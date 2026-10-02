@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504540-qSLdPu7Pb9zSoE5urnrQ",
+ "object": "chat.completion",
+ "created": 1788504540,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"angles\",\"empty\":false,\"items\":[{\"h2\":\"Direct mail: Connect with Nick’s cocktail YouTube work to earn attention\",\"body\":[{\"text\":\"Nick Fisher created the Cocktail Chemistry YouTube channel in 2014 and authored the book \\\"Cocktail Chemistry\\\".\",\"claimIds\":[\"zaf-110\"]},{\"text\":\"Use his own words—\\\"I invest a lot in top quality liquors that I love and want to recommend to you guys, um as well as equipment that I use...\\\"—as the personal cue before introducing Clue.\",\"claimIds\":[\"zaf-101\"]}],\"sendLine\":\"In the direct-mail brief: Create a cocktail-themed mailer for Nick that uses his interest in top-quality liquors and equipment as the opening cue, then introduces Clue.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Landing page: Show how Clue can support Zafran’s alliances build from scratch\",\"body\":[{\"text\":\"Zafran is looking for a Director of Alliances to build its partner ecosystem from scratch, anchored in GSIs and extending into CSP and ISV partners.\",\"claimIds\":[\"zaf-091\"]},{\"text\":\"Position the page around Clue helping marketers research buying committees and scale account-specific content while Zafran builds that channel.\",\"claimIds\":[\"zaf-091\"]}],\"sendLine\":\"Brief the design agent with: Build a landing page around Zafran’s new alliances motion, using the partner ecosystem and Director of Alliances role as the context for a scalable ABM workflow.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Content: Turn Zafran’s remediation claims into an executive-ready account brief\",\"body\":[{\"text\":\"Zafran says its platform can prove that 99% of critical vulnerabilities are not exploitable and reduce time per vulnerability by 87%.\",\"claimIds\":[\"zaf-174\"]},{\"text\":\"Its messaging also focuses on noisy scanner output, de-duplicated findings, and routing a single ticket to an owner through Jira or ServiceNow.\",\"claimIds\":[\"zaf-136\",\"zaf-140\"]}],\"sendLine\":\"Brief the design agent with: Create an executive account brief that presents Zafran’s 99% and 87% company claims alongside its single-ticket remediation workflow.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Event: Use the NYC connection for an in-person conversation\",\"body\":[{\"text\":\"Nick Fisher is in New York, New York, and Zafran’s BDR hiring requirements call for approximately three days a week at its NYC office.\",\"claimIds\":[\"zaf-042\",\"zaf-092\"]},{\"text\":\"Use a New York event or office-adjacent meeting as the setting for a conversation about Zafran’s ABM-driven go-to-market motion.\",\"claimIds\":[\"zaf-042\",\"zaf-092\",\"zaf-140\"]}],\"sendLine\":\"For the event: Invite Nick to a New York conversation focused on Zafran’s ABM-driven go-to-market motion and its NYC presence.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmnh4B6YSpeTwyAo2GcM-sZ2_WGIzn3mlCrm33oxnE1jv6E33QsJ6P_yxQH5lkjrNydy9_kflCyadQA8Z57n5ue_Eib-ZmGQvULsCgB8iJXMx6s3xMY35mN4sAgR1cBBdh02BGQCdanGFz1O7Rpatk26cj5QQGZToCfmd-759yRlti9NqbvIPURRMS1M0t-pMeU7nrdNtf0iirCY4bOOLRARZE9YTFVu0QGDlCHj9r1f9jAMdBCUvDOxx3zZ15giwLCohgQY7P2y6qB7kOWa3AMjCAKZu2H2zs-sCmqfjPdgF1X63fVafNqCeqLgK0FLTrQrZPEWIuW_m3eS-AhFYwjhuqGldAJY9sPD41TZN4fd4vDaU2kTgLrcTsFjquk0sHYr_VJ_uaapBC_3iAFZE50DqG7qKviSlofVs9qlgObzNlmBpzkIiRRTM07jgSiMG1MLO6ZNQWfGa_L1ZhBPR3DIPtrsCsqucabZ4U5yCKujNWe1ahYaiYaxVTVeWZzMf1HQ411xGePuCg9AcZTF8YPDf6yz11IBxfl1imTS2E3ToQUc9aBopE6oG_ZjZ7p30-3GbCuOUYI4DiZNm9jCoVAutQ0R9gn4lpSHNcQJsabq4HiOOtptAFNau_54y0C-NTgHg11JTmbbsqr5UmQ1lm6fQh-WXNVS1gE6d134l4o24Q4vmgvn1yCqGJuCXuokuSMuBQluSz0FWcXNiQMceXZ42ZdKWAL0jP4dOJtziLcBd6L5-aqNgYIWtv9KCJ0PyyCJfdrfO9omO0dLXBEjE2ZxeE6uZMZn4FAX_qaTQM-nG64B6HyACfmSqlLYVAMg0JOuBkAEgq7KrtLdNLLsIrS2VGLthQyn6zeE1Z6xXj8Cexvly82Y2yIHLBH21Tx8hd1AYYvWR-S3-d1GI2jD0HW7UFYwtcowyLzBjxX6lzUOpmy3XmIQVE1AL1AeCAgQ1OmU710zWk3ebQfcHOKozihg4M5KHs_tOZKtX8GfTLtYT1wc1UgHsZI0P2HxXNNeXxpgCcIjnmRFlFwCFNLDJ6hVInApVLby0_IP8WvW2E9faqG3vIcU-GGlaZPsFU7QD4WAKqzPmlak4Qd-93M-Jl1g3LHDxNqT3Ubj4wbKZda6kYXP6DhncgQIX9xuCFgCrquFDZ5OsUO1VIxsTe7PecJybQa_erMSaPeFVUaJLH_Sar83fPFC5frbMgHRMirWs9VMa6Cd3czcRY6574VC6nXQZXGI6JnxR6mP5T3XY8vZiKYWoJNcsjSoRiqrVtp4euuuEjo5pmAw8_JQBRrsJ5cVqGxP6Pe7W2F3Q7yHA-xMOh-ZPSHx5dL1XUmptZ6YNf52wM8Tz5QnP0FMUeXn_7tb6eoyisee3Gb0B2jZ0zOiPhLLHEquH1spW1Rbnq0jgLu62mVl4qk1627Ah9LJHXIy7rndh8AB5dUpfM9LQqfCU6YvniieyNSslqIm5HnfE_cgALme8V3RgMfsGlVyN2Bxe5sjy_pKm5gJ6hL1dOc54ggOCDuISt9FJJFMpuhE7Tm5CVxjmaBBcprr6ZnpIdggoSytVuWKhzkbj5I10uKSpqGxuVibtbW-KSZVHRPoDdjlsLqOclwKZ-PRdAK84Ap1nWmBuQ-jlR5NVReRloncOYTtFwUWIvH2p-0OJK7K9JUx5PXznbCtDHGPZ35WSzdnGofwpCC6LVXZ2wx2DA6Dj2Yoax5W0mMKNOZmoz0AjMe2p5P_xCyU4QtTF4DXy-9KJn8_YPpEZwD7RSZgFoUdV9CTS9E0km6GpckXRWibgYwS21lHWl7TzfyqaCMTlvpw84jVIDcIRepTdNpQSEQgzlOOwRU7WMhJH0VceEWrvXlHLsr5HbD3sx0PxVo0anVicsB4Cifbw58iDF9uokK4jvurmiuoW9cSp53_52tm5UY1WUp0LamsIrWziMUr0lE8pcGm2NatUIAip8rA3Wot5iIEIz8M1DI7gNB74wi668wkqhqHoM2m5hrX7ufDa7ry8MS246LVm-2Rvwzkivvguckk2ejegowrmqaW-ZLVL5ryxBTz5uhNkCO1kkxHaFqjHWzVi8wb-nLzc0nHd8ueNc5gbbGHHqD_J5nN24YKiNPPsQOH3n_cn3_kb7XWPm07uhQLp0cCKj_-LxmC4e3rN90z9c6_yYw5geElYNXdx7BSyXxJLEeCN6YgV3S_CQgJ96DWet8fdrO3K2r8aReXYe4mzog8DqNqYiRrni22H6nUTiCP3JIUFt9N-p8KCkkEopP5pq80bf4YXDyyC47RIbWXNmq3IWEGM4u-Hv5ar8NN3i9gqpHXX3gViw0XhvsEwlgeQBARK0kmx-6Xr42Os5NseoTbj1XPzB1qt9uwvKdEEQznhJ7yTgc0zs_E2K9npeMn2TfzXRuB16T6yqQq3K6xmPusyCovGHh3xfUXYJqWrk-IyPYchgS3pYD_A5NgEF1T-xC-biRn7RWw3QYQi9F11OBqStpdgep_SKY4_D8U-2WwmhyeMyHyorPk60VHjKsy89R5RomEew85HBIDjog0AEI5ASpcSP08ywVeOAQo_j9OkrBazFrnWpKaH20OFWDDhlRYLkzM6PBcQWU1XO60mkevQBG7Pc7mCu5Clv2flZftCOF8JMqCRkEtIvYO9dtrO1TGK51lKyFhyIHSTOlFHisT5iCDVGwnXz7gNX2G15q67mZVa1RqgzBHwgGWVBmaqlYDjzBM_nvGMxmmkwwI8D5m2bXHimrTZtOPJIDFEpQKlaVDfWAR8rW7mpFrRIgvJJGoz8iYpMeEgc33QC1qfm4iabZXNfGwirKkzwFAWFVmtgTs_QabZJV1Isn_R7rHe9bojKW31QxiQ-ajFMVcWJT3hyJ-Pje82V6GMPgjvSOjre93_caQ1qJRkpj7uKRRO8uKvR2goBiFqYH9DdF29h5kULVcobwnAiJSuvd9F0NQXrq7Uf44D_b1LvptpVdF_5a5MR6YRJagNDGift77qnb1gxPzOGrNMKyvJABD5SWSX3UuPNsnMGW7NFz3EPztNKhMuxDq3MYFAA_AP7DLLL8w7Z9hjdkwffVxfNjmbLVz07bNlvWw9Ou7aG-_vCA_AzLHIqB32omthGLXsU_rSbaA9DxdPWKFrH0-EtEhMRBw9yFSVauxQlZ7xxbo-i8q-rNautDt-ISPm8PWqBpKw1cwI6dFPWBmuCS2BylW6Gvzgf3IenbJwmrczuhPI1r8o3MH-XNJBp196DMia2pG6R1ZTJxH2pimKRFqnG2CsgA-rfpd_0N1w8L6Ve0eFV1kaq-C2QlXG2cpClCfNL5ewCcNLlaujBb1AMwIu3xyt_fII9G0WW530wJ770X7uBN0gQbl_GPmhBS7K4DADsTphzKV58meWj6x_oORwhTAk23vDV2hcYDlD1XbJlWZooPf3eII_nnvD_YWbmUjbCCtNNGL4mUfDeTnwUQPWwVcDkBZT7jXFt9S_X7dxvS70XrlV_sTaMtslKADAQihFBf7aIbxsFL4RrpzZgQ93XmVg34txDwW2hIcNZHx42Xfn_Xl0kxGlkxRbMVgTmUp-vRQ5EN4aRQ6oAJ5bjFMrrTJqw1ck14HZk_STvCf2foFh1rJ5JZBBcsEgXqX6IKvdRWogEbACt29pf2MoV-ARgZTZQUP-vIbdu0EQJk-1llt4wFlYaGMGmLVKiQs5eBlND1CQjvAY95Y8M6y_wxh4yd_KHQqz6kklmVmaEadMyfpAmM5XS_CjtGjGfQWgY61-2C7kfh4vozXw3sZJmh6afAvbFJBWXeNNKGQML5rrs4sjfnrO1arV8X02EfSnnl0tURXzDYb_Bgkn0tazUvcJx2C0EUc1jdDzuM1vnGsbcNn7WujUNcAtIb1aAltNXWdlHA0sGzcRwb-c12pSMX0H4Yv23NsyDWchukxrTN510Cqxe804PFUNsX69mg_MqZ2uxvjuk_KhppE_Yh5OZo9szlMv1K6zCWMZLN6EB2SE-6lxslFkoWzsj2zvri56gX5W5x9-7kMlv1PUJ_LTyHWG7fkag3g5E0KjMRrge2vgp1dpCz8ybytmhrrAnl01w3RVu_ACQdDDZLviQ5InqV5WGJxb5kcwUbiqcMT7m1StNzWYdd_I8SHrfnhgigRt6NscOAHqcUd0QqFeFXOi29rEMGtGWpL7Uw0lSYDS2hhWRAmiaIpuF6aFjidlF3iEb7paAgdV7g-8vMtvA55IN4h3O9Kvt80KhGpMeU45FCgXp-BSdmf1owifeGgf0ymif5O8me7dGEtOUCFI-2D1pnOdwG0_fsXWiN97rAEXE3kn82m7-WlMU5tZqOJGWLlCqvinBd_WezQrpsIQ-qhuH-OlhQXP0p-aZNwBL7TXrwg2hH1TkWN3cON-tGwPkVUl5ZBOWHQ7mNfbSAoqe9tr6dy1ixktuV6UEz4FE6_ohrGQw9CrDk3PLoz42W5Ra_lwxYza4Qq41hf71V0WfXXS2IHpm_3FwVb3T3Rhq3lETFmZae83EIwBsZr_OBgCLSDarPIE3RXOzdpTF3PdESdYhieQucz.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_066159bfc1ef578f016a9a69dd5c6c87d0b5555ff508e69baa",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 4503,
+  "completion_tokens": 1187,
+  "total_tokens": 5690,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 4500,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00255,
+   "upstream_inference_prompt_cost": 0.0011256,
+   "upstream_inference_completions_cost": 0.0014244
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 12.14,
+ "_attempt": 0
+}

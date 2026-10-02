@@ -90,13 +90,15 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
             "core.work_email",
             "core.direct_phone",
             "core.primary_tech_stack",
+            "core.logo_url",
             "account.total_funding",
             "account.recent_funding",
         ),
         provider="exa",
         auth_ref="CLUE_EXA_API_KEY",
         freshness_profile="operation_window",
-        version=3,
+        # v4 (2026-09-11): yields ``core.logo_url`` — the LinkedIn company mark Websets returns.
+        version=4,
     ),
     _entry(
         "clay",
@@ -166,17 +168,26 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         modality=Modality.STRUCTURED,
         entity_scope=EntityScope.ACCOUNT,
         tier=1,
+        # The comprehensive account contract (§3.1) makes this the structured owner of the
+        # firmographic identity rows and the two funding rows; the organization snapshot carries
+        # them, so the manifest must declare them or the launcher's per-field plan is empty and
+        # research is refused. Deliberately absent: ``core.annual_revenue`` — Sumble's pinned v9
+        # organization attributes carry no revenue figure, so §3.1 gives that row to Exa Deep alone.
         yields=(
             "core.employee_count",
             "core.primary_domain",
             "core.industry",
             "core.hq_location",
+            "core.company_about",
+            "core.company_linkedin_url",
+            "account.total_funding",
+            "account.recent_funding",
         ),
         provider="sumble",
         auth_ref="CLUE_SUMBLE_API_KEY",
         rate_limit={"requests_per_second": 10},
         freshness_profile="daily",
-        version=2,
+        version=3,
     ),
     _entry(
         "sumble_jobs",
@@ -235,6 +246,22 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         rate_limit={"requests_per_second": 10},
         freshness_profile="daily",
         version=2,
+    ),
+    _entry(
+        "ai_ark_people",
+        modality=Modality.STRUCTURED,
+        # The Contacts-table email lookup (founder ruling 2026-09-29): AI Ark's
+        # ``/v1/people/export/single`` for one exact LinkedIn-identified person, the same export
+        # the ARV2 research agents use. It answers the address with its own mailbox verdict.
+        entity_scope=EntityScope.CONTACT,
+        tier=1,
+        yields=("core.work_email",),
+        provider="ai_ark",
+        cost_cents=Decimal(0),
+        identity_binding=IdentityBinding.STRONG,
+        auth_ref="CLUE_AI_ARK_API_KEY",
+        rate_limit={"requests_per_second": 0.1},
+        freshness_profile="daily",
     ),
     # Authoritative registries — deterministic, tier-1, vertical/jurisdiction-flavored. They yield
     # account-level authoritative facts; finer per-vertical field yields (e.g. healthcare.npi) are
@@ -368,10 +395,28 @@ SEED_MANIFESTS: tuple[RegistrySourceManifest, ...] = (
         modality=Modality.TEXT,
         entity_scope=EntityScope.BOTH,
         tier=4,
-        yields=("account", "account.resonance", "contact.facet"),
+        # §3.1 ownership, stated as the concrete account rows Exa Deep owns rather than the whole
+        # ``account`` class. The class token claimed *every* account field — including
+        # ``account.hiring_velocity_eng``, which §3.1 gives to Sumble Jobs alone — so a planned
+        # field carried two authorized sources and the deep lane could buy a second provider for a
+        # row it was never granted. The two class tokens that remain are whole-class ownership:
+        # §3.1 gives Exa Deep all six ``account.resonance.*`` rows and §7.1 all nine
+        # ``contact.facet.*`` rows.
+        yields=(
+            "core.company_about",
+            "core.industry",
+            "core.annual_revenue",
+            "account.total_funding",
+            "account.recent_funding",
+            "account.operational_pain",
+            "account.strategic_moves",
+            "account.resonance",
+            "contact.facet",
+        ),
         provider="exa",
         cost_cents=Decimal(10),
         auth_ref="CLUE_EXA_API_KEY",
+        version=2,
     ),
     _entry(
         "parallel_task",

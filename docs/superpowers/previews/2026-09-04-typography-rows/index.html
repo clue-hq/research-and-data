@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Typography rows — founder preview (Plan 4, item G)</title>
+    <!--
+      Editor Quality Plan 4, item G — FOUNDER PREVIEW ONLY.
+
+      Nothing on this page ships. No inspector control for line height, letter
+      spacing, max lines / wrap or resize mode lands in Plan 4; the plan's
+      Global Constraints hold the gate and Task 9 produces this page and its
+      ICONS.md and nothing else.
+
+      Everything below is copied from the real panel rather than designed here:
+
+        markup   apps/frontend/src/features/chat-shell/components/image-inspector.tsx
+                 (AdTextInspector's Typography section; TextAlignment)
+                 apps/frontend/src/features/chat-shell/components/inspector-primitives.tsx
+                 (InspectorSection / InspectorField / InspectorInput /
+                  InspectorSelect / InspectorTextArea / InspectorIcon /
+                  ColorControl)
+        css      apps/frontend/src/features/chat-shell/components/chat-shell.module.css
+                 (values inlined RESOLVED, not by variable name, so this page
+                  renders identically with no app and no design-system build)
+        tokens   apps/frontend/packages/design-system/generated/tokens.css
+                 --clue-ds-color-bg-neutral        #FFFFFF
+                 --clue-ds-color-bg-page           #F8F9FB
+                 --clue-ds-color-border-neutral    #D6D9E0
+                 --clue-ds-color-content-neutral   #1C2028
+                 --clue-ds-color-content-subtle    #5E636C
+                 --clue-ds-shadow-card-subtle      0 1px 2px rgb(0 0 0 / 6.67%)
+        fonts    apps/frontend/src/app/globals.css (Satoshi 400/500 from
+                 /public/fonts) and @fontsource-variable/inter (the one weight
+                 override the panel authors: the Font-weight select).
+
+      Icon provenance: ./ICONS.md.
+    -->
+    <style>
+      /* ── Fonts ────────────────────────────────────────────────────────────
+         Absolute file:// paths so the page renders with the REAL faces off a
+         double-click, with no server. `globals.css` loads exactly these two
+         Satoshi weights; Inter is the app's @fontsource-variable copy, used by
+         the panel for one control only (see .inspectorSelectControlWeight). */
+      @font-face {
+        font-family: "Satoshi";
+        src: url("file:///Users/aryankeshri/conductor/workspaces/research-and-data/colombo/apps/frontend/public/fonts/satoshi-regular.woff2") format("woff2");
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Satoshi";
+        src: url("file:///Users/aryankeshri/conductor/workspaces/research-and-data/colombo/apps/frontend/public/fonts/satoshi-medium.woff2") format("woff2");
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "Inter";
+        src: url("file:///Users/aryankeshri/conductor/workspaces/research-and-data/colombo/apps/frontend/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2-variations");
+        font-style: normal;
+        font-weight: 100 900;
+        font-display: swap;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      /* globals.css `body`, with the page background so the white panel column
+         reads as a panel. */
+      body {
+        margin: 0;
+        background: #f8f9fb;
+        color: #1c2028;
+        font-family: "Satoshi", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      /* ── Preview chrome (NOT the app) ─────────────────────────────────── */
+      .caption {
+        margin: 0;
+        padding: 7px 16px;
+        background: #1c2028;
+        color: #ffffff;
+        font-size: 12px;
+        font-weight: 500;
+        line-height: 16px;
+        letter-spacing: 0.01em;
+      }
+
+      .stage {
+        display: flex;
+        align-items: flex-start;
+        gap: 24px;
+        padding: 8px 16px 16px;
+      }
+
+      /* `.inspectorDock` sits in the shell's inspector column, which
+         `.shellPanelOpen` / editor-surface.tsx size as
+         `minmax(400px, 480px)` — 480px at a 1280-wide viewport. */
+      .inspectorDock {
+        flex: 0 0 480px;
+        width: 480px;
+        overflow-x: hidden;
+        background: #ffffff;
+      }
+
+      .legend {
+        max-width: 560px;
+        color: #5e636c;
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .legend h2 {
+        margin: 0 0 6px;
+        color: #1c2028;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 18px;
+      }
+
+      .legend p {
+        margin: 0 0 10px;
+      }
+
+      .legend code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+      }
+
+      /* ── .inspector ───────────────────────────────────────────────────── */
+      .inspector {
+        width: 100%;
+        max-width: 100%;
+        background: #ffffff;
+        color: #1c2028;
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .inspectorRail {
+        width: calc(100% - 16px);
+        margin: 0 8px;
+      }
+
+      .inspectorSection {
+        width: 100%;
+        max-width: 100%;
+        padding: 16px;
+        border-bottom: 0.5px solid #d6d9e0;
+      }
+
+      .inspectorSectionTitle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: max-content;
+        max-width: 100%;
+        padding: 0;
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: #5e636c;
+        font-size: 13px;
+        font-weight: 400;
+        line-height: 18px;
+        text-align: left;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      .inspectorSectionChevron {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 8px;
+        width: 8px;
+        height: 8px;
+        transform: rotate(90deg); /* .inspectorSectionChevronOpen */
+        transform-origin: center;
+      }
+
+      .inspectorSectionChevron svg {
+        display: block;
+        width: 4px;
+        height: 7px;
+      }
+
+      .inspectorSectionContent {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding-top: 16px;
+      }
+
+      .inspectorField {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .inspectorFieldLabel {
+        color: #5e636c;
+        font-size: 13px;
+        font-weight: 400;
+        line-height: 18px;
+      }
+
+      /* The proposed rows' label carries a 12px icon in front of the words.
+         The label is otherwise the shipped `.inspectorFieldLabel` verbatim —
+         the icon+gap is the one addition item G is asking about. */
+      .inspectorFieldLabelIcon {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .inspectorControl,
+      .colorValue,
+      .opacityValue {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        height: 34px;
+        gap: 8px;
+        padding: 8px;
+        overflow: hidden;
+        border: 0.5px solid #e6e9ed;
+        border-radius: 8px;
+        background: rgb(0 37 110 / 3%);
+        color: #1c2028;
+        font-size: 13px;
+        line-height: 18px;
+      }
+
+      .inspectorInputControl input,
+      .inspectorInputControl textarea,
+      .opacityValue input {
+        width: 100%;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+      }
+
+      .inspectorTextAreaControl {
+        align-items: stretch;
+        height: auto;
+      }
+
+      .inspectorTextAreaControl textarea {
+        resize: vertical;
+      }
+
+      .inspectorSelectControl {
+        position: relative;
+        justify-content: space-between;
+        width: 100%;
+        border-radius: 4px;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+        cursor: pointer;
+        font: inherit;
+        text-align: left;
+      }
+
+      /* `.inspectorSelectControl[aria-label="Font weight"]` — the panel's one
+         local type override. */
+      .inspectorSelectControlWeight {
+        font-family: Inter, Arial, sans-serif;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .inspectorSelectValue {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .inputChevron {
+        flex: 0 0 auto;
+        margin-left: auto;
+        pointer-events: none;
+      }
+
+      .fieldPrefix {
+        flex: 0 0 auto;
+        color: #5e636c;
+      }
+
+      .fieldGrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .fieldGrid > * {
+        min-width: 0;
+      }
+
+      /* ── Colour row (`ColorControl`) ──────────────────────────────────── */
+      .colorControl {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        width: 100%;
+      }
+
+      .colorValue {
+        border-radius: 8px 0 0 8px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .colorValue > span:not(.colorSwatch) {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .opacityValue {
+        justify-content: center;
+        min-width: 58px;
+        border-left: 0;
+        border-radius: 0 8px 8px 0;
+      }
+
+      .colorSwatch {
+        flex: 0 0 16px;
+        width: 16px;
+        height: 16px;
+        border: 0.5px solid rgb(0 24 62 / 13%);
+        border-radius: 1px;
+      }
+
+      /* ── Alignment (`TextAlignment`) ──────────────────────────────────── */
+      .alignmentGroups {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 92px;
+        gap: 16px;
+      }
+
+      .alignmentControl {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 2px;
+        padding: 2px;
+        border: 0.5px solid #e6e9ed;
+        border-radius: 10px;
+        background: rgb(0 37 110 / 3%);
+      }
+
+      .alignmentControlQuad {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .verticalAlignment {
+        grid-template-columns: repeat(3, 1fr);
+      }
+
+      .alignmentControl button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 28px;
+        padding: 0;
+        appearance: none;
+        border: 0.5px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+
+      .alignmentControl .alignmentActive {
+        border-color: rgb(0 24 62 / 13%);
+        background: white;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+      }
+
+      /* ── Segmented control (`SegmentedControl`, web-inspector.tsx) ─────── */
+      .inspectorSegmentedControl {
+        display: grid;
+        grid-auto-columns: minmax(0, 1fr);
+        grid-auto-flow: column;
+        gap: 2px;
+        width: 100%;
+        height: 32px;
+        padding: 2px;
+        border: 0.5px solid #e6e9ed;
+        border-radius: 10px;
+        background: rgb(0 37 110 / 3%);
+      }
+
+      .inspectorSegmentedControl button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+        height: 27px;
+        padding: 0 12px;
+        appearance: none;
+        border: 0.5px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: #1c2028;
+        font-size: 13px;
+        line-height: 18px;
+        cursor: pointer;
+      }
+
+      .inspectorSegmentedControl .inspectorSegmentActive {
+        border-color: rgb(0 24 62 / 13%);
+        background: white;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 7%);
+      }
+
+      /* ── `InspectorIcon` ──────────────────────────────────────────────── */
+      /* The component renders a `size × size` span holding the SVG under
+         `object-fit: contain`, so a non-square asset is letterboxed rather
+         than stretched. Each inline SVG below therefore carries its intrinsic
+         ratio scaled into the 12px box. */
+      .inspectorIcon {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: 12px;
+        height: 12px;
+      }
+
+      .inspectorIcon svg {
+        display: block;
+      }
+
+      /* ── PREVIEW-ONLY vocabulary (flagged as such in the notes below) ──── */
+      /* The 0.05 stepper. The shipped panel has NO spinner anywhere; this is
+         the one piece of new chrome on the page, drawn from the panel's own
+         `select-chevron` glyph so it at least speaks the existing language. */
+      .stepper {
+        display: flex;
+        flex: 0 0 auto;
+        flex-direction: column;
+        gap: 1px;
+        margin-left: 2px;
+      }
+
+      .stepper span {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 13px;
+        border: 0.5px solid rgb(0 24 62 / 13%);
+        border-radius: 3px;
+        background: white;
+        cursor: pointer;
+      }
+
+      .stepper svg {
+        display: block;
+        width: 7px;
+        height: 4px;
+      }
+
+      .stepper .up svg {
+        transform: rotate(180deg);
+      }
+
+      /* Annotations. Deliberately unlike anything in the panel so the founder
+         never mistakes one for shipped chrome. */
+      .note {
+        margin: -2px 0 2px;
+        padding-left: 8px;
+        border-left: 2px solid #cfd4dc;
+        color: #8a909a;
+        font-size: 11px;
+        line-height: 15px;
+      }
+
+      .divider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 8px 0 0;
+        color: #8a909a;
+        font-size: 11px;
+        line-height: 15px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .divider::after {
+        content: "";
+        flex: 1 1 auto;
+        height: 1px;
+        background: repeating-linear-gradient(
+          to right,
+          #cfd4dc 0 3px,
+          transparent 3px 6px
+        );
+      }
+    </style>
+  </head>
+  <body>
+    <p class="caption">
+      Preview only — Plan 4 item G, founder gate. Nothing here is shipped.
+    </p>
+
+    <div class="stage">
+      <!-- The shell's inspector column, at the width editor-surface.tsx gives
+           it: `minmax(400px, 480px)`. Only the Typography section is drawn —
+           the panel header, the Stroke / Layout / Layers sections and the
+           canvas are all out of frame on purpose. -->
+      <div class="inspectorDock">
+        <aside aria-label="Ad inspector" class="inspector">
+          <div class="inspectorRail">
+            <section class="inspectorSection">
+              <button aria-expanded="true" class="inspectorSectionTitle" type="button">
+                <span>Typography</span>
+                <span aria-hidden="true" class="inspectorSectionChevron">
+                  <!-- /public/icons/chat-shell/inspector/shared/chevron-right.svg -->
+                  <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="4" height="7" viewBox="0 0 4 7" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path id="Vector" d="M0.5 6.5L3.5 3.5L0.5 0.5" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </span>
+              </button>
+
+              <div class="inspectorSectionContent">
+                <!-- ══ SHIPPED ROWS — AdTextInspector, verbatim order ══════ -->
+
+                <!-- Text (InspectorTextArea, rows=3) -->
+                <div class="inspectorField">
+                  <span class="inspectorFieldLabel">Text</span>
+                  <span class="inspectorControl inspectorInputControl inspectorTextAreaControl">
+                    <textarea aria-label="Text content" rows="3">Pipeline that shows up on time.</textarea>
+                  </span>
+                </div>
+
+                <!-- Color (ColorControl: swatch + hex, then opacity) -->
+                <div class="inspectorField">
+                  <span class="inspectorFieldLabel">Color</span>
+                  <span class="colorControl">
+                    <button aria-label="Choose color #1C2028" class="colorValue" type="button">
+                      <span class="colorSwatch" style="background: #1c2028"></span>
+                      <span>#1C2028</span>
+                    </button>
+                    <span class="opacityValue inspectorInputControl">
+                      <input aria-label="Color opacity" value="100%" readonly />
+                    </span>
+                  </span>
+                </div>
+
+                <!-- Font (InspectorSelect) -->
+                <div class="inspectorField">
+                  <span class="inspectorFieldLabel">Font</span>
+                  <button aria-label="Font family" class="inspectorControl inspectorSelectControl" type="button">
+                    <span class="inspectorSelectValue">Inter</span>
+                    <span class="inputChevron">
+                      <span class="inspectorIcon">
+                        <!-- shared/select-chevron.svg — 7×4 contained in 12×12 -->
+                        <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="6.857" viewBox="0 0 7 4" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path id="Vector" d="M0.5 0.5L3.5 3.5L6.5 0.5" stroke="#1C2028" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </span>
+                    </span>
+                  </button>
+                </div>
+
+                <!-- Size + Weight (fieldGrid) -->
+                <div class="fieldGrid">
+                  <div class="inspectorField">
+                    <span class="inspectorFieldLabel">Size</span>
+                    <span class="inspectorControl inspectorInputControl">
+                      <input aria-label="Font size" value="48" readonly />
+                    </span>
+                  </div>
+                  <div class="inspectorField">
+                    <span class="inspectorFieldLabel">Weight</span>
+                    <button aria-label="Font weight" class="inspectorControl inspectorSelectControl inspectorSelectControlWeight" type="button">
+                      <span class="inspectorSelectValue">700 Bold</span>
+                      <span class="inputChevron">
+                        <span class="inspectorIcon">
+                          <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="6.857" viewBox="0 0 7 4" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path id="Vector" d="M0.5 0.5L3.5 3.5L6.5 0.5" stroke="#1C2028" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Alignment (TextAlignment: horizontal quad + vertical trio) -->
+                <div class="inspectorField">
+                  <span class="inspectorFieldLabel">Alignment</span>
+                  <div class="alignmentGroups">
+                    <div aria-label="Horizontal alignment" class="alignmentControl alignmentControlQuad" role="group">
+                      <button aria-label="Align left" aria-pressed="true" class="alignmentActive" type="button">
+                        <span class="inspectorIcon">
+                          <!-- shared/align-left.svg — 10×7 -->
+                          <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="8.4" viewBox="0 0 10 7" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path id="Vector" d="M9.5 0.5H0.5M6.5 3.5H0.5M7.5 6.5H0.5" stroke="#1C2028" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </button>
+                      <button aria-label="Align center" type="button">
+                        <span class="inspectorIcon">
+                          <!-- shared/align-center.svg — 10×7 -->
+                          <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="8.4" viewBox="0 0 10 7" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path id="Vector" d="M9.5 0.5H0.5M7.5 3.5H2.5M8.5 6.5H1.5" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </button>
+                      <button aria-label="Align right" type="button">
+                        <span class="inspectorIcon">
+                          <!-- shared/align-right.svg — 10×7 -->
+                          <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="8.4" viewBox="0 0 10 7" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path id="Vector" d="M9.5 0.5H0.5M9.5 3.5H3.5M9.5 6.5H2.5" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </button>
+                      <button aria-label="Align justify" type="button">
+                        <span class="inspectorIcon">
+                          <!-- shared/align-justify.svg — 10×7 -->
+                          <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="8.4" viewBox="0 0 10 7" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path id="Vector" d="M9.5 0.5H0.5M9.5 3.5H0.5M9.5 6.5H0.5" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </button>
+                    </div>
+                    <div aria-label="Vertical alignment" class="alignmentControl verticalAlignment" role="group">
+                      <button aria-label="Align top" aria-pressed="true" class="alignmentActive" type="button">
+                        <span class="inspectorIcon">
+                          <!-- shared/align-top.svg — 11×11 -->
+                          <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="12" viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path id="Vector" d="M0.5 0.5H10.5M3 7.5H8C8.55228 7.5 9 7.94772 9 8.5V9.5C9 10.0523 8.55228 10.5 8 10.5H3C2.44772 10.5 2 10.0523 2 9.5V8.5C2 7.94772 2.44772 7.5 3 7.5ZM4 2.5H7C7.55228 2.5 8 2.94772 8 3.5V4.5C8 5.05228 7.55228 5.5 7 5.5H4C3.44772 5.5 3 5.05228 3 4.5V3.5C3 2.94772 3.44772 2.5 4 2.5Z" stroke="#1C2028" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </button>
+                      <button aria-label="Align middle" type="button">
+                        <span class="inspectorIcon">
+                          <!-- shared/align-middle.svg — 11×9 -->
+                          <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="9.818" viewBox="0 0 11 9" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path id="Vector" d="M10.5 8.5H0.5M10.5 0.5H0.5M4 3H7C7.55228 3 8 3.44772 8 4V5C8 5.55228 7.55228 6 7 6H4C3.44772 6 3 5.55228 3 5V4C3 3.44772 3.44772 3 4 3Z" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </button>
+                      <button aria-label="Align bottom" type="button">
+                        <span class="inspectorIcon">
+                          <!-- shared/align-bottom.svg — 11×11 -->
+                          <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="12" viewBox="0 0 11 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path id="Vector" d="M0.5 10.5H10.5M3 5.5H8C8.55228 5.5 9 5.94772 9 6.5V7.5C9 8.05228 8.55228 8.5 8 8.5H3C2.44772 8.5 2 8.05228 2 7.5V6.5C2 5.94772 2.44772 5.5 3 5.5ZM4 0.5H7C7.55228 0.5 8 0.947715 8 1.5V2.5C8 3.05228 7.55228 3.5 7 3.5H4C3.44772 3.5 3 3.05228 3 2.5V1.5C3 0.947715 3.44772 0.5 4 0.5Z" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ══ PROPOSED ROWS — nothing below this line ships ═══════ -->
+                <p class="divider">Proposed rows — preview only</p>
+
+                <!-- Line height + Letter spacing (fieldGrid) — founder ruling
+                     2026-09-04: two-up in one row, like Max lines + Wrap. -->
+                <div class="fieldGrid">
+                  <!-- Line height -->
+                  <div class="inspectorField">
+                    <span class="inspectorFieldLabel inspectorFieldLabelIcon">
+                      <span class="inspectorIcon">
+                        <!-- shared/move-vertical.svg — 5×11, vendored verbatim -->
+                        <svg preserveAspectRatio="none" overflow="visible" width="5.455" height="12" viewBox="0 0 5 11" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M2.5 0.5V10.5M4.5 2.5L2.5 0.5L0.5 2.5M4.5 8.5L2.5 10.5L0.5 8.5" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </span>
+                      <span>Line height</span>
+                    </span>
+                    <span class="inspectorControl inspectorInputControl">
+                      <input aria-label="Line height" value="1.04" readonly />
+                      <span class="fieldPrefix">&times;</span>
+                      <span aria-hidden="true" class="stepper">
+                        <span class="up">
+                          <svg preserveAspectRatio="none" overflow="visible" width="7" height="4" viewBox="0 0 7 4" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M0.5 0.5L3.5 3.5L6.5 0.5" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                        <span class="down">
+                          <svg preserveAspectRatio="none" overflow="visible" width="7" height="4" viewBox="0 0 7 4" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M0.5 0.5L3.5 3.5L6.5 0.5" stroke="#5E636C" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                      </span>
+                    </span>
+                  </div>
+                  <!-- Letter spacing -->
+                  <div class="inspectorField">
+                    <span class="inspectorFieldLabel inspectorFieldLabelIcon">
+                      <span class="inspectorIcon">
+                        <!-- shared/move-horizontal.svg — 11×5, vendored verbatim -->
+                        <svg preserveAspectRatio="none" overflow="visible" width="12" height="5.455" viewBox="0 0 11 5" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M8.5 4.5L10.5 2.5L8.5 0.5M10.5 2.5H0.5M2.5 4.5L0.5 2.5L2.5 0.5" stroke="#1C2028" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </span>
+                      <span>Letter spacing</span>
+                    </span>
+                    <span class="inspectorControl inspectorInputControl">
+                      <input aria-label="Letter spacing" value="0" readonly />
+                      <span class="fieldPrefix">em</span>
+                    </span>
+                  </div>
+                </div>
+                <p class="note">
+                  Stepper moves <strong>0.05</strong> per press — and it is NEW
+                  chrome: no shipped field has a spinner.
+                </p>
+
+                <!-- Max lines + Wrap (fieldGrid) -->
+                <div class="fieldGrid">
+                  <div class="inspectorField">
+                    <span class="inspectorFieldLabel inspectorFieldLabelIcon">
+                      <span class="inspectorIcon">
+                        <!-- lucide-react 1.28.0 · rows-3 (ISC) — NOT vendored -->
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                          <rect width="18" height="18" x="3" y="3" rx="2"/>
+                          <path d="M21 9H3"/>
+                          <path d="M21 15H3"/>
+                        </svg>
+                      </span>
+                      <span>Max lines</span>
+                    </span>
+                    <span class="inspectorControl inspectorInputControl">
+                      <input aria-label="Max lines" value="2" readonly />
+                    </span>
+                  </div>
+                  <div class="inspectorField">
+                    <span class="inspectorFieldLabel inspectorFieldLabelIcon">
+                      <span class="inspectorIcon">
+                        <!-- lucide-react 1.28.0 · wrap-text / text-wrap (ISC) — NOT vendored -->
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                          <path d="m16 16-3 3 3 3"/>
+                          <path d="M3 12h14.5a1 1 0 0 1 0 7H13"/>
+                          <path d="M3 19h6"/>
+                          <path d="M3 5h18"/>
+                        </svg>
+                      </span>
+                      <span>Wrap</span>
+                    </span>
+                    <div aria-label="Text wrapping" class="inspectorSegmentedControl" role="group">
+                      <button aria-pressed="true" class="inspectorSegmentActive" type="button">On</button>
+                      <button type="button">Off</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Resize -->
+                <div class="inspectorField">
+                  <span class="inspectorFieldLabel inspectorFieldLabelIcon">
+                    <span class="inspectorIcon">
+                      <!-- shared/scan.svg — 13×13, vendored verbatim -->
+                      <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="12" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path id="Vector" d="M1.83333 0.5C1.47971 0.5 1.14057 0.640476 0.890524 0.890524C0.640476 1.14057 0.5 1.47971 0.5 1.83333M11.1667 0.5C11.5203 0.5 11.8594 0.640476 12.1095 0.890524C12.3595 1.14057 12.5 1.47971 12.5 1.83333M12.5 11.1667C12.5 11.5203 12.3595 11.8594 12.1095 12.1095C11.8594 12.3595 11.5203 12.5 11.1667 12.5M1.83333 12.5C1.47971 12.5 1.14057 12.3595 0.890524 12.1095C0.640476 11.8594 0.5 11.5203 0.5 11.1667M4.5 0.5H5.16667M4.5 12.5H5.16667M7.83333 0.5H8.5M7.83333 12.5H8.5M0.5 4.5V5.16667M12.5 4.5V5.16667M0.5 7.83333V8.5M12.5 7.83333V8.5" stroke="#1C2028" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </span>
+                    <span>Resize</span>
+                  </span>
+                  <div aria-label="Resize mode" class="inspectorSegmentedControl" role="group">
+                    <button type="button">Auto width</button>
+                    <button aria-pressed="true" class="inspectorSegmentActive" type="button">Auto height</button>
+                    <button type="button">Fixed</button>
+                  </div>
+                </div>
+                <p class="note">
+                  Auto width = hug / hug · Auto height = fixed width, hug height
+                  · Fixed = the authored box.
+                </p>
+              </div>
+            </section>
+          </div>
+        </aside>
+      </div>
+
+      <div class="legend">
+        <h2>What you are looking at</h2>
+        <p>
+          The ad text inspector's <strong>Typography</strong> section, drawn
+          from the real panel's own markup, classes and design tokens — the five
+          shipped rows (Text, Color, Font, Size / Weight, Alignment) at the top,
+          then the rows item G proposes. The panel column is 480px, the width
+          the shell gives the inspector.
+        </p>
+        <p>
+          <strong>No control on this page exists in the product</strong>, and
+          Plan 4 does not build one. The gate is: are these the right rows, are
+          these the right icons, and is lucide the right place to take an icon
+          the local set does not have? Icon-by-icon provenance is in
+          <code>ICONS.md</code> beside this file.
+        </p>
+
+        <h2>Row by row</h2>
+        <p>
+          <strong>Line height</strong> is a multiplier of the font size, so
+          <code>1.04</code> is the Apollo headline's own value. The
+          <strong>0.05 stepper</strong> is the one piece of chrome on this page
+          that is not lifted from the panel — no shipped field has a spinner. It
+          is drawn from the panel's own <code>select-chevron</code> glyph so it
+          speaks the existing language, but it needs its own yes/no.
+        </p>
+        <p>
+          <strong>Max lines</strong> and <strong>Wrap</strong> sit two-up in the
+          panel's existing <code>fieldGrid</code>, like Size / Weight. The Wrap
+          toggle is the shipped <code>SegmentedControl</code> — the web
+          inspector's own Wrap row is exactly this control with Yes / No labels
+          — so no new vocabulary is introduced, only the words On / Off.
+        </p>
+        <p>
+          <strong>Resize</strong> makes the same statement the Layout section's
+          already-shipped "Fit to text" button makes in one click. Whether both
+          belong on the panel is a real question, and it is part of this gate.
+        </p>
+
+        <h2>One inherited wrinkle</h2>
+        <p>
+          The shipped icon files hardcode their own stroke colour, and the set is
+          not consistent — <code>move-vertical</code> and
+          <code>align-middle</code> are <code>#5E636C</code> (the label colour),
+          while <code>move-horizontal</code> and <code>scan</code> are
+          <code>#1C2028</code>. So the Letter spacing and Resize glyphs sit
+          darker than their labels. That is the product's state today, not a
+          preview artefact.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

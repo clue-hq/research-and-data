@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 
 from clue_agents.contracts import (
@@ -15,7 +16,11 @@ from clue_agents.contracts import (
     normalize_virtual_path,
 )
 from clue_agents.workspace import AgentWorkspaceLease
-from clue_agents.workspace_policy import WorkspaceConflict, WorkspaceSecurityError
+from clue_agents.workspace_policy import (
+    WorkspaceConflict,
+    WorkspaceError,
+    WorkspaceSecurityError,
+)
 
 __all__ = [
     "AgentResourceMaterializer",
@@ -105,6 +110,10 @@ class WorkspaceSeedFile:
             raise WorkspaceSecurityError("workspace seed files must be UTF-8 text") from exc
 
 
+#: The readiness marker, written last and verified first.
+_MANIFEST_PATH = ".deepagent/manifest.json"
+
+
 def _resource_path(ref: AgentResourceRef) -> str:
     if ref.kind is ResourceKind.PROFILE:
         return f".deepagent/profiles/{ref.name}/{ref.version}/profile.yaml"
@@ -113,6 +122,37 @@ def _resource_path(ref: AgentResourceRef) -> str:
     if ref.kind is ResourceKind.SKILL:
         return f".deepagent/skills/{ref.name}/{ref.version}/SKILL.md"
     raise WorkspaceSecurityError("unsupported agent resource kind")
+
+
+_SKILL_PATH = re.compile(r"\{\{\s*skills\.([a-zA-Z0-9_-]+)\.path\s*\}\}")
+
+
+def render_skill_references(text: str, skills: tuple[AgentResourceRef, ...]) -> str:
+    """Resolve only skill-path placeholders, from the effective pinned skill set.
+
+    No catalog scans, general template evaluation or recursive substitution. Unrelated
+    placeholders (for example account_name in teaching examples) remain literal.
+    """
+
+    if not re.search(r"\{\{\s*skills\b", text):
+        return text
+    paths: dict[str, str] = {}
+    for ref in skills:
+        key = ref.name.replace("-", "_")
+        if key in paths:
+            raise WorkspaceSecurityError(f"ambiguous skill placeholder name: {key}")
+        paths[key] = "/" + _resource_path(ref)
+
+    def replace(match: re.Match[str]) -> str:
+        key = match[1].replace("-", "_")
+        if key not in paths:
+            raise WorkspaceSecurityError(f"skill placeholder is not mounted by this profile: {key}")
+        return paths[key]
+
+    rendered = _SKILL_PATH.sub(replace, text)
+    if re.search(r"\{\{\s*skills\b", rendered):
+        raise WorkspaceSecurityError("invalid skill placeholder; expected {{skills.<name>.path}}")
+    return rendered
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,10 +181,54 @@ class AgentResourceSnapshot:
         for address, expected_ref in expected_by_address.items():
             if actual_by_address[address].ref != expected_ref:
                 raise WorkspaceSecurityError("resource snapshot ref differs from the manifest")
+        # Resolve before any model spend or workspace writes, including references between skills.
+        for body in self.bodies:
+            self.rendered_content(body)
+
+    def rendered_content(self, body: ResourceBody) -> bytes:
+        """Derived model-visible bytes; source bodies and their hashes stay immutable."""
+
+        if body.ref.kind not in (ResourceKind.PROMPT, ResourceKind.SKILL):
+            return body.content
+        return render_skill_references(body.content.decode("utf-8"), self.manifest.skills).encode(
+            "utf-8"
+        )
+
+    def materialized_entries(self) -> tuple[tuple[str, bytes], ...]:
+        entries = []
+        rendered_records = []
+        for body in sorted(self.bodies, key=lambda item: _resource_path(item.ref)):
+            path = _resource_path(body.ref)
+            content = self.rendered_content(body)
+            entries.append((path, content))
+            if content != body.content:
+                rendered_records.append(
+                    {
+                        "path": path,
+                        "source_sha256": body.ref.sha256,
+                        "rendered_sha256": hashlib.sha256(content).hexdigest(),
+                    }
+                )
+        if rendered_records:
+            entries.append(
+                (
+                    ".deepagent/rendered-resources.json",
+                    json.dumps(
+                        {"renderer": "skill-paths-v1", "resources": rendered_records},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8"),
+                )
+            )
+        return tuple(entries)
 
 
 class AgentResourceMaterializer:
-    """Copy one exact snapshot plus context/input bytes and freeze them before model spend."""
+    """Copy one exact snapshot plus context/input bytes and freeze them before model spend.
+
+    The thread workspace is persistent, so this runs once per *turn*, not once per directory:
+    every turn resets the three trusted trees and rewrites its own pinned bytes into them.
+    """
 
     def materialize(
         self,
@@ -153,42 +237,13 @@ class AgentResourceMaterializer:
         snapshot: AgentResourceSnapshot,
         seed_files: tuple[WorkspaceSeedFile, ...] = (),
     ) -> None:
-        if lease.resources_frozen or lease.materialization_failed:
-            raise WorkspaceConflict("workspace materialization is one-shot")
+        """Write this turn's pinned resources, inputs and context into the thread workspace."""
 
-        resource_paths = tuple(_resource_path(body.ref) for body in snapshot.bodies)
-        seed_paths = tuple(seed.path for seed in seed_files)
-        all_paths = (*resource_paths, *seed_paths, ".deepagent/manifest.json")
-        if len(set(all_paths)) != len(all_paths):
-            raise WorkspaceConflict("workspace materialization paths must be unique")
-
+        if lease.materialized or lease.materialization_failed:
+            raise WorkspaceConflict("this turn already materialized its workspace resources")
+        self._validate_paths(snapshot, seed_files)
         try:
-            for body in sorted(snapshot.bodies, key=lambda item: _resource_path(item.ref)):
-                lease.backend.materialize_bytes(_resource_path(body.ref), body.content)
-            for seed in sorted(seed_files, key=lambda item: item.path):
-                lease.backend.materialize_bytes(seed.path, seed.content)
-
-            # Manifest-last is the readiness marker: its presence means every referenced byte was
-            # copied successfully. It includes digests and addresses, never prompt/context bodies.
-            manifest_bytes = _canonical_manifest_bytes(snapshot.manifest)
-            lease.backend.materialize_bytes(".deepagent/manifest.json", manifest_bytes)
-            lease.backend.freeze_materialized_trees()
-
-            for body in snapshot.bodies:
-                entry = lease.backend.stat_entry_sync(_resource_path(body.ref))
-                if entry.sha256 != body.ref.sha256 or not entry.read_only:
-                    raise WorkspaceSecurityError("materialized resource verification failed")
-            for seed in seed_files:
-                entry = lease.backend.stat_entry_sync(seed.path)
-                if entry.sha256 != seed.sha256 or not entry.read_only:
-                    raise WorkspaceSecurityError("materialized seed verification failed")
-            manifest_entry = lease.backend.stat_entry_sync(".deepagent/manifest.json")
-            if (
-                manifest_entry.sha256 != hashlib.sha256(manifest_bytes).hexdigest()
-                or not manifest_entry.read_only
-            ):
-                raise WorkspaceSecurityError("materialized manifest verification failed")
-            lease.mark_resources_frozen()
+            self._write_trees(lease=lease, snapshot=snapshot, seed_files=seed_files)
         except Exception:
             lease.mark_materialization_failed()
             raise
@@ -200,21 +255,112 @@ class AgentResourceMaterializer:
         snapshot: AgentResourceSnapshot,
         seed_files: tuple[WorkspaceSeedFile, ...] = (),
     ) -> None:
-        """Re-verify every immutable byte before a cold process resumes model execution."""
+        """Re-verify every immutable byte before a cold process resumes model execution.
 
-        if not lease.resources_frozen or lease.materialization_failed:
-            raise WorkspaceConflict("only a frozen healthy materialization may be resumed")
-        expected = (
-            *((_resource_path(body.ref), body.ref.sha256) for body in snapshot.bodies),
+        A crash can land anywhere in the write, so an absent, writable or differing path is
+        not fatal here: the trees are reset and rewritten from the same pinned snapshot. Only
+        bytes that still differ after that rewrite are a security failure.
+        """
+
+        if lease.materialization_failed:
+            raise WorkspaceConflict("a failed materialization cannot be resumed")
+        expected = self._expected_entries(snapshot, seed_files)
+        if self._matches(lease=lease, expected=expected):
+            lease.mark_resources_frozen()
+            lease.mark_materialized()
+            return
+
+        self._validate_paths(snapshot, seed_files)
+        self._write_trees(lease=lease, snapshot=snapshot, seed_files=seed_files)
+        if not self._matches(lease=lease, expected=expected):
+            raise WorkspaceSecurityError(
+                "reopened materialization differs from its immutable snapshot"
+            )
+
+    @staticmethod
+    def _validate_paths(
+        snapshot: AgentResourceSnapshot,
+        seed_files: tuple[WorkspaceSeedFile, ...],
+    ) -> None:
+        resource_paths = tuple(path for path, _ in snapshot.materialized_entries())
+        seed_paths = tuple(seed.path for seed in seed_files)
+        all_paths = (*resource_paths, *seed_paths, _MANIFEST_PATH)
+        if len(set(all_paths)) != len(all_paths):
+            raise WorkspaceConflict("workspace materialization paths must be unique")
+
+    @staticmethod
+    def _expected_entries(
+        snapshot: AgentResourceSnapshot,
+        seed_files: tuple[WorkspaceSeedFile, ...],
+    ) -> tuple[tuple[str, str], ...]:
+        """Every path the model must see, with the exact digest it must have."""
+
+        return (
+            *(
+                (path, hashlib.sha256(content).hexdigest())
+                for path, content in snapshot.materialized_entries()
+            ),
             *((seed.path, seed.sha256) for seed in seed_files),
             (
-                ".deepagent/manifest.json",
+                _MANIFEST_PATH,
                 hashlib.sha256(_canonical_manifest_bytes(snapshot.manifest)).hexdigest(),
             ),
         )
-        for path, digest in expected:
+
+    @staticmethod
+    def _matches(
+        *,
+        lease: AgentWorkspaceLease,
+        expected: tuple[tuple[str, str], ...],
+    ) -> bool:
+        """Whether the frozen trees on disk already hold exactly these immutable bytes."""
+
+        try:
+            if not lease.backend.materialized_trees_frozen():
+                return False
+            for path, digest in expected:
+                entry = lease.backend.stat_entry_sync(path)
+                if entry.sha256 != digest or not entry.read_only:
+                    return False
+        except (WorkspaceError, FileNotFoundError):
+            # Absent, unsafe or partially frozen: rebuildable, not yet a security failure.
+            return False
+        return True
+
+    def _write_trees(
+        self,
+        *,
+        lease: AgentWorkspaceLease,
+        snapshot: AgentResourceSnapshot,
+        seed_files: tuple[WorkspaceSeedFile, ...],
+    ) -> None:
+        """Reset the trusted trees, write this turn's bytes, freeze them, verify every digest."""
+
+        lease.backend.reset_materialized_trees()
+        for path, content in snapshot.materialized_entries():
+            lease.backend.materialize_bytes(path, content)
+        for seed in sorted(seed_files, key=lambda item: item.path):
+            lease.backend.materialize_bytes(seed.path, seed.content)
+
+        # Manifest-last is the readiness marker: its presence means every referenced byte was
+        # copied successfully. It includes digests and addresses, never prompt/context bodies.
+        manifest_bytes = _canonical_manifest_bytes(snapshot.manifest)
+        lease.backend.materialize_bytes(_MANIFEST_PATH, manifest_bytes)
+        lease.backend.freeze_materialized_trees()
+
+        for path, content in snapshot.materialized_entries():
             entry = lease.backend.stat_entry_sync(path)
-            if entry.sha256 != digest or not entry.read_only:
-                raise WorkspaceSecurityError(
-                    "reopened materialization differs from its immutable snapshot"
-                )
+            if entry.sha256 != hashlib.sha256(content).hexdigest() or not entry.read_only:
+                raise WorkspaceSecurityError("materialized resource verification failed")
+        for seed in seed_files:
+            entry = lease.backend.stat_entry_sync(seed.path)
+            if entry.sha256 != seed.sha256 or not entry.read_only:
+                raise WorkspaceSecurityError("materialized seed verification failed")
+        manifest_entry = lease.backend.stat_entry_sync(_MANIFEST_PATH)
+        if (
+            manifest_entry.sha256 != hashlib.sha256(manifest_bytes).hexdigest()
+            or not manifest_entry.read_only
+        ):
+            raise WorkspaceSecurityError("materialized manifest verification failed")
+        lease.mark_resources_frozen()
+        lease.mark_materialized()

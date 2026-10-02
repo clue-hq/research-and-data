@@ -1,9 +1,11 @@
 """Durable, provider-observed Contact email acquisition for FI-2 Slice 10.
 
 This is intentionally not C5's validated contact-channel workflow. A Contacts-table click is
-authenticated human intent to ask two acquisition sources for one exact LinkedIn-identified
-person. Results stay unverified claims, are never promoted into ``contact_entity.verified_email``,
-and are displayed only after the existing jurisdiction/use and display-policy checks.
+authenticated human intent to ask AI Ark for one exact LinkedIn-identified person's work email,
+through the same ``/v1/people/export/single`` export the ARV2 research agents use (founder
+ruling 2026-09-29; the Exa Websets and Sumble providers below are no longer composed). Results
+stay unverified claims, are never promoted into ``contact_entity.verified_email``, and are
+displayed only after the existing jurisdiction/use and display-policy checks.
 """
 
 from __future__ import annotations
@@ -27,9 +29,24 @@ from pydantic import BaseModel, ConfigDict, JsonValue, SecretStr
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.ai_ark_client import (
+    AI_ARK_BASE_URL,
+    AiArkClient,
+    AiArkEmailExport,
+    AiArkResponseError,
+)
+from clue_api.arv2.calls import ProviderCaller
+from clue_api.arv2.errors import ProviderHalted
+from clue_api.arv2.provider_ledger import (
+    BufferedLedger,
+    BufferedRawSink,
+    LedgerStamp,
+    drain_provider_calls,
+)
+from clue_api.arv2.transport import HttpxTransport
 from clue_api.exa_websets_submit import DEFAULT_EXA_WEBSETS_PRICING
 from clue_api.frontend_read.accounts_list import WireModel
-from clue_api.research_view_governance import display_allowed
+from clue_api.frontend_read.v1_shared import arv2_display_allowed
 from clue_config import STRICT_DEFAULT_REGIME, Jurisdiction, RetentionTtls
 from clue_core import (
     Claim,
@@ -105,9 +122,13 @@ ConnFactoryLike = Callable[[], AbstractAsyncContextManager[AsyncConnection]]
 
 _CONTRACT_VERSION = "fi2-contact-email-lookup-v1"
 _FIELD_KEY = "core.work_email"
+#: The ``core.work_email`` verdict for an address no provider probed (registry vocabulary).
+_UNPROBED_STATUS = "unverified"
+AI_ARK_SOURCE_KEY = "ai_ark_people"
 _PROVIDER_LABELS = {
     EXA_WEBSETS_SOURCE_KEY: "Exa",
     PEOPLE_SOURCE_KEY: "Sumble",
+    AI_ARK_SOURCE_KEY: "AI Ark",
 }
 
 
@@ -204,6 +225,10 @@ class ProviderProgress(BaseModel):
     provider_import_id: str | None = None
     provider_operation_id: str | None = None
     email: str | None = None
+    # The provider's own mailbox verdict (``core.work_email`` status vocabulary) and when it was
+    # checked. ``None`` for a source that returns an address without probing it.
+    email_status: str | None = None
+    checked_at: str | None = None
     source_url: str | None = None
     observed_at: datetime | None = None
     credits_used: Decimal = Decimal(0)
@@ -252,6 +277,20 @@ def _normalize_email(value: str) -> str:
     if not local or separator != "@" or not host or "." not in host or " " in normalized:
         raise ValueError("provider returned a malformed email")
     return normalized
+
+
+def _claim_address(value: JsonValue) -> str | None:
+    """The address inside a ``core.work_email`` value, in either shape it has ever had.
+
+    Since D4-b the value is ``{"address", "status", …}``; rows written before it are the bare
+    address string, and this view is a provider-attempt history that still points at them.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, Mapping):
+        address = value.get("address")
+        return address if isinstance(address, str) else None
+    return None
 
 
 def _normalized_profile(value: str) -> str:
@@ -558,6 +597,119 @@ class SumbleEmailProvider:
         )
 
 
+#: The ``core.work_email`` verdicts that mean an address is usable (the same two the display
+#: policy shows); any other AI Ark verdict is answered as "no email found".
+_USABLE_AI_ARK_VERDICTS = frozenset({"verified_smtp", "catch_all_valid"})
+_AI_ARK_EXPORT_URL = f"{AI_ARK_BASE_URL}/v1/people/export/single"
+
+
+class AiArkEmailProvider:
+    """AI Ark's single-person export: one synchronous call, answered with the mailbox verdict.
+
+    The same ``/v1/people/export/single`` call the ARV2 research agents make, so a Contacts-table
+    lookup and a research job find the same address and grade it the same way. The call's raw
+    body and money rows go through the shared provider ledger, stamped to the workspace. There is
+    nothing to poll: :meth:`start` always returns a terminal state.
+    """
+
+    source_key = AI_ARK_SOURCE_KEY
+
+    def __init__(
+        self,
+        *,
+        api_key: SecretStr | None,
+        min_gap_s: float,
+        conn_factory: ConnFactoryLike = transaction,
+        client_factory: Callable[[ProviderCaller], Any] | None = None,
+    ) -> None:
+        self._api_key = api_key
+        self._min_gap_s = min_gap_s
+        self._conn_factory = conn_factory
+        self._client_factory = client_factory
+
+    @property
+    def available(self) -> bool:
+        return self._api_key is not None and bool(self._api_key.get_secret_value().strip())
+
+    def request_json(self, target: EmailLookupTarget) -> dict[str, JsonValue]:
+        return {"providerContract": "ai-ark-people-export-single", "url": target.linkedin_url}
+
+    def _client(self, caller: ProviderCaller) -> Any:
+        if self._client_factory is not None:
+            return self._client_factory(caller)
+        if not self.available:
+            raise RuntimeError("AI Ark email provider is not configured")
+        assert self._api_key is not None
+        return AiArkClient(caller, self._api_key, min_gap_s=self._min_gap_s)
+
+    async def start(self, target: EmailLookupTarget, *, external_id: str) -> ProviderProgress:
+        raw, ledger = BufferedRawSink(), BufferedLedger()
+        caller = ProviderCaller(
+            transport=HttpxTransport(),
+            raw_sink=raw,
+            ledger=ledger,
+            now=lambda: datetime.now(UTC),
+        )
+        client = self._client(caller)
+        try:
+            exported = await asyncio.to_thread(client.export_email, target.linkedin_url)
+        except ProviderHalted:
+            return ProviderProgress(state=ProviderState.UNAVAILABLE, failure_code="ai_ark_halted")
+        except AiArkResponseError as exc:
+            return ProviderProgress(
+                state=ProviderState.FAILED, failure_code=str(exc).split(":", 1)[0]
+            )
+        finally:
+            # The call's rows are money whatever its outcome (the web-search tool's rule).
+            async with self._conn_factory() as conn:
+                await drain_provider_calls(
+                    conn,
+                    raw=raw,
+                    ledger=ledger,
+                    artifacts=None,
+                    stamp=LedgerStamp(workspace_id=target.workspace_id),
+                )
+        return self._progress(exported, operation_id=external_id)
+
+    async def poll(self, target: EmailLookupTarget, attempt: ProviderAttempt) -> ProviderProgress:
+        raise RuntimeError("AI Ark email export is synchronous and is never polled")
+
+    def _progress(self, exported: AiArkEmailExport, *, operation_id: str) -> ProviderProgress:
+        cost = exported.cost
+        usable = bool(exported.found and exported.address) and (
+            exported.verdict in _USABLE_AI_ARK_VERDICTS
+        )
+        artifact = ProviderArtifact(
+            kind="people_export",
+            content=_canonical_json(
+                {
+                    "email": dict(exported.raw_email_block),
+                    "fullName": exported.full_name,
+                    "title": exported.title,
+                    "currentCompany": exported.current_company,
+                    "linkedinUrl": exported.linkedin_url,
+                }
+            ),
+            source_url=_AI_ARK_EXPORT_URL,
+            request_id=None if cost is None else cost.ledger_row_id,
+        )
+        return ProviderProgress(
+            state=ProviderState.AVAILABLE if usable else ProviderState.NO_RESULT,
+            provider_operation_id=operation_id,
+            email=exported.address if usable else None,
+            email_status=exported.verdict if usable else None,
+            checked_at=exported.checked_at if usable else None,
+            observed_at=datetime.now(UTC),
+            credits_used=Decimal(0) if cost is None or cost.credits is None else cost.credits,
+            cost_cents=(
+                Decimal(0)
+                if cost is None or cost.cost_usd is None
+                else (cost.cost_usd * 100).quantize(Decimal("0.0001"))
+            ),
+            artifacts=(artifact,),
+        )
+
+
 async def _load_attempts(
     conn: AsyncConnection, *, workspace_id: str, lookup_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, list[tuple[str, ProviderState, str | None]]]:
@@ -592,15 +744,20 @@ async def _load_attempts(
         value: str | None = None
         if claim_id is not None:
             claim = live_claims.get(ClaimId(uuid.UUID(str(claim_id))))
+            # The ARV2 display predicate, not C7's: the address this view reports is the one the
+            # contact screens render from the same claim, and two predicates over one claim is two
+            # answers to "may this person's email be shown" (C7's also demands a STRONG identity
+            # binding, which the ARV2 lenient writer does not stamp — so it hid every ARV2 address
+            # the screens were happily showing).
             claim_is_currently_displayable = (
                 claim is not None
                 and claim.entity_id == EntityId(uuid.UUID(str(contact_id)))
                 and str(claim.field_key) == _FIELD_KEY
                 and claim.source_key == str(source_key)
-                and display_allowed(claim, policy)
+                and arv2_display_allowed(claim, policy)
             )
             if claim_is_currently_displayable and claim is not None:
-                value = claim.value_json if isinstance(claim.value_json, str) else None
+                value = _claim_address(claim.value_json)
             elif provider_state is ProviderState.AVAILABLE:
                 # Provider history remains immutable, but a policy change, retention expiry or DSAR
                 # tombstone must take effect on every read. Never resurrect the historical value
@@ -729,8 +886,8 @@ class ContactEmailLookupService:
         poll_after_s: int = 5,
     ) -> None:
         self._providers = {provider.source_key: provider for provider in providers}
-        if set(self._providers) != {EXA_WEBSETS_SOURCE_KEY, PEOPLE_SOURCE_KEY}:
-            raise ValueError("contact email lookup requires the Exa and Sumble provider slots")
+        if not self._providers:
+            raise ValueError("contact email lookup requires at least one provider")
         self._storage = storage
         self._conn_factory = conn_factory
         self._poll_after = timedelta(seconds=poll_after_s)
@@ -1165,6 +1322,8 @@ class ContactEmailLookupService:
                     artifact_key=response_artifact_key,
                     provider_operation_id=progress.provider_operation_id,
                     email=progress.email,
+                    email_status=progress.email_status,
+                    checked_at=progress.checked_at,
                     source_url=progress.source_url or target.linkedin_url,
                     observed_at=progress.observed_at or datetime.now(UTC),
                     cost_cents=progress.cost_cents,
@@ -1213,6 +1372,8 @@ class ContactEmailLookupService:
         artifact_key: str,
         provider_operation_id: str,
         email: str,
+        email_status: str | None = None,
+        checked_at: str | None = None,
         source_url: str,
         observed_at: datetime,
         cost_cents: Decimal,
@@ -1227,7 +1388,17 @@ class ContactEmailLookupService:
             entity_id=EntityId(target.contact_id),
             entity_type=EntityType.CONTACT,
             field_key=_FIELD_KEY,
-            value_json=_normalize_email(email),
+            # ARV2 D4-b decision 6: the address travels with the verdict that grades it. AI Ark
+            # probes the mailbox and reports its own verdict (``verified_smtp`` /
+            # ``catch_all_valid``) and check time; Exa Websets and Sumble return an address and
+            # nothing about its deliverability, so their honest verdict is ``unverified``. The
+            # claim is still born ``VerificationStatus.UNVERIFIED``: the provider graded the
+            # mailbox, the platform did not independently verify it.
+            value_json={
+                "address": _normalize_email(email),
+                "status": email_status or _UNPROBED_STATUS,
+                **({"checked_at": checked_at} if checked_at else {}),
+            },
             source_url=_safe_public_url(source_url, target.linkedin_url),
             source_key=source_key,
             artifact_key=artifact_key,
@@ -1286,7 +1457,7 @@ class ContactEmailLookupService:
             retention=RetentionTtls(),
             third_party_collected=True,
         )
-        return claim.id, decision.usable_for_outreach and display_allowed(claim, policy)
+        return claim.id, decision.usable_for_outreach and arv2_display_allowed(claim, policy)
 
     async def _mark_failure(
         self,
@@ -1347,20 +1518,17 @@ class ContactEmailLookupService:
 
 def build_contact_email_lookup_service(
     *,
-    exa_api_key: SecretStr | None,
-    sumble_api_key: SecretStr | None,
-    sumble_cents_per_credit: Decimal,
+    ai_ark_api_key: SecretStr | None,
+    ai_ark_min_gap_s: float,
     storage: StorageBackend,
     poll_after_s: int,
     conn_factory: ConnFactory = transaction,
 ) -> ContactEmailLookupService:
+    """The Contacts-table lookup, on AI Ark only (founder ruling 2026-09-29)."""
     return ContactEmailLookupService(
         providers=(
-            ExaEmailProvider(api_key=exa_api_key, poll_after_s=poll_after_s),
-            SumbleEmailProvider(
-                api_key=sumble_api_key,
-                cents_per_credit=sumble_cents_per_credit,
-                poll_after_s=poll_after_s,
+            AiArkEmailProvider(
+                api_key=ai_ark_api_key, min_gap_s=ai_ark_min_gap_s, conn_factory=conn_factory
             ),
         ),
         storage=storage,
@@ -1370,6 +1538,8 @@ def build_contact_email_lookup_service(
 
 
 __all__ = [
+    "AI_ARK_SOURCE_KEY",
+    "AiArkEmailProvider",
     "ContactEmailLookupService",
     "ContactEmailLookupView",
     "EmailLookupState",

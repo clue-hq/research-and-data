@@ -1,0 +1,1620 @@
+{
+  "_contracts_read": [
+    "apps/frontend/src/features/accounts/model/account.ts",
+    "apps/frontend/src/features/accounts/model/account-detail.ts",
+    "apps/frontend/src/features/accounts/model/account-contact.ts",
+    "apps/frontend/src/features/accounts/model/vocabulary.ts",
+    "apps/frontend/docs/api-contracts/accounts.md",
+    "platform/api/clue_api/frontend_read/accounts_list.py",
+    "platform/api/clue_api/frontend_read/account_detail.py",
+    "platform/api/clue_api/frontend_read/contacts.py",
+    "platform/api/clue_api/frontend_read/committee.py",
+    "libs/clue-core/clue_core/contact_research.py"
+  ],
+  "GET /frontend/v1/accounts": {
+    "data": [
+      {
+        "id": "cd5ba6dc-c3bc-5413-9245-df235886b370",
+        "name": "Probook",
+        "domain": "probook.ai",
+        "employeeCount": 52,
+        "revenueBand": null,
+        "logoUrl": null,
+        "projects": [
+          {
+            "projectId": "prj_clue_seriesa_verticalai",
+            "name": "Series A vertical-AI \u2014 fragmented SMB",
+            "addedVia": "discovered",
+            "addedAt": "2026-08-26T21:40:00Z"
+          }
+        ],
+        "primaryProjectId": "prj_clue_seriesa_verticalai",
+        "scores": [],
+        "researchStatus": [
+          {
+            "projectId": "prj_clue_seriesa_verticalai",
+            "status": "needs_review"
+          }
+        ],
+        "updatedAt": "2026-08-26T21:40:00Z"
+      }
+    ],
+    "meta": {
+      "total": 1,
+      "nextCursor": null
+    }
+  },
+  "GET /frontend/v1/accounts/{accountId}": {
+    "id": "cd5ba6dc-c3bc-5413-9245-df235886b370",
+    "name": "Probook",
+    "domain": "probook.ai",
+    "aliases": [
+      "Probook AI"
+    ],
+    "registryIds": {},
+    "hqGeo": {
+      "city": "New York",
+      "region": "New York",
+      "country": "US",
+      "postalCode": "10022"
+    },
+    "redirectedFrom": null,
+    "neutralFacts": [
+      {
+        "fieldKey": "account.hiring_velocity_eng",
+        "value": 3,
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "account.operational_pain",
+        "value": "Scaling delivery capacity is a bottleneck: need to grow engineering, customer success and GTM to meet surging demand.",
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "exa_research"
+      },
+      {
+        "fieldKey": "account.recent_funding",
+        "value": {
+          "amount_usd": 34000000.0,
+          "round": "Series A"
+        },
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "account.resonance.buying_culture",
+        "value": {
+          "culture_label": "founder-led, operator-oriented, deployment-committed",
+          "summary": "Founder-led origin with hands-on customer discovery and in-person deployments; public commitment to scale GTM and deliver outcomes post-sale."
+        },
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "exa_research"
+      },
+      {
+        "fieldKey": "account.resonance.culture",
+        "value": "Built by people from the trades; small team with diverse backgrounds; deploys in person and configures alongside customers.",
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "exa_research"
+      },
+      {
+        "fieldKey": "account.strategic_moves",
+        "value": "Scale go-to-market team against surging demand; grow engineering and customer success",
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "exa_research"
+      },
+      {
+        "fieldKey": "account.total_funding",
+        "value": {
+          "amount_usd": 40000000.0,
+          "estimate_kind": "reported"
+        },
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "core.account_name",
+        "value": "Probook",
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "core.company_about",
+        "value": "The AI Operating System for home services; built around dispatch to unify intake, data cleaning, chat, outbound, and dispatch so operators can run customer experience as one connected system.",
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "exa_research"
+      },
+      {
+        "fieldKey": "core.company_linkedin_url",
+        "value": "http://www.linkedin.com/company/probook-ai",
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "core.employee_count",
+        "value": 52,
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "core.employee_range",
+        "value": {
+          "label": "14 open positions listed",
+          "min": 14,
+          "max": 14
+        },
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "exa_research"
+      },
+      {
+        "fieldKey": "core.hq_location",
+        "value": {
+          "raw": "new york, new york, united states, 10022",
+          "city": "New York",
+          "region": "New York",
+          "country": "United States",
+          "country_code": "US"
+        },
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "core.industry",
+        "value": "information technology & services",
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "core.primary_domain",
+        "value": "probook.ai",
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      },
+      {
+        "fieldKey": "core.primary_tech_stack",
+        "value": [
+          "AI",
+          "Amazon AWS",
+          "Amazon CloudFront",
+          "Cursor",
+          "Excel Impact",
+          "Frame",
+          "Gmail",
+          "Google Meet",
+          "Google Search Console",
+          "Google Search Console",
+          "Google Sheets",
+          "Google Tag Manager",
+          "Google Workspace",
+          "HSTS",
+          "LinkedIn Ads",
+          "LinkedIn Recruiter",
+          "Microsoft 365",
+          "Microsoft 365 Apps & Services",
+          "Microsoft Email Providers",
+          "Microsoft Exchange",
+          "Microsoft Exchange Online",
+          "Mobile Friendly",
+          "Next.js",
+          "Outlook",
+          "Priority Hints",
+          "React",
+          "Vercel",
+          "Viewport Meta",
+          "YouTube",
+          "webpack"
+        ],
+        "freshness": "fresh",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo"
+      }
+    ],
+    "projectSections": [
+      {
+        "projectId": "prj_clue_seriesa_verticalai",
+        "name": "Series A vertical-AI \u2014 fragmented SMB",
+        "addedVia": "discovered",
+        "addedAt": "2026-08-26T21:40:00Z",
+        "scores": [],
+        "narratives": [],
+        "insights": []
+      }
+    ],
+    "committee": [
+      {
+        "contactId": "8de16b15-0723-5609-917c-df5bc64b9277",
+        "name": "George Eliadis",
+        "persona": "economic_buyer",
+        "roleOnCommittee": "economic_buyer",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ]
+      },
+      {
+        "contactId": "f31ccd75-f376-528f-8b6c-f2f823a60e56",
+        "name": "Mark Hoffman",
+        "persona": "economic_buyer",
+        "roleOnCommittee": "economic_buyer",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ]
+      },
+      {
+        "contactId": "0c49f3eb-9f51-579b-99f7-6acb965af754",
+        "name": "Kate Blumberg",
+        "persona": "champion",
+        "roleOnCommittee": "champion",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ]
+      },
+      {
+        "contactId": "61006812-713c-5564-8c38-16620cbcc0b3",
+        "name": "Aaron Churba",
+        "persona": "champion",
+        "roleOnCommittee": "champion",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ]
+      },
+      {
+        "contactId": "f4ec4553-7a98-5f74-8e61-2e445319374b",
+        "name": "Lewis Zhang",
+        "persona": "technical_evaluator",
+        "roleOnCommittee": "technical_evaluator",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ]
+      }
+    ],
+    "coverage": {
+      "researchedFieldCount": 16,
+      "unresolvedFieldKeys": [
+        "account.resonance.attrition_signal",
+        "account.resonance.employee_sentiment",
+        "account.resonance.eng_blog_tone",
+        "account.resonance.public_frustrations",
+        "core.annual_revenue",
+        "core.company_email",
+        "core.company_phone",
+        "core.revenue_band"
+      ]
+    }
+  },
+  "GET /frontend/v1/accounts/{accountId}/contacts": {
+    "data": [
+      {
+        "id": "8de16b15-0723-5609-917c-df5bc64b9277",
+        "name": "George Eliadis",
+        "title": "Co-Founder & CEO",
+        "titleRestricted": false,
+        "persona": "economic_buyer",
+        "roleOnCommittee": {
+          "value": "economic_buyer",
+          "confidence": 0.9
+        },
+        "linkedinUrl": "https://www.linkedin.com/in/george-eliadis",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ],
+        "signals": {
+          "typeCount": 2
+        }
+      },
+      {
+        "id": "f31ccd75-f376-528f-8b6c-f2f823a60e56",
+        "name": "Mark Hoffman",
+        "title": "Chief Revenue Officer",
+        "titleRestricted": false,
+        "persona": "economic_buyer",
+        "roleOnCommittee": {
+          "value": "economic_buyer",
+          "confidence": 0.9
+        },
+        "linkedinUrl": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ],
+        "signals": {
+          "typeCount": 1
+        }
+      },
+      {
+        "id": "0c49f3eb-9f51-579b-99f7-6acb965af754",
+        "name": "Kate Blumberg",
+        "title": "Director of Growth",
+        "titleRestricted": false,
+        "persona": "champion",
+        "roleOnCommittee": {
+          "value": "champion",
+          "confidence": 0.9
+        },
+        "linkedinUrl": "https://www.linkedin.com/in/kibrady12",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ],
+        "signals": {
+          "typeCount": 1
+        }
+      },
+      {
+        "id": "61006812-713c-5564-8c38-16620cbcc0b3",
+        "name": "Aaron Churba",
+        "title": "Director of Sales & Development",
+        "titleRestricted": false,
+        "persona": "champion",
+        "roleOnCommittee": {
+          "value": "champion",
+          "confidence": 0.9
+        },
+        "linkedinUrl": "https://www.linkedin.com/in/aaronloganchurba",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ],
+        "signals": {
+          "typeCount": 1
+        }
+      },
+      {
+        "id": "f4ec4553-7a98-5f74-8e61-2e445319374b",
+        "name": "Lewis Zhang",
+        "title": "Co-Founder / CTO",
+        "titleRestricted": false,
+        "persona": "technical_evaluator",
+        "roleOnCommittee": {
+          "value": "technical_evaluator",
+          "confidence": 0.9
+        },
+        "linkedinUrl": "https://www.linkedin.com/in/lewisfzhang",
+        "projectIds": [
+          "prj_clue_seriesa_verticalai"
+        ],
+        "signals": {
+          "typeCount": 1
+        }
+      }
+    ],
+    "meta": {
+      "total": 5
+    }
+  },
+  "GET /frontend/v1/accounts/{accountId}/contacts/{contactId}": {
+    "id": "0c49f3eb-9f51-579b-99f7-6acb965af754",
+    "name": "Kate Blumberg",
+    "title": "Director of Growth",
+    "titleRestricted": false,
+    "persona": "champion",
+    "roleOnCommittee": {
+      "value": "champion",
+      "confidence": 0.9
+    },
+    "linkedinUrl": "https://www.linkedin.com/in/kibrady12",
+    "projectIds": [
+      "prj_clue_seriesa_verticalai"
+    ],
+    "signals": {
+      "typeCount": 1
+    },
+    "accountId": "cd5ba6dc-c3bc-5413-9245-df235886b370",
+    "accountName": "Probook",
+    "professionalFacts": [
+      {
+        "fieldKey": "contact.current_title",
+        "value": "Director of Growth",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo",
+        "restricted": false
+      },
+      {
+        "fieldKey": "contact.job_function",
+        "value": "master_marketing",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo",
+        "restricted": false
+      },
+      {
+        "fieldKey": "contact.job_level",
+        "value": "director",
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo",
+        "restricted": false
+      },
+      {
+        "fieldKey": "contact.current_location",
+        "value": {
+          "raw": "New York, New York, United States",
+          "country": "United States"
+        },
+        "observedAt": "2026-08-26T21:40:00Z",
+        "provider": "apollo",
+        "restricted": false
+      }
+    ],
+    "evidence": [
+      {
+        "provider": "apollo",
+        "observedAt": "2026-08-26T21:40:00Z"
+      },
+      {
+        "provider": "exa_research",
+        "observedAt": "2026-08-26T21:40:00Z"
+      }
+    ],
+    "redirectedFrom": null
+  },
+  "_PROPOSED_SLOTS": {
+    "_note": "Everything this run produced that the as-built contract has NO slot for. Marked, never silently folded into a real field.",
+    "account.neutralFacts[].priority": {
+      "hypothesis": "NeutralFactSchema has no rank, so the frontend can only sort by fieldKey. The 8 P1 rows on this account are interleaved with 15 P2/P3 rows and the 'why now' story is invisible. One `priority: 1|2|3` per fact makes the ordering server-authored and identical on every surface.",
+      "example": [
+        {
+          "fieldKey": "account.hiring_velocity_eng",
+          "priority": 2
+        },
+        {
+          "fieldKey": "account.operational_pain",
+          "priority": 2
+        },
+        {
+          "fieldKey": "account.recent_funding",
+          "priority": 1
+        },
+        {
+          "fieldKey": "account.resonance.buying_culture",
+          "priority": 2
+        },
+        {
+          "fieldKey": "account.resonance.culture",
+          "priority": 3
+        },
+        {
+          "fieldKey": "account.strategic_moves",
+          "priority": 1
+        },
+        {
+          "fieldKey": "account.total_funding",
+          "priority": 1
+        },
+        {
+          "fieldKey": "core.account_name",
+          "priority": 2
+        },
+        {
+          "fieldKey": "core.company_about",
+          "priority": 2
+        },
+        {
+          "fieldKey": "core.company_linkedin_url",
+          "priority": 2
+        },
+        {
+          "fieldKey": "core.employee_count",
+          "priority": 2
+        },
+        {
+          "fieldKey": "core.employee_range",
+          "priority": 2
+        },
+        {
+          "fieldKey": "core.hq_location",
+          "priority": 2
+        },
+        {
+          "fieldKey": "core.industry",
+          "priority": 2
+        },
+        {
+          "fieldKey": "core.primary_domain",
+          "priority": 2
+        },
+        {
+          "fieldKey": "core.primary_tech_stack",
+          "priority": 1
+        }
+      ]
+    },
+    "account.topSignals[]": {
+      "hypothesis": "The 'Why now' card. A server-selected, ordered list of the P1 facts with the verbatim quote and the source domain behind each. Derivable from neutralFacts+priority, but every client would re-derive it differently, and the quote (evidence_span) is not on the wire at all today.",
+      "example": [
+        {
+          "fieldKey": "core.primary_tech_stack",
+          "quote": "current_technologies (30 detected) = AI, Amazon AWS, Amazon CloudFront, Cursor, Excel Impact, Frame, Gmail, Google Meet, Google Search Console, Google Search Console, Google Sheets, Google Tag Manager, Google Workspace, HSTS, LinkedIn Ads, LinkedIn Recruiter, Microsoft 365, Microsoft 365 Apps & Services, Microsoft Email Providers, Microsoft Exchange, Microsoft Exchange Online, Mobile Friendly, Next.js, Outlook, Priority Hints, React, Vercel, Viewport Meta, YouTube, webpack",
+          "sourceDomain": "www.linkedin.com",
+          "observedAt": "2026-08-26T21:40:00Z"
+        },
+        {
+          "fieldKey": "account.recent_funding",
+          "quote": "funding_events[0] = {date: \"2026-06-01T00:00:00.000+00:00\", type: \"Series A\", amount: \"40M\", investors: \"Andreessen Horowitz, Sequoia\"}",
+          "sourceDomain": "itnerd.blog",
+          "observedAt": "2026-08-26T21:40:00Z"
+        },
+        {
+          "fieldKey": "account.total_funding",
+          "quote": "funding_events[0].amount = \"40M\" (total announced funding)",
+          "sourceDomain": "itnerd.blog",
+          "observedAt": "2026-08-26T21:40:00Z"
+        },
+        {
+          "fieldKey": "account.recent_funding",
+          "quote": "a16z is leading Probook\u2019s $34 million Series A",
+          "sourceDomain": "a16z.com",
+          "observedAt": "2026-08-26T21:40:00Z"
+        },
+        {
+          "fieldKey": "account.total_funding",
+          "quote": "Probook raised $40M from Andreessen Horowitz and Sequoia Capital.",
+          "sourceDomain": "www.globenewswire.com",
+          "observedAt": "2026-08-26T21:40:00Z"
+        },
+        {
+          "fieldKey": "account.strategic_moves",
+          "quote": "Probook says it will \"scale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.\"",
+          "sourceDomain": "www.globenewswire.com",
+          "observedAt": "2026-08-26T21:40:00Z"
+        },
+        {
+          "fieldKey": "account.recent_funding",
+          "quote": "a $6 million Seed round led by Sequoia Capital.",
+          "sourceDomain": "www.globenewswire.com",
+          "observedAt": "2026-08-26T21:40:00Z"
+        },
+        {
+          "fieldKey": "account.operational_pain",
+          "quote": "scale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.",
+          "sourceDomain": "www.globenewswire.com",
+          "observedAt": "2026-08-26T21:40:00Z"
+        }
+      ]
+    },
+    "account.summary": {
+      "hypothesis": "The Lane-E `account.summary` analog: a 3-5 sentence prose paragraph. No field on AccountDetailSchema holds prose. Layer 2 generates it; it needs somewhere to land.",
+      "example": "<generated by Layer 2 \u2014 see layer2_display.json>"
+    },
+    "contact.professionalFacts \u2014 missing families": {
+      "hypothesis": "CONTACT_PROFESSIONAL_FIELD_KEYS is exactly six keys and includes NEITHER core.work_email NOR any contact.facet.* field. So the verified email this run paid an Apollo credit for, and the entire per-person deep research (career history, awards, public posts, communication style, hooks), have NO surface on the contact-profile payload. `signals.typeCount` is an integer \u2014 the only hint they exist.",
+      "example_missing_per_contact": {
+        "8de16b15-0723-5609-917c-df5bc64b9277": {
+          "name": "George Eliadis",
+          "facts": [
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "Today, we're announcing $40M in funding from Sequoia and Andreessen Horowitz to solve a problem I faced in my own business.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/george-eliadis_today-were-announcing-40m-in-funding-from-activity-7475172924774293504-mVOB",
+              "evidenceSpan": "Today, we're announcing $40M in funding from Sequoia and Andreessen Horowitz to solve a problem I faced in my own business."
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "Until December, our 'sales team' was just me",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+              "evidenceSpan": "Until December, our 'sales team' was just me"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "I've personally met pretty much every Probook customer, run every demo, and traveled across the US to visit almost every shop.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+              "evidenceSpan": "I've personally met pretty much every Probook customer, run every demo, and traveled across the US to visit almost every shop."
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+              "evidenceSpan": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/george-eliadis_today-were-announcing-40m-in-funding-from-activity-7475172924774293504-mVOB",
+              "evidenceSpan": "The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead."
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Co-Founder & CEO",
+                  "start": "2021-11-01",
+                  "end": "present"
+                },
+                {
+                  "org": "A2Z Exterior Pressure Washing",
+                  "role": "Contractor",
+                  "start": "2018-06-01",
+                  "end": "2023-08-01"
+                },
+                {
+                  "org": "Eliadis Numismatics",
+                  "role": "Numismatist",
+                  "start": "2015-06-01",
+                  "end": "2021-08-01"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/george-eliadis",
+              "evidenceSpan": "employment_history[] from Apollo people/match: Co-Founder & CEO @ Probook (2021-11-01..present); Contractor @ A2Z Exterior Pressure Washing (2018-06-01..2023-08-01); Numismatist @ Eliadis Numismatics (2015-06-01..2021-08-01)"
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Co-Founder & CEO",
+                  "start": "Nov 2021",
+                  "end": "Present"
+                },
+                {
+                  "org": "A2Z Exterior Pressure Washing",
+                  "role": "Contractor",
+                  "start": "Jun 2018",
+                  "end": "Aug 2023"
+                },
+                {
+                  "org": "Eliadis Numismatics",
+                  "role": "Numismatist",
+                  "start": "Jun 2015",
+                  "end": "Aug 2021"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/george-eliadis",
+              "evidenceSpan": "Co-Founder & CEO - Probook\" and \"Nov 2021 - Present"
+            },
+            {
+              "fieldKey": "core.work_email",
+              "value": "george@probook.ai",
+              "priority": 2,
+              "useClass": null,
+              "sourceUrl": "https://www.linkedin.com/in/george-eliadis",
+              "evidenceSpan": "email = \"george@probook.ai\" (email_status = \"verified\")"
+            },
+            {
+              "fieldKey": "contact.facet.alma_mater",
+              "value": [
+                "University of Pennsylvania",
+                "Wharton School",
+                "Jerome Fisher M&T Program",
+                "Newburgh Free Academy",
+                "Yale Young Global Scholars"
+              ],
+              "priority": 3,
+              "useClass": "personal-public-non-sensitive",
+              "sourceUrl": "https://www.linkedin.com/in/george-eliadis",
+              "evidenceSpan": "Bachelor of Science in Engineering, Electrical/Systems Engineering\" and \"2020\u00032024"
+            },
+            {
+              "fieldKey": "contact.facet.communication_style",
+              "value": {
+                "style_label": "direct, operator-oriented, metric-heavy",
+                "summary": "Uses direct, self-critical, operator-first language and emphasizes measurable outcomes and operational metrics."
+              },
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+              "evidenceSpan": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner"
+            },
+            {
+              "fieldKey": "contact.facet.public_appearances",
+              "value": [
+                {
+                  "title": "Tech in the trades with George Eliadis of Probook",
+                  "venue": "Reimagining Home Services podcast",
+                  "url": "https://podfollow.com/reimagining-home-services/episode/baafd6e2d2e5eb72c7d793dd7c24b7a36f232153/view",
+                  "date": "29 June 2026"
+                },
+                {
+                  "title": "The Shortlist NY Founder Showcase at betaworks",
+                  "venue": "Shortlist NY Founder Showcase",
+                  "url": "https://www.linkedin.com/posts/george-eliadis_last-month-i-was-one-of-6-founders-who-presented-activity-7434250700706160642-KwRW",
+                  "date": "2 March 2026"
+                }
+              ],
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://podfollow.com/reimagining-home-services/episode/baafd6e2d2e5eb72c7d793dd7c24b7a36f232153/view",
+              "evidenceSpan": "Published: 29 June 2026"
+            },
+            {
+              "fieldKey": "contact.facet.recent_award",
+              "value": "Named 2020 U.S. Presidential Scholar",
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://mail.newburghschools.org/news.php?storynum=2184",
+              "evidenceSpan": "George Eliadis, Named 2020 U.S. Presidential Scholar"
+            },
+            {
+              "fieldKey": "contact.facet.stated_interests",
+              "value": [
+                "home services operations",
+                "dispatch automation",
+                "founder-led sales / GTM"
+              ],
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.probook.ai/letter",
+              "evidenceSpan": "I started Probook to solve a problem in my own business"
+            }
+          ]
+        },
+        "f31ccd75-f376-528f-8b6c-f2f823a60e56": {
+          "name": "Mark Hoffman",
+          "facts": [
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+              "evidenceSpan": "Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "This team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/mark-hoffman-582a5741_this-team-just-wow-things-are-just-starting-activity-7341107094747533312-cdTA",
+              "evidenceSpan": "This team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "The first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them. The GTM team is inching up towards 20 now, with many more to go.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+              "evidenceSpan": "The first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them. The GTM team is inching up towards 20 now, with many more to go."
+            },
+            {
+              "fieldKey": "contact.facet.stated_interests",
+              "value": [
+                "GTM team building",
+                "revenue organization scaling"
+              ],
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+              "evidenceSpan": "The GTM team is inching up towards 20 now, with many more to go."
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Chief Revenue Officer",
+                  "start": "2026-02-01",
+                  "end": "present"
+                },
+                {
+                  "org": "Tennr",
+                  "role": "Chief Sales Officer (CSO)",
+                  "start": "2024-12-01",
+                  "end": "2026-02-01"
+                },
+                {
+                  "org": "VTS",
+                  "role": "Senior Vice President of Sales",
+                  "start": "2021-08-01",
+                  "end": "2024-12-01"
+                },
+                {
+                  "org": "VTS",
+                  "role": "Vice President of Sales",
+                  "start": "2019-07-01",
+                  "end": "2021-08-01"
+                },
+                {
+                  "org": "VTS",
+                  "role": "Director of Sales",
+                  "start": "2017-01-01",
+                  "end": "2019-07-01"
+                },
+                {
+                  "org": "Hightower Inc.",
+                  "role": "Director of Inside Sales",
+                  "start": "2016-06-01",
+                  "end": "2016-12-01"
+                },
+                {
+                  "org": "ZocDoc",
+                  "role": "Inside Sales Manager",
+                  "start": "2014-05-01",
+                  "end": "2016-04-01"
+                },
+                {
+                  "org": "ZocDoc",
+                  "role": "Senior Sales Executive",
+                  "start": "2014-02-01",
+                  "end": "2014-05-01"
+                },
+                {
+                  "org": "ZocDoc",
+                  "role": "Inside Sales Executive",
+                  "start": "2013-01-01",
+                  "end": "2014-02-01"
+                },
+                {
+                  "org": "ZocDoc",
+                  "role": "Business Origination Associate",
+                  "start": "2012-06-01",
+                  "end": "2013-01-01"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+              "evidenceSpan": "employment_history[] from Apollo people/match: Chief Revenue Officer @ Probook (2026-02-01..present); Chief Sales Officer (CSO) @ Tennr (2024-12-01..2026-02-01); Senior Vice President of Sales @ VTS (2021-08-01..2024-12-01); Vice President of Sales @ VTS (2019-07-01..2021-08-01); Director of Sales @ VTS (2017-01-01..2019-07-01); Director of Inside Sales @ Hightower Inc. (2016-06-01..2016-12-01); Inside Sales Manager @ ZocDoc (2014-05-01..2016-04-01); Senior Sales Executive @ ZocDoc (2014-02-01..2014-05-01)"
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Chief Revenue Officer",
+                  "start": "Feb 2026",
+                  "end": "Present"
+                },
+                {
+                  "org": "Tennr",
+                  "role": "Chief Sales Officer",
+                  "start": "Dec 2024",
+                  "end": "Feb 2026"
+                },
+                {
+                  "org": "VTS",
+                  "role": "Senior Vice President of Sales",
+                  "start": "Aug 2021",
+                  "end": "Dec 2024"
+                },
+                {
+                  "org": "VTS",
+                  "role": "Vice President of Sales",
+                  "start": "Jul 2019",
+                  "end": "Aug 2021"
+                },
+                {
+                  "org": "VTS",
+                  "role": "Director of Sales",
+                  "start": "Jan 2017",
+                  "end": "Jul 2019"
+                },
+                {
+                  "org": "Hightower Inc.",
+                  "role": "Director of Inside Sales",
+                  "start": "Jun 2016",
+                  "end": "Dec 2016"
+                },
+                {
+                  "org": "ZocDoc",
+                  "role": "Inside Sales Manager",
+                  "start": "May 2014",
+                  "end": "Apr 2016"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+              "evidenceSpan": "Chief Revenue Officer - Probook (Current)."
+            },
+            {
+              "fieldKey": "core.work_email",
+              "value": "mark@probook.ai",
+              "priority": 2,
+              "useClass": null,
+              "sourceUrl": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+              "evidenceSpan": "email = \"mark@probook.ai\" (email_status = \"verified\")"
+            },
+            {
+              "fieldKey": "contact.facet.communication_style",
+              "value": {
+                "style_label": "direct, energetic, team-oriented",
+                "summary": "Writes in an energetic, team-focused tone emphasizing building teams and solving hard problems."
+              },
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+              "evidenceSpan": "The first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them."
+            }
+          ]
+        },
+        "0c49f3eb-9f51-579b-99f7-6acb965af754": {
+          "name": "Kate Blumberg",
+          "facts": [
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "I\u00039m excited to share that I\u00039ve joined Probook to lead growth and build out the marketing organization",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z",
+              "evidenceSpan": "I\u00039m excited to share that I\u00039ve joined Probook to lead growth and build out the marketing organization"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z",
+              "evidenceSpan": "I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "The martech hype cycle is relentless and Clay is everywhere right now. Glad to see new tools like Riveter gaining traction and cutting through the noise",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/kibrady12_the-martech-hype-cycle-is-relentless-and-activity-7488693969325846528-STdm",
+              "evidenceSpan": "The martech hype cycle is relentless and Clay is everywhere right now. Glad to see new tools like Riveter gaining traction and cutting through the noise"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "After two incredible years at BuildOps, I\u2019m excited to share that I\u2019m looking for my next role",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/kibrady12_after-two-incredible-years-at-buildops-i-activity-7459629371444703232-esk_",
+              "evidenceSpan": "After two incredible years at BuildOps, I\u2019m excited to share that I\u2019m looking for my next role"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "When I joined BuildOps, it was to join a high-performing, revenue-obsessed team where I could focus on one thing: building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid\u2026 creating systems, scaling teams, sharpening positioning, and helping turn momentum into revenue.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/kibrady12_after-two-incredible-years-at-buildops-i-activity-7459629371444703232-esk_",
+              "evidenceSpan": "When I joined BuildOps, it was to join a high-performing, revenue-obsessed team where I could focus on one thing: building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid\u2026 creating systems, scaling teams, sharpening positioning, and helping turn momentum into revenue."
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Director of Growth",
+                  "start": "2026-06-01",
+                  "end": "present"
+                },
+                {
+                  "org": "BuildOps",
+                  "role": "Director of Demand Generation",
+                  "start": "2024-06-01",
+                  "end": "2026-04-01"
+                },
+                {
+                  "org": "Middesk",
+                  "role": "Head of Growth",
+                  "start": "2023-01-01",
+                  "end": "2024-06-01"
+                },
+                {
+                  "org": "SafeGraph",
+                  "role": "Director of Demand Generation",
+                  "start": "2022-01-01",
+                  "end": "2022-12-01"
+                },
+                {
+                  "org": "SafeGraph",
+                  "role": "Demand Generation",
+                  "start": "2020-01-01",
+                  "end": "2022-01-01"
+                },
+                {
+                  "org": "Survata",
+                  "role": "Head of Demand Generation",
+                  "start": "2018-07-01",
+                  "end": "2020-01-01"
+                },
+                {
+                  "org": "Branch",
+                  "role": "Sales Development Team Lead",
+                  "start": "2018-01-01",
+                  "end": "2018-06-01"
+                },
+                {
+                  "org": "Branch",
+                  "role": "ABM Manager",
+                  "start": "2017-07-01",
+                  "end": "2018-06-01"
+                },
+                {
+                  "org": "Branch",
+                  "role": "Global Events Manager",
+                  "start": "2017-01-01",
+                  "end": "2017-12-01"
+                },
+                {
+                  "org": "Branch Metrics",
+                  "role": "Marketing Coordinator",
+                  "start": "2015-11-01",
+                  "end": "2017-01-01"
+                },
+                {
+                  "org": "Meeting Solutions Inc.",
+                  "role": "Event Coordinator",
+                  "start": "2014-03-01",
+                  "end": "2015-11-01"
+                },
+                {
+                  "org": "Federal Realty Investment Trust",
+                  "role": "Marketing Intern",
+                  "start": "2013-05-01",
+                  "end": "2013-12-01"
+                },
+                {
+                  "org": "BrandLinkDC",
+                  "role": "PR, Markerting and Events Intern",
+                  "start": "2012-09-01",
+                  "end": "2013-05-01"
+                },
+                {
+                  "org": "Fund for the Public Interest",
+                  "role": "Citizen Outreach Staff",
+                  "start": "2011-05-01",
+                  "end": "2011-08-01"
+                },
+                {
+                  "org": "Autism Speaks",
+                  "role": "Marketing Intern National Walk Now",
+                  "start": "2010-05-01",
+                  "end": "2010-08-01"
+                },
+                {
+                  "org": "U.S. House of Representatives",
+                  "role": "Congressional Page",
+                  "start": "2007-06-01",
+                  "end": "2007-07-01"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/kibrady12",
+              "evidenceSpan": "employment_history[] from Apollo people/match: Director of Growth @ Probook (2026-06-01..present); Director of Demand Generation @ BuildOps (2024-06-01..2026-04-01); Head of Growth @ Middesk (2023-01-01..2024-06-01); Director of Demand Generation @ SafeGraph (2022-01-01..2022-12-01); Demand Generation @ SafeGraph (2020-01-01..2022-01-01); Head of Demand Generation @ Survata (2018-07-01..2020-01-01); Sales Development Team Lead @ Branch (2018-01-01..2018-06-01); ABM Manager @ Branch (2017-07-01..2018-06-01)"
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Director of Growth",
+                  "start": "Jun 2026",
+                  "end": "Present"
+                },
+                {
+                  "org": "BuildOps",
+                  "role": "Director of Demand Generation",
+                  "start": "Jun 2024",
+                  "end": "Apr 2026"
+                },
+                {
+                  "org": "Middesk",
+                  "role": "Head of Growth",
+                  "start": "Jan 2023",
+                  "end": "Jun 2024"
+                },
+                {
+                  "org": "SafeGraph",
+                  "role": "Director of Demand Generation",
+                  "start": "Jan 2022",
+                  "end": "Dec 2022"
+                },
+                {
+                  "org": "Survata",
+                  "role": "Head of Demand Generation",
+                  "start": "Jul 2018",
+                  "end": "Jan 2020"
+                },
+                {
+                  "org": "Branch",
+                  "role": "ABM Manager",
+                  "start": "Jul 2017",
+                  "end": "Jun 2018"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/kibrady12",
+              "evidenceSpan": "Director of Growth - Probook (Current)\" and \"Jun 2026 - Present"
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "Glad to see new tools like Riveter gaining traction and cutting through the noise",
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/kibrady12_the-martech-hype-cycle-is-relentless-and-activity-7488693969325846528-STdm",
+              "evidenceSpan": "Glad to see new tools like Riveter gaining traction and cutting through the noise"
+            },
+            {
+              "fieldKey": "contact.facet.stated_interests",
+              "value": [
+                "martech and ABM",
+                "demand generation",
+                "building revenue-linked marketing teams"
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/kibrady12_the-martech-hype-cycle-is-relentless-and-activity-7488693969325846528-STdm",
+              "evidenceSpan": "Glad to see new tools like Riveter gaining traction and cutting through the noise"
+            },
+            {
+              "fieldKey": "contact.facet.communication_style",
+              "value": {
+                "style_label": "energetic, specific, revenue-oriented",
+                "summary": "Writes conversationally with an emphasis on revenue alignment, hiring, and martech pragmatism."
+              },
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/kibrady12_after-two-incredible-years-at-buildops-i-activity-7459629371444703232-esk_",
+              "evidenceSpan": "building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid"
+            }
+          ]
+        },
+        "61006812-713c-5564-8c38-16620cbcc0b3": {
+          "name": "Aaron Churba",
+          "facts": [
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "I'm excited to share that I've joined Probook as Director of Sales & Development.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT",
+              "evidenceSpan": "I'm excited to share that I've joined Probook as Director of Sales & Development."
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "Currently leading a team of 5 sellers and counting.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/aaronloganchurba",
+              "evidenceSpan": "Currently leading a team of 5 sellers and counting."
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "helping more businesses discover Probook, building a world-class GTM organization, and contributing to the next stage of growth.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/aaronloganchurba",
+              "evidenceSpan": "helping more businesses discover Probook, building a world-class GTM organization, and contributing to the next stage of growth."
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "In my ~10 year journey in SaaS sales, one key lesson stands out: prospects buy from people they like, relate to, or aspire to emulate.",
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD",
+              "evidenceSpan": "In my ~10 year journey in SaaS sales, one key lesson stands out: prospects buy from people they like, relate to, or aspire to emulate."
+            },
+            {
+              "fieldKey": "contact.facet.stated_interests",
+              "value": [
+                "GTM organization building",
+                "sales coaching"
+              ],
+              "priority": 1,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT",
+              "evidenceSpan": "helping more businesses discover Probook, building a world-class GTM organization"
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Director of Sales & Development",
+                  "start": "2026-02-01",
+                  "end": "present"
+                },
+                {
+                  "org": "Bite",
+                  "role": null,
+                  "start": null,
+                  "end": "present"
+                },
+                {
+                  "org": "Bite",
+                  "role": "Advisor",
+                  "start": "2025-08-01",
+                  "end": "2026-02-01"
+                },
+                {
+                  "org": "Bite",
+                  "role": "Director of Sales",
+                  "start": "2024-05-01",
+                  "end": "2025-08-01"
+                },
+                {
+                  "org": "Techvera",
+                  "role": "Sales",
+                  "start": "2025-08-01",
+                  "end": "2026-01-01"
+                },
+                {
+                  "org": "Zip Security",
+                  "role": "Director of Sales",
+                  "start": "2023-06-01",
+                  "end": "2024-05-01"
+                },
+                {
+                  "org": "Zip Security",
+                  "role": "Advisor",
+                  "start": "2022-09-01",
+                  "end": "2023-06-01"
+                },
+                {
+                  "org": "Electric",
+                  "role": "Manager, Sales",
+                  "start": "2022-05-01",
+                  "end": "2023-06-01"
+                },
+                {
+                  "org": "Electric",
+                  "role": "Senior Account Executive",
+                  "start": "2022-01-01",
+                  "end": "2022-05-01"
+                },
+                {
+                  "org": "Electric",
+                  "role": "Account Executive",
+                  "start": "2019-01-01",
+                  "end": "2022-01-01"
+                },
+                {
+                  "org": "VTS, Inc.",
+                  "role": "Business Development",
+                  "start": "2017-08-01",
+                  "end": "2019-01-01"
+                },
+                {
+                  "org": "SinglePlatform",
+                  "role": "Senior Business Analyst",
+                  "start": "2016-05-01",
+                  "end": "2017-08-01"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/aaronloganchurba",
+              "evidenceSpan": "employment_history[] from Apollo people/match: Director of Sales & Development @ Probook (2026-02-01..present); None @ Bite (None..present); Advisor @ Bite (2025-08-01..2026-02-01); Director of Sales @ Bite (2024-05-01..2025-08-01); Sales @ Techvera (2025-08-01..2026-01-01); Director of Sales @ Zip Security (2023-06-01..2024-05-01); Advisor @ Zip Security (2022-09-01..2023-06-01); Manager, Sales @ Electric (2022-05-01..2023-06-01)"
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Director of Sales & Development",
+                  "start": "Feb 2026",
+                  "end": "Present"
+                },
+                {
+                  "org": "Bite",
+                  "role": "Director of Sales",
+                  "start": "May 2024",
+                  "end": "Aug 2025"
+                },
+                {
+                  "org": "Electric",
+                  "role": "Manager, Sales",
+                  "start": "May 2022",
+                  "end": "Jun 2023"
+                },
+                {
+                  "org": "VTS, Inc.",
+                  "role": "Business Development",
+                  "start": "Aug 2017",
+                  "end": "Jan 2019"
+                },
+                {
+                  "org": "SinglePlatform",
+                  "role": "Senior Business Analyst",
+                  "start": "May 2016",
+                  "end": "Aug 2017"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/aaronloganchurba",
+              "evidenceSpan": "Director of Sales & Development - Probook (Current)\" and \"Feb 2026 - Present"
+            },
+            {
+              "fieldKey": "core.work_email",
+              "value": "aaron@probook.ai",
+              "priority": 2,
+              "useClass": null,
+              "sourceUrl": "https://www.linkedin.com/in/aaronloganchurba",
+              "evidenceSpan": "email = \"aaron@probook.ai\" (email_status = \"verified\")"
+            },
+            {
+              "fieldKey": "contact.facet.communication_style",
+              "value": {
+                "style_label": "relationship-led, alignment-focused",
+                "summary": "Public posts emphasize relationship-building, alignment of values/goals, and coaching sellers."
+              },
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD",
+              "evidenceSpan": "prospects buy from people they like, relate to, or aspire to emulate"
+            }
+          ]
+        },
+        "f4ec4553-7a98-5f74-8e61-2e445319374b": {
+          "name": "Lewis Zhang",
+          "facts": [
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Co-Founder / CTO",
+                  "start": "2024-01-01",
+                  "end": "present"
+                },
+                {
+                  "org": "Roblox",
+                  "role": "Senior ML Engineer",
+                  "start": "2021-01-01",
+                  "end": "2024-01-01"
+                },
+                {
+                  "org": "Confluent",
+                  "role": "Software Engineer Intern",
+                  "start": "2021-03-01",
+                  "end": "2021-05-01"
+                },
+                {
+                  "org": "Rubrik, Inc.",
+                  "role": "Software Engineer Intern",
+                  "start": "2020-12-01",
+                  "end": "2021-03-01"
+                },
+                {
+                  "org": "Tesla",
+                  "role": "Software Engineer Intern",
+                  "start": "2020-08-01",
+                  "end": "2020-10-01"
+                },
+                {
+                  "org": "Intel Corporation",
+                  "role": "Software Engineer Intern",
+                  "start": "2020-05-01",
+                  "end": "2020-08-01"
+                },
+                {
+                  "org": "Berkeley Artificial Intelligence Research",
+                  "role": "Research Intern",
+                  "start": "2019-08-01",
+                  "end": "2020-05-01"
+                },
+                {
+                  "org": "Stanford University",
+                  "role": "Research Intern",
+                  "start": "2018-06-01",
+                  "end": "2019-08-01"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/lewisfzhang",
+              "evidenceSpan": "employment_history[] from Apollo people/match: Co-Founder / CTO @ Probook (2024-01-01..present); Senior ML Engineer @ Roblox (2021-01-01..2024-01-01); Software Engineer Intern @ Confluent (2021-03-01..2021-05-01); Software Engineer Intern @ Rubrik, Inc. (2020-12-01..2021-03-01); Software Engineer Intern @ Tesla (2020-08-01..2020-10-01); Software Engineer Intern @ Intel Corporation (2020-05-01..2020-08-01); Research Intern @ Berkeley Artificial Intelligence Research (2019-08-01..2020-05-01); Research Intern @ Stanford University (2018-06-01..2019-08-01)"
+            },
+            {
+              "fieldKey": "contact.facet.career_history",
+              "value": [
+                {
+                  "org": "Probook",
+                  "role": "Co-Founder & CTO",
+                  "start": "Jan 2024",
+                  "end": "Present"
+                },
+                {
+                  "org": "Roblox",
+                  "role": "Senior ML Engineer",
+                  "start": "Jan 2021",
+                  "end": "Jan 2024"
+                },
+                {
+                  "org": "Berkeley Artificial Intelligence Research",
+                  "role": "Research Intern",
+                  "start": "Aug 2019",
+                  "end": "May 2020"
+                },
+                {
+                  "org": "Confluent",
+                  "role": "Software Engineer Intern",
+                  "start": "Mar 2021",
+                  "end": "May 2021"
+                }
+              ],
+              "priority": 2,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/lewisfzhang",
+              "evidenceSpan": "Co-Founder CTO - Probook (Current) Jan 2024 - Present."
+            },
+            {
+              "fieldKey": "core.work_email",
+              "value": "lewis@probook.ai",
+              "priority": 2,
+              "useClass": null,
+              "sourceUrl": "https://www.linkedin.com/in/lewisfzhang",
+              "evidenceSpan": "email = \"lewis@probook.ai\" (email_status = \"verified\")"
+            },
+            {
+              "fieldKey": "contact.facet.alma_mater",
+              "value": [
+                "University of California, Berkeley",
+                "Bellarmine College Preparatory"
+              ],
+              "priority": 3,
+              "useClass": "personal-public-non-sensitive",
+              "sourceUrl": "https://www.linkedin.com/in/lewisfzhang",
+              "evidenceSpan": "Bachelor of Science, EECS at University of California, Berkeley"
+            },
+            {
+              "fieldKey": "contact.facet.communication_style",
+              "value": {
+                "style_label": "concise, self-deprecating, results-focused",
+                "summary": "Short-form public posts emphasize small wins and technical focus, with modest tone."
+              },
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d",
+              "evidenceSpan": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins."
+            },
+            {
+              "fieldKey": "contact.facet.recent_post",
+              "value": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.",
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d",
+              "evidenceSpan": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins."
+            },
+            {
+              "fieldKey": "contact.facet.stated_interests",
+              "value": [
+                "scalable data and ML systems",
+                "building reliable engineering workflows"
+              ],
+              "priority": 3,
+              "useClass": "professional-public",
+              "sourceUrl": "https://www.linkedin.com/in/lewisfzhang",
+              "evidenceSpan": "contributing to open source project Scalabel.ai, a web annotation tool for autonomous driving datasets"
+            }
+          ]
+        }
+      }
+    },
+    "contact.openers[]": {
+      "hypothesis": "Each per-person deep call produced 3 grounded openers with the exact hook and its URL. There is no registered field and no wire slot. This is the single most immediately actionable output of the run and it lives only in a markdown file.",
+      "example": "<generated by Layer 2 from the person reports \u2014 see layer2_display.json>"
+    },
+    "evidence[].url": {
+      "hypothesis": "ContactEvidenceSchema is deliberately {provider, observedAt} with no URL (G4). Every claim in this run has a source_url and most have a verbatim evidence_span; a reviewer cannot open either from the contact profile. REQ-07's presign path is the intended home \u2014 see the CLAUDE.md [B2xpresign/frontend] backlog item for the scope gate that must land first."
+    },
+    "projectSections[].insights[] \u2014 needs a project_relative pack": {
+      "hypothesis": "As-built this array is empty for this account, because every field the run wrote is project_neutral. The P1 buying-intent signals (open GTM roles, the GTM stack gap, GTM team shape, funding runway) are exactly the project-relative species, and the PROPOSED vertical_saas.* pack is what makes them land here instead of being flattened into neutralFacts.",
+      "example_if_pack_registered": [
+        {
+          "fieldKey": "vertical_saas.open_gtm_roles",
+          "value": [
+            {
+              "title": "Sales Development Representative",
+              "department": "GTM",
+              "location": "Manhattan",
+              "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+              "posted_at": "2026-04-23"
+            },
+            {
+              "title": "Enterprise Account Executive",
+              "department": "GTM",
+              "location": "Manhattan",
+              "url": "https://jobs.ashbyhq.com/probook/a54815d3-1062-4d02-9d87-ebc6feb892e2",
+              "posted_at": "2026-06-03"
+            },
+            {
+              "title": "Strategic Account Executive",
+              "department": "GTM",
+              "location": "Manhattan",
+              "url": "https://jobs.ashbyhq.com/probook/672b7090-68f9-4951-8af3-482e289d7af7",
+              "posted_at": "2026-06-23"
+            },
+            {
+              "title": "Solutions Consultant",
+              "department": "GTM",
+              "location": "Manhattan",
+              "url": "https://jobs.ashbyhq.com/probook/d4bf0942-9da6-4157-802e-8e5991973841",
+              "posted_at": "2026-06-22"
+            },
+            {
+              "title": "Senior Product Marketing Manager",
+              "department": "GTM",
+              "location": "Manhattan",
+              "url": "https://jobs.ashbyhq.com/probook/b49b1bdc-3834-4b37-8216-6cc58c005991",
+              "posted_at": "2026-07-16"
+            },
+            {
+              "title": "Events Marketing Specialist",
+              "department": "GTM",
+              "location": "Manhattan",
+              "url": "https://jobs.ashbyhq.com/probook/c195de0a-605b-4bfa-840f-f6ff5f7e24f1",
+              "posted_at": "2026-07-16"
+            }
+          ],
+          "observedAt": "2026-08-26T21:40:00Z",
+          "provider": "ashby_public"
+        },
+        {
+          "fieldKey": "vertical_saas.gtm_stack",
+          "value": {
+            "as_of": "2026-08-26",
+            "crm": [],
+            "outbound": [],
+            "abm": [],
+            "paid": [
+              "LinkedIn Ads"
+            ],
+            "absent": [
+              "Salesforce",
+              "HubSpot",
+              "Outreach",
+              "Salesloft",
+              "Apollo.io",
+              "Clay",
+              "6sense",
+              "Demandbase"
+            ]
+          },
+          "observedAt": "2026-08-26T21:40:00Z",
+          "provider": "apollo"
+        },
+        {
+          "fieldKey": "vertical_saas.gtm_team_shape",
+          "value": {
+            "as_of": "2026-08-26",
+            "sales_headcount": 7,
+            "marketing_headcount": 1,
+            "open_gtm_roles": 6,
+            "first_sales_hire_made": true
+          },
+          "observedAt": "2026-08-26T21:40:00Z",
+          "provider": "apollo"
+        },
+        {
+          "fieldKey": "vertical_saas.target_vertical",
+          "value": {
+            "vertical": "US home-services contractors (plumbing, HVAC, electrical)",
+            "fragmentation": "fragmented_smb",
+            "basis": "the AI Operating System for home services, built around dispatch"
+          },
+          "observedAt": "2026-08-26T21:40:00Z",
+          "provider": "exa_research"
+        },
+        {
+          "fieldKey": "vertical_saas.funding_runway_signal",
+          "value": {
+            "latest_round_date": "2026-06-23",
+            "latest_round_stage": "Series A",
+            "months_since_round": 2,
+            "stated_growth_target": "scale its go-to-market team against surging demand"
+          },
+          "observedAt": "2026-08-26T21:40:00Z",
+          "provider": "exa_research"
+        }
+      ]
+    }
+  }
+}

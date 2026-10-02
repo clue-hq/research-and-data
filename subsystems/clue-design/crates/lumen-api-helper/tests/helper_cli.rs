@@ -679,21 +679,29 @@ fn validates_scene_brand_governance_through_core_bridge() {
     }));
 
     assert_eq!(response["ok"], false, "{response:#?}");
-    assert!(response["diagnostics"]
+    let diagnostic = response["diagnostics"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|diagnostic| diagnostic["code"] == "LUMB0805"
-            && diagnostic["message"]
-                .as_str()
-                .is_some_and(|message| message.contains("raw typography"))));
-    assert!(response["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|diagnostic| diagnostic["hint"]
-            .as_str()
-            .is_some_and(|hint| hint.contains("style($type."))));
+        .find(|diagnostic| diagnostic["code"] == "LUMB0805")
+        .expect("strict governance must reject the missing typography role binding");
+    assert_eq!(diagnostic["severity"], "error");
+    assert_eq!(diagnostic["phase"], "brand");
+    assert_eq!(
+        diagnostic["subject"],
+        json!({"kind": "node", "id": "node_contact_name"})
+    );
+    assert_eq!(
+        diagnostic["message"],
+        "node node_contact_name text has no Brand Kit typography role binding"
+    );
+    let hint = diagnostic["hint"].as_str().expect("actionable governance hint");
+    assert!(hint.contains("preserves the intended family, weight, size, leading, tracking and color"));
+    assert!(hint.contains("a size token alone does not make a whole role equivalent"));
+    assert!(hint.contains("Intentional literals may remain under advisory governance"));
+    assert!(hint.contains("Under strict governance, use an equivalent existing role"));
+    assert!(hint.contains("do not substitute an unrelated role"));
+    assert!(!hint.contains("style($type."));
 }
 
 #[test]

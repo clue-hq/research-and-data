@@ -14,6 +14,7 @@ import type {
   PageSize,
   Scene,
   TextAlign,
+  TextNode,
   VerticalAlign,
 } from "../engine/scene/contracts";
 import {
@@ -23,6 +24,8 @@ import {
   updateNodeLayout,
 } from "../engine/scene/operations";
 import { normalizePageSize } from "../engine/scene/pageGeometry";
+import { setKitTokenMaps, setTokenColorMap } from "../engine/scene/renderAdapter";
+import type { KitTokenMaps } from "../engine/scene/tokenColors";
 import { adBrandKit } from "./__fixtures__/brand-kit-colors";
 import {
   AD_PAGE_ID,
@@ -75,6 +78,47 @@ import {
  */
 
 const SCENE = HARVESTED_AD_PAGE;
+
+for (const missing of ["pending", "role", "size", "leading", "tracking", "family-alias",
+  "wrapped-family-alias", "raw-family-alias", "wrapped-raw-family-alias", "constructor", "__proto__"] as const) {
+  it(`refuses typography edits with ${missing} brand values without disabling content edits`, () => {
+    const scene = structuredClone(SCENE);
+    const node = scene.nodes.text_headline;
+    if (node.kind.kind !== "text") throw new Error("expected text");
+    node.kind = { ...node.kind, font_family: "Inter", font_size: 16, font_weight: 400,
+      style_token: "$type.headline", font_size_token: "$type.size",
+      line_height_token: "$type.leading", letter_spacing_token: "$type.tracking" };
+    const canvasMaps: KitTokenMaps = { colors: {}, typography: {
+      "type.headline": { fontFamily: "Season Mix", fontSize: 80, fontWeight: 500 },
+    }, numbers: { "type.size": 67.5, "type.leading": 1.12, "type.tracking": -0.6 } };
+    const maps = structuredClone(canvasMaps);
+    if (missing === "role") delete maps.typography["type.headline"];
+    if (missing === "size") delete maps.numbers["type.size"];
+    if (missing === "leading") delete maps.numbers["type.leading"];
+    if (missing === "tracking") delete maps.numbers["type.tracking"];
+    if (missing === "family-alias") maps.typography["type.headline"].fontFamily = "$font.brand";
+    if (missing === "wrapped-family-alias") maps.typography["type.headline"].fontFamily = " token(font.brand) ";
+    if (missing === "constructor" || missing === "__proto__") node.kind.style_token = missing;
+    if (missing === "raw-family-alias" || missing === "wrapped-raw-family-alias") {
+      node.kind = { ...node.kind, style_token: null, font_size_token: null,
+        line_height_token: null, letter_spacing_token: null,
+        font_family: missing === "raw-family-alias" ? "$type.headline" : " token(type.headline) " };
+    }
+    setKitTokenMaps(canvasMaps);
+    const before = JSON.stringify(scene);
+    try {
+      for (const [property, value] of [["fontSize", "72"], ["fontFamily", "Mona Sans"], ["fontWeight", "700 Bold"]]) {
+        assert.equal(sceneChangeToOperation({ property, value, selectionId: node.id }, node, scene, null,
+          missing === "pending" ? null : maps), null);
+      }
+      assert.notEqual(sceneChangeToOperation({ property: "content", value: "Revised headline", selectionId: node.id },
+        node, scene, null, null), null);
+      assert.equal(JSON.stringify(scene), before);
+    } finally {
+      setTokenColorMap({});
+    }
+  });
+}
 /** The page's root frame — the node §1.1's Background rows write. */
 const AD_ROOT_FRAME_ID = "frame_ad_root";
 
@@ -191,7 +235,7 @@ it("§1.2 Color: an 8-digit hex truncates to six digits (the ported normalizatio
 });
 
 it("§1.2 Color: anything that is not a hex is refused rather than guessed black", () => {
-  for (const value of ["", "  ", "#FFF", "rebeccapurple", "00F59B", COLOR_NONE]) {
+  for (const value of ["", "  ", "#FFF", "rebeccapurple", "123456", COLOR_NONE]) {
     assert.equal(apply(adPlainText(), "textColor", value), null, value);
   }
   assert.equal(apply(adPlainText(), "textColor", 16711680), null);
@@ -217,6 +261,187 @@ it("§1.6 guard: a MULTI-LAYER fill is not writable through the single swatch", 
 it("§1.2 Color: a NON-text node is refused — hydrate routes its fill to backgroundColor", () => {
   assert.equal(apply(adRect(), "textColor", "#FF00AA"), null);
   assert.equal(apply(adAutoLayout(), "textColor", "#FF00AA"), null);
+});
+
+// ══ Rung A — Text content (the Typography section's first row) ══════════════
+
+it("rung A Text: a string writes only the text kind's content", () => {
+  assert.deepEqual(
+    apply(adPlainText(), "content", "4.1x faster triage"),
+    updateNode("text_proof_stat", {
+      kind: set({ ...adPlainText().kind, content: "4.1x faster triage" }),
+    }),
+  );
+  // Multiline is the whole point of the textarea: the newline rides through
+  // verbatim, it is not a commit terminator here.
+  assert.deepEqual(
+    apply(adPlainText(), "content", "3.4x\nfaster triage"),
+    updateNode("text_proof_stat", {
+      kind: set({ ...adPlainText().kind, content: "3.4x\nfaster triage" }),
+    }),
+  );
+});
+
+it("rung A Text: an EMPTY string is a legal commit — clearing text is a real edit", () => {
+  // Unlike `fontFamily`, which refuses "" (an unnamed family is not a family),
+  // an emptied text node is a node that says nothing, and it survives.
+  assert.deepEqual(
+    apply(adPlainText(), "content", ""),
+    updateNode("text_proof_stat", {
+      kind: set({ ...adPlainText().kind, content: "" }),
+    }),
+  );
+});
+
+it("rung A Text: a non-string value is refused rather than coerced", () => {
+  assert.equal(apply(adPlainText(), "content", 34), null);
+  assert.equal(apply(adPlainText(), "content", true), null);
+  assert.equal(apply(adPlainText(), "content", null), null);
+});
+
+it("rung A Text: a NON-text node is refused (updateTextNode throws on one)", () => {
+  assert.equal(apply(adRect(), "content", "hello"), null);
+  assert.equal(apply(adAutoLayout(), "content", "hello"), null);
+  assert.equal(apply(adImage(), "content", "hello"), null);
+});
+
+it("rung A Text: a LOCKED text node refuses the content row like every other", () => {
+  const { node, scene } = withNodeField("text_proof_stat", "locked", true);
+  assert.equal(apply(node, "content", "4.1x faster triage", scene), null);
+  assert.equal(apply(node, "content", "", scene), null);
+});
+
+/* Rung C upgrade (founder-visible item 6): before rung C an inspector content
+ * edit let the engine's D4 rule clear every span on the node. It now remaps
+ * them with the same conservative prefix/suffix diff the caret session's
+ * untracked path uses — styling inside the unchanged prefix and suffix
+ * survives, styling over the changed middle is trimmed or dropped. */
+
+/** The harvested stat with `faster` bolded — the same span the session tests
+ * use, so both surfaces are proven over one document shape. */
+function adSpannedText(): { node: Node; scene: Scene } {
+  const scene = clone(SCENE);
+  const node = scene.nodes.text_proof_stat;
+  (node.kind as TextNode).spans = [{ start: 5, end: 11, font_weight: 700 }];
+  return { node, scene };
+}
+
+it("rung C Text: an edit AFTER every span keeps the styling, re-authored so D4 cannot clear it", () => {
+  const { node, scene } = adSpannedText();
+  // The maintained vector is byte-identical here (the edit is past the last
+  // span), which the engine reads as a stale carry-forward and clears. The
+  // commit therefore re-authors it as the same styling in a different shape.
+  assert.deepEqual(
+    apply(node, "content", "3.4x faster triage!", scene),
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "3.4x faster triage!",
+        spans: [
+          { start: 5, end: 6, font_weight: 700 },
+          { start: 6, end: 11, font_weight: 700 },
+        ],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: an edit BEFORE a span carries the span with the text it styles", () => {
+  const { node, scene } = adSpannedText();
+  assert.deepEqual(
+    apply(node, "content", "Up to 3.4x faster triage", scene),
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "Up to 3.4x faster triage",
+        spans: [{ start: 11, end: 17, font_weight: 700 }],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: an edit THROUGH a styled run trims it to what is still attributable", () => {
+  const { node, scene } = adSpannedText();
+  assert.deepEqual(
+    apply(node, "content", "3.4x fXr triage", scene),
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "3.4x fXr triage",
+        spans: [
+          { start: 5, end: 6, font_weight: 700 },
+          { start: 7, end: 8, font_weight: 700 },
+        ],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: clearing the text drops the spans it can no longer index", () => {
+  const { node, scene } = adSpannedText();
+  assert.deepEqual(
+    apply(node, "content", "", scene),
+    updateNode("text_proof_stat", {
+      kind: set({ ...node.kind, content: "", spans: [] }),
+    }),
+  );
+});
+
+it("rung C Text: a SECOND edit on an already-split node does not regenerate the split", () => {
+  // F1 (review 2026-08-24, P1). The inspector reaches the same D4 collision the
+  // caret session does: `text_proof_stat` here holds what a previous suffix edit
+  // wrote — one bold run stored as two adjacent same-style spans. Remapping a
+  // fresh suffix edit normalizes them back together, and the pre-F1 guard
+  // compared that against the NORMALIZED stored vector, matched, and re-split it
+  // into exactly the bytes the document already held — so the engine cleared the
+  // styling. Compared RAW (what the engine compares), the merge already differs.
+  const scene = clone(SCENE);
+  const node = scene.nodes.text_proof_stat;
+  (node.kind as TextNode).spans = [
+    { start: 5, end: 6, font_weight: 700 },
+    { start: 6, end: 11, font_weight: 700 },
+  ];
+  const operation = apply(node, "content", "3.4x faster triage!!", scene);
+  assert.deepEqual(
+    operation,
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "3.4x faster triage!!",
+        spans: [{ start: 5, end: 11, font_weight: 700 }],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: an UNSPLITTABLE span restates a no-op channel rather than dying", () => {
+  // F2 (review 2026-08-24, P3-1): a one-character styled run — the coloured "!"
+  // — has no interior boundary to split, so before F2 it went out byte-identical
+  // and the engine cleared it. `text_proof_stat`'s node states no underline, so
+  // `underline: false` is its own base: identical pixels, different bytes.
+  const scene = clone(SCENE);
+  const node = scene.nodes.text_proof_stat;
+  (node.kind as TextNode).spans = [{ start: 17, end: 18, font_weight: 700 }];
+  assert.deepEqual(
+    apply(node, "content", "3.4x faster triage!", scene),
+    updateNode("text_proof_stat", {
+      kind: set({
+        ...node.kind,
+        content: "3.4x faster triage!",
+        spans: [{ start: 17, end: 18, font_weight: 700, underline: false }],
+      }),
+    }),
+  );
+});
+
+it("rung C Text: a node with NO spans still writes the content channel alone", () => {
+  // Unchanged from rung A: nothing to remap, so nothing about the write moves.
+  assert.deepEqual(
+    apply(adPlainText(), "content", "4.1x faster triage"),
+    updateNode("text_proof_stat", {
+      kind: set({ ...adPlainText().kind, content: "4.1x faster triage" }),
+    }),
+  );
 });
 
 // ══ §1.2 row 2 — Font family ════════════════════════════════════════════════
@@ -777,6 +1002,44 @@ it("§1.4/OQ-2 Mode: a label outside Fixed/Hug/Fill writes nothing", () => {
   }
 });
 
+// ══ Plan 4 item F: "Fit to text" ═══════════════════════════════════════════
+//
+// The text inspector's one-click way out of a fixed height the copy outgrew.
+// UNCOVERED-by-harvest: both harvested texts HUG, so the fixed-height case is
+// the harvested stat with its height (and only its height) replaced — the
+// width the fixture carries (256) rides through untouched, which is the whole
+// point of ruling R6.
+
+it("Plan 4 Fit to text: a fixed-height text box flips its height to hug, width untouched", () => {
+  const { node, scene } = adSpannedText();
+  const fixed = {
+    ...node,
+    size: {
+      width: { kind: "fixed" as const, value: 256 },
+      height: { kind: "fixed" as const, value: 216 },
+    },
+  };
+  assert.deepEqual(
+    apply(fixed, "fitToText", "1", scene),
+    updateNode(fixed.id, {
+      size: set({
+        height: { kind: "hug" },
+        width: { kind: "fixed", value: 256 },
+      }),
+    }),
+  );
+});
+
+it("Plan 4 Fit to text: a hugging text box writes nothing; a non-text node writes nothing", () => {
+  const { node, scene } = adSpannedText();
+  const hugging = {
+    ...node,
+    size: { ...node.size, height: { kind: "hug" as const } },
+  };
+  assert.equal(apply(hugging, "fitToText", "1", scene), null);
+  assert.equal(apply(adRect(), "fitToText", "1"), null);
+});
+
 // ══ §1.4 Auto Layout — Direction · Wrap · Gap · Grow · Pad · Align ══════════
 //
 // AD4.B step 2. TWO homes, so two kinds of operation: Direction and Wrap live
@@ -996,12 +1259,10 @@ it("§1.4/L10 Auto Layout: a layout-LESS node seeds `defaultLayoutProps()` — t
   );
 });
 
-it("§1.4/OQ-2 Auto Layout: gap/padding TOKENS and the layout mode ride along untouched", () => {
-  // §1.4's Auto Layout bullet keeps tokens and fill weights OFF the surface, so
-  // no control on this panel can restate one — which means a numeric commit
-  // that DROPPED them would destroy a binding the user cannot get back. The
-  // spread preserves them; `undefined` keys are never introduced, because the
-  // spread only carries what the node actually holds (wire-format minimization).
+it("Task40: numeric gap replaces its binding and preserves padding binding and layout mode", () => {
+  // Intentional correction: a numeric edit must reach export. Preserving its
+  // hidden token previously made the user's input ineffective. Undo retains
+  // the original binding through the authored inverse, not this new layout.
   const scene = clone(SCENE);
   const node = scene.nodes.auto_row_copy;
   node.layout = {
@@ -1016,7 +1277,7 @@ it("§1.4/OQ-2 Auto Layout: gap/padding TOKENS and the layout mode ride along un
       align_x: "start",
       align_y: "center",
       gap: 12,
-      gap_token: "$space.md",
+      gap_token: undefined,
       grow: 0,
       layout_mode: "stack",
       padding: [40, 44, 40, 44],
@@ -1151,7 +1412,7 @@ it("§1.4 Shape Fill: a TEXT node is refused — hydrate routes ITS fill to text
 });
 
 it("§1.4 Shape Fill: anything that is not a hex or the sentinel is refused, never guessed black", () => {
-  for (const value of ["", "  ", "#FFF", "rebeccapurple", "00F59B"]) {
+  for (const value of ["", "  ", "#FFF", "rebeccapurple", "123456"]) {
     assert.equal(apply(adEllipse(), "backgroundColor", value), null, value);
   }
   assert.equal(apply(adEllipse(), "backgroundColor", 16711680), null);
@@ -1894,7 +2155,7 @@ it("§4: a LOCKED root frame refuses both Background rows", () => {
 });
 
 it("§1.1 Background: anything that is not a hex is refused rather than guessed black", () => {
-  for (const value of ["", "  ", "#FFF", "rebeccapurple", "00F59B"]) {
+  for (const value of ["", "  ", "#FFF", "rebeccapurple", "123456"]) {
     assert.equal(applyCanvas("backgroundColor", value), null, value);
   }
   assert.equal(applyCanvas("backgroundColor", 16711680), null);
@@ -2009,7 +2270,7 @@ it('§1.1 Background: the fill object\'s "solid" type carries no colour, so it w
   // The ruling is "write the swatch's current colour"; the event does not
   // carry it (`onFillChange` is handed `{angle, stops, type}` and the swatch
   // colour is a separate prop), and in the only case that reaches here the
-  // control is showing the dummy's `#00F59B` seed rather than a document
+  // control is showing the dummy's seed rather than a document
   // colour. `stops[0]` is not it either — the stops are inert while solid.
   // Both refusals, and the founder-facing gap they leave, are argued in full
   // at `backgroundPaint`'s `solid` case.
@@ -2340,8 +2601,8 @@ it("§1.6 ROUND TRIP on real data: token → hex detaches, hex → token re-bind
 });
 
 it("§1.6 Color: a label this document's kit does not define is NOT a write", () => {
-  // The dummy's fixture palette (`INSPECTOR_THEME_COLORS`), which the control
-  // falls back to when no kit is attached. Writing `{kind:"token",
+  // Labels the retired fixture palette used to offer (no palette exists any
+  // more, but a stale label could still arrive). Writing `{kind:"token",
   // token:"Primary"}` would bind the ad to a token nothing can resolve.
   for (const label of ["Primary", "Dark", "Subtle"]) {
     assert.equal(
@@ -3803,4 +4064,22 @@ it("A32: the generated placement differs from the stored one in the ALT TEXT and
   assert.ok(operations, "the harvested image takes a generated picture");
   const { placement } = operations[1] as { placement: AssetPlacement };
   assert.deepEqual({ ...placement, alt_text: stored.alt_text }, stored);
+});
+
+it("canonical spacing overrides one binding and materializes only the effective padding siblings", () => {
+  const scene = clone(SCENE);
+  const node = scene.nodes.auto_row_copy;
+  node.layout = { ...node.layout!, gap:72, gap_token:"space.8", padding:[72,72,72,72], padding_token:"space.8" };
+  const effective = { ...node, layout: { ...node.layout, gap:32, padding:[32,32,32,32] as [number,number,number,number] } };
+  const operation = sceneChangeToOperation({ property:"padding.top", value:"40", selectionId:node.id }, node, scene, null, null, effective);
+  assert.deepEqual(operation, updateNodeLayout(node, { ...node.layout, padding:[40,32,32,32], padding_token:undefined }));
+  const state = hydrateSceneInspectorState(node, scene, null, effective);
+  assert.equal(state.gap,"32");
+  assert.deepEqual(state.padding,{ top:"32", right:"32", bottom:"32", left:"32" });
+  assert.equal(sceneChangeToOperation({ property:"padding.top", value:"40", selectionId:node.id }, node, scene, null, null, null), null);
+  assert.deepEqual(node.layout.padding,[72,72,72,72]);
+  if (operation?.kind !== "update_node" || operation.patch.layout.kind !== "set") throw new Error("expected layout");
+  const edited = { ...node, layout:operation.patch.layout.value };
+  const second = sceneChangeToOperation({ property:"padding.left", value:"48", selectionId:node.id }, edited, scene, null, null, edited);
+  assert.deepEqual(second, updateNodeLayout(edited, { ...edited.layout!, padding:[40,32,32,48] }));
 });

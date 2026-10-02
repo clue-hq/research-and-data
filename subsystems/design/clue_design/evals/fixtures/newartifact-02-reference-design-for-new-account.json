@@ -1,0 +1,24 @@
+{
+  "name": "newartifact-02-reference-design-for-new-account",
+  "kind": "new_artifact",
+  "artifact": "design \"Premier Gastroenterology LinkedIn ad\" (scene ad), for account \"Premier Gastroenterology\"",
+  "tags": [
+    "design \"Premier Gastroenterology LinkedIn ad\" (scene ad) (this artifact)",
+    "account \"Mercy Health\""
+  ],
+  "brief": "A 1:1 LinkedIn ad for Premier Gastroenterology selling the GI front-door bundle.",
+  "history": [],
+  "message": "Use @Premier Gastroenterology LinkedIn ad as the reference and make the same kind of ad for @Mercy Health.",
+  "judgment": {
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": true,
+    "current_artifact_accepted": false,
+    "reasoning": "The current ad is only a reference here; the work is a new ad for Mercy Health."
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  },
+  "why": "The current artifact is tagged, but as inspiration for a different account's design \u2014 the work has moved."
+}

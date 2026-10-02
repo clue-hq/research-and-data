@@ -1,0 +1,82 @@
+# Worker VM (OVHcloud VPS-4) — first deployment spec §5.2, §7, §9.4. Holds no customer data.
+# Compose variables come from /srv/clue/compose.env (BACKEND_IMAGE, DOCKER_GID,
+# PGBOUNCER_CLIENT_PASSWORD); the application env from /srv/clue/env (mode 0600). Every container
+# here reaches Postgres through PgBouncer (transaction mode) except the ingestion pool's
+# CONTROLLER, which reads the env file's LUMEN_INGESTION_CONTROLLER_DATABASE_URL (the direct
+# Railway proxy URL for the clue_worker role).
+# Run: docker compose --env-file /srv/clue/compose.env -f compose.yaml up -d
+
+x-worker: &worker
+  image: ${BACKEND_IMAGE}
+  command: ["fleet-worker"]
+  env_file: [/srv/clue/env]
+  user: "1000:1000"
+  group_add: ["${DOCKER_GID}"]
+  restart: unless-stopped
+  stop_grace_period: 60s
+  depends_on: [pgbouncer]
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /srv/clue/workspaces:/srv/clue/workspaces
+    - /srv/clue/engine-cache:/srv/clue/engine-cache
+
+# The worker pools go through PgBouncer (transaction pooling, MAX_PREPARED_STATEMENTS set in
+# /srv/clue/pgbouncer.env so asyncpg's prepared statements survive). Their advisory locks are all
+# transaction-scoped (pg_advisory_xact_lock), which transaction pooling preserves.
+x-worker-env: &worker-env
+  CLUE_DATABASE_URL: postgresql+asyncpg://clue_worker:${PGBOUNCER_CLIENT_PASSWORD}@pgbouncer:6432/railway
+  CLUE_AGENT_WORKSPACE_ROOT: /srv/clue/workspaces
+  # The design agent's session memory and compaction history; unset, it lands inside the image
+  # (/app/subsystems/clue-design/.deepagent-workspace) and every redeploy would wipe it.
+  LUMEN_AGENT_WORKSPACE_ROOT: /srv/clue/workspaces/lumen-agent
+  LUMEN_ASSET_STORE_ROOT: /srv/clue/engine-cache
+
+x-batch: &batch
+  <<: *worker
+  environment:
+    <<: *worker-env
+    CLUE_FLEET_WORKER_KINDS: drive_run,account_job,execute_graph,entity_research_job,stage0_recon,official_site_crawl,onboarding_run,arv2_account_research,arv2_discovery,arv2_display_page
+    CLUE_FLEET_WORKER_CONCURRENCY: "10"
+
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1-p3
+    restart: unless-stopped
+    env_file: [/srv/clue/pgbouncer.env]
+
+  chat:
+    <<: *worker
+    environment:
+      <<: *worker-env
+      CLUE_FLEET_WORKER_KINDS: agent_turn
+      CLUE_FLEET_WORKER_CONCURRENCY: "10"
+
+  design:
+    <<: *worker
+    environment:
+      <<: *worker-env
+      CLUE_FLEET_WORKER_KINDS: design_job
+      CLUE_FLEET_WORKER_CONCURRENCY: "8"
+
+  batch1: *batch
+  batch2: *batch
+  batch3: *batch
+
+  # Its children (coordinator + analysis workers) are ordinary fleet workers and go through
+  # PgBouncer like every pool. Only the controller — one connection, holding a SESSION advisory
+  # lock that transaction pooling would strand — connects directly, via the env file's
+  # LUMEN_INGESTION_CONTROLLER_DATABASE_URL (lumen_api/ingestion_pool.py::controller_engine).
+  # Written out rather than built from x-worker so it gets no Docker socket: it runs no sandboxes.
+  ingestion:
+    image: ${BACKEND_IMAGE}
+    command: ["ingestion-pool"]
+    env_file: [/srv/clue/env]
+    user: "1000:1000"
+    restart: unless-stopped
+    stop_grace_period: 60s
+    depends_on: [pgbouncer]
+    volumes:
+      - /srv/clue/workspaces:/srv/clue/workspaces
+      - /srv/clue/engine-cache:/srv/clue/engine-cache
+    environment:
+      <<: *worker-env

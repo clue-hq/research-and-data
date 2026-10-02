@@ -1,0 +1,110 @@
+schema_version: '1'
+kind: profile
+name: quality-person-research
+version: v17-person
+status: active
+role: account_research
+prompt:
+  name: quality-person-research
+  version: v17-person
+  sha256: 6c079db907077144bba71bcb45d9416b1ca93f80d8a4318a1f643e1fd4c0ba46
+skills:
+- name: governed-evidence
+  version: v4
+  sha256: 9480efb23acc4e45fec3b8c5cd0a7a64ddf422fc0acf93b1037a57354d55a706
+- name: person-dossier
+  version: v3
+  sha256: 25ea6429a483398b07767099ac7a2548cf994dff51c618e9f87bda68a3d74981
+- name: person-depth-charter
+  version: v1
+  sha256: 6d8c699dec4a0250be7bbc7ecb3f26ad1c09fa822ce3a2604bae175925d32981
+- name: claim-ready-person-dossier
+  version: v2
+  sha256: 726fdced93fa2ee5b600226816e423fd351b90e3598dde944e50d5cfd278f1e5
+tools:
+- name: search_evidence
+  version: '2'
+  input_schema_sha256: d6eee650044a263b8d59f276ce887ccdd314816cb7f736ccc360e7760107ab4d
+  output_schema_sha256: 12fd588d01efc14d760126a4eb485c56458f25bc3841408cdc4668422f677be3
+- name: record_research_disposition
+  version: '2'
+  input_schema_sha256: ab84cc6ece3a67ba0f3c6076915bbdf6f48a3256a7ed15053a0975c42caea6ed
+  output_schema_sha256: d5458cf618b731af3058bd1bacf7100d2993c66a59d478b96d1ee01685f2d913
+- name: acquire_research_evidence
+  version: '1'
+  input_schema_sha256: 4d59ef67b3685e3e36d93ced1d21eb4b295b87413928127614c1f8ff13698d08
+  output_schema_sha256: ac4bbc57d23e215e824f5367bdc625284e4d06fb9ac11d7b56056f0accca2901
+- name: save_dossier_section
+  version: '1'
+  input_schema_sha256: 8278e906041bff81287f33d9ef7abfd9d631b1cd32859ac7e70b812b279e5137
+  output_schema_sha256: df244750f3e79e0c4bddc0c07a9f3b91ae77c43de59071ed878e4811684730fc
+- name: validate_dossier
+  version: '1'
+  input_schema_sha256: f89a2006769c69c15df229f5d400cb6b52297f31cbe73d371ffb560db6e6e2bd
+  output_schema_sha256: df244750f3e79e0c4bddc0c07a9f3b91ae77c43de59071ed878e4811684730fc
+- name: finish_dossier
+  version: '1'
+  input_schema_sha256: f89a2006769c69c15df229f5d400cb6b52297f31cbe73d371ffb560db6e6e2bd
+  output_schema_sha256: df244750f3e79e0c4bddc0c07a9f3b91ae77c43de59071ed878e4811684730fc
+- name: begin_dossier_revision
+  version: '1'
+  input_schema_sha256: 4620051d997dedf4306526b2643e9272b2fa5432ccf71e528e6ae7b86548203c
+  output_schema_sha256: df244750f3e79e0c4bddc0c07a9f3b91ae77c43de59071ed878e4811684730fc
+- name: discard_dossier_revision
+  version: '1'
+  input_schema_sha256: 43267fa0a4ebec60cb5e435401fd40bab0718c22856e5b0f98384494a10c0db3
+  output_schema_sha256: df244750f3e79e0c4bddc0c07a9f3b91ae77c43de59071ed878e4811684730fc
+model:
+  model_id: x-ai/grok-4.6
+  timeout_s: 120.0
+  max_retries: 2
+  max_output_tokens: 16384
+  temperature: 0.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 10485760
+  max_file_bytes: 1048576
+  max_file_count: 200
+  allowed_extensions:
+  - .json
+  - .md
+  - .txt
+  - .yaml
+  readable_prefixes:
+  - .deepagent
+  - inputs
+  - context
+  - work
+  - outputs
+  - research
+  - evidence
+  writable_prefixes:
+  - work
+  - outputs
+  retention_class: agent-ephemeral-v1
+delegation_roles:
+- research_narrative
+delegation_tool_grants:
+  research_narrative:
+  - name: record_research_finding
+    version: '3'
+    input_schema_sha256: 91c4bf0266df6d791b4ddbd4f6679fbc27242dc70d287c69d77685787df94463
+    output_schema_sha256: d743d5ffed3f779f5f06ab262d0932265b130cbcf72650e872be37ded5aa7b4b
+  - name: search_evidence
+    version: '2'
+    input_schema_sha256: d6eee650044a263b8d59f276ce887ccdd314816cb7f736ccc360e7760107ab4d
+    output_schema_sha256: 12fd588d01efc14d760126a4eb485c56458f25bc3841408cdc4668422f677be3
+  - name: read_research_page_inputs
+    version: '1'
+    input_schema_sha256: 3d8bd52d3e95c7c5afa914340a6cc2e11880857dc9aba5bf69e92d7966fb6896
+    output_schema_sha256: 0d5abd113f8012cbe41c456f4f1534849116722305757b63fd4f5a53cfe74c72
+  - name: publish_research_page
+    version: '2'
+    input_schema_sha256: 143a1a716b07efb5319c8178c4ee3caa4de45cfa08f540f5128e00697bcfc929
+    output_schema_sha256: ec85e7c58685359238c152dfeb0699aeaf26395a32345a3ce8c448bdc10053cd
+max_delegation_depth: 1
+max_delegations: 16
+max_plan_nodes: 64
+turn_timeout_s: 1800.0
+max_model_rounds: 100

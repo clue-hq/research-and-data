@@ -1,0 +1,516 @@
+schema_version: "1"
+kind: profile
+name: head-of-abm
+version: v59
+status: active
+# v59 (one ask, many artifacts — spec 2026-09-19): v58's surface exactly — the same skills, the
+# same workspace, the same caps, the same grant but for ONE address moved, and the prompt that
+# teaches it. `open_design_leg` becomes @5: its input carries an `artifacts` list of
+# `{title, note, account_id?}` items instead of one top-level `title`, so a single message asking
+# for "a 1:1 ad for each of these twenty accounts" opens ONE leg that births twenty documents,
+# each with the account it is for stamped on it and its own note in the user's own words. The @4
+# schema stays registered and frozen for replay; only the input digest moves (the output shape is
+# unchanged).
+# Prompt v11 -> v12 because the two design paragraphs are the thing that decides how many items
+# get listed: they become one paragraph that covers every designed page (site, landing page,
+# microsite, ad, banner, flyer, poster), tells the agent to read the count out of the message,
+# and requires a per-item note — the account (name, domain, `account_id` from the tag) or the
+# emphasis that makes this variant different from its siblings — because the design agent reads
+# the brief and its item's note, never this conversation. Nothing else in v11 moves: the
+# `run_python` clause v58 put there is carried through word for word.
+# The conversation recipe moves 29 -> 30 to admit `open_design_leg@5`: a requirement set resolves
+# one version per (kind, key), so @4 leaves the slot rather than stand beside @5.
+# The manual re-mints at `manual-*@v6` because the generated `tools` chapter renders THIS
+# profile's grant — the delegation entry's address, inputs and refusals — and a catalog version is
+# immutable: v58 keeps its v5 chapters.
+# v58 (the code sandbox and the project's attachments, 2026-09-19): v57's surface with one tool
+# added and one folder opened. `run_python@1` is GRANTED for the first time: one short Python
+# script per call, in a locked-down container with no network, over this turn's own workspace and
+# nothing else. It exists because a file tool that reads UTF-8 text cannot open a PDF, a Word
+# document, a slide deck, a spreadsheet or an image, and a human who attaches one of those to a
+# message is entitled to an answer about what is actually in it rather than a guess from its
+# filename. It is a WRITE over the agent's own workspace — it spends nothing, approves nothing and
+# launches nothing — and what a run leaves behind is swept against this workspace policy the
+# moment it exits, so a file outside the allowed formats, over the per-file ceiling or over the
+# quota is deleted and named in `files_removed`.
+# `attachments` joins `readable_prefixes`: every file anyone has attached in this project is
+# mounted read-only at `attachments/<filename>`, for the file tools and for a script alike. It is
+# NOT writable — an attachment is the human's file, exactly as uploaded — and it is absent from a
+# project nobody has attached anything to. `allowed_extensions` is deliberately UNMOVED: the extra
+# formats a script may produce (`.csv`, `.xlsx`, `.docx`, `.pptx`, `.pdf`, `.png`) are enforced by
+# the post-run sweep over what the container wrote, not by `write_file`, which stays text-only.
+# Skill pin v33→v34: §1 names `attachments/` and which tool opens which kind of file — nothing
+# else in the agent's context says what is in one — and §7c adds the rule that an attached file
+# is opened and read to the end before it is summarised. `code-execution@v1` is pinned beside the
+# document skills: the whole procedure for the sandbox, the recipe for each file kind, and what
+# may be said about a file afterwards. Prompt pin v10→v11 replaces v10's "no code execution"
+# clause with the one route that now exists. The manual re-mints at `manual-*@v5`: the grant moved, so the four generated chapters
+# move with it, and the workspace chapter is rewritten for `attachments/` and the sandbox.
+# Recipe revision 29 admits `run_python@1` to the interaction slot.
+# v57 (the turn caps move to the founder's numbers, 2026-09-14): v56's surface exactly — the same
+# grant, the same skills, the same workspace — with the two numbers that bound a turn raised to
+# the ones the founder ruled on 2026-09-08: `turn_timeout_s` 300 → 1800 and `max_model_rounds`
+# 24 → 100. A live plan-draft turn (7ffabc38) failed `agent_timeout` at the 300-second wall clock
+# before it wrote anything: no stall and no loop, just grok-4.6 reading its skills and reasoning
+# for about four minutes, one stretch of it 169 seconds, and then being cut mid-thought. Plan 3's
+# persona turn spent four of the same five minutes the same way. A cap that fails a real document
+# turn is the pre-emptive restriction the founder ruled out — observe a looping run, never
+# pre-restrict — so the caps become the ruling's numbers and stay observable.
+# No tool address moves, so the conversation recipe stays at 28. The manual re-mints at
+# `manual-*@v4` because the generated `limits` chapter renders BOTH of these numbers off this
+# profile, and a catalog version is immutable: v56 keeps its v3 chapters.
+# v56 (paged and spilled reads, 2026-09-14): v55's surface with the read side of the
+# conversation finished. Two of the reads move to their PAGED contract — `read_account_research@2`
+# and `read_discovery_run@2` take `offset`/`limit` and answer with `next_offset`, so a wide
+# account or a long discovery is walked to the end instead of guessed at from one page — and two
+# reads are GRANTED for the first time: `read_claims@1`, the general claims query (one account or
+# contact, narrowed by field family, source tier, verification status or date, behind the same
+# display gate the account page uses), and `read_artifact@1`, one artifact of this project's
+# gallery by id, its summary or the words on its page. Nothing here spends, approves or launches;
+# what they buy is that an answer about an account, a claim or an artifact rests on a row.
+# The `@1`s of the two paged reads stay registered, and recipe0-stage0@27 stays the exact replay
+# input for a turn pinned to it; they are simply no longer what this profile pins, so the
+# name-only default alias moves with the pin.
+# Skill pin v32→v33: §7c is rewritten as the read map — which read answers which question, that
+# every read comes in pages and a `next_offset` is read to the end before a count is stated, that
+# a narrowing `field_prefix` comes from `prefixes` and is never invented, and that a receipt
+# carrying `spilled_to` is read from that file in chunks and noted in `scratch/notes.md`. The
+# three document skills move to v2 with Task 7's free-flowing `project/` documents.
+# The manual re-mints at v3 because the grant moved: the four generated chapters are rendered from
+# THIS profile, and a catalog version is immutable, so v55 keeps its v2 chapters.
+# Recipe revision 28 admits the four addresses and RE-PINS the two reads: a requirement set
+# resolves one version per (kind, key), so the `@1`s leave the slot rather than stand beside
+# their `@2`s — the move `open_icp_confirmation_gate@1` already made at revision 22.
+# v55 (the versioned project root, 2026-09-14): v54 with the project's documents written as
+# FILES instead of through three governed tools. `project/` joins `writable_prefixes`, so a
+# `write_file` at `audience/icp-<key>.md`, `audience/persona-<key>.md` or `plan.md` lands a new
+# version of the document that path names and the mount serves the refreshed file back on the
+# same turn. `author_icp_document@1`, `request_persona_synthesis@1` and
+# `write_project_document@1` are ungranted here for that reason: the act they performed is now a
+# file write, and keeping them would offer two ways to write the same document. They stay
+# registered and frozen for replay of executions pinned to recipe0-stage0@26 or earlier.
+# The procedure moves with them. Stage-0 skill v31→v32 keeps §5b, §5c and §6b as one-line
+# pointers and the three new skills carry the whole procedure: `icp-authoring@v1` (draft only
+# from the brand's knowledge and this project's decisions, save at `project/audience/icp-<key>.md`,
+# then open the gate), `persona-authoring@v1` (one section per `persona_map` role, for the pinned
+# key only, written from the files because this surface has no web tool) and `plan-authoring@v1`
+# (the plan, and what to do when a stale write comes back `revision_conflict`). None of the three
+# grants a tool, so pinning them widens nothing.
+# The manual re-mints at v2 because the grant moved: the four generated chapters are rendered
+# from THIS profile, and four hand-written ones named the retired tools. Catalog versions are
+# immutable and v54 still has to resolve, so the fifteen chapters are copied to v2 rather than
+# edited in place. Recipe revision 27 drops the three addresses from the interaction slot.
+# v54 (the operating manual, 2026-09-14): v53 with the manual disclosed. Fifteen `manual-*`
+# chapters are pinned at v1 beside the Stage-0 skill, so the capability map names every one of
+# them with a one-line summary and an openable path, and the agent reads the chapter instead of
+# guessing: what one turn is and what ends it, what each folder and file in the workspace means,
+# every governed tool with its refusals and the next move for each, the claim fields, how a claim
+# is read, how account research and discovery actually run, how a document or a decision is
+# written, which of its own rules the platform enforces and which it only states, what the human
+# sees on each screen, the sibling agents, every error string, the turn's hard numbers, and the
+# glossary. Four of the fifteen are generated from this exact profile by
+# `python -m clue_api.manual_build --write`, so a chapter cannot quietly disagree with the grant.
+# No tool is added or dropped and no address moves, so the conversation recipe stays at 26.
+# Prompt pin moved v9→v10: the paragraph teaching specialist delegation is gone, because this
+# surface withholds delegation, and the Stage-0 paragraph now points at the manual. Skill pin
+# moved v30→v31: §1, §6, §7c and §10 name the chapter that answers the question the step
+# raises, and §6 no longer claims the platform refuses an unrouted finalization, because on this
+# surface nothing checks it.
+# v53 (brand index path, 2026-09-14): v52 with the skill pin moved v29→v30 — §1 names the
+# brand library's manifest at its real mounted path, `brand/index.json` (the tree root, beside
+# `knowledge/`). Nothing else moves.
+# v52 (the mounted libraries, 2026-09-13): v51 with the two read-only library mounts granted.
+# The brand's knowledge is materialized once per pinned version and mounted at `brand/`, and the
+# project's settled state — `status.md`, `decisions.md`, its own documents, the artifact index —
+# is compiled once per project and mounted at `project/`, so both prefixes join the readable list.
+# Neither is writable: a library is the platform's word about what is settled, and the agent
+# changes it only through a governed tool (the plan through `write_project_document@1`), never by
+# writing a file. Nothing is dropped — `inputs/` still carries this turn's message and cards, and
+# the per-turn seeds beneath it are still readable while they exist. Prompt pin moved v8→v9 and
+# skill pin v28→v29: both now name the mounted paths (`brand/knowledge/`, `project/`) instead of
+# the seed paths, and §1 describes the project library as one place every thread of the project
+# sees. No tool is added or dropped. Everything else is v51's.
+# v51 (thread workspace, 2026-09-13): v50 with the workspace block moved to the thread layout.
+# The workspace is now one persistent directory per chat thread, so `scratch/` — the agent's own
+# notebook, which survives every turn of the thread — is granted readable and writable, and
+# `reads/` is granted readable (the platform writes what a tool read back for it; the agent never
+# writes there). `work/` stays on BOTH lists, readable and writable, so a delegated specialist's
+# workspace is byte-for-byte what it was under v50 — the Head of ABM's own skill never names
+# `work/` and never writes there, because `scratch/` is its notebook. (The registry intersects a
+# child's workspace with its parent's on both lists, so dropping `work/` here would leave every
+# delegated research/content/reviewer child writable only in `outputs/` — its own scratch pad
+# taken away by a change to its parent. An unused `work/` costs the Head of ABM nothing.)
+# `context/` stays readable, because the assembler still materializes the turn's context cards
+# under it. Quota raised to 400 files / 20 MiB because the notebook
+# persists across a long conversation instead of dying with the turn. Skill pin moved v27→v28
+# (§1 names the notebook: what `scratch/` is for, and what belongs in the project's files instead).
+# Nothing else moves.
+# v50 (read-tool hotfix, 2026-09-13): v49 with the three reads' repaired contracts —
+# `read_account_research` pages its claims (`offset`/`next_offset`), names the account's claim
+# families (`prefixes`) and fits the governed receipt; `read_discovery_run` accepts the schema's
+# own `pass` on input so its result passes the runner's validation. Skill pin moved v26→v27 (§7c:
+# overviews render on first page view; read pages to the end; never invent a prefix; §1's
+# onboarding pointer names the real flow). Nothing else moves. Digests read off the live
+# descriptors.
+# v49 (read-tool output schemas typed, 2026-09-13): v48 with the three reads' contracts repaired;
+# skill pin moved v25→v26. The rows each read serves are now typed models in the output schema
+# (`ProjectAccountView`, `AccountOverviewSection`, `AccountClaimView`, `DiscoveryCandidateView`)
+# rather than opaque dicts, so a later change to a row shape moves the digest and this pin notices.
+# Three contract repairs ride with them: `read_account_research`'s claims mirror the account
+# page's own display gate (sensitive, unverified tier-4 and outreach-unsafe claims held back and
+# counted in `excluded`, each claim carrying its verification status), so chat cannot state a fact
+# the app refuses to print; `read_project_accounts` gains `query` and `offset`, so a named account
+# past the first page is reachable; `read_discovery_run`'s `verified` counts the candidates the
+# verifier judged rather than every candidate that is not pending. Nothing else moves: prompt v8,
+# the gates, the ICP-authoring pair, the plan write, the ARV2 launches and run read, model,
+# workspace, delegation and limits are v48's. Digests read off the live descriptors.
+# v48 (read tools, 2026-09-13): v47 plus the three ARV2 read tools; skill pin moved v24→v25.
+# `read_project_accounts@1`, `read_account_research@1` and `read_discovery_run@1` are effect-free
+# reads over the project's own rows: the accounts in the project with each one's research status,
+# what research found about one account (its written overview, or its live claims), and the latest
+# discovery run with its candidates. They spend nothing, approve nothing and launch nothing — they
+# are how this agent answers a question about accounts from the rows instead of from what its own
+# thread happened to start. stage0-interview v25 §7c is the procedure (read before you speak) and
+# its §7b says to read the last discovery run before proposing another. Nothing else moves: prompt
+# v8, the gates, the ICP-authoring pair, the plan write, the ARV2 launches and run read, model,
+# workspace, delegation and limits are v47's. Digests read off the live descriptors.
+# v47 (project plan, 2026-09-12): v46 plus `write_project_document@1`; skill pin moved v23→v24.
+# The agent may now write this project's one plan, `inputs/project/plan.md`, once the strategy is
+# settled — the section-2 answers, a confirmed and pinned ICP, a confirmed product set. The write
+# carries `expected_version`, so the human's own edits through the Plan tab are never overwritten
+# silently: a stale version is refused by name and the agent re-reads and writes again.
+# stage0-interview v24 §6b is the procedure (when the plan is written, what it contains, and the
+# `project_document` domain ref that makes the plan card appear). Nothing else moves: prompt v8,
+# the gates, the ICP-authoring pair, the ARV2 launches and run read, model, workspace, delegation
+# and limits are v46's. Digests read off the live descriptor.
+# v46 (ARV2 context and authoring, 2026-09-12): v45 plus `author_icp_document@1` and
+# `request_persona_synthesis@1`; skill pin moved v22→v23. The agent may now write a proposed ICP
+# document — brand-level or a project-local variant — and ask the platform to synthesize its
+# personas. Neither tool confirms anything: authoring sets the status to proposed and the human
+# still confirms through `open_icp_confirmation_gate@2`, and the persona request queues a
+# background turn rather than producing a document on this one. stage0-interview v23 is the
+# procedure (§5b authoring, §5c personas, §1 the project's own files). Nothing else moves:
+# prompt v8, the gates, the ARV2 launches and run read, model, workspace, delegation and limits
+# are v45's. Digests read off the live descriptors.
+# v45 (ARV2 Track R, R4): v44 plus ONE tool — `launch_arv2_discovery@1`, verified account
+# discovery for a project — and the skill version that teaches it, stage0-interview v22 (§7b,
+# "Discover accounts for this project"). Nothing else moves: prompt v8, the product-set gate, the
+# artifact-ref ICP gate and the ARV2 account/person launches and run read are v44's, and so are
+# model, workspace, delegation and limits. Finding candidate accounts from the ICP the project
+# pinned is the same act on the same lane as researching accounts a human named — it spends
+# against providers, so it stays a governed launch the human's own turn must ask for, and a
+# successful call means a run was queued, never that accounts were found or approved.
+role: head_of_abm
+prompt:
+  name: head-of-abm
+  version: v12
+  sha256: 2765b399f294dd0a418f4d615d3a720cf579eae2bb0439fc71d13638ce48fda1
+skills:
+  - name: stage0-interview
+    version: v34
+    sha256: abb0de5ba1c07fc076b7ea23ae70152221a4cc45970e4309a263192766fb7a71
+  # The three document skills. Each one is the whole procedure for one document the agent
+  # now writes as a file under `project/`: the profile it may propose, the personas for the
+  # profile the human confirmed, and the project's one plan. They grant no tool — the writing
+  # is `write_file` on a writable prefix — so pinning them discloses a summary and an openable
+  # path and nothing else. Stage-0 v32 §5b, §5c and §6b point at them by name.
+  - name: icp-authoring
+    version: v2
+    sha256: 92497cee99f78821b9b68abba7d8c6ce17a7533b444de485a91f719cad0d5b6f
+  - name: persona-authoring
+    version: v2
+    sha256: 9850f92bd80d8caf3ebbe32dc3c46d5016f1857ec0cf0f5382bfd5e5deed6d40
+  - name: plan-authoring
+    version: v2
+    sha256: 08f016d89695b9fd03fe9382e4ee851702feaec89c102aae2cb182848f423ba2
+  # The sandbox skill, pinned at v58 with the tool it teaches. It is the whole procedure for
+  # `run_python@1`: when running code is the right move and when it is not, the recipe for each
+  # kind of file the file tools cannot open, what the workspace sweep will take back out, and
+  # what may be said about a file afterwards — never its contents from its name. It grants no
+  # tool of its own; the grant is the `run_python` entry below.
+  - name: code-execution
+    version: v1
+    sha256: c4c9383e26d4921ecde44e495f569cd2af38df9e06831f16c13b5df5b4f4820a
+  # The operating manual: fifteen chapters, pinned in reading order so the capability map lists
+  # them that way. `manual-index` is the map of the library; the rest are its chapters. Four of
+  # them (`tools`, `fields`, `errors`, `limits`) are rendered from this exact profile version by
+  # `python -m clue_api.manual_build --write`, so they cannot drift from the grant without the
+  # build saying so; the other eleven are hand-written and guarded by `tests/agents/
+  # test_manual_drift.py`. Every chapter grants no tool (`tools: []`), so pinning one widens
+  # nothing: it only discloses a summary and an openable path. They are at v6 because this
+  # version's GRANT changed — the generated `tools` chapter renders the delegation entry off this
+  # profile, and `open_design_leg` moved to @5 with a new input — and a catalog version is
+  # immutable: v58 keeps the v5 chapters.
+  - name: manual-index
+    version: v6
+    sha256: 99e893e7721891950b2df098b31358b6817ea4fa29ee4be53361fab667c66be2
+  - name: manual-turn
+    version: v6
+    sha256: 2d86f5a7007e08e0a59ff635a4b571008fa39f82869b91548ad458ced046cef2
+  - name: manual-workspace
+    version: v6
+    sha256: d21a2cfa0509758594fda84cbc549e09c6daac86804c11901835026ec81b188e
+  - name: manual-tools
+    version: v6
+    sha256: 707439446765f2c0cee0f4fd1a8b6160ac6ad075eab18e2ce6fcb3ae08521ccd
+  - name: manual-fields
+    version: v6
+    sha256: c37be299c0d57762d76cb85718128bf948a16e60736235dcaa3e911ef74d3bbf
+  - name: manual-claims
+    version: v6
+    sha256: c0375b1bca22d2646b605604eb4713fb3468caeb11fb9e42c21549a08894f339
+  - name: manual-accounts-research
+    version: v6
+    sha256: f8a8aa3e8ec204ad91b6ef8c10a3d5d0f5afe0a46a8c9ee6a8f80fd32aa97de6
+  - name: manual-discovery
+    version: v6
+    sha256: a60c49d338f704af806b9474ef3e43e5e72b2570fe45161b0185f03be0d2581a
+  - name: manual-documents-decisions
+    version: v6
+    sha256: a7b6cf740e53f68d00374fe09d2cbf91664033f6d2e03a0405043d5f8a2565d8
+  - name: manual-gates-authority
+    version: v6
+    sha256: 8776f489588cf7f689d2423c2acd201a30215d410c25edc6cc62b260dd1830cb
+  - name: manual-humans-screens
+    version: v6
+    sha256: d223d09a40fc0c47e5d0c13fb70781c09c61f78c1bc5483afeb231e79b4a1661
+  - name: manual-siblings
+    version: v6
+    sha256: ada05ee841caa0528e2544735a20e9b3c47fb6a85554ec537a568f1a386ae61c
+  - name: manual-errors
+    version: v6
+    sha256: a0520c21125427c8b4795f319298ea8313e0c80bf8ab4a9deaed66330bd3c864
+  - name: manual-limits
+    version: v6
+    sha256: e4ae32156173db01e3972a9a1f9d03ce941c65904b9d694be42db8d9ff8889ba
+  - name: manual-glossary
+    version: v6
+    sha256: e846f654aa46a227b01d15b000126c5ef9e4b6821498691c64ab52c0b108b389
+tools:
+  # Retired at v55: `author_icp_document@1`, `request_persona_synthesis@1` and
+  # `write_project_document@1` stood here. Each one wrote a project document through a governed
+  # call; the versioned `project/` mount does the same work from a `write_file`, so keeping them
+  # would offer the agent two ways to write the same file and two vocabularies for its refusals.
+  # They are ungranted, not unregistered: an execution pinned to recipe0-stage0@26 or earlier
+  # still resolves its own immutable revision, and the Stage-0 skill's §5b/§5c/§6b now point at
+  # `icp-authoring`, `persona-authoring` and `plan-authoring` instead.
+  - name: draft_account_research_directive
+    version: "5"
+    input_schema_sha256: 5cf321a59b2aa856a98ecca7ed85e90b0c6c89eb2f4092bbe74042f4e5b23292
+    output_schema_sha256: 1d805a759f731032c83ccb36b3b5f11b04b2e85682c6e6f1a503d2e0cb91bb8d
+  - name: get_research_view
+    version: "1"
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  - name: inspect_statement_history
+    version: "1"
+    input_schema_sha256: 886263cab48572d3779e9a7d7dbb1b72f636f1441d0cd2d50c0dd696592daac6
+    output_schema_sha256: 6ce1ede45f5ab66f12b4530b58f1154df9f06167da45af785b4c11a5abf04875
+  # ARV2 Track R, R2 / O6: the new research lane's launch, granted to the Head of ABM with the
+  # skill (v22 §7) that says what must be confirmed first — a confirmed ICP document version and
+  # a confirmed product set — and its read-only status sibling below.
+  - name: launch_arv2_account_research
+    version: "1"
+    input_schema_sha256: 57638dc151a30c67905105bfe4d0a86650ccb31dc9675e3880fe173e17d88c2e
+    output_schema_sha256: 44180afee6410fe56bc94c928b5cbb543fa3bf175d4755b66b87f3abf690906a
+  # ARV2 Track R, R4: verified account DISCOVERY for one project — a long list built from the
+  # confirmed ICP document version the project pinned, then verified company by company against
+  # that document's hard gates, each answer carrying a quote and a source. It approves nothing:
+  # the candidates land on the accounts table and a human adds the ones they want. Granted with
+  # this version; stage0-interview v22 §7b is the procedure. Digests read off the live descriptor.
+  - name: launch_arv2_discovery
+    version: "1"
+    input_schema_sha256: 8a11c20903277320e3cb791efb977f512b9369169d346e4266508ff455bf8db1
+    output_schema_sha256: bbf0f09767552e89cb6744319152dc99c25e370abfb1e4948cf6248a700b3552
+  # ARV2 Track R, R3 / O6 (founder ruling 3, 2026-09-10): the same launch for named PEOPLE, on the
+  # same lane and the same preconditions. It researches contacts that already exist and never
+  # creates a person; the persona it names is the committee seat a person is given if they do not
+  # already hold one. Digests read off the live descriptor.
+  - name: launch_arv2_person_research
+    version: "1"
+    input_schema_sha256: d968b9e07d39af88cab9ce8ec9aaa211fb5ba62396cbd8f96e5be53ad100cead
+    output_schema_sha256: 63313e7dfdb79fe60dea37eb0284d1295c08026e33893afec9878a97e8fed067
+  # Multi-artifact legs (spec 2026-09-19) promote the delegation entry to @5: the top-level
+  # `title` is DELETED and the input carries an `artifacts` list of `{title, note, account_id?}`
+  # items, one per document the leg is to create. One open, N births, each document stamped with
+  # the account its item names. The @4 schema is frozen for replay; only the input digest moves
+  # (the output shape is unchanged).
+  - name: open_design_leg
+    version: "5"
+    input_schema_sha256: cf0b0534ed46006d661e269b8ceb871a108cb43686c6f07e0874bf0d6bd01872
+    output_schema_sha256: 2a3d13666fbdad3c34bc5106914f0ce353c9d0fbe4ce396a3132fa10933ad626
+  - name: open_directive_confirmation_gate
+    version: "1"
+    input_schema_sha256: 12d9a95bb3d8b4dc76fab84022edc45eeb1fb8fbd14aa18b0c6b597dff3dad69
+    output_schema_sha256: d07d0ec4416189ddf5395245bda7207587e256bfdc2f16b7e7a6f949e712786c
+  # ARV2 onboarding O6: @2 presents the brand's ICP knowledge document and its approval mints a
+  # confirmed version of that document. @1's subject was a draft `icp_spec` row, which this lane
+  # no longer writes; @1 stays registered and frozen for replay, ungranted here.
+  - name: open_icp_confirmation_gate
+    version: "2"
+    input_schema_sha256: fffd85eb3501052310dc55fda8977135e6600d4c17e85cf263b42c517a25dcea
+    output_schema_sha256: 53ca7fcd506f449992d9100b86a22df8e413d32eefb4cdb6bd8f918b0733eec0
+  # ARV2 onboarding O6: the SET-valued product gate. A project targets a set of products, and
+  # the candidates come from the brand's own product rows and catalog document — never a
+  # Client-KB version — so it replaces the single-product S5-F product gate.
+  - name: open_product_set_selection_gate
+    version: "1"
+    input_schema_sha256: 0c8e2b602a382a9ef2a202e297555d74ff8c41fdfbe4dddf95018e0af66e69f9
+    output_schema_sha256: 3586c05851a774dae4fa9c2801e762a15475a85de2f8d247b63040b806cbd919
+  - name: propose_field
+    version: "2"
+    input_schema_sha256: 381ff072e572d2a4a11818b527d7b36fe1a64c0de63d7f34cebd70b44e26a4a2
+    output_schema_sha256: 3250d58ae68070d2e2112986d8c91befd06795a506770b1ed62cf2f6c99f9842
+  - name: propose_source
+    version: "1"
+    input_schema_sha256: 641252341ba5eab67aefcc7748a3cc27cac07a158418a1d9855c61fddc21ef5b
+    output_schema_sha256: 708d9b5075c72103232daa51c12cbb83a5fe5bdf638bfa79659193f2324a851e
+  # ARV2 read tools: the project's own rows, read. `read_account_research` serves one account's
+  # written overview sections, or its live claims with value, source, evidence and tier, so a
+  # statement about an account carries a claim behind it instead of a memory of an earlier thread.
+  # At v56 it is the PAGED `@2`: `offset` and `limit` go in, `next_offset` comes back, and a wide
+  # account is walked to the end rather than counted from its first page. `@1` stays registered,
+  # and recipe0-stage0@27 stays the replay input of a turn pinned to it; it is simply no longer
+  # what this profile pins.
+  - name: read_account_research
+    version: "2"
+    input_schema_sha256: 97e3f1dc122d321fa0d6165d65bfaf09f09b2de83cdf84d2e2331725e04bedd0
+    output_schema_sha256: 1697e1587da18c201a767fbe1bea67fda72a31b7280d1f422182127434af44fe
+  # The gallery read, granted for the first time at v56: one artifact of THIS project by the id
+  # the project library's `artifacts/index.json` already carries — what it is, what it is called,
+  # its status and version, and (asked for) the words on its page, capped, with `body_truncated`
+  # saying whether there is more. It reads the rail's own rows and changes nothing, so describing
+  # an artifact no longer means describing a memory of the turn that made it.
+  - name: read_artifact
+    version: "1"
+    input_schema_sha256: 58b98e878063ee0c1b617b8268e9eb2eb07454c1395c3000e494ca30576d4516
+    output_schema_sha256: f8865423a1926ce1098ef2f735080150aeadbe52968d02c50e53b9fade0c0671
+  - name: read_arv2_account_research_run
+    version: "1"
+    input_schema_sha256: 029dddd3db84fcdbb076aac5dd874d7e2cad14cdbefb945555b8e820a3b7d0ba
+    output_schema_sha256: 5663712620131bc9019b80e535f021552f2fcef08e410400d65bea71ad606162
+  # The general claims query, granted for the first time at v56: the claims of ONE account or
+  # contact, narrowed by field family, source tier, verification status or date, paged, and behind
+  # the same display gate the account page uses. It is what `read_account_research`'s fixed claims
+  # section cannot be asked — "only the verified ones", "only since the first", "this contact's" —
+  # and it answers a query that matched nothing with the families the subject actually has, so an
+  # empty answer is honest rather than bare. stage0-interview v33 §7c says which question it is for.
+  - name: read_claims
+    version: "1"
+    input_schema_sha256: fefe65c65874eee0c5832b5a63a764966cc53259b30c45c0613f35e44b59b578
+    output_schema_sha256: dc6936fd434e33fd37430cf46b2fd24885a6c8526330184f31b7ac6a84ca0f3e
+  # `read_discovery_run` serves the project's latest discovery run (or one named by id) with what
+  # it asked for, what it found and verified, and the top candidates with their verdict. It
+  # approves nothing and starts nothing; stage0-interview v33 §7b says to read it before
+  # proposing another discovery. At v56 it is the PAGED `@2`, on the same terms as its account
+  # sibling: `offset`/`limit` in, `next_offset` back, `@1` kept for replay.
+  - name: read_discovery_run
+    version: "2"
+    input_schema_sha256: dc65a03a9ada24f96c61000b794d2030b18394e68406519663b354940d2d9d01
+    output_schema_sha256: e72eb59e5145cae4ab13941be39e3c87e88202f51aa2c6ca39dbb45f2e28230f
+  # `read_project_accounts` is the list `status.md` only summarizes: the accounts in this project,
+  # each one's research status and how it joined. stage0-interview v33 §7c is the procedure.
+  - name: read_project_accounts
+    version: "1"
+    input_schema_sha256: 9a7aa42aacc66b5dcf1834db46284e876e12406ecc814419b3b63d55d2275cdd
+    output_schema_sha256: b3d662ea77b66e6ed4d408e3b8c707ed2cae4efda9a3cc01b5c078a8f2cace08
+  - name: record_interview_answer
+    version: "1"
+    input_schema_sha256: 6e597a939a364afc1774e32331256d02c14101d33b2641e3851d449eef7c7ecc
+    output_schema_sha256: 5f0e0fe7baad009e16af713744ef7abbc390615d627a69f5f25c43eb8734e7a8
+  # The code sandbox, granted for the first time at v58 (spec 2026-09-19 §3.4): one short Python
+  # script per call, in a container with no network, over this turn's own workspace. It is what
+  # opens a PDF, a Word document, a deck, a spreadsheet or an image — the files `read_file`
+  # refuses — and what does arithmetic over a table instead of eyeballing it. A WRITE, because a
+  # script leaves files behind; it spends nothing and starts nothing, and what it wrote is swept
+  # against this profile's workspace policy the moment the container exits. `code-execution@v1` is
+  # the procedure. Digests read off the live descriptor.
+  - name: run_python
+    version: "1"
+    input_schema_sha256: c3c261b3cb0dbd182dbbd14921a2228b29fcd5e3a626a387a7d4eee50db334d4
+    output_schema_sha256: f4fe91bacc68b4a45c7bcda24c72548481dc562b31312426db47f415b8a07c85
+  - name: submit_ingestion
+    version: "1"
+    input_schema_sha256: 9b0a3d6ca25706d310fafd8a28969d6d39cff1272d904f3e4943eddb0b8b83c9
+    output_schema_sha256: 8e2acc7a8819cb1eaff07dc0fa6f8a90b824572e5fb39cbf34a5380f3f1319bf
+model:
+  model_id: x-ai/grok-4.6
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 8192
+  temperature: 0.1
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 20971520
+  max_file_bytes: 1048576
+  max_file_count: 400
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  # `attachments` joins the readable list at v58 and NOT the writable one: every file anyone has
+  # attached in this project is mounted read-only at `attachments/<filename>`, for the file tools
+  # and for a sandboxed script alike, and an attachment is the human's own file. It is absent from
+  # a project nobody has attached anything to.
+  readable_prefixes:
+    [
+      ".deepagent",
+      "inputs",
+      "context",
+      "scratch",
+      "reads",
+      "work",
+      "outputs",
+      "brand",
+      "project",
+      "attachments",
+    ]
+  writable_prefixes: ["scratch", "work", "outputs", "project"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: [research, content_drafter, reviewer]
+delegation_tool_grants:
+  research:
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+    - name: run_verification
+      version: "1"
+      input_schema_sha256: a331a001f6b269a9daa97f2d861342d7dfae86a0e75a942ca8f1f4f9d302b0b2
+      output_schema_sha256: d93aeddfdd146ca7bc8dba48b2fcac40415934659c495905255dae3ceb32d91b
+  content_drafter:
+    - name: compose_handoff
+      version: "1"
+      input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+      output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+    - name: compose_contact_content_handoff
+      version: "1"
+      input_schema_sha256: 6976ebe684c36bcbf112149ebad4d5046817ccf0ac6516bd9ced5429c89278db
+      output_schema_sha256: 4802b53a210dc2e07b73da4263e144d1e030e9315ecda31ba4383d17038274d2
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  reviewer:
+    - name: compose_handoff
+      version: "1"
+      input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+      output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+    - name: compose_contact_content_handoff
+      version: "1"
+      input_schema_sha256: 6976ebe684c36bcbf112149ebad4d5046817ccf0ac6516bd9ced5429c89278db
+      output_schema_sha256: 4802b53a210dc2e07b73da4263e144d1e030e9315ecda31ba4383d17038274d2
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+max_delegation_depth: 1
+max_delegations: 6
+max_plan_nodes: 48
+# The founder's numbers (ruling 2026-09-08, applied at v57): thirty minutes of wall clock and
+# a hundred model rounds. Both sit inside what `ProfileDocument` allows (le=1800, le=128)
+# and they are the observation window, not a budget the agent is meant to spend. A turn
+# that runs long is something to watch; a turn cut mid-thought at four minutes is a
+# restriction nobody asked for.
+turn_timeout_s: 1800.0
+max_model_rounds: 100
+
+

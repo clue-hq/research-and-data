@@ -1,0 +1,736 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 0.83,
+  "_request_body": {
+    "url": "https://www.linkedin.com/in/varinderkaur"
+  },
+  "_body": {
+    "id": "02321ba9-8571-0924-a589-abef8647c8fa",
+    "identifier": "varinderkaur",
+    "profile": {
+      "first_name": "Vari",
+      "middle_name": null,
+      "last_name": "Kaur",
+      "full_name": "Vari Kaur",
+      "headline": "Demand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth",
+      "title": "Head of Growth Marketing",
+      "picture": {
+        "source": "https://images.ai-ark.com/52YGyxVQ6xPIjz1h6JSN7-w5HVq0eiF3fDN4sXOtw8g/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/02321ba9-8571-0924-a589-abef8647c8fa.jpg"
+      },
+      "background": {
+        "source": "https://media.licdn.com/dms/image/v2/C5616AQGBuHa7E1riYg/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1617220225944?e=1786579200&v=beta&t=zeqEtP2NtiMWz9PaHEb4EjTZz6nS5Ccj4ZuOeo0R1jc"
+      },
+      "summary": "Results-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs for B2B SaaS companies across industries, including cybersecurity, healthcare, enterprise software, and AI. Strong track record in aligning marketing with sales to drive pipeline, revenue growth, and customer acquisition.\n\nI specialize in full-funnel strategy development\u2014from top-of-funnel lead acquisition to pipeline acceleration and sales enablement. Skilled in managing paid media (LinkedIn, Google, programmatic), email nurture, lead scoring, lifecycle marketing, and intent-based targeting. \n\nHands-on experience with tools like Marketo, HubSpot, Salesforce, 6sense, Demandbase, ZoomInfo, Google Ads, LinkedIn Campaign Manager, and more. Passionate about using AI and automation to optimize performance, enhance personalization, and improve campaign ROI."
+    },
+    "link": {
+      "linkedin": "https://www.linkedin.com/in/varinderkaur",
+      "twitter": null,
+      "github": null,
+      "facebook": null
+    },
+    "location": {
+      "default": "Easton, Pennsylvania, United States, North America",
+      "short": "Easton, Pennsylvania",
+      "country": "United States",
+      "state": "Pennsylvania",
+      "city": "Easton",
+      "position": null
+    },
+    "languages": {
+      "primary_locale": {
+        "country": "US",
+        "language": "en"
+      },
+      "supported_locales": [
+        {
+          "country": "US",
+          "language": "en"
+        }
+      ],
+      "profile_languages": null
+    },
+    "industry": "Information Technology & Services",
+    "educations": [
+      {
+        "school": {
+          "id": "6d97d024-dcdc-ad1c-4845-8971f3a526b0",
+          "name": "Punjab Technical University",
+          "logo": "https://images.ai-ark.com/wlvi3Nowb_Qn2jpQaOUoL_OwCH9r2nK52Ih8WyAgs1U/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/6d97d024-dcdc-ad1c-4845-8971f3a526b0.jpg",
+          "url": "https://www.linkedin.com/school/punjab-technical-university"
+        },
+        "degree_name": "Master of Business Administration (M.B.A)",
+        "field_of_study": "Marketing",
+        "grade": null,
+        "date": {
+          "start": "2008-01-01",
+          "end": "2010-12-31"
+        }
+      },
+      {
+        "school": {
+          "id": "6d97d024-dcdc-ad1c-4845-8971f3a526b0",
+          "name": "Punjab Technical University",
+          "logo": "https://images.ai-ark.com/wlvi3Nowb_Qn2jpQaOUoL_OwCH9r2nK52Ih8WyAgs1U/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/6d97d024-dcdc-ad1c-4845-8971f3a526b0.jpg",
+          "url": "https://www.linkedin.com/school/punjab-technical-university"
+        },
+        "degree_name": "Master of Computer Application (M.C.A)",
+        "field_of_study": null,
+        "grade": null,
+        "date": {
+          "start": "2001-01-01",
+          "end": "2004-12-31"
+        }
+      }
+    ],
+    "awards": [
+      {
+        "title": "CMO Special Mention Award",
+        "description": null,
+        "issuer": null,
+        "date": null
+      },
+      {
+        "title": "Marketing Team Player Award",
+        "description": null,
+        "issuer": null,
+        "date": null
+      }
+    ],
+    "certifications": [
+      {
+        "name": "Fundamentals of Next-Gen Marketing",
+        "authority": "6sense",
+        "url": "https://verify.skilljar.com/c/arzgsjcfpzxh",
+        "license_number": "arzgsjcfpzxh",
+        "display_source": "skilljar.com",
+        "company": {
+          "id": "4826043c-0a62-5a5b-67a2-c483c5f4cddf",
+          "name": "6sense",
+          "logo": "https://images.ai-ark.com/r53FvoChTgqks7XWxwZhHHDsWsJ-A0Oae2iMZp0RcyY/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4826043c-0a62-5a5b-67a2-c483c5f4cddf.jpg",
+          "url": "https://www.linkedin.com/company/6sense"
+        },
+        "date": {
+          "start": "2025-03-01",
+          "end": null
+        }
+      },
+      {
+        "name": "Account-Based Go-to-Market (GTM) Certification",
+        "authority": "Demandbase",
+        "url": "https://verify.skilljar.com/c/6o2fh9ncjbr7",
+        "license_number": "6o2fh9ncjbr7",
+        "display_source": "skilljar.com",
+        "company": {
+          "id": "d3aa5aad-4688-53fb-4d32-ffdfba02a100",
+          "name": "Demandbase",
+          "logo": "https://images.ai-ark.com/74_ZOMVVnep9xzB7OsAqNG9hopDpBLcwn5VdqyAze3c/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/d3aa5aad-4688-53fb-4d32-ffdfba02a100.jpg",
+          "url": "https://www.linkedin.com/company/demandbase"
+        },
+        "date": {
+          "start": "2025-02-01",
+          "end": null
+        }
+      },
+      {
+        "name": "Conversion Funnel Optimization",
+        "authority": "LinkedIn",
+        "url": null,
+        "license_number": null,
+        "display_source": null,
+        "company": {
+          "id": "60ecc6ff-f76b-b973-25ad-8528412a323b",
+          "name": "LinkedIn",
+          "logo": "https://images.ai-ark.com/EpHp398bTA3JtVS8kZD58EvWCfjW7NVqRN8_JhKxhXo/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/60ecc6ff-f76b-b973-25ad-8528412a323b.jpg",
+          "url": "https://www.linkedin.com/company/linkedin"
+        },
+        "date": {
+          "start": "2025-02-01",
+          "end": null
+        }
+      },
+      {
+        "name": "ABM Advanced Certification",
+        "authority": "Demandbase",
+        "url": null,
+        "license_number": null,
+        "display_source": null,
+        "company": {
+          "id": "d3aa5aad-4688-53fb-4d32-ffdfba02a100",
+          "name": "Demandbase",
+          "logo": "https://images.ai-ark.com/74_ZOMVVnep9xzB7OsAqNG9hopDpBLcwn5VdqyAze3c/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/d3aa5aad-4688-53fb-4d32-ffdfba02a100.jpg",
+          "url": "https://www.linkedin.com/company/demandbase"
+        },
+        "date": {
+          "start": "2021-02-01",
+          "end": null
+        }
+      },
+      {
+        "name": "Inbound Marketing",
+        "authority": "HubSpot Academy",
+        "url": null,
+        "license_number": null,
+        "display_source": null,
+        "company": {
+          "id": "35af88de-4a53-b2bc-dd9f-a20c9a783840",
+          "name": "HubSpot Academy",
+          "logo": "https://images.ai-ark.com/8YkrWWqLjcXCcDxUvyt0T90I8Obu-a5ogHXThrXzEn8/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/35af88de-4a53-b2bc-dd9f-a20c9a783840.jpg",
+          "url": "https://www.linkedin.com/school/hubspot-academy"
+        },
+        "date": {
+          "start": "2021-02-01",
+          "end": "2023-03-31"
+        }
+      },
+      {
+        "name": "Advanced Google Analytics",
+        "authority": "Google",
+        "url": null,
+        "license_number": null,
+        "display_source": null,
+        "company": {
+          "id": "5c0d17fa-f952-e9d0-c457-759615f2e789",
+          "name": "Google",
+          "logo": "https://images.ai-ark.com/zuU1yJLOT7cULNjR3Cn_wxS6x8iB21oexA-FzvH1LgQ/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/5c0d17fa-f952-e9d0-c457-759615f2e789.jpg",
+          "url": "https://www.linkedin.com/company/google"
+        },
+        "date": null
+      },
+      {
+        "name": "Google Analytics Individual Qualification (GAIQ)",
+        "authority": "Google",
+        "url": null,
+        "license_number": null,
+        "display_source": null,
+        "company": {
+          "id": "5c0d17fa-f952-e9d0-c457-759615f2e789",
+          "name": "Google",
+          "logo": "https://images.ai-ark.com/zuU1yJLOT7cULNjR3Cn_wxS6x8iB21oexA-FzvH1LgQ/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/5c0d17fa-f952-e9d0-c457-759615f2e789.jpg",
+          "url": "https://www.linkedin.com/company/google"
+        },
+        "date": null
+      },
+      {
+        "name": "Marketo Certified Expert (MCE)",
+        "authority": "Marketo",
+        "url": null,
+        "license_number": null,
+        "display_source": null,
+        "company": {
+          "id": "943889e7-ee51-17c1-051c-e0ec1260ab69",
+          "name": "Adobe Marketo",
+          "logo": "https://images.ai-ark.com/nj9sBq4vWzZXH9Vlf2dQxlhOav-g4GC9ydJ_-8u6i6M/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/943889e7-ee51-17c1-051c-e0ec1260ab69.jpg",
+          "url": "https://www.linkedin.com/company/adobemarketoengage"
+        },
+        "date": null
+      }
+    ],
+    "position_groups": [
+      {
+        "company": {
+          "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+          "name": "Zafran Security",
+          "logo": "https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg",
+          "url": "https://www.linkedin.com/company/zafran-security",
+          "employees": {
+            "start": 51,
+            "end": 200
+          }
+        },
+        "date": {
+          "start": "2025-05-01",
+          "end": null
+        },
+        "profile_positions": [
+          {
+            "company": "Zafran Security",
+            "description": null,
+            "title": "Head of Growth Marketing",
+            "employment_type": "Full-time",
+            "location": "New York, United States",
+            "date": {
+              "start": "2025-05-01",
+              "end": null
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "7fa5c206-40cc-e969-77b6-799710db8e91",
+          "name": "Secureworks",
+          "logo": "https://images.ai-ark.com/wsMpLzuJXYhR_I0jboIPoJvSgzZWFgFxsgCosgb4S-M/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/7fa5c206-40cc-e969-77b6-799710db8e91.jpg",
+          "url": "https://www.linkedin.com/company/secureworks",
+          "employees": {
+            "start": 1001,
+            "end": 5000
+          }
+        },
+        "date": {
+          "start": "2022-06-01",
+          "end": "2025-05-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Secureworks",
+            "description": "- Targeting cybersecurity personas and building B2B demand generation engine that integrates all marketing channels including paid advertising, email nurture, webinars, website o, etc.) to generate qualified leads and drive conversions. \n- Optimizing demand generation programs to support growth targets for new logo acquisition, expansion and retention within our existing install base. \n- Tracking key KPIs and conversion rates through the lead flow funnel - MQL ->SALs -> SQLs -> Opportunities. Working with the SDR leaders to improve the conversion rates and sharing insights with the leadership. \n- Leading initiatives for optimization of the website and improving web conversion rate. \n- Owning MarTech stack and ongoing management of marketing best practices, maintenance of campaign and email nurture program performance.",
+            "title": "Director, Demand Generation & Technology",
+            "employment_type": "Full-time",
+            "location": null,
+            "date": {
+              "start": "2022-06-01",
+              "end": "2025-05-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "3e2d55af-d0f7-e694-0d6a-de450cf3cb8e",
+          "name": "ReSource Pro",
+          "logo": "https://images.ai-ark.com/jqmSACxbCpwoF9SeoVkRU65XZixDvBFw62KLm9kKprM/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/3e2d55af-d0f7-e694-0d6a-de450cf3cb8e.jpg",
+          "url": "https://www.linkedin.com/company/resourcepro",
+          "employees": {
+            "start": 10001,
+            "end": null
+          }
+        },
+        "date": {
+          "start": "2021-04-01",
+          "end": "2022-06-30"
+        },
+        "profile_positions": [
+          {
+            "company": "ReSource Pro",
+            "description": "- Developed and implemented a comprehensive demand generation strategy aligned with company goals and revenue targets.\n- Executed multi-channel marketing campaigns across email, webinars, paid media, content syndication, events, and other channels. Collaborated with content and design to create compelling marketing assets and content, including landing pages, emails, ads, and social media posts.\n- Established marketing performance measurement framework and defined key performance indicators (KPIs). Tracked and analyzed campaign performance, identifying areas for improvement and optimization.",
+            "title": "Director Demand Generation",
+            "employment_type": "Full-time",
+            "location": "New York, United States",
+            "date": {
+              "start": "2021-04-01",
+              "end": "2022-06-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "a222bfb4-d6ea-7a6d-622b-633ffb3f4b56",
+          "name": "Axiom",
+          "logo": "https://images.ai-ark.com/klVZPyu8m-l3aS6chO5yfAUU-k6t2QL6YoDsFLbBIaM/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/a222bfb4-d6ea-7a6d-622b-633ffb3f4b56.jpg",
+          "url": "https://www.linkedin.com/company/axiom_law",
+          "employees": {
+            "start": 1001,
+            "end": 5000
+          }
+        },
+        "date": {
+          "start": "2019-05-01",
+          "end": "2021-04-30"
+        },
+        "profile_positions": [
+          {
+            "company": "Axiom",
+            "description": "Successfully managed digital demand generation and marketing operations function at Axiom. \n- Executed integrated marketing campaigns via digital (display, search, programmatic & social), website improvements, account-based marketing, industry-specific nurture campaigns, etc. that grew marketing\u2019s contribution to sales pipeline from <1% to >25% \n- Worked closely together with Revenue operations and Campaign Analytics team to build marketing dashboard that helped to provide visibility into success of campaigns and tactics.\n- Responsible for maintaining Marketing dashboard for ELT meetings and QBRs.\n- Implemented MarTech stack and closed-loop lead processes ensuring no leads fall through the crack.  \n- Successfully integrated CRM tool (Salesforce) with marketing automation tool (Hubspot) in a record timeline. Prior to this integration, both systems were running as standalone systems at the company.",
+            "title": "Director Demand Generation and Technology",
+            "employment_type": "Full-time",
+            "location": "New York",
+            "date": {
+              "start": "2019-05-01",
+              "end": "2021-04-30"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "c3f7d428-0512-3abf-83f9-00c9d9d54662",
+          "name": "Tangoe",
+          "logo": "https://images.ai-ark.com/C31HdRyIkxTLDgoRvhQJ2pPZnQgUb3FVtEsyxYdIl8I/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/c3f7d428-0512-3abf-83f9-00c9d9d54662.jpg",
+          "url": "https://www.linkedin.com/company/tangoe",
+          "employees": {
+            "start": 1001,
+            "end": 5000
+          }
+        },
+        "date": {
+          "start": "2018-03-01",
+          "end": "2019-05-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Tangoe",
+            "description": "Tangoe a leading global provider of IT and Telecom Expense Management software and services to a wide range of global enterprises and service providers.",
+            "title": "Director Digital Marketing",
+            "employment_type": null,
+            "location": "Parsippany, NJ",
+            "date": {
+              "start": "2018-03-01",
+              "end": "2019-05-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "de67bf03-477e-1a45-baf2-0c6dd05ecda2",
+          "name": "Ivanti",
+          "logo": "https://images.ai-ark.com/u3BpUobmvy1iEto05eiN41RO_USSnlmkfR4kd7bzW8U/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/de67bf03-477e-1a45-baf2-0c6dd05ecda2.jpg",
+          "url": "https://www.linkedin.com/company/ivanti",
+          "employees": {
+            "start": 1001,
+            "end": 5000
+          }
+        },
+        "date": {
+          "start": "2011-02-01",
+          "end": "2018-12-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Ivanti",
+            "description": "RES Software was acquired by Ivanti in July 2017. Ivanti is a global leader in IT systems and security management, service management, asset management, and mobility management solutions.",
+            "title": "Senior Manager, Global Marketing Operations",
+            "employment_type": null,
+            "location": "Greater Salt Lake City Area",
+            "date": {
+              "start": "2017-01-01",
+              "end": "2018-12-31"
+            }
+          },
+          {
+            "company": "Ivanti",
+            "description": "Driving SEO/SEM programs to optimize awareness and lead conversion. Worked closely with the regional field marketing and demand generation teams to ensure a consistent lead management process, and facilitate marketing budgeting, reporting and forecasting. Managed the marketing infrastructure and systems (Marketo & Salesforce) and website operations & analytics.\n\nAs marketing systems expert:\n\n* Managed marketing systems and operations - building landing pages & email templates, customer database, lead scoring, nurture, campaign tracking, marketing automation systems, touch governance and privacy compliance processes. \n* Optimized lead scoring and distribution methodology to ensure quality leads are passed to sales development for qualification and for increasing efficiencies and conversion rates.\n* Effectively managed a variety of technology, data, and service vendors like Reachforce, Lookbook, Brightedge, SEMrush, Leadlander, etc.\n\nAs a digital marketing strategist:\n\n* Driving awareness and lead generation campaigns via paid search\n* Worked with product marketing, global demand gen and field marketing teams to optimize ad campaigns\n* Developed campaign-end reporting and monthly web analytics reports\n* Reviewed analytics and performance data to drive strategic business decisions\u00a0",
+            "title": "Senior Manager, Global Marketing Operations",
+            "employment_type": "Full-time",
+            "location": "Greater Philadelphia Area",
+            "date": {
+              "start": "2015-03-01",
+              "end": "2017-07-31"
+            }
+          },
+          {
+            "company": "Ivanti",
+            "description": "Managing technical aspects of key marketing automation systems to produce, distribute, and report on leads. \nTracking all marketing campaigns and program results, measure program success, and report metrics  and produce monthly metrics reports. \nProviding support to the regional marketing teams for successful execution of the marketing campaigns in their regions. Managing corporate website, product microsites and other marketing assets including development of landing pages, emails and newsletters.",
+            "title": "Manager, Global Marketing",
+            "employment_type": null,
+            "location": "Greater Philadelphia Area",
+            "date": {
+              "start": "2013-01-01",
+              "end": "2015-02-28"
+            }
+          },
+          {
+            "company": "Ivanti",
+            "description": "RES Software transforms how users consume IT services through proactive, secure and automated delivery and return of IT resources, with a great user experience. RES Software helps IT professionals master the impacts of IT consumerization, increasingly sophisticated corporate users, bring-your-own-device initiatives and cloud technologies by building a foundation for delivering IT as a Service.",
+            "title": "Online Marketing Manager",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2011-02-01",
+              "end": "2013-01-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": null,
+          "name": "Grazitti",
+          "logo": null,
+          "url": null
+        },
+        "date": {
+          "start": "2008-01-01",
+          "end": "2011-12-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Grazitti",
+            "description": "Grazitti is a web marketing agency, offering a unique blend of creativity, innovation and digital marketing expertise.",
+            "title": "Online Marketing Manager",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2008-01-01",
+              "end": "2011-12-31"
+            }
+          }
+        ]
+      },
+      {
+        "company": {
+          "id": "c772215d-8476-595d-399b-2141c46cb2c3",
+          "name": "Milestone",
+          "logo": "https://images.ai-ark.com/_g5ceX4bPZqwzKV2c68m4DHfiSvjCDXbd5PGbGRMnFQ/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/c772215d-8476-595d-399b-2141c46cb2c3.jpg",
+          "url": "https://www.linkedin.com/company/milestone-consultants-inc",
+          "employees": {
+            "start": 11,
+            "end": 50
+          }
+        },
+        "date": {
+          "start": "2006-01-01",
+          "end": "2008-12-31"
+        },
+        "profile_positions": [
+          {
+            "company": "Milestone Global Solutions",
+            "description": "Milestone Consultants offers global outsourcing and off shoring services for custom software development and internet solutions.",
+            "title": "SEO Analyst and Content Writer",
+            "employment_type": null,
+            "location": null,
+            "date": {
+              "start": "2006-01-01",
+              "end": "2008-12-31"
+            }
+          }
+        ]
+      }
+    ],
+    "skills": [
+      "Website Conversion Optimization",
+      "A/B Testing",
+      "Website Optimization",
+      "Web Conversion Optimization",
+      "Demandbase",
+      "Target Marketing",
+      "Inbound Marketing",
+      "Inbound Lead Generation",
+      "HubSpot Marketing Hub",
+      "HubSpot",
+      "Go-to-Market Strategy",
+      "Funnel Optimization",
+      "Performance Marketing",
+      "Analytical Skills",
+      "Multi-Channel Marketing",
+      "Marketing Campaign Management",
+      "Campaign Execution",
+      "Marketing Campaigns",
+      "Paid Search Campaigns",
+      "Paid Search Strategy"
+    ],
+    "member_badges": {
+      "premium": false,
+      "creator": false,
+      "open_to_work": false,
+      "hiring": false,
+      "verified": true,
+      "influencer": false
+    },
+    "statistics": {
+      "network": {
+        "influencer": false,
+        "followable": null,
+        "followers_count": 2478,
+        "connections_count": 1899
+      },
+      "experience": {
+        "prev_job_titles": null,
+        "tenure": {
+          "company": "2025-05-01",
+          "start": "2006-01-01",
+          "title": "2025-05-01"
+        }
+      }
+    },
+    "company": {
+      "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+      "summary": {
+        "name": "Zafran Security",
+        "legal_name": "Zafran Security Ltd.",
+        "description": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe\u2019re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+        "overview": "Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability management lifecycle. With threat actors rapidly exploiting newly revealed security vulnerabilities through AI automation, Zafran's platform enables organizations to take action before these vulnerabilities result in incidents. The company\u2019s solutions work alongside current security tools, utilizing AI agents to pinpoint weaknesses, provide contextual information, and address these issues by linking them to controls and evaluating the potential for exploitation.",
+        "founded_year": 2022,
+        "type": "PRIVATELY_HELD",
+        "industry": "computer and network security",
+        "staff": {
+          "total": 167,
+          "range": {
+            "start": 51,
+            "end": 200
+          }
+        },
+        "logo": {
+          "source": "https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg"
+        }
+      },
+      "link": {
+        "website": "https://www.zafran.io",
+        "domain": "zafran.io",
+        "domain_ltd": "zafran.io",
+        "linkedin": "https://www.linkedin.com/company/zafran-security",
+        "twitter": "https://x.com/Zafran_io",
+        "crunchbase": "https://www.crunchbase.com/organization/zafran"
+      },
+      "financial": {
+        "revenue": {
+          "annual": {
+            "start": 10000000,
+            "end": 25000000,
+            "amount": "10000000-25000000"
+          }
+        },
+        "funding": {
+          "type": "SERIES_C",
+          "total_amount": 130500000,
+          "last_amount": 60000000,
+          "num_investor": 9,
+          "num_funding_rounds": 4,
+          "rounds": [
+            {
+              "announced_at": "2025-12-02",
+              "raised_amount": 60000000,
+              "type": "SERIES_C",
+              "investors": [
+                "Vintage Investment Partners",
+                "Cyberstarts",
+                "Amex Ventures",
+                "PSP Growth",
+                "Knollwood Investment Advisory",
+                "Sequoia Capital",
+                "Menlo Ventures"
+              ]
+            },
+            {
+              "announced_at": "2024-09-08",
+              "raised_amount": 40000000,
+              "type": "SERIES_B",
+              "investors": [
+                "Penny Jar Capital",
+                "Cerca Partners",
+                "Cyberstarts"
+              ]
+            },
+            {
+              "announced_at": "2024-03-28",
+              "raised_amount": 25000000,
+              "type": "VENTURE_ROUND"
+            },
+            {
+              "announced_at": "2024-03-28",
+              "raised_amount": 5500000,
+              "type": "SEED_ROUND"
+            }
+          ],
+          "date": "2025-12-02"
+        },
+        "aberdeen": {
+          "it_spend": 7626866
+        }
+      },
+      "location": {
+        "headquarter": {
+          "continent": "North America",
+          "country": "United States",
+          "city": "New York, New York",
+          "raw_address": "New York, New York, United States, North America",
+          "position": {
+            "lng": -73.98556,
+            "lat": 40.748295
+          }
+        },
+        "locations": [
+          {
+            "continent": "North America",
+            "country": "United States",
+            "city": "New York, New York",
+            "raw_address": "New York, New York, United States, North America",
+            "position": {
+              "lng": -73.98556,
+              "lat": 40.748295
+            }
+          }
+        ]
+      },
+      "technologies": [
+        {
+          "name": "dnssec",
+          "category": "ns"
+        },
+        {
+          "name": "google cloud",
+          "category": "hosting"
+        },
+        {
+          "name": "amazon s3",
+          "category": "cdn"
+        },
+        {
+          "name": "envoy",
+          "category": "server"
+        },
+        {
+          "name": "floc opt-out",
+          "category": "ads"
+        },
+        {
+          "name": "cloudflare automatic challenge",
+          "category": "cdn"
+        },
+        {
+          "name": "cloudflare challenge",
+          "category": "cdn"
+        },
+        {
+          "name": "hubspot hosted",
+          "category": "hosting"
+        },
+        {
+          "name": "amazon oregon region",
+          "category": "hosting"
+        },
+        {
+          "name": "zendesk mail",
+          "category": "mx"
+        }
+      ],
+      "industries": [
+        "risk management",
+        "cyber security",
+        "information technology",
+        "network security",
+        "software",
+        "computer and network security"
+      ],
+      "languages": [
+        "english"
+      ],
+      "last_updated": "2026-08-22"
+    },
+    "department": {
+      "departments": [
+        "marketing"
+      ],
+      "sub_departments": [
+        "growth_marketing"
+      ],
+      "functions": [
+        "marketing"
+      ],
+      "seniority": "head"
+    },
+    "email": {
+      "state": "DONE",
+      "output": [
+        {
+          "address": "vari@zafran.io",
+          "mx": {
+            "record": "aspmx.l.google.com",
+            "google": false,
+            "found": true,
+            "provider": "g-suite"
+          },
+          "domainType": "SMTP",
+          "status": "VALID",
+          "subStatus": "EMPTY",
+          "date": "2026-08-31T07:51:52.000461",
+          "free": false,
+          "generic": false,
+          "found": true
+        }
+      ]
+    },
+    "last_updated": "2026-08-22"
+  }
+}

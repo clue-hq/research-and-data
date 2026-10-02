@@ -54,6 +54,33 @@ pub const MAX_FRAGMENT_SLOTS: usize = 64;
 pub const MAX_FRAGMENT_SLOT_KEY_CHARS: usize = 64;
 pub const MAX_FRAGMENT_SLOT_VALUE_BYTES: usize = 8_192;
 
+/// One human text edit inside a cloned section, keyed by the structural path
+/// of the element it replaces.
+///
+/// `text` is PLAIN text — never markup. The three marks and the relative size
+/// step are the whole vocabulary: a clone's typography belongs to the artifact,
+/// so this offers a nudge (`size` is a step, not a value) rather than a second
+/// styling system that could disagree with the pinned CSS.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FragmentTextOverride {
+    pub text: String,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default)]
+    pub italic: bool,
+    #[serde(default)]
+    pub underline: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<i8>,
+}
+
+pub const MAX_FRAGMENT_TEXT_OVERRIDES: usize = 64;
+pub const MAX_FRAGMENT_OVERRIDE_PATH_CHARS: usize = 256;
+/// Inclusive relative size steps. A step, not a font size: the artifact owns
+/// the scale and this only walks it.
+pub const MIN_FRAGMENT_OVERRIDE_SIZE: i8 = -3;
+pub const MAX_FRAGMENT_OVERRIDE_SIZE: i8 = 3;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WebDoc {
     pub schema_version: u32,
@@ -161,6 +188,14 @@ pub enum WebNodeKind {
         fragment_id: String,
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         slots: BTreeMap<String, FragmentSlotValue>,
+        /// Ruling R-A6 (founder, 2026-09-04): the ONE interior edit a human
+        /// may make to a clone. D-F3 said a fragment is opaque below its
+        /// root; this amends it by exactly one axis — the TEXT of one
+        /// element, addressed by structural path — and nothing else. The
+        /// artifact stays immutable: an override is a per-instance
+        /// substitution applied at render, never a rewrite of the clone.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        text_overrides: BTreeMap<String, FragmentTextOverride>,
     },
     Image {
         asset_id: AssetId,
@@ -762,6 +797,56 @@ pub fn fragment_slots_issue(slots: &BTreeMap<String, FragmentSlotValue>) -> Opti
     None
 }
 
+/// The grammar of a text-override key: `^(:nth-child\(\d+\)( > )?)+$`, with
+/// every index ≥ 1.
+///
+/// STRUCTURAL only — positions, never names. A path may say "the second child
+/// of the first child", and it may not say `div`, `.headline`, or `#hero`.
+/// That is the whole point: a name-bearing selector would let a write path
+/// address the clone by its markup and, downstream, be interpolated into a
+/// selector or a query. Positions carry no characters that need escaping, so
+/// what the editor can address is bounded at the door rather than sanitized
+/// wherever it lands.
+///
+/// Written by hand — this crate has no regex dependency and the grammar is
+/// small enough that adding one would cost more than it saves.
+pub fn fragment_override_path_is_valid(path: &str) -> bool {
+    if path.is_empty() || path.len() > MAX_FRAGMENT_OVERRIDE_PATH_CHARS {
+        return false;
+    }
+    let mut rest = path;
+    loop {
+        let Some(after_open) = rest.strip_prefix(":nth-child(") else {
+            return false;
+        };
+        let Some(close) = after_open.find(')') else {
+            return false;
+        };
+        let digits = &after_open[..close];
+        // `:nth-child` is 1-based, so index 0 addresses nothing; a leading
+        // zero is refused with it, keeping one spelling per position.
+        if digits.is_empty()
+            || digits.starts_with('0')
+            || !digits.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return false;
+        }
+        rest = &after_open[close + 1..];
+        if rest.is_empty() {
+            return true;
+        }
+        // A separator must be followed by another step: a trailing ` > `
+        // addresses nothing.
+        let Some(after_separator) = rest.strip_prefix(" > ") else {
+            return false;
+        };
+        if after_separator.is_empty() {
+            return false;
+        }
+        rest = after_separator;
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MarqueeDirection {
@@ -1030,7 +1115,112 @@ mod tests {
         WebNodeKind::Fragment {
             fragment_id: fragment_id.to_owned(),
             slots,
+            text_overrides: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn fragment_override_paths_are_structural_only() {
+        for good in [
+            ":nth-child(1)",
+            ":nth-child(12)",
+            ":nth-child(1) > :nth-child(2)",
+            ":nth-child(3) > :nth-child(1) > :nth-child(9)",
+        ] {
+            assert!(fragment_override_path_is_valid(good), "{good:?}");
+        }
+        for bad in [
+            // `:nth-child` is 1-based; 0 addresses nothing.
+            ":nth-child(0)",
+            ":nth-child(01)",
+            // Name-bearing selectors are the whole reason for the grammar.
+            "div > h2",
+            ".headline",
+            "#hero",
+            ":nth-child(1) > h2",
+            // Separator shapes.
+            ":nth-child(1) > ",
+            ":nth-child(1)>:nth-child(2)",
+            ":nth-child(1) >> :nth-child(2)",
+            ":nth-child(1):nth-child(2)",
+            "",
+            // Malformed steps.
+            ":nth-child(",
+            ":nth-child()",
+            ":nth-child(a)",
+            ":nth-child(1",
+            ":nth-child(1))",
+        ] {
+            assert!(!fragment_override_path_is_valid(bad), "{bad:?}");
+        }
+
+        // Bounded length: 256 characters is the ceiling, 257 is refused.
+        let step = ":nth-child(1)";
+        let separator = " > ";
+        let mut path = step.to_owned();
+        while path.len() + separator.len() + step.len() <= MAX_FRAGMENT_OVERRIDE_PATH_CHARS {
+            path.push_str(separator);
+            path.push_str(step);
+        }
+        assert!(path.len() <= MAX_FRAGMENT_OVERRIDE_PATH_CHARS);
+        assert!(fragment_override_path_is_valid(&path), "{path:?}");
+        let long = format!(":nth-child({})", "1".repeat(257 - ":nth-child()".len()));
+        assert_eq!(long.len(), 257);
+        assert!(!fragment_override_path_is_valid(&long), "{long:?}");
+    }
+
+    #[test]
+    fn fragment_text_overrides_round_trip_and_omit_the_empty_map() {
+        // The empty map is skipped on the way out, so a fragment that carries
+        // no human edit serializes exactly as it did before R-A6.
+        let bare = WebNode {
+            id: NodeId::from("frg_hero"),
+            kind: fragment_kind("frag_0123456789abcdef", BTreeMap::new()),
+            classes: String::new(),
+            children: Vec::new(),
+            name: None,
+            slot_key: None,
+        };
+        let json = serde_json::to_string(&bare).expect("serialize");
+        assert!(!json.contains("text_overrides"), "{json}");
+
+        let mut edited = bare.clone();
+        let WebNodeKind::Fragment { text_overrides, .. } = &mut edited.kind else {
+            panic!("fragment");
+        };
+        text_overrides.insert(
+            ":nth-child(1)".to_owned(),
+            FragmentTextOverride {
+                text: "Shorter".to_owned(),
+                bold: true,
+                italic: false,
+                underline: false,
+                size: Some(1),
+            },
+        );
+        let value = serde_json::to_value(&edited).expect("serialize");
+        assert_eq!(
+            value["text_overrides"][":nth-child(1)"],
+            serde_json::json!({"text": "Shorter", "bold": true, "italic": false, "underline": false, "size": 1})
+        );
+        let back: WebNode = serde_json::from_value(value).expect("deserialize");
+        assert_eq!(back, edited);
+
+        // A missing `size` is None and is not written back out.
+        let plain = FragmentTextOverride {
+            text: "Plain".to_owned(),
+            bold: false,
+            italic: false,
+            underline: false,
+            size: None,
+        };
+        let plain_json = serde_json::to_string(&plain).expect("serialize");
+        assert!(!plain_json.contains("size"), "{plain_json}");
+        assert_eq!(
+            serde_json::from_str::<FragmentTextOverride>(r#"{"text":"Plain"}"#)
+                .expect("deserialize"),
+            plain
+        );
     }
 
     #[test]

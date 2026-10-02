@@ -1,0 +1,150 @@
+{
+  "total_claims": 52,
+  "by_source_key": {
+    "apollo": 19,
+    "exa_research": 33
+  },
+  "by_tier": {
+    "1": 19,
+    "4": 33
+  },
+  "by_entity": {
+    "account:lassie": 27,
+    "contact:steijn-pelle": 21,
+    "contact:max-shore": 4
+  },
+  "by_field_key": {
+    "account.hiring_velocity_eng": 1,
+    "account.operational_pain": 1,
+    "account.recent_funding": 2,
+    "account.resonance.culture": 1,
+    "account.strategic_moves": 2,
+    "account.total_funding": 2,
+    "contact.current_location": 3,
+    "contact.current_title": 4,
+    "contact.facet.alma_mater": 1,
+    "contact.facet.career_history": 3,
+    "contact.facet.communication_style": 1,
+    "contact.facet.hobby": 1,
+    "contact.facet.public_appearances": 2,
+    "contact.facet.publications": 2,
+    "contact.facet.recent_award": 1,
+    "contact.facet.recent_post": 1,
+    "contact.job_level": 1,
+    "contact.persona": 2,
+    "contact.role_on_committee": 1,
+    "core.account_name": 1,
+    "core.annual_revenue": 1,
+    "core.company_about": 3,
+    "core.company_linkedin_url": 2,
+    "core.company_phone": 1,
+    "core.employee_count": 1,
+    "core.hq_location": 3,
+    "core.industry": 3,
+    "core.primary_domain": 1,
+    "core.primary_tech_stack": 2,
+    "core.work_email": 2
+  },
+  "distinct_field_keys": 30,
+  "all_field_keys_registered": true,
+  "rows_contributed_by_structuring_model": {
+    "openai/gpt-5-mini@minimal": 16,
+    "z-ai/glm-4.7": 17
+  },
+  "schema_validation_failures": [],
+  "semantic_defects_hand_audited": [
+    {
+      "row": "core.company_linkedin_url (openai/gpt-5-mini@minimal)",
+      "emitted": "https://www.lassie.ai/company",
+      "problem": "not a LinkedIn URL. Passes value_schema (any string) but is semantically wrong. Apollo's tier-1 row carries the correct http://www.linkedin.com/company/lassie.",
+      "catchable_by": "a tool-side format/host validator on url-shaped fields, not value_schema"
+    },
+    {
+      "row": "contact.persona = champion for Steijn Pelle (openai/gpt-5-mini@minimal)",
+      "emitted": "champion",
+      "problem": "Steijn Pelle is the CEO/co-founder = economic_buyer. The evidence_span cited is an interview-process sentence from a job posting and does not support any persona. glm-4.7 assigned economic_buyer correctly.",
+      "catchable_by": "the faithfulness judge (M9.3) - the span does not entail the value"
+    },
+    {
+      "row": "core.employee_count = 23 (openai/gpt-5-mini, default reasoning run)",
+      "emitted": 23,
+      "problem": "the account report explicitly flagged 23 as an unreliable aggregator estimate; Apollo's tier-1 value is 41. Not carried into the merged set.",
+      "catchable_by": "tier precedence in the merge policy (tier-1 apollo beats tier-4 synthesis)"
+    }
+  ],
+  "model_proposed_fields": [
+    {
+      "proposed_by": [
+        "openai/gpt-5-mini@minimal"
+      ],
+      "field_key": "company.founders",
+      "entity_type": "account",
+      "value_type": "list",
+      "value_schema": "{'type':'array','items':{'type':'string'}}",
+      "description": "List of named founders/co-founders as observed in primary sources (verbatim names).",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "ABM sellers often need a distilled list of founders to target early-stage decision-makers and to personalize outreach; capturing founders explicitly helps routing and executive outreach strategies.",
+      "example_value": "[\"Steijn Pelle\", \"Fr\u00e9d\u00e9ric Renken\"]",
+      "example_evidence_span": "Co-founders Steijn Pelle and Fr\u00e9d\u00e9ric Renken did not find this problem from a distance.",
+      "example_source_url": "https://a16z.com/announcement/investing-in-lassie/"
+    },
+    {
+      "proposed_by": [
+        "openai/gpt-5-mini@minimal"
+      ],
+      "field_key": "account.practices_count",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "{'type':'integer'}",
+      "description": "Number of customer practices or small-business customers cited by the company or investor materials.",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "Customer count (e.g., number of practices) is a high-signal traction metric for ABM prioritization; capturing it as structured numeric data enables ranking accounts by adoption and tailoring messaging.",
+      "example_value": 700,
+      "example_evidence_span": "Lassie already works with more than 700 practices across 49 states, generates more than $10 million in annualized revenue, and provides practices with 250,000 hours of labor a year.",
+      "example_source_url": "https://a16z.com/announcement/investing-in-lassie/"
+    },
+    {
+      "proposed_by": [
+        "openai/gpt-5-mini@minimal"
+      ],
+      "field_key": "account.claimed_annualized_revenue",
+      "entity_type": "account",
+      "value_type": "object",
+      "value_schema": "{'type':'object','required':['amount','currency','as_of'],'properties':{'amount':{'type':'number'},'currency':{'type':'string'},'as_of':{'type':'string'}}}",
+      "description": "Annualized revenue figure cited in company or investor materials, with as-of date.",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "Reported annualized revenue is a key traction and segmentation signal for ABM targeting, helping prioritize accounts that have reached product-market fit and are scaling.",
+      "example_value": {
+        "amount": 10000000,
+        "currency": "USD",
+        "as_of": "June 3, 2026"
+      },
+      "example_evidence_span": "Lassie already works with more than 700 practices across 49 states, generates more than $10 million in annualized revenue, and provides practices with 250,000 hours of labor a year.",
+      "example_source_url": "https://a16z.com/announcement/investing-in-lassie/"
+    },
+    {
+      "proposed_by": [
+        "z-ai/glm-4.7"
+      ],
+      "field_key": "account.ecosystem_integrations",
+      "entity_type": "account",
+      "value_type": "list[str]",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "Key third-party systems or platforms (e.g., PMS, CRM) that the account's software integrates with natively.",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "For ABM targeting in healthcare/dental verticals, knowing which Practice Management Systems (PMS) a vendor integrates with (e.g., Dentrix, Eaglesoft) is critical to determine compatibility with a prospect's existing stack and to assess switching costs or technical viability.",
+      "example_value": [
+        "Dentrix",
+        "Eaglesoft",
+        "Open Dental"
+      ],
+      "example_evidence_span": "We automate EOB posting and payment matching across Dentrix, Eaglesoft, and Open Dental, without human intervention.",
+      "example_source_url": "https://www.lassie.ai/blog/ai-dental-admin-support"
+    }
+  ]
+}

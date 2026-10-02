@@ -38,6 +38,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from clue_obs.otel import get_metric_sink
 from clue_toolbelt import (
     ExternalReplayBoundary,
     JournalParameterPolicy,
@@ -71,10 +72,14 @@ __all__ = [
     "RecordDiagnosticsInput",
     "RecordDiagnosticsTool",
     "RedoDocumentTool",
+    "RenameDocumentInput",
+    "RenameDocumentTool",
     "ReplaceSceneInput",
     "ReplaceSceneTool",
     "SetAgentInstructionsInput",
     "SetAgentInstructionsTool",
+    "SetDocumentArchivedInput",
+    "SetDocumentArchivedTool",
     "SetLayoutManagedEditingInput",
     "SetLayoutManagedEditingTool",
     "SetWebNoindexInput",
@@ -563,6 +568,105 @@ class SetWebNoindexTool(DesignTool):
             document_id=inputs.document_id,
             field="web_noindex",
             value=document["web_noindex"],
+        )
+
+
+class RenameDocumentInput(ToolInput):
+    document_id: str
+    title: str
+
+
+class RenameDocumentTool(DesignTool):
+    """Rename one document — row title and document JSON title together, version bumped."""
+
+    name = "design_rename_document"
+    version = "1"
+    model_description = (
+        "Rename a design document. Writes the title on the row AND inside the document JSON so "
+        "the next save cannot revert it, and advances the document version."
+    )
+    input_model: ClassVar[type[ToolInput]] = RenameDocumentInput
+    output_model: ClassVar[type[ToolOutput]] = ToggleRef
+    replay: ClassVar[ReplaySafety] = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="workspace + document_id (design_document.title)",
+        external_boundary=ExternalReplayBoundary.NONE,
+        notes=(
+            "assigning the same title twice converges on the title; the version advances each time"
+        ),
+    )
+    effect_class: ClassVar[ToolEffectClass] = ToolEffectClass.WRITE
+    parameter_policy: ClassVar[JournalParameterPolicy] = JournalParameterPolicy(
+        safe_display_fields=("document_id", "title")
+    )
+
+    def check(self, inputs: ToolInput, ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
+        assert isinstance(inputs, RenameDocumentInput)
+        if not inputs.title.strip():
+            return (
+                PreconditionFailure(
+                    reason_code="design_document_title_blank",
+                    message="a document title must not be blank",
+                ),
+            )
+        # Both kinds rename; a finalized document is frozen against every mutation.
+        return document_failures(
+            self.host.repository(ctx.workspace_id), inputs.document_id, draft=True, action="rename"
+        )
+
+    def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
+        assert isinstance(inputs, RenameDocumentInput)
+        document = self.host.repository(ctx.workspace_id).rename_document(
+            inputs.document_id, inputs.title
+        )
+        get_metric_sink().add(
+            "design.document.renamed", 1, {"doc_kind": str(document.get("doc_kind", "scene"))}
+        )
+        return ToggleRef(document_id=inputs.document_id, field="title", value=document["title"])
+
+
+class SetDocumentArchivedInput(ToolInput):
+    document_id: str
+    #: REQUIRED, no default: a caller who names no value cannot reach the tool (the noindex rule).
+    enabled: bool
+
+
+class SetDocumentArchivedTool(DesignTool):
+    """Archive or restore one document — a library/gallery state, independent of publish."""
+
+    name = "design_set_document_archived"
+    version = "1"
+    model_description = (
+        "Archive or restore a design document. An archived document leaves the project gallery "
+        "and the artifacts library's default view; publishing is unaffected."
+    )
+    input_model: ClassVar[type[ToolInput]] = SetDocumentArchivedInput
+    output_model: ClassVar[type[ToolOutput]] = ToggleRef
+    replay: ClassVar[ReplaySafety] = ReplaySafety(
+        policy=ReplayPolicy.DOMAIN_IDEMPOTENT,
+        durable_identity="workspace + document_id (design_document.archived_at)",
+        external_boundary=ExternalReplayBoundary.NONE,
+        notes="effect-free by value: archiving twice keeps the first timestamp",
+    )
+    effect_class: ClassVar[ToolEffectClass] = ToolEffectClass.WRITE
+    parameter_policy: ClassVar[JournalParameterPolicy] = JournalParameterPolicy(
+        safe_display_fields=("document_id", "enabled")
+    )
+
+    def check(self, inputs: ToolInput, ctx: ToolContext) -> tuple[PreconditionFailure, ...]:
+        assert isinstance(inputs, SetDocumentArchivedInput)
+        return document_failures(self.host.repository(ctx.workspace_id), inputs.document_id)
+
+    def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
+        assert isinstance(inputs, SetDocumentArchivedInput)
+        document = self.host.repository(ctx.workspace_id).set_document_archived(
+            inputs.document_id, inputs.enabled
+        )
+        get_metric_sink().add(
+            "design.document.archived", 1, {"enabled": "true" if inputs.enabled else "false"}
+        )
+        return ToggleRef(
+            document_id=inputs.document_id, field="archived_at", value=document["archived_at"]
         )
 
 

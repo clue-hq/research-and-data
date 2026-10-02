@@ -1,49 +1,51 @@
 /**
- * The FI-4 slice-3 D-6 checklist table: which explicit onboarding fields roll up into which
- * setting-up row.
- *
- * This is DATA, deliberately — the reduction over it (`model/setup-items.ts`) takes the table
- * as a parameter and knows nothing about these particular four rows. The field partition is the
- * ratified one and covers all eleven `CLIENT_ONBOARDING_FIELDS` exactly once; company navigation
- * such as `client.product_catalog` is intentionally not a checklist row. The labels and
- * detail lines are integration-authored copy pending founder review.
+ * The setting-up checklist rows over the NEW onboarding lane's steps (spec 2026-09-12). DATA,
+ * deliberately: the derivation (`model/setup-items.ts`) takes the table as a parameter. Labels and
+ * detail lines are integration-authored copy pending founder review, as the previous table was.
  */
 export interface SetupGroup {
   /** Stable across every poll tick — the frozen SetupRow keys on it. Never renumber. */
   id: string;
   label: string;
   detail: string;
-  fieldKeys: readonly string[];
+  /** The step kinds this row reports. The FIRST kind decides completion; later kinds only annotate. */
+  stepKinds: readonly string[];
+  /**
+   * Appended to the detail line once the lead step is done while this row's trailing work has
+   * not finished — the row's promise is kept, and the rest of it outlives the release.
+   *
+   * A column rather than a row-id check in the derivation: which rows continue behind the user
+   * is table truth, exactly like the kinds they report.
+   */
+  continuingNote?: string;
 }
 
 export const SETUP_GROUPS: readonly SetupGroup[] = [
   {
-    id: "product-value",
-    label: "Understanding your product & value",
-    detail: "Product, value proposition, and differentiators",
-    fieldKeys: ["client.product", "client.value_prop", "client.differentiator"],
+    id: "company",
+    label: "Understanding your company",
+    detail: "Positioning, market and competitors",
+    stepKinds: ["overview"],
   },
   {
-    id: "pricing-proof",
-    label: "Pricing & proof",
-    detail: "Pricing posture and proof points",
-    fieldKeys: ["client.pricing_posture", "client.proof_point"],
+    id: "products",
+    label: "Your product lineup",
+    detail: "Every offering, from your own pages",
+    stepKinds: ["lineup", "catalog_sync"],
   },
   {
-    id: "customers-market",
-    label: "Customers & market",
-    detail: "Customers, ICP evidence, and market reputation",
-    fieldKeys: [
-      "client.customer",
-      "client.icp_evidence",
-      "client.market_reputation",
-      "client.delivered_value",
-    ],
+    id: "proof",
+    label: "Customer proof",
+    detail: "Reviews, case studies and named customers",
+    stepKinds: ["reviews"],
   },
   {
-    id: "competitors-buyers",
-    label: "Competitors & likely buyers",
-    detail: "Competitor landscape and likely-buyer profiles",
-    fieldKeys: ["client.competitor", "client.buyer_profile"],
+    id: "audience",
+    label: "ICPs and personas",
+    detail: "Who you sell to, and who decides",
+    stepKinds: ["synthesis", "persona"],
+    // Only this row continues: per-persona research is work the user asked for and will come
+    // back to, and it is created AFTER `synthesis` lands — usually on the release tick itself.
+    continuingNote: " — personas continue in the background",
   },
 ] as const;

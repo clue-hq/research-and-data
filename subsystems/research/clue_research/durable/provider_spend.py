@@ -2,8 +2,9 @@
 
 Provider ledgers own request fingerprints, provider units, and terminal receipts.  This module owns
 the one cross-provider invariant they cannot enforce independently: while a project run is active
-in an allowed phase, its already-recorded spend plus every outstanding provider reservation plus
-the proposed reservation must fit under the run's hard cap.
+in an allowed phase -- or one exact human-authorized entity-research job is running through the
+legacy tier checkpoint -- its already-recorded spend plus every outstanding provider reservation
+plus the proposed reservation must fit under the run's hard cap.
 
 The project-run row is locked before the outstanding totals are read.  All callers reserve their
 operation in the same transaction, so concurrent Exa discovery and targeted-enrichment attempts
@@ -13,6 +14,7 @@ cannot both observe the same remaining capacity.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Final
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -21,6 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import CostCents, ProjectPhase, ProjectRunId
 from clue_research.durable.enums import ProjectRunStatus
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20).
+_SITE_PROJECT_RUN_SPEND: Final = "project_run_provider_spend"
 
 
 class ProviderSpendGuardError(RuntimeError):
@@ -142,8 +148,9 @@ async def require_provider_spend_capacity(
     reserving service — never read here, so this function stays a pure durable primitive. With it
     False the *money* comparison at the end no longer raises
     :class:`ProviderSpendBudgetExceeded`; **everything else is unchanged**, which is the whole
-    point. The run is still locked, the run must still be ACTIVE, the phase/job authority is still
-    proved, the outstanding total is still computed, and the returned
+    point. The run is still locked, the run must still be ACTIVE unless an exact entity-research
+    job is running while its outer run is paused at the legacy tier checkpoint, the phase/job
+    authority is still proved, the outstanding total is still computed, and the returned
     :class:`ProviderSpendCapacity` still reports the true cap, spend and outstanding — so the
     caller writes exactly the ledger row it always wrote and a pilot deployment's spend is recorded
     honestly while simply exceeding its cap.
@@ -168,10 +175,6 @@ async def require_provider_spend_capacity(
         raise ProviderSpendRunNotFound(f"project run {project_run_id}")
     phase = ProjectPhase(str(row["phase"]))
     status = ProjectRunStatus(str(row["status"]))
-    if status is not ProjectRunStatus.ACTIVE:
-        raise ProviderSpendRunIneligible(
-            f"project run {project_run_id} is {status.value}, not active"
-        )
     if entity_research_job_id is not None:
         job = (
             (
@@ -218,6 +221,20 @@ async def require_provider_spend_capacity(
             raise ProviderSpendRunIneligible(
                 "provider reservation lacks one exact live entity-research job authority"
             )
+        # The explicitly launched entity job is the human authority for its selected subject.
+        # Permit that exact job while the outer discovery state machine is paused only at its
+        # legacy tier checkpoint; manual pauses elsewhere and every terminal status remain hard
+        # stops. This lets low/no-tier selected accounts run without weakening unrelated runs.
+        if status is not ProjectRunStatus.ACTIVE and not (
+            status is ProjectRunStatus.PAUSED and phase is ProjectPhase.TIER_CHECKPOINT
+        ):
+            raise ProviderSpendRunIneligible(
+                f"project run {project_run_id} is {status.value}, not active"
+            )
+    elif status is not ProjectRunStatus.ACTIVE:
+        raise ProviderSpendRunIneligible(
+            f"project run {project_run_id} is {status.value}, not active"
+        )
     elif phase not in allowed_phases:
         allowed = ", ".join(sorted(value.value for value in allowed_phases))
         raise ProviderSpendRunIneligible(
@@ -228,7 +245,24 @@ async def require_provider_spend_capacity(
     outstanding = Decimal(
         (await conn.execute(_OUTSTANDING_SQL, {"project_run_id": project_run_id})).scalar_one()
     )
-    if enforce_budget and cap is not None and spent + outstanding + proposed_cents > cap:
+    # Already record-only when controls are off (the FI pilot ruling, 2026-08-11); the 2026-08-20
+    # cap ruling only adds the announcement, so a skipped project-run stop is as visible as the
+    # per-provider ones it sits above.
+    if (
+        cap is not None
+        and spent + outstanding + proposed_cents > cap
+        and cap_refusal_is_enforced(
+            enforce_budget,
+            site=_SITE_PROJECT_RUN_SPEND,
+            reason="project_run_cap_exceeded",
+            amounts={
+                "spent_cents": spent,
+                "outstanding_cents": outstanding,
+                "proposed_cents": proposed_cents,
+                "budget_cap_cents": cap,
+            },
+        )
+    ):
         raise ProviderSpendBudgetExceeded(
             "provider reservation exceeds project-run cap: "
             f"spent={spent}, outstanding={outstanding}, proposed={proposed_cents}, cap={cap}"

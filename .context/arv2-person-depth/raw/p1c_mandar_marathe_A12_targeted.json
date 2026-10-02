@@ -1,0 +1,354 @@
+{
+  "requestId": "9bc22a187c683dd4becb62b274504b6d",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/nbm1dw3lyp2",
+      "title": "Mandar Marathe",
+      "url": "https://www.linkedin.com/in/mandarmarathe",
+      "publishedDate": "2026-08-30T03:08:35.000Z",
+      "text": "# Mandar Marathe\n\nAI Marketer | Driving Growth for B2B SaaS & AI Brands via Claude Cowork / Code Agents & Skills, AEO & SEO, Content, Paid Media, ABM | VP Marketing at Uptiq.ai, Digital Marketing Faculty at IIT Bombay\n\nMumbai, Maharashtra, India (IN)\n\n500 connections \u2022 8,396 followers\n\n## About\n\nHi, I'm Mandar. I\u2019m an Inbound Marketing Generalist with 18+ years of experience\u2026\n\nTotal Experience: 21 years\n\n## Experience\n\n### Vice President Marketing - [UPTIQ](https://www.linkedin.com/company/uptiqai) (Current)\n\nJan 2025 - Present (1 year and 7 months) in Pune\n\nMarketing Team Lead\n- Responsible for Demand Generation & Sales Enablement\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nUPTIQ is a Technology, Information and Internet company. Uptiq is a Financial AI platform that brings intelligent agents, powerful orchestration, and purpose-built suites together to help teams grow, originate, and serve continuously. The platform provides solutions for banking, credit unions, wealth management, and equipment finance. UPTIQ has 150-200 employees (+130% YoY), founded in 2022. Headquartered in McKinney, Texas, United States, with an office in Austin. Its workforce is distributed across 7 countries (including India, United States, Ukraine, Spain, and Australia). Has $49M in total funding, with 4 prior funding rounds.\n\n### Promoter - [Elemnt Sports Science](https://www.linkedin.com/company/elemnt-sports-science) (Current)\n\nFeb 2022 - Present (4 years and 1 month) in Mumbai, Maha",
+      "image": "https://media.licdn.com/dms/image/v2/D4D03AQFhG9FCduT0DQ/profile-displayphoto-scale_200_200/B4DZq0SQhWGwAY-/0/1763961278586?e=2147483647&v=beta&t=WAoGs2EQjK7Bsu90dhxKRClZs24LXiGt-YiEGRNjUtU",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/nbm1dw3lyp2",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Mandar Marathe",
+            "firstName": "Mandar",
+            "lastName": "Marathe",
+            "location": "Mumbai, Maharashtra, India",
+            "workHistory": [
+              {
+                "title": "Vice President Marketing",
+                "location": "Pune",
+                "dates": {
+                  "from": "2025-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hlcr9cj0tnb",
+                  "name": "UPTIQ"
+                }
+              },
+              {
+                "title": "Promoter",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2022-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3s0kdqym172",
+                  "name": "Elemnt Sports Science"
+                }
+              },
+              {
+                "title": "Marketing Specialist",
+                "location": "Thane, Maharashtra, India",
+                "dates": {
+                  "from": "2025-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7bsj17xw82g",
+                  "name": "T72 Club"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tyfgqww4ld4",
+                  "name": "IIT Bombay - Shailesh J. Mehta School of Management"
+                }
+              },
+              {
+                "title": "Entrepreneur in Residence",
+                "location": "Aurangabad, Maharashtra, India",
+                "dates": {
+                  "from": "2024-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tgdv333429b",
+                  "name": "MAGIC Business Incubator SME Accelerator"
+                }
+              },
+              {
+                "title": "Co-Founder",
+                "location": "Mumbai, Maharashtra",
+                "dates": {
+                  "from": "2019-11-01",
+                  "to": "2022-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7482fq9zbtb",
+                  "name": "Koppr"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Sirmaur, Himachal Pradesh, India",
+                "dates": {
+                  "from": "2018-10-01",
+                  "to": "2021-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wg6sr3c6fnt",
+                  "name": "Indian Institute of Management, Sirmaur"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Chennai, Tamil Nadu, India",
+                "dates": {
+                  "from": "2018-03-01",
+                  "to": "2020-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yvmzml308t9",
+                  "name": "Great Lakes Institute of Management"
+                }
+              },
+              {
+                "title": "Managing Partner",
+                "location": "Mumbai Area, India",
+                "dates": {
+                  "from": "2013-10-01",
+                  "to": "2019-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zxn6lrf72yn",
+                  "name": "BriefKase Digital Communications"
+                }
+              },
+              {
+                "title": "Digital Marketing Consultant & Trainer - SEO, Meta Ads",
+                "location": "Mumbai Metropolitan Region",
+                "dates": {
+                  "from": "2016-05-01",
+                  "to": "2019-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qyndxzklxqb",
+                  "name": "Digital Vidya"
+                }
+              },
+              {
+                "title": "Sr. Director, Client Servicing",
+                "location": "Mumbai Area, India",
+                "dates": {
+                  "from": "2013-04-01",
+                  "to": "2013-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zkj93zsnrdw",
+                  "name": "Reprise Media"
+                }
+              },
+              {
+                "title": "Director, Client Servicing",
+                "location": null,
+                "dates": {
+                  "from": "2010-10-01",
+                  "to": "2013-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zkj93zsnrdw",
+                  "name": "Reprise Media"
+                }
+              },
+              {
+                "title": "Chief Marketing Officer",
+                "location": null,
+                "dates": {
+                  "from": "2009-10-01",
+                  "to": "2011-07-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "30 Dollar Finance"
+                }
+              },
+              {
+                "title": "Senior Analyst, Internet Solutions",
+                "location": "Boston, Massachusetts, United States",
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2010-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/s73wk86lt49",
+                  "name": "Digitas"
+                }
+              },
+              {
+                "title": "Business Consultant Cooperative Education",
+                "location": null,
+                "dates": {
+                  "from": "2007-08-01",
+                  "to": "2007-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9x9ddydt8hh",
+                  "name": "AT&T"
+                }
+              },
+              {
+                "title": "Manager, eCommerce & Business Management Internship",
+                "location": null,
+                "dates": {
+                  "from": "2007-05-01",
+                  "to": "2007-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/q4xrw5ytk81",
+                  "name": "Dell"
+                }
+              },
+              {
+                "title": "Software Engineer",
+                "location": null,
+                "dates": {
+                  "from": "2004-09-01",
+                  "to": "2006-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/98qk9txnqbg",
+                  "name": "Infosys Technologies Ltd"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "S.S.C",
+                "dates": {
+                  "from": "1987",
+                  "to": "1998"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "St. Augustines High School"
+                }
+              },
+              {
+                "degree": "Master of Business Administration - MBA, Marketing",
+                "dates": {
+                  "from": "2006",
+                  "to": "2007"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/zfdvcgf4dm5",
+                  "name": "Mays Business School - Texas A&M University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_financial-expertise-meets-ai-inside-uptiq-activity-7452951249588666368-P6Na",
+      "title": "AI gets better when real knowledge is transferred from humans to systems - Watch this video to learn about our Knowledge Team and how their \"Human in the loop\" approach makes our \u2026 | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_financial-expertise-meets-ai-inside-uptiq-activity-7452951249588666368-P6Na",
+      "publishedDate": "2026-04-23T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# AI gets better when real knowledge is transferred from humans to systems - Watch this video to learn about our Knowledge Team and how their \"Human in the loop\" approach makes our \u2026 | Mandar Marathe \u00b7 LinkedIn \u00b7 2026-04-23\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nAI gets better when real knowledge is transferred from humans to systems - Watch this video to learn about our Knowledge Team and how their \"Human in the loop\" approach makes our Agentic AI solutions stand out from the rest! #lending #aiagents #financialexpertise #intelligence\n\n**Reshared from [UPTIQ](https://linkedin.com/company/uptiqai):**\n> \ud835\udc00\ud835\udc08 \ud835\udc22\ud835\udc2c \ud835\udc28\ud835\udc27\ud835\udc25\ud835\udc32 \ud835\udc1a\ud835\udc2c \ud835\udc2c\ud835\udc26\ud835\udc1a\ud835\udc2b\ud835\udc2d \ud835\udc1a\ud835\udc2c \ud835\udc2d\ud835\udc21\ud835\udc1e \ud835\udc29\ud835\udc1e\ud835\udc28\ud835\udc29\ud835\udc25\ud835\udc1e \ud835\udc30\ud835\udc21\ud835\udc28 \ud835\udc2d\ud835\udc2b\ud835\udc1a\ud835\udc22\ud835\udc27 \ud835\udc22\ud835\udc2d.\n>\n> In our latest episode of \ud835\udc70\ud835\udc8f\ud835\udc94\ud835\udc8a\ud835\udc85\ud835\udc86 \ud835\udc7c\ud835\udc91\ud835\udc95\ud835\udc8a\ud835\udc92, our host Mandar Marathe sits down with Akansha (Head of Financial Services Knowledge & Intelligence) to discuss how we bridge the gap between deep commercial lending expertise and agentic AI.\n>\n> At Uptiq, it\u2019s not just about automation, it\u2019s about accuracy, efficiency, and a \"human-in-the-loop\" approach that outpaces traditional spreadsheets.\n>\n> Watch the full conversation to see how we\u2019re buildi"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_aimarketing-activity-7480104338795802624-KPDb",
+      "title": "On the go with Craig McKeon, we spoke about.. | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_aimarketing-activity-7480104338795802624-KPDb",
+      "publishedDate": "2026-07-07T03:44:07.000Z",
+      "author": "Mandar Marathe",
+      "text": "Craig McKeon on AI in Marketing and Banking | Mandar Marathe posted on the topic | LinkedIn\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nhttps://in.linkedin.com/in/mandarmarathe\n\nMandar Marathe\n\nAI Marketer | Driving Growth for B2B SaaS & AI Brands via Claude Cowork / Code Agents & Skills, AEO & SEO, Content, Paid Media, ABM | VP Marketing at Uptiq.ai, Digital Marketing Faculty at IIT Bombay\n\n1w\n\n- Report this post\n\nOn the go with Craig McKeon, we spoke about.. \ud83d\udcbb AI in Marketing and what has changed \ud83c\udfe6 Are Banks and Financial Services on the cusp of an AI Adoption revolution? \ud83c\udf72 What AI can never change Its been great to work with you at UPTIQ- Looking forward to collaborative growth and more such conversations once you are back in Pune!#aimarketing\n\n48 3 Comments\n\nLike Comment\n\nTranscript Transcript\n\n##### Transcript\n\nHey, hi. Today we have with us Craig McKeon, who's at the back seat and we are just driving from Pune back to Mumbai. Craig was here with us from Boston and Boston is where I've lived for four years in the US So Craig incidentally, has been in marketing for the past 15 years and we also share our birthdays, so. There's a lot of common between Craig and me. So my question, Craig, to you is, I mean, you've been working in marketing for 15 years now, and what has changed when it comes to the past three years where AI has suddenly creeped up in everyone's life, includin",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D5605AQEafpmFZAxR6g/thumbnail-with-play-button-overlay-high/B56Z86rGqqH4C0-/0/1783395812558?e=2147483647&v=beta&t=1KzYvWn7tvRTuTBrZiPrv3uuKesVG72W-PvdsNh53bQ",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_iit-bombay-cmo-programme-in-marketing-leadership-activity-7477257565010317312-xXTv",
+      "title": "Elated to announce the launch of \"Executive Leadership for CMOs in the Age of AI\" - India's first executive programme integrating marketing strategy, data-driven growth, and Artificial Intelligence. | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_iit-bombay-cmo-programme-in-marketing-leadership-activity-7477257565010317312-xXTv",
+      "publishedDate": "2026-06-29T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# Elated to announce the launch of \"Executive Leadership for CMOs in the Age of AI\" - India's first executive programme integrating marketing strategy, data-driven growth, and Artificial Intelligence. | Mandar Marathe \u00b7 LinkedIn \u00b7 2026-06-29\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nElated to announce the launch of \"Executive Leadership for CMOs in the Age of AI\" - India's first executive programme integrating marketing strategy, data-driven growth, and Artificial Intelligence.\n\nDelivered by IIT Bombay - Shailesh J. Mehta School of Management Bombay, I'll be taking sessions on integrating Generative AI and agentic workflows into modern marketing operations.\n\nKnow more: https://lnkd.in/dihZjvNb\n\nThank you [Dinesh Sharma](https://linkedin.com/in/dinesh-sharma-68868a3), [Arti Kalro](https://linkedin.com/in/artikalro) for this wonderful opportunity to get back to IIT Bombay after a hiatus!\n\n#AIMarketing #MarketingAI #AgenticAIMarketing\n\n## Comments\n\n**[Sharadha Deekonda](https://linkedin.com/in/sharadha-deekonda)** \u00b7 2026-06-29\n> All the best !\n\n## Engagement\n\n- Reactions: 28"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_weve-raised-25m-in-series-b-funding-to-activity-7427776660524965888-Rp6O",
+      "title": "We\u2019ve raised $25M in Series B funding to scale our mission of embedding AI agents directly into bank and credit union workflows. | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_weve-raised-25m-in-series-b-funding-to-activity-7427776660524965888-Rp6O",
+      "publishedDate": "2026-02-12T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# We\u2019ve raised $25M in Series B funding to scale our mission of embedding AI agents directly into bank and credit union workflows. | Mandar Marathe \u00b7 LinkedIn \u00b7 2026-02-12\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nWe\u2019ve raised $25M in Series B funding to scale our mission of embedding AI agents directly into bank and credit union workflows.\n\n[Snehal Fulzele](https://linkedin.com/in/snehalfulzele) | [Gaurav Mehra](https://linkedin.com/in/gmehra) | [Anand Deshmukh](https://linkedin.com/in/anand-deshmukh-9559252a) | [Kyle Kneubuhl](https://linkedin.com/in/kyle-kneubuhl-211b825b) | [Jared Ingersoll](https://linkedin.com/in/jared-ingersoll-75374813a) | [Adriene McCance](https://linkedin.com/in/adriene-mccance) | [Nilesh Makhija](https://linkedin.com/in/nileshmakhijauptiq) | [Jay Richardson](https://linkedin.com/in/jayrichsf) | [Wiley Duncan](https://linkedin.com/in/wileyduncan) [Andrew Bertolina](https://linkedin.com/in/andrewbertolina) | [Hampton Vaughan](https://linkedin.com/in/hamptonvaughan) | [Armi (Armine) Movsesyan-Susanyan](https://linkedin.com/in/armiish) | Karyn Saltalamacchia | [Mitchell Jurius, CLFP](https://linkedin.com/in/mi",
+      "image": "https://media.licdn.com/dms/image/v2/D4D22AQGcZaS1XwLZ-g/feedshare-shrink_800/B4DZxTBG33HwAk-/0/1770919325542?e=2147483647&v=beta&t=MkuvHedGlkUdCZtlgfwhpPoKieIvaCY0_ZDXbPQXo7o"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_while-i-was-building-koppr-with-snehal-fulzele-activity-7432100329866883072-aFZU",
+      "title": "While I was building Koppr with Snehal Fulzele in 2018, AI had not arrived. There was no vibe coding. No LLM to build agents. | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_while-i-was-building-koppr-with-snehal-fulzele-activity-7432100329866883072-aFZU",
+      "publishedDate": "2026-02-24T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# While I was building Koppr with Snehal Fulzele in 2018, AI had not arrived. There was no vibe coding. No LLM to build agents. | Mandar Marathe \u00b7 LinkedIn \u00b7 2026-02-24\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nWhile I was building [Koppr](https://linkedin.com/company/koppr) with [Snehal Fulzele](https://linkedin.com/in/snehalfulzele) in 2018, AI had not arrived. There was no vibe coding. No LLM to build agents.\n\nThe world has changed post ChatGPT. What a time to build and accelerate for Fintech founders! #FinTechFounders #AIinFinance #StartupJourney #FounderCommunity\n\n**Reshared from [UPTIQ](https://linkedin.com/company/uptiqai):**\n> Building reliable AI for FinTech is hard.\n>\n> You need accuracy, explainability, and speed.\n>\n> Most founders get stuck on all three.\n>\n> [Snehal Fulzele](https://linkedin.com/in/snehalfulzele), CEO of Uptiq, just launched the Fintech Founders' Program for early-stage founders facing this exact problem.\n>\n> Instead of building AI infrastructure from scratch, you partner with a team that's spent 4 years solving the same problem.\n>\n> \u27a1\ufe0f Skip the infrastructure grind: Build on our QORE platform with AI com"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_aiinmarketing-contentmarketing-marketingai-activity-7455473768929386496-nUGv",
+      "title": "AI hasn\u2019t just sped up content creation. | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_aiinmarketing-contentmarketing-marketingai-activity-7455473768929386496-nUGv",
+      "publishedDate": "2026-04-30T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# AI hasn\u2019t just sped up content creation. | Mandar Marathe \u00b7 LinkedIn \u00b7 2026-04-30\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nAI hasn\u2019t just sped up content creation.\n\nIt\u2019s completely changed how our team at [UPTIQ](https://linkedin.com/company/uptiqai) thinks about scale.\n\nIn this video, [Prachi Prakash](https://linkedin.com/in/prakashprachi) breaks down the exact AI stack she uses \u2014 and it\u2019s not just one tool. It\u2019s a full workflow.\n\nHere\u2019s what stood out to me:\n\ud83d\udd28 Sales calls, PDFs, webinars \u2192 turned into insights using NotebookLM\n\ud83d\udd2a ChatGPT vs Claude \u2192 competing to sharpen prompts\n\u26cf\ufe0f Jasper, Copy.ai \u2192 scaling blogs, ads & emails\n\ud83e\ude9a Perplexity \u2192 fast research without the rabbit holes\n\nOne idea \u2192 repurposed into LinkedIn posts, emails, infographics, videos\n\nWhat used to take days\u2026 now happens in hours.\n\nBut the biggest shift isn\u2019t speed.\n\nIt\u2019s leverage.\n\nWe\u2019re no longer creating content from scratch every time.\n\nWe\u2019re maximizing one strong idea across every channel.\n\nThat\u2019s the real AI advantage.\n\nWatch [Prachi Prakash](https://linkedin.com/in/prakashprachi) walk through her exact workflow \u2014 and you\u2019ll probably rethink your own cont"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_in-just-a-few-hours-i-built-a-google-ads-activity-7470810768146436096-gR7Q",
+      "title": "In just a few hours, I built a Google Ads Campaign Manager that comes along with a knowledge base / store for UPTIQ using Claude Cowork. | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_in-just-a-few-hours-i-built-a-google-ads-activity-7470810768146436096-gR7Q",
+      "publishedDate": "2026-06-11T12:14:48.000Z",
+      "author": "Mandar Marathe",
+      "text": "Google Ads Campaign Manager for UPTIQ with Claude Cowork | Mandar Marathe posted on the topic | LinkedIn\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nhttps://in.linkedin.com/in/mandarmarathe\n\nMandar Marathe\n\nAI Marketer | Driving Growth for B2B SaaS & AI Brands via Claude Cowork / Code Agents & Skills, AEO & SEO, Content, Paid Media, ABM | VP Marketing at Uptiq.ai, Digital Marketing Faculty at IIT Bombay\n\n1mo\n\n- Report this post\n\nIn just a few hours, I built a Google Ads Campaign Manager that comes along with a knowledge base / store for UPTIQ using Claude Cowork. This a really a great time to be a marketer (especially if you are a nerd) ! The Google Ad Campaign manager comes with multiple skills and will evolve as we start using it. Some skills include: \ud83d\udcd6 Knowledge ingestion: Read through company decks, product documentation, web pages, 1 pagers / brochures and come up with Value prop, buyer personas, messaging, tone, competitive research. \u27a1\ufe0f Google Ads Campaign Structure generator: Maps Uptiq's ICP personas to a full Google Ads Search campaign tree: campaigns, ad groups, and keyword lists (broad/phrase/exact) per ad group. \ud83d\udcc2 RSA Copy Generator: Generates Google Ads Responsive Search Ad (RSA) copy for each ad group in campaign structure \ud83d\udd0d Search terms analyser: Pulls the Google Ads search term report via the connected connector and classifies every search term as: relevant, irr",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D4D05AQGTaojfQ2eeeg/thumbnail-with-play-button-overlay-high/B4DZ62mrRCKUC0-/0/1781180073307?e=2147483647&v=beta&t=OTfUyrhNKXw1ysVegama1YO7qEmFvJKgdUg_BIBds2Y",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_uptiqai-workbench-developer-edition-activity-7295834535005433857-dqwu",
+      "title": "Exciting News! We at UPTIQ are thrilled to announce the launch of Uptiq AI Workbench \u2013 Developer Edition! | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_uptiqai-workbench-developer-edition-activity-7295834535005433857-dqwu",
+      "publishedDate": "2025-02-13T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# Exciting News! We at UPTIQ are thrilled to announce the launch of Uptiq AI Workbench \u2013 Developer Edition! | Mandar Marathe \u00b7 LinkedIn \u00b7 2025-02-13\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nExciting News! We at [UPTIQ](https://linkedin.com/company/uptiqai) are thrilled to announce the launch of Uptiq AI Workbench \u2013 Developer Edition!\n\nThis cutting-edge platform empowers developers to build AI Agents and Agentic applications tailored for financial services, supporting 16+ Frontier LLMs, a fine-tuned model library for wealth, banking, lending, and capital markets, and a low-code/no-code workflow builder.\n\n\ud83d\ude80 Quick Create Agent\n\ud83d\ude80 Rapidly build AI agents with minimal setup.\n\ud83d\ude80 Monetization with Agent Store\n\ud83d\ude80 Market AI innovations to 300+ financial institutions already using the Uptiq Platform.\n\ud83d\ude80 RAG, Data Gateway, and Enterprise-Grade Security\n\ud83d\ude80 Transform financial workflows with powerful AI capabilities.\n\nAfter a successful beta with 100+ builders, we now have 1,000+ developers on our waitlist! Want in?\nSign up at: https://lnkd.in/gpD9db9y\n\n#AI\u00a0#MachineLearning\u00a0#FinancialServices\u00a0#Fintech\u00a0#Developers\u00a0#Innovation\n\n## Comments\n\n**[Ma"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/uptiqai_how-ai-agents-are-transforming-commercial-activity-7437805783297363968-MEq7",
+      "title": "Everyone is talking about Large Language Models (LLMs) in banking and lending. | UPTIQ",
+      "url": "https://www.linkedin.com/posts/uptiqai_how-ai-agents-are-transforming-commercial-activity-7437805783297363968-MEq7",
+      "publishedDate": "2026-03-12T00:00:00.000Z",
+      "author": "UPTIQ",
+      "text": "# Everyone is talking about Large Language Models (LLMs) in banking and lending. | UPTIQ \u00b7 LinkedIn \u00b7 2026-03-12\n\n**UPTIQ**: Uptiq is a Financial AI platform that brings intelligent agents, powerful orchestration, and purpose-built suites together to help teams grow, originate, and serve continuously. The platform provides solutions for banking, credit unions, wealth management, and equipment finance. UPTIQ has 150-200 employees (+130% YoY), founded in 2022. Headquartered in McKinney, Texas, United States, with an office in Austin. Its workforce is distributed across 7 countries (including India, United States, Ukraine, Spain, and Australia). Has $49M in total funding, with 4 prior funding rounds.\n\n---\n\nEveryone is talking about Large Language Models (LLMs) in banking and lending.\n\nBut here\u2019s an important distinction:\nAn LLM integration is not an AI agent.\n\nIn this episode of our \ud835\udc70\ud835\udc8f\ud835\udc94\ud835\udc8a\ud835\udc85\ud835\udc86 \ud835\udc7c\ud835\udc91\ud835\udc95\ud835\udc8a\ud835\udc92 video series, our host [Mandar Marathe](https://linkedin.com/in/mandarmarathe) chats with our Engineering Director [Utkarsh Ugale](https://linkedin.com/in/utkarshugale) who explains what it actually takes to build production-grade AI agents for commercial lending.\n\nIn this episode, we dive deep into:\n\u2022 How AI agents support underwriting workflows\n\u2022 Why explainability and compliance are non-negotiable in lending\n\u2022 How Uptiq\u2019s QORE platform helps teams build secure agents faster\n\nWatch now!\n\nLearn more about Uptiq's commercial lending suite: https://lnkd.in/gPjRDzJM\n\n#AI #Agents"
+    }
+  ],
+  "searchTime": 1105.3,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.19,
+  "_request": {
+    "query": "\"Mandar Marathe\" UPTIQ OR Cognizant OR fintech marketing background webinar interview India",
+    "type": "auto",
+    "numResults": 10,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

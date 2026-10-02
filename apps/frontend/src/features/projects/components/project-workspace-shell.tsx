@@ -16,6 +16,7 @@ import styles from "./project-flow.module.css";
 
 export function ProjectWorkspaceShell({
   artifacts,
+  canEditDocuments = false,
   documentIds,
   initial,
   projectId,
@@ -25,6 +26,7 @@ export function ProjectWorkspaceShell({
    * for the artifact rail. Absent (the legacy /projects/{id} absorber) → the
    * gallery keeps its honest empty state. */
   artifacts?: ProjectArtifact[];
+  canEditDocuments?: boolean;
   /** Artifact id → design-document id over the whole feed; the canvas mount
    * (next slice) resolves the active tab's document through it. */
   documentIds?: Record<string, string>;
@@ -55,6 +57,7 @@ export function ProjectWorkspaceShell({
   return (
     <LoadedProjectWorkspace
       artifacts={artifacts}
+      canEditDocuments={canEditDocuments}
       documentIds={documentIds}
       initial={initial}
       key={workspaceRemountKey(loaded.workspace.id, initial)}
@@ -65,11 +68,13 @@ export function ProjectWorkspaceShell({
 
 function LoadedProjectWorkspace({
   artifacts,
+  canEditDocuments = false,
   documentIds,
   initial,
   workspace,
 }: {
   artifacts?: ProjectArtifact[];
+  canEditDocuments?: boolean;
   documentIds?: Record<string, string>;
   initial: ProjectWorkspaceInitialState;
   workspace: ProjectWorkspace;
@@ -81,12 +86,14 @@ function LoadedProjectWorkspace({
   const chat = useProjectChatController({
     projectId: workspace.id,
     initialThreadId: initial.threadId,
+    projectTitle: workspace.title,
   });
   // Phase C (C-3): the designed chat shell is the workspace's view layer —
   // ChatSurface renders the chat pane + artifact rail around production chat.
   return (
     <ChatSurface
       artifacts={artifacts}
+      canEditDocuments={canEditDocuments}
       chat={chat}
       controller={controller}
       documentIds={documentIds}

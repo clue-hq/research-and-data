@@ -14,7 +14,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-HTML_MAX_BYTES = 2 * 1024 * 1024
+# Match the page transport budget. A rendered marketing page can have more than
+# 2 MiB of head markup before its first body image (observed on AWS). Capture
+# preserves the entire document within this bound; it must never save a prefix.
+HTML_MAX_BYTES = 5 * 1024 * 1024
 
 
 class Stylesheet(BaseModel):

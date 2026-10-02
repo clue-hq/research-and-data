@@ -22,7 +22,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Annotated
 
+from annotated_types import Ge, Le
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from clue_core.enums import (
@@ -49,8 +51,9 @@ from clue_core.primitives import (
     new_claim_id,
 )
 
-# Extraction methods that must cite where the value came from. ``human`` and ``crm_import``
-# may carry an internal/no URL; web/synthesis sources must point at a source_url.
+# Extraction methods that must cite where the value came from to be *promotable* (ARV2 D1 moved
+# this from construction to :func:`can_be_promoted`). ``human`` and ``crm_import`` may carry an
+# internal/no URL; a web/synthesis claim without a source_url exists but stays ``UNVERIFIED``.
 _URL_REQUIRED_METHODS = frozenset(
     {ExtractionMethod.API, ExtractionMethod.SCRAPE, ExtractionMethod.LLM_SYNTHESIS}
 )
@@ -93,7 +96,11 @@ class Claim(BaseModel):
 
     Construction enforces the structural invariants; it does **not** require an
     ``evidence_span`` for tier-4 (a span-less tier-4 claim is allowed to *exist* as
-    ``UNVERIFIED`` — it simply cannot be promoted; see :func:`can_be_promoted`).
+    ``UNVERIFIED`` — it simply cannot be promoted; see :func:`can_be_promoted`). Since ARV2 D1
+    (master plan §2) it does **not** require a ``source_url`` for api/scrape/synthesis claims
+    either — such a claim exists ``UNVERIFIED`` with a ``source_missing`` write marker and cannot
+    be promoted, so the lenient write gate can keep the honest, uncitable observation instead of
+    throwing it away.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -154,6 +161,16 @@ class Claim(BaseModel):
     product_id: str | None = None
     # --- promotion state (additive; driven by M9, not a conventions §4 field) ---
     verification_status: VerificationStatus = VerificationStatus.UNVERIFIED
+    # --- ARV2 D1 (master plan §4) ---
+    # 1 = active buying intent, 2 = qualifying fact, 3 = context. Orders display items; never gates.
+    signal_priority: Annotated[int, Ge(1), Le(3)] = 3
+    # Appropriateness, distinct from accuracy: False confines the claim to restricted display
+    # sections and bars it from outreach copy.
+    outreach_safe: bool = True
+    # Lenient-write annotations stamped at insert (schema_valid, source_missing, proposed_field,
+    # identity_binding_defaulted, use_class_defaulted, pipe_joined_key, evidence_verbatim,
+    # unevidenced, entailment). None = nothing to note.
+    write_markers: dict[str, JsonValue] | None = None
 
     @model_validator(mode="after")
     def _check_provenance(self) -> Claim:
@@ -198,14 +215,6 @@ class Claim(BaseModel):
                 "source_tier 4 and extraction_method 'llm_synthesis' must agree "
                 f"(got tier={self.source_tier}, method={self.extraction_method})"
             )
-
-        # Web/synthesis claims must cite a source.
-        if (
-            self.claim_flavor is not ClaimFlavor.DERIVED
-            and self.extraction_method in _URL_REQUIRED_METHODS
-            and not self.source_url
-        ):
-            raise ValueError(f"extraction_method {self.extraction_method} requires a source_url")
 
         # Provenance-flavor coherence (staged-flow §9).
         if self.claim_flavor is ClaimFlavor.DISCOVERY:
@@ -271,7 +280,10 @@ def can_be_promoted(claim: Claim) -> bool:
     * a tier-4 (LLM-synthesized) claim with no ``evidence_span`` can never be promoted —
       this is the schema-level kill switch for fabricated facts (substrate §1/§6);
     * a contact claim with only a ``WEAK`` identity binding can never be promoted — better
-      an empty hook than someone else's fact (staged-flow §6).
+      an empty hook than someone else's fact (staged-flow §6);
+    * an ``api``/``scrape``/``llm_synthesis`` claim with no ``source_url`` can never be promoted —
+      a web/synthesis fact nobody can go and check stays ``UNVERIFIED`` (ARV2 D1, master plan §2;
+      until then this was a *construction* rule, which the lenient write gate cannot use).
 
     Returning ``True`` means "eligible", not "verified": corroboration / the faithfulness
     judge (M9) still decide the actual transition.
@@ -284,7 +296,12 @@ def can_be_promoted(claim: Claim) -> bool:
     weakly_bound_contact = (
         claim.entity_type is EntityType.CONTACT and claim.identity_binding is IdentityBinding.WEAK
     )
-    return not (tier4_without_span or weakly_bound_contact)
+    url_required_but_missing = (
+        claim.claim_flavor is not ClaimFlavor.DERIVED
+        and claim.extraction_method in _URL_REQUIRED_METHODS
+        and not claim.source_url
+    )
+    return not (tier4_without_span or weakly_bound_contact or url_required_but_missing)
 
 
 def reference_time(claim: Claim) -> datetime:

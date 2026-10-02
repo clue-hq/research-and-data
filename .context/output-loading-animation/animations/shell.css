@@ -1,0 +1,62 @@
+/* Shared shell — mimics the Clue output screen from the 2026-09-04 screenshot.
+   Left: chat pane. Right: output pane with tabs, toolbar, centred artifact card.
+   Every option page only adds what goes INSIDE .veil (the loading overlay). */
+@font-face{font-family:"Satoshi";src:url("../fonts/satoshi-regular.woff2") format("woff2");font-weight:400}
+@font-face{font-family:"Satoshi";src:url("../fonts/satoshi-medium.woff2") format("woff2");font-weight:500}
+:root{
+  --ink:#161814; --olive-950:#33372E; --olive-800:#44483F; --olive-900:#646B5C;
+  --sage-600:#A6AD9D; --sage-500:#BCC4B3; --brand-200:#E4EADC; --brand-100:#EEF2E9; --brand-50:#F8FAF6;
+  --cream:#F8F5DC; --teal-700:#5C7A82; --teal-900:#4E6B73; --teal-100:#EAF3F5;
+  --page:#F7F8F8; --line:#E6E8E6; --text:#1F211D; --muted:#7A7F75;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font-family:"Satoshi",Arial,sans-serif;color:var(--text);background:#fff;-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:480px 1fr;height:100vh;min-height:640px}
+.chat{border-right:1px solid var(--line);display:flex;flex-direction:column;background:#fff}
+.chat header{height:54px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 24px;font-size:15px;font-weight:500}
+.chat header .dots,.toolbar .dots{color:#9AA097;letter-spacing:1px}
+.thread{flex:1;padding:24px;display:flex;flex-direction:column;gap:14px;font-size:14px;line-height:1.5}
+.msg{max-width:88%;padding:10px 14px;border-radius:14px}
+.msg.user{align-self:flex-end;background:var(--brand-100);color:var(--olive-950)}
+.msg.agent{align-self:flex-start;color:var(--text)}
+.msg.agent .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:8px}
+.msg.agent .pill i{width:6px;height:6px;border-radius:50%;background:var(--sage-600);animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:.3}50%{opacity:1}}
+.composer{margin:20px;border:1px solid var(--line);border-radius:14px;height:128px;display:flex;flex-direction:column;justify-content:flex-end;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.composer .row{display:flex;align-items:center;gap:14px;font-size:13px;color:var(--muted)}
+.spacer{flex:1}
+.composer .send{width:44px;height:30px;border-radius:15px;background:#E9EBE8}
+.output{display:flex;flex-direction:column;background:var(--page);min-width:0}
+.tabs{height:54px;display:flex;align-items:center;gap:6px;padding:0 20px;background:#fff;border-bottom:1px solid var(--line);font-size:13.5px;color:#5D625A}
+.tabs span{padding:7px 12px;border-radius:8px}
+.tabs span.active{background:#fff;border:1px solid var(--line);color:var(--text);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.toolbar{height:56px;display:flex;align-items:center;gap:12px;padding:0 20px;background:#fff;border-bottom:1px solid var(--line);font-size:13.5px;font-weight:500}
+.toolbar .zoom{color:#5D625A;font-weight:400;margin-right:8px}
+.toolbar button{font:inherit;font-weight:500;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;color:var(--text)}
+.toolbar button.dark{background:var(--olive-950);color:#fff;border-color:var(--olive-950)}
+.canvas{flex:1;display:grid;place-items:center;padding:40px;position:relative;overflow:hidden}
+.card{position:relative;width:min(620px,80vh);aspect-ratio:1;background:#fff;border:1px solid var(--line);border-radius:2px;overflow:hidden}
+/* --- the finished artifact (a LinkedIn single-image ad mock), revealed on Finish --- */
+.artifact{position:absolute;inset:0;padding:36px;display:flex;flex-direction:column;gap:18px;opacity:0;filter:blur(16px) saturate(.6);transform:scale(.985);transition:opacity .9s cubic-bezier(.2,.7,.2,1),filter 1.1s cubic-bezier(.2,.7,.2,1),transform 1.1s cubic-bezier(.2,.7,.2,1)}
+.artifact .who{display:flex;align-items:center;gap:12px;font-size:14px}
+.artifact .who .av{width:40px;height:40px;border-radius:50%;background:var(--olive-950);display:grid;place-items:center}
+.artifact .who .av svg{width:20px}
+.artifact .who small{display:block;color:var(--muted);font-size:12px}
+.artifact .copy{font-size:16px;line-height:1.5;color:var(--text)}
+.artifact .hero{flex:1;border-radius:6px;background:linear-gradient(135deg,var(--olive-950),var(--olive-800) 60%,var(--olive-900));display:flex;align-items:flex-end;padding:28px;color:var(--cream);font-size:30px;line-height:1.15;font-weight:500;letter-spacing:-.01em}
+.artifact .cta{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:6px;padding:12px 14px;font-size:14px}
+.artifact .cta b{font-weight:500}
+.artifact .cta span{border:1.5px solid var(--olive-800);border-radius:999px;padding:6px 14px;color:var(--olive-800);font-weight:500}
+body.done .artifact{opacity:1;filter:blur(0) saturate(1);transform:none}
+/* --- the loading veil sits above the artifact --- */
+.veil{position:absolute;inset:0;display:grid;place-items:center;transition:opacity .5s ease .25s}
+body.done .veil{opacity:0;pointer-events:none}
+.mark path{fill:currentColor}
+/* shimmering status label */
+.status{margin-top:18px;font-size:13.5px;font-weight:500;color:var(--olive-900);background:linear-gradient(90deg,var(--olive-900) 0 40%,var(--sage-500) 50%,var(--olive-900) 60% 100%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:shimmer 2.2s linear infinite}
+@keyframes shimmer{from{background-position:120% 0}to{background-position:-120% 0}}
+/* demo controls (not part of the product UI) */
+.controls{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:flex;gap:8px;background:var(--ink);padding:8px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:10}
+.controls button{font:inherit;font-size:13px;font-weight:500;color:var(--cream);background:transparent;border:1px solid rgba(248,245,220,.25);border-radius:8px;padding:8px 14px;cursor:pointer}
+.controls button:hover{background:rgba(248,245,220,.1)}
+.controls .label{color:var(--sage-600);font-size:12px;align-self:center;padding:0 8px 0 6px}

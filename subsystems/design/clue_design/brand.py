@@ -299,6 +299,33 @@ async def latest_approved_brand_kit_ref(
     return {"id": str(row.brand_kit_id), "version": int(row.version)}
 
 
+async def approved_brand_mark_sha256(conn: AsyncConnection, *, workspace_id: str) -> str | None:
+    """The digest of the workspace's brand mark (``assets.logos.mark``, first variant), or None.
+
+    The mark is what website ingestion's logo ladder took from the client's own site — its
+    manifest / apple-touch / favicon icon — so it is the page origin's default ``/favicon.ico``
+    when no admin uploaded one. Same unambiguity rule as :func:`latest_approved_brand_kit_ref`
+    (one brand, its newest approved kit): a multi-brand workspace gets None, never a guess.
+    """
+    ref = await latest_approved_brand_kit_ref(conn, workspace_id=workspace_id)
+    if ref is None:
+        return None
+    row = (
+        await conn.execute(
+            text(
+                "SELECT asset.digest_value FROM design_brand_kit AS kit"
+                " JOIN design_asset AS asset ON asset.workspace_id = kit.workspace_id"
+                " AND asset.asset_id ="
+                " kit.brand_kit_json #>> '{assets,logos,mark,variants,0,asset_id}'"
+                " AND asset.digest_algorithm = 'sha256'"
+                " WHERE kit.workspace_id = :w AND kit.brand_kit_id = :b AND kit.version = :v"
+            ),
+            {"w": workspace_id, "b": ref["id"], "v": ref["version"]},
+        )
+    ).first()
+    return str(row[0]) if row is not None and row[0] else None
+
+
 async def update_brand_kit_approval(
     conn: AsyncConnection, *, workspace_id: str, brand_kit_id: str, approval_status: str
 ) -> JsonObject:

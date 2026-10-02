@@ -199,7 +199,10 @@ def _no_live_http(monkeypatch: pytest.MonkeyPatch) -> None:
             "lane is an injected seam and one of them was missed"
         )
 
-    for name in ("get", "post", "request", "stream"):
+    # ``Client`` is on the list since lane 3 slice 5: the lane's paid calls go through
+    # ``clue_spend.HttpxTransport``, which builds an ``httpx.Client`` rather than calling the
+    # module-level ``post``. Without it the guard would pass while the lane really dialled out.
+    for name in ("get", "post", "request", "stream", "Client", "AsyncClient"):
         monkeypatch.setattr(httpx, name, refuse, raising=False)
 
 
@@ -442,23 +445,81 @@ def test_an_advertiser_mismatch_keeps_nothing_and_names_the_conflict(
     assert lane["card"] is None
 
 
+CONDUIT_PAGE_ID = "96574094"
+
+
+def _conduit_library() -> _ApolloLibrary:
+    """Conduit's real page shape (2026-09-29): one executive's promoted posts outnumber the
+    company's own ads. Both are paid for by Conduit's page; only the company's go to the library."""
+    executive = tuple(
+        _ad(f"5100{n}", "Cole Rubin", f"https://cdn.example/cole-{n}.jpg") for n in range(5)
+    )
+    company = tuple(
+        _ad(f"5200{n}", "Conduit", f"https://cdn.example/conduit-{n}.jpg") for n in range(2)
+    )
+    return _ApolloLibrary(ads_by_page={CONDUIT_PAGE_ID: executive + company})
+
+
+def _conduit_identity() -> _StubIdentityResolver:
+    return _StubIdentityResolver(
+        CompanyIdentity(
+            domain="conduit.ai",
+            name="conduit",
+            linkedin_id=CONDUIT_PAGE_ID,
+            linkedin_url="linkedin.com/company/useconduitai",
+            provider="stub-identity",
+        )
+    )
+
+
+def test_left_to_guess_the_filter_takes_the_executive_for_the_company() -> None:
+    """RED CASE, proving the stub reproduces the live failure: with no name, the most frequent
+    advertiser wins, so the executive is kept and the company's own ads are dropped."""
+    from lumen_ingestion.ad_library.harvest import select_creatives
+
+    pages = [_page(CONDUIT_PAGE_ID, _conduit_library()._ads_by_page[CONDUIT_PAGE_ID])]
+    selection = select_creatives(pages)
+
+    assert selection.advertiser_name == "Cole Rubin"
+    assert {ad.advertiser_name for ad in selection.kept} == {"Cole Rubin"}
+
+
+def test_the_resolved_name_keeps_the_companys_ads_over_a_louder_executive(
+    tmp_path: Path, lane_on: None
+) -> None:
+    """THE FIX. The filter is told the resolved name, so the company's ads are kept, the
+    executive's promoted posts are dropped as thought-leader ads, and the check passes."""
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    job = _run(
+        client,
+        tmp_path,
+        request_body=_body(brand_kit_id, company_domain="conduit.ai"),
+        provider=_conduit_library(),
+        identity_resolver=_conduit_identity(),
+    )
+
+    harvest = job["evidence"]["steps"]["harvest"]
+    assert harvest["advertiser_name"] == "conduit"
+    assert harvest["kept"] == 2
+    assert harvest["dropped"] == {"thought_leader": 5}
+    assert harvest["advertiser_check"]["status"] == "ok"
+    assert job["outcome"]["status"] != "advertiser_mismatch"
+    creatives = client.get(f"/brand-ad-assets/{brand_kit_id}").json()["creatives"]
+    assert {c["advertiser_name"] for c in creatives} == {"Conduit"}
+
+
 def test_on_the_fallback_path_a_named_brand_keeps_nothing_from_a_strangers_page(
     tmp_path: Path, lane_on: None
 ) -> None:
-    """A stranger's page yields nothing — but by the FILTER, not by the cross-check.
+    """A stranger's page yields nothing, and says WHY: the dropped names reach the cross-check.
 
-    This pins a real interaction between the two mechanisms, and it is worth stating plainly
-    because the statuses differ. When the request supplies `advertiser_name`, the harvest's
-    existing thought-leader rule already drops every ad not advertised by that name, so the
-    cross-check — which by design compares the ads that were KEPT — is handed an empty list and
-    correctly reports nothing to disagree about. The lane therefore lands on `empty` rather than
-    `advertiser_mismatch`.
-
-    Custody-wise the two are identical and the guarantee holds: not one stranger's creative is
-    kept. Diagnostically `empty` is the weaker of the two words, and the mitigation is the part
-    R3-A actually asked for — the page that was checked is now named in the summary, so "we
-    looked in the right place and found nothing" and "we looked at the wrong page" stop being
-    the same sentence.
+    The filter drops every ad not advertised by the brand's name, so nothing is kept. Until
+    2026-09-30 the cross-check compared only the KEPT ads, was handed an empty list, and the lane
+    landed on the weaker word `empty`. It now checks the names the filter dropped for not being
+    the brand's when nothing was kept, so a stranger's page reads as `advertiser_mismatch` and the
+    stranger is named. Custody is unchanged: not one stranger's creative is kept.
     """
     client = _client(tmp_path)
     brand_kit_id = _seed_brand_kit(client)
@@ -479,10 +540,11 @@ def test_on_the_fallback_path_a_named_brand_keeps_nothing_from_a_strangers_page(
     )
 
     harvest = job["evidence"]["steps"]["harvest"]
-    assert harvest["status"] == "empty"
+    assert harvest["status"] == "advertiser_mismatch"
     assert harvest["kept"] == 0
-    assert harvest["dropped"] == {"thought_leader": 1}, "the filter did the work here"
-    assert harvest["advertiser_check"]["status"] == "ok", "nothing kept, nothing to disagree"
+    assert harvest["dropped"] == {"thought_leader": 1}, "the filter did the dropping"
+    assert harvest["advertiser_check"]["status"] == "mismatch"
+    assert harvest["advertiser_check"]["observed"] == ["Some Other Company"]
 
     assert job["outcome"]["advertiser_verified"] is False
     assert "UNVERIFIED" in job["outcome"]["summary"]

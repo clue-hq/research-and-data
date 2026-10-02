@@ -1,0 +1,71 @@
+{
+ "id": "gen-1788504836-qNqlxXLBbTQaXQYMlHOZ",
+ "object": "chat.completion",
+ "created": 1788504836,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"contact_insights\",\"empty\":false,\"items\":[{\"h2\":\"Vari holds an Account-Based Go-to-Market certification from Demandbase\",\"body\":[{\"text\":\"Vari Kaur holds an Account-Based Go-to-Market (GTM) Certification from Demandbase and an ABM Advanced Certification. [zaf-033]\",\"claimIds\":[\"zaf-033\"]},{\"text\":\"What it means for us: lead with Clue's account-based workflow and its fit with growth marketing execution. [zaf-033]\",\"claimIds\":[\"zaf-033\"]}],\"contactRefs\":[{\"name\":\"Vari Kaur\"}],\"priority\":1},{\"h2\":\"Nick's article claims 96% of vulnerabilities did not require patching\",\"body\":[{\"text\":\"Nick Fisher's LinkedIn article says, \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\" [zaf-159]\",\"claimIds\":[\"zaf-159\"]},{\"text\":\"What it means for us: anchor outreach in risk exposure and concrete proof-of-value outcomes rather than more patching. [zaf-159]\",\"claimIds\":[\"zaf-159\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Sanaz identifies operator capacity as the biggest cybersecurity pain\",\"body\":[{\"text\":\"Sanaz Yashar said, \\\"And the biggest pain of cybersecurity when you come from the offensive war to the defensive war, the biggest pain is we don't have enough operators to operate all the different vulnerabilities.\\\" [zaf-095]\",\"claimIds\":[\"zaf-095\"]},{\"text\":\"What it means for us: connect Clue's value to reducing the workload of managing vulnerabilities. [zaf-095]\",\"claimIds\":[\"zaf-095\"]}],\"contactRefs\":[{\"name\":\"Sanaz Yashar\"}],\"priority\":1},{\"h2\":\"Ben moved from VP of Research at Armis to Co-Founder & CTO at Zafran Security\",\"body\":[{\"text\":\"Ben Seri is Co-Founder & CTO at Zafran Security and previously held the title VP of Research at Armis. [zaf-063, zaf-069]\",\"claimIds\":[\"zaf-063\",\"zaf-069\"]},{\"text\":\"What it means for us: prepare a technically specific case that can stand up to research-level evaluation. [zaf-064, zaf-069]\",\"claimIds\":[\"zaf-064\",\"zaf-069\"]}],\"contactRefs\":[{\"name\":\"Ben Seri\"}],\"priority\":2},{\"h2\":\"Tom brings enterprise-sales experience from eight years at Okta\",\"body\":[{\"text\":\"Tom Anthony is SVP, Global Sales at Zafran Security and previously held four sales roles at Okta from 2014 to 2022. [zaf-072, zaf-078]\",\"claimIds\":[\"zaf-072\",\"zaf-078\"]},{\"text\":\"What it means for us: frame outreach around sales-team adoption and support for global go-to-market execution. [zaf-073, zaf-078]\",\"claimIds\":[\"zaf-073\",\"zaf-078\"]}],\"contactRefs\":[{\"name\":\"Tom Anthony\"}],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": "**Clarifying sentence structure**\n\nI'm thinking about the final sentence and whether it should end with a colon. It feels like \"What it means for us:\" could be formatted differently to ensure it's clear. Standard UI seems to expect a concluding phrase, so I wonder if I should keep \"What it means for us:\" as a label without insights. Maybe the body needs to end properly with a label and a colon for coherence. Let's figure out the best way to phrase this!",
+    "reasoning_details": [
+     {
+      "type": "reasoning.summary",
+      "summary": "**Clarifying sentence structure**\n\nI'm thinking about the final sentence and whether it should end with a colon. It feels like \"What it means for us:\" could be formatted differently to ensure it's clear. Standard UI seems to expect a concluding phrase, so I wonder if I should keep \"What it means for us:\" as a label without insights. Maybe the body needs to end properly with a label and a colon for coherence. Let's figure out the best way to phrase this!",
+      "format": "openai-responses-v1",
+      "index": 0
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmsKzXYT2a8C_mqflu8srusimGa0gU9IMi01i8NW_orqQHsEV8YQNFXEaqRt0pJ80wUflM7YrU4h9mQ5cdIQ_BhUv4HJEZ14fVgg4NMfuQbONPjofnxNY5S3weuuCI2ODH0sAbpipmIZPHc8OT0lg7W9al10Vu6mjHtNPx4rbriDrE-oQ5GjKKAV3dbi96CXv_gFwB3segQbkgqsOQIsi0qsYYh_hHrXDGT0xuCjQ9KRB4KWN6meCdGISNedDV-20k4KwiU0ddDkRwPn7tntqrXaxu1XWkk7ThCbgdvL3IugsJUFHIhD6bmItBWGewLBSNMNpNqHJgmsakqU0QxtaQpLYsA-8YUMa9B_tyLzOEZlfYFFvKvB2TZ773en9Q14bwVyPxSZB-DsP3n_VWG4JbusmqUukAieJMpd3I6hcd8zY3cLXqkBMrbqTblnI3DP_jHTQmJX2pLbnAU-voXJ4VB0UBPTwHdDu3ymhVVuMHsqvorRitBBGZmmW_DvE3AkfXI0MrxIESdKoxQEZhoEl56QlEZumFs7onT76dsN5g8tKdEcnS852asJElMAw297Uab9GJ_4TkznoWZPev0dXfwIk4k9AVy5O5cqp4T1oGTiimGRzBQdJEblMBE80dkdBrORm0He_WoczCPq8bOQ6P10PJKwyZ1Qb56FzEIKe9DGzYsBQOnliu7elfDE9MZo4PaSetOO_5oTpApUsmkJlMXwcqukzehjgh2gUL_KXX9Li6CMUNpoW2bH23A9tbHfMmhoTvUgRCR_9K8azsHCPZkltRJybbhXb8mB1yWfUV9sUbDozbk03hf2sNpwZGk0-8_0CkrSsP2s3-B0pHNIY_-zNs7KhPZvTAq01f9FymA5Va0261aF4Dc_tPOsQpyvW9YOosMT_FMjx6cce2GxyBi99ZF4zvtBpsVI2Am8shnOehvMuLCnJFFWZclVtNJXMOnLWV8ODSKSgCTQT2PYgpai6FjLjxg7dBuxci0ppZkOGQUlyAtxzoLnIjmalJmspaABABl60XB5sU0zzdugGnAFCydnvrKopwvCAnL0dIBvpCdrkL8zjowzShovGylc-EXVxLmmxvcZqQbfZqt5Z4KIL0rSSQ4ZHYO7TI63-6tc-FPA3WVQS2twaU9NFUtmCsZ761s6ZRnkSD4nRUUjeibvnVPyVtqf7UD8eeSYJXLWI4_RbU-RaG4y9ddwRo2uqwsvu9-eN2H5ZIBgKLmHt8prB9y8Et7cUaceHU0EeK9lwNehdQKfrX0RL0R2c4j2Sxct4zF4o9sHRRQdJzz1LxMFXskW36dmfqGmGM_paV_xX8O-5g5lyL0IJb3yHIK8fl493fwFQByBoFw_oodN7TK0kWgPnFRQQdxO3tbpqKshc7g5xblul9iEb-lCq9yx0XNDPQXZ6gy2n6aj1_0qjmnQcvFPmSYoeITtkVp0dz9sv3zpupvtkKCy8x-8EAnrRZwr5w-NofaVBXdSV2dn9oDC5BPLIl5tdNck-zoQcZlUfsS90VE8e1-_r0qc8cw35pDxmuCsuVPM6d3KtYyt8A6KUOEZH8-ceMvV9ck-zlfRe-PGCg3eV93614wKpDotCLK4bZuulDdsp7IiqjWcQkk1P308M2UyJ2kqoQSAbs9zg-FECi0_uTashZiqs98ribY9T9xTztFyVteYkFgUcjBhvgC8IiEuOkNE7ALKe_uJrhPQrofxPiytncKeIQsAYBw5q9sFfKagKjBeKt_SWUYXzn9-Vx1SgE6CqtOm46-4Ci_5E_Mm5BcLk0Db4s4rL1J0u_vQ_66HykZoOG_WZfSd72bDoYT6AfHh34xIQR6vrrS9OyjGE0QxR79wZU1HOO4M4-Fn86Qlzdvm7mqphLyGNduaROKqP6qdx8Sa3rLAc7DO-u8CNYCH1vN-EuJSJPLL8E_6GeIkM8kRzjKoS_rMfzvpGc-BdZ3c1NAOQb0WY9zXHS1poFz3981SxQyN83nw9kbH0ovwMj-AvQJ4GiPYp5R-KnDbIvuWOKvtLVzuWVT_0hOonTr0wR1bHeKSc6V3mdBY2QspxFybaBIJsuRz12HWTwS7plnUV8gsRzK4ggbboDXWsk5ubFg0_r-ZiQumao8sTpPPAkdcUOWY-JEQYdMrqO97bCVC8RkffGdfUnI6G2NqBRnveo0IzOLcVidqpuk4C7iXpSWIDGLyGfkVmN6dapz_vpLHREw0BN7KYXRJuTU1dQd_rmln4kzOgDW8BxwsmvEe8Fi723JHhHbOvp_KeKHAR4nlxlRsigRd0lQdhp-ZI5lV4bnQIjJ_vQd3hr1AatK4Ac2LPWNefPtIPqCjJPdqoiTorPPYBh_l3Lg5zoLLpUzDDptXj838NDuGiKUmSzmnKxSnQbPM9WYzhRAbEhwl6vQzPb2DOZhPA9jUC4WISLCKuvRKGHe1MBARzM-wfyHsISJm3ll15kF8lmX3k2m5jGPTrlObtW6BPk18I-l4dp9HpqwQyOeZ-ZAzI4Vcj0cN0fLUqatKklXJL_KrZMmRM0HmBFvENbQhzzDgswcRvU71RSPme7xGyb_I5AmJxVDGV7GcWFf6npzgE_NazJjMRrFJVfHOgON_O-IeUSk2xa20rg-7zE2LPbAD_t2EF9xWc-ZcF1Oz11WV76M8bNtlH1yb-I2F1JZys30ONVkBXrOwQKtqxV2paNff6ktzU6fYYBM-7hwqVXDFbCIl5Z2VFk84Tn2MX5fs7WV2lGwZ72Gp9JRKmc3s-3HnSTSRZ904Eg-iX1ImXxbdzU5rS_Sbu-tiuwvtXWbt1SfZHqTS1_fuuXpg8flgrBkrP4FL6UvLVP8jmw6euYnS3b6vdmJENV7cz4FwJE6sacyzTnntObWRR3AZGF1jS_hu1gElxQDK3SJK2dQvY3EskbuNf4UbTWbP6Ajy9kCrAuUKm494R9Ou3PqyDi4_N8HVIjrQ-3vIualNcCPSBwxDwxhReziapOGcGWKLjDrTReSW_I6r_c2OHiP9XiTe_UvVUCrMAMOTY_uWJzCzXfr-44V6Txz5SD7Cn2NqTmAVqv9__7Id09yhhDSjMznKIdTe6QNi5c1z1ygz_IPqpVqcPW6kLqKAOSj0AVTPlDE88DyCxHKbO86WwUUeRiWUkIeeqRXJuvi503E264e6mh8UszgZS7qFeuvatMZd2lbVuL7GMefU8T1viSUIGSnFIWrlzaNa8cyvQaQl_dcnKrPH_J2KcKqjBrPvbskSRZRqeCvvTjy1pH1T-0II1ztXMQzxooMexrit4fQ33SiWS9eOOsRIkNehRXGH1Sq1Z5MSWS09gT3l2_1fExaanrAX68JMzqaqTHnZvh3TVJYmsR-XaPyBeEzlc0-gTEu2YMjIENvofgmBo8hmJsQoJ9QCydxRmutSDATmIwdzqM9f-rz7HLlWm6TQKN2Dc1F35fuIfLYSmFJejB5lXN2oO5IBiqJsOUColyWTbIqlYaVA3HTiKldOYlYdGQW4qcdwrCXzSaQGOq2kOLUFKlH1zB_2ZWJ7Fx4Zk60dNWKGNx_sWGkpGnONhNHc6vMPK2U_CMfdJZsHcriDErb-F_hoqMyVTR5ln2UcQsOFJ1C9rbUqhbGu9X-MQVzLmfvUDJPnYGJ22Wnu7EsKiT0U7tNRwsXrOmIB-Eh9aCYVXVVvWUBvBFnp-ZWZLpPrCZpnzpnP5CpkyfY8aqXH-NmCmS4O0zIYiH-W3jaNSPY74Hugab1kS8VFnJ2d0x-v1P5turs9u9uy1zm7Wg55ByTpxo7j-eHtdpxHNTUqo6Ym0ji50o-8xJxKo_wL0EgXa4M8TS6s3fej_n44sYRASKGnjAAqZvmm7ty8KeYwdhmDxIGHUANpM_2_ArXFMHf9FE8s9lEb7Tmvy8aSTxL7d6nnit_sP4BAc8B0_GSKFggFqr-goTaK_l4Rx3lFkvBfMN4UxbJejHSmkmtAoTI9mW3OrYuvLiyvRQDCkl9bSx1pLpnjGSGEBAa_f3lfYBkRvumVGZYQo2-IlKg0K4QSo3H4NfS_G1n8yxNjxAll8dwvSuflAST6kl3GYnCmZEXkNkkWm0kIlNihUU6leT1xmCQJRrxeWZjy7ZsuTVTjMh9TW9OH39N2Hs5ww0U4GN_gvCrZC_6u50NIIE9S7BFD1WAkn_lCYQXCzdYaaIJTRj510-Z0t0vQSmirDnve1yxQToE50IyUgaE2tm731iKWWcA552q94h6BtGHuRUmoiJqWMJ9xoPPgdZwcbIquSeZLyznQxObf3XpsndCWZpgLpnm1nKZYISQPvqFhKyKoTwGBSSj7PTs7k77nRuFPiVE1Q5FC59SKQhe6LjDhZq7VsN--QXI1TFhckCWynaMMmmtNBxcR6JmEp_f2p1AbFr85Imj1W9Mcx7IQoy0ooQkha0BbIV9fZRPJGi8IlYqzuY8PITENRrF7iu87XHtCwx0kPFqH5jDSyFcpnOT51l_rVtH65VCub8Bxzb4su5Qvz7y4Xfd-v8WlCRdxwmpBmwtmJaXnkaCnyT6qlaPgmhus1PFk2NF1xddfBn2t.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0337619fce09b46e016a9a6b054f2487d0b3e924c93d2c8ded",
+      "index": 1
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmsNfdAL1lzQJMHECUnb7dO3hCbMIX5I3rkpAQyh6RUFJKQrWRBlX3SM3cL9Lo9IAmDrW8TjIqb8lGCD7Epj4m-tJh37inwUmqQUxoLzZ8K8UT-lDJkrU_SPAGb2LizqYGOSbwnsNfxe4ER1lDoVtGlfo8txuxWKJHEdw5T2CBE-8ADNZID364aESLuT0xRSNwhDZ9vFK2Azy_RQyy9A6dMjb4HXLlnnadoG9B5R5FPibc3oNbQO1JyibDnKrnSrTxjhJKFLMwUKLFXNPMdZi_x4ncw75Lt0UAc-c9FGAnFTNMGh1EieJ2m9tQLUJQNHCbL9EkAj6RkZeIczaMon8QQw1njLtOTF1CY9pvzQb1Mj1DndUEME9o7zg3fApdia6XrZPKsU65cASQKP5X2B_TyNaqrdcaT9L10kdJ6XTaOm3yTTeasIGQkGjQizBSitDUHiw390btPdEhZUVca3UHbS4eTaGlKPTmzs8Q8z9uLwHsNOouU5gtfzVqIZ0oAowlRtd3S_2pLfeJ64EoL3WUBIwPgH1_k24dLpmeP2HUwvJAntqarQjoqmfXi6xWFQ7PQ4MwLehF62E6uLLNkqEQpEgQccRF8qPcWwh3-4jP_lrIsgmaXX6nzJYFddBtaYVy2yYRzn_1YoGjVp1ofsp7wyza5a095WmEOVvfeqYkKRpQxPPNaAgZCy_3voejcTdWX6aTQefaP_LecukA8rAEkZJQn0lNsAe9HXy3BesNYFWI1K-VNDm8uKpVnOEdzy8AOi-QkUDpfIwG_1JdN1yb690Gsf6V-hY8qPVHmM6lbh87SqNrclHHWm7_NWxe9e_IS4aLyN3RGJx_75kIbkra21R6crLct1pHM8PGoJcBkJyqhTITpnoPeSemOLLJMbnzNmnLzaxTqqcgalik_8r3rrXGqxn5Udwczkc0zoPkoaiMyBSu_NTHlc5qhPDxa_cp1VlZBAH1-MBR83cDYBifjAdBAReOC7cbDXCxx3deCMdtkEUgy9XOEguzrizN5zeH6pBcVvZ-0wXcmbmAMvB8UJn0Db2uyg2QW0J_NOrZPdkMM5s_TamsBlPjn7opUV04HmgCw237A8Cg7_3l-tttBSA1c5sB0P2hbaijWBi-4I02iJOFGnrSOYvjZ0D0JvCBNvy8mUmI2BRP4jmCzyzHf3Fi798uhYKh8wxz93PAk2l-eVf0rGjGIIh-h1R2G2exmE_Oqbhw2KcIw6zXcFDICUM0UXPuIT4gHzaGU3QfHFiKqle4D2yBdB8dLEVf53wnXuTofcZcfHxUPv5QDJ4szEA0ve7ppOpFKJ2fuG7Jnkisv_2bWI8xHquQP-1Vdmugum9LtMOWh10dV9GoRtf37yfK0mIBr5jaS_tp2trdjw_l6jURxRfCTm-ApgDZlMi_-PFeNnhweF2AYEOcjcIlwOWM30ttlu8CVoPg_Tsl4TpNEzAnWCFXR2PkrowwkZauxOY4-RlsXV9axAHVzVhar9mIyNhbjlhgR-WXYajPXjnV95mOZmCrYmNGbUsqkWOWTpz4GvLxgl95bcyR8Qahd8h3N8X9D1mkAFLtNqkILY4Go07JNMB4XYLDrk-lTdcV_jgAcfAEmuTE5a152rZDjQfSJWkK_nCn8IBP2B6lf4gnaz74WwK9675Perk1colqjSapwOq9wvDqase4zYLW1iL2X0A_C-lCMFn5NPlKiR73TyX9pM1G5aoBTHscpg6JP-fMUme0j_FepXI-lDTsWsvxfm8zfEYiWeMt2SEz8z5oTFTMv_RfbwzKSpv2Vwwy1ORahY1o6RIt9po9BrBHkIM9kAU7bhhCMHoEW_1boUA27Zmjpak3AVlyrw5JwYhpUIs9K574SJF71-dqQ6tbXku7ooHI5DrMuGlx0GMdo_jru0D8TlpecZ4OxDpEZk3BuTKsRH9f0O77F8yCQtFnSKUwXme7_VGkuT1y1NsO4UxpnVK_W9kA7Ct3GPT6Ri9NAVI7iJcXAtAyg7pU-7B6bWrCWUpNCU7yLrozIzSqTUAwSF7A6LwFW63FWHn0RlJKisZ4IJppRGTRMeoe3QkiRt86ktaE8twgM6uSSOfTzze2sBE2v6kx4NKMslhBWu9utupjVOCoGfadNjXMWqAlIItNvsjBu3UdRAkRrGxRRw0lhm0k9ls_Yp6E7W03WyogGSLAc5p9-b7v7DyLxQ0pabzjgr2yszyuXrZvj_dLE2JY9AshwZu1YpD6xa8r92XVdjHBKN87kD_fiL07XO6uyTxcrMU6L-h2E1zjJioxz38x3VMwDIr64pBmb0UFyqD7GdpbTp2XqD2K2ICs65Fce8PY_jvITlxHmEw5U4XcXA9zeP9iwBcHC2SuVmtXwvP1NlWcpFm_erjQ_n1M6_TR-ZCyTIFv3QZmWeF_XsJAfRyhFPfqjYJ1jdLwL38JnXaQkUU7V3LzW_lPUjIlGc2DzpCFcoDt4Pkqnl4Ba_vcDYbWOnI6qrV689CuOjEreymrHOVWP94Nnz_V1ZLMtVbDxUHrYw7ZN36QCFfkeYMlI5EL4NF6DtPK0ThXh2zA5AyEVPI7fg2Sc6HcZ_QDYm-BrHAeNl6FvrXlvQXj30UWsG9ASvq5uaxC5vUv0J-R5xZLSJXMKB8hoNJKEgmiH-PbAHpdYEL7kkW5K16uP6rPRebNBLTIsX8MNrZnJqmDhGNEUiIXI7yfz1m4jIDR5LhRU5_o9uQ7LQmvBZOJCvtEG3M6chZ86ho6-3ilc753LgHnl9AVHau-El_RJjiSKz-f49tUP-7iQOspfnOi7Eg8eDKhca2iB_EKW4W0UlvTwHwyps3YZaziztmsUk2fEJE_ZHaX5akkNshhuaOiChKNHja7nhfqvPmDtKTy58NKool3pyr-ALgsutV5PYUGHOGB4Z02gh6Hzc0afJQ_HleHgdGMCL38pXVCbCiu3xDBW_WRMRzX9cjlUQKg4J_rEQb_lFBHzB3J_2c6y4t6-VJ9Kdez9EvruZpTqItAlyaS8oSBUAA2l_SXW9CY-4yJS_OUvsKTYmPs5_mzxk_i-PDNaIiesi3V4Qt-glGxt9zdtRt6Te27UTBzM6VBFpfEAyjOp4gUenEXA4R-LDCwwa8TyuzIPsBVJUysKlzGCV1jo9X7fsAJiGekxewt8-dH5s_MaBxkyH-N140FNy41KUAHOWNvft-d24N24F7DzN5S9xwSxAo8bAv81oks3AV1qYYhSt5hz0o28Iy-dI1YfHkXfdak_qEdrWo0NeykhCDUmpJFxPl_pjPwzZLpC7jC-tDb0nAgShEt3Ng0FRctf7AUPYzxJlGBnOZfl1-BwCFc_Rw026kIb0jxyr2Py4YM1dhzr5rBBbDyoSF-z8kuVYImMi6oEnB92oyACuELGO3ORm399G5YJNg_NdFM9p92_ez2uKxSI6UU3OdLE9lz6xscQ9m0ufIo6r1LF4rGYyshl-k02R9p15AAFs2Sk2bgVgUiIYrfeKAvqGxWc23sdhwlb4-26WJdct7qntSWJsgCrchVUZygJ3116YM76kPfsVlAghIijp6kIjTaQ3WLnURbsfWp4YCAh-_GXG7B2xYUMuc4wpfPVm6nunsyT0KLup8FyibGKMDvgSxV4PNaBJRAso949f9U2EzxvUc6fimvYbP7qCNm-CJFDTDcXP8MI1LuxF-Pk0wRiMW24gxQY8ORWK89lrKlJarzFx4o17A-DYD43b7CkclHz6raW0ral_WDHfRFCnMLECoXF8ylu8eiJi4B4=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0337619fce09b46e016a9a6b0ac00c87d0bf5e1df68a8c943b",
+      "index": 2
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 8361,
+  "completion_tokens": 1618,
+  "total_tokens": 9979,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 8358,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.0040317,
+   "upstream_inference_prompt_cost": 0.0020901,
+   "upstream_inference_completions_cost": 0.0019416
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 930,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 12.94,
+ "_attempt": 0
+}

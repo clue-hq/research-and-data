@@ -76,6 +76,10 @@ class WebPublishRef(ToolOutput):
     package_digest: str | None
     html_digest: str | None
     previous_available: bool
+    #: F5 — the site this publish serves. ``routes`` is in document order (``/`` first for
+    #: every ordinary site), so a caller can name every address it just published.
+    page_count: int = 0
+    routes: list[str] = []
 
 
 class WebPublishStatusRef(ToolOutput):
@@ -96,7 +100,6 @@ def publish_web_document(
     node_bin: str,
     document: dict[str, Any],
     slug: str,
-    public_base: str,
     noindex: bool = False,
 ) -> WebPublishRef:
     """Build, persist and point one publish at ``slug``. The ONE publish write path.
@@ -107,20 +110,34 @@ def publish_web_document(
     is what makes "applied on every republish, whichever route publishes it" a property of the
     system rather than a promise each caller has to keep. The direction is one-way on purpose: a
     publish can only ever ADD the robots meta, and nothing that publishes can take it off.
+
+    The site's public address comes from the hostname registry (custom-domain publishing §6.1,
+    reconciliation 2026-09-28): ``site_address(repository, slug)`` on the workspace's always-live
+    system hostname, never the request. And the first successful publish LOCKS the workspace's
+    system label (F5 R-F5-5): something is now on the air at that address, so its host segment
+    stops being editable.
     """
 
     from .. import web_export
     from ..database import utc_now
+    from ..public_pages import site_address
 
     noindex = bool(noindex) or bool(document.get("web_noindex"))
+    address = site_address(repository, slug)
+    # Workspace page defaults (custom-domain publishing §4.2), read here — at the ONE publish
+    # write path — so every route that publishes picks them up, and so a default set today
+    # reaches a page on its next republish rather than only through the screen that set it.
+    defaults = repository.pages_defaults()
     package = web_export.build_publish_package(
         core,
         repository,
         document,
         blobs=blobs,
         slug=slug,
-        public_base=public_base,
+        site_address=address,
         workspace_id=repository.workspace_id,
+        default_description=defaults["page_description"],
+        default_social_preview_sha256=defaults["social_preview_sha256"],
         node_bin=node_bin,
         noindex=noindex,
     )
@@ -143,8 +160,24 @@ def publish_web_document(
             "package_digest": package.package_digest,
             "runtime_version": package.runtime_version,
             "created_at": utc_now(),
+            # F5: the whole site, immutable beside the package that produced it. The DAL
+            # materializes these into the served per-route pages when the pointer swaps, so a
+            # rollback restores the routes as well as the bytes.
+            "pages": [
+                {
+                    "route": page.route,
+                    "page_id": page.page_id,
+                    "html": page.html,
+                    "html_digest": page.html_digest,
+                }
+                for page in package.pages
+            ],
         }
     )
+    # F5 R-F5-5: the label stops being editable once a revision exists to be served at it.
+    # Idempotent, so every republish (and every account page of a batch) is a no-op that cannot
+    # move `locked_at` off the moment the address first went public.
+    repository.lock_system_hostname()
     publish = repository.upsert_web_publish(
         slug,
         document["id"],
@@ -153,6 +186,11 @@ def publish_web_document(
         package.runtime_version,
         publish_id,
     )
+    # A document lives at ONE address. Republishing it under a new slug is a move (the share
+    # menu's promise: "the site stays up at its current address until the marketer
+    # republishes"), so the address it moved from stops serving — found live 2026-09-30, when a
+    # renamed page kept answering at its old slug beside the new one.
+    repository.unpublish_other_slugs(document["id"], slug)
     return WebPublishRef(
         slug=slug,
         document_id=document["id"],
@@ -164,6 +202,8 @@ def publish_web_document(
         package_digest=publish.get("package_digest"),
         html_digest=publish.get("html_digest"),
         previous_available=publish["previous_html"] is not None,
+        page_count=len(package.pages),
+        routes=[page.route for page in package.pages],
     )
 
 
@@ -174,15 +214,12 @@ def publish_web_document(
 
 class PublishWebDocumentInput(ToolInput):
     document_id: str
-    #: The public origin the published HTML embeds its absolute links against. It is part of the
-    #: rendered bytes, so it is part of the idempotency body — two origins are two publishes.
-    public_base: str
     slug: str
     #: Emit ``<meta name="robots" content="noindex">`` on this page (clone-fidelity F4.3, ruling
     #: R25-4). PER PAGE, defaulting off: CP2's ABM account pages are reachable by their explicit
     #: URL and by nothing else, so they ask for it; a homepage publish never does and stays
-    #: byte-identical. Like ``public_base`` it is part of the rendered bytes, so it belongs in
-    #: the idempotency body — an indexed and a de-indexed page are two publishes.
+    #: byte-identical. It is part of the rendered bytes, so it belongs in the idempotency body —
+    #: an indexed and a de-indexed page are two publishes.
     #:
     #: R-F1 added the page's OWN durable ``web_noindex``, and it deliberately does NOT appear
     #: here. It is a property of the document row, exactly like the scene the publish renders,
@@ -273,7 +310,6 @@ class PublishWebDocumentTool(DesignTool):
             node_bin=self.host.need("web_export_node_bin"),
             document=repository.require_document(inputs.document_id),
             slug=inputs.slug,
-            public_base=inputs.public_base,
             noindex=inputs.noindex,
         )
 

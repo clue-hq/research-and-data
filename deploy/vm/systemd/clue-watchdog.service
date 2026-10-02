@@ -1,0 +1,7 @@
+[Unit]
+Description=Clue VM watchdog (first deployment spec §11)
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/clue/app/deploy/vm/watchdog.sh

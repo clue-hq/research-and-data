@@ -215,11 +215,26 @@ def test_memory_caps_validate_and_default() -> None:
 
 
 def test_no_production_code_outside_memory_touches_the_substrate() -> None:
-    """Only the API composition root imports the public memory seam; nobody names ``_store``."""
+    """A named few import the public memory seam; **nobody** outside names ``_store``.
+
+    The second half is the rule that never moves (Rule S1): memory storage is private, so a
+    consumer gets the shape the package chose to export or it gets nothing. The first half is a
+    short, explicit allowlist — every module on it is listed here so adding one is a decision a
+    reviewer sees, not a drift:
+
+    * ``memory_wiring`` — the composition root that builds the seams the platform injects.
+    * ``frontend_read/project_memory`` — the project home's memory panel. Its *write* goes
+      through the injected ``clue_core.MemoryWriteSeam`` like everyone else's; what it imports
+      from the package are the verbs core has no protocol for (the human's own list, the
+      read-back of a submitted note, ``retire``, the kill-switch check). It deliberately does not
+      reach them through ``memory_wiring``: that module names ``LLMGateway``, and this one is
+      import-reachable from the chat turn path, which Lane D2's isolation guard forbids.
+    """
     roots = [_REPO_ROOT / "libs", _REPO_ROOT / "subsystems", _REPO_ROOT / "platform"]
     offenders: list[str] = []
     public_composition_roots = {
         (_REPO_ROOT / "platform/api/clue_api/memory_wiring.py").resolve(),
+        (_REPO_ROOT / "platform/api/clue_api/frontend_read/project_memory.py").resolve(),
     }
     for root in roots:
         for path in root.rglob("*.py"):

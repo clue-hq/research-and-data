@@ -1,0 +1,64 @@
+{
+ "id": "gen-1788504819-j57SgCTQGZI1aiufXtYF",
+ "object": "chat.completion",
+ "created": 1788504819,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"tools\",\"empty\":false,\"items\":[{\"h2\":\"Sales stack documented on 2026-09-02\",\"body\":[{\"text\":\"A Zafran requirement says, \\\"Utilize tools such as Salesforce, LinkedIn Sales Navigator, ZoomInfo & Outreach\\\" and the account also lists HubSpot and Salesforce in its marketing stack. [2026-09-02]\",\"claimIds\":[\"zaf-089\"]},{\"text\":\"What it means for us: Their documented sales and marketing stack gives us a concrete integration context for outreach. [2026-09-02]\",\"claimIds\":[\"zaf-089\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"Agentic exposure workflow routes results through Jira or ServiceNow\",\"body\":[{\"text\":\"Zafran describes an Exposure Graph that integrates with existing scanners, endpoint agents and cloud security tools, then routes the result as \\\"a single ticket\\\" through Jira or ServiceNow. [2026-09-02]\",\"claimIds\":[\"zaf-147\"]},{\"text\":\"What it means for us: Messaging can connect Zafran's workflow to the security and ticketing tools already in a prospect's environment. [2026-09-02]\",\"claimIds\":[\"zaf-147\"]}],\"contactRefs\":[],\"priority\":2},{\"h2\":\"Nick Fisher shared a 96% proof-of-value result\",\"body\":[{\"text\":\"Nick Fisher's LinkedIn article says, \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\" [2026-09-02]\",\"claimIds\":[\"zaf-159\"]},{\"text\":\"What it means for us: This gives us a specific proof-of-value statistic to reference when shaping outreach around risk exposure and existing controls. [2026-09-02]\",\"claimIds\":[\"zaf-159\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": "**Organizing item priority**\n\nI’m working on prioritizing items based on their claims. Item 1 is priority 1, item 2 is priority 2, and item 3 is priority 1 again. I think I might need to include a date in an H2 header, like \"Sales stack documented on 2026-09-02,\" and I don't want to invent any information. Zafran lists Salesforce, Sales Navigator, ZoomInfo, and Outreach for that date. Also, I need to keep the body as an exact quote without extra quotes around tool names unless it's a verbatim claim.",
+    "reasoning_details": [
+     {
+      "type": "reasoning.summary",
+      "summary": "**Organizing item priority**\n\nI’m working on prioritizing items based on their claims. Item 1 is priority 1, item 2 is priority 2, and item 3 is priority 1 again. I think I might need to include a date in an H2 header, like \"Sales stack documented on 2026-09-02,\" and I don't want to invent any information. Zafran lists Salesforce, Sales Navigator, ZoomInfo, and Outreach for that date. Also, I need to keep the body as an exact quote without extra quotes around tool names unless it's a verbatim claim.",
+      "format": "openai-responses-v1",
+      "index": 0
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmr50bFCnXp2on0w5OsYvzANhaCv-KpA5UB9u861CS7TMdm5fUNTzLnVYDqRe9rJ6jVv9UbCN8jagrAgRQdUxqihx6gbRbf-_WYJkdcUIYAaIMdMnwRTzu_KspI-PpT3_dJLMLV_6AxthkuVQYJyDVWrd76AptVDBZLc0O_EMvBLVS0UkLn9gvn0P3do_3Nlk2eBXxZl_n2PoZ5Yyj-8bX-VEcYUEmPvmszhAhV-MXLU71kgpFQGWmRhKH1k6ZK5MqcBA99xHehmu8gIyVgWjjHZnWC6_EvYSANqkp1N9lFYSIDTA6KsIWU_3Vek6qMi-r1_MT2HC1ugHjS6xmdILOAyjYyDH5PjhZUHUsJbTiqROSUwDnnAa_XC9QoQvconYP6wz6xpjhohul2SCjDhOI8kRHzZSonSjY98W1gNUM-dQYvtEive-UUJr24ERXHWC-c1njewX_wV6v5Oj8CNgNX0zddStAdZwG3E7CvCNL1ReML5JYEe6LNt929lH017kfB-RJnxatlFM2BoGUhqHvB7dZ9BdZS8SPk2uptxKm8jknS1kft9of_q23erpu3VcLTm-htgJWEA2JC-bYBiYl-xbcC6hAvyQq3xq3FnJo4iOxQQ8Gr5lHtXZ5OnO_JqySkO-7mji9Xkko1H3YCccDvw7iokGq03afext8UX7rnADVLhceWhpX7_Ftw2xwrZ1yYvRkJiN4Z3SbM46TJoOhYSsJKNRThHWy20zWu8Coy6YrfuAYtnM4iXX1jnmWnp3tfqyd76u9rcMAySvibRcpffS2B965Uq2cx7znwzzVcH0Vn2XPg_sqfi89MosmUIt-TOqQyNRVnsc4QxQ9XtYkqm0YloZ3gIIBXrBUqowk5jZAJF-UUdrQNcypi0q-g_rYBfd4YL93MDHBSnHEbVb4uIJ7_vVQxkN673too4_ptfXYMgcEE1x45i836HSFABlbM3ST05gewPISW3KlHxbF_1vCfBRwxdCiW57UuKxD0nVj_dSxQXEdkGa_9bBsuox3ykU1tbP3gqHh3_4KS58ymmemkYZUDgwujtPdU4_d1xZ6BNXfGPjM7HqpzZp_77Z9-iRAywuQKiGCt6VR6yZmAQuBNUMPTl_H2aFSnizXgNWRvuVK9NqzanFHsjLi3NVe5dzyP7ta_xJ-Dc3IEqzZWI4MWd73oHS7pF8DTEwEcxwOnLfManvvBVj9c_xxY8thKjGDDlAz0gfMUOu4dD-9gdN-O1EqnYYIUBwBKr5A7uKFFiUtH9l7oPVHdUqCwURPzhf0ukdc4U6-Mnfe4zv4BY5aX6Rq4ccEU9UmO-KDefTwppxy4ztCfBD9CYTRno0Lz_DL6kkztYgFRJ9s8JzejW85BKzEXHQaHnZCp4hXEUin4uB46kbWiCtPAX2YLZDnQmH87dkKgzDqAZ5PdSbotY6KsjvgFoT1nf2ywTMFfi4WYa58Ft2RDhr5T2gBuU8jlbclHCOmdkIZgKfwIsFoR1TcyitXc5I14gGQ10LYZ-kXnhA9ImDfStZAijllH-H1NbjpVTdiwBSrTstoOBa2F9l0SvBRzRMz4lYxJvzGD5w7UOHP-eb2kIzsxLWSiXgI3ifMBl1azYU8BcgxjHKwbfQJsLB2Y4tF2J9Rqw-xI56Vx97nz7I0eYl2O_Grjm6yH1Q7ilVSWq1SbUVZloAtsX0c_La9G6SJAf2Zb-U1u3bAcKETczO9bA1WJA2vj8rk3oGjJdPhzgsiNwXBr0qZhoGxPTshhZDad9VFKCMQR0-zoEnd8zb4-W9l66FE-P3vLe_BjAdrRjVEVhZsW-wJwIOHqWdxZxDBo5c9iaQ_v68OGLHjqZdX4BFeWMEuQY9YDU8ZALS0Mly7OrFZD4KhctJm7bwFgrsAS1u8xkDwEtw_J0u83gBNqYV6j8F9wVeCyDoCLbkl-EkvZ38Y4xe8aXfN_yJf8dHDemKOp0L0krnTyI-xaz85Q4Nya_Yq2TipzreoIDXT3jHvxvu4RmJuGPQJ3f5wNzlITWr6iO8FJzylY73MEYwz9HtFP_HBpsFlQPlGw7GXOvCpQVXwBBtgt9UkjJDHOJsmU0c4v5m6WhlIFQsMVyP13qIUtyW1yCUdXiHFYAUPxSaDnFq_uG0OpoEYEmCbPOkHFxwN-8ArN3L1Aexy7BDXdDDeUu4gdSibmHl-aAsIvGd-c1hNFbmM9_vFNESJrnSrI9PxIxYHehJLGtKkyBMOHoaz4jB4ABRmXF-ZxFhPVH_oVRoFx7pLFef-h4bYrq5QTLdQOpOQ8OjdkP1P0jUylest275NruCGgSzuKcZUCwLth4zsDrM6fT9eFzIgw78rOGaFl1rtIuW_QbsxSKVpu5Ne0tdNvXnEmp7XDMfT9qjw25dRTZ69wg3NJ4Hc6un_s1FusyPiH9Yn7YbYGzGkmXT2NDqeWgjldPWHXUGk3ofSBqoFH-MBWbqhnEMprteLOWnsboZ9u9XNkbHncpyap22sPovrUNLD1WLiqOMcvumakHVhUqR7wNd1sBKl0-KLnGF-yi0GEkA04jwHU2ijPxpoQ3rc1gyAk3mDsvRFNVT0sCIrsvBFs9jjOUyrIr_pxGEKO4g6AFMs7SgwGazFkUQ_YoYWyNp_szqzbC4nUKk7MtqXLLKbhnl0nKuSCxHLYZ4KiHN9h6IHgyKelU5GIVEUeLA_KqMEwKlmLmj8nZvA7ub3-jIhKCyy1wz8vVDSTJMmjOMta6-LYHKZyi51hOi4aMOPamsMVeXi5tpgtsbuohH8XD7zTAHy0JvrV4VzmfAHXB-Zr4J2i4LDHP9E60p16ewv4rtKsZsoScEhts6lp8nP7sbQ-w0WRxE-KAa8vatsYiSKcPAJVBc-bbEpbWzhDGYuapLBPL1Jw89NT2CL2FVXn5j4TT6ItQR49PAxHtvfV5WmvHjpJjaU1yxvdi9CIfeFwxwcdVllDtuj0wyfzZV_v81RmgodoiE_DZQpkXXWE-EKJsNObUKRJDw70VbRCTWTQXvR8O4lswCWDDV8lcAFZa1K4w4Md1Gxdr13HJFnnuuI-TogArDKtU7GnSHiL41rUqtjEbeFOuTouaIb-7FifFqD7CIj4nH7TCedFOQNp-RlILQ_e01NMaOPkSFKXKu329SWk1PgjGhamADtQRTumL4stplJa6oZHIEGcQ6ui_DQMc4eGlxBgnpZ5bAFRwf9rGoyV_lkfARXj5pAA3g9267XRmHw-VNu_jLGC3fxmxRxBcEkfGiu4c_djZkafBFf9OagVEszHivPBAEwrUQkqvS6_Bq4ts7zcyI4Pw0KEJZwdjvCirid3ao7rrxlEH-ooxopInQHYUUL5trqfEjCbV8y63fBcB1rH0vNcVvyfrDNedmEoiHXI63JL2Wg7fS-LPj0W3ChYiipyNuR3Sw-cF1rEEhA08uoQD76ab4DbJEBbngOob9Efqs5TrAr45FXVQWvxu6z9-0-3EZVl163gWacKyVa_FAoSq9EO3fGVAOAA2VCm-49x3gu-0vxuOG3CkahoyEFK8q3j2V24TX-08hZWftUbDQ1gk9fntsZGItduaS5r65gCOsXnLk4vELA39dg9O_z092ckOoQEs9l9kME7o32Qj8O6znYrrdmZNS-CUku7Pc0z_PPKm7bSCOwiTts0JBO2dNu3bTfh_rMJyWJugLUyefOtgJquKqFKuJrGkxNOqeO-B3kJbUHp0BRmfsEgTgu8MVu3HsXZ75Y0-jCoEAiA5fuYIehI4GjmTIZefZZ8Bp0Ljz3iYNOGiqdrUpNsVcfqR_kcTHK96CqnTSyc2OeTJPw0DnwViQK3yMca0UXvVSZ2aLmaPl7Y85WuLciVULwu5ff7c7tqQSF4pG6XLsI0pnO29oV1oLlIMy1-BU0WkvdkCMYbnFJqN8KVsbCey8UaBxvyH36Ha3DE1ypfHnqIKvIGoJN4vOjfL3_bqyscmHjBsmwra6iduoAOpNdtwL1pXYwQj3lMdg_sczQzK35Cam333FHJmmtAk9tcWaPAxkuhV18vc8MR48cbNXUr9wooKtIN_piTmlfy7VB1OzqUNliD0apbfUH_SFGKEqDl4_PH3k9I_vUw9TjZBiKW6NkuVBCa90QVS442YYZ17oXEGI8VTYuQeiGK_VTPVNDfa3_z8jI1-9BLhZuZtqgWEFAyt6G0t_awTFpFxupa79S8w6rd7fk1q6l3v0luofA9pzXLoq1KdVZEtUiXQ0G9k.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_09f88d74d86ce5a5016a9a6af4c8dc87d0829bdaac1013f348",
+      "index": 1
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 2072,
+  "completion_tokens": 931,
+  "total_tokens": 3003,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 2069,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00163505,
+   "upstream_inference_prompt_cost": 0.00051785,
+   "upstream_inference_completions_cost": 0.0011172
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.17,
+ "_attempt": 0
+}

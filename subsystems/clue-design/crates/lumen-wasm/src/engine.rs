@@ -8,13 +8,17 @@
 //! JS render snapshot in sync without per-keystroke full-scene
 //! serialization.
 
+use lumen_core::brand::{validate_requested_brand_mode, BrandKit, BrandMode};
+use lumen_core::preflight::token_options_for_scene_medium;
 use lumen_core::validation::validate_scene;
 use lumen_core::{
     build_structured_edit_batch, compile_dsl_into_scene_with_session, hit_stack, layout_scene,
     measure_key, preflight_scene, DslCompileSessionSnapshot, LayoutOptions, Operation, PageId,
-    PreflightOptions, ProvidedTextMeasurer, Scene, SharedTextMeasurer, StructuredEditInstruction,
-    TextDirection, TextMeasureInput, TextTransform, TextWrap,
+    PreflightOptions, ProvidedLine, ProvidedMetrics, ProvidedTextMeasurer, Scene,
+    SharedTextMeasurer, StructuredEditInstruction, TextDirection, TextMeasureInput, TextTransform,
+    TextWrap,
 };
+use lumen_core::{BrandKitRef, Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
@@ -53,10 +57,24 @@ pub fn version_payload() -> Value {
     })
 }
 
+/// Plan 4 item F: one editor-measured line box (see `ProvidedLine`).
+#[derive(Deserialize)]
+struct ProvidedMeasurementLine {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    baseline: f64,
+}
+
 /// One editor-supplied text measurement (Wave 3 C4): the measurement input
 /// fields plus the SkParagraph width/height the editor measured for them.
 #[derive(Deserialize)]
 struct ProvidedMeasurement {
+    #[serde(default)]
+    node_id: Option<String>,
+    #[serde(default)]
+    font_size_override: Option<f64>,
     content: String,
     font_family: String,
     font_size: f64,
@@ -91,11 +109,18 @@ struct ProvidedMeasurement {
     spans: Vec<lumen_core::TextSpan>,
     width: f64,
     height: f64,
+    /// Plan 4 item F: the painted line boxes measured at this record's
+    /// `max_width` (paragraph-relative, left-aligned). Optional so the
+    /// unconstrained records keep their shape.
+    #[serde(default)]
+    lines: Option<Vec<ProvidedMeasurementLine>>,
 }
 
 impl ProvidedMeasurement {
     fn input(&self) -> TextMeasureInput {
         TextMeasureInput {
+            node_id: self.node_id.clone(),
+            font_size_override: self.font_size_override,
             content: self.content.clone(),
             font_family: self.font_family.clone(),
             font_size: self.font_size,
@@ -116,8 +141,27 @@ impl ProvidedMeasurement {
     }
 }
 
+#[derive(Clone, Deserialize)]
+struct RenderContext {
+    context_key: String,
+    document_id: String,
+    scene_brand_ref: Option<BrandKitRef>,
+    scene_medium: Option<lumen_core::Medium>,
+    brand_kit: Option<BrandKit>,
+    mode: Option<BrandMode>,
+    #[serde(default)]
+    diagnostics: Vec<Diagnostic>,
+}
+
 pub struct Engine {
     scene: Scene,
+    presentation: Scene,
+    context: Option<RenderContext>,
+    context_enabled: bool,
+    context_error: Option<Diagnostic>,
+    revision: u64,
+    status: &'static str,
+    diagnostics: Vec<Diagnostic>,
     dsl_session: Option<DslCompileSessionSnapshot>,
     /// Wave 3 C4: editor-supplied SkParagraph metrics. When set, `relayout`
     /// measures text with these (Skia-faithful), making editor `computed`
@@ -134,7 +178,14 @@ impl Engine {
         let scene: Scene = serde_json::from_str(scene_json)
             .map_err(|error| format!("invalid scene JSON: {error}"))?;
         let mut engine = Self {
+            presentation: scene.clone(),
             scene,
+            context: None,
+            context_enabled: false,
+            context_error: None,
+            revision: 1,
+            status: "ready",
+            diagnostics: Vec::new(),
             dsl_session: None,
             measurer: None,
         };
@@ -145,13 +196,20 @@ impl Engine {
     /// Replace the local scene (serialization in: reconcile / undo frames).
     /// Resets the DSL session: it indexed the previous scene state. The
     /// reconciled scene is relaid-out so editor render geometry stays
-    /// single-source (local heuristic) and never inherits the server's Skia
+    /// single-source (local measurements) and never inherits the server's Skia
     /// `computed` directly, which would jump text on every reconcile.
     pub fn load_scene(&mut self, scene_json: &str) -> Result<(), String> {
         let scene: Scene = serde_json::from_str(scene_json)
             .map_err(|error| format!("invalid scene JSON: {error}"))?;
         self.scene = scene;
+        self.revision += 1;
         self.dsl_session = None;
+        // Canonical inputs must be remeasured after reconciliation. Legacy
+        // standalone callers remeasure only when text changes, so retain their
+        // keyed metrics across same-text geometry/undo snapshots.
+        if self.context_enabled {
+            self.measurer = None;
+        }
         self.relayout();
         Ok(())
     }
@@ -167,23 +225,135 @@ impl Engine {
     /// unchanged, so an edit only moves the node it touched and that node's
     /// true layout dependents.
     fn relayout(&mut self) {
-        let options = LayoutOptions {
+        let mut authored = self.scene.clone();
+        for node in authored.nodes.values_mut() {
+            node.computed = None;
+        }
+        self.diagnostics.clear();
+        self.status = "ready";
+        let layout = LayoutOptions {
             measurer: self.measurer.clone(),
             ..LayoutOptions::default()
         };
-        let result = layout_scene(&self.scene, options);
-        for (node_id, computed) in result.geometry {
-            if let Some(node) = self.scene.nodes.get_mut(&node_id) {
-                node.computed = Some(computed);
+        let mut resolved = None;
+        if self.context_enabled {
+            if let Some(error) = &self.context_error {
+                self.status = "invalid";
+                self.diagnostics.push(error.clone());
+            } else if let Some(context) = &self.context {
+                self.diagnostics.extend(context.diagnostics.clone());
+                if context.document_id != authored.meta.id.to_string()
+                    || context.scene_brand_ref != authored.meta.brand_kit
+                    || context.scene_medium != authored.meta.medium
+                {
+                    self.status = "pending";
+                    self.diagnostics.push(context_diagnostic(
+                        "EDITOR_RENDER_CONTEXT_STALE",
+                        "Document pin or medium changed; awaiting fresh canonical render context",
+                    ));
+                    self.measurer = None;
+                } else {
+                    let mut options = PreflightOptions {
+                        layout: layout.clone(),
+                        ..PreflightOptions::default()
+                    };
+                    options.token_resolution.mode = context.mode.clone().unwrap_or_default();
+                    options.token_resolution =
+                        token_options_for_scene_medium(&authored, &options.token_resolution);
+                    if let Some(kit) = &context.brand_kit {
+                        self.diagnostics.extend(validate_requested_brand_mode(
+                            kit,
+                            &options.token_resolution.mode,
+                        ));
+                    }
+                    if !self
+                        .diagnostics
+                        .iter()
+                        .any(|d| d.severity == DiagnosticSeverity::Error)
+                    {
+                        let result =
+                            preflight_scene(authored.clone(), context.brand_kit.as_ref(), options);
+                        self.diagnostics.extend(result.diagnostics);
+                        if result.layout_result.is_some() {
+                            resolved = Some(result.scene);
+                        }
+                    }
+                    if resolved.is_none() {
+                        self.status = "invalid";
+                    }
+                }
+            } else {
+                self.status = "pending";
+                self.diagnostics.push(context_diagnostic(
+                    "EDITOR_RENDER_CONTEXT_PENDING",
+                    "Canonical render context is unavailable; showing authored literals",
+                ));
             }
         }
+        self.presentation = resolved.unwrap_or_else(|| {
+            // Explicit degraded preview. Never keep geometry or metrics from a previous context.
+            let options = if self.status == "ready" {
+                layout
+            } else {
+                LayoutOptions::default()
+            };
+            let result = layout_scene(&authored, options);
+            self.diagnostics.extend(result.diagnostics);
+            for (id, computed) in result.geometry {
+                if let Some(node) = authored.nodes.get_mut(&id) {
+                    node.computed = Some(computed);
+                }
+            }
+            authored
+        });
+        for (id, node) in &mut self.scene.nodes {
+            node.computed = self
+                .presentation
+                .nodes
+                .get(id)
+                .and_then(|node| node.computed.clone());
+        }
+    }
+
+    pub fn set_render_context(&mut self, context_json: &str) -> String {
+        self.revision += 1;
+        self.context_enabled = true;
+        self.context = None;
+        self.context_error = None;
+        self.measurer = None;
+        match serde_json::from_str::<Option<RenderContext>>(context_json) {
+            Ok(context) => self.context = context,
+            Err(error) => {
+                self.context_error = Some(context_diagnostic(
+                    "EDITOR_RENDER_CONTEXT_INVALID",
+                    &error.to_string(),
+                ))
+            }
+        }
+        self.relayout();
+        self.presentation_json()
+    }
+
+    fn derivation(&self) -> Value {
+        json!({"context_key": self.context.as_ref().map(|c| &c.context_key),
+            "input_revision": self.revision, "status": self.status,
+            "diagnostics": without_heuristic_measurement_notice(self.diagnostics.clone())})
+    }
+
+    pub fn presentation_json(&self) -> String {
+        let mut value = self.derivation();
+        value["scene"] = to_value(&self.presentation);
+        value.to_string()
     }
 
     /// Wave 3 C4 (measure-then-inject): install editor-supplied SkParagraph
     /// metrics and relayout, so text `computed` becomes Skia-faithful. The
     /// payload is `[{ content, font_family, font_size, font_weight,
     /// line_height, letter_spacing, wrap, max_lines, direction, max_width?,
-    /// max_height?, width, height }]`; the engine keys each by the same
+    /// max_height?, width, height, lines? }]` — `lines` (Plan 4 item F) being
+    /// the painted line boxes `[{ x, y, width, height, baseline }]` the editor
+    /// measured at this record's `max_width`, which replace the heuristic
+    /// per-line detail when present. The engine keys each entry by the same
     /// measurement input it lays out with. An empty payload clears the
     /// override (back to the heuristic).
     pub fn set_measurements(&mut self, measurements_json: &str) -> String {
@@ -199,15 +369,35 @@ impl Engine {
         };
         let mut overrides = HashMap::with_capacity(entries.len());
         for entry in &entries {
-            overrides.insert(measure_key(&entry.input()), (entry.width, entry.height));
+            overrides.insert(
+                measure_key(&entry.input()),
+                ProvidedMetrics {
+                    width: entry.width,
+                    height: entry.height,
+                    lines: entry.lines.as_ref().map(|lines| {
+                        lines
+                            .iter()
+                            .map(|line| ProvidedLine {
+                                x: line.x,
+                                y: line.y,
+                                width: line.width,
+                                height: line.height,
+                                baseline: line.baseline,
+                            })
+                            .collect()
+                    }),
+                },
+            );
         }
-        self.measurer = if overrides.is_empty() {
+        let provided = Arc::new(ProvidedTextMeasurer::new(overrides));
+        self.measurer = if provided.is_empty() {
             None
         } else {
-            Some(Arc::new(ProvidedTextMeasurer::new(overrides)))
+            Some(provided.clone())
         };
         self.relayout();
-        json!({ "ok": true, "count": entries.len() }).to_string()
+        json!({ "ok": true, "count": entries.len(), "missing": provided.missing_inputs() })
+            .to_string()
     }
 
     /// Full scene snapshot out. Reserved for init/reconcile/undo-frame
@@ -232,9 +422,11 @@ impl Engine {
             }
         };
         let before = self.scene.clone();
+        let before_presentation = self.presentation.clone();
         let inverse_operations = self.scene.invert_operations(&operations).ok().flatten();
         match self.scene.apply_operations_checked(operations) {
             Ok(report) => {
+                self.revision += 1;
                 // Refresh derived geometry so the delta carries a coherent
                 // whole-tree `computed` for the optimistic render. The
                 // authored operations the editor persists are unaffected.
@@ -245,6 +437,8 @@ impl Engine {
                     "diagnostics": report.diagnostics,
                     "inverse_operations": inverse_operations,
                     "delta": scene_delta(&before, &self.scene),
+                    "presentation_delta": scene_delta(&before_presentation, &self.presentation),
+                    "derivation": self.derivation(),
                 })
                 .to_string()
             }
@@ -279,8 +473,10 @@ impl Engine {
             }
         };
         let before = self.scene.clone();
+        let before_presentation = self.presentation.clone();
         match batch.apply_checked(&mut self.scene) {
             Ok(report) => {
+                self.revision += 1;
                 self.relayout();
                 json!({
                     "ok": true,
@@ -296,6 +492,8 @@ impl Engine {
                         "lineage": batch.lineage,
                     },
                     "delta": scene_delta(&before, &self.scene),
+                    "presentation_delta": scene_delta(&before_presentation, &self.presentation),
+                    "derivation": self.derivation(),
                 })
                 .to_string()
             }
@@ -311,9 +509,11 @@ impl Engine {
     /// session in engine state across calls (the module owns local state).
     pub fn compile_dsl_block(&mut self, source: &str) -> String {
         let before = self.scene.clone();
+        let before_presentation = self.presentation.clone();
         let result =
             compile_dsl_into_scene_with_session(source, &mut self.scene, self.dsl_session.take());
         self.dsl_session = Some(result.session_snapshot);
+        self.revision += 1;
         // A compiled block creates/edits nodes; refresh geometry so the
         // editor renders the new tree from one coherent layout pass.
         self.relayout();
@@ -350,6 +550,8 @@ impl Engine {
                 "diagnostics": error.diagnostics,
             })),
             "delta": scene_delta(&before, &self.scene),
+                    "presentation_delta": scene_delta(&before_presentation, &self.presentation),
+                    "derivation": self.derivation(),
         })
         .to_string()
     }
@@ -358,25 +560,39 @@ impl Engine {
     /// this is the wasm fallback measurer; server geometry stays
     /// authoritative for text-dependent layout.
     pub fn layout_geometry(&self) -> String {
-        let result = layout_scene(&self.scene, LayoutOptions::default());
-        json!({
-            "geometry": result.geometry,
-            "diagnostics": without_heuristic_measurement_notice(result.diagnostics),
-            "text_measurement": TEXT_MEASUREMENT,
-        })
+        let geometry: std::collections::BTreeMap<_, _> = self
+            .presentation
+            .nodes
+            .iter()
+            .filter_map(|(id, node)| node.computed.as_ref().map(|c| (id, c)))
+            .collect();
+        json!({"geometry": geometry,
+            "diagnostics": without_heuristic_measurement_notice(self.diagnostics.clone()),
+            "text_measurement": TEXT_MEASUREMENT, "derivation": self.derivation()})
         .to_string()
     }
 
-    /// Read-only preflight subset: diagnostics under the heuristic
-    /// measurer, no brand kit resolution, scene untouched. The canonical
-    /// preflight (Skia measurement, brand kits) remains the server's.
+    /// Context-aware diagnostics for the current browser measurer; server export remains authoritative.
     pub fn preflight(&self) -> String {
-        let result = preflight_scene(self.scene.clone(), None, PreflightOptions::default());
-        json!({
-            "has_errors": result.has_errors(),
-            "diagnostics": without_heuristic_measurement_notice(result.diagnostics),
-            "text_measurement": TEXT_MEASUREMENT,
-        })
+        let diagnostics = if self.context_enabled {
+            self.diagnostics.clone()
+        } else {
+            preflight_scene(
+                self.scene.clone(),
+                None,
+                PreflightOptions {
+                    layout: LayoutOptions {
+                        measurer: self.measurer.clone(),
+                        ..LayoutOptions::default()
+                    },
+                    ..PreflightOptions::default()
+                },
+            )
+            .diagnostics
+        };
+        json!({"has_errors": diagnostics.iter().any(|d| d.severity == DiagnosticSeverity::Error),
+            "diagnostics": without_heuristic_measurement_notice(diagnostics),
+            "text_measurement": TEXT_MEASUREMENT, "derivation": self.derivation()})
         .to_string()
     }
 
@@ -391,13 +607,22 @@ impl Engine {
     /// gesture layer drill in / cycle overlapping nodes. One traversal.
     pub fn hit_test(&self, page_id: &str, x: f64, y: f64) -> String {
         let page = PageId::from(page_id);
-        let stack: Vec<String> = hit_stack(&self.scene, &page, x, y)
+        let stack: Vec<String> = hit_stack(&self.presentation, &page, x, y)
             .iter()
             .map(|id| id.to_string())
             .collect();
         let hit = stack.last().cloned();
         json!({ "hit": hit, "stack": stack }).to_string()
     }
+}
+
+fn context_diagnostic(code: &str, message: &str) -> Diagnostic {
+    Diagnostic::error(
+        Phase::Brand,
+        code,
+        message,
+        Some(DiagnosticSubject::Document),
+    )
 }
 
 fn error_payload(

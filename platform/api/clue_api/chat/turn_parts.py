@@ -33,6 +33,8 @@ __all__ = [
     "ActivityStep",
     "ActivityStepStatus",
     "AgentActivityPart",
+    "ClarificationPart",
+    "ClarificationQuestion",
     "GatePart",
     "PartKind",
     "PlanPart",
@@ -49,6 +51,7 @@ __all__ = [
     "TurnPart",
     "activity_part_id",
     "assistant_message_id",
+    "clarification_part_id",
     "gate_part_id",
     "plan_part_id",
     "reasoning_part_id",
@@ -71,6 +74,7 @@ class PartKind(StrEnum):
     GATE = "gate"
     SOURCES = "sources"
     ACTION = "action"
+    CLARIFICATION = "clarification"
 
 
 class ToolPartState(StrEnum):
@@ -215,6 +219,9 @@ class TaskCounts(BaseModel):
     running: int = Field(default=0, ge=0)
     completed: int = Field(default=0, ge=0)
     partial: int = Field(default=0, ge=0)
+    #: Finished and routed to a human — counted apart from ``partial`` (a shortfall) because it is
+    #: the one terminal outcome that names a queue somebody can work.
+    needs_review: int = Field(default=0, ge=0)
     blocked: int = Field(default=0, ge=0)
     failed: int = Field(default=0, ge=0)
 
@@ -281,6 +288,38 @@ class GatePart(_Part):
     answered_at: str | None = None
 
 
+class ClarificationQuestion(BaseModel):
+    """One question the design runtime asked before designing (its ``request_clarification``
+    payload, field for field). ``default`` is what the runtime uses when the answer is skipped."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    question: str
+    why_it_matters: str = ""
+    options: tuple[str, ...] = ()
+    default: str
+    allow_freeform: bool = True
+
+
+class ClarificationPart(_Part):
+    """Spec 2026-09-20 (clarification cards) §2.1: a document's opening-move questions.
+
+    Emitted by the leg runner once per addressed document whose terminal run ended
+    ``clarification_requested``. The card the client renders above the composer; on a turn that
+    is no longer the latest it renders read-only. The durable record is the summary sentence on
+    the turn's assistant message — this part is the live/replayed projection, like a gate's.
+    """
+
+    kind: PartKind = PartKind.CLARIFICATION
+    document_id: str
+    document_title: str
+    doc_kind: str
+    account_name: str | None = None
+    run_id: str
+    questions: tuple[ClarificationQuestion, ...]
+
+
 class SourceItem(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -300,7 +339,14 @@ class SourcesPart(_Part):
 
 #: The union every emitter method accepts.
 TurnPart = (
-    ToolPart | ReasoningPart | AgentActivityPart | TaskPart | PlanPart | GatePart | SourcesPart
+    ToolPart
+    | ReasoningPart
+    | AgentActivityPart
+    | TaskPart
+    | PlanPart
+    | GatePart
+    | SourcesPart
+    | ClarificationPart
 )
 
 
@@ -360,6 +406,10 @@ def gate_part_id(*, object_type: str, object_id: str) -> str:
 
 def sources_part_id(*, message_id: UUID) -> str:
     return f"sources:{message_id}"
+
+
+def clarification_part_id(document_id: str) -> str:
+    return f"clarification:{document_id}"
 
 
 # --- projections from durable objects -------------------------------------------------------
@@ -432,10 +482,16 @@ _TASK_STATES: dict[str, TaskState] = {
 
 
 def _terminal_task_state(counts: TaskCounts) -> TaskState:
-    """What an ended run actually achieved, read off its subjects' finalization outcomes."""
+    """What an ended run actually achieved, read off its subjects' finalization outcomes.
 
-    if counts.completed == 0 and counts.partial == 0 and counts.failed > 0:
+    ``needs_review`` is counted apart from ``partial`` but reads the same here: a subject routed to
+    review is a subject the run did not finish everything on, so the *state* is unchanged by the
+    split — only the counts got more honest.
+    """
+
+    unfinished = counts.partial + counts.needs_review
+    if counts.completed == 0 and unfinished == 0 and counts.failed > 0:
         return TaskState.FAILED
-    if counts.partial > 0 or counts.failed > 0:
+    if unfinished > 0 or counts.failed > 0:
         return TaskState.PARTIAL
     return TaskState.COMPLETED

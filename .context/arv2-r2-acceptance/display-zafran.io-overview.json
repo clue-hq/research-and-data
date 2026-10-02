@@ -1,0 +1,674 @@
+{
+  "overview": {
+    "checks": {
+      "buying-committee": {
+        "aliases": 25,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "how-to-approach": {
+        "aliases": 48,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "watch-outs": {
+        "aliases": 1,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "what-they-do": {
+        "aliases": 8,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "why-now": {
+        "aliases": 32,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "why-they-fit": {
+        "aliases": 41,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      }
+    },
+    "cost_usd": "0.01565695",
+    "display_block": {
+      "page": "overview",
+      "sections": [
+        {
+          "defaultOpen": true,
+          "empty": false,
+          "h1": "What they do",
+          "intro": [
+            {
+              "claimIds": [
+                "dbd45874-4105-4b92-90a0-956ec615fe9f"
+              ],
+              "text": "Zafran sells an AI-native exposure management platform for security teams that cuts through vulnerability noise, reveals what is truly exploitable, and automates mitigation and remediation using existing security controls. Its stated mission is to proactively stop the exploitation of vulnerabilities everywhere."
+            },
+            {
+              "claimIds": [
+                "b0a22951-3d44-4c15-bb45-38144e3beb56",
+                "945435b5-5a93-4187-a455-45486745cce4",
+                "638b4ded-9c7e-4fba-aafb-a2df186a282f",
+                "41cd0cd6-a36f-41f8-ba39-10876f5c5c81",
+                "dd9536e8-73e7-45e8-937f-84da05f410b5",
+                "1f6fec87-8bb6-4e79-ba16-be760d23bf6e"
+              ],
+              "text": "Founded in 2022, Zafran is headquartered in New York, New York, and has 167 employees. It has raised $130.5 million across four rounds from nine investors, including a $60 million Series C announced on 2 December 2025. Named customers include Kraft Heinz and Chipotle."
+            }
+          ],
+          "items": [],
+          "key": "what-they-do",
+          "restricted": false
+        },
+        {
+          "defaultOpen": true,
+          "empty": false,
+          "h1": "Why they fit",
+          "intro": [
+            {
+              "claimIds": [
+                "f45483cb-dbd7-4817-a5f7-ce1866a853cd",
+                "7d579f11-efda-4164-9c2f-4459d2c38150",
+                "41cd0cd6-a36f-41f8-ba39-10876f5c5c81",
+                "638b4ded-9c7e-4fba-aafb-a2df186a282f"
+              ],
+              "text": "The overall picture is a 167-person, $130.5 million-funded company building ABM from scratch while hiring across marketing and sales."
+            }
+          ],
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "The Senior Manager, ABM & Integrated Campaigns role is tasked with building 1:1, 1:few and 1:many programs."
+                },
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "The role reports to the Head of Growth Marketing and includes account tiering, buying-group mapping and coordinated engagement sequences."
+                }
+              ],
+              "contactRefs": [],
+              "fitDisposition": "support",
+              "h2": "ABM capability is being built from scratch",
+              "id": "why-they-fit-1",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "7d579f11-efda-4164-9c2f-4459d2c38150"
+                  ],
+                  "text": "Zafran Security has 27 open requisitions, including 11 in Sales and 3 in Marketing."
+                },
+                {
+                  "claimIds": [
+                    "7d579f11-efda-4164-9c2f-4459d2c38150"
+                  ],
+                  "text": "Nine roles were published in the last 30 days and four in the last seven days."
+                }
+              ],
+              "contactRefs": [],
+              "fitDisposition": "support",
+              "h2": "Hiring activity supports a broader go-to-market motion",
+              "id": "why-they-fit-2",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "dd9536e8-73e7-45e8-937f-84da05f410b5",
+                    "41cd0cd6-a36f-41f8-ba39-10876f5c5c81"
+                  ],
+                  "text": "The company announced a $60 million Series C on 2 December 2025 and has raised $130.5 million across four rounds."
+                },
+                {
+                  "claimIds": [
+                    "638b4ded-9c7e-4fba-aafb-a2df186a282f"
+                  ],
+                  "text": "Its reported employee count is 167."
+                }
+              ],
+              "contactRefs": [],
+              "fitDisposition": "support",
+              "h2": "Funding and team size indicate room for a scaled program",
+              "id": "why-they-fit-3",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "1f6fec87-8bb6-4e79-ba16-be760d23bf6e"
+                  ],
+                  "text": "The customer evidence names Ricardo Lafosse, CISO at Kraft Heinz, and Dave Estlick, CISO at Chipotle."
+                },
+                {
+                  "claimIds": [
+                    "1f6fec87-8bb6-4e79-ba16-be760d23bf6e"
+                  ],
+                  "text": "Their cited outcomes include evaluating the security tech stack, identifying gaps, improving protection and improving ROI on tools."
+                }
+              ],
+              "contactRefs": [],
+              "fitDisposition": "support",
+              "h2": "Named customer evidence gives the message concrete proof points",
+              "id": "why-they-fit-4",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c"
+                  ],
+                  "text": "Across all 27 requisitions, 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, Clay, Common Room, Gong, Marketo, Salesloft and Apollo are explicitly absent."
+                },
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c"
+                  ],
+                  "text": "The listed marketing stack includes HubSpot, Salesforce and unnamed major ABM platforms, so the current ABM tooling environment is not fully clear."
+                }
+              ],
+              "contactRefs": [],
+              "fitDisposition": "caveat",
+              "h2": "ABM tooling is not clearly named in the hiring evidence",
+              "id": "why-they-fit-5",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            }
+          ],
+          "key": "why-they-fit",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Why now",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "47678440-74e1-4be3-bbb5-598758a92fb9"
+                  ],
+                  "text": "Zafran Security began standing up a partner and alliances channel from zero on 1 September 2026."
+                },
+                {
+                  "claimIds": [
+                    "47678440-74e1-4be3-bbb5-598758a92fb9"
+                  ],
+                  "text": "The Director of Alliances role is designed to build the channel across global systems integrators, cloud partners and technology partners."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Partner and alliances channel began building on 1 September 2026",
+              "id": "why-now-1",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "12efab0c-5d96-4215-b869-d1353fed5ce0"
+                  ],
+                  "text": "Zafran Security posted an AI Team Lead role on 7 September 2026."
+                },
+                {
+                  "claimIds": [
+                    "12efab0c-5d96-4215-b869-d1353fed5ce0"
+                  ],
+                  "text": "The new R&D opening is a current signal of investment in an AI team."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "AI Team Lead role posted on 7 September 2026",
+              "id": "why-now-2",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "Zafran Security published its Senior Manager, ABM & Integrated Campaigns requisition on 17 June 2026, and it has been open for 77 days."
+                },
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "The role covers 1:1, 1:few and 1:many programs, account tiering, buying-group mapping and engagement sequences."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "ABM function is being built from scratch with a role open 77 days",
+              "id": "why-now-3",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            }
+          ],
+          "key": "why-now",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Buying committee",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "2371a12c-afbc-48f7-8240-d28cd2d2d5b6",
+                    "ea82bdd5-cd35-4617-b64d-096df2960922",
+                    "d38a7dea-1561-44ef-9697-fd09f0469e94"
+                  ],
+                  "text": "Vari Kaur is recorded as Head of Growth Marketing and the Champion on the committee."
+                },
+                {
+                  "claimIds": [
+                    "f759b617-b81b-456d-8ab5-ba47d949c4f6"
+                  ],
+                  "text": "Her career history includes growth marketing and demand generation roles at Zafran Security, Secureworks, ReSource Pro, Axiom, Tangoe, Ivanti, Grazitti and Milestone."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "7226c003-484c-4bb9-946f-868a6a79588b",
+                  "name": "Vari Kaur",
+                  "persona": "champion",
+                  "title": "Head of Growth Marketing (Varinder / Vari Kaur referenced as Head of Growth Marketing)"
+                }
+              ],
+              "h2": "Vari Kaur \u2014 Head of Growth Marketing \u2014 Champion",
+              "id": "buying-committee-1",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "df97eabe-26df-4bf1-8eba-f1feba627dcf",
+                    "fc08d7bd-7450-4b67-bba1-b12b23f5c59e",
+                    "fe26ced0-f81e-4259-a997-71e61bb6622a"
+                  ],
+                  "text": "Nick Fisher is recorded as VP of Marketing and the Economic buyer on the committee."
+                },
+                {
+                  "claimIds": [
+                    "32f3fd18-8962-44af-8866-614259b99469"
+                  ],
+                  "text": "His career history includes product marketing leadership roles at Zafran Security, Sysdig, Okta, Lookout, Ideagen Huddle and Zynga."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "034de76e-06e7-48b2-8141-11aa664da79c",
+                  "name": "Nick Fisher",
+                  "persona": "economic_buyer",
+                  "title": "VP of Marketing"
+                }
+              ],
+              "h2": "Nick Fisher \u2014 VP of Marketing \u2014 Economic buyer",
+              "id": "buying-committee-2",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "63664143-4931-4d7a-a2c9-d9908a674794",
+                    "33890fcc-c07c-483a-93df-c30e07bd38b1"
+                  ],
+                  "text": "Sanaz Yashar is recorded as Co-Founder & CEO and the Economic buyer on the committee."
+                },
+                {
+                  "claimIds": [
+                    "5a8f12ed-3898-4522-9162-4f99aef58865"
+                  ],
+                  "text": "Her career history includes leadership roles at Zafran Security, Mandiant, FireEye, Cybereason and Israeli Military Intelligence."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "2da6777f-6f1b-4d7d-8ec3-df0a3b545afa",
+                  "name": "Sanaz Yashar",
+                  "persona": "economic_buyer",
+                  "title": "Co-Founder & CEO"
+                }
+              ],
+              "h2": "Sanaz Yashar \u2014 Co-Founder & CEO \u2014 Economic buyer",
+              "id": "buying-committee-3",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "823666e8-0f25-4178-ad09-8e92d642566c",
+                    "f264f677-9c86-4ad0-a07f-1a6bc9585b3c",
+                    "14d672ea-e1b7-4249-a8ff-779872e8d03c"
+                  ],
+                  "text": "Ben Seri is recorded as Co-Founder & CTO and the Technical evaluator on the committee."
+                },
+                {
+                  "claimIds": [
+                    "057fa99f-eebd-4694-b9a3-961a822f051d"
+                  ],
+                  "text": "His career history includes Co-Founder & CTO at Zafran Security and VP of Research at Armis."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "5b9cbf0b-436f-4df6-b29c-72299402f2a3",
+                  "name": "Ben Seri",
+                  "persona": "technical_evaluator",
+                  "title": "Co-Founder & CTO"
+                }
+              ],
+              "h2": "Ben Seri \u2014 Co-Founder & CTO \u2014 Technical evaluator",
+              "id": "buying-committee-4",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "d3b6e23e-996f-4438-82c9-31eb8e58395c",
+                    "f3b30da0-1b45-44d0-8e98-b3c6446ad973"
+                  ],
+                  "text": "Tom Anthony is recorded as SVP, Global Sales and a User on the committee."
+                },
+                {
+                  "claimIds": [
+                    "37b696ad-3d57-4421-a1f2-5c2bd826150d"
+                  ],
+                  "text": "His career history includes global sales and customer success leadership at Zafran Security, Upbound and Okta."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "e350cdd7-324c-43b3-bc4a-722d687ae58c",
+                  "name": "Tom Anthony",
+                  "persona": "user",
+                  "title": "SVP, Global Sales"
+                }
+              ],
+              "h2": "Tom Anthony \u2014 SVP, Global Sales \u2014 User",
+              "id": "buying-committee-5",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            }
+          ],
+          "key": "buying-committee",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "How to approach",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "2371a12c-afbc-48f7-8240-d28cd2d2d5b6",
+                    "ea82bdd5-cd35-4617-b64d-096df2960922"
+                  ],
+                  "text": "Open with Vari Kaur, whose title is Head of Growth Marketing and whose recorded persona is champion."
+                },
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "The ABM role reports to the Head of Growth Marketing and is focused on building the program from scratch."
+                }
+              ],
+              "contactRefs": [
+                {
+                  "accountId": "74d83176-f407-4d35-a9c2-25ad0a8bbf91",
+                  "contactId": "7226c003-484c-4bb9-946f-868a6a79588b",
+                  "name": "Vari Kaur",
+                  "persona": "champion",
+                  "title": "Head of Growth Marketing (Varinder / Vari Kaur referenced as Head of Growth Marketing)"
+                }
+              ],
+              "h2": "Lead with Vari Kaur \u2014 champion for the ABM build",
+              "id": "how-to-approach-1",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "We can help turn the ABM program being built from scratch into coordinated 1:1, 1:few and 1:many motions."
+                },
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "Lead on the practical work of defining target-account tiers, mapping buying groups and building stakeholder engagement sequences."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "The message \u2014 help build coordinated ABM motions",
+              "id": "how-to-approach-2",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "Show the ABM operating model covering 1:1 programs, 1:few cluster plays and scaled 1:many motions."
+                },
+                {
+                  "claimIds": [
+                    "1f6fec87-8bb6-4e79-ba16-be760d23bf6e"
+                  ],
+                  "text": "Pair it with customer evidence from Kraft Heinz and Chipotle, including how Zafran helps evaluate security controls and identify gaps."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "The proof to show \u2014 customer evidence and the ABM operating model",
+              "id": "how-to-approach-3",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c"
+                  ],
+                  "text": "Use Salesforce, LinkedIn Sales Navigator, ZoomInfo and Outreach for outbound execution."
+                },
+                {
+                  "claimIds": [
+                    "cc576ca5-11af-4388-af80-e79c07be7a0c"
+                  ],
+                  "text": "The recorded marketing stack also includes HubSpot, Salesforce and unnamed major ABM platforms."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Tier and channels \u2014 use Salesforce and the listed outbound stack",
+              "id": "how-to-approach-4",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "f45483cb-dbd7-4817-a5f7-ce1866a853cd"
+                  ],
+                  "text": "The Senior Manager, ABM & Integrated Campaigns role was published on 17 June 2026 and is listed as 77 days open."
+                },
+                {
+                  "claimIds": [
+                    "7d579f11-efda-4164-9c2f-4459d2c38150"
+                  ],
+                  "text": "The account has 27 open requisitions, with 9 published in the last 30 days and 4 in the last 7 days."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Timing \u2014 act while the ABM role and hiring push are active",
+              "id": "how-to-approach-5",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            }
+          ],
+          "key": "how-to-approach",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Watch-outs",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "aeaa50cf-60f7-4c71-b4ee-4dc27e82b7bf"
+                  ],
+                  "text": "The podcast transcript has a sustained loop beginning at 12:41, while a re-run produced the full 6,926-word episode with no looping but no timestamps or speaker labels."
+                },
+                {
+                  "claimIds": [
+                    "aeaa50cf-60f7-4c71-b4ee-4dc27e82b7bf"
+                  ],
+                  "text": "Do not use transcript quotes after 12:38 without re-verifying them against the faithful ASR."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Transcript-quality warning: verify the podcast before using any quote",
+              "id": "watch-outs-1",
+              "newSinceLastVisit": false,
+              "priority": 3,
+              "sendLine": null
+            }
+          ],
+          "key": "watch-outs",
+          "restricted": true
+        }
+      ]
+    },
+    "evidence_count": 31,
+    "failed": [],
+    "generated": [
+      "what-they-do",
+      "why-they-fit",
+      "why-now",
+      "buying-committee",
+      "how-to-approach",
+      "watch-outs"
+    ],
+    "regenerated": [],
+    "skipped_empty": [],
+    "stale_served": []
+  },
+  "total_cost_usd": "0.01565695"
+}

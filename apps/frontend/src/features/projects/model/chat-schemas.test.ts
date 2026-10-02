@@ -22,6 +22,7 @@ import {
   turnRequestBody,
 } from "./chat-turn";
 import { ChatGateListResponseSchema, formatCents, isGateOpen } from "./chat-gate";
+import { parseHomeBootstrapDraft } from "./home-submission";
 import {
   fixtureGates,
   fixtureMessages,
@@ -157,8 +158,51 @@ test("design asset context refs retain read-time filename and thumbnail metadata
     version: null,
     ordinal: 0,
     label: "inspiration.webp",
+    // A design asset carries no document kind; the wire omits it and it reads as null.
+    kind: null,
     mediaType: "image/webp",
     thumbnailDigest: "b".repeat(64),
+    // A design asset is not a chat upload; it has no upload route to fetch from.
+    uploadId: null,
+  });
+});
+
+test("attachment refs carry the human's filename, media type and upload id", () => {
+  const page = ChatMessageListResponseSchema.parse({
+    data: [
+      {
+        ...fixtureMessages[0],
+        body: "Here is the screenshot.",
+        refs: [
+          {
+            flavor: "attachment",
+            workspace_id: "ws-demo",
+            object_type: "artifact",
+            object_id: "ws-demo/" + "c".repeat(64),
+            version: null,
+            ordinal: 0,
+            label: "shot.png",
+            media_type: "image/png",
+            upload_id: "11111111-2222-3333-4444-555555555555",
+          },
+        ],
+      },
+    ],
+    meta: { next_cursor: null },
+  });
+
+  assert.deepEqual(page.messages[0].refs[0], {
+    flavor: "attachment",
+    workspaceId: "ws-demo",
+    objectType: "artifact",
+    objectId: "ws-demo/" + "c".repeat(64),
+    version: null,
+    ordinal: 0,
+    label: "shot.png",
+    kind: null,
+    mediaType: "image/png",
+    thumbnailDigest: null,
+    uploadId: "11111111-2222-3333-4444-555555555555",
   });
 });
 
@@ -210,6 +254,28 @@ test("a physically missing historical artifact gives actionable recovery copy", 
         expected_subject_sha256: "b".repeat(64),
         expected_estimated_cost_cents: null,
         selected_product_id: "prd_phone",
+      },
+    },
+  );
+  // The set-valued gate sends the whole chosen list, never a single id.
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "gate_response",
+      response: {
+        gateId: "g-product-set",
+        decision: "approved",
+        expectedSubjectSha256: "c".repeat(64),
+        expectedEstimatedCostCents: null,
+        selectedProductIds: ["prd_phone", "prd_intake"],
+      },
+    }),
+    {
+      gate_response: {
+        gate_id: "g-product-set",
+        decision: "approved",
+        expected_subject_sha256: "c".repeat(64),
+        expected_estimated_cost_cents: null,
+        selected_product_ids: ["prd_phone", "prd_intake"],
       },
     },
   );
@@ -425,4 +491,100 @@ test("a streaming-start text part is representable — empty text, empty parts",
   // (charter §2's D-4 hazard list). The domain type simply allows it.
   const empty = { kind: "text" as const, partId: "text:a", revision: 1, text: "", streaming: true, failed: false, failureReason: null };
   assert.equal(empty.text, "");
+});
+
+test("a context ref's note rides the wire only when present", () => {
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "message",
+      message: "fix",
+      contextRefs: [
+        { objectId: "doc_1", objectType: "design_document", version: 3 },
+        {
+          objectId: "frg_a#:nth-child(2)",
+          objectType: "design_node",
+          version: 3,
+          note: "1. Make this shorter",
+        },
+      ],
+    }),
+    {
+      message: "fix",
+      context_refs: [
+        { object_type: "design_document", object_id: "doc_1", version: 3 },
+        {
+          object_type: "design_node",
+          object_id: "frg_a#:nth-child(2)",
+          version: 3,
+          note: "1. Make this shorter",
+        },
+      ],
+      attachment_refs: [],
+      agent_profile_id: null,
+    },
+  );
+});
+
+test("a message turn body carries every attachment ref field in snake_case", () => {
+  assert.deepEqual(
+    turnRequestBody({
+      kind: "message",
+      message: "read this brief",
+      attachmentRefs: [
+        {
+          uploadId: "upl_1",
+          artifactKey: `ws_1/${"a".repeat(64)}`,
+          sha256: "a".repeat(64),
+          mediaType: "text/markdown",
+          byteCount: 512,
+          filename: "brief.md",
+        },
+      ],
+    }),
+    {
+      message: "read this brief",
+      context_refs: [],
+      attachment_refs: [
+        {
+          upload_id: "upl_1",
+          artifact_key: `ws_1/${"a".repeat(64)}`,
+          sha256: "a".repeat(64),
+          media_type: "text/markdown",
+          byte_count: 512,
+          filename: "brief.md",
+        },
+      ],
+      agent_profile_id: null,
+    },
+  );
+});
+
+test("a Home bootstrap draft keeps the upload id of an attachment ref", () => {
+  const parsed = parseHomeBootstrapDraft({
+    brandId: "brd_1",
+    message: "read this brief",
+    attachmentRefs: [
+      {
+        artifactKey: `ws_1/${"a".repeat(64)}`,
+        byteCount: 512,
+        filename: "brief.md",
+        mediaType: "text/markdown",
+        sha256: "a".repeat(64),
+        uploadId: "upl_1",
+      },
+    ],
+  });
+  assert.equal(parsed.success, true);
+  if (parsed.success) {
+    assert.deepEqual(parsed.request.attachmentRefs, [
+      {
+        artifactKey: `ws_1/${"a".repeat(64)}`,
+        byteCount: 512,
+        filename: "brief.md",
+        mediaType: "text/markdown",
+        sha256: "a".repeat(64),
+        uploadId: "upl_1",
+      },
+    ]);
+  }
 });

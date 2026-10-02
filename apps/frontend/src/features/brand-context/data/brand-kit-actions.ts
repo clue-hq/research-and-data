@@ -5,7 +5,7 @@ import {
 } from "../model/brand-kit-actions";
 
 /**
- * Slice 4: the Brand-context page's two mutations and the ingestion-job read behind them.
+ * Slice 4: the Brand-context page's re-extraction and its ingestion-job read.
  *
  * Browser-side, so everything goes through the authenticated BFF (`/api/clue/design`, W1.2):
  * the proxy proves the session and stamps `X-Workspace-Id` server-side. A design-API origin is
@@ -16,8 +16,6 @@ const DESIGN_BFF = "/api/clue/design";
 export interface BrandKitActionsSource {
   /** The workspace's ingestion jobs, most recent first; `null` means the read is unavailable. */
   listIngestionJobs(): Promise<IngestionJob[] | null>;
-  /** Approve a kit's LATEST version. There is no un-approve affordance, by ruling. */
-  approve(brandKitId: string): Promise<void>;
   /** Enqueue one website ingestion; with `brand_kit_id` it publishes that kit's next version. */
   enqueueWebsiteIngestion(request: ReExtractRequest): Promise<void>;
 }
@@ -35,12 +33,6 @@ async function post(path: string, body: unknown): Promise<void> {
 }
 
 export const httpBrandKitActionsSource: BrandKitActionsSource = {
-  async approve(brandKitId) {
-    await post(`/brand-kits/${encodeURIComponent(brandKitId)}/approval`, {
-      approval_status: "approved",
-    });
-  },
-
   async enqueueWebsiteIngestion(request) {
     await post("/brand-kits/ingest/website", request);
   },
@@ -66,22 +58,11 @@ export const httpBrandKitActionsSource: BrandKitActionsSource = {
 };
 
 export interface BrandKitActions {
-  approve(brandKitId: string): Promise<void>;
   reExtract(request: ReExtractRequest): Promise<void>;
   listIngestionJobs(): Promise<IngestionJob[] | null>;
 }
 
-/**
- * The mutations share one SINGLE-FLIGHT guard.
- *
- * The buttons already disable themselves while a run is in flight, but a disabled button is a
- * rendering, not a guarantee: a double click lands both events before React re-renders, and
- * each of these posts is a durable act (a second ingestion job, a second approval write). The
- * guard is here, so it holds whatever the presentation does. Approval and Re-extract are also
- * mutually exclusive: the approval endpoint targets the lineage's latest version, so racing it
- * with a publish could approve a draft the person has not reviewed. A failed attempt releases
- * the guard: a refusal the client can see is a refusal the client may retry.
- */
+/** A double click shares the pending extraction request; a failure releases it for retry. */
 export function createBrandKitActions(
   source: BrandKitActionsSource = httpBrandKitActionsSource,
 ): BrandKitActions {
@@ -97,7 +78,6 @@ export function createBrandKitActions(
   }
 
   return {
-    approve: (brandKitId) => single(() => source.approve(brandKitId)),
     listIngestionJobs: () => source.listIngestionJobs(),
     reExtract: (request) => single(() => source.enqueueWebsiteIngestion(request)),
   };

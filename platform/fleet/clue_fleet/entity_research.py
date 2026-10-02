@@ -237,11 +237,27 @@ class EntityResearchJobEventRow(BaseModel):
 
 
 class EntityResearchExecutionFence(BaseModel):
+    """One exact drive of one job: its task, its holder, its lease, and its attempt ordinal.
+
+    ``task_attempt`` is the durable per-task claim counter (``fleet_task.attempts``, incremented
+    by every claim and never reset — a re-offered task keeps its row). It is part of the fence
+    because ``lease_generation`` alone does **not** identify a drive: ``release_work_lease``
+    deletes the ``work_lease`` row, so the next acquisition starts again at generation 1. Two
+    drives of the same job at the same durable state therefore share
+    ``(job, lease_generation, current_state_sha256)``, and the R3 journal's immutable
+    exact-construction row would be replayed under a *different* construction whenever anything
+    that constructs the agent moved between them (code, deployment config, run budget, committee
+    plan) — a legitimate resume after a crash, refused as tampering. Composition keys the agent
+    turn id on the attempt as well, so every drive is its own turn and the R3 guard keeps its
+    real meaning: one turn id, one immutable construction.
+    """
+
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     task_id: UUID
     worker_id: NonEmptyStr
     lease_generation: int = Field(ge=1)
+    task_attempt: int = Field(ge=1)
 
 
 class EntityResearchBeginResult(BaseModel):
@@ -1536,6 +1552,7 @@ class EntityResearchJobWorkHandler:
             task_id=context.task_id,
             worker_id=context.worker_id,
             lease_generation=context.lease_generation,
+            task_attempt=context.task_attempt,
         )
         begin = await self._store.begin(job_id, fence=fence)
         if not begin.admitted:

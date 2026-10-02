@@ -1,0 +1,346 @@
+{
+  "phases": [
+    {
+      "phase": "B0_ashby_boards_and_live_sites",
+      "seconds": 4.69,
+      "note": "free: 6 Ashby boards + 5 live site fetches",
+      "ts": "2026-08-31T07:34:19Z"
+    },
+    {
+      "phase": "B0b_free_followups",
+      "seconds": 3.59,
+      "note": "harmonic req page + ATS hunt + careers",
+      "ts": "2026-08-31T07:35:11Z"
+    },
+    {
+      "phase": "B1a_own_site_zafran",
+      "seconds": 1.24,
+      "note": "4 urls x2 methods",
+      "ts": "2026-08-31T07:36:19Z"
+    },
+    {
+      "phase": "B1a_own_site_cogent",
+      "seconds": 0.91,
+      "note": "3 urls x2 methods",
+      "ts": "2026-08-31T07:36:20Z"
+    },
+    {
+      "phase": "B1a_own_site_harmonic",
+      "seconds": 0.46,
+      "note": "3 urls x2 methods",
+      "ts": "2026-08-31T07:36:20Z"
+    },
+    {
+      "phase": "B1a_own_site_vendelux",
+      "seconds": 1.26,
+      "note": "3 urls x2 methods",
+      "ts": "2026-08-31T07:36:22Z"
+    },
+    {
+      "phase": "B1a_own_site_uptiq",
+      "seconds": 0.99,
+      "note": "4 urls x2 methods",
+      "ts": "2026-08-31T07:36:23Z"
+    },
+    {
+      "phase": "B1a_TOTAL",
+      "seconds": 4.88,
+      "note": "own-site reads, 5 accounts",
+      "ts": "2026-08-31T07:36:23Z"
+    },
+    {
+      "phase": "B1b_deep_zafran",
+      "seconds": 46.77,
+      "note": "exa deep-reasoning, 1 call",
+      "ts": "2026-08-31T07:38:35Z"
+    },
+    {
+      "phase": "B1b_deep_cogent",
+      "seconds": 55.65,
+      "note": "exa deep-reasoning, 1 call",
+      "ts": "2026-08-31T07:39:32Z"
+    },
+    {
+      "phase": "B1b_TOTAL",
+      "seconds": 104.84,
+      "note": "2 deep-reasoning calls",
+      "ts": "2026-08-31T07:39:33Z"
+    },
+    {
+      "phase": "B1b_deep_harmonic",
+      "seconds": 42.95,
+      "note": "exa deep-reasoning, 1 call",
+      "ts": "2026-08-31T07:40:19Z"
+    },
+    {
+      "phase": "B1b_deep_vendelux",
+      "seconds": 40.91,
+      "note": "exa deep-reasoning, 1 call",
+      "ts": "2026-08-31T07:41:02Z"
+    },
+    {
+      "phase": "B1b_deep_uptiq",
+      "seconds": 40.96,
+      "note": "exa deep-reasoning, 1 call",
+      "ts": "2026-08-31T07:41:44Z"
+    },
+    {
+      "phase": "B1b_TOTAL",
+      "seconds": 128.44,
+      "note": "3 deep-reasoning calls",
+      "ts": "2026-08-31T07:41:45Z"
+    },
+    {
+      "phase": "B1c_ark_title_filter_probe",
+      "seconds": 1.69,
+      "note": "1 call, size 2",
+      "ts": "2026-08-31T07:44:11Z"
+    },
+    {
+      "phase": "B1c_ark_zafran",
+      "seconds": 0.79,
+      "note": "size=12, 12 profiles",
+      "ts": "2026-08-31T07:45:07Z"
+    },
+    {
+      "phase": "B1c_ark_cogent",
+      "seconds": 11.28,
+      "note": "size=12, 12 profiles",
+      "ts": "2026-08-31T07:45:18Z"
+    },
+    {
+      "phase": "B1c_ark_vendelux",
+      "seconds": 11.06,
+      "note": "size=12, 12 profiles",
+      "ts": "2026-08-31T07:45:29Z"
+    },
+    {
+      "phase": "B1c_ark_harmonic",
+      "seconds": 11.19,
+      "note": "size=8, 8 profiles",
+      "ts": "2026-08-31T07:45:40Z"
+    },
+    {
+      "phase": "B1c_ark_uptiq",
+      "seconds": 11.46,
+      "note": "size=6, 6 profiles",
+      "ts": "2026-08-31T07:45:52Z"
+    },
+    {
+      "phase": "B1c_TOTAL",
+      "seconds": 45.79,
+      "note": "5 AI Ark roster searches",
+      "ts": "2026-08-31T07:45:52Z"
+    },
+    {
+      "phase": "B1d_g_zafran_mktg",
+      "seconds": 2.11,
+      "note": "cheap gap-fill search",
+      "ts": "2026-08-31T07:46:52Z"
+    },
+    {
+      "phase": "B1d_g_cogent_mktg",
+      "seconds": 1.77,
+      "note": "cheap gap-fill search",
+      "ts": "2026-08-31T07:46:55Z"
+    },
+    {
+      "phase": "B1d_g_harmonic_abm",
+      "seconds": 1.35,
+      "note": "cheap gap-fill search",
+      "ts": "2026-08-31T07:46:58Z"
+    },
+    {
+      "phase": "B1d_g_uptiq_agency",
+      "seconds": 1.52,
+      "note": "cheap gap-fill search",
+      "ts": "2026-08-31T07:47:00Z"
+    },
+    {
+      "phase": "B1d_ark_nick_fisher",
+      "seconds": 0.66,
+      "note": "name-scoped, size 3",
+      "ts": "2026-08-31T07:47:02Z"
+    },
+    {
+      "phase": "B1d_TOTAL",
+      "seconds": 11.82,
+      "note": "4 exa gap-fills + 1 ark name search",
+      "ts": "2026-08-31T07:47:02Z"
+    },
+    {
+      "phase": "B2_contact_deep_zafran",
+      "seconds": 31.83,
+      "note": "Vari Kaur (Varinder Kaur)",
+      "ts": "2026-08-31T07:49:20Z"
+    },
+    {
+      "phase": "B2_contact_deep_cogent",
+      "seconds": 40.52,
+      "note": "Alexander Semien",
+      "ts": "2026-08-31T07:50:02Z"
+    },
+    {
+      "phase": "B2_contact_deep_harmonic",
+      "seconds": 70.63,
+      "note": "Ana Corio (Anastasia Corio)",
+      "ts": "2026-08-31T07:51:14Z"
+    },
+    {
+      "phase": "B2_contact_deep_TOTAL",
+      "seconds": 146.59,
+      "note": "3 contact deep calls",
+      "ts": "2026-08-31T07:51:15Z"
+    },
+    {
+      "phase": "B2b_email_zafran_Vari_Kaur",
+      "seconds": 3.28,
+      "note": "verified",
+      "ts": "2026-08-31T07:51:52Z"
+    },
+    {
+      "phase": "B2b_email_zafran_Nick_Fisher",
+      "seconds": 13.23,
+      "note": "verified",
+      "ts": "2026-08-31T07:52:05Z"
+    },
+    {
+      "phase": "B2b_email_cogent_Alexander_Semien",
+      "seconds": 11.33,
+      "note": "unverified",
+      "ts": "2026-08-31T07:52:17Z"
+    },
+    {
+      "phase": "B2b_email_cogent_Cameron_Coles",
+      "seconds": 12.24,
+      "note": "verified",
+      "ts": "2026-08-31T07:52:29Z"
+    },
+    {
+      "phase": "B2b_email_harmonic_Ana_Corio",
+      "seconds": 11.35,
+      "note": "verified",
+      "ts": "2026-08-31T07:52:40Z"
+    },
+    {
+      "phase": "B2b_email_harmonic_Tyler_Chonoles",
+      "seconds": 12.64,
+      "note": "verified",
+      "ts": "2026-08-31T07:52:53Z"
+    },
+    {
+      "phase": "B2b_emails_TOTAL",
+      "seconds": 64.07,
+      "note": "6 exports",
+      "ts": "2026-08-31T07:52:53Z"
+    },
+    {
+      "phase": "B2c_reparse_emails",
+      "seconds": 0.0,
+      "note": "0 provider calls, ledger corrected",
+      "ts": "2026-08-31T07:53:29Z"
+    },
+    {
+      "phase": "B2d_semien_email_retry",
+      "seconds": 12.93,
+      "note": "name-scoped search + export retry",
+      "ts": "2026-08-31T07:53:58Z"
+    },
+    {
+      "phase": "B3_n_zafran",
+      "seconds": 1.68,
+      "note": "cheap negatives/probe search",
+      "ts": "2026-08-31T07:54:20Z"
+    },
+    {
+      "phase": "B3_n_cogent",
+      "seconds": 1.2,
+      "note": "cheap negatives/probe search",
+      "ts": "2026-08-31T07:54:22Z"
+    },
+    {
+      "phase": "B3_n_harmonic",
+      "seconds": 1.13,
+      "note": "cheap negatives/probe search",
+      "ts": "2026-08-31T07:54:24Z"
+    },
+    {
+      "phase": "B3_t_arintra",
+      "seconds": 1.81,
+      "note": "cheap negatives/probe search",
+      "ts": "2026-08-31T07:54:27Z"
+    },
+    {
+      "phase": "B3_TOTAL",
+      "seconds": 10.25,
+      "note": "3 negatives + 1 arintra probe",
+      "ts": "2026-08-31T07:54:28Z"
+    },
+    {
+      "phase": "B4_structure_zafran",
+      "seconds": 24.86,
+      "note": "gpt-5-mini, one subject",
+      "ts": "2026-08-31T07:56:41Z"
+    },
+    {
+      "phase": "B4_structure_cogent",
+      "seconds": 26.09,
+      "note": "gpt-5-mini, one subject",
+      "ts": "2026-08-31T07:57:07Z"
+    },
+    {
+      "phase": "B4_structure_harmonic",
+      "seconds": 19.75,
+      "note": "gpt-5-mini, one subject",
+      "ts": "2026-08-31T07:57:27Z"
+    },
+    {
+      "phase": "B4_structure_vendelux",
+      "seconds": 19.08,
+      "note": "gpt-5-mini, one subject",
+      "ts": "2026-08-31T07:57:46Z"
+    },
+    {
+      "phase": "B4_structure_uptiq",
+      "seconds": 24.72,
+      "note": "gpt-5-mini, one subject",
+      "ts": "2026-08-31T07:58:11Z"
+    },
+    {
+      "phase": "B4_structure_accounts_TOTAL",
+      "seconds": 114.5,
+      "note": "5 account calls",
+      "ts": "2026-08-31T07:58:11Z"
+    },
+    {
+      "phase": "B4b_structure_contact_zafran",
+      "seconds": 21.72,
+      "note": "Vari Kaur (Varinder Kaur)",
+      "ts": "2026-08-31T07:59:44Z"
+    },
+    {
+      "phase": "B4b_structure_contact_cogent",
+      "seconds": 17.03,
+      "note": "Alexander Semien",
+      "ts": "2026-08-31T08:00:01Z"
+    },
+    {
+      "phase": "B4b_structure_contact_harmonic",
+      "seconds": 19.52,
+      "note": "Ana Corio (Anastasia Corio)",
+      "ts": "2026-08-31T08:00:21Z"
+    },
+    {
+      "phase": "B4b_contacts_and_merge_TOTAL",
+      "seconds": 58.28,
+      "note": "3 contact calls + merge",
+      "ts": "2026-08-31T08:00:21Z"
+    },
+    {
+      "phase": "B4c_patch_committees",
+      "seconds": 0.01,
+      "note": "0 provider calls",
+      "ts": "2026-08-31T08:01:17Z"
+    }
+  ]
+}

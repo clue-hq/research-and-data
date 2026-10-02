@@ -15,13 +15,11 @@ import {
   SourcesTrigger,
 } from "@/components/ai-elements/sources";
 import { MessageResponse } from "@/components/ai-elements/message-response";
+import { ClarificationHistoryCard } from "@/features/chat-shell/components/clarification-card";
 import type { ChatGatePart, ChatPart } from "../model/chat-parts";
 import type { GateCardModel, GateDecisionInput } from "../model/chat-gate";
-import type { TranscriptTurnState } from "../model/chat-transcript";
-import { ChatAgentActivity, ChatReasoning } from "./chat-agent-activity";
 import { ChatGateCard } from "./chat-gate-card";
 import { ChatResearchTask } from "./chat-research-task";
-import { ChatToolCall } from "./chat-tool-call";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
 
@@ -34,6 +32,9 @@ import styles from "./project-flow.module.css";
  */
 export interface ChatPartActions {
   busy: boolean;
+  /** The turn whose clarification parts the card above the composer is showing; its inline record is suppressed. */
+  openClarificationTurnId?: string | null;
+  onOpenPlan?: (documentId: string) => void;
   gateFor(part: ChatGatePart): GateCardModel | null;
   onGateDecision(
     card: GateCardModel,
@@ -45,40 +46,45 @@ export interface ChatPartActions {
 export function ChatMessagePartView({
   actions,
   part,
-  turnState,
 }: {
   actions: ChatPartActions;
   part: ChatPart;
-  turnState: TranscriptTurnState;
 }) {
   switch (part.kind) {
     case "text":
       return (
         <div className={styles.messageText} data-streaming={part.streaming || undefined}>
           <MessageResponse streaming={part.streaming}>{part.text}</MessageResponse>
-          {part.failed ? (
+          {part.failed && part.failureReason !== "stop_requested" ? (
             <p role="note">
               <ProjectIcon name="close" size={12} />
               {part.failureReason
-                ? `Stopped: ${part.failureReason}`
-                : "Stopped before this response finished"}
+                ? `Response interrupted: ${part.failureReason}`
+                : "This response could not finish"}
             </p>
           ) : null}
         </div>
       );
     case "reasoning":
-      return <ChatReasoning part={part} turnState={turnState} />;
     case "agent_activity":
-      return <ChatAgentActivity part={part} turnState={turnState} />;
+      // Reasoning is consolidated at the message level. Activity receipts stay
+      // in the stream/inspector, without duplicating the same rounds in chat.
+      return null;
     case "tool":
-      return <ChatToolCall part={part} />;
+      // Tool receipts remain in the event history, but per-step activity rows
+      // are not part of the chat UI (release cleanup, 2026-09-20).
+      return null;
     case "task":
       return <ChatResearchTask part={part} />;
     case "plan":
       return (
         <Plan className={styles.planSummary} defaultOpen={false}>
           <PlanHeader>
-            <PlanTitle>{part.title}</PlanTitle>
+            {part.planRef?.objectType === "project_document" && part.planRef.objectId && actions.onOpenPlan ? (
+              <button type="button" className={`${styles.planSummaryTitle} ${styles.planDocumentLink}`} onClick={() => { if (part.planRef.objectId) actions.onOpenPlan?.(part.planRef.objectId); }}>
+                {part.title}<ProjectIcon name="chevron-right" size={12} />
+              </button>
+            ) : <PlanTitle>{part.title}</PlanTitle>}
             {part.revisionLabel ? (
               <PlanDescription>{`Revision ${part.revisionLabel}`}</PlanDescription>
             ) : null}
@@ -108,6 +114,12 @@ export function ChatMessagePartView({
         />
       );
     }
+    case "clarification":
+      // The interactive card lives above the composer and is driven from the
+      // transcript's LAST turn (`openClarification`). Here — inline, in the
+      // message that asked — the part is a read-only record: the questions and
+      // their defaults, and the fact that the answer is the next message.
+      return <ClarificationHistoryCard part={part} />;
     case "sources":
       return (
         <Sources className={styles.projectSources} defaultOpen={false}>

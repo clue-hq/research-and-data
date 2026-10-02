@@ -1,25 +1,25 @@
-"""FI-2 slice 1, Task 2 — the global-lens accounts list: ``GET /frontend/v1/accounts``.
+"""The workspace accounts table: ``GET /frontend/v1/accounts`` (contract v1, ARV2 E1).
 
-The workspace-scoped, Band-2 read the frontend `/accounts` table binds to. It composes five
-untouched mechanism surfaces and owns no research logic of its own:
+The workspace-scoped read the frontend `/accounts` table binds to. It composes untouched mechanism
+surfaces and owns no research logic of its own:
 
 1. **the account spine** — a workspace ``account_entity`` scan (the workspace's own client binding
-   and merge losers are excluded: neither is a target-account row; Task 3 serves loser redirects);
-2. **neutral facts** — ONE :func:`~clue_research.claimstore.current_values` batch over the
-   list-row neutral field set, under ``WorkspaceScope.for_workspace``. These fields are
-   ``project_neutral``, so they serve from the canonical merge in *every* lens and are
-   deliberately **not** lineage-filtered (FI-2 slice-0 handoff: lineage filtering is
-   species-conditional);
+   and merge losers are excluded: neither is a target-account row);
+2. **neutral facts** — ONE :func:`~clue_research.claimstore.current_values` batch over the row's
+   neutral field set, under ``WorkspaceScope.for_workspace``. These fields are ``project_neutral``,
+   so they serve from the canonical merge in *every* lens and are deliberately **not**
+   lineage-filtered;
 3. **membership** — :func:`~clue_research.membership.memberships_for_accounts`, whose element 0 is
    the recorded ``primaryProjectId`` policy, with each project's display name resolved by ONE
-   batched :func:`project_names` read over the whole page (the FI-1 §9 plan-owner addendum; a
-   per-membership lookup would be an N+1 over a 200-row page);
-4. **per-project attributed scores** — the live ``account.scoring.fit`` / ``.intent`` claims joined
-   to their project through ``run_lineage``. These fields *are* ``project_relative``, so the join
-   is the whole point: every project's score is served **attributed to that project**, and no
-   representative run is guessed (FI-2 §7 dissolves FI-1 D-2 — ambiguity is shown, not hidden);
-5. **research status** — the M8D ``entity_research_job`` aggregation (see
-   :class:`AccountResearchStatusValue` for the mapping and why ``failed`` is absent).
+   batched :func:`project_names` read over the whole page (a per-membership lookup would be an N+1
+   over a 200-row page);
+4. **the account's fit** — the live ``account.scoring.fit`` claims joined to their projects
+   through ``run_lineage``, the newest of which the row shows whichever project produced it
+   (founder ruling 2026-09-11: a fit is global to the account; see :func:`account_fit`). The join
+   still matters: a score arrives attributed to the project that produced it, and no
+   representative run is guessed — the detail's project sections keep that attribution;
+5. **research status** — the account's own latest ARV2 job
+   (:func:`~clue_api.frontend_read.v1_shared.arv2_research_status_for`).
 
 Two disciplines are load-bearing here and are enforced, not merely intended:
 
@@ -29,14 +29,13 @@ Two disciplines are load-bearing here and are enforced, not merely intended:
   reads here scope through the **entity** (ids drawn from the workspace's own ``account_entity``
   page) plus ``WorkspaceScope.predicate()``, which encodes the reuse-class rule correctly, and the
   lineage join adds ``run_lineage.workspace_id`` — a real tenancy column on a real tenancy table.
-* **Band-2 wire discipline.** Semantic values only: enums, numbers, ISO-8601 timestamps, opaque
-  ids, and ``null`` wherever the backend genuinely knows nothing. No display strings, no labels, no
-  formatting — the frontend owns presentation (FI-1 Band-1/Band-2 split).
+* **A fixed number of batched statements per response.** Every source above is read once over the
+  whole page; a per-row lookup is what the suite's statement-count guard exists to prevent.
 
 The scan is **paginated by construction** over ``(created_at, id)`` descending, newest account
-first, so a workspace list can never become an unbounded query. Existing internal consumers retain
-opaque keyset cursors; the browser uses a mutually-exclusive numbered-page mode over the same total
-order so it can navigate backwards and jump to a page without pretending it selected unseen rows.
+first, so a workspace list can never become an unbounded query. Internal consumers retain opaque
+keyset cursors; the browser uses a mutually-exclusive numbered-page mode over the same total order
+so it can navigate backwards and jump to a page without pretending it selected unseen rows.
 """
 
 from __future__ import annotations
@@ -47,30 +46,65 @@ import uuid
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.frontend_read.app import WorkspaceDep
+from clue_api.frontend_read.contract_v1 import (
+    AccountOwner,
+    AccountProject,
+    AccountsMeta,
+    AccountsResponseV1,
+    AccountV1,
+)
+from clue_api.frontend_read.v1_shared import (
+    RESEARCH_STATUS_LABELS,
+    account_logo_path,
+    arv2_research_status_for,
+    custom_fields_for,
+    employee_band,
+    fit_band,
+    fit_score_100,
+    industry_labels,
+    iso_utc,
+    last_modified_for,
+    location_label,
+    owners_for,
+    revenue_band_label,
+    socials,
+    website_url,
+)
+from clue_config import Settings
 from clue_core import EntityId, decode_jsonb_scalar
 from clue_db import ConnFactory
 from clue_research.claimstore import WorkspaceScope, current_values
-from clue_research.membership import ProjectMembership, memberships_for_accounts
+from clue_research.membership import memberships_for_accounts
 
 # --- policy constants -------------------------------------------------------------------------
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 
-#: The neutral (``project_neutral``) account fields the list row renders. Read in ONE batched
-#: merge; every one of them is optional on the wire, because an empty field is a correct output.
-LIST_NEUTRAL_FIELD_KEYS: tuple[str, ...] = ("core.employee_count", "core.revenue_band")
+#: The neutral (``project_neutral``) account fields the row renders (ARV2 D3 decision 3), read in
+#: ONE batched merge: the account's own chrome — bands, location, industries, socials. Every one of
+#: them is optional on the wire, because an empty field is a correct output.
+V1_NEUTRAL_FIELD_KEYS: tuple[str, ...] = (
+    "core.employee_count",
+    "core.employee_range",
+    "core.revenue_band",
+    "core.hq_location",
+    "core.industry",
+    "core.industries_all",
+    "core.company_linkedin_url",
+    "core.company_twitter_url",
+    "core.logo_url",
+)
 
 #: The ``project_relative`` scoring fields the row attributes per project. ``account.scoring.*`` is
 #: relative by prefix, so these two are lineage-joined (unlike the neutral set above).
@@ -88,79 +122,12 @@ class InvalidCursorError(ValueError):
 # --- the wire vocabulary ----------------------------------------------------------------------
 
 
-class AccountResearchStatusValue(StrEnum):
-    """The honest per-``(account, project)`` research status (FI-1 §5.2).
-
-    The mapping, from the M8D lifecycle in ``entity_research_job`` (+ the R6 account-fleet control
-    rows), applied to the **latest** job for that pair — multiple concurrent runs per account are
-    legal, so a per-account status needs a latest-run-wins rule and this is it:
-
-    ==========================================================  ==================
-    backend condition (first match wins, in this order)         status
-    ==========================================================  ==================
-    no ``entity_research_job`` for the (account, project)       ``not_started``
-    terminal + outcome ``needs_review``                         ``needs_review``
-    terminal + outcome ``completed``                            ``completed``
-    terminal + any other outcome                                ``suspended``
-    non-terminal + admission ``paused`` or fleet ``suspended``  ``suspended``
-    non-terminal, otherwise                                     ``in_progress``
-    ==========================================================  ==================
-
-    **Why the terminal arm is tested first.** The run-level fleet state is *not* per-account: the
-    R6 supervisor drives the whole fleet to ``suspended`` when **any** job in the run pauses.
-    Consulting it before this account's own terminal row would let a sibling account's pause mask
-    this account's finished result — and ``needs_review``, the most actionable state on the
-    screen, is exactly the one that would disappear. A job that has reached ``terminal`` has an
-    accepted engine receipt: its outcome is a fact about *this* account and nothing at the run
-    level can revise it. The fleet/admission arms therefore apply only to a job that is still in
-    flight, where "is this actually progressing?" is a real question; the per-job
-    ``admission_state = 'paused'`` arm is the genuinely per-account halt (FI-1 §5.2's explicit
-    carve-out from ``in_progress``), and the fleet arm covers the run-wide stop holding this
-    unfinished job back.
-
-    **Why there is no ``failed``.** The backend has no failure terminal to report. A worker crash
-    does not fail the job — it *re-queues* it, pauses admission and drives the fleet to
-    ``suspended`` (there is no attempt counter, no retry ceiling, and no persisted error text). So
-    the honest rendering of "research stopped and it is not finished" is always "halted, awaiting a
-    human", which is exactly ``suspended``; inventing a ``failed`` slot would put a state on the
-    wire that no backend row can ever justify. The same reasoning routes the other non-success
-    terminal outcomes (``cancelled`` / ``exhausted`` / ``budget_stopped`` / the unreachable
-    ``failed``) to ``suspended``: each one means stopped-without-a-result, and a human decides what
-    happens next. ``completed`` is reported for the ``completed`` outcome alone — the frontend's
-    stronger "fully enriched" (empty ``unresolved_field_keys`` + a complete committee) is a claim
-    this endpoint cannot yet substantiate, so it does not make it.
-    """
-
-    NOT_STARTED = "not_started"
-    IN_PROGRESS = "in_progress"
-    NEEDS_REVIEW = "needs_review"
-    COMPLETED = "completed"
-    SUSPENDED = "suspended"
-
-
 class WireModel(BaseModel):
     """Frozen, camelCase-on-the-wire, snake_case in Python — the frontend's JSON convention."""
 
     model_config = ConfigDict(
         frozen=True, extra="forbid", alias_generator=to_camel, populate_by_name=True
     )
-
-
-class AccountProjectMembership(WireModel):
-    """One project that targets this account, and how/when it joined.
-
-    ``name`` is the ``project`` row's own name, resolved by :func:`project_names` in one batched
-    read per response (the FI-1 §9 plan-owner addendum: the accounts table searches and sorts on the
-    project name, and no other slice-1 surface serves it). It is the project *entity's* name, not a
-    formatted label — Band-2 still holds. ``null`` when this workspace has no ``project`` row for
-    the id, which membership's composite FK makes unreachable here but which the detail's
-    lineage-derived sections can genuinely hit.
-    """
-
-    project_id: str
-    name: str | None = None
-    added_via: str
-    added_at: datetime
 
 
 class ProjectScore(WireModel):
@@ -184,53 +151,6 @@ class AccountProjectScore(ProjectScore):
     """A :class:`ProjectScore` carrying the project it belongs to — the flat list row's shape."""
 
     project_id: str
-
-
-class AccountResearchStatus(WireModel):
-    """The research status of this account *within* one project."""
-
-    project_id: str
-    status: AccountResearchStatusValue
-
-
-class AccountListRow(WireModel):
-    """One row of the global accounts list."""
-
-    id: uuid.UUID
-    name: str
-    domain: str | None = None
-    employee_count: int | None = None
-    revenue_band: str | None = None
-    # No logo pipeline exists yet. Explicitly ``null`` rather than absent, so the frontend binds the
-    # field now and the backend can start populating it without a schema change.
-    logo_url: str | None = None
-    projects: tuple[AccountProjectMembership, ...] = ()
-    primary_project_id: str | None = None
-    scores: tuple[AccountProjectScore, ...] = ()
-    research_status: tuple[AccountResearchStatus, ...] = ()
-    updated_at: datetime
-
-
-class AccountListMeta(WireModel):
-    """Pagination metadata. ``total`` counts the whole filtered set, not the page.
-
-    ``page``/``pageSize``/``totalPages`` are present for the numbered browser table. The opaque
-    cursor remains available for internal consumers and backwards compatibility; the two modes
-    are mutually exclusive on one request.
-    """
-
-    total: int
-    next_cursor: str | None = None
-    page: int | None = Field(default=None, exclude_if=lambda value: value is None)
-    page_size: int | None = Field(default=None, exclude_if=lambda value: value is None)
-    total_pages: int | None = Field(default=None, exclude_if=lambda value: value is None)
-
-
-class AccountListResponse(WireModel):
-    """``{data, meta}`` — the envelope `apps/frontend/docs/api-contracts/accounts.md` documents."""
-
-    data: tuple[AccountListRow, ...]
-    meta: AccountListMeta
 
 
 # --- the opaque cursor ------------------------------------------------------------------------
@@ -353,53 +273,18 @@ _PROJECT_NAMES = text(
     """
 ).bindparams(bindparam("project_ids", expanding=True))
 
-# The latest job per (account, project) plus the two control rows that can hold it: the R6 account
-# fleet (whose ``suspended`` state is the backend's real failure mode) and its per-job admission
-# control (whose ``paused`` state is FI-1 §5.2's explicit carve-out from ``in_progress``). Only
-# account-subject jobs are considered — a contact job is a different subject's research.
-_RESEARCH_JOBS = text(
+# The page's owner and creator ids, read from the spine in one batched statement rather than
+# widened onto ``_PAGE_ACCOUNTS``: the page scan is shared with the composer's mention catalog and
+# stays the five columns a row is identified by. Workspace-scoped like every other read here.
+_ACCOUNT_PEOPLE = text(
     """
-    SELECT DISTINCT ON (j.subject_entity_id, j.project_id)
-        j.subject_entity_id,
-        j.project_id,
-        j.state,
-        j.finalization_outcome,
-        jc.admission_state,
-        f.state AS fleet_state
-    FROM entity_research_job j
-    LEFT JOIN entity_research_account_fleet_job_control jc ON jc.job_id = j.job_id
-    LEFT JOIN entity_research_account_fleet f ON f.research_run_id = j.research_run_id
-    WHERE j.workspace_id = :workspace_id
-      AND j.subject_type = 'account'
-      AND j.subject_entity_id IN :entity_ids
-    ORDER BY j.subject_entity_id, j.project_id, j.created_at DESC, j.job_id DESC
+    SELECT id, owner_user_id, created_by_user_id
+    FROM account_entity
+    WHERE workspace_id = :workspace_id AND id IN :entity_ids
     """
 ).bindparams(bindparam("entity_ids", expanding=True, type_=PgUUID(as_uuid=True)))
 
-
 # --- composition helpers ----------------------------------------------------------------------
-
-
-def research_status_for(
-    *,
-    job_state: str,
-    finalization_outcome: str | None,
-    admission_state: str | None,
-    fleet_state: str | None,
-) -> AccountResearchStatusValue:
-    """The FI-1 §5.2 mapping, as a pure function (see :class:`AccountResearchStatusValue`)."""
-    # This account's own terminal outcome wins over any run-level state: ``fleet_state`` is a
-    # property of the whole fleet (one paused sibling suspends it), so testing it first would let
-    # another account's pause erase this one's finished result.
-    if job_state == "terminal":
-        if finalization_outcome == "needs_review":
-            return AccountResearchStatusValue.NEEDS_REVIEW
-        if finalization_outcome == "completed":
-            return AccountResearchStatusValue.COMPLETED
-        return AccountResearchStatusValue.SUSPENDED
-    if admission_state == "paused" or fleet_state == "suspended":
-        return AccountResearchStatusValue.SUSPENDED
-    return AccountResearchStatusValue.IN_PROGRESS
 
 
 def as_int(value: Any) -> int | None:
@@ -556,72 +441,29 @@ async def project_names(
     return {str(project_id): str(name) for project_id, name in rows}
 
 
-async def _read_research_status(
-    conn: AsyncConnection, *, workspace_id: str, entity_ids: Sequence[uuid.UUID]
-) -> dict[uuid.UUID, dict[str, AccountResearchStatusValue]]:
-    """``{account: {project: status}}`` for every (account, project) that has *any* research job."""
-    if not entity_ids:
-        return {}
-    rows = (
-        await conn.execute(
-            _RESEARCH_JOBS, {"workspace_id": workspace_id, "entity_ids": list(entity_ids)}
-        )
-    ).all()
-    statuses: dict[uuid.UUID, dict[str, AccountResearchStatusValue]] = defaultdict(dict)
-    for entity_id, project_id, state, outcome, admission_state, fleet_state in rows:
-        statuses[uuid.UUID(str(entity_id))][str(project_id)] = research_status_for(
-            job_state=str(state),
-            finalization_outcome=None if outcome is None else str(outcome),
-            admission_state=None if admission_state is None else str(admission_state),
-            fleet_state=None if fleet_state is None else str(fleet_state),
-        )
-    return statuses
-
-
-def _research_status_rows(
-    memberships: tuple[ProjectMembership, ...],
-    statuses: dict[str, AccountResearchStatusValue],
-) -> tuple[AccountResearchStatus, ...]:
-    """One entry per membership project (``not_started`` when it has no job), **plus** any project
-    that researched this account without a membership row.
-
-    That second class should not exist — research is launched for a project that targets the
-    account — so when it does, it is reported rather than hidden: a silently dropped status is
-    indistinguishable from no research at all.
-    """
-    ordered = [membership.project_id for membership in memberships]
-    members = set(ordered)
-    ordered += sorted(project_id for project_id in statuses if project_id not in members)
-    return tuple(
-        AccountResearchStatus(
-            project_id=project_id,
-            status=statuses.get(project_id, AccountResearchStatusValue.NOT_STARTED),
-        )
-        for project_id in ordered
-    )
-
-
 # --- the read model ---------------------------------------------------------------------------
 
+#: One page of the account spine: ``(total, rows, has_more)``. ``total`` counts the whole filtered
+#: set, not the page; ``rows`` are ``(id, canonical_name, primary_domain, created_at, updated_at)``
+#: in the served order.
+SpinePage = tuple[int, Sequence[Any], bool]
 
-async def list_accounts(
+
+async def read_spine_page(
     conn: AsyncConnection,
     *,
     workspace_id: str,
-    project_id: str | None = None,
-    limit: int = DEFAULT_LIMIT,
-    cursor: str | None = None,
-    page_number: int | None = None,
-) -> AccountListResponse:
-    """One page of the workspace's accounts, fully composed.
+    project_id: str | None,
+    limit: int,
+    cursor: str | None,
+    page_number: int | None,
+) -> SpinePage:
+    """The paginated account scan — ONE definition of "which accounts this workspace has".
 
-    ``project_id`` is a **filter over membership**, not a lens: an unknown or foreign project
-    simply matches nothing and returns an empty page, because "no accounts in that project" is a
-    true answer and a 404 would claim the project does not exist — which this endpoint has no
-    authority to say.
-
-    Raises :class:`InvalidCursorError` for a cursor this endpoint did not mint. Numbered pages and
-    cursors cannot be combined: silently preferring one would make selection and page labels lie.
+    Public because the composer's mention catalog needs the same bounded, client-binding-excluding,
+    merge-loser-excluding page the table shows; a second scan somewhere else is how two surfaces
+    start disagreeing about which accounts exist. Raises :class:`InvalidCursorError` for a cursor
+    this endpoint did not mint.
     """
     if page_number is not None and cursor is not None:
         raise ValueError("page and cursor are mutually exclusive")
@@ -629,7 +471,6 @@ async def list_accounts(
     filter_params: dict[str, Any] = {"workspace_id": workspace_id, "project_id": project_id}
 
     total = int((await conn.execute(_COUNT_ACCOUNTS, filter_params)).scalar_one())
-    total_pages = max(1, (total + limit - 1) // limit)
     if page_number is None:
         # One extra row is the has-more probe; it is never served.
         rows = (
@@ -643,43 +484,108 @@ async def list_accounts(
                 },
             )
         ).all()
-        has_more = len(rows) > limit
-        page_rows = rows[:limit]
-    else:
-        page_rows = (
-            await conn.execute(
-                _NUMBERED_PAGE_ACCOUNTS,
-                {
-                    **filter_params,
-                    "row_limit": limit,
-                    "row_offset": (page_number - 1) * limit,
-                },
-            )
-        ).all()
-        has_more = False
+        return total, rows[:limit], len(rows) > limit
+    page_rows = (
+        await conn.execute(
+            _NUMBERED_PAGE_ACCOUNTS,
+            {**filter_params, "row_limit": limit, "row_offset": (page_number - 1) * limit},
+        )
+    ).all()
+    return total, page_rows, False
 
-    meta = AccountListMeta(
-        total=total,
-        next_cursor=None,
-        page=page_number,
-        page_size=limit if page_number is not None else None,
-        total_pages=total_pages if page_number is not None else None,
+
+def _next_cursor(
+    page_rows: Sequence[Any], *, page_number: int | None, has_more: bool
+) -> str | None:
+    """The keyset cursor for the next page — ``None`` in numbered-page mode and on the last page."""
+    if page_number is not None or not has_more or not page_rows:
+        return None
+    last_id, _name, _domain, last_created_at, _updated = page_rows[-1]
+    return encode_cursor(last_created_at, uuid.UUID(str(last_id)))
+
+
+def account_fit(scores: tuple[AccountProjectScore, ...]) -> float | None:
+    """The fit the row shows: the account's most recently scored fit, whichever project scored it.
+
+    **Founder ruling 2026-09-11 — a fit is global to the account.** A seller's ICPs vary little
+    from project to project, so a score decided once (by discovery, or by a later scorer) is the
+    account's fit everywhere: the row shows it whether the account belongs to the project that
+    scored it, to another, or to none at all. This supersedes the FI-2 §7 read rule under which
+    the row served only the *primary project's* score and a membership-less account was always
+    unscored — which left every freshly discovered account (a member of nothing until approved)
+    with an empty fit column on the very screen meant to show it.
+
+    Among the account's scores the most recently scored wins, because an older ICP's verdict is not
+    this account's current fit; the per-project attribution is kept on the account detail's project
+    sections, so nothing is lost. The scores still arrive attributed through ``run_lineage`` —
+    nothing here guesses a run — and an account with no live score has no fit: ``None`` is served,
+    never a band.
+    """
+    candidates = [score for score in scores if score.fit is not None]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda score: score.scored_at).fit
+
+
+async def list_accounts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+    cursor: str | None = None,
+    page_number: int | None = None,
+    settings: Settings,
+    now: datetime,
+) -> AccountsResponseV1:
+    """One page of the workspace's accounts — the ARV2 accounts-table row.
+
+    The page, the filter and the cursor semantics are :func:`read_spine_page`'s; this function owns
+    the row. It is the *screen's* row: bands and labels the backend computes so the browser cannot
+    disagree with it, the account's own chrome (industries, socials, location, custom fields,
+    owner), and exactly one research status and one fit, because the table has one column for each.
+    The status and the fit are scoped differently and on purpose:
+    the fit is the **primary project's** (a score is ``project_relative``, so serving another
+    project's would be a category error), while the research status is the account's own latest
+    ARV2 job, whichever project launched it.
+
+    Every source is read in a fixed number of batched statements over the whole page: a per-row
+    lookup here would be an N+1 over a 200-row page, which is what the suite's statement-count
+    guard exists to prevent.
+
+    ``now`` is accepted for the v1 reader signature the other four endpoints share (they serve
+    relative time labels); this row carries none, so nothing here reads the clock.
+    """
+    del now  # no relative label on this row — see the docstring.
+    total, page_rows, has_more = await read_spine_page(
+        conn,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        limit=limit,
+        cursor=cursor,
+        page_number=page_number,
+    )
+    meta = AccountsMeta(
+        total=total, next_cursor=_next_cursor(page_rows, page_number=page_number, has_more=has_more)
     )
     if not page_rows:
-        return AccountListResponse(data=(), meta=meta)
+        return AccountsResponseV1(data=(), meta=meta)
 
     account_ids = [uuid.UUID(str(row[0])) for row in page_rows]
+    entity_ids = [EntityId(account_id) for account_id in account_ids]
     neutral = await current_values(
         conn,
-        [EntityId(account_id) for account_id in account_ids],
-        LIST_NEUTRAL_FIELD_KEYS,
+        entity_ids,
+        V1_NEUTRAL_FIELD_KEYS,
         scope=WorkspaceScope.for_workspace(workspace_id),
     )
     memberships = await memberships_for_accounts(
         conn, workspace_id=workspace_id, account_ids=account_ids
     )
     scores = await _read_scores(conn, workspace_id=workspace_id, entity_ids=account_ids)
-    statuses = await _read_research_status(conn, workspace_id=workspace_id, entity_ids=account_ids)
+    research = await arv2_research_status_for(
+        conn, workspace_id=workspace_id, account_ids=entity_ids
+    )
     names = await project_names(
         conn,
         workspace_id=workspace_id,
@@ -689,63 +595,128 @@ async def list_accounts(
             for membership in account_memberships
         ),
     )
+    people = {
+        uuid.UUID(str(entity_id)): (owner_user_id, created_by_user_id)
+        for entity_id, owner_user_id, created_by_user_id in (
+            await conn.execute(
+                _ACCOUNT_PEOPLE, {"workspace_id": workspace_id, "entity_ids": account_ids}
+            )
+        ).all()
+    }
+    owners = await owners_for(
+        conn,
+        user_ids=(user_id for pair in people.values() for user_id in pair if user_id),
+    )
+    custom_fields = await custom_fields_for(conn, workspace_id=workspace_id, account_ids=entity_ids)
+    last_modified = await last_modified_for(conn, workspace_id=workspace_id, account_ids=entity_ids)
 
-    data: list[AccountListRow] = []
-    for account_id, (_id, canonical_name, primary_domain, _created_at, updated_at) in zip(
+    def owner_of(user_id: str | None) -> AccountOwner | None:
+        return owners.get(user_id) if user_id else None
+
+    def neutral_value(entity_id: EntityId, field_key: str) -> Any:
+        current = neutral.get((entity_id, field_key))
+        return None if current is None else current.value_json
+
+    data: list[AccountV1] = []
+    for account_id, (_id, canonical_name, primary_domain, created_at, updated_at) in zip(
         account_ids, page_rows, strict=True
     ):
         entity_id = EntityId(account_id)
-        employee_count = neutral.get((entity_id, "core.employee_count"))
-        revenue_band = neutral.get((entity_id, "core.revenue_band"))
         account_memberships = memberships.get(account_id, ())
+        # The recorded FI-2 §2 policy: element 0 of the membership read is the primary project. A
+        # membership-less account (a seed, a legacy import) simply has none, and its row is served
+        # unscored rather than attributed to a project it does not belong to.
+        primary_project_id = account_memberships[0].project_id if account_memberships else None
+        # The account's own latest ARV2 job, whichever project launched it. The row still leads
+        # with the primary project's *name*, but research is a fact about the account: an ARV2 run
+        # pins its project, and hiding a finished research job because the account's primary
+        # membership happens to be another project would report it as never researched.
+        status, refreshing = research.get(entity_id, ("not_started", False))
+        # The account's newest fit, whichever project scored it (founder ruling 2026-09-11: a fit
+        # is global to the account) — see :func:`account_fit`.
+        fit = account_fit(scores.get(account_id, ()))
+        location = location_label(neutral_value(entity_id, "core.hq_location"))
+        owner_user_id, created_by_user_id = people.get(account_id, (None, None))
+        revenue_band = as_str(neutral_value(entity_id, "core.revenue_band"))
         data.append(
-            AccountListRow(
-                id=account_id,
-                name=str(canonical_name),
-                domain=primary_domain,
-                employee_count=(
-                    None if employee_count is None else as_int(employee_count.value_json)
+            AccountV1(
+                id=str(account_id),
+                # ``canonical_name`` is NOT NULL on the spine, but a blank one would fail the
+                # contract's ``min(1)``; the domain, then the id, keep the row honest and visible.
+                name=str(canonical_name or primary_domain or account_id),
+                # The platform's logo route when the account carries a mark-type logo (founder
+                # ruling 2026-09-11); null otherwise — never a guessed URL.
+                logo_path=account_logo_path(
+                    account_id,
+                    neutral_value(entity_id, "core.logo_url"),
+                    domain=primary_domain,
+                    settings=settings,
                 ),
-                revenue_band=None if revenue_band is None else as_str(revenue_band.value_json),
+                website_url=website_url(primary_domain),
+                # ``arv2_research_job.status`` is the seam-1 vocabulary, which is character-for-
+                # character the ``ResearchStatus`` literal (D0 ruling S11): the row's status *is*
+                # the job's status, and the label map is keyed by it.
+                research_status=status,
+                research_status_label=RESEARCH_STATUS_LABELS[status],
+                research_is_refreshing=refreshing,
+                overall_fit=fit_band(fit, settings=settings),
+                fit_score=fit_score_100(fit),
+                # The label, not the token: ``core.revenue_band`` stores ``"10m_50m"`` and the
+                # revenue column was printing it verbatim at a marketer (D4-b controller ruling 2).
+                revenue_band=revenue_band_label(revenue_band),
+                employee_band=employee_band(
+                    as_int(neutral_value(entity_id, "core.employee_count")),
+                    neutral_value(entity_id, "core.employee_range"),
+                ),
+                # One location claim per account today, so the count is 0 or 1 — reported as a
+                # count because the screen shows "+N", and inventing a larger one would be a lie.
+                location_count=1 if location else 0,
+                locations_label=location,
+                owner=owner_of(owner_user_id),
+                created_by=owner_of(created_by_user_id),
+                industry_labels=tuple(
+                    industry_labels(
+                        neutral_value(entity_id, "core.industry"),
+                        neutral_value(entity_id, "core.industries_all"),
+                    )
+                ),
+                socials=tuple(
+                    socials(
+                        neutral_value(entity_id, "core.company_linkedin_url"),
+                        neutral_value(entity_id, "core.company_twitter_url"),
+                    )
+                ),
+                created_at=iso_utc(created_at),
+                last_modified_at=iso_utc(last_modified.get(entity_id, updated_at)),
+                primary_project_id=primary_project_id,
                 projects=tuple(
-                    AccountProjectMembership(
-                        project_id=membership.project_id,
-                        name=names.get(membership.project_id),
-                        added_via=membership.added_via,
-                        added_at=membership.added_at,
+                    AccountProject(
+                        id=membership.project_id,
+                        # The contract requires a non-empty name; an unnamed project is named by
+                        # its id rather than served as an empty chip.
+                        name=names.get(membership.project_id) or membership.project_id,
                     )
                     for membership in account_memberships
                 ),
-                # The recorded FI-2 §2 policy: earliest membership. A membership-less account has
-                # no primary project, and that is a legitimate row — seeds, the client entity and
-                # legacy imports all render this way.
-                primary_project_id=(
-                    account_memberships[0].project_id if account_memberships else None
-                ),
-                scores=scores.get(account_id, ()),
-                research_status=_research_status_rows(
-                    account_memberships, statuses.get(account_id, {})
-                ),
-                updated_at=updated_at,
+                custom_fields=tuple(custom_fields.get(entity_id, ())),
             )
         )
-
-    last_id, _name, _domain, last_created_at, _updated = page_rows[-1]
-    next_cursor = (
-        encode_cursor(last_created_at, uuid.UUID(str(last_id)))
-        if page_number is None and has_more
-        else None
-    )
-    return AccountListResponse(
-        data=tuple(data), meta=meta.model_copy(update={"next_cursor": next_cursor})
-    )
+    return AccountsResponseV1(data=tuple(data), meta=meta)
 
 
 # --- the route --------------------------------------------------------------------------------
 
 
-def register_accounts_list_routes(router: APIRouter, *, conn_factory: ConnFactory) -> None:
-    """Register ``GET /accounts`` on the workspace-scoped `/frontend/v1` router."""
+def register_accounts_list_routes(
+    router: APIRouter, *, conn_factory: ConnFactory, settings: Settings
+) -> None:
+    """Register ``GET /accounts`` on the workspace-scoped `/frontend/v1` router.
+
+    ``settings`` reaches the reader because the fit bands are configured thresholds, not code
+    (ruling S3). A ``?contract=`` query parameter is accepted and ignored: it selected between the
+    FI-2 and v1 payloads until the FI-2 half was deleted (2026-09-09), and refusing the value the
+    frontend may still be sending would 422 a request this route can answer perfectly well.
+    """
 
     @router.get("/accounts")
     async def get_accounts(
@@ -754,7 +725,7 @@ def register_accounts_list_routes(router: APIRouter, *, conn_factory: ConnFactor
         limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
         cursor: Annotated[str | None, Query()] = None,
         page: Annotated[int | None, Query(ge=1)] = None,
-    ) -> AccountListResponse:
+    ) -> AccountsResponseV1:
         async with conn_factory() as conn:
             try:
                 return await list_accounts(
@@ -764,6 +735,8 @@ def register_accounts_list_routes(router: APIRouter, *, conn_factory: ConnFactor
                     limit=limit,
                     cursor=cursor,
                     page_number=page,
+                    settings=settings,
+                    now=datetime.now(UTC),
                 )
             except (InvalidCursorError, ValueError) as exc:
                 raise HTTPException(

@@ -53,6 +53,7 @@ function renderPanel(params: {
       nodeInfo={null}
       pageId="home"
       page={null}
+      pages={[]}
       theme={null}
       dialogs={[]}
       previewComponent={vi.fn()}

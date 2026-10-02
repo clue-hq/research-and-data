@@ -159,6 +159,7 @@ class OpenRouterBriefAgent:
     def __init__(self) -> None:
         self.enabled = settings.lumen_ingestion_brief
         self.model = settings.lumen_ingestion_brief_model
+        self.reasoning = settings.lumen_ingestion_brief_reasoning
         self.base_url = settings.openrouter_base_url
         self.api_key = settings.openrouter_api_key
 
@@ -170,29 +171,91 @@ class OpenRouterBriefAgent:
         from langchain.agents import create_agent
         from langchain.agents.structured_output import ToolStrategy
         from lumen_agent.llm import init_model
+        from lumen_agent.usage_collector import ModelCallCollector
 
         from .brief import BrandBrief
 
+        model = init_model(
+            self.model,
+            base_url=self.base_url,
+            api_key=self.api_key,
+            reasoning=self.reasoning,
+            role="ingestion-brief",
+        )
+        # Lane 3 slice 5: this stage's model calls are real money and had no row behind them.
+        # The collector is attached INSTANCE-level — the same `.callbacks` append
+        # `lumen_agent.trace_callbacks.attach_trace_callback` uses, and for the same reason:
+        # `.with_config` returns a RunnableBinding the agent factory mishandles. There is one
+        # model and no sub-agents here, so `on_llm_*` on this instance IS every call the stage
+        # makes.
+        collector = ModelCallCollector()
+        _append_callback(model, collector)
         agent = create_agent(
-            model=init_model(
-                self.model,
-                base_url=self.base_url,
-                api_key=self.api_key,
-                role="ingestion-brief",
-            ),
+            model=model,
             tools=list(self.TOOLS),
             system_prompt=load_brief_prompt(),
             response_format=ToolStrategy(BrandBrief),
             name="lumen-ingestion-brief-agent",
         )
-        result = agent.invoke(
-            {"messages": [{"role": "user", "content": _message_content(request)}]},
-            config={"recursion_limit": MAX_AGENT_STEPS},
-        )
+        try:
+            result = agent.invoke(
+                {"messages": [{"role": "user", "content": _message_content(request)}]},
+                config={"recursion_limit": MAX_AGENT_STEPS},
+            )
+        finally:
+            # On EVERY exit path: a refusal and a hung gateway still spent the calls they made.
+            _record_spend(collector)
         structured = result.get("structured_response")
         if structured is None:
             raise BriefRefused("the brief agent returned no BrandBrief@1 object")
         return structured.model_dump(mode="json")
+
+
+def _append_callback(model: Any, handler: Any) -> None:
+    """Append a handler to a model's own declared ``callbacks`` field, in place.
+
+    Mirrors ``lumen_agent.trace_callbacks.attach_trace_callback``: append, never replace, and a
+    model with no writable ``callbacks`` field (a test sentinel) is left untouched — a receipt is
+    never worth failing an ingestion over.
+    """
+    if not hasattr(model, "callbacks"):
+        return
+    try:
+        existing = model.callbacks
+        if existing is None:
+            model.callbacks = [handler]
+        elif isinstance(existing, list):
+            existing.append(handler)
+        else:
+            add_handler = getattr(existing, "add_handler", None)
+            if callable(add_handler):
+                add_handler(handler)
+            else:
+                model.callbacks = [existing, handler]
+    except Exception:  # noqa: BLE001 - never block the stage on wiring
+        logger.warning("brief agent usage collection not wired", exc_info=True)
+
+
+def _record_spend(collector: Any) -> None:
+    """Land the stage's collected calls on the ingestion job's open spend scope.
+
+    No scope open (a direct call, a test) means the rows have nowhere to go; the calls still
+    happened and are still on the gateway's own record, so this is a skip and not an error.
+    Plan constraint 6 holds here too: nothing in the brief stage may fail an ingestion, so a
+    ledger failure is logged and swallowed.
+    """
+    try:
+        from lumen_api import spend
+
+        scope = spend.current_scope()
+        if scope is None:
+            return
+        for call in collector.calls:
+            spend.record_collected_model_call(
+                scope, call, operation="design.ingestion.brief", label="brief"
+            )
+    except Exception:  # noqa: BLE001 - the ledger may never fail an ingestion
+        logger.warning("brief agent spend rows not recorded", exc_info=True)
 
 
 def _message_content(request: BriefRequest) -> list[dict[str, Any]]:

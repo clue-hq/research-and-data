@@ -1,0 +1,499 @@
+{
+  "id": "agent_run_11b83e1af2bd44f399badec0d8c77ebd",
+  "object": "agent_run",
+  "status": "completed",
+  "stopReason": "schema_satisfied",
+  "createdAt": "2026-09-07T12:26:41.368Z",
+  "completedAt": "2026-09-07T12:27:48.025Z",
+  "request": {
+    "query": "Research [COMPANY NAME] and create a comprehensive report covering these areas:\n\n**==The Origin Story==**\n\n- How did this company start? What problem were they solving?\n- Who are the founders? What's their background and previous experience?\n- Early funding, initial customers, and first product iterations\n\n**==The Business Reality==**\n\n- How does this company make money? What's their revenue model?\n- Are they profitable? What's their financial trajectory?\n- Who funds them? Latest valuation and investor expectations\n\n**==What They Actually Do==**\n\n- Current products and services – skip the marketing fluff\n- How their technology works under the hood\n- Key features that matter to users\n- Product evolution and major pivots\n\n**==The Market Position==**\n\n- Who are their main competitors? How do they stack up?\n- What's their competitive advantage? Is it defensible?\n- Market size, share, and growth potential\n- Target customers and use cases\n\n**==The Customer Reality==**\n\n- Who actually uses this? Customer segments and personas\n- Positive reviews and success stories\n- Complaints, negative feedback, and common problems\n- Customer retention and satisfaction data\n\n**==The People==**\n\n- Current leadership team and key employees\n- Company culture and employee reviews\n- Team size, hiring patterns, and organizational structure\n\n**==The Problems==**\n\n- What criticism do they face? Industry controversies\n- Failed products or initiatives\n- Operational challenges and technical debt\n\n**==The Future==**\n\n- Product roadmap and strategic direction\n- Market trends that help or hurt them\n- Partnerships, acquisitions, and expansion plans\n- Regulatory risks and opportunities\n\n**==Recent Context==**\n\n- Latest news, announcements, and developments\n- Industry changes affecting the company\n- Geopolitical pressures and international strategy\n\ncompany name is Insighthealth.ai",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "facts",
+        "sections",
+        "competitors",
+        "named_customers",
+        "not_found"
+      ],
+      "properties": {
+        "facts": {
+          "type": "object",
+          "properties": {
+            "website": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uri"
+            },
+            "investors": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 15
+            },
+            "legal_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "geographies": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 10
+            },
+            "founded_year": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "headquarters": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "latest_round": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "round name, amount, date, lead investor"
+            },
+            "revenue_model": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "how they charge: per seat, per encounter, platform fee, services"
+            },
+            "employee_range": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "e.g. 51-200, as publicly stated or estimated; say which"
+            },
+            "pricing_posture": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "published prices, quote-only, freemium, enterprise-only"
+            },
+            "funding_total_usd": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "industries_served": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 10
+            },
+            "regulatory_posture": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "certifications and compliance claims relevant to buyers, e.g. HIPAA, SOC 2, BAA availability"
+            },
+            "customer_count_claim": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "the company's own stated number, verbatim, with where it was stated"
+            }
+          },
+          "additionalProperties": false
+        },
+        "sections": {
+          "type": "object",
+          "required": [
+            "origin_story",
+            "business_model",
+            "positioning",
+            "market_position",
+            "customer_segments",
+            "leadership",
+            "recent_context"
+          ],
+          "properties": {
+            "leadership": {
+              "type": "string",
+              "description": "Markdown. Current leadership team with titles. No employee reviews or culture commentary."
+            },
+            "positioning": {
+              "type": "string",
+              "description": "Markdown. Value proposition in the company's own words, the differentiators they claim, and the portfolio described in one paragraph. Do NOT list individual products; another document owns the catalog."
+            },
+            "origin_story": {
+              "type": "string",
+              "description": "Markdown. Founding problem, founders and their prior experience, first customers and early product."
+            },
+            "business_model": {
+              "type": "string",
+              "description": "Markdown. How they make money, pricing posture, funding trajectory. No valuation speculation."
+            },
+            "recent_context": {
+              "type": "string",
+              "description": "Markdown. Announcements, partnerships, expansion, hiring signals from the last 12 months, each dated."
+            },
+            "market_position": {
+              "type": "string",
+              "description": "Markdown. Main competitors and how the company stacks up, defensibility, market size and growth where sourced."
+            },
+            "customer_segments": {
+              "type": "string",
+              "description": "Markdown. Who buys and who uses it: segments, roles, organisation types and sizes, use cases. Cite case studies. Do not reproduce reviews; a separate document owns them."
+            }
+          },
+          "additionalProperties": false
+        },
+        "not_found": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "an item that was searched for and could not be established, stated plainly"
+          },
+          "maxItems": 20
+        },
+        "competitors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "how_they_compare"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "website": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uri"
+              },
+              "how_they_compare": {
+                "type": "string",
+                "description": "one or two sentences, sourced"
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 12
+        },
+        "named_customers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "segment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "evidence_kind": {
+                "enum": [
+                  "case_study",
+                  "logo_wall",
+                  "press",
+                  "review",
+                  "other"
+                ],
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "effort": "high"
+  },
+  "output": {
+    "text": "Comprehensive evidence-backed report on Insight Health AI, Inc., current to 2026-09-07. It separates company-reported performance from independently reported facts and explicitly identifies unavailable financial, retention, valuation and review evidence.",
+    "structured": {
+      "facts": {
+        "website": "https://www.insighthealth.ai/",
+        "investors": [
+          "Standard Capital",
+          "Pear VC",
+          "Kindred Ventures",
+          "Eudemian",
+          "ElevenLabs",
+          "43",
+          "RTP Global",
+          "Karman Ventures",
+          "Wedbush Ventures",
+          "MKT1",
+          "Go Global Ventures",
+          "Invariantes",
+          "GTM Operators Fund",
+          "Script VC"
+        ],
+        "legal_name": "Insight Health AI, Inc.",
+        "geographies": [
+          "United States"
+        ],
+        "founded_year": 2023,
+        "headquarters": "Austin, Texas, United States",
+        "latest_round": "Series A, $11 million, announced April 3, 2026; led by Standard Capital.",
+        "revenue_model": "Tiered SaaS for Aura AI Scribe—Free, Pro per clinician, Team per clinician, and custom Enterprise; the company/industry directory describes phone-agent pricing as outcome-based. Enterprise includes the virtual care assistant.",
+        "employee_range": "13 employees stated in the April and June 2026 company releases; LinkedIn estimated 20 employees in June 2026, so current headcount is not independently reconciled.",
+        "pricing_posture": "Free trial/free tier; published Aura pricing of $39.99/month or $480/year for Pro and $79.99/month or $960/year for Team; Enterprise is custom-priced.",
+        "funding_total_usd": 15600000,
+        "industries_served": [
+          "Healthcare provider practices",
+          "Independent practices",
+          "Multi-specialty groups",
+          "Medical billing companies",
+          "Primary care",
+          "Gastroenterology",
+          "Pain and spine",
+          "Neurosurgery",
+          "Pediatrics",
+          "Oncology"
+        ],
+        "regulatory_posture": "Company claims HIPAA compliance and SOC 2 Type II certification; its fax-agent page says a BAA is available on paid tiers. It describes clinician-in-the-loop escalation/supervision for higher-risk situations. No FDA clearance/authorization was established in the reviewed sources.",
+        "customer_count_claim": "\"completed more than 3 million autonomous clinical conversations\" (Insight Health’s April 3, 2026 funding release; June 17, 2026 AdvancedMD announcement)."
+      },
+      "sections": {
+        "leadership": "## Leadership and organization\n* **Jaimal Soni — Co-founder and CEO.** Former Segment product/sales-engineering leader; previously at Boomtrain; former Y Combinator founder. [Company About]\n* **Saran Siva — Co-founder and CTO.** Former Head of Cloud Infrastructure Engineering at Twilio; previously worked on Visa’s Kubernetes platform and Deloitte government health-benefits initiatives. [Company About]\n* **Dr. Pankaj Gore — Co-founder and Co-Chief Medical Officer.** Providence Brain and Spine Institute surgeon/director. [Company About]\n* **Dr. Eric Stecker — Co-founder and Co-Chief Medical Officer.** Cardiologist, OHSU professor and American College of Cardiology Science and Quality Committee chair. [Company About]\n* **Abhinav Ittekot — Founding Engineer.** Cloud infrastructure, observability and security experience, including Segment. [Company About]\n\nCompany releases stated 13 employees in April/June 2026; LinkedIn subsequently estimated about 20, with U.S. and India distribution. This suggests a small, growing organization, but neither hiring plan nor functional reporting structure was publicly detailed. No sufficiently attributable Glassdoor/employee-review corpus was found, so culture claims should not be inferred. [Business Wire] [LinkedIn]",
+        "positioning": "## What it actually does\nInsight Health is an AI-workflow vendor for the operational edges of outpatient care rather than a diagnostic or prescribing system. Its platform uses voice/text agents to collect structured histories and medication information, handle follow-up and phone/front-desk interactions, process referrals/faxes and documentation, and write resulting structured work into connected EHR workflows. Its ambient component listens to encounters and drafts specialty-specific notes. The vendor says its fax pipeline identifies document types, splits packets, extracts fields, matches patients using demographics and historical patterns, and routes data via FHIR R4/HL7v2; its phone agent detects urgency and escalates exceptions to staff. [Company fax-agent page] [Company phone-triage page]\n\nThe buyer-relevant claims are EHR integration, specialty configuration, English/Spanish phone interactions, routing in under two minutes for fax workflows, and escalation rather than an asserted replacement of clinicians. The company cites 99.5% extraction accuracy for its fax agent and 56+ specialties for phone triage—vendor claims that should be validated in a pilot against the buyer’s own charts, fax quality and escalation protocols. [Company fax-agent page] [Company phone-triage page]\n\nProduct evolution: the company emerged publicly in 2025 around patient-facing Lumi and routine-care agents, while retaining/adding ambient documentation. Its October 2025 Epic Toolbox designation and marketplace/integration moves broadened distribution. [Fierce Healthcare] [Company newsroom]",
+        "origin_story": "## Origin and early build\nInsight Health was founded in 2023 by former Segment/Twilio operators **Jaimal Soni** (CEO) and **Saran Siva** (CTO), alongside practicing physicians **Dr. Pankaj Gore** and **Dr. Eric Stecker**, both Co-Chief Medical Officers. The founding premise was that clinicians should practice medicine rather than handle paperwork: referral/fax queues, history-taking, medication updates, documentation, and follow-up. The company says it built in stealth for about a year before publicly unveiling its platform in June 2025. [Company blog] [Fierce Healthcare]\n\nThe operator/clinical combination is material: Soni previously led functions at Segment and co-led Twilio CustomerAI R&D; Siva was Twilio’s Head of Cloud Infrastructure Engineering and had helped launch Segment for Healthcare. Gore directs brain-tumor/skull-base surgery at Providence Brain and Spine Institute; Stecker is a cardiologist and OHSU medicine professor. [Company About] The early product centered on Lumi, a voice/text patient-facing agent, then expanded into documentation and operational workflows. Its first disclosed outside capital was a $4.6m seed, announced with its 2025 emergence from stealth; the founders say 43 wrote a pre-product first check. [MobiHealthNews] [Company blog]\n\nEarly deployments were specialty-practice workflows. Standard Capital describes a spine-practice result of 14 new patients/day versus seven after pre-visit imaging/history collection, and a GI clinic clearing a six-month, 4,000-procedure backlog in three weeks. These are investor-reported case examples, not independently audited outcomes. [Standard Capital]",
+        "business_model": "## Business reality\nInsight Health sells B2B healthcare workflow software to practices and provider organizations. The published self-serve pricing applies to Aura: free, Pro at $39.99/month ($480/year) per clinician, Team at $79.99/month ($960/year) per clinician, plus custom Enterprise. A third-party directory says phone-agent contracts are outcome-based rather than per-minute. Higher-complexity agent deployments, integrations and enterprise support therefore appear to be the principal expansion path. [Company site] [Physician AI Tools]\n\nIt raised $4.6m in seed financing in 2025 and an $11m Series A on April 3, 2026, totaling **$15.6m disclosed funding**. Standard Capital led the A; Pear VC, Kindred Ventures, Eudemian, ElevenLabs and 43 participated. The company said proceeds would support product development and provider partnerships. [MobiHealthNews] [Business Wire]\n\nNo audited revenue, ARR, gross margin, cash burn, profitability, or company-confirmed valuation was found. The company’s reported adoption evidence is 3m+ autonomous clinical conversations and $50m+ collective annual administrative-cost savings at named customer clinics; these are company claims, not revenue or proof of profitability. [Business Wire]",
+        "recent_context": "## Recent context (as of 2026-09-07)\n* **April 3, 2026:** announced $11m Series A led by Standard Capital to develop the platform and deepen provider partnerships. [Business Wire]\n* **June 17, 2026:** joined the **AdvancedMD Marketplace**, expanding availability to independent practices, multi-specialty groups and billing companies. [Business Wire]\n* **October 13, 2025:** company says Aura AI Scribe received an **Epic Toolbox** designation for ambient note generation. [Company newsroom]\n* **April 2025 / January 2025:** announced an Office Practicum pediatric-documentation partnership and athenahealth Marketplace participation, respectively. [Company newsroom]\n\nThe favorable trend is provider pressure to reduce administrative labor while preserving practice independence; the downside is rising scrutiny of patient-facing clinical AI, safety/error risk, PHI/privacy obligations, and reliance on EHR and marketplace partners. No acquisition, international expansion plan, or dated product roadmap beyond general product/partnership expansion was substantiated in the reviewed sources. [Fierce Healthcare] [Business Wire]",
+        "market_position": "## Market position, competitors and risks\nInsight sits where ambient clinical documentation, patient-engagement agents, referral/fax document AI, and front-office automation overlap. The company itself names **Tennr, HealOS, Documo and PracticeEHR** in fax/referral comparison material; CB Insights also identifies **Sully.ai** among competitors. Tennr is a particularly close competitor in referral/document workflow; Documo is more fax/document-focused; broader ambient-scribe vendors compete for the documentation budget. Insight’s pitch is the combined referral-to-scheduling workflow and patient-facing outreach, rather than a standalone scribe. [Company fax-agent page] [CB Insights]\n\nIts potential advantages are physician co-founders, specialty workflow design, interfaces to EHRs, and distribution through athenahealth, AdvancedMD, Office Practicum and Epic’s Toolbox. These create switching and implementation friction, but are not a durable moat by themselves: foundation-model capability is widely available and incumbents/EHR vendors can bundle adjacent workflow features. Adoption also depends on clinically safe handoffs, integration reliability and measurable ROI. [Company newsroom] [Standard Capital]\n\nThe addressable problem is large—Fortune cites estimates of up to $1tn in annual U.S. healthcare administrative costs—but no reliable source reviewed established Insight’s market share or a company-specific market-size forecast. Regulatory exposure is meaningful: Fierce notes there is not yet an industry-wide AI standard/regulation, and the company’s own materials stress clinician escalation. It should not be treated as a diagnosis/prescription system based on the reviewed evidence. [Fortune] [Fierce Healthcare]",
+        "customer_segments": "## Customer reality\nThe disclosed target is mid-market specialty practices—roughly 15 to a few hundred physicians in Standard Capital’s description—plus independent practices, multi-specialty groups and medical billing companies through AdvancedMD. Use cases include pre-visit intake, patient history/medication collection, referral/fax intake, prior-authorization support, scheduling, phone triage, follow-up and documentation. [Standard Capital] [Business Wire]\n\nNamed organizational customers/partners include The Oregon Clinic, Pacific Sports & Spine, Inland Neurosurgery, Coastal Health, Santiam Hospital & Clinics and MedNOW Clinics. The company also presents individual clinician testimonials from Headland Family Medicine, pain-management and specialty physicians. [Business Wire] [Company site]\n\nPublic review evidence is thin. FeaturedCustomers reports 4.7/5 from 231 reference ratings and testimonials credit customization, athenaOne integration, and time savings, but that is an aggregator rather than an independently verifiable representative survey. No credible public cohort-retention, churn, NPS, or independently audited satisfaction figure was found. [FeaturedCustomers]"
+      },
+      "not_found": [
+        "Audited financial statements, ARR/revenue, profitability, margins, or cash-burn data.",
+        "A company-confirmed valuation; a third-party database estimate was not treated as verified.",
+        "An independently sourced market-share figure or reliable company-specific TAM/SAM forecast.",
+        "Public retention, churn, NPS, or statistically representative customer-satisfaction data.",
+        "A meaningful attributable corpus of negative customer reviews or employee reviews specific to Insight Health AI.",
+        "A detailed dated public product roadmap, acquisition plan, or international-expansion strategy.",
+        "FDA authorization/clearance evidence for Insight Health’s agents."
+      ],
+      "competitors": [
+        {
+          "name": "Tennr",
+          "website": "https://www.tennr.com/",
+          "how_they_compare": "A close workflow competitor in referral/document automation. Insight’s own comparison page positions its differentiation as joining document intake to referral follow-up and EHR routing, including certain exclusive integration partnerships. [Company fax-agent page]"
+        },
+        {
+          "name": "HealOS",
+          "website": "https://www.healos.ai/",
+          "how_they_compare": "Insight lists HealOS in its public fax/referral comparison. Insight claims a wider combined document-to-referral-follow-up workflow; this is vendor-authored competitive positioning, not an independent benchmark. [Company fax-agent page]"
+        },
+        {
+          "name": "Documo",
+          "website": "https://www.documo.com/",
+          "how_they_compare": "Documo is a document/fax automation alternative named by Insight. Insight’s claimed distinction is clinical classification, patient matching and EHR/referral workflow rather than simple fax transport. [Company fax-agent page]"
+        },
+        {
+          "name": "PracticeEHR",
+          "website": "https://practiceehr.com/",
+          "how_they_compare": "PracticeEHR is listed by Insight among adjacent workflow alternatives. Insight focuses on adding AI agents across intake, fax/referrals, phone and documentation, whereas the comparison is not an independent feature test. [Company fax-agent page]"
+        },
+        {
+          "name": "Sully.ai",
+          "website": "https://www.sully.ai/",
+          "how_they_compare": "CB Insights identifies Sully.ai as a competitor. Both participate in healthcare AI automation; Insight’s disclosed focus is specialty-practice administrative and patient-facing workflows. [CB Insights]"
+        }
+      ],
+      "named_customers": [
+        {
+          "name": "The Oregon Clinic",
+          "segment": "Specialty healthcare clinic",
+          "evidence_kind": "press"
+        },
+        {
+          "name": "Pacific Sports & Spine",
+          "segment": "Specialty healthcare clinic",
+          "evidence_kind": "press"
+        },
+        {
+          "name": "Inland Neurosurgery",
+          "segment": "Neurosurgery practice",
+          "evidence_kind": "press"
+        },
+        {
+          "name": "Coastal Health",
+          "segment": "Healthcare clinic",
+          "evidence_kind": "press"
+        },
+        {
+          "name": "Santiam Hospital & Clinics",
+          "segment": "Hospital and clinics",
+          "evidence_kind": "press"
+        },
+        {
+          "name": "MedNOW Clinics",
+          "segment": "Healthcare clinics",
+          "evidence_kind": "other"
+        },
+        {
+          "name": "Headland Family Medicine",
+          "segment": "Family medicine practice",
+          "evidence_kind": "review"
+        },
+        {
+          "name": "Pain Management & Interventional Spine",
+          "segment": "Pain-management practice",
+          "evidence_kind": "review"
+        }
+      ]
+    },
+    "grounding": [
+      {
+        "field": "structured.facts",
+        "citations": [
+          {
+            "url": "https://www.businesswire.com/news/home/20260403198306/en/Insight-Health-Raises-%2411M-Series-A-Led-by-Standard-Capital-to-Fix-Healthcares-Administrative-Crisis",
+            "title": "Insight Health Raises $11M Series A Led by Standard Capital to Fix Healthcare’s Administrative Crisis"
+          },
+          {
+            "url": "https://www.insighthealth.ai/",
+            "title": "Insight Health"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "structured.sections.origin_story",
+        "citations": [
+          {
+            "url": "https://www.insighthealth.ai/blog/why-we-built-insight-health",
+            "title": "Why We Built Insight Health"
+          },
+          {
+            "url": "https://www.fiercehealthcare.com/ai-and-machine-learning/insight-health-hits-market-ai-agents-routine-tasks-patient-intake-follow",
+            "title": "Insight Health launches patient-facing agentic AI platform"
+          },
+          {
+            "url": "https://www.insighthealth.ai/about-us",
+            "title": "About Insight Health"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "structured.sections.business_model",
+        "citations": [
+          {
+            "url": "https://www.insighthealth.ai/",
+            "title": "Insight Health"
+          },
+          {
+            "url": "https://www.mobihealthnews.com/news/insight-health-raises-11m-scale-clinical-ai-agents",
+            "title": "Insight Health raises $11M to scale clinical AI agents"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "structured.sections.positioning",
+        "citations": [
+          {
+            "url": "https://www.insighthealth.ai/fax-ai-agent",
+            "title": "AI Fax Agent For Healthcare"
+          },
+          {
+            "url": "https://www.insighthealth.ai/phone-triage",
+            "title": "Phone Triage"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "structured.sections.market_position",
+        "citations": [
+          {
+            "url": "https://www.insighthealth.ai/fax-ai-agent",
+            "title": "AI Fax Agent For Healthcare"
+          },
+          {
+            "url": "https://fortune.com/2026/04/03/health-care-fax-machine-problem-insight-health-series-a-11-million-ai-assistants/",
+            "title": "The startup looking to solve health care’s fax machine problem"
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "field": "structured.sections.customer_segments",
+        "citations": [
+          {
+            "url": "https://www.businesswire.com/news/home/20260617618332/en/Insight-Health-Joins-AdvancedMD-Marketplace-to-Bring-Clinical-AI-Agents-to-Thousands-of-Independent-Practices",
+            "title": "Insight Health Joins AdvancedMD Marketplace"
+          },
+          {
+            "url": "https://www.featuredcustomers.com/vendor/insight-health",
+            "title": "4 Insight Health Customer Reviews & References"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "structured.sections.leadership",
+        "citations": [
+          {
+            "url": "https://www.insighthealth.ai/about-us",
+            "title": "About Insight Health"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "structured.sections.recent_context",
+        "citations": [
+          {
+            "url": "https://www.insighthealth.ai/newsroom",
+            "title": "Insight Health Newsroom"
+          },
+          {
+            "url": "https://www.businesswire.com/news/home/20260617618332/en/Insight-Health-Joins-AdvancedMD-Marketplace-to-Bring-Clinical-AI-Agents-to-Thousands-of-Independent-Practices",
+            "title": "Insight Health Joins AdvancedMD Marketplace"
+          }
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "usage": {
+    "agentComputeUnits": 2,
+    "searches": 60,
+    "emails": 0,
+    "phoneNumbers": 0
+  },
+  "costDollars": {
+    "total": 0.5,
+    "agentCompute": 0.2,
+    "search": 0.3,
+    "emails": 0,
+    "phoneNumbers": 0
+  }
+}

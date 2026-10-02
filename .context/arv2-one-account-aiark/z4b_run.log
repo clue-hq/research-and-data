@@ -1,0 +1,12 @@
+== downloading mp3 ==
+   41116315 bytes in 1.28s
+== uploading to Gemini Files API ==
+  files.start http=200 upload_url=YES
+  files.upload http=200 2.9s
+   state=ACTIVE
+   uri: https://generativelanguage.googleapis.com/v1beta/files/lrvoxi6qvig8 state: ACTIVE videoMetadata/duration: None
+== generateContent ==
+  gemini[z4b_podcast_sanaz_boardroom] http=200 44.11s usage={"promptTokenCount": 64586, "candidatesTokenCount": 12860, "totalTokenCount": 77446, "promptTokensDetails": [{"modality": "TEXT", "tokenCount": 343}, {"modality": "AUDIO", "tokenCount": 64243}], "serviceTier": "standard"} cost=$0.024451
+finishReason: STOP chars: 44409
+
+Z4b 49.1s spend=0.0824

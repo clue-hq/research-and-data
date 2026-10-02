@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 // @vitest-environment node
 import { describe, expect, it } from "../../__tests__/vitest-shim";
 
@@ -49,4 +50,30 @@ describe("applySceneDelta", () => {
     const next = applySceneDelta(scene, { export_profiles: profiles });
     expect(next.export_profiles).toBe(profiles);
   });
+});
+
+import { WasmEngine, type WasmModule } from "../wasmEngine";
+it("keeps each mutation's presentation paired and rejects stale measurements", () => {
+  const authored = cloneScene(baseScene);
+  const presented = cloneScene(baseScene);
+  presented.nodes.node_contact_name.name = "effective";
+  let revision = 1;
+  const metadata = () => ({ context_key: "ctx", input_revision: revision, status: "ready", diagnostics: [] });
+  const wasmModule = { engineVersion: () => "{}", LumenEngine: class {
+    sceneJson() { return JSON.stringify(authored); }
+    presentationJson() { return JSON.stringify({ ...metadata(), scene: presented }); }
+    setRenderContext() { return this.presentationJson(); }
+    applyOperations() { revision++; return JSON.stringify({ ok:true, delta:{}, presentation_delta: { nodes: {
+      node_contact_name: { ...presented.nodes.node_contact_name, name:"next" }
+    } }, derivation:metadata() }); }
+    setMeasurements() { throw new Error("stale measurement reached WASM"); }
+  }} as unknown as WasmModule;
+  const engine = new WasmEngine(wasmModule, authored);
+  const before = engine.presentationScene;
+  const stamp = engine.derivation.input_revision;
+  const result = engine.applyOperations([]);
+  expect(result.presentationScene?.nodes.node_contact_name.name).toBe("next");
+  expect(before.nodes.node_contact_name.name).toBe("effective");
+  expect(engine.scene.nodes.node_contact_name.name).not.toBe("next");
+  assert.throws(() => engine.setMeasurements([], stamp), /Stale presentation/);
 });

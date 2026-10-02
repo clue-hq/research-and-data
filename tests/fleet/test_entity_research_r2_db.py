@@ -81,6 +81,7 @@ async def _claim_and_lease(
             task_id=task.task_id,
             worker_id=worker_id,
             lease_generation=lease.generation,
+            task_attempt=1,
         ),
         task.task_id,
     )

@@ -1,0 +1,639 @@
+You convert free-form research reports into typed claim rows for a claim store.
+
+ABSOLUTE RULES
+1. You may ONLY use a field_key from the catalog given to you. If a fact does not fit any catalog
+   key, DO NOT force it - put it in proposed_fields instead.
+2. value_json MUST validate against that field's value_schema exactly (right JSON type, required
+   properties present, enum values exact).
+3. evidence_span MUST be a VERBATIM substring of the report - copy the quoted text exactly as it
+   appears. Never paraphrase into evidence_span. If the report gives no quote for a fact, omit the
+   fact entirely.
+4. source_url MUST be the URL the report attributes that fact to. Every row needs one. Never invent
+   a URL, never reuse an unrelated one.
+5. NEVER emit a row for anything the report marked "NOT FOUND" or "excluded: special-category".
+6. Do not emit provenance fields (source_key, tier, extraction_method, verification_status): the
+   caller stamps those. Emit only field_key, value_json, evidence_span, source_url, confidence, and
+   for contact.facet.* also use_class.
+7. Prefer fewer, well-evidenced rows over many thin ones. One row per field per distinct fact.
+
+Return ONLY a JSON object: {"account_claims":[...], "contact_claims":[...], "proposed_fields":[...]}
+Each claim: {"field_key","value_json","evidence_span","source_url","confidence"} (+ "use_class" for
+contact.facet.*).
+Each proposed field: {"field_key","entity_type","value_type","value_schema","description",
+"reuse_scope","hypothesis","example_value","example_evidence_span","example_source_url"} where
+description is agent-facing (what an agent reads to decide whether to fill it), reuse_scope is
+"tenant_private" or "public_footprint", and hypothesis is one paragraph on why the platform needs
+this field for an ABM ICP like this one.
+
+=====
+
+# FIELD CATALOG (the ONLY keys you may use)
+ACCOUNT FIELDS (entity = the account):
+  core.account_name | value_type=str | Canonical account name observation. | value_schema={'type': 'string'}
+  core.primary_domain | value_type=str | Primary web domain. | value_schema={'type': 'string'}
+  core.company_linkedin_url | value_type=str | Public LinkedIn company page URL. | value_schema={'type': 'string'}
+  core.industry | value_type=str | Primary industry classification. | value_schema={'type': 'string'}
+  core.company_about | value_type=str | Public company description/about text. | value_schema={'type': 'string'}
+  core.employee_count | value_type=int | Total headcount. | value_schema={'type': 'integer'}
+  core.employee_range | value_type=object | Employee range, used only when exact headcount is unavailable. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string'}, 'min': {'type': 'integer'}, 'max': {'type': 'integer'}}}
+  core.hq_location | value_type=object | Normalized HQ/primary location plus the source's raw value. | value_schema={'type': 'object', 'required': ['raw'], 'properties': {'raw': {'type': 'string'}, 'city': {'type': 'string'}, 'region': {'type': 'string'}, 'country': {'type': 'string'}, 'country_code': {'type': 'string'}}}
+  core.annual_revenue | value_type=object | Annual revenue with currency, as-of date and reported/estimate semantics. | value_schema={'type': 'object', 'required': ['amount', 'currency', 'as_of', 'estimate_kind'], 'properties': {'amount': {'type': 'number'}, 'currency': {'type': 'string'}, 'as_of': {'type': 'string'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  core.revenue_band | value_type=enum | Bounded revenue band when exact sourced revenue is absent. | value_schema={'type': 'string', 'enum': ['under_1m', '1m_10m', '10m_50m', '50m_100m', '100m_500m', '500m_1b', '1b_plus']}
+  core.company_email | value_type=str | Public general company contact email. | value_schema={'type': 'string'}
+  core.company_phone | value_type=str | Public general company contact phone. | value_schema={'type': 'string'}
+  core.primary_tech_stack | value_type=list[str] | Detected primary technologies. | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  account.recent_funding | value_type=object | Most recent funding round. | value_schema={'type': 'object', 'required': ['amount_usd'], 'properties': {'amount_usd': {'type': 'number'}, 'round': {'type': 'string'}}}
+  account.total_funding | value_type=object | Total funding in USD with explicit estimate semantics. | value_schema={'type': 'object', 'required': ['amount_usd', 'estimate_kind'], 'properties': {'amount_usd': {'type': 'number'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  account.hiring_velocity_eng | value_type=number | Engineering hiring velocity (count of open engineering roles). | value_schema={'type': 'number'}
+  account.operational_pain | value_type=str | Synthesized operational pain. | value_schema={'type': 'string'}
+  account.strategic_moves | value_type=str | Strategic moves / initiatives. | value_schema={'type': 'string'}
+  account.resonance.culture | value_type=str | Cultural resonance signal. | value_schema={'type': 'string'}
+  account.resonance.employee_sentiment | value_type=object | Aggregate employee sentiment. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string', 'enum': ['positive', 'neutral', 'negative', 'mixed']}, 'polarity': {'type': 'number'}, 'summary': {'type': 'string'}}}
+  account.resonance.attrition_signal | value_type=object | Morale / attrition / layoff signal. | value_schema={'type': 'object', 'required': ['signal_type'], 'properties': {'signal_type': {'type': 'string', 'enum': ['morale', 'attrition', 'layoff']}, 'direction': {'type': 'string', 'enum': ['improving', 'stable', 'worsening']}, 'summary': {'type': 'string'}}}
+  account.resonance.eng_blog_tone | value_type=object | Tone/voice of the company's engineering or company blog. | value_schema={'type': 'object', 'required': ['tone_label'], 'properties': {'tone_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  account.resonance.public_frustrations | value_type=list[object] | Publicly aired frustrations about the account. | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['frustration'], 'properties': {'frustration': {'type': 'string'}, 'summary': {'type': 'string'}}}}
+  account.resonance.buying_culture | value_type=object | 'What it's like to buy here' - procurement culture. | value_schema={'type': 'object', 'required': ['culture_label'], 'properties': {'culture_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+
+CONTACT FIELDS (entity = the contact; plain contact.*):
+  core.work_email | value_type=str | Selected contact's observed work email. | value_schema={'type': 'string'}
+  core.direct_phone | value_type=str | Selected contact's observed direct phone. | value_schema={'type': 'string'}
+  contact.current_title | value_type=str | Current professional title. | value_schema={'type': 'string'}
+  contact.job_function | value_type=str | Current job function. | value_schema={'type': 'string'}
+  contact.job_level | value_type=str | Current job level. | value_schema={'type': 'string'}
+  contact.current_location | value_type=object | Current professional location/country. | value_schema={'type': 'object', 'properties': {'raw': {'type': 'string'}, 'country': {'type': 'string'}}}
+  contact.persona | value_type=str | Buying-committee persona key (CLOSED enum - only these four values exist). | value_schema={'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}
+  contact.role_on_committee | value_type=object | Inferred buying-committee role + plausibility rationale. | value_schema={'type': 'object', 'required': ['role'], 'properties': {'role': {'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}, 'rationale': {'type': 'string'}}}
+
+CONTACT FACET FIELDS (entity = the contact; GOVERNED - every claim MUST carry identity_binding and use_class):
+  contact.facet.career_history | value_type=list[object] | Professional history beyond the current title. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['org'], 'properties': {'org': {'type': 'string'}, 'role': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}}}
+  contact.facet.alma_mater | value_type=list[str] | School(s) / university the person attended. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.stated_interests | value_type=list[str] | Publicly stated interests / topics. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.communication_style | value_type=object | Inferred communication style / tone from public activity. | default use_class=professional-public | value_schema={'type': 'object', 'required': ['style_label'], 'properties': {'style_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  contact.facet.public_appearances | value_type=list[object] | Podcasts / talks / panels the person appeared in. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.publications | value_type=list[object] | Articles / papers / books the person authored. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.recent_post | value_type=str | Recent public post (personal hook). | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.nickname | value_type=str | Preferred / known-by name beyond the legal first name. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.hobby | value_type=str | Publicly stated hobby. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.recent_award | value_type=str | Recent award or recognition. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.conference_talk | value_type=str | Conference talk given by the person. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.causes | value_type=list[object] | Publicly supported causes (sensitive by default). | default use_class=sensitive | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['cause'], 'properties': {'cause': {'type': 'string'}, 'context': {'type': 'string'}}}}
+
+# ACCOUNT: Lassie (lassie.ai). Entity id: account:lassie
+# CONTACT: Steijn Pelle, CEO & co-founder. Entity id: contact:steijn-pelle
+
+# REPORT 1 - ACCOUNT DEEP RESEARCH (Exa deep-reasoning)
+# Lassie (lassie.ai) — decision-grade account dossier ## 1. IDENTITY AND DISAMBIGUATION
+Lassie is the San Francisco-based operating company behind lassie.ai, an AI software company building autonomous administrative systems for independent healthcare practices, initially dental practices. Its public positioning is “AI that runs the doctor’s office”; the product reads insurance claims, reconciles payments, posts to practice ledgers, and flags claims requiring action. The June 3, 2026 financing release identifies the company as “Lassie” and says it is “the company building autonomous systems to run small businesses”; the a16z announcement says it is “starting with dental practices.” Verbatim evidence: “SAN FRANCISCO, Calif.--(BUSINESS WIRE)-- Lassie, the company building autonomous systems to run small businesses, announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million.” URL: https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves. The company homepage headline is “Lassie — AI That Runs the Doctor's Office.” URL: https://www.lassie.ai/. HQ: San Francisco is explicitly stated in the Business Wire dateline and in the company description returned for the company page. Founding year: NOT FOUND on the reviewed public pages. Legal entity name: NOT FOUND. What it sells: autonomous administrative/insurance and revenue-cycle automation for practices, not pet insurance or veterinary software. Excluded same-name entities: (1) Lassie pet-insurance companies at lassie.co/lassie.se — excluded because they concern pet insurance and are unrelated to healthcare administration; (2) Lassie the fictional collie, film, and TV franchise — excluded because it is entertainment/IP; (3) veterinary, pet-care, dog-related Lassie results — excluded because they do not concern lassie.ai’s San Francisco dental/medical-practice software. No excluded source is used as evidence in this dossier. ## 2. PRODUCT AND TARGET VERTICAL
+The product is an autonomous AI agent/system for administrative work in doctors’ offices, with dental as the initial market. The primary workflow evidence is insurance and revenue-cycle administration: reading claims, reconciling payments, posting to the ledger, and identifying exceptions. Exact a16z quote: “Then they spent years building the infrastructure and integrations required for agents to operate directly within a practice’s workflow: reading insurance claims, reconciling payments, posting to the ledger, and flagging claims that need action. Lassie is not a copilot that creates more work for the practice to review. It does the work.” URL: https://a16z.com/announcement/investing-in-lassie/. The company page says: “Lassie works autonomously, around the clock, reading insurance claims, reconciling payments, handling denials and appeals.” URL: https://www.lassie.ai/company. The homepage search result states: “Handling enrollments, converting payments to EFTs, and posting them automatically, without delay.” URL: https://www.lassie.ai/. Practice types: dental is explicitly the starting market; a16z also says the founders spoke with “dentists, primary care doctors, and healthcare finance teams,” indicating medical/primary-care applicability, but a current quantified medical customer base is NOT FOUND. Veterinary service is NOT FOUND and should not be inferred. Exact quote: “Lassie is building AI that runs small businesses, starting with dental practices.”. Named integrations/PMS: public Lassie material explicitly names Dentrix, Eaglesoft, and Open Dental. Quote: “We automate EOB posting and payment matching across Dentrix, Eaglesoft, and Open Dental, without human intervention.” URL: https://www.lassie.ai/blog/ai-dental-admin-support. Pricing: NOT FOUND on the reviewed public pages. Phone handling, phone answering, and scheduling automation: NOT FOUND as confirmed Lassie product capabilities in the reviewed primary sources; do not conflate job-market/blog SEO language with a shipped product claim. ## 3. CUSTOMERS AND TRACTION
+Lassie publicly claims more than 700 practices across 49 states. The a16z quote is: “Lassie already works with more than 700 practices across 49 states, generates more than $10 million in annualized revenue, and provides practices with 250,000 hours of labor a year.” URL: https://a16z.com/announcement/investing-in-lassie/. The company page separately says: “Lassie is already trusted by700+ doctors’ officesacross the country.” URL: https://www.lassie.ai/company. Traction claims found: 700+ practices; 49 states; more than $10 million annualized revenue; 250,000 hours of labor per year. Named customer: a16z describes the founders’ dentist as “Dr. Kwon,” but this is a founder-origin story, not a confirmed paying-customer case study. Quote: “Steijn learned from his own dentist, Dr. Kwon, how complex the financial administration of an SMB dental practice can be.”. Other named customers, logos, ARR definition, revenue growth rate, retention, NRR, ACV, testimonials, and customer-level case studies: NOT FOUND. The acquisition signal is unusually relevant for an ABM seller: quote: “Growth has come largely through referrals and inbound demand – a sign that customers are not just buying the product, but telling other practice owners about it.”. ## 4. FUNDING HISTORY
+Series A — announced June 3, 2026; $35 million; led by Andreessen Horowitz/a16z; participating support from Night Capital and named individual investors Rahul Vohra, Zach Perret, Taavet Hinrikus, Gokul Rajaram, and Brian Balfour. Business Wire quote: “Lassie … announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million. The round was led by Andreessen Horowitz (a16z) with support from Night Capital, Rahul Vohra, founder and former CEO of Superhuman; Zach Perret, co-founder and CEO of Plaid; Taavet Hinrikus, co-founder and former CEO of Wise; Gokul Rajaram; and Brian Balfour, co-founder and CEO of Reforge.” URL: https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves. The a16z announcement date is June 3, 2026 and says: “Today, we are thrilled to announce that a16z is leading Lassie’s $35 million Series A.” URL: https://a16z.com/announcement/investing-in-lassie/. Earlier capital: the Series A release says total capital raised is $47 million, implying $12 million raised before the Series A, but the reviewed public source does not state the earlier round’s stage, date, lead, or full participant list. Therefore: pre-seed/seed round details — NOT FOUND; only the arithmetic difference between stated total capital and Series A is publicly visible in the cited release, and it should not be treated as a separately verified round description. ## 5. TEAM AND GTM COMPOSITION
+Total headcount: NOT FOUND from an authoritative company or LinkedIn page in the reviewed sources. A search-result company entity record reports a workforce of 23, but that is an aggregator/entity estimate rather than a primary source and is not sufficient to state current headcount as fact. Engineering/sales/marketing split: NOT FOUND. Dedicated commercial roles are clearly being recruited or contemplated: GTM Associate, Head of Marketing, Account Executives referenced in the GTM Associate description, Customer Success Manager, and Business Operations. This proves commercial-function hiring signals, not the exact current employee count. The GTM Associate posting says it partners with “Account Executives,” and the Head of Marketing posting refers to working directly with the CEO. Employees and titles publicly confirmed in the reviewed primary sources: Steijn Pelle — co-founder/CEO (the Head of Finance posting says “you’ll work alongside CEO Steijn Pelle”); Frédéric/ Frederic Renken — co-founder (a16z names him co-founder). Exact quotes: “you’ll work alongside CEO Steijn Pelle” URL: https://jobs.ashbyhq.com/lassie/3b76ef54-2d0f-4c64-a16a-4d76c3899afd; “Co-founders Steijn Pelle and Frédéric Renken” URL: https://a16z.com/announcement/investing-in-lassie/. Other employee names and exact titles: NOT FOUND in the reviewed public pages. Dedicated salespeople, marketers, or SDRs currently employed: NOT FOUND; open postings establish hiring intent, not current staffing. ## 6. GO-TO-MARKET MOTION
+Hard evidence indicates referral- and inbound-led growth to date. Quote: “Growth has come largely through referrals and inbound demand.”. The company is now formalizing outbound and multi-channel prospecting through its GTM Associate role. Quote: “You’ll identify promising doctors’ offices, run thoughtful outreach you’d want to receive yourself, schedule demos, and help us learn which messages actually land with small businesses.” URL: https://jobs.ashbyhq.com/lassie/d7f41c77-908c-4206-852b-a99a17f9a867. The same posting specifies: “Build lists of promising doctors’ offices and run thoughtful outreach across email, phone, social, events, and more” and “Experiment with messages, segments, and channels to learn where demand is strongest.”. Founder-led selling/customer discovery is supported by a16z: “Before writing a single line of code, they spent months talking to dentists, primary care doctors, and healthcare finance teams.”. In-person events/study clubs, referrals, outbound email/cold calling, paid ads, direct mail, conferences/trade shows, DSO partnerships: referrals and inbound are confirmed; outbound email, phone, social, and events are specified as contemplated GTM channels in the job posting; study clubs, paid advertising, direct mail, trade shows, and DSO partnerships: NOT FOUND. Public CRM/outbound/ad tooling: NOT FOUND. ## 7. HIRING SIGNALS
+GTM Associate — location: NOT FOUND in the search extract/reviewed page; posting URL: https://jobs.ashbyhq.com/lassie/d7f41c77-908c-4206-852b-a99a17f9a867. Verbatim GTM description: “As a GTM Associate at Lassie, you'll create the first spark of demand. You'll identify promising doctors' offices, run thoughtful outreach you'd want to receive yourself, schedule demos, and help us learn which messages actually land with small businesses.” Additional quote: “Build lists of promising doctors' offices and run thoughtful outreach across email, phone, social, events, and more.” Salary band: NOT FOUND. Head of Marketing — location: NOT FOUND in the reviewed extract; URL: https://jobs.ashbyhq.com/lassie/297fd72f-fe6d-40f1-8931-89085e66fa2f. Verbatim: “As Lassie's Head of Marketing, you'll be responsible for turning customer love into compounding demand.” Responsibilities include: “Own the growth system across acquisition, activation, and retention” and “Use customer insight, data, and experimentation to find the channels and messages that scale.” Salary band: NOT FOUND. Customer Success Manager — location: NOT FOUND in the reviewed extract; URL: https://jobs.ashbyhq.com/lassie/19493179-d4ea-476e-af9f-218684228879. Verbatim: “As one of Lassie's first Customer Success Managers, you'll guide hundreds of doctors' practices from signup to their first automated workflow and ultimately to a business that runs itself with Lassie.” Additional quote: “Hold regular business reviews with practice owners, intervene early on churn risk, and identify expansion opportunities.” Salary band: NOT FOUND. Business Operations — location, salary band, and full posting details: NOT FOUND beyond URL https://jobs.ashbyhq.com/lassie/b5013359-447e-445d-b3af-bc304e89a654. Search extract quote: “Business Operations builds the operating system behind Lassie’s growth.”. Head of Finance — location and salary band: NOT FOUND; URL: https://jobs.ashbyhq.com/lassie/3b76ef54-2d0f-4c64-a16a-4d76c3899afd. This is not a GTM role, but it has revenue-operations relevance. Quote: “Lead strategic finance work beyond the core: pricing structure, sales commission design, rev ops foundations, and more.”. Account Executive and SDR postings: NOT FOUND as independently reviewed open postings; AEs are referenced in the GTM Associate description. ## 8. LEADERSHIP AND KEY PEOPLE
+Steijn Pelle — co-founder and CEO. Current CEO title is explicit in the Head of Finance job posting: “you’ll work alongside CEO Steijn Pelle.” URL: https://jobs.ashbyhq.com/lassie/3b76ef54-2d0f-4c64-a16a-4d76c3899afd. Prior company: Robinhood; a16z says: “After working in consumer fintech at Robinhood and Coinbase, Steijn learned from his own dentist…”. Frédéric/ Frederic Renken — co-founder. a16z quote: “Co-founders Steijn Pelle and Frédéric Renken did not find this problem from a distance.” Prior companies: product at Superhuman and Uber. Quote: “He and Frédéric, who had built product at Superhuman and Uber, then worked inside Dr. Kwon’s office…” URL: https://a16z.com/announcement/investing-in-lassie/. Other executives/leads: NOT FOUND in the reviewed public primary sources. Revenue/growth ownership: CEO Steijn Pelle appears to own company-level growth strategy by implication of the Head of Marketing posting’s statement that the hire will partner directly with the CEO, but an explicit “head of revenue” or sales owner is NOT FOUND. The Head of Marketing role would own acquisition, activation, retention, channels, and growth loops if filled. ## 9. OPERATIONAL PAIN AND STRATEGIC MOVES
+The publicly described market pain is administrative labor and complexity in small practices. a16z says: “Across roughly 160,000 dental practices in the U.S., this work is increasingly hard to staff and expensive to get wrong.”. It also says the system catches “the underpayments, denials, and missing claims that used to slip through.”. The company page says its mission addresses a burden that is “quietly breaking independent healthcare,” but that wording comes from the company’s public positioning as represented on its page. Strategic move: build a repeatable growth engine beyond current referral/inbound demand. Head of Marketing quote: “turning customer love into compounding demand” and “find the repeatable, scalable channels and messages that help Lassie reach far more doctors' offices efficiently.”. Strategic market expansion: dental is the beachhead; a16z says: “But the larger insight is not dental-specific. Every small business is still held together by human labor.”. Exact roadmap beyond dental, launch dates, medical product modules, or veterinary expansion: NOT FOUND. Publicly stated internal pain around fragmented SMB selling, hiring, or distribution beyond the job descriptions’ need to build GTM processes: NOT FOUND. ## 10. CULTURE AND RESONANCE
+The company page describes the team as: “We are a team of ambitious builders and operators, united in our shared optimism about the future. We value craft, rigor of thought, and direct communication.” URL: https://www.lassie.ai/company. It also says: “We’re pushing the boundary on autonomous systems, and believe small businesses will soon run themselves.”. Founder-building style: a16z says the founders worked inside a dental office and spent months speaking with users before coding. Quote: “Before writing a single line of code, they spent months talking to dentists, primary care doctors, and healthcare finance teams.”. Product tone is explicitly automation-first rather than assistive: “Lassie is not a copilot that creates more work for the practice to review. It does the work.”. Employee sentiment, public frustrations, workplace controversies, and independently verified culture reviews: NOT FOUND. The public tone is ambitious, optimistic, direct, and infrastructure/operator-oriented; those descriptors are grounded in the company’s own quoted language, not inferred employee sentiment. ## 11. TIMING SIGNALS
+June 3, 2026 — Series A announcement. Lassie announced $35M Series A led by Andreessen Horowitz, total capital $47M. URLs: https://a16z.com/announcement/investing-in-lassie/; https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves. June 3, 2026 — a16z published its investment thesis. It disclosed 700+ practices across 49 states, $10M+ annualized revenue, 250,000 labor hours/year, referral/inbound-led growth, and the dental-to-small-business strategic framing. URL: https://a16z.com/announcement/investing-in-lassie/. July 3, 2026 — Lassie published a dental admin-support article whose search extract states its automation works across Dentrix, Eaglesoft, and Open Dental. URL: https://www.lassie.ai/blog/ai-dental-admin-support. July 3, 2026 — Lassie published a dental payment-posting guide describing EOB/ERA processing, PMS ledger posting, write-offs, balances, and exception flagging. URL: https://www.lassie.ai/blog/dental-payment-posting-guide. July 10, 2026 — Lassie published an independent-dentist AR staffing article. Search extract quote: “We built Lassie for the practice that does not want to hire another biller or hand its revenue cycle to an agency.” URL: https://www.lassie.ai/blog/independent-dentist-insurance-ar-staffing. Current hiring signal visible in the reviewed search results as of August 26, 2026 — GTM Associate, Head of Marketing, Customer Success Manager, Business Operations, and Head of Finance postings. URLs: https://jobs.ashbyhq.com/lassie/d7f41c77-908c-4206-852b-a99a17f9a867; https://jobs.ashbyhq.com/lassie/297fd72f-fe6d-40f1-8931-89085e66fa2f; https://jobs.ashbyhq.com/lassie/19493179-d4ea-476e-af9f-218684228879; https://jobs.ashbyhq.com/lassie/b5013359-447e-445d-b3af-bc304e89a654; https://jobs.ashbyhq.com/lassie/3b76ef54-2d0f-4c64-a16a-4d76c3899afd. Posting dates: NOT FOUND in the reviewed extracts, so “current” is based on discovery in the requested research date, not a claimed posting date. ## 12. SOURCE LIST [primary] https://a16z.com/announcement/investing-in-lassie/ [primary] https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves [secondary] https://nextmd.ai/blog/lassie-raised-35m-to-do-the-back-office-paperwork-so-doctors-don-t-have-to [secondary] https://au.finance.yahoo.com/news/lassie-raises-35m-led-andreessen-141500294.html [primary] https://www.lassie.ai/company [primary] https://www.lassie.ai/ [primary] https://www.lassie.ai/blog/dental-payment-posting-guide [primary] https://www.lassie.ai/blog/independent-dentist-insurance-ar-staffing [primary] https://www.lassie.ai/blog/ai-dental-admin-support [primary] https://www.lassie.ai/blog [primary] https://www.lassie.ai/blog/dental-revenue-cycle-management-solutions-independent-practices [primary] https://jobs.ashbyhq.com/lassie/d7f41c77-908c-4206-852b-a99a17f9a867 [primary] https://jobs.ashbyhq.com/lassie/297fd72f-fe6d-40f1-8931-89085e66fa2f [primary] https://jobs.ashbyhq.com/lassie/b5013359-447e-445d-b3af-bc304e89a654 [primary] https://jobs.ashbyhq.com/lassie/19493179-d4ea-476e-af9f-218684228879 [primary] https://jobs.ashbyhq.com/lassie/3b76ef54-2d0f-4c64-a16a-4d76c3899afd Research caveat: This dossier uses only sources unambiguously tied to lassie.ai and excludes pet-insurance, veterinary, dog, and fictional-collie entities. Facts not explicitly available in the reviewed public-page extracts are marked NOT FOUND rather than inferred.
+
+# REPORT 2 - CONTACT DEEP RESEARCH (Exa deep-reasoning)
+# 1. IDENTITY CONFIRMATION The person researched is Steijn Pelle, the San Francisco-based co-founder and CEO of Lassie, the company at lassie.ai—not the Swedish pet-insurance company at lassie.co and not the fictional collie. - His personal site identifies him as: “CEO & Co-Founder at Lassie. Building AI that runs small businesses.” URL: https://steijn.com/ [primary]
+- His LinkedIn profile identifies the current role as “CEO and Co-Founder - Lassie (Current)” and describes Lassie as “Building AI that runs small businesses, starting with the doctor's office.” URL: https://www.linkedin.com/in/steijn [primary]
+- Lassie’s company page describes the product as: “Lassie helps doctors run their offices by handling the busywork.” URL: https://www.lassie.ai/company [primary]
+- a16z’s investment announcement explicitly ties him to Lassie: “Lassie is building AI that runs small businesses, starting with dental practices. Co-founders Steijn Pelle and Frédéric Renken...” URL: https://a16z.com/announcement/investing-in-lassie/ [primary/official investor]
+- The June 3, 2026 funding release quotes: “Small business owners should be freed up from doing busywork, so they can focus on what they are passionate about,” said Steijn Pelle, CEO and co-founder of Lassie.” URL: https://natlawreview.com/press-releases/lassie-raises-35m-led-andreessen-horowitz-build-ai-small-businesses-run [secondary reproduction of company release]
+- His own June 3, 2026 LinkedIn post says: “Today, we're introducing Lassie and $47M in funding led by a16z. We're building AI that runs small businesses, starting with doctors' offices.” URL: https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ [primary] Confidence that the later sections concern the same Steijn Pelle: HIGH. The personal site, LinkedIn profile, Lassie’s site, a16z, his own LinkedIn posts, and interviews converge on the same name, role, geography, prior employers, and founder history. Deliberately excluded: material about lassie.co, the Swedish pet-insurance company, and the fictional collie; those are different entities. I also excluded any source material containing health/medical information about Pelle personally, religion, political views, race or ethnicity, sexual orientation, family or children, bereavement/personal tragedy, home address, personal phone, and personal/private email. Where such material appeared, it is excluded: special-category. # 2. CURRENT ROLE AND TENURE - Exact current title: “CEO and Co-Founder - Lassie.” LinkedIn gives “Mar 2020 - Present” in San Francisco. URL: https://www.linkedin.com/in/steijn [primary]
+- His personal-site description is: “CEO & Co-Founder at Lassie. Building AI that runs small businesses.” URL: https://steijn.com/ [primary]
+- His own job description on LinkedIn is: “Building AI that runs small businesses, starting with the doctor's office.” URL: https://www.linkedin.com/in/steijn [primary]
+- Lassie’s public company description says: “Lassie is an AI that runs the doctor's office. It automates admin enrollments, payment posting, EFT reconciliation, and helps teams focus on patients.” URL: https://www.linkedin.com/in/steijn [primary]
+- Public evidence indicates that he owns overall company building, product direction, growth/go-to-market and hiring, rather than only one functional area. His 2022 hiring post says the first business hire would “partner closely with Steijn Pelle and team in tackling multiple, pre-series A 0-1 challenges” and “build out Lassie’s first go-to-market playbook.” URL: https://www.linkedin.com/posts/steijn_founding-business-hire-activity-6932862496571617282-GskC [primary] Start-date nuance: LinkedIn says March 2020; a 2026 profile says Lassie was founded in 2021. The exact founding date is NOT FOUND in a primary source reviewed, so March 2020 is reported as his LinkedIn tenure, not independently reconciled with the company’s founding year. # 3. CAREER HISTORY Robinhood - Product Manager, December 2018–November 2019, San Francisco Bay Area. His LinkedIn profile says he was “Hired as the first product manager focused on user growth” and “Helped to accelerate Robinhood’s user base from 6 million to 10 million users.” It lists the principal growth work as “Building out ‘invite your friends’ referrals feature,” “Improving the onboarding flow,” and starting “Robinhood Learn” plus SEO. URL: https://www.linkedin.com/in/steijn [primary]
+- The concise primary-profile quote is: “Hired as the first product manager focused on user growth. Helped to accelerate Robinhood’s user base from 6 million to 10 million users.” URL: https://www.linkedin.com/in/steijn [primary]
+- His own Lassie announcement adds: “To get here, we first had to leave Robinhood and Superhuman to work in offices ourselves.” URL: https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ [primary] Coinbase - Product Lead, Growth, January–July 2018, San Francisco Bay Area. LinkedIn lists the role and dates. URL: https://www.linkedin.com/in/steijn [primary]
+- His April 9, 2018 first-person announcement says: “I’ve joined Coinbase as a product lead to scale the company’s growth team!” and “This is an amazing opportunity to share my learnings about user growth and apply it to cryptocurrency.” URL: https://medium.com/@steijnpelle/im-joining-coinbase-4c10b34bf161 [primary]
+- In a later LinkedIn hiring post he characterized the prior impact as: “After helping Robinhood and Coinbase grow to their first hundreds of millions in annual revenue...” URL: https://www.linkedin.com/posts/steijn_after-helping-robinhood-and-coinbase-grow-activity-7345814439805243392-wFvO [primary] HealthTap - Product Manager, Growth, February 2016–December 2017, Palo Alto. LinkedIn describes him as “First Product Manager focused on growth.” It says he shipped “70+ experiments (SEO, paid, NUX) that increased annual new user activations by 275%,” hired “an 8 person growth team,” created a growth model, established instrumentation/analytics, and built a Facebook Messenger health chatbot. URL: https://www.linkedin.com/in/steijn [primary]
+- Representative quote: “We shipped 70+ experiments (SEO, paid, NUX) that increased annual new user activations by 275%.” URL: https://www.linkedin.com/in/steijn [primary]
+- Because this describes work at a healthcare company rather than Pelle’s personal health, it is permitted professional history. Any personal health information found elsewhere is excluded: special-category. FITMO - COO and Co-Founder, April 2014–February 2016, Amsterdam Area, Netherlands. LinkedIn’s summary says: “Personal trainer on demand. Focused on: 1. Customer development 2. Product growth, including integrations with Jawbone and Apple 3. Analytics and experimentation framework.” URL: https://www.linkedin.com/in/steijn [primary]
+- Contemporary coverage identifies him as co-founder: “Fitmo is in 2014 opgericht door Dave Roeloffs en Steijn Pelle.” URL: https://siliconcanals.com/nieuwe-investeerder-voor-fitness-app-fitmo/ [secondary]
+- Funding coverage calls him “Co-founder/COO Steijn Pelle.” URL: https://www.finsmes.com/2014/11/fitmo-raises-e1-2m-in-funding.html [secondary] Pelliano - CEO and Co-Founder, June 2011–April 2014, Rotterdam. LinkedIn describes it as an “Italian e-commerce brand for males clothing” that “Within 24 months... sold in 11 countries, in over 120 points-of-sale and through own e-commerce channel.” It says he led e-commerce product management and product growth “> $1 million annual run rate,” built “distribution partnerships with over 120 department stores world-wide,” and raised “> $1 million in funding.” URL: https://www.linkedin.com/in/steijn [primary]
+- These figures are reported only as his own LinkedIn description; independent corroboration of Pelliano’s dates and metrics was NOT FOUND. ELF Entertainment - CEO and Co-Founder, January 2007–May 2011. LinkedIn lists the title and dates. URL: https://www.linkedin.com/in/steijn [primary]
+- A substantive public description of ELF Entertainment’s product, traction or outcome is NOT FOUND. # 4. EDUCATION - Rotterdam School of Management, Erasmus University: LinkedIn/archived profile data lists “Bachelor of Science, Business” and dates 2007–2011. URL: https://www.linkedin.com/in/steijn [primary]
+- An indexed profile version gives the fuller wording “Bachelor of Science, Business Administration.” URL: https://www.linkedin.com/in/steijn [primary]
+- Reforge: “Product Growth Program,” 2016, appears in an indexed profile record. URL: https://www.linkedin.com/in/steijn [secondary/aggregated profile record]
+- University of Cambridge and St. Petersburg State University are mentioned by an aggregator, but degree, field and dates are not sufficiently supported by a primary source. They are therefore NOT FOUND for this report. URL checked: https://me.sh/profile/steijn-pelle [secondary] # 5. PUBLIC WRITING, TALKS AND PODCASTS 1. “I’m joining Coinbase,” Medium, April 9, 2018. URL: https://medium.com/@steijnpelle/im-joining-coinbase-4c10b34bf161 [primary]
+Representative quote: “I’ve joined Coinbase as a product lead to scale the company’s growth team!” 2. “Come work with me! You’ll be teammate #6 and the founding business hire,” LinkedIn, May 19, 2022. URL: https://www.linkedin.com/posts/steijn_founding-business-hire-activity-6932862496571617282-GskC [primary]
+Representative quote: “We’re applying what we learned at Robinhood and Superhuman to put small business doctors in control of their practice.” 3. “After helping Robinhood and Coinbase grow to their first hundreds of millions in annual revenue...,” LinkedIn, July 1, 2025. URL: https://www.linkedin.com/posts/steijn_after-helping-robinhood-and-coinbase-grow-activity-7345814439805243392-wFvO [primary]
+Representative quote: “Opening up a new role soon: another go-to-market hire. You’ll work closely with me and early GTM team to build a $100m ARR engine over the next 12 months.” 4. “a16z Backs Lassie with $47M in Funding for AI-Powered Office Automation,” LinkedIn, June 3, 2026. URL: https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ [primary]
+Representative quote: “Today, we're introducing Lassie and $47M in funding led by a16z. We're building AI that runs small businesses, starting with doctors' offices.” 5. “Lassie: From Flying to 100 Dental Offices to $100M ARR Via Product Obsession with Steijn Pelle,” Founder-Led Sales Stories, August 22, 2025. URL: https://founderledsalesstories.substack.com/p/lassie-from-flying-to-100-dental [secondary interview/podcast page]
+The page reports that the conversation covers “Lassie's crazy commitment to product quality,” flying to “100+ dental offices nationwide,” saying no to most leads, delaying the first sales hire until hundreds of customers, organic growth, and a “Robinhood-style” waitlist. A directly attributable quote reproduced on the page is: “Common wisdom: find someone after 5-10 customers. It took us a lot longer to see a scalable, repeatable motion. That was the trigger to aggressively expand GTM.” 6. “2315: Getting Paid in the Age of AI: Back Office Automation from Silicon Valley Pt. 2,” Dental Success Institute / Dentalpreneur Podcast, August 19, 2025. URL: https://www.truedentalsuccess.com/the-dentalpreneur-podcast/2315-getting-paid-in-the-age-of-ai-back-office-automation-from-silicon-valley-pt-2/ [secondary podcast page]
+The page says he discussed “why traditional billing models can’t scale,” eliminating “up to 80 hours of admin work per month,” charging only when Lassie delivers results, future insurance verification/patient billing/AI appeals, and company culture. A verbatim page quote is: “Steijn also shares how his experience at Robinhood and Coinbase shaped his approach to building user-focused technology.” 7. “Steijn Pelle on Dental AI Automation,” MDIB Podcast, episode 342, February 20, 2026. URL: https://mommydibs.com/steijn-pelle-lassie-ai/ [secondary podcast page]
+The page says the episode covers EOB posting, write-offs, paper checks, digital payments, accuracy, and freeing staff for treatment planning and patient communication. Representative quote from the page: “Steijn Pelle is the CEO and Co-founder of Lassie.” 8. “How Steijn Pelle built Lassie to help small businesses run themselves using AI,” a16z Build, August 24, 2026. URL: https://a16zbuild.substack.com/p/how-steijn-pelle-built-lassie-to [secondary interview/profile from official investor channel]
+The article says he scaled Lassie to “800+ small businesses across 49 states” and is on “a mission to scale Lassie - and create a future world where every small business runs itself, using AI.” The page reproduces his June 3 post: “Today, we're introducing Lassie and $47M in funding led by a16z.” A complete list of conference talks, newsletters and additional substantive LinkedIn posts beyond those above is NOT FOUND in the reviewed public search results. # 6. AWARDS AND RECOGNITION - F6S describes him as “Awarded Young Entrepreneur of the Year. Former Professional Runner.” URL: https://www.f6s.com/company/fitmoteam?flow=seePage [secondary]
+- No awarding body, award year, or independent corroboration was found. The award title and the fact that F6S states it are reported; further detail is NOT FOUND.
+- No other awards, lists or honors were found in the reviewed sources: NOT FOUND. # 7. HOW HE THINKS AND WRITES - Mission-first, plainspoken framing: he repeatedly uses “AI that runs small businesses” and narrows the initial market to “starting with doctors' offices.” This is concise, concrete positioning rather than abstract AI language. Quote: “We’re building AI that runs small businesses, starting with doctors' offices.” URL: https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ [primary]
+- Growth as a product system: his career description emphasizes referrals, onboarding, SEO, experiments, analytics, acquisition loops and retention loops. Quote: “We created growth model that identifies northstar metric, acquisition loops and retention loops.” URL: https://www.linkedin.com/in/steijn [primary]
+- Quantitative and operational language: he writes in specific user, experiment, team and revenue numbers. Quotes include “6 million to 10 million users,” “70+ experiments,” “275%,” “8 person growth team,” and “$100m ARR engine.” URLs: https://www.linkedin.com/in/steijn and https://www.linkedin.com/posts/steijn_after-helping-robinhood-and-coinbase-grow-activity-7345814439805243392-wFvO [primary]
+- Product-led distribution and customer delight: the interview page characterizes the approach as turning “one delighted dentist into an organic growth engine” and using a “Robinhood-style” waitlist. URL: https://founderledsalesstories.substack.com/p/lassie-from-flying-to-100-dental [secondary]
+- Deliberate, evidence-before-scaling judgment: his reproduced interview quote says, “It took us a lot longer to see a scalable, repeatable motion. That was the trigger to aggressively expand GTM.” URL: https://founderledsalesstories.substack.com/p/lassie-from-flying-to-100-dental [secondary]
+- Direct, recruiting-oriented prose: his hiring post opens with “Come work with me!” and asks for “a brilliant generalist” with “masterful analytical chops” and the ability to get “any job” done. URL: https://www.linkedin.com/posts/steijn_founding-business-hire-activity-6932862496571617282-GskC [primary]
+- Recurring themes: autonomy, busywork removal, customer focus, growth loops, product quality, direct communication, ambitious hiring and distribution through trusted customers. Lassie’s company page reinforces the cultural wording: “We value craft, rigor of thought, and direct communication.” URL: https://www.lassie.ai/company [primary] # 8. NON-SENSITIVE PERSONAL HOOKS - Country of origin: an interview page describes him as “Originally from the Netherlands.” URL: https://mommydibs.com/steijn-pelle-lassie-ai/ [secondary]
+- Earlier geography: his LinkedIn history places Pelliano in Rotterdam, FITMO in the Amsterdam Area, and later roles in Palo Alto/San Francisco. URL: https://www.linkedin.com/in/steijn [primary]
+- Publicly stated hobby/athletic interest: F6S describes him as “Former Professional Runner.” URL: https://www.f6s.com/company/fitmoteam?flow=seePage [secondary]
+- A secondary profile says he competed in “various marathons in San Francisco.” Because this is not confirmed by a primary source, it is NOT FOUND as a firm hook. URL checked: https://me.sh/profile/steijn-pelle [secondary]
+- Languages, alma-mater loyalties, sports teams, side projects and non-religious/non-political community involvement: NOT FOUND.
+- Any family-related material was excluded: excluded: special-category. # 9. WHAT HE IS PUBLICLY WORKING ON OR WORRIED ABOUT RIGHT NOW Newest first: - August 24, 2026: a16z Build reports that Pelle has scaled Lassie to “800+ small businesses across 49 states” and is on “a mission to scale Lassie - and create a future world where every small business runs itself, using AI.” URL: https://a16zbuild.substack.com/p/how-steijn-pelle-built-lassie-to [secondary]
+- June 3, 2026: his own post announced “$47M in funding led by a16z,” described Lassie as AI for small businesses beginning with doctors’ offices, and said it was trusted by “700+ practices” while providing “30 hours of labor per month.” URL: https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ [primary]
+- June 3, 2026: a16z said it was leading Lassie’s “$35 million Series A” and that the company was “starting with dental practices.” It described the founders’ hands-on distribution/product discovery: they “worked inside Dr. Kwon’s office, processing payments by hand to understand the workflow from the inside.” URL: https://a16z.com/announcement/investing-in-lassie/ [primary/official investor]
+- July 1, 2025: he was recruiting another GTM hire to “build a $100m ARR engine over the next 12 months,” seeking someone who could “take on significant responsibility quickly and grow into an operator.” URL: https://www.linkedin.com/posts/steijn_after-helping-robinhood-and-coinbase-grow-activity-7345814439805243392-wFvO [primary]
+- May 19, 2022: he was hiring the founding business employee to “build out Lassie’s first go-to-market playbook,” with “Growth initiatives, new product development, scaling out the early business teams” in scope. URL: https://www.linkedin.com/posts/steijn_founding-business-hire-activity-6932862496571617282-GskC [primary] Current publicly stated priorities are therefore scale, distribution/GTM, hiring strong generalists and operators, expanding from dental/doctor offices toward a broader small-business operating system, and preserving product quality while scaling. A specific personal worry or concern is NOT FOUND. # 10. SUGGESTED OPENERS 1. “Your description of Lassie as ‘AI that runs small businesses, starting with doctors’ offices’ stood out to me—especially the way you connected that mission to working inside Dr. Kwon’s office and processing payments by hand.”
+Hook and source: his June 3 LinkedIn post, https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ; a16z announcement, https://a16z.com/announcement/investing-in-lassie/ 2. “I noticed your point that it took longer than the usual five-to-ten customers to find a scalable, repeatable sales motion before expanding GTM.”
+Hook and source: interview quote reproduced by Founder-Led Sales Stories, https://founderledsalesstories.substack.com/p/lassie-from-flying-to-100-dental 3. “The progression from Robinhood referrals and onboarding to Lassie’s customer-led growth engine is a particularly interesting through-line.”
+Hook and source: LinkedIn career description, https://www.linkedin.com/in/steijn; Founder-Led Sales Stories interview page, https://founderledsalesstories.substack.com/p/lassie-from-flying-to-100-dental 4. “Your July 2025 hiring post framed the next GTM role around building a ‘$100m ARR engine’ while giving someone room to grow into an operator.”
+Hook and source: Steijn Pelle LinkedIn post, https://www.linkedin.com/posts/steijn_after-helping-robinhood-and-coinbase-grow-activity-7345814439805243392-wFvO 5. “I appreciated the specificity in your growth background: ‘70+ experiments’ and a 275% increase in annual new-user activations at HealthTap.”
+Hook and source: Steijn Pelle LinkedIn profile, https://www.linkedin.com/in/steijn # 11. SOURCE LIST [primary] https://steijn.com/ [primary] https://www.linkedin.com/in/steijn [primary] https://www.lassie.ai/company [primary] https://www.lassie.ai/ [primary] https://medium.com/@steijnpelle/im-joining-coinbase-4c10b34bf161 [primary] https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ [primary] https://www.linkedin.com/posts/steijn_founding-business-hire-activity-6932862496571617282-GskC [primary] https://www.linkedin.com/posts/steijn_after-helping-robinhood-and-coinbase-grow-activity-7345814439805243392-wFvO [primary/official investor] https://a16z.com/announcement/investing-in-lassie/ [secondary] https://a16zbuild.substack.com/p/how-steijn-pelle-built-lassie-to [secondary] https://founderledsalesstories.substack.com/p/lassie-from-flying-to-100-dental [secondary] https://mommydibs.com/steijn-pelle-lassie-ai/ [secondary] https://www.truedentalsuccess.com/the-dentalpreneur-podcast/2315-getting-paid-in-the-age-of-ai-back-office-automation-from-silicon-valley-pt-2/ [secondary] https://www.f6s.com/company/fitmoteam?flow=seePage [secondary] https://siliconcanals.com/nieuwe-investeerder-voor-fitness-app-fitmo/ [secondary] https://www.finsmes.com/2014/11/fitmo-raises-e1-2m-in-funding.html [secondary] https://me.sh/profile/steijn-pelle [secondary] https://natlawreview.com/press-releases/lassie-raises-35m-led-andreessen-horowitz-build-ai-small-businesses-run [secondary] https://www.morningstar.com/news/business-wire/20260603909717/lassie-raises-35m-led-by-andreessen-horowitz-to-build-ai-for-small-businesses-to-run-themselves [secondary] https://www.upstartsmedia.com/p/toothy-ai-lassie-raises-35m [secondary] https://yespress.io/steijn-pelle [secondary] https://www.orrick.com/en/news/2026/06/lassie-raises-35-million-in-series-a-round-led-by-a16z [secondary] https://www.siliconcanals.com/nieuwe-investeerder-voor-fitness-app-fitmo/ Note: The work email supplied in the request was not used or repeated because the requested report excludes personal/private email and the task requires public-page grounding.
+
+# SUPPLEMENTARY SOURCE EXTRACTS - funding / analyst pages
+SOURCE https://sacra.com/c/lassie/
+Lassie analysis | Sacra
+
+Home&nbsp>&nbsp Companies&nbsp>&nbsp Lassie
+
+Lassie
+
+Autonomous AI for medical and dental practice administration that automates enrollments, payment posting, EFT reconciliation, claims follow-up, and reporting
+
+Embed PDF
+
+Details
+
+Headquarters
+
+San Francisco, United States
+
+CEO
+
+Steijn Pelle
+
+Website
+
+Milestones
+
+FOUNDING YEAR
+
+2020
+
+Listed In
+
+Overview
+
+Reports
+
+Filings
+
+Unhighlight
+
+## Valuation & Funding
+
+Lassie raised a $35 million Series A in June 2026 led by Andreessen Horowitz.
+
+Before the Series A, Lassie raised earlier rounds backed by SV Angel, Homebrew, and Go Global Ventures, bringing total disclosed funding to $47 million.
+
+The Series A included participation from angel investors Rahul Vohra, Zach Perret, Taavet Hinrikus, Gokul Rajaram, Brian Balfour, and Night Capital.
+
+## Product
+
+Lassie is an AI back-office tool for independent medical and dental practices. It automates insurance payment paperwork that often sits with an office manager or biller, including payer enrollments, EFT reconciliation, payment posting, claims follow-up, appeals, and reporting, without requiring the practice to replace its existing practice management software.
+
+The workflow begins when an insurer sends money. Lassie ingests remittance data, matches each payment to the correct insurer, patient, and claim, applies the practice's contractual adjustment logic, and posts the result directly into the practice management system in real time. When records align, the process runs without human involvement. When they do not, such as in an underpayment, mismatched EFT, or ambiguous write-off, Lassie flags the exception for staff review instead of leaving it in a backlog.
+
+The product integrates with the three dominant on-premise dental EHR systems, Dentrix, Eaglesoft, and Open Dental, through a local agent that connects Windows-based software to Lassie's servers. It also connects to banking rails through Plaid and MX for real-time deposit reconciliation, and to major payers including BCBS, UHC, Delta Dental, Cigna, Aetna, MetLife, and Guardian.
+
+Lassie also covers claims follow-up and appeals, including autonomous payer calls to check claim status, and includes a conversational reporting layer where practice owners can ask operational questions such as how collections are tracking for the week. The company says 98% of posting is handled autonomously, with staff involved only in the most complex edge cases.
+
+Go-live timelines depend on the practice's 
+
+SOURCE https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves
+Lassie Raises $35M Led by Andreessen Horowitz to Build AI for Small Businesses to Run Themselves
+
+Jun 3, 2026 10:15 AM Eastern Daylight Time
+
+# Lassie Raises $35M Led by Andreessen Horowitz to Build AI for Small Businesses to Run Themselves
+
+Share
+
+---
+
+Founded by early Robinhood and Superhuman product managers, Lassie is working on autonomous systems that handle the busywork
+
+Currently operating in 700+ small businesses across 49 states, providing business owners with over 250,000 hours of labor each year
+
+SAN FRANCISCO, Calif.--(BUSINESS WIRE)-- Lassie, the company building autonomous systems to run small businesses, announced it has raised $35 million in Series A financing, bringing its total capital raised to $47 million. The round was led by Andreessen Horowitz (a16z) with support from Night Capital, Rahul Vohra, founder and former CEO of Superhuman; Zach Perret, co-founder and CEO of Plaid; Taavet Hinrikus, co-founder and former CEO of Wise; Gokul Rajaram; and Brian Balfour, co-founder and CEO of Reforge.
+
+AI can do a lot today. It writes software, passes bar exams, and generates realistic videos from simple prompts. But it can do so much more. It can help millions of small business owners by handling their busywork. Up until now, software has not removed this painstaking administrative work and has merely rearranged it. For the first time, software can interpret messy context, move across the endless systems that small businesses have, and do that work for an owner.
+
+Nowhere is this more apparent than in doctors’ offices, the largest type of small businesses behind retail and food and beverage. A typical practice loses 100+ hours a month to administrative work and spends roughly $200,000 a year on staff that owners can barely find, let alone keep.
+
+Today, Lassie’s agent goes into a practice's insurance portals, pulls reimbursements, reconciles them against records, updates the system-of-record, and verifies the funds in the bank. Operating in more than 700 practices across 49 states, Lassie currently provides businesses owners with over 250,000 hours of labor each year.
+
+"Small business owners should be freed up from doing busywork, so they can focus on what they are passionate about," said Steijn Pelle, CEO and co-founder of Lassie. "After watching 700 businesses rely on Lassie to do a big part of their administration, I am convinced that the future is bright. They now use the time we save them to grow the business and spend more time with customer
+
+SOURCE https://a16z.com/announcement/investing-in-lassie/
+Investing in Lassie | Andreessen Horowitz
+
+Enterprise
+
+# Investing in Lassie
+
+Alex Rampell and Olivia Moore Posted June 3, 2026
+
+Subscribe
+
+Share
+
+Share
+
+Email
+
+X
+
+LinkedIn
+
+Facebook
+
+Hacker News
+
+WhatsApp
+
+Flipboard
+
+Reddit
+
+Share
+
+Share
+
+Email
+
+X
+
+LinkedIn
+
+Facebook
+
+Hacker News
+
+WhatsApp
+
+Flipboard
+
+Reddit
+
+Most small businesses have something in common: they are run by reluctant operators. These are owners who set out to provide a service to their local community, and ended up running a business instead. They did not sign up to become finance people, HR people, recruiters, billers, or claims specialists. They became those things because someone had to.
+
+Dental practices are a perfect example. Dentists go to school to practice dentistry and care for patients. Instead many are stuck doing paperwork, hiring people, training and retaining staff, negotiating insurance contracts, fighting claims, and managing cash flow.
+
+Across roughly 160,000 dental practices in the U.S., this work is increasingly hard to staff and expensive to get wrong. AI can already do much of this work today. It is just not in the hands of these businesses yet.
+
+We think businesses will soon run themselves, and small businesses will be among the first. Today, we are thrilled to announce that a16z is leading Lassie’s $35 million Series A – and partnering with a team solving exactly this problem.
+
+Lassie is building AI that runs small businesses, starting with dental practices. Co-founders Steijn Pelle and Frédéric Renken did not find this problem from a distance. After working in consumer fintech at Robinhood and Coinbase, Steijn learned from his own dentist, Dr. Kwon, how complex the financial administration of an SMB dental practice can be. He and Frédéric, who had built product at Superhuman and Uber, then worked inside Dr. Kwon’s office, processing payments by hand to understand the workflow from the inside.
+
+This story is emblematic of how Steijn and Frédéric have approached building Lassie. Before writing a single line of code, they spent months talking to dentists, primary care doctors, and healthcare finance teams. Then they spent years building the infrastructure and integrations required for agents to operate directly within a practice’s workflow: reading insurance claims, reconciling payments, posting to the ledger, and flagging claims that need action. Lassie is not a copilot that creates more work for the practice to review. It does the work.
+
+Lassie already works with more
+
+SOURCE https://lassie.ai/
+# Lassie
+
+Lassie is a Software Development company. Lassie is an AI that runs the doctor's office. It automates admin enrollments, payment posting, EFT reconciliation, and helps teams focus on patients. Lassie employs 23 people. Headquartered in San Francisco, United States. Its workforce is distributed across United States, India, and Netherlands. with 1 prior funding round.
+
+## About
+
+Lassie enables doctors to focus on patients, not paperwork.
+
+The average practice spends around 200 hours a month running itself. We have seen firsthand how the administrative burden is quietly breaking independent healthcare.
+ 
+Doctors work late into the night so that they can get through all of their paperwork by hand. Nobody taught them how to submit a claim, bill a patient, or reconcile insurance payments.
+
+Our goal is to enable these businesses to run themselves.
+
+Lassie works autonomously, around the clock, reading insurance claims, reconciling payments, handling denials and appeals.
+
+Over 700 practices across 49 states trust Lassie to run their operations. In the past year alone, we have saved more than 250,000 hours of labor, time redirected entirely to patient care.
+
+Learn more or join the team: lassie
+
+# SUPPLEMENTARY SOURCE EXTRACTS - the company's own job postings (jobs.ashbyhq.com/lassie)
+SOURCE https://jobs.ashbyhq.com/lassie/d7f41c77-908c-4206-852b-a99a17f9a867
+GTM Associate @ Lassie
+
+# GTM Associate
+
+## Location
+
+San Francisco, CA
+
+## Employment Type
+
+Full time
+
+## Department
+
+Sales
+
+Our mission is to help small businesses run themselves. We’re starting with doctors’ offices, building autonomous systems that handle busywork and complete the workflows that keep the office moving every day. Our team is small, flat, and ambitious. We value craft, intellectual rigor, and direct communication.
+
+# About the role
+
+As a GTM Associate at Lassie, you'll create the first spark of demand. You'll identify promising doctors' offices, run thoughtful outreach you'd want to receive yourself, schedule demos, and help us learn which messages actually land with small businesses.
+
+# What you'll do
+
+- Build lists of promising doctors' offices and run thoughtful outreach across email, phone, social, events, and more
+- Experiment with messages, segments, and channels to learn where demand is strongest
+- Run early discovery conversations to understand who's working in the practice, how the office operates, and where Lassie may or may not fit
+- Partner closely with Account Executives to schedule demos with offices that meet Lassie's ideal customer profile
+- Keep the GTM engine organized, measured, and moving
+
+# What we're looking for
+
+- You have 1–2 years of SDR or BDR experience
+- You move fast, think fast, and improve with every rep
+- You never give up, with a smile on your face
+- You build real rapport with a busy doctor in 90 seconds, and they feel it
+- You're self-aware, flag what isn't working, and know how to improve
+- You're excited about helping a small business run itself
+
+# Joining us
+
+To start, you'll have a handful of conversations with our team and founders. If there is mutual excitement, we'll invite you to the office where you'll work on a small project and meet the team.
+
+SOURCE https://jobs.ashbyhq.com/lassie/297fd72f-fe6d-40f1-8931-89085e66fa2f
+Head of Marketing @ Lassie
+
+- Back to Lassie’s Job Listings
+
+# Head of Marketing
+
+## Location
+
+San Francisco, CA
+
+## Employment Type
+
+Full time
+
+## Department
+
+Marketing
+
+Our mission is to help small businesses run themselves. We’re starting with doctors’ offices, building autonomous systems that handle busywork and complete the workflows that keep the office moving every day. Our team is small, flat, and ambitious. We value craft, intellectual rigor, and direct communication.
+
+# About the role
+
+As Lassie's Head of Marketing, you'll be responsible for turning customer love into compounding demand. You'll connect product, data, marketing, sales, and customer insight to find the repeatable, scalable channels and messages that help Lassie reach far more doctors' offices efficiently. Think of this role as Lassie's Matt Epstein.
+
+You'll be in strong company. You'll partner directly with Lassie's CEO, who scaled Robinhood's referral program as its first growth lead. On Lassie's cap table, you'll find leading growth operators like Brian Balfour, former VP of Growth at HubSpot and founder of Reforge (one of the most respected growth courses in the industry), or John Egan, an engineering leader with deep growth experience at companies like Anthropic and Pinterest.
+
+## What you'll do
+
+Own the growth system across acquisition, activation, and retention
+
+Use customer insight, data, and experimentation to find the channels and messages that scale
+
+Turn what's working into repeatable growth loops
+
+## What we're looking for
+
+You have 5+ years of experience finding and scaling growth loops
+
+You've worked at an early-stage startup
+
+You bring rigor of thought: not only did you get a growth loop to work, but you can also articulate what you did and replicate it in a different context
+
+You already use AI tools daily to build and operate, and you're excited to figure out how AI reshapes distribution and growth strategy from the ground up
+
+# Joining us
+
+To start, you'll have a handful of conversations with our team and founders. If there is mutual excitement, we'll invite you to the office where you'll work on a small project and meet the team.
+
+Apply for this Job
+
+SOURCE https://jobs.ashbyhq.com/lassie/19493179-d4ea-476e-af9f-218684228879
+Customer Success Manager @ Lassie
+
+# Customer Success Manager
+
+## Location
+
+San Francisco, CA
+
+## Employment Type
+
+Full time
+
+## Department
+
+Customer Success
+
+Our mission is to help small businesses run themselves. We’re starting with doctors’ offices, building autonomous systems that handle busywork and complete the workflows that keep the office moving every day. Our team is small, flat, and ambitious. We value craft, intellectual rigor, and direct communication.
+
+# About the role
+
+As one of Lassie's first Customer Success Managers, you'll guide hundreds of doctors' practices from signup to their first automated workflow and ultimately to a business that runs itself with Lassie. You'll own customer health across a growing book of accounts: setting up agents, guiding owners through change management, minimizing churn, and preparing accounts for expansion.
+
+You'll also help define how customer success works at Lassie. You'll build the playbooks for implementation, account management, and retention, and set the bar for customer obsession that future hires will meet. You are the voice of the customer, internally working directly with product and the founders to make sure customer needs are heard, understood, and met with excellent solutions.
+
+## What you'll do
+
+- Own and manage a book of accounts spanning the full customer lifecycle, scaling with our path to thousands of customers
+- Run the onboarding process so every new practice can quickly and effectively implement the Lassie Agent in their practice
+- Hold regular business reviews with practice owners, intervene early on churn risk, and identify expansion opportunities
+- Build and refine the implementation, account management, and retention playbooks that future CS hires will run
+- Drive a structured feedback loop with product, sales, and marketing. Your learnings shape the product, and our go-to-market strategy
+
+## What we're looking for
+
+- You're customer-obsessed: if a customer has a problem, you find a way to make it right and take pride in exceptional customer experience
+- You've operated at an early-stage startup, preferably working directly with founders. Bonus: you've built onboarding or CS playbooks from scratch
+- You thrive on human interaction. You bring high energy into every call and are energized by building and maintaining strong business relationships
+- You're a fast learner who can quickly become a trusted expert for the small business owners of America
+- You can sell value: communicate o
+
+SOURCE https://jobs.ashbyhq.com/lassie/b5013359-447e-445d-b3af-bc304e89a654
+Business Operations @ Lassie
+
+- Back to Lassie’s Job Listings
+
+# Business Operations
+
+## Location
+
+San Francisco, CA
+
+## Employment Type
+
+Full time
+
+## Department
+
+Operations
+
+Our mission is to help small businesses run themselves. We’re starting with doctors’ offices, building autonomous systems that handle busywork and complete the workflows that keep the office moving every day. Our team is small, flat, and ambitious. We value craft, intellectual rigor, and direct communication.
+
+# About the role
+
+Business Operations builds the operating system behind Lassie’s growth. On enrollments, you’ll design and run the processes that move customers through setup, paperwork, system connections, and internal handoffs so Lassie can start doing useful work.
+
+# What you'll do
+
+Own enrollment workflows across paperwork, system connections, status tracking, internal handoffs, and customer readiness
+
+Build the processes, dashboards, and automation that make setup faster and less manual over time
+
+Work across sales, customer operations, product, and engineering to remove operational bottlenecks
+
+# Joining us
+
+To start, you'll have a handful of conversations with our team and founders. If there is mutual excitement, we'll invite you to the office where you'll work on a small project and meet the team.
+
+Apply for this Job
+
+SOURCE https://jobs.ashbyhq.com/lassie/3b76ef54-2d0f-4c64-a16a-4d76c3899afd
+Head of Finance @ Lassie
+
+- Back to Lassie’s Job Listings
+
+# Head of Finance
+
+## Location
+
+San Francisco, CA
+
+## Employment Type
+
+Full time
+
+## Department
+
+Finance
+
+Our mission is to help small businesses run themselves. We’re starting with doctors’ offices, building autonomous systems that handle busywork and complete the workflows that keep the office moving every day. Our team is small, flat, and ambitious. We value craft, intellectual rigor, and direct communication.
+
+# About the role
+
+As Lassie's first finance hire, you'll build out the company's financial operations from the ground up. You'll work alongside CEO Steijn Pelle and Lassie advisor Jason Warnick (former CFO, Robinhood). You'll own the transition from founder-led finance to a world-class, AI-native function. This is a unique opportunity to build the systems that shape how Lassie grows and operates.
+
+This role is as strategic as it is operational. You'll be involved in every major financial decision, from daily tradeoffs to strategic finance projects, and you'll be the person who gives the leadership team confidence in where the company stands and where it's headed financially.
+
+# What you'll do
+
+Establish and own the reporting of the company's key metrics (think active practices, ACV, ARR, net dollar retention, churn, payback period) so you can measure progress
+
+Build and maintain the company's financial operating model, including scenario planning and tradeoff visibility, so leadership can make confident resource and growth decisions
+
+Ensure an accurate, timely monthly close and deliver financial statements that give leadership an actionable view of the business
+
+Own the full FP&A cycle: budget, quarterly actuals, monthly reporting
+
+Serve as the CEO's key finance partner through future fundraises
+
+Build scalable, AI-native finance infrastructure across accounting, forecasting, spend management, and payroll, choosing tools that reduce complexity and grow with the company without overbuilding
+
+Lead strategic finance work beyond the core: pricing structure, sales commission design, rev ops foundations, and more
+
+# What we're looking for
+
+## Must-have
+
+You've built operating models, scenario plans, and unit economics from scratch in a startup environment, and you can defend your assumptions with board-level rigor
+
+You're a hands-on operator: you've closed the books, managed vendors, and run payroll, not just managed people who do those things
+
+You translate complex financial data into clear in
+
+SOURCE https://jobs.ashbyhq.com/lassie
+Lassie Jobs
+
+# Open Positions (16)
+
+## Customer Success
+
+### Customer Success Manager
+
+Customer Success • San Francisco, CA • Full time
+
+## Design
+
+### Design Engineer
+
+Design • San Francisco, CA • Full time
+
+### Product Designer
+
+Design • San Francisco, CA • Full time
+
+## Engineering
+
+### Software Engineer, Applied AI
+
+Engineering • San Francisco, CA • Full time
+
+### Software Engineer, Growth
+
+Engineering • San Francisco, CA • Full time
+
+### Software Engineer, Platform
+
+Engineering • San Francisco, CA • Full time
+
+### Software Engineer, Product
+
+Engineering • San Francisco, CA • Full time
+
+### Software Engineer, Security
+
+Engineering • San Francisco, CA • Full time
+
+## Finance
+
+### Head of Finance
+
+Finance • San Francisco, CA • Full time
+
+## Marketing
+
+### Head of Marketing
+
+Marketing • San Francisco, CA • Full time
+
+### Product Marketer
+
+Marketing • San Francisco, CA • Full time
+
+## Operations
+
+### Business Operations
+
+Operations • San Francisco, CA • Full time
+
+### Customer Operations
+
+Operations • San Francisco, CA • Full time
+
+## People
+
+### Founding Recruiter
+
+People • San Francisco, CA • Full time
+
+## Sales
+
+### Account Executive
+
+Sales • San Francisco, CA • Full time
+
+### GTM Associate
+
+Sales • San Francisco, CA • Full time
+
+Emit the claim rows now. Remember: verbatim evidence_span, real source_url, catalog keys only,
+and route everything that does not fit into proposed_fields.

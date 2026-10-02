@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788505132-PL0zlozX4dc0qYKy2v9I",
+ "object": "chat.completion",
+ "created": 1788505132,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"tools\",\"empty\":false,\"items\":[{\"h2\":\"2026 GTM stack includes Salesforce, Outreach and HubSpot\",\"body\":[{\"text\":\"Zafran's GTM tooling claim lists Salesforce, LinkedIn Sales Navigator, ZoomInfo and Outreach for sales, plus HubSpot, Salesforce and an unnamed major ABM platform for marketing. [zaf-089]\",\"claimIds\":[\"zaf-089\"]},{\"text\":\"What it means for us: Their existing revenue stack gives us a concrete context for positioning Clue alongside current sales and marketing systems. [zaf-089]\",\"claimIds\":[\"zaf-089\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"2026 security stack spans cloud, scanners and Jira or ServiceNow\",\"body\":[{\"text\":\"Zafran's primary technology stack includes Google Cloud, Amazon S3, Cloudflare and HubSpot-hosted infrastructure. [zaf-019]\",\"claimIds\":[\"zaf-019\"]},{\"text\":\"Its product also integrates with scanners, endpoint agents and cloud security tools, then routes results as \\\"a single ticket\\\" through Jira or ServiceNow. [zaf-147]\",\"claimIds\":[\"zaf-147\"]},{\"text\":\"What it means for us: Messaging should account for an environment where Zafran connects to existing tools rather than requiring a separate replacement stack. [zaf-147]\",\"claimIds\":[\"zaf-147\"]}],\"contactRefs\":[],\"priority\":2},{\"h2\":\"2026: Nick Fisher published \\\"Why I joined Zafran Security\\\" with a 96% PoV claim\",\"body\":[{\"text\":\"Nick Fisher authored the LinkedIn article \\\"Why I joined Zafran Security\\\" and wrote, \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\" [zaf-158, zaf-159]\",\"claimIds\":[\"zaf-158\",\"zaf-159\"]},{\"text\":\"What it means for us: A useful message angle for Nick is content that connects account engagement to real risk exposure and existing controls. [zaf-159]\",\"claimIds\":[\"zaf-159\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmwxLB5oqCjsQctHhOQwDF9RygC5VgQl9A5JHhwqbnucDIJWcOsqEYIY_ocNiCPtZiWjTlmjdgc0lcKU3kb5NgdnZiCAouAAKrmxSI3FcSAwBGchnL54yWSJ5Zu9wcXzmU4GXjQg7VXlGcTTy3lLw-YH5KG7-cqqe493gXQALQREcJpymFoKip44cmT2sqev5L86-mylm-ApG4KIpj6ZzhPCsxTMe_pzW9Mx7_ljqh9-eg1RCWgsyCj2nOxFm3lZNqtkYPgORnh210nNhLaK-vYYNhgL6ABZ8-CIUhnxc4Xj80_TwwwpX41MrPxEebEB6qvEbfFZv8k7CyvucyDTt9yiX_tk3p1qAqq2hPv_6HitsO8Q9_tJQ__jW3TFxunrtwMzMwXGUcwHoLBAxbnNRMd65J0IPpIGKSF4cHoUP0p_3HDL9oQRnGfQuHFJBz9jSz49sWs6EIXlqXjzyK-1QpTat95sElFq-sZEp9te4tFdMTgSvPKEECI1ZgKcvkKKFusu7K1-3LP1oQQIK6kp2pQoo1Bh0dl0yP2v4fEjc9QP21adzREX97GHg2PPconBKdFgajr5wfKKeOfyRFnfveG4enRl8CNBCJE4ri47Oau5s97wVndtsKou4KaZSIj7YGOEbdnNqsCOy_Pb2uq__xSqEHHGSj7zpJzvyyuVOx0qK3l1LavDU5WNI8ZKEU1Tuc5FzY1cPtAqp8Z-sKxEKhSXqYGp_aPp8oy9kpyXMCqNoXD_1lrQdOO2Rm-rKz4x-OlJeC9wbai5bk3XlxtjbzgQSPuzaJbUlx3q9HRS4rdnRJiXI1locf1AWxv4Jgmwa4A0-XduwEUtjpbOK6_6jidGUQ6RoCJqYcQ8rPQ1OO6f0GZnxy6d-HAeC9ccZu131cgXVNjUdXrHBH4SWPkfcJy3SZjIJUAaionkGSF2AOjYWIXjqBLEVXr-ehvGqrSogMHBkMX-VhDqFIf35RIQaFFmr0LjCOk1ifIWSj_0NEpwvCq8LU1JYx36KFqtvv_hWQsbzHKa5DhrLYU5RjXcE6GhFgjS7aDtj_3iYuexHCevbsu9fmoVH0s4fX3ZOc4h9Xxvq1nDQUj66qy1CHqXbNT0PblOGV7i6WHAlx5fOz8XdEAuqW1rTkqDhsGIIxe8_Z4HxKJ2vxwW4wlpNCacICICyiwD4lsEbnNy_I_0AIeaGxXvwnTgjWKwevLCdtSyPHH_HLPe6mzi1oVjKFE8nUYxiH9NYLiwnYtXZi8ZsTzM7pL8wnLPq5otO3FtkHz1qNL_ATXgXvKo6E43TK4vzevED-j6pI4rsu9rp6cjuNjfMrfe9Lx-0L0rkcvPkP_01PHd_jj2-evvvx0lvr7KWT2kGFWZWFKWG-nuC-j5lppMyfp8lFWlcCdlvcqdaCmNWoqIgYJpet1BveZTKI0ZFuhIWlpfad1hMhGE8VBFwPiHdrNv722s8SIu3jQ01L446S664VgkQdIipsJhKkEmCxsdAyAxLQH9HPSDlBbwthRhHqPRGpWd2-_-wrWVJqrbTE1ttVnkwExfpimlJB_hEZDtoYTxoKvn38nJ_Q7iVQYwXZ-q87N34XcnTMOiHRR2ma5cgEU7mODwws7ROK-6HGuqEfkhAIssL7yR2DZ5K4wvZSdji4LfEWiwcd8Tvs0ADhPsl19_M93IzrvTPPmU13p7v_vx3ufYuU6_34mvvtkZd2YzmmA0xndE6o-u5UsNnXh32Y8Kw0eQExlSNgOZMwRcvB9viSClSOer43JMPK4UMFXyDEKi53VfRFmyGXYd5_Wkc0Kd6ilSzRcEkS034sCuoOdnD77V9Upk-6BPRbyd0dHPdZRfejVe7j4ViRc2QSuZ27X7n3bVy051QrE4n446H6-AUO2dHu8oqygQn0daQyzZ3TILDXZeTA5CG1a5sr2_dlQa_a0KFbgqyS6URC9sDZQ5-siyhQsqipbSE6a3s-nNed-dDRju5oH39Qt0ffwsZAldN90KQD1KBMfV3z-_vurddWGAZeXehu5YTf-c_ya8zAs6THCTSKfYXqS4W1SuJ3AmJIdoR_3n2B3uANeheQmL5eZE10gFjuhAeKua7CnYGaPOZac4rEVhuVE-0bi9VNOdjkSEq5u7bE7XxV4n2yZLy63ypP_7580Pd-IC_j5fWp-rwlwze-dNq6ZVI1cxNThuszmli97PC_oz4YdLMEGdEpU9DAgwtRvGxtHbqhoeVFr2pmmgdF7a6mDdQsCv4Z1dIpCpFVzqpVYTeVPErtAhQhXW90h7_3LaE8EBzns-bnBj1A2-yUajCDBXti-3QbJr0Mr6eqKxcZKMX4DIib7oBi7oLmzxJmg-IYVgQkqCU14rKnDlYl53xvExlHtlpFEzc7jWisfDoICwzGD-sQlDJrTL3PBfzPs-EkcTdfzaurJGrvhjBg3itA8DZTqvjzJ999TmE1PwpmNHRrBI89N5SrnfQF2TZAru3O0axZD41SGKufitlbMBPZZwnpDHSbiylXBcf8dJI_E0DlGPkOqAQ7oQgMj5K_Hd89SqQm6LhsY9r_7Bw9oP1AfFCqCyy-pTPPbqh6fd0-hnFG89rYVBgXewgjBMGX2zamDUpUz6PJUL0o70YEMlH80XIft8YZYyto__N2ds0AWCoS13-qK8OeHJYUHEkxkIW8ivIC-1eaY5ywcKz7LUnP30kMlfQ3C3dNf_ir5VeQq_b8_vqR9IXjt33Kl56SpPZaZmu67-Ltz2R7dWR66w679fzok--1QlId-lDYFCoP983ZGT1Mo-m6k3tfOdDK5aAZwMftRiYfdir0p6Vmlj5WJ9EwdI0PIpzEebV3AE4QPILwhdqVyGGYvYAEzwba6mzBUIULFEcPMuCI-wZYfpFV0taLWpb7dx4HPzbhPH-_3upf_BKUn_hehco_hjNOobZyV2DZzmRTNS9faFnPb65DAjRaEZjwQ0DJdvz5L-24h0LyQjSdpt2TxcciTxMGp0CIDuB8hCuR0Ph0luok1Yt_lYu1Kj7ZvXNE0ghfT-TRa25BE1SGavJ5zwFucGaiDQjDVJbw_NtbkrgYdjHgbuvqlAVfSkpNF_40-6LUgsSG_RXQW4eViExJnGWB0DTnSexr-u8DUXmQtMDo_3nqT9xZzGrEQlF9A1CK21y10RXoqzFwOcVo-7IA4kJUUB10iZFoRjY5LJ_yPC6jHwzxaX_EzWuw-aZO7meNL73mTbiWi3frPOFYcl0e-B5b5hH4IWTCIHfZe13dvhc25f-pgGYSPnRck0EYm6PWWmHZLo99nrZxQvrmyQ5pkZ3O1TUFIK_dZFLX3oJ8Ei0l4MrQJQ1bKqRtFdy0tnbKd2YE-sLfXAF3JoeTDalpBmE1jIyyDkw4Z4xRX0-uYc7SU6iqsEDxnAbLrqagxsYUYU--1o0Jw77BrwsJY67jf9zYNwlRl-_TZCaKgkdH9v19ilj-cxT6dQ3tEDsRbcIWalax5pCBOILZkeOXkOaPRWmNNk_-vABQtfYy9E-AQ8rNC6VjU9m5qfwUrqDAIr1SPJrFluhUqj4ClZUDQKoAO3y5-ljk8fP-7SWvEWC1BaFuRhh-e1cbyHHze83J4qtdRezA7oL1On55aX81ZXweFQZnncW98SB4a2XGHugEJoAjqAZWzxpJw3hr3vxfjgCtp3GIctDVX9H_NzCXwqW7-99ggUKK843AIKubOivGAzs1E0wLE0jgwkLxatu0MaqdOzaxuL9qQpjLpk-bP8IKMYdRVFnhA81BqDVyFk9eU8_F8Tv7O5rHkWkoum_ke3LlNUnPJMZ1j1Uwg5Y-g3iayWYzvH-JYYmO57ODiIFXIqWkWBk5GcsGutmWBdzew16q9nlPMWmaFAA8lpZZ0W5xZwhkOQdymwz1SjvgdsJaRjiR3be5Sxf50vc1dd3WVSpedhqyQ0oghsU39G2Da033kL1Pdk_pq3wIBDsg3AmtwxOpaLOcKLM1M-wBCROn8vd9BzvRfyjSCJM0Il_G21BfAsGJnxSTulSP4o4G_Y77as0bncT3a6ti8qXEn4mOW84j0hfAWpmp5XJR6Sa4kbx14idgotmE0wlZLfndMQ7IlNBz8hcxSpwbRCpysWn7pjSNtLZLHkO8DR8TJlXCsvVo2zrguCQHE48lD0e1_yo0-Tca0X9CXy5hJlZ10665ivVbYgKaqNIo7da7bp_GFZxiBTyMqRqekZ0jQhLbUwlTP2dSmleuBO6-__uKWHOGNtGtPD2nBWWXvWISdaYpzcMS250BinXseK2t5nGsdlbo19Qw5tM9yz8fb8bAG0UQdzgYj8batvjcrzNPW010ohvg4_oMLV2mV7xUlFqde_plDVFugHe_lGah_O-BJ5.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_01a2fac621ed98f3016a9a6c2d546c87d085875bcb9cc2b34b",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25228,
+  "completion_tokens": 993,
+  "total_tokens": 26221,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 25225,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.0016967,
+   "upstream_inference_prompt_cost": 0.0005051,
+   "upstream_inference_completions_cost": 0.0011916
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 7.65,
+ "_attempt": 0
+}

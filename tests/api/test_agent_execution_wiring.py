@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from decimal import Decimal
@@ -27,6 +28,7 @@ from clue_agents import (
     WorkspacePolicy,
 )
 from clue_agents.contracts import PlanToolStep
+from clue_agents.execution import RECEIPT_REFERENCE_VALUES_MAX_BYTES
 from clue_api.agent_execution_wiring import (
     _FAILURE_MESSAGE_LIMIT,
     C5AgentExecutionAdapter,
@@ -344,6 +346,7 @@ def _adapter(
     tool: Tool | None = None,
     profile_pins_other_tool: bool = False,
     executor: _Executor | None = None,
+    spill_sink: Any = None,
 ):
     registry = ToolRegistry()
     registry.register(tool if tool is not None else _Tool(), make_default=True)
@@ -409,6 +412,7 @@ def _adapter(
         journal=cast(Any, journal),
         checkpointer_factory=cast(Any, lambda _: None),
         pin_provider=cast(Any, pin_provider),
+        spill_sink=spill_sink,
         crash_hook=crash_hook,
         conn_factory=cast(Any, _no_finalization_conn),
     )
@@ -806,3 +810,197 @@ def test_every_agent_tool_context_carries_the_turns_actor_and_derived_receipt() 
         (ctx.principal_kind, ctx.actor_id, ctx.membership_id, ctx.action_ref)
         for ctx in pins.contexts
     ] == [("service", "svc_agent_execution", None, expected_ref)]
+
+
+class _BulkOutput(ToolOutput):
+    summary: str
+    claims: tuple[str, ...]
+
+
+class _BulkTool(_Tool):
+    """A read whose honest answer is simply larger than a receipt: an account's claim list."""
+
+    output_model = _BulkOutput
+
+
+class _BulkExecutor(_Executor):
+    def __init__(self, *, claim_count: int, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.claim_count = claim_count
+        self.references: dict[str, Any] = {
+            "summary": "Acme Robotics: " + "funding and hiring evidence, " * 20,
+            "claims": [f"claim-{index:04d}-" + "e" * 48 for index in range(claim_count)],
+        }
+
+    async def invoke_interaction_tool(
+        self,
+        append: InteractionAppend,
+        **kwargs: Any,
+    ) -> ToolResult:
+        del append
+        self.invoked.append(kwargs)
+        self.effect_count += 1
+        return ToolResult(tool="read_project", version="1", references=self.references)
+
+
+class _RecordingSpillSink:
+    """Stands in for the thread workspace: it takes the bytes and names where they landed."""
+
+    def __init__(self) -> None:
+        self.writes: list[tuple[str, bytes]] = []
+
+    def write_spill(self, operation_id: str, data: bytes) -> str:
+        self.writes.append((operation_id, data))
+        return f"reads/{operation_id}.json"
+
+
+def _bulk_adapter(*, sink: Any, claim_count: int = 400):
+    executor = _BulkExecutor(claim_count=claim_count, allowed=("read_project@1",))
+    return _adapter(
+        allowed=("read_project@1",),
+        tool=_BulkTool(),
+        executor=executor,
+        spill_sink=sink,
+    )
+
+
+def test_a_result_too_large_for_its_receipt_spills_instead_of_failing_the_read() -> None:
+    """The 2026-09-13 defect, inverted: the read runs, so it must also be *delivered*.
+
+    The receipt bound is a refusal that arrives after the tool has already run and spent, so a
+    72-claim account read came back as "the agent cannot read this account". With a sink the same
+    oversized result lands in ``reads/`` and the operation completes.
+    """
+
+    sink = _RecordingSpillSink()
+    adapter, trusted, pin, executor, journal = _bulk_adapter(sink=sink)
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    assert progress[-1].status == "completed"
+    assert len(sink.writes) == 1
+    operation_id, data = sink.writes[0]
+    assert operation_id == str(validated.operations[0].operation_id)
+    # The file holds the whole result, canonically — it is the thing the model will open.
+    assert len(data) > 12 * 1024
+    assert json.loads(data) == executor.references
+    # …and the durable spine is untouched: the full result was journaled before any of this.
+    assert journal.results[0]["result"].references == executor.references
+    assert journal.results[0]["result_ref"].media_type == (
+        "application/vnd.clue.agent-tool-result+json"
+    )
+
+
+def test_a_spilled_receipt_carries_a_pointer_and_a_count_rather_than_the_payload() -> None:
+    """What the model is handed instead: where the bytes are, how many rows, and a sliver of
+    prose, all of it inside the bound the un-spilled result blew through."""
+
+    sink = _RecordingSpillSink()
+    adapter, trusted, pin, executor, _ = _bulk_adapter(sink=sink)
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    operation = validated.operations[0]
+
+    receipt = run_async(
+        adapter._execute_operation(
+            plan=validated,
+            operation=operation,
+            step=_plan(pin).steps[0],
+            completed=set(),
+            operation_by_key={operation.node_key: operation},
+        )
+    )
+
+    assert receipt.status == AgentExecutionStatus.COMPLETED
+    assert receipt.reference_values == {
+        "spilled_to": f"reads/{operation.operation_id}.json",
+        "count": 400,
+        "summary": executor.references["summary"][:300],
+        "tool": "read_project@1",
+    }
+    # The result itself is still one hop away, on the receipt that has always carried it.
+    assert receipt.artifact_refs[0].media_type == "application/vnd.clue.agent-tool-result+json"
+    assert len(json.dumps(receipt.reference_values).encode()) < RECEIPT_REFERENCE_VALUES_MAX_BYTES
+
+
+def test_an_oversized_result_with_no_sink_keeps_todays_refusal() -> None:
+    """A composition root that holds no workspace lease cannot spill, and must not pretend to."""
+
+    adapter, trusted, pin, _, _ = _bulk_adapter(sink=None)
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+
+    assert progress[-1].status == "failed"
+    assert "16 KiB" in progress[-1].failures[0].message
+
+
+def test_a_result_inside_the_budget_is_never_spilled() -> None:
+    """The sink is for the overflow only. A read that fits still rides inside its own receipt."""
+
+    sink = _RecordingSpillSink()
+    adapter, trusted, pin, executor, _ = _bulk_adapter(sink=sink, claim_count=4)
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    operation = validated.operations[0]
+
+    receipt = run_async(
+        adapter._execute_operation(
+            plan=validated,
+            operation=operation,
+            step=_plan(pin).steps[0],
+            completed=set(),
+            operation_by_key={operation.node_key: operation},
+        )
+    )
+
+    assert sink.writes == []
+    assert receipt.reference_values == executor.references
+
+
+def test_the_receipt_the_model_reads_carries_the_stub_not_the_payload() -> None:
+    """The public path, end to end. ``execute`` drops the receipt it builds; the model is handed
+    the one ``recover`` rebuilds from the result artifact. If hydration restored the full
+    references the threshold would be a rule the model never actually sees, and the oversized
+    payload would reach its context anyway — the defect, moved rather than fixed."""
+
+    sink = _RecordingSpillSink()
+    adapter, trusted, pin, executor, _ = _bulk_adapter(sink=sink)
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    progress = run_async(_collect(adapter.execute(plan=validated)))
+    assert progress[-1].status == "completed"
+
+    recovered = run_async(adapter.recover(execution_id=validated.execution_id))
+    receipts = recovered["operation_receipts"]
+    assert isinstance(receipts, tuple)
+    receipt = receipts[0]
+    assert isinstance(receipt, GovernedOperationReceipt)
+
+    operation_id = validated.operations[0].operation_id
+    assert receipt.reference_values == {
+        "spilled_to": f"reads/{operation_id}.json",
+        "count": 400,
+        "summary": executor.references["summary"][:300],
+        "tool": "read_project@1",
+    }
+    # Hydration re-spills the same operation to the same name — a rewrite, not a second file —
+    # and the bytes behind the pointer are still the whole result.
+    assert {name for name, _ in sink.writes} == {str(operation_id)}
+    assert json.loads(sink.writes[-1][1]) == executor.references
+
+
+def test_the_recovered_receipt_keeps_the_full_references_when_they_fit() -> None:
+    """The rebuilt receipt is only a stub when the result earned one."""
+
+    sink = _RecordingSpillSink()
+    adapter, trusted, pin, executor, _ = _bulk_adapter(sink=sink, claim_count=4)
+    validated = run_async(adapter.validate_plan(plan=_plan(pin), constitution=trusted))
+    run_async(_collect(adapter.execute(plan=validated)))
+
+    recovered = run_async(adapter.recover(execution_id=validated.execution_id))
+    receipts = recovered["operation_receipts"]
+    assert isinstance(receipts, tuple)
+    receipt = receipts[0]
+    assert isinstance(receipt, GovernedOperationReceipt)
+
+    assert receipt.reference_values == executor.references
+    assert sink.writes == []

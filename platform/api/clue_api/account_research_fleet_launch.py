@@ -11,16 +11,24 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 
-from clue_api.account_entity_research_composition import account_research_profile_sha256
-from clue_api.account_research_estimate import (
-    AccountTierCheckpointMissing,
-    compute_account_research_estimate,
+from clue_api.account_entity_research_composition import (
+    ACCOUNT_RESEARCH_PROFILE_REF,
+    account_research_profile_sha256,
 )
+from clue_api.account_research_discovery_readiness import (
+    AccountResearchDiscoveryNotReady,
+    require_sealed_account_discovery,
+)
+from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.account_research_fleet import (
     AccountResearchFleetError,
     AccountResearchFleetPolicy,
     AccountResearchFleetProjection,
     AccountResearchFleetService,
+)
+from clue_api.comprehensive_research_contract import (
+    COMPREHENSIVE_ACCOUNT_FIELD_SOURCES,
+    source_can_request,
 )
 from clue_core import (
     EffectiveFieldSourcePlan,
@@ -43,8 +51,10 @@ from clue_core.entity_research import (
     ResearchRunLifecycleContract,
     ResearchSelectionBasis,
     ResearchSubjectType,
+    SealedDiscoveryLaunchReceipt,
     SelectedResearchSubject,
 )
+from clue_core.field import account_axis_field_keys
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobEnvelope, EntityResearchRunEnvelope
 from clue_obs import get_logger
@@ -83,6 +93,12 @@ _JOB_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r6:account-research-job")
 _ACCOUNT_RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r6:account-run-compatibility")
 _ATTEMPT_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r6:account-research-attempt")
 _LEASE_NAMESPACE = uuid5(NAMESPACE_URL, "clue:m8d:r6:account-research-lease")
+#: §3.1 rows whose ownership tuple is empty — reused or derived, never bought (see the launch
+#: partition below). Derived from the frozen contract map so the two can never drift.
+_ZERO_ACQUISITION_PROFILE_FIELDS = frozenset(
+    field for field, sources in COMPREHENSIVE_ACCOUNT_FIELD_SOURCES.items() if not sources
+)
+
 _SUPPORTED_FIELD_SOURCES = frozenset(
     {
         EXA_DEEP_SOURCE_KEY,
@@ -91,6 +107,14 @@ _SUPPORTED_FIELD_SOURCES = frozenset(
         TECH_STACK_SOURCE_KEY,
     }
 )
+
+
+#: Intersecting requestability into the *authority* at launch is what keeps the two halves of the
+#: platform honest: a pair nobody can ever dispatch must not be born as an obligation the
+#: completeness reader then waits on forever. The predicate itself lives in the frozen contract
+#: module, because the completeness reader must apply exactly the same one to selections minted
+#: before this intersection existed.
+_source_can_request = source_can_request
 
 
 class AccountResearchFleetLaunchError(RuntimeError):
@@ -191,6 +215,32 @@ class AccountResearchFleetLauncher:
                 raise AccountResearchFleetLaunchError(
                     "a failed project run cannot authorize new account research"
                 )
+            try:
+                discovery = await require_sealed_account_discovery(
+                    conn,
+                    workspace_id=request.workspace_id,
+                    project_run_id=ProjectRunId(request.project_run_id),
+                    icp_key=project_run.icp_key,
+                    icp_version=project_run.icp_version,
+                    for_update=True,
+                )
+            except AccountResearchDiscoveryNotReady as exc:
+                raise AccountResearchFleetLaunchError(str(exc)) from exc
+            selected_outside_seal = set(account_ids) - set(discovery.account_ids)
+            if selected_outside_seal:
+                raise AccountResearchFleetLaunchError(
+                    "account research selection contains an Account outside the exact sealed "
+                    "discovery membership"
+                )
+            discovery_receipt = SealedDiscoveryLaunchReceipt(
+                discovery_batch_id=UUID(str(discovery.discovery_batch_id)),
+                discovery_generation=discovery.discovery_generation,
+                discovery_seal_sha256=discovery.discovery_seal_sha256,
+                account_manifest_ref=discovery.account_manifest_ref,
+                account_manifest_sha256=discovery.account_manifest_sha256,
+                claim_manifest_ref=discovery.claim_manifest_ref,
+                claim_manifest_sha256=discovery.claim_manifest_sha256,
+            )
             directive = await get_research_directive(
                 conn,
                 ResearchDirectiveId(request.research_directive_id),
@@ -227,16 +277,13 @@ class AccountResearchFleetLauncher:
             # ``clue_api.account_research_estimate`` verbatim so the directive-confirmation gate
             # can write **the same number** this launcher then verifies. One computation, two
             # callers; the exact-match verification below is unchanged and stays the launcher's.
-            try:
-                estimate = await compute_account_research_estimate(
-                    conn,
-                    workspace_id=request.workspace_id,
-                    project_run_id=ProjectRunId(request.project_run_id),
-                    directive_id=directive.directive_id,
-                    account_ids=account_ids,
-                )
-            except AccountTierCheckpointMissing as exc:
-                raise AccountResearchFleetLaunchError(str(exc)) from exc
+            estimate = await compute_account_research_estimate(
+                conn,
+                workspace_id=request.workspace_id,
+                project_run_id=ProjectRunId(request.project_run_id),
+                directive_id=directive.directive_id,
+                account_ids=account_ids,
+            )
             effective_by_account = estimate.effective_by_account
             pins_by_account = {
                 account_id: effective.pin for account_id, effective in effective_by_account.items()
@@ -322,13 +369,21 @@ class AccountResearchFleetLauncher:
                         f"committee, and privacy authority; account {account_id} has an override"
                     )
 
-            field_keys = tuple(
-                str(value) for value in first.field_keys if str(value).startswith("account.")
-            )
+            # Project the confirmed authority onto the shared account axis (CORE | ACCOUNT |
+            # ACCOUNT_RESONANCE | PACK) — the same projection the in-job Exa preparation applies.
+            # A raw ``account.`` prefix filter silently dropped the comprehensive profile's
+            # ``core.*`` firmographic fields, so launcher and runtime disagreed about the field
+            # universe; contact fields stay excluded for the later committee/contact fleet.
+            field_keys = tuple(str(key) for key in account_axis_field_keys(first.field_keys))
             questions = tuple(item.text for item in first.questions)
-            if not field_keys or not questions:
+            # ``ResearchDirectiveBody`` deliberately permits a field-only directive. The fixed
+            # comprehensive profile already supplies the complete 21-field execution authority;
+            # no placeholder question is invented merely to satisfy the older R0 envelope.
+            # Question-only directives remain ineligible because this launcher needs at least one
+            # governed acquisition field.
+            if not field_keys:
                 raise AccountResearchFleetLaunchError(
-                    "account research requires confirmed account fields and directional questions"
+                    "account research requires confirmed account fields"
                 )
             allowed_sources = set(first.source_policy.allowed_source_keys)
             icp = await get_icp_version(
@@ -342,6 +397,21 @@ class AccountResearchFleetLauncher:
                 raise AccountResearchFleetLaunchError(
                     "account research source compilation lacks its exact ICP/account"
                 )
+            # §3.1 rows 1/5/8 own no acquisition source: core.account_name is reused canonical
+            # identity truth, and core.employee_range / core.revenue_band are derived from
+            # governed evidence at finalization. The directive keeps carrying them (the runtime
+            # drives preparation and coverage off the directive's full field universe), but the
+            # launch selection admits only acquisition fields — you cannot buy, estimate, or
+            # authorize a source for a field that has none, and EntityResearchSelection requires
+            # source authority to cover every admitted field.
+            acquisition_field_keys = tuple(
+                key for key in field_keys if key not in _ZERO_ACQUISITION_PROFILE_FIELDS
+            )
+            if not acquisition_field_keys:
+                raise AccountResearchFleetLaunchError(
+                    "account research requires at least one acquisition field"
+                )
+            field_keys = acquisition_field_keys
             authorities: list[FieldSourceAuthority] = []
             source_plan_values: list[dict[str, object]] = []
             for field_key in field_keys:
@@ -409,16 +479,29 @@ class AccountResearchFleetLauncher:
                         compiled,
                         source_profile_ref=icp.source_profile_ref,
                     )
-                source_keys = tuple(
+                authorized = tuple(
                     item.source_key
                     for item in plan.sources
                     if item.source_key in allowed_sources
                     and item.source_key in _SUPPORTED_FIELD_SOURCES
                 )
-                if not source_keys:
+                if not authorized:
                     raise AccountResearchFleetLaunchError(
                         f"no composed R5 source is authorized for {field_key}"
                     )
+                # Requestability is intersected into the effective authority here, once, at the
+                # only place that mints it. A source whose pinned action structurally cannot ask
+                # for this field never enters the field's authorized list, so no unbuyable
+                # (field, source) pair is ever born: the field either keeps its remaining sources
+                # (e.g. ``account.total_funding`` keeps Exa Deep after Sumble Organizations drops
+                # out) or is admitted with *no* authority and settles like the zero-acquisition
+                # rows — an honest gap the coverage ledger reports and finalization closes
+                # ``needs_review``, instead of an obligation no dispatch could ever discharge.
+                source_keys = tuple(
+                    source_key
+                    for source_key in authorized
+                    if _source_can_request(source_key, field_key)
+                )
                 authorities.append(
                     FieldSourceAuthority(field_key=field_key, source_keys=source_keys)
                 )
@@ -441,6 +524,14 @@ class AccountResearchFleetLauncher:
                 else ()
             )
             admitted_sources = (*source_keys, *committee_source_keys)
+            if not admitted_sources:
+                # Every admitted field lost its whole authority to the requestability intersection
+                # and no committee source is authorized either: this launch could dispatch nothing
+                # at all. Refuse it here, loudly, rather than emitting a selection with no admitted
+                # source for the envelope contract to reject as a shape error.
+                raise AccountResearchFleetLaunchError(
+                    "no admitted account field can be requested from any authorized source"
+                )
             field_plan_sha = _sha({"field_keys": field_keys})
             source_plan_sha = _sha(source_plan_values)
             request_sha = _sha(
@@ -449,6 +540,7 @@ class AccountResearchFleetLauncher:
                     "project_id": project_run.project_id,
                     "product_id": project_run.product_id,
                     "project_run_id": str(request.project_run_id),
+                    "discovery_receipt": discovery_receipt.model_dump(mode="json"),
                     "directive_ref": directive.directive_ref,
                     "directive_sha256": directive.canonical_json_sha256,
                     "account_pins": [
@@ -479,6 +571,7 @@ class AccountResearchFleetLauncher:
                 product_id=project_run.product_id,
                 project_run_id=request.project_run_id,
                 subject_type=ResearchSubjectType.ACCOUNT,
+                discovery_receipt=discovery_receipt,
                 subjects=tuple(
                     SelectedResearchSubject(
                         subject_entity_id=account_id,
@@ -495,12 +588,23 @@ class AccountResearchFleetLauncher:
                 field_source_authority=tuple(authorities),
                 committee_source_keys=committee_source_keys,
                 research_questions=questions,
-                policy_refs=(
-                    f"account-research-launch:{request_sha}",
-                    first.effort_policy.freshness_policy_ref,
-                    first.effort_policy.recursion_policy_ref,
-                    f"research-privacy:{_sha(first.privacy_policy.model_dump(mode='json'))}",
-                    request.supervisor_policy.policy_ref,
+                # These are references, not typed policy slots. Two slots can legitimately point
+                # at the same shared policy (the browser's default profile currently uses
+                # ``"default"`` for both freshness and recursion), so flatten them into a stable
+                # unique set before validating the selection envelope.
+                policy_refs=tuple(
+                    dict.fromkeys(
+                        (
+                            f"account-research-launch:{request_sha}",
+                            first.effort_policy.freshness_policy_ref,
+                            first.effort_policy.recursion_policy_ref,
+                            (
+                                "research-privacy:"
+                                f"{_sha(first.privacy_policy.model_dump(mode='json'))}"
+                            ),
+                            request.supervisor_policy.policy_ref,
+                        )
+                    )
                 ),
                 budget_envelope_ref=f"account-research-launch:{request_sha}",
                 # The launching action and the directive's confirming turn, de-duplicated. They are
@@ -587,7 +691,7 @@ class AccountResearchFleetLauncher:
                     product_id=project_run.product_id,
                     project_run_id=request.project_run_id,
                     selection=selection,
-                    agent_profile_ref="agent-profile:account-research:v1",
+                    agent_profile_ref=ACCOUNT_RESEARCH_PROFILE_REF,
                     agent_profile_sha256=profile_sha,
                     checkpoint_thread_id=f"entity-research:{job_id}",
                     attempt_id=uuid5(_ATTEMPT_NAMESPACE, str(job_id)),

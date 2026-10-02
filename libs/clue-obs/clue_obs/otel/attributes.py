@@ -56,6 +56,22 @@ ATTR_N_CLAIMS = "n_claims"
 # count, never a secret).
 ATTR_N_SOURCES = "n_sources"
 
+# Run context (lane 3 slice 2) — the ids and enums structlog binds at the roots, copied onto every
+# span by ``RunContextSpanProcessor``. Identifiers and closed vocabularies only, never text.
+ATTR_REQUEST_ID = "request_id"
+ATTR_PROJECT_ID = "project_id"
+ATTR_THREAD_ID = "thread_id"
+ATTR_TURN_ID = "turn_id"
+ATTR_JOB_ID = "job_id"
+ATTR_ACCOUNT_ID = "account_id"
+ATTR_ACTOR = "actor"
+ATTR_PROFILE_VERSION = "profile_version"
+ATTR_TASK_ID = "task_id"
+ATTR_WORK_ID = "work_id"
+ATTR_FLEET_KIND = "fleet_kind"
+ATTR_TASK_ATTEMPT = "task_attempt"
+ATTR_WORKER_ID = "worker_id"
+
 # Known-safe dimensions: identifiers/enums/numbers, never secrets. Passed through (type-coerced)
 # without value-shape redaction so a UUID id is not mistaken for an opaque-token credential.
 STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
@@ -83,6 +99,19 @@ STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
         ATTR_MODALITY,
         ATTR_N_CLAIMS,
         ATTR_N_SOURCES,
+        ATTR_REQUEST_ID,
+        ATTR_PROJECT_ID,
+        ATTR_THREAD_ID,
+        ATTR_TURN_ID,
+        ATTR_JOB_ID,
+        ATTR_ACCOUNT_ID,
+        ATTR_ACTOR,
+        ATTR_PROFILE_VERSION,
+        ATTR_TASK_ID,
+        ATTR_WORK_ID,
+        ATTR_FLEET_KIND,
+        ATTR_TASK_ATTEMPT,
+        ATTR_WORKER_ID,
     }
 )
 
@@ -115,6 +144,19 @@ class SpanAttributes(TypedDict, total=False):
     modality: str
     n_claims: int
     n_sources: int
+    request_id: str
+    project_id: str
+    thread_id: str
+    turn_id: UUID | str
+    job_id: UUID | str
+    account_id: UUID | str
+    actor: str
+    profile_version: str
+    task_id: UUID | str
+    work_id: str
+    fleet_kind: str
+    task_attempt: int
+    worker_id: str
 
 
 def to_otel_value(value: object) -> OtelValue | None:

@@ -1,0 +1,145 @@
+You convert free-form research reports into typed claim rows for a claim store.
+
+ABSOLUTE RULES
+1. You may ONLY use a field_key from the catalog given to you. If a fact does not fit any catalog
+   key, DO NOT force it — put it in proposed_fields instead.
+2. value_json MUST validate against that field's value_schema exactly (right JSON type, required
+   properties present, enum values exact).
+3. evidence_span MUST be a VERBATIM substring of the material given to you — copy the quoted text
+   exactly as it appears. Never paraphrase into evidence_span. If there is no quote for a fact,
+   omit the fact entirely.
+4. source_url MUST be the URL the material attributes that fact to. Every row needs one. Never
+   invent a URL and never reuse an unrelated one.
+5. NEVER emit a row for anything marked "NOT FOUND". Never emit an automated/LinkedIn REVENUE
+   ESTIMATE as core.annual_revenue — an estimate is not a reported number; skip it or use
+   core.revenue_band only if the material states a band.
+6. NEVER emit special-category personal data (health, religion, politics, sexual orientation,
+   ethnicity, union membership, criminal matters, family/bereavement, home address, personal
+   phone/email).
+7. Do NOT emit provenance fields (source_key, tier, extraction_method, verification_status): the
+   caller stamps those. Emit only field_key, value_json, evidence_span, source_url, confidence,
+   priority, and for contact.facet.* also use_class.
+8. Prefer fewer, well-evidenced rows over many thin ones. One row per field per distinct fact.
+
+SIGNAL PRIORITY — every claim MUST carry `priority`: 1, 2 or 3.
+  priority 1 (top; shown first): ACTIVE BUYING INTENT. Go-to-market/marketing hiring (quote the
+    req), fresh funding (amount/date/investors), a vacant or newly-filled marketing/growth seat, a
+    tooling gap (no ABM/intent platform), an executive publicly naming a GTM bottleneck or growth
+    commitment, and any timing event less than 6 months old.
+  priority 2 (supporting): firmographics that QUALIFY the account (headcount, vertical, customers,
+    outcome metrics), committee composition, titles and personas, tech stack.
+  priority 3 (context): history, culture and resonance, background facts, personal hooks.
+
+Return ONLY a JSON object with the keys the user message asks for.
+Each proposed field: {"field_key","entity_type","value_type","value_schema","description",
+"reuse_scope","hypothesis","example_value","example_evidence_span","example_source_url",
+"priority"} where description is agent-facing and hypothesis is one paragraph on why an ABM
+platform needs this field.
+
+=====
+
+# FIELD CATALOG (the ONLY keys you may use)
+ACCOUNT FIELDS (entity = the account):
+  core.account_name | value_type=str | Canonical account name observation. | value_schema={'type': 'string'}
+  core.primary_domain | value_type=str | Primary web domain. | value_schema={'type': 'string'}
+  core.company_linkedin_url | value_type=str | Public LinkedIn company page URL. | value_schema={'type': 'string'}
+  core.industry | value_type=str | Primary industry classification. | value_schema={'type': 'string'}
+  core.company_about | value_type=str | Public company description/about text. | value_schema={'type': 'string'}
+  core.employee_count | value_type=int | Total headcount. | value_schema={'type': 'integer'}
+  core.employee_range | value_type=object | Employee range, used only when exact headcount is unavailable. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string'}, 'min': {'type': 'integer'}, 'max': {'type': 'integer'}}}
+  core.hq_location | value_type=object | Normalized HQ/primary location plus the source's raw value. | value_schema={'type': 'object', 'required': ['raw'], 'properties': {'raw': {'type': 'string'}, 'city': {'type': 'string'}, 'region': {'type': 'string'}, 'country': {'type': 'string'}, 'country_code': {'type': 'string'}}}
+  core.annual_revenue | value_type=object | Annual revenue with currency, as-of date and reported/estimate semantics. | value_schema={'type': 'object', 'required': ['amount', 'currency', 'as_of', 'estimate_kind'], 'properties': {'amount': {'type': 'number'}, 'currency': {'type': 'string'}, 'as_of': {'type': 'string'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  core.revenue_band | value_type=enum | Bounded revenue band when exact sourced revenue is absent. | value_schema={'type': 'string', 'enum': ['under_1m', '1m_10m', '10m_50m', '50m_100m', '100m_500m', '500m_1b', '1b_plus']}
+  core.company_email | value_type=str | Public general company contact email. | value_schema={'type': 'string'}
+  core.company_phone | value_type=str | Public general company contact phone. | value_schema={'type': 'string'}
+  core.primary_tech_stack | value_type=list[str] | Detected primary technologies. | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  account.recent_funding | value_type=object | Most recent funding round. | value_schema={'type': 'object', 'required': ['amount_usd'], 'properties': {'amount_usd': {'type': 'number'}, 'round': {'type': 'string'}}}
+  account.total_funding | value_type=object | Total funding in USD with explicit estimate semantics. | value_schema={'type': 'object', 'required': ['amount_usd', 'estimate_kind'], 'properties': {'amount_usd': {'type': 'number'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  account.hiring_velocity_eng | value_type=number | Engineering hiring velocity (count of open engineering roles). | value_schema={'type': 'number'}
+  account.operational_pain | value_type=str | Synthesized operational pain. | value_schema={'type': 'string'}
+  account.strategic_moves | value_type=str | Strategic moves / initiatives. | value_schema={'type': 'string'}
+  account.resonance.culture | value_type=str | Cultural resonance signal. | value_schema={'type': 'string'}
+  account.resonance.employee_sentiment | value_type=object | Aggregate employee sentiment. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string', 'enum': ['positive', 'neutral', 'negative', 'mixed']}, 'polarity': {'type': 'number'}, 'summary': {'type': 'string'}}}
+  account.resonance.attrition_signal | value_type=object | Morale / attrition / layoff signal. | value_schema={'type': 'object', 'required': ['signal_type'], 'properties': {'signal_type': {'type': 'string', 'enum': ['morale', 'attrition', 'layoff']}, 'direction': {'type': 'string', 'enum': ['improving', 'stable', 'worsening']}, 'summary': {'type': 'string'}}}
+  account.resonance.eng_blog_tone | value_type=object | Tone/voice of the company's engineering or company blog. | value_schema={'type': 'object', 'required': ['tone_label'], 'properties': {'tone_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  account.resonance.public_frustrations | value_type=list[object] | Publicly aired frustrations about the account. | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['frustration'], 'properties': {'frustration': {'type': 'string'}, 'summary': {'type': 'string'}}}}
+  account.resonance.buying_culture | value_type=object | 'What it's like to buy here' - procurement culture. | value_schema={'type': 'object', 'required': ['culture_label'], 'properties': {'culture_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+
+CONTACT FIELDS (entity = the contact; plain contact.*):
+  core.work_email | value_type=str | Selected contact's observed work email. | value_schema={'type': 'string'}
+  core.direct_phone | value_type=str | Selected contact's observed direct phone. | value_schema={'type': 'string'}
+  contact.current_title | value_type=str | Current professional title. | value_schema={'type': 'string'}
+  contact.job_function | value_type=str | Current job function. | value_schema={'type': 'string'}
+  contact.job_level | value_type=str | Current job level. | value_schema={'type': 'string'}
+  contact.current_location | value_type=object | Current professional location/country. | value_schema={'type': 'object', 'properties': {'raw': {'type': 'string'}, 'country': {'type': 'string'}}}
+  contact.persona | value_type=str | Buying-committee persona key (CLOSED enum - only these four values exist). | value_schema={'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}
+  contact.role_on_committee | value_type=object | Inferred buying-committee role + plausibility rationale. | value_schema={'type': 'object', 'required': ['role'], 'properties': {'role': {'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}, 'rationale': {'type': 'string'}}}
+
+CONTACT FACET FIELDS (entity = the contact; GOVERNED - every claim MUST carry identity_binding and use_class):
+  contact.facet.career_history | value_type=list[object] | Professional history beyond the current title. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['org'], 'properties': {'org': {'type': 'string'}, 'role': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}}}
+  contact.facet.alma_mater | value_type=list[str] | School(s) / university the person attended. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.stated_interests | value_type=list[str] | Publicly stated interests / topics. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.communication_style | value_type=object | Inferred communication style / tone from public activity. | default use_class=professional-public | value_schema={'type': 'object', 'required': ['style_label'], 'properties': {'style_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  contact.facet.public_appearances | value_type=list[object] | Podcasts / talks / panels the person appeared in. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.publications | value_type=list[object] | Articles / papers / books the person authored. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.recent_post | value_type=str | Recent public post (personal hook). | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.nickname | value_type=str | Preferred / known-by name beyond the legal first name. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.hobby | value_type=str | Publicly stated hobby. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.recent_award | value_type=str | Recent award or recognition. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.conference_talk | value_type=str | Conference talk given by the person. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.causes | value_type=list[object] | Publicly supported causes (sensitive by default). | default use_class=sensitive | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['cause'], 'properties': {'cause': {'type': 'string'}, 'context': {'type': 'string'}}}}
+
+# CONTACT: Alexander Semien, currently at Cogent Security, Inc.. Entity id: contact:alexander-semien
+# Alexander Semien, Head of Growth, is the CHAMPION. Cameron Coles, VP of Marketing, is the ECONOMIC_BUYER.
+# The client selling to them is Clue (cluehq.ai), an AI-native ABM orchestration platform. Judge priority against THAT sale. contact.persona is a CLOSED enum: champion | economic_buyer | technical_evaluator | blocker.
+
+# PER-PERSON DEEP RESEARCH REPORT (Exa deep-reasoning, one call)
+# Alexander Semien — cited professional profile ## 1. IDENTITY - Full name: Alexander Semien. His public LinkedIn result is titled “Alexander Semien” and uses the profile URL https://www.linkedin.com/in/alexander-semien.
+- Exact current title: Head of Growth. The profile headline states “Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps.”
+- Employer: Cogent Security, Inc. The profile result labels the current employer “Cogent Security”; THREATCON1 says, “Alexander Semien leads Marketing at Cogent Security.”
+- Start date: August 2025. The profile’s work-history result states “Marketing - Cogent Security (Current)” and “Aug 2025 - Present”; his transition post says, “My first week at Cogent Security…” and is dated August 14, 2025 in the result metadata.
+- Location: New York, New York, United States.
+- LinkedIn: https://www.linkedin.com/in/alexander-semien
+- Same-name exclusions: NOT FOUND. The search evidence located one matching professional profile whose current employer is Cogent Security; no other Alexander Semien at a different Cogent-named company was identified in the reviewed results. This is a search-result conclusion, not proof that no other same-name person exists. ## 2. CAREER HISTORY The following dates and roles come from the public LinkedIn work-history result unless otherwise noted: - Cogent Security — Head of Growth / profile work-history label “Marketing,” August 2025–present. The result states “Aug 2025 - Present.”
+- Sevco Security — VP, Product Marketing, August 2023–August 2025, New York. The result states “VP, Product Marketing - Sevco Security,” “Aug 2023 - Aug 2025 (2 years).”
+- Abnormal Security — Director, Strategy & Analytics, August 2020–August 2023, New York. The result states “Director, Strategy & Analytics - Abnormal Security,” “Aug 2020 - Aug 2023 (3 years).”
+- Zyper (Acquired by Discord) — Manager, Finance & Operations, November 2019–August 2020, San Francisco.
+- Forward — Associate, November 2018–October 2019, San Francisco.
+- Accenture — Senior Analyst, December 2017–November 2018; Analyst, July 2016–December 2017.
+- What he was doing immediately before Cogent and for how long: VP, Product Marketing at Sevco Security, August 2023–August 2025 — approximately two years.
+- Additional corroboration: THREATCON1 says he “previously…led Product Strategy and Product Marketing at Sevco Security” and “helped scale Abnormal Security from early stage to hypergrowth while running Strategy and Analytics”; it also says he “began his career at Accenture.” ## 3. WHAT THEY OWN TODAY - Role scope: THREATCON1 describes him as “leads Marketing at Cogent Security - telling Cogent’s story as it builds the first AI taskforce for vulnerability management.”
+- Stated growth-function scope: Semien wrote, “We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more.”
+- Operating model: He wrote, “Andrew Cuzzone, our GTM Engineer, builds the AI architecture. I set strategy and build the models.”
+- Team/output ambition: He wrote, “With AI, two people have the output of a team of ten.”
+- Current hiring scope: His August 14, 2026 post says, “Zach Van Keulen, Andrew Cuzzone, and I need more teammates,” followed by openings for “Head of Demand Generation” and “Sales Enablement Lead.”
+- The Head of Demand Generation remit is quoted as: “turn attention into pipeline across field, channel, digital, content, outbound, and creative plays.” The Sales Enablement Lead remit is: “curriculum, product education, assets, insights, and tool adoption.”
+- Reports to: NOT FOUND. Vineet Edupuganti is identified as Cogent’s CEO in the webinar post, and Semien says, “When I interviewed with Vineet Edupuganti…”; no source explicitly states Semien’s reporting line.
+- Direct reports: NOT FOUND. The sources identify Andrew Cuzzone as “our GTM Engineer” and mention Zach Van Keulen, but do not explicitly say either reports to Semien.
+- Team size: NOT FOUND as an official headcount. The clearest stated current core is “Zach Van Keulen, Andrew Cuzzone, and I,” i.e. three named people in the hiring post, but the post does not call this the complete team or state a headcount.
+- Relationship to Cameron Coles, VP Marketing at Cogent: NOT FOUND in the reviewed public sources. No source reviewed explicitly establishes a reporting, peer, or other professional relationship. ## 4. PUBLIC VOICE — located public posts/talks and verbatim excerpts The search results do not establish that this is every post Semien has ever published. The following are the public professional items located: ### August 14, 2026 — hiring for Growth after Black Hat “Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles 🥳 1. Head of Demand Generation Help Cogent win the market: turn attention into pipeline across field, channel, digital, content, outbound, and creative plays. 2. Sales Enablement Lead Make the sales team elite: curriculum, product education, assets, insights, and tool adoption. We’re creative, operational, AI-first, and” URL: https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk ### May 2, 2026 — Revenue Operations hiring “At Cogent, we built the entire growth function on a custom in-house AI operating system. Every decision we make is rooted in data. We already have the automation and agents. Now we need the human to interpret what they’re showing, find the so what, and drive the change across the sales org.” URL: https://www.linkedin.com/posts/alexander-semien_im-back-with-another-role-this-time-for-activity-7456429674232156160-lb8B ### April 30, 2026 — first Cogent webinar “Our first webinar at Cogent! This is a big moment for the company and the Growth Team.” “Super excited to announce that Rinki Sethi and Vineet Edupuganti are going to get into the nitty gritty of cyber news over the last few weeks: what actually changed, what most programs are missing, and what to do about it.” He reshared this event copy verbatim in the result: “The state of cybersecurity fundamentally changed in the last month.
+Between Mythos, Codex, and the Glasswing leak, AI-driven vulnerability discovery went from theoretical to operational. The offensive capabilities that were supposed to stay contained didn't. Most VM programs weren't built for this tempo. Cogent 's CEO, Vineet Edupuganti, is sitting down with Rinki Sethi (CSO & CISO at Upwind Security, Founding Partner at Lockstep ) for a real conversation about what comes next. → What actually changed and what didn't
+→ What foundations most teams are still missing
+→ Practical steps you can take in the next 90 days Wednesday, May 6th
+11:30 AM PT / 2:30 PM ET
+Registration link in comments.” URL: https://www.linkedin.com/posts/alexander-semien_our-first-webinar-at-cogent-this-is-a-big-activity-7455694305408757762-JEpl ### April 24, 2026 — interview with Vineet and growth-team design “When I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more. Andrew Cuzzone, our GTM Engineer, builds the AI architecture. I set strategy and build the models. With AI, two people have the output of a team of ten. That said, the tech isn't the only thing that makes us different. We're also very intentional about our brand. We build community through hospitality, honest conversations, and human connection. And we look cool doing it with premium experiences, branded moments, and TikTok-ad-level swag. 💅 We want to test the limits of what's possible with a small team, great systems, and people who think differently about this space (because life is too short to do boring marketing). With all that said, I'm happy to announce that we're growing the growth team” URL: https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF ### August 14, 2025 / result metadata August 31, 2025 — joining Cogent during Black Hat “There’s nothing like starting a new chapter in the middle of Black Hat. My first week at Cogent Security was a whirlwind, and that’s exactly the kind of energy I was hoping for. I’ve joined my former Abnormal AI colleagues Vineet Edupuganti and Geng Sng, along with new teammates Thanos Baskous and Aziz Kapadia to take on one of the toughest challenges in security: vulnerability management. We’re building a task force of intelligent agents to tackle persistent problems like asset inventory, vulnerability prioritization, remediation, and mitigation.
+I’m excited to help shape and share Cogent’s story, so please follow along for the journey!” URL: https://www.linkedin.com/posts/alexander-semien_theres-nothing-like-starting-a-new-chapter-activity-7361796281381339136-JgKt ### June 12, 2025 — Gartner Security & Risk Management Summit “I just got back from the Gartner Security & Risk Management Summit and a few themes stood out to me: 🔹 AI marketing is everywhere.
+AI, AI, AI. It came up in nearly every conversation – across every part of the stack. But, not all vendors showed real depth beyond the buzzwords. Those who actually execute on their ambitious visions will win. 🔹 Vendors are starting to sound the same.
+Terms like EAP, CTEM, AEV, and ASCA were everywhere. The convergence is real, but it’s also creating confusion. Clear messaging and real-world use cases are what will cut through. 🔹 The fundamentals are still the bottleneck.
+Teams are still dealing with ransomware, patching, scan coverage, and tool overload. One takeaway was loud and clear: get” URL: https://www.linkedin.com/posts/alexander-semien_i-just-got-back-from-the-gartner-security-activity-7338916389497298947-TLdO ### May 13, 2026 — AI-in-cybersecurity narrative Cogent’s post says: “Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs.” URL: https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b The actual video/transcript wording is NOT FOUND in the reviewed search evidence. ### THREATCON1 conference THREATCON1’s speaker page says: “Alexander Semien leads Marketing at Cogent Security - telling Cogent’s story as it builds the first AI taskforce for vulnerability management.” The event presentation page is titled “We Can’t Wait for Patch Tuesdays: The Case for AI Blue Teaming.” Its page copy includes: “Leaders should ask where assistants can shorten the loop between signal and action, where remembering windows and exceptions must be systematic, and where evidence can be produced automatically so approvals move faster.” URL: https://www.threatcon1.org/speakers/alexander-semien
+Presentation URL: https://www.threatcon1.org/presentations/we-cant-wait-for-patch-tuesdays-the-case-for-ai-blue-teaming The exact conference date, Semien’s exact speaking role, and a full verbatim transcript of his spoken remarks: NOT FOUND. ### Other public posts, podcasts, articles Podcasts: NOT FOUND. Standalone authored articles: NOT FOUND in the reviewed results. The Cogent article “Applied AI for Vulnerability Management” is company-authored; no evidence in the result identifies Semien as its author. LinkedIn posts specifically about ABM, account research, or named tools used by his team: NOT FOUND in the reviewed results. ## 5. COMMUNICATION STYLE — evidence-based - Tone: energetic and builder-oriented, evidenced by “I like the early stages; no playbook, just a vision and a lot to figure out” and “life is too short to do boring marketing.”
+- Length: he uses both long explanatory paragraphs (the interview/growth-system post) and compact hiring/event announcements.
+- Formality: conversational and informal, evidenced by “Hey 👋 I’m Alex,” “Chat, who should I hire,” and “find the so what.”
+- Humour/playfulness: “And we look cool doing it with premium experiences, branded moments, and TikTok-ad-level swag. 💅” and the “🥳” in the hiring announcement.
+- Emoji: explicit examples are “👋,” “💅,” “🥳,” and the blue-diamond bullets “🔹.”
+- Substantive style: he pairs punchy claims with operational specifics, such as “rich data layer and multi-agent platform,” “revenue marketing, sales ops, field logistics, pipeline operations,” and “turn attention into pipeline across field, channel, digital, content, outbound, and creative plays.” ## 6. STATED PROFESSIONAL INTERESTS & PRIORITIES - Early-stage company building: “I like the early stages; no playbook, just a vision and a lot to figure out.”
+- GTM clarity and momentum: “architect GTM motions that actually work,” “finding the story that resonates,” “programs that drive traction,” and “bringing clarity in the chaos, and creating momentum where there was none.”
+- Cybersecurity vulnerability management: “one of the toughest challenges in security: vulnerability management” and agent work across “asset inventory, vulnerability prioritization, remediation, and mitigation.”
+- Applied AI and automation: “custom in-house AI operating system,” “automation and agents,” and “two people have the output of a team of ten.”
+- Data-driven revenue execution: “Every decision we make is rooted in data.”
+- Differentiated brand and human community: “hospitality, honest conversations, and human connection,” plus “premium experiences, branded moments, and TikTok-ad-level swag.”
+- Clear messaging over buzzwords: “Those who actually execute on their ambitious visions will win” and “Clear messaging and real-world use cases are what will cut through.” ## 7. HOOKS FOR A COLD APPROACH 1. Growth hiring after Black Hat (most recent located item): reference his post: “Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates,” especially the Head of Demand Generation remit to “turn attention into pipeline across field, channel, digital, content, outbound, and creative plays.” URL: https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk 2. AI-native RevOps: reference his statement, “Every decision we make is rooted in data. We already have the automation and agents. Now we need the human to interpret what they’re showing, find the so what, and drive the change across the sales org.” URL: https://www.linkedin.com/posts/alexander-semien_im-back-with-another-role-this-time-for-activity-7456429674232156160-lb8B 3. Differentiated cyber marketing: reference his stated ambition, “I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber,” and his emphasis on “hospitality, honest conversations, and human connection.” URL: https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF ## 8. WHAT WOULD ANNOY THEM No explicit personal vendor/outreach pet peeve was found. The closest stated professional frustrations are: - Marketing buzzwords without substance: “not all vendors showed real depth beyond the buzzwords.”
+- Category/vendor sameness: “Vendors are starting to sound the same,” with “Clear messaging and real-world use cases” needed to cut through.
+- Operational overload: “Teams are still dealing with ransomware, patching, scan coverage, and tool overload.” A specific complaint about cold outreach, vendors contacting him, ABM, account research, or a marketing practice: NOT FOUND. ## Bottom line The reviewed evidence supports Alexander Semien as Cogent Security’s New York–based Head of Growth, joining in August 2025 after roughly two years as Sevco Security’s VP of Product Marketing. His public positioning centers on building an AI-native, data-rooted growth operation, differentiated cyber marketing, and practical vulnerability-management messaging. Reporting line, direct-report structure, complete team size, Cameron Coles relationship, podcasts, and exact ABM/account-research/tool posts are NOT FOUND in the reviewed evidence.
+
+Emit ONLY contact-entity claims for contact:alexander-semien now. Each claim: {"field_key","value_json","evidence_span","source_url","confidence","priority"} (+ "use_class" for contact.facet.*).
+Return {"contact_claims":[...], "proposed_fields":[...]}.

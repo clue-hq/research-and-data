@@ -174,3 +174,20 @@ class IngestAdAssetsTool(IngestWebsiteTool):
         "card, and pre-generate imagery from it. Runs asynchronously."
     )
     _kind: ClassVar[str] = "ad_assets"
+
+
+class EnrichAssetsTool(IngestWebsiteTool):
+    """Offer explicitly requested asset analysis through the existing governed job seam."""
+
+    name = "design_enrich_assets"
+    _kind = "asset_enrichment"
+    model_description = "Queue analysis of existing workspace assets; originals and human edits remain intact."
+
+    def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
+        assert isinstance(inputs, OfferIngestionJobInput)
+        from ..asset_enrichment import offer_retry
+        job = offer_retry(ctx.workspace_id, inputs.request, job_id=inputs.job_id,
+                          work_id=UUID(inputs.work_id), envelope=inputs.envelope,
+                          priority=inputs.priority)
+        return IngestionJobRef(job_id=job["job_id"], work_id=inputs.work_id,
+                               kind=self._kind, status=job["status"])

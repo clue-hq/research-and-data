@@ -32,6 +32,18 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import UtcDatetime
 
+
+class TurnStopRequested(RuntimeError):
+    """A durable Stop won the race with normal finalization."""
+
+
+async def lock_turn_control(conn: AsyncConnection, *, workspace_id: str, turn_id: UUID) -> None:
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+        {"scope": f"agent-turn-control:{workspace_id}:{turn_id}"},
+    )
+
+
 __all__ = [
     "TurnControlKind",
     "TurnControlRow",

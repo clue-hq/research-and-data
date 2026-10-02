@@ -39,7 +39,458 @@ Error envelope:
 }
 ```
 
+## Contract v1 — the accounts screens (ARV2 D3, 2026-09-08)
+
+**This is the current contract for the five accounts-screen payloads.** It supersedes both older
+sections below wherever they differ. Its presentation truth is the dummy frontend `clue-frontend`
+@ `84f8ee7` (`src/features/accounts/model/*.ts`); its authority is
+`docs/specs/ARV2-MASTER-PLAN.md` §6 and the D0 rulings, and *where each value is read from* —
+endpoint, SQL, table column or claim `field_key` — is `docs/specs/ARV2-DATA-SOURCE-MAP.md`.
+
+The contract is **executable**, not prose. The Zod schemas — with their amendments marked in place —
+are this app's own accounts models at `apps/frontend/src/features/accounts/model/` (vendored under
+`tests/api/contract_v1/zod/` at D3, moved here by the D4 re-lift), the pydantic wire models are
+`platform/api/clue_api/frontend_read/contract_v1.py`, and
+`tests/api/contract_v1/test_contract_v1.py` proves the three agree: the field sets match, a golden
+payload of each shape parses through the real Zod, and **the field tables in this section list
+exactly the fields on the wire**. Editing a table here without editing the models fails the build.
+
+How to read the tables: `required` = the key is always present (its value may still be `null` when
+the type says so); `optional` = the key is **omitted** when the backend does not know it. That
+distinction is load-bearing — a Zod `.optional()` that is not `.nullable()` *rejects* an explicit
+`null`, so "unknown" is an absent key, never a null one. Band-2 discipline still holds for ids,
+enums and timestamps; the `*Label` fields are the deliberate, enumerated exceptions where the
+backend owns the wording (a label is served precisely so the browser never derives it).
+
+### Envelopes
+
+| Endpoint | Envelope |
+| --- | --- |
+| `GET /frontend/v1/accounts` | `{ "data": Account[], "meta": { "total": int, "nextCursor": string \| null } }` |
+| `GET /frontend/v1/accounts/{accountId}` | `{ "data": AccountDetail }` |
+| `GET /frontend/v1/accounts/{accountId}/workspace` | `{ "data": AccountWorkspace }` |
+| `GET /frontend/v1/accounts/{accountId}/contacts` | `{ "data": AccountContactSummary[], "meta": { "total": int } }` |
+| `GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` | `{ "data": AccountContactDetail }` |
+
+The contacts envelope's `meta.total` is a v1 addition — the dummy's
+`AccountContactsResponseSchema` carries only `data`, and the screen's "N contacts" count was
+inferred. The payload schemas themselves are unchanged, which is why the parity test covers the
+five payloads and not the envelopes.
+
+**The `?contract=v1` parameter was removed 2026-09-09 (D4-b): one contract.** It selected between
+these shapes and the FI-2 payloads while both were served; the FI-2 readers, their wire models and
+the selector were all deleted, so every route now serves contract v1 unconditionally. A `contract`
+query parameter is **ignored**, not refused — the adapters stopped sending it in the same change,
+and 422ing a request the route can answer would have made the two halves undeployable apart.
+Timestamps are UTC and `Z`-suffixed (`2026-09-08T12:00:00Z`) because `z.string().datetime()` accepts
+an offset only with `{ offset: true }`, which these schemas do not set.
+
+### D4 as built (2026-09-09)
+
+The accounts feature in `apps/frontend` **is** the design build's (`clue-frontend`
+`integration/live-backend-v1` @ `84f8ee7`), re-lifted file for file and re-pointed at these routes.
+What follows is what shipped: the adapters, the fixture flag, the FI-2 behaviours the founder kept
+and the ones that went, and the three rendering rules the wire leaves to the client.
+
+#### Adapters
+
+The five repositories in `src/features/accounts/data/` are the only code that talks to these
+routes. Each one goes through `fetchRead` — the authenticated server request on a Server Component,
+the same-origin `/api/clue/frontend/v1/…` BFF in the browser. (They sent `?contract=v1` on every
+request until 2026-09-09; the surface serves one contract now, so no selector is sent.)
+
+| Repository | Request |
+| --- | --- |
+| `accounts.repository.ts` | `GET /accounts?limit=200[&cursor=…][&projectId=…]` |
+| `account-details.repository.ts` | `GET /accounts/{id}` |
+| `account-workspace.repository.ts` | `GET /accounts/{id}/workspace` |
+| `account-contacts.repository.ts` (list) | `GET /accounts/{id}/contacts` |
+| `account-contacts.repository.ts` (detail) | `GET /accounts/{id}/contacts/{contactId}` |
+
+**The list read returns the whole list.** The accounts table keeps the design build's browser-side
+search, filter, sort and pagination, so `getAccounts()` follows `meta.nextCursor` at `limit=200`
+(E1's `MAX_LIMIT`) and concatenates each page's `data` in server order. It stops after **25 pages —
+5,000 rows** — and returns what it has; beyond that size the honest fix is server-side paging on the
+screen, not a longer walk in the adapter. The returned `meta` is `{ total: <the server's own total>,
+nextCursor: null }`: the count is the backend's, and there is nothing left for the caller to page.
+`projectId` is the one query knob the backend owns and is forwarded; `search`, `sort`, `overallFit`,
+`researchStatus`, `limit` and `cursor` are browser-side concerns and are deliberately **not** sent,
+because E1 has no parameter for them and a silently-ignored parameter is worse than none.
+
+**Record 404s are `null`, everything else throws.** `ACCOUNT_NOT_FOUND` and `CONTACT_NOT_FOUND`
+resolve to `null` on E2, E3, E4 and E5 (on E4 that means "no such account" — an account with no
+committee is `[]`). E1 never 404s. Every other failure — a wrong mount, a disabled read surface, an
+auth or transport error — is a `ClueApiError`, which the page turns into a typed recovery screen via
+`accounts-read-result.ts`. There is no retry against a second transport and no partial answer.
+
+**Fixtures are an explicit opt-in, never a fallback.** `CLUE_ACCOUNTS_FIXTURE_MODE=true` — the exact
+string, read in exactly one module, `data/repository-mode.ts` — selects the design build's fixture
+repositories for local work. Any other value (including unset) selects the live adapters, and a live
+read that fails **fails**: it never falls back to fixture data. No file in the feature reads
+`CLUE_API_BASE_URL`; both rules are guarded by static tests in
+`data/account-live-repositories.test.ts`.
+
+#### The FI-2 behaviours that were kept
+
+Three pieces of the FI-2 accounts screen outlived the re-lift (founder ruling 2026-09-09), ported
+onto the design build's own components — no new component file, no Tailwind restyle:
+
+- **Bulk actions with exactly two options.** The selection bar carries a project select with **Add
+  to project** (`POST /frontend/v1/accounts/bulk-actions/add-to-project`, still the FI-2 route and
+  still an idempotency-keyed submit) and **Send to chat** (the project chat transport, unchanged),
+  plus Clear. The notice is the server's own counts (`"1 added · 1 already in project"`), never a
+  client-side tally, and only accepted subjects are reflected onto the rows. Capabilities come from
+  `readAccountBulkCapabilities()`; in fixture mode it returns the DISABLED constants without a
+  backend call. A local draft row is never selectable. **The selection survives search, filter and
+  sort** — it is cleared only by a successful add-to-project or the explicit Clear control.
+- **The single-contact email lookup.** `startContactEmailLookup` then poll (3s) until
+  `resolved`/`failed`, **capped at 40 polls (~2 minutes)**, after which the control states an honest
+  timeout rather than polling forever. On `resolved` with exactly one address the row's `emailLabel`
+  is set locally and its `emailStatus` becomes `"available"`; a conflicting multi-address result
+  narrows to nothing and says "Multiple emails found". `emailLookup` is not a contract-v1 field, so
+  this update is local to the loaded rows.
+- **The typed recovery screen.** `accounts-read-result.ts` classifies transport failures and the
+  accounts **layout** renders `accounts-recovery-screen.tsx` in place of the shell; detail,
+  workspace and contact pages keep `notFound()` on a `null` record and let anything else surface.
+
+#### The FI-2 behaviours that were dropped
+
+- **The bulk email lookup** is gone entirely — `lookupContactEmails`, `readContactBulkCapabilities`,
+  `ContactBulkCapabilities`, the contact-side bulk UI, and `BulkActionResponse.items[].emailLookup`
+  in the frontend model. The backend still serves its bulk email route; nothing in the frontend
+  calls it. A grep guard in `hooks/use-accounts-screen-controller.test.ts` keeps it out.
+- **The Band-2 views** — `account-facts`, `evidence-list`, `table-pagination`, `account-avatar` and
+  their models/formatters (`formatting.ts`, `prose.ts`, `evidence.ts`) — are deleted, not ported.
+  The contract serves the labels those views used to derive.
+
+#### Create is local and non-optimistic
+
+There is **no write endpoint for account creation** on this surface yet. "New account" produces a
+draft row entirely in the browser: `fitScore: null`, `overallFit: null`, bands `"Unknown"`,
+`locationCount: 0`, empty `industryLabels` / `socials` / `projects` / `customFields`,
+`primaryProjectId: null`, `researchStatus: "not_started"`, `logoPath: null`, and the `websiteUrl`
+that was typed. Nothing is invented — no `fitScore: 0`, no `"Medium"` band. The row is marked
+`isLocalDraft: true` on a **UI-only** type (`AccountSchema` does not carry the field and parsing
+drops it), renders a text-only "Not saved yet", cannot be selected for a server action, and
+disappears on reload. `POST /frontend/v1/accounts` is a recorded follow-up.
+
+#### Three client-side rendering rules
+
+- **The committee slot.** Contract v1 serves a `buying-committee` section inside `overviewDisplay`
+  whose generated items restate the committee. The frontend renders the `buyingCommittee[]` **table**
+  in that slot and drops the section's items; when a block omits the section, the split falls back to
+  `how-to-approach` so the table stays where the design put it. (Whether the recipe should stop
+  emitting that section is a D5 question.)
+- **E4 `title: null` renders "—" client-side** (ruling S7). The dash is a presentation choice, not a
+  wire value — the `"—"` placeholder exists on the wire only on E2's committee card.
+- **`BuyingCommitteeMember.linkedinUrl` is nullable**; the link renders only when present.
+
+#### Done on the backend (D4-b, 2026-09-09)
+
+The FI-2 branches on E1/E2/E4/E5 and the `contract` query parameter are **deleted**: the FI-2
+readers and wire models (`AccountDetail`/`neutralFacts`/`projectSections`, `ContactProfile`,
+`AccountListRow`), `app.contract_mode`/`ContractDep`, the FI-2-only modules
+(`committee.py`'s governed reader, `evidence.py`'s `EvidenceReference`, `prose.py`,
+`account_activity.py` and the E6 route), the contact bulk email-lookup route, and the FI-2 route
+tests all went with them. `tests/api/test_frontend_read_arv2_only_guard.py` is the standing rule
+that keeps the old research lane off this path.
+
+### D0 amendments (rulings)
+
+The models differ from `84f8ee7` in exactly these places, each marked in the file with a
+`// D0 ruling Rn/Sn` or `// D3 ruling` comment. `account-workspace.ts` is byte-identical.
+
+| Ruling | Change | Why |
+| --- | --- | --- |
+| S11 | `ResearchStatusSchema` = `not_started \| in_progress \| needs_review \| completed \| suspended` | the backend's five M8D states; `fully_enriched` and `failed` never existed |
+| S2 | `logoPath`, `accountLogoPath` become nullable | no logo pipeline exists in v1; the frontend renders its building glyph on `null`, and no third-party logo is fetched |
+| R7 | `overallFit` becomes nullable | an unscored account has no band; `fitScore: 0` / `overallFit: "Medium"` was invented by `createLocalAccount` |
+| S7 | contact `title` becomes nullable | no title claim → the row shows "—" rather than an invented title |
+| S5 | `summaryParagraphs`, `businessParagraphs`, `overviewParagraphs` relax from `.min(1)` to `.default([])`; `AccountDetailSchema.industryLabels` likewise | the backend never fabricates prose for a legacy slot |
+| R5 | `AccountContactDetailSchema` gains `emailClaimId` | the email chip resolves its evidence by claim id instead of substring-matching evidence text |
+| R8 | `AccountContactDetailSchema` gains `lastModifiedAt` | the contact header showed the **account's** stamp; it is now the contact's own latest `verifiedAt` |
+| D3 | `websiteUrl` becomes nullable | `'https://' + account_entity.primary_domain`, and an account may have no domain |
+| D3 | `BuyingCommitteeMember.linkedinUrl` becomes nullable | a member resolved from a coverage row may have no LinkedIn URL; the dummy renders the link only when present |
+
+### Backend-owned semantics
+
+The frontend never re-derives any of these (master plan §6).
+
+| Wire field | Backend rule |
+| --- | --- |
+| `ResearchEvidence` | one row per claim cited on the page; `claimId` = claim id; `quote` = the verbatim evidence span **or `null`** with `researchExcerpt` = the research sentence when no original-source quote exists (never a fabricated quotation); `sourceUrl` = source URL or `null` for private records (`verificationKind: "record"` — email checks, database rows); `verifiedAt` = `observed_at`; `publishedAt` = the source date when known; `mediaTimestamp` from the claim's media sub-fields; `outreachSafe` = the claim column; `sourceDomain` resolved server-side; `faviconUrl` may be `null` — the frontend resolves favicons by domain through its own proxy route; `title` = page title when captured |
+| `body[].segments` | the display model's output is split into clause-level segments, each with the claim ids supporting that clause; chips render after the clause, not the sentence |
+| `ResearchItem.priority` | the best (lowest number) `signal_priority` among the item's cited claims; the backend sorts P1 first |
+| `fitDisposition` | on "Why they fit" items: `support` when the fit claim is satisfied, `caveat` when it is the honest negative |
+| `intro[]` | narrative sections ("What they do", "Why they fit") carry their paragraphs as `intro`; items carry the evidence rows |
+| `ResearchSection.empty` / `emptyMessage` | `empty` when the recipe matched nothing and the display model was not called; `emptyMessage` is optional server text, else the client prints "No {section} information found for {name}." Since 2026-09-16 it may instead read `"Not generated: <provider> refused (<reason>). Retries automatically."` (or `"… failing (<reason>). …"`) while a provider incident is open — see the note under the Section shape |
+| `ResearchSection.pending` | `true` while a fleet task is writing the section (plan 2026-09-21): the section is `empty`, its `emptyMessage` is the served sentence `Synthesis in progress, please wait a few seconds.`, and the client re-reads the page every 5 s while any section is pending. Never `true` for a section whose recipe matched nothing. |
+| restricted sections | `do-not-mention` / `context-only` / `watch-outs` are the only sections that ever receive `outreachSafe=false` claims; the frontend shows them under an "Internal notes" control and the overview page omits `watch-outs` |
+| `sendLine` | contact page only; a separate field, never inside quotation marks; `channel` is served text |
+| `h1` / counts / overall fit | `h1` is the section's served vocabulary **without counts or parentheticals**; counts are `items.length`; the overall fit is `overallFit`, never text parsed out of an `h1` |
+| `insightSummary` | computed by the backend: `"{n} insights"` where n = items across non-restricted sections, and `"{m} people"` where m = committee members. The fixture's "42 reported in research" declared total is a fixture artifact and does not exist in production |
+| `newSinceLastVisit` | the **frontend** computes it from `ResearchEvidence.verifiedAt` against a locally stored last-visit stamp; the backend serves `false` and keeps no visit row (decision D5) |
+| `fitScore` / `overallFit` | both `null` when the account has not been scored (never `0`, never a guessed band); scoring writes both together (ruling R7 made `overallFit` nullable) |
+| `owner` / `createdBy` | workspace users (CRM data, never agent-written); `owner` nullable, `createdBy` recorded at creation; display precedence: assigned `owner`, else `createdBy`, else "Unassigned" (ruling R6) — never the current viewer |
+| `tenureLabel` / `employmentStartedAt` | the backend serves both; the frontend displays `tenureLabel` as-is and never computes tenure from the browser clock; `employmentStartedAt` exists for sorting and date display |
+| `artifacts[]` | the workspace endpoint projects account-associated generated artifacts with `accountId`; `updatedAt` comes from the artifact record; no invented dates. Served since 2026-09-30 (S9's later slice): the account's design documents from every project |
+| `activity[]` | actor is `clue` for agent actions and `person {id,name}` for user actions; `occurredAt` is ISO-8601; an unattributed event carries no actor at all; `isSample` appears only in fixtures |
+| `customFields` | registry custom variables whose values are claims; `presentation` comes from the registry row; the first four active client-pack fields in registry order are `primary` (ruling S6) |
+| `BuyingCommitteeMember.email` + `emailClaimId` | from the `core.work_email` claim; verification state lives in the evidence hover, not inline |
+| `influence` | legacy persona-derived default (S8); contextual unverified/excluded membership returns null |
+| `previewTitle` | `= name` in v1 (ruling S4) |
+| display gating | E2–E5 select claims through `arv2_display_allowed` (ruling S10): use-class rules and the sensitive fail-close stay, but a `WEAK` identity binding no longer hides an `outreachSafe = true` claim |
+
+### Not on the wire
+
+By design, and not to be added without a ruling:
+
+- `field_key` — the claim's registry key. Generic field rendering exists only for `customFields`.
+- `use_class` — the compliance use-class of a claim.
+- `source_type` — the resolver/source species behind a claim.
+- **avatar images** for accounts and contacts beyond the optional `avatarUrl` asset path; no
+  third-party avatar or logo fetch happens in v1.
+- **dates on source chips and hover cards** (ruling R1): `verifiedAt` and `publishedAt` are served
+  but rendered nowhere. `verifiedAt` feeds the frontend's new-since-last-visit computation.
+
+The Next.js `/api/source-favicon` route and the accounts layout shell stay frontend-owned.
+
+### Shared shapes
+
+`ResearchEvidence`, referenced by E2, E3 and E5:
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `claimId` | string | required | the claim's id — the join key for every citation chip |
+| `sourceUrl` | url \| null | required (nullable) | `null` for private records |
+| `sourceDomain` | string \| null | required (nullable) | resolved server-side |
+| `faviconUrl` | url \| null | required (nullable) | the frontend may resolve its own |
+| `title` | string \| null | required (nullable) | page title when captured |
+| `quote` | string \| null | required (nullable) | the verbatim span, or `null` |
+| `researchExcerpt` | string | optional | the research sentence when there is no quote |
+| `publishedAt` | date (`YYYY-MM-DD`) \| null | required (nullable) | source date when known |
+| `verifiedAt` | date (`YYYY-MM-DD`) | required | the claim's `observed_at` |
+| `verificationKind` | `verified` \| `record` | optional (default `verified`) | `record` = a private record |
+| `mediaTimestamp` | string \| null | required (nullable) | from the claim's media sub-fields |
+| `provider` | string \| null | required (nullable) | the resolver that retrieved it |
+| `outreachSafe` | bool | required | the claim column |
+
+`ResearchDisplayBlock`, referenced by E2 (`overviewDisplay`), E3 (`insightsDisplay`) and E5
+(`contactDisplay`):
+
+```
+DisplayBlock { page ∈ insights|overview|contact, sections[] }
+  Section  { key, h1, empty, items[], intro[]?, restricted=false, defaultOpen=false, emptyMessage?, pending=false }
+  Item     { id, h2, body[], sendLine|null, contactRefs[], inlineLead?, fitDisposition? ∈ support|caveat,
+             subject?, priority ∈ 1|2|3, newSinceLastVisit=false }
+  Sentence { text, claimIds[], segments[]? { text, claimIds[] } }
+  SendLine { channel, text, claimIds[] }
+  ContactRef { accountId, contactId, name, title?, persona?, emailState? ∈ verified|unverified|not_requested, avatarUrl? }
+```
+
+**`emptyMessage` while a provider incident is open (2026-09-16).** Spec
+`docs/superpowers/specs/2026-09-16-provider-incidents-design.md`. When this read's own generation
+halted on a provider, or when a provider incident is open right now, every section that is `empty`
+and was not generated by this read carries the one served sentence
+
+```
+Not generated: model provider refused (key limit exceeded). Retries automatically.
+```
+
+— `"<provider label> refused (<reason>)"` for a refusal (a decision no retry changes) and
+`"<provider label> failing (<reason>)"` for a fault that usually passes. The labels are the
+backend's words (`clue_api.provider_incidents.provider_display` / `reason_words`), so the frontend
+renders `emptyMessage` verbatim and never parses a provider or reason out of it. Sections that this
+read *did* generate are untouched, and a page with nothing wrong keeps the client's
+"No {section} information found for {name}." default.
+
+**Shared sections (2026-09-21).** `context-only` on the insights page is the overview's
+`watch-outs` block; `contact-insights` is the committee's `why-this-person` blocks in committee
+order. Same items, same claim ids, the insights page's own `h1`/`defaultOpen`. They are never
+`pending` on the insights page — their owner page carries that.
+
+`BuyingCommitteeMember` (E2): `{ contactId, name, title, persona, email|null, emailClaimId|null,
+linkedinUrl|null, whyTheyMatter }` — `persona` is served display text, e.g. `Economic buyer`, as it
+is on every `persona` slot including `ContactRef`'s. `AccountOwner` (`owner`, `createdBy`, and the `person` actor):
+`{ id, name, avatarUrl? }`. `AccountActivity` (E2, E3): `{ id, kind ∈
+contacts|summary|created|artifact|updated, text, timeLabel, actor? ({type:"clue"} \| {type:"person",
+id, name, avatarUrl?}), action?, occurredAt?, isSample? }`.
+
+### E1 — Accounts list row (AccountSchema)
+
+`GET /frontend/v1/accounts` → `data[]`.
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `id` | string | required | opaque `account_entity` id |
+| `name` | string | required | the account's resolved name |
+| `logoPath` | path (`/…`) \| null | required (nullable) | `null` in v1 — no logo pipeline (S2) |
+| `websiteUrl` | url \| null | required (nullable) | `https://` + `primary_domain`; `null` when there is no domain |
+| `researchStatus` | enum (5) | required | the latest M8D job for this (account, project) |
+| `researchStatusLabel` | string | optional | served wording for the status chip |
+| `researchIsRefreshing` | bool | optional (default `false`) | a re-research run is in flight over an already-researched account |
+| `overallFit` | `High` \| `Medium` \| `Low` \| null | required (nullable) | `null` until scored (R7) |
+| `fitScore` | int 0–100 \| null | required (nullable) | `null` until scored; never `0` for unknown |
+| `revenueBand` | string | required | served wording for the `core.revenue_band` claim — `"$10M–50M"`, `"$1B+"`, `"under $1M"`; `"Unknown"` when absent |
+| `employeeBand` | string | required | the `core.employee_count` claim, banded |
+| `locationCount` | int ≥ 0 | required | distinct known locations |
+| `locationsLabel` | string | optional | served wording for the locations cell |
+| `owner` | AccountOwner \| null | optional | `null` when unassigned — never the current viewer (R6) |
+| `createdBy` | AccountOwner \| null | optional | recorded at creation |
+| `industryLabels` | string[] | optional (default `[]`) | industry claims |
+| `socials` | AccountSocial[] | optional (default `[]`) | `{id, label ∈ LinkedIn\|Twitter\|Facebook\|Instagram, url}` |
+| `createdAt` | ISO-8601 datetime | optional | `account_entity.created_at` |
+| `lastModifiedAt` | ISO-8601 datetime | optional | the account's latest claim `observed_at` |
+| `primaryProjectId` | string \| null | optional | element 0 of the recorded membership policy |
+| `projects` | AccountProject[] | optional (default `[]`) | `{id, name}` per targeting project |
+| `customFields` | AccountCustomField[] | optional (default `[]`) | `{id, label, value, presentation ∈ text\|badge\|score, primary}` |
+
+**FI-2 fields kept until D4.** The existing `/frontend/v1/accounts` row still serves `domain`,
+`employeeCount`, `logoUrl`, `scores`, `projectResearchStatus`, `projectMemberships` and
+`updatedAt`. They are superseded by the table above and are removed when the frontend re-lift (D4)
+stops reading them.
+
+### E2 — Account detail (AccountDetailSchema)
+
+`GET /frontend/v1/accounts/{accountId}` → `data`. **Not a superset of E1**: the detail serves
+labels where the list serves bands, and drops the list-only membership fields.
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `id` | string | required | opaque `account_entity` id |
+| `name` | string | required | the account's resolved name |
+| `previewTitle` | string | required | `= name` in v1 (S4) |
+| `logoPath` | path (`/…`) \| null | required (nullable) | `null` in v1 (S2) |
+| `websiteUrl` | url \| null | required (nullable) | `null` when there is no domain |
+| `websiteLabel` | string | required | the hostname the header prints — served, not parsed in the browser |
+| `researchStatus` | enum (5) | required | latest M8D job for this (account, project) |
+| `researchStatusLabel` | string | optional | served wording for the status chip |
+| `owner` | AccountOwner \| null | optional | `null` when unassigned (R6) |
+| `createdBy` | AccountOwner \| null | optional | recorded at creation |
+| `industryLabels` | string[] | optional (default `[]`) | relaxed from `.min(1)` (S5) |
+| `headcountLabel` | string | required | the rail's headcount wording |
+| `locationsLabel` | string | required | the rail's locations wording |
+| `revenueLabel` | string | required | served wording read from the `core.annual_revenue` object — `"$10M–25M"`, `"$10M+"`, `"up to $25M"`; else the band as a label (as E1's `revenueBand`); else `"Unknown"` |
+| `foundedLabel` | string | optional | omitted when the founding year is unknown |
+| `fundingLabel` | string | optional | served wording — the latest round joined to the running total, `"Series C · $60M · $130.5M"` (a round with no currency of its own borrows the total's); omitted when funding is unknown |
+| `fitScore` | int 0–100 \| null | required (nullable) | `null` until scored |
+| `fitScoreLabel` | string | optional | served wording for the score |
+| `createdAt` | ISO-8601 datetime | required | `account_entity.created_at` |
+| `lastModifiedAt` | ISO-8601 datetime | required | the account's latest claim `observed_at` |
+| `socials` | AccountSocial[] | optional (default `[]`) | as E1 |
+| `customFields` | AccountCustomField[] | optional (default `[]`) | as E1 |
+| `overallFit` | `High` \| `Medium` \| `Low` \| null | required (nullable) | `null` until scored (R7) |
+| `summaryParagraphs` | string[] | optional (default `[]`) | legacy prose slot; never fabricated (S5) |
+| `businessParagraphs` | string[] | optional (default `[]`) | legacy prose slot; never fabricated (S5) |
+| `fitCriteria` | AccountFitCriterion[] | required | `{id, matched, title, evidence}`; legacy, may be `[]` |
+| `contacts` | AccountContact[] | required | `{id, name, avatarUrl?, title?, persona?, emailVerified?, hasDetail}`; `persona` is served display text, e.g. `Economic buyer` |
+| `insights` | AccountInsight[] | required | `{id, source ∈ link\|linkedin\|x, title, dateLabel, url}` |
+| `activity` | AccountActivity[] | required | see Shared shapes |
+| `headerMetadata` | string[] | optional (default `[]`) | the header's served chip strings |
+| `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `overviewDisplay` |
+| `overviewDisplay` | DisplayBlock (`page: "overview"`) | optional | omitted when the overview has not been generated |
+| `buyingCommittee` | BuyingCommitteeMember[] | optional (default `[]`) | `linkedinUrl` nullable (D3) |
+
+**FI-2 fields kept until D4.** `neutralFacts`, `projectSections`, `committee`, `coverage`,
+`summary`, `redirectedFrom`, `aliases`, `registryIds`, `hqGeo`, `domain`.
+
+### E3 — Account workspace (AccountWorkspaceSchema)
+
+`GET /frontend/v1/accounts/{accountId}/workspace` → `data`. The insights and artifacts tabs.
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `accountId` | string | required | echoes the path id |
+| `insights` | WorkspaceInsight[] | required | `{id, source ∈ link\|linkedin\|x, title, sourceLabel, url, summary}` |
+| `insightSummary` | string[] | optional (default `[]`) | computed: `"{n} insights"`, `"{m} people"` |
+| `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `insightsDisplay` |
+| `insightsDisplay` | DisplayBlock (`page: "insights"`) | optional | omitted when the insights page has not been generated |
+| `artifacts` | AccountArtifact[] | required | `{id, title, type ∈ presentation\|document\|web\|ad\|email, accountId?, projectName?, updatedAt?, thumbnailPath, lastEditedLabel}`; served since 2026-09-30: the design documents made for this account (through `design_account.account_entity_id`) from **every** project, newest first, `projectName` = the project's name, archived ones omitted; `thumbnailPath` = the gallery's `/api/clue/design/documents/{id}/thumbnail?v={current_version}` (render `unoptimized`: session-authenticated route); `type` `ad` or `web` |
+| `activity` | AccountActivity[] | required | see Shared shapes |
+
+**FI-2 fields kept until D4.** None — this endpoint is new in v1.
+
+### E4 — Contacts list row (AccountContactSummarySchema)
+
+`GET /frontend/v1/accounts/{accountId}/contacts` → `data[]`.
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `id` | string | required | opaque `contact_entity` id |
+| `name` | string | required | the contact's resolved name |
+| `title` | string \| null | required (nullable) | `null` when no title claim exists; the row shows "—" (S7) |
+| `persona` | string | required | served display text, e.g. `Economic buyer` — never the backend vocabulary value |
+| `membershipState` | `candidate` \| `supported` \| `needs_verification` \| `excluded` \| null | optional (nullable) | assessment for the selected project/context; null for legacy data |
+| `outreachEligible` | boolean | optional | false prevents outreach assumptions even when a contact channel exists |
+| `membershipGaps` | string[] | optional | explicit unresolved employment/remit evidence, never inferred from geography alone |
+| `personaTone` | `olive`\|`orange`\|`blue`\|`cyan`\|`green`\|`pink`\|`red` | required | the served chip tone for that persona |
+| `influence` | `High` \| `Medium` \| `Low` \| null | required | null for contextual unverified/excluded membership; otherwise persona-derived default (S8) |
+| `avatarUrl` | url or path (`/…`) | optional | omitted when unknown; no third-party avatar fetch |
+| `emailStatus` | `available` \| `lookup` | required | whether a work-email claim exists |
+| `emailLabel` | email | optional | present only when `emailStatus = available` |
+| `socials` | (`linkedin`\|`x`\|`facebook`\|`instagram`\|`whatsapp`)[] | required | which social chips to render |
+| `profileAction` | `none` \| `preview` \| `page` | optional (default `none`) | replaces the dummy's hard-coded featured contact |
+
+**FI-2 fields kept until D4.** `titleRestricted`, `roleOnCommittee`, `signals`, `projectIds`,
+`emailLookup`, row-level `linkedinUrl`, `professionalFacts`, the FI-2-shaped `evidence`, and
+`redirectedFrom`.
+
+### E5 — Contact detail (AccountContactDetailSchema)
+
+`GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` → `data`. The E4 row plus:
+
+| field | type | required | rule |
+| --- | --- | --- | --- |
+| `id` | string | required | as E4 |
+| `name` | string | required | as E4 |
+| `title` | string \| null | required (nullable) | as E4 (S7) |
+| `persona` | string | required | as E4 — served display text, e.g. `Economic buyer` |
+| `membershipState` | `candidate` \| `supported` \| `needs_verification` \| `excluded` \| null | optional (nullable) | assessment for the selected project/context; null for legacy data |
+| `outreachEligible` | boolean | optional | false prevents outreach assumptions even when a contact channel exists |
+| `membershipGaps` | string[] | optional | explicit unresolved employment/remit evidence, never inferred from geography alone |
+| `personaTone` | enum (7) | required | as E4 |
+| `influence` | `High` \| `Medium` \| `Low` \| null | required | as E4 |
+| `avatarUrl` | url or path (`/…`) | optional | as E4 |
+| `emailStatus` | `available` \| `lookup` | required | as E4 |
+| `emailLabel` | email | optional | as E4 |
+| `socials` | enum[] | required | as E4 |
+| `profileAction` | `none` \| `preview` \| `page` | optional (default `none`) | as E4 |
+| `accountId` | string | required | the owning account |
+| `accountName` | string | required | for the header crumb |
+| `accountLogoPath` | path (`/…`) \| null | required (nullable) | `null` in v1 (S2) |
+| `recentSignalsLabel` | string | required | the rail's recent-signals wording |
+| `linkedinLabel` | string | required | the rail's LinkedIn wording |
+| `linkedinUrl` | url | required | the contact's own profile URL |
+| `xLabel` | string | optional | omitted when there is no X handle |
+| `xUrl` | url | optional | omitted when there is no X handle |
+| `emailVerifiedAt` | date (`YYYY-MM-DD`) | optional | when the email check ran |
+| `emailClaimId` | string \| null | optional | the `core.work_email` claim behind the chip (R5) |
+| `locationLabel` | string | optional | the rail's location wording |
+| `bestFirstChannelLabel` | string | optional | the rail's channel recommendation |
+| `educationLabel` | string | optional | the rail's education wording |
+| `tenureLabel` | string | optional | served — never computed from the browser clock (R8) |
+| `employmentStartedAt` | date (`YYYY-MM-DD`) | optional | for sorting and date display |
+| `linkedinFollowers` | int ≥ 0 | optional | omitted when unknown |
+| `linkedinCreator` | bool | optional | omitted when unknown |
+| `locationClaimId` | string | optional | the claim behind the location row |
+| `reports` | ContactRef[] | optional (default `[]`) | who reports to this person |
+| `overviewParagraphs` | string[] | optional (default `[]`) | legacy prose slot; never fabricated (S5) |
+| `evidence` | ContactEvidence[] | required | `{id, source ∈ link\|linkedin\|x, title, dateLabel, url}` |
+| `researchEvidence` | ResearchEvidence[] | optional (default `[]`) | one row per claim cited by `contactDisplay` |
+| `contactDisplay` | DisplayBlock (`page: "contact"`) | optional | omitted when the contact page has not been generated |
+| `lastModifiedAt` | ISO-8601 datetime | required | the **contact's** own latest `verifiedAt` (R8) |
+| `customFields` | AccountCustomField[] | optional (default `[]`) | as E1, keyed to the contact's own registry claims |
+
+The four non-Nick fixture contact pages synthesize an "Account context" section (ruling R10); that
+is fixture-only — a production page's sections come from `contactDisplay` and nothing else.
+
+**FI-2 fields kept until D4.** `titleRestricted`, `roleOnCommittee`, `signals`, `projectIds`,
+`emailLookup`, `professionalFacts`, the FI-2-shaped `evidence`, and `redirectedFrom`. *(Historical:
+all of these went with the FI-2 readers on 2026-09-09 — see "Done on the backend (D4-b)" above.)*
+
 ## Implemented frontend read contract
+
+> **Historical.** This is the frontend-authored *proposal* that started the integration. Contract v1 above is what is served; nothing here is live. Kept because the rulings further down cite it.
 
 ### `GET /api/v1/accounts`
 
@@ -357,6 +808,8 @@ authored filter rules. Project IDs must remain opaque stable identifiers.
 
 ## As-built backend read API (FI-2 slice 1, 2026-08-08) — ratified deviations
 
+> **Historical — the FI-2 shapes below are no longer served.** They were deleted with the FI-2 readers on 2026-09-09 (D4-b); contract v1 above is the whole read surface. Kept because the ratified deviations and rulings recorded here are cited by the memory notes and by later sections of this file.
+
 The proposal above is unchanged and stays the frontend's authored view. This
 section records what the backend actually serves after FI-2 slice 1, so the Zod
 schemas and HTTP adapters are written against the real wire. Every shape below
@@ -534,7 +987,11 @@ Contacts row and profile:
       "title": "VP Finance",
       "titleRestricted": false,
       "persona": "economic_buyer",
-      "roleOnCommittee": { "value": "economic_buyer", "confidence": 0.87 },
+      "roleOnCommittee": {
+        "value": "economic_buyer",
+        "confidence": 0.87,
+        "reasoning": "Owns the financial approval for this workflow."
+      },
       "linkedinUrl": "https://linkedin.com/in/dana-buyer",
       "projectIds": ["prj_a", "prj_b"],
       "signals": { "typeCount": 1 },
@@ -550,6 +1007,11 @@ The profile is that row plus `accountId`, `accountName`, `redirectedFrom`,
 `professionalFacts` (`{ fieldKey, claimId, value, observedAt, provider,
 restricted }`), and the claim-mapped `evidence` records specified by the FI-2
 slice-5 section below.
+
+`roleOnCommittee.reasoning` is the nullable agent-authored rationale from the same governed role
+claim as `value` and `confidence`. The backend serves it whenever held and never derives it from a
+title. The frontend schema preserves it, while the frontend remains the display authority: the
+current buying-committee table and profile intentionally do not render this field.
 
 `emailLookup` is `null` until a user requests enrichment. Once requested, it is
 `{ lookupId, state, resolution, emails, retryable }`, where `state` is `pending | available |
@@ -614,13 +1076,15 @@ carry their full `projects` array.
 - **`employeeBand: "100-200"` becomes `employeeCount: 1200`, an integer.** The
   backend holds a headcount claim, not a band; banding is a display decision the
   frontend owns.
-- **`revenueBand` keeps its name but changes value space.** It now carries the
+- **`revenueBand` keeps its name but changes value space.** ~~It now carries the
   backend claim vocabulary (for example `100m_500m`), not the proposed
-  `"$1 - $10M"` display string, and it is **not** a guaranteed closed enum — the
-  value is whatever the field's writer produced. Same key with a different
-  vocabulary is exactly the mismatch a Zod `z.string()` will accept and a label
-  map will silently mis-render, so treat it as an opaque token and render through
-  a lookup with a fallback.
+  `"$1 - $10M"` display string.~~ **[SUPERSEDED 2026-09-09 by the D4-b controller
+  ruling]** the backend now serves the **label**, not the token — `10m_50m`
+  becomes `"$10M–50M"`, `1b_plus` becomes `"$1B+"`, `under_1m` becomes
+  `"under $1M"`, and `"Unknown"` when no claim exists. It is still not a closed
+  enum (a token the backend cannot parse is passed through as written), so render
+  it as an opaque display string; do **not** build a client-side label map, which
+  is exactly the drift this ruling removes.
 - **`scores[]` is a list keyed by `(projectId, icpKey, icpVersion)`, on both the
   list row and the detail section** — one project can score an account under
   several ICPs and versions, so a single `fitScore` would require guessing a
@@ -1304,3 +1768,160 @@ Those states have distinct titles and descriptions. Adding a live Account
 artifact endpoint, sorting, grid/list presentation, and preview behavior is a
 separate integration slice; it must introduce typed repository data and real
 handlers together rather than restoring dormant controls.
+
+### Project Target Accounts tab (lift from the dummy, 2026-09-11)
+
+Lifted from the dummy frontend `clue-frontend` @ `e3bcea7`
+(`docs/api-contracts/accounts.md` § "Project Target Accounts prototype"), edited
+where this platform's seams differ. The dummy is presentation truth; the two
+edits below are the seam, not the screen.
+
+The project workspace exposes a permanent Target accounts tab next to Gallery.
+Its shareable route is `/projects/:projectId/chats/:chatId?surface=target-accounts`;
+`/projects/:projectId/accounts?thread=:chatId` redirects there. A threadless
+`/projects/:projectId/accounts` redirects to `/projects/:projectId?surface=target-accounts`
+instead: founder ruling R3 forbids the dummy's `thread-primary` fixture id in a
+production URL, so `projectTargetAccountsHref` never emits it, and the project
+landing route is the legacy absorber (ruling R1) that carries `surface` through
+its own canonicalization to the resolved thread. A gallery card whose document
+type is `table` **is** the project's account list, so it opens this surface
+rather than an artifact tab (`features/chat-shell/model/gallery-card-target.ts`).
+
+**Seam edit 1 — the BFF route composes three reads, not two.** The frontend
+route `GET /api/projects/:projectId/accounts` returns
+`{ accounts, availableAccounts, profile, bulkCapabilities }` in one uncached
+(`Cache-Control: no-store`) document. `accounts` and `availableAccounts` come
+from the accounts repository (`data/project-accounts.repository.ts`), which
+forwards `projectId` to the backend read `GET /frontend/v1/accounts?projectId=`.
+The cursor walk belongs to the list read itself (`data/accounts.repository.ts`):
+it follows `meta.nextCursor` for at most `ACCOUNTS_PAGE_CAP` (25) pages of
+`ACCOUNTS_PAGE_LIMIT` (200) rows and then returns what it has with
+`meta.nextCursor: null`. A workspace or project larger than those 5,000 rows is
+therefore **silently truncated** — the screen shows the first 5,000 and says
+nothing; the honest fix at that size is server-side paging on the screen, not a
+longer walk. Browser pagination runs over whatever that one read returned.
+`availableAccounts` is the unscoped directory minus the current members.
+`profile` is derived from the session — `getWorkspaceProfile(session)` — because
+this platform has no settings feature to read a `SettingsWorkspace` from; the
+session is resolved *outside* the route's try, so an authentication redirect is
+never swallowed into a 502. `bulkCapabilities` is the existing server-declared,
+fail-closed bulk-action capability read. A failed data read returns `502` with a
+retry action; the parse contract is
+`features/accounts/model/project-accounts.ts` (`ProjectAccountsResponseSchema`).
+
+The table reuses the global account cell renderers, column controls, and density
+tokens. Project membership is applied before search, filters, sort, and paging.
+Page sizes are 25, 50, and 100; query changes reset to page 1. The header
+checkbox selects the current page, while other selected pages remain selected.
+Switching Gallery/Target accounts or opening an in-project account preview
+preserves the mounted table state. Previews reuse the global full-height account
+drawer, toolbar, contacts, and research presentation. The frontend read route
+`GET /api/accounts/:accountId` loads the same detail repository and validated
+`{ data: AccountDetail }` response as the global preview and full page. Missing
+detail records return 404; upstream failures return 502 with a retry action.
+Directory properties remain visible while details load or are unavailable.
+Closing restores focus to the project table. Open as page always navigates to
+the canonical workspace route `/accounts/:accountId`.
+
+**Seam edit 2 — Add accounts is a real membership write** (founder ruling,
+2026-09-11). It replaces the dummy's local-state-only paragraph, which is not
+kept. The picked directory accounts are submitted through the existing bulk
+action `POST /accounts/bulk-actions/add-to-project` — the screen controller's
+`submitAddAccounts`, with a fresh `Idempotency-Key` per attempt — and the rows
+learn about the additions only once the backend accepts. On success the served
+lists are re-read so the picker stops offering an account that is now a member;
+the table keeps its columns, selection and page across that re-read. A refusal
+changes nothing on screen and says so, with a Try again action. No duplicate
+account record is created: membership is the only thing written.
+
+**Membership display correction (2026-09-12):** The global bulk picker starts
+at "Choose a project"; Add to project stays disabled until an explicit choice.
+Clearing or successfully submitting the selection resets that choice. The
+result notice includes the chosen project's name alongside the backend counts.
+The shared table controller reconciles each new server snapshot, retaining only
+unsaved local drafts from its previous rows. This makes added members and updated
+research fields visible on a tab re-read without remounting the table or losing
+its filters, selection and column settings. The membership API is unchanged.
+
+**Seam edit 3 — Add to chat, into the open chat** (founder request,
+2026-09-11; not in the dummy, which has no such button on this tab). The tab's
+selection bar carries an "Add to chat" button in the global bar's token (the
+`Button` at size `md`) in the filled default variant, the founder's choice for
+this placement. It is the global table's action minus its destination picker:
+the tab already sits beside the chat it targets, so the selected accounts are
+prepared through the same `POST /projects/:projectId/composer-context/prepare`
+(every reference validated, its version pinned) against the current project and
+the open thread — `thread_id: null` on a threadless project page, where the
+composer's first send creates the thread — and the prepared entities land in
+that mount's composer as selected context, exactly as a restored handoff would.
+No handoff record is written and nothing navigates. The gate and the limit are
+the global bar's (`bulkCapabilities.addToChat`, a real chat transport, and the
+workspace's `composerCapabilities.contextRefs`); the selection clears only once
+the chat holds the accounts, and a refusal is worded as the destination dialog
+words it, shown in the conversation's existing context-handoff error line.
+Frontend-only: the backend contract is unchanged.
+
+**Seam edit 4 — the tab streams a live discovery run** (spec
+`docs/superpowers/specs/2026-09-12-discovery-streaming-design.md`). A new read,
+`GET /frontend/v1/projects/:projectId/discovery/current` (BFF mirror
+`GET /api/projects/:projectId/discovery`), serves the project's latest discovery run:
+`{ run_id, status, asked, found, verified, shown, started_at, finished_at }` or `null`. While
+`status` is `not_started`/`in_progress` the chat shell polls it every 5 s, the "Target accounts"
+tab label carries the chat's rotating loader glyph, and the tab re-reads
+`/api/projects/:projectId/accounts` on every tick without dropping its rows, so verified
+accounts appear as the driver lands them. A completed `launch_arv2_discovery` tool part on the
+open thread opens the surface once (`chat-shell/model/discovery-launch-signal.ts`). Backend:
+the driver now lists the webset on every poll tick and verifies new items in a bounded pool
+(`CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY`, default 4), one candidate's gates asked together;
+a row still appears only after every gate is verified.
+
+## Research quality generations — approved 2026-09-22, implemented locally; live acceptance pending
+
+The research-quality design §10.2 and its implementation authorization govern this additive
+contract. Existing account/contact layouts remain. New quality-profile reads carry `projectId`,
+`contextId`, `generationId` and `qualityState` separately from job execution status. Account,
+Insights and Contact reads accept `projectId` and `contextId`; an omitted context is resolved only
+when unambiguous and returned explicitly. Ambiguity yields `context_required` with project choices,
+never another project's narrative. Legacy unscoped output is labelled `legacy`.
+
+`researchQuality` includes those identities, `qualityState` (researching/provisional/reconciled/
+partial/needs_review/suspended/privacy_stopped/context_required/legacy), `refreshPending`, ordinary
+non-sensitive `gaps`, and `contexts` choices. `DisplayBlock` carries the same metadata. Missing or
+invalidated content remains visibly pending/qualified; privacy restrictions remain separate.
+Committee members carry `membershipState` (candidate/supported/needs_verification/excluded),
+`outreachEligible` and `membershipGaps`. Only supported current employment plus supported remit may
+be presented as an established buying role. Counts use the same assessed membership reader.
+For a contextual candidate, unverified or excluded member, `influence` is null and renders as
+Unverified; the legacy persona default must not imply a verified influence level.
+`membershipGaps` contains user-facing explanations, not internal assessment reason codes.
+
+Cited sentences additionally carry `kind` (fact/inference/quote/qualified/gap) and qualifications.
+An attributed provider report excerpt is not a primary quote. A value argument cites a narrative
+claim backed by both account claims and exact pinned seller-document passages. Invalid historical
+observations remain auditable but are unavailable to ordinary factual summaries. Stale writes are
+refused atomically; rejected claims and revoked memberships are suppressed before asynchronous
+refresh. Read requests do not invoke the old Luna writer for a quality generation.
+
+## Miscellaneous research sections — approved and integrated locally 2026-09-27
+
+Account Insights and Contact display blocks now include an owned `miscellaneous` section,
+headed **Miscellaneous**, after the existing sections. Overview is unchanged. This uses the
+existing `ResearchSection` shape; no new transport or component-specific field is needed.
+
+The section contains additional source-linked findings not represented in the main narrative.
+It is ordinary research (`restricted: false`), initially collapsed (`defaultOpen: false`),
+with the same item text, attribution, qualifications and claim/source controls as other sections.
+It is not the Internal notes surface. The narrative skills govern selection; the frontend neither
+reclassifies claims nor invents residual content. Findings already explained elsewhere need not
+be repeated, and distinctive personal interests can still receive prominence in the main narrative.
+
+Backend recipe seeding offers the section to the account and person writers through
+`read_narrative_inputs`; `write_research_narrative` stores it using the existing scoped claim-ID
+resolution and page writer. Old/in-flight narratives may omit this additive section. A quality
+page with no saved Miscellaneous block shows “No additional research findings have been published
+yet.” and does not enter a refresh loop merely because this section was introduced. Existing
+blocks still become stale when their underlying research changes. No historical content is
+automatically moved or regenerated by this change.
+
+Fixture account/contact pages expose the same empty section. The generic `ResearchDocument`
+and `ResearchStack` render it as an independent native disclosure with source controls.

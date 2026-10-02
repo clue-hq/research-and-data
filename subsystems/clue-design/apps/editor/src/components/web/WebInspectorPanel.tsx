@@ -13,6 +13,7 @@ import {
   removeNodeOp,
   setNodeClassesOp,
   setNodePropsOp,
+  setPageMetaOp,
   setSlotKeyOp,
   slotKeyParts,
   textVariantAllowsStructuredRichText,
@@ -27,6 +28,7 @@ import {
   type WebTheme
 } from "@/engine/webDocuments";
 import type { CustomComponentArtifact } from "@/engine/webDocuments";
+import { routeFieldDecision } from "@/components/web/inspectorPageField";
 import {
   alignItemsFacet,
   bgColorFacet,
@@ -109,6 +111,9 @@ interface WebInspectorPanelProps {
   /** The full page summary — the sibling/parent lookup the header's
    * reorder/duplicate/delete actions need. */
   page: WebPageSummary | null;
+  /** Every page in the document — the Page card's route field needs the OTHER
+   * pages' routes to refuse a collision before the round trip. */
+  pages: readonly WebPageSummary[];
   theme: WebTheme | null;
   /** Every dialog component in the document — the button command form's target
    * list. */
@@ -168,6 +173,7 @@ export function WebInspectorPanel({
   nodeInfo,
   pageId,
   page,
+  pages,
   theme,
   dialogs,
   previewComponent,
@@ -206,6 +212,13 @@ export function WebInspectorPanel({
         <p className="web-empty-hint">
           Click any element in the preview to edit its text, color, and layout.
         </p>
+        {/* F5: the page itself is only describable when NO node is selected — a
+            selected node means this panel is describing that node, and the page
+            is not part of it. The dev shell carries the route field alone; the
+            platform shell owns add/remove. */}
+        {page ? (
+          <PageCard page={page} pages={pages} busy={busy} applyOps={applyOps} />
+        ) : null}
         {/* D-F8: a hidden-on-source section is on no page, so it can never be selected — and
             the inspector is the ONE place a human sees and activates one. The empty state is
             where it is always reachable, rather than only while some other node happens to be
@@ -436,6 +449,85 @@ function ComputedLayoutCard({ info }: { info: WebNodeInfo | null }): React.React
           </dd>
         </div>
       </dl>
+    </Card>
+  );
+}
+
+/** The nothing-selected state's Page card: the active page's route, editable.
+ *
+ * Commit is blur/Enter (the same shape every other text field in this panel
+ * uses) and goes through `routeFieldDecision`, so an unchanged draft writes
+ * nothing and an ungrammatical or already-taken route is refused HERE — no op
+ * is built at all, and the typed text survives its own refusal so it can be
+ * corrected. Parity with the platform shell's Page section, minus add/remove:
+ * the dev shell stays minimal. */
+function PageCard({
+  page,
+  pages,
+  busy,
+  applyOps
+}: {
+  page: WebPageSummary;
+  pages: readonly WebPageSummary[];
+  busy: boolean;
+  applyOps: (operations: WebOperation[], intent?: string) => void;
+}): React.ReactElement {
+  const [draft, setDraft] = useState(page.route);
+  const [message, setMessage] = useState<string | null>(null);
+  // The DOCUMENT's route outranks the box: a committed write, an undo, or a
+  // page switch all mean the page on screen now says something different, and
+  // a stale draft would be this card lying about the document.
+  React.useEffect(() => {
+    setDraft(page.route);
+    setMessage(null);
+  }, [page.id, page.route]);
+
+  const commit = () => {
+    if (busy) {
+      return;
+    }
+    const siblingRoutes = pages
+      .filter((candidate) => candidate.id !== page.id)
+      .map((candidate) => candidate.route);
+    const decision = routeFieldDecision(draft, page.route, siblingRoutes);
+    if (decision.kind === "noop") {
+      setMessage(null);
+      return;
+    }
+    if (decision.kind === "refuse") {
+      setMessage(decision.message);
+      return;
+    }
+    setMessage(null);
+    applyOps([setPageMetaOp(page.id, { route: decision.route })], "set_page_route");
+  };
+
+  return (
+    <Card title="Page">
+      <p className="web-insp-hint">{page.name}</p>
+      <label className="field web-insp-field">
+        <span className="field-label">Route</span>
+        <input
+          type="text"
+          value={draft}
+          disabled={busy}
+          spellCheck={false}
+          aria-label="Page route"
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setMessage(null);
+          }}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+        />
+      </label>
+      {message ? (
+        <p className="web-insp-error" role="alert">
+          {message}
+        </p>
+      ) : null}
     </Card>
   );
 }

@@ -1,0 +1,103 @@
+{
+  "requestId": "9e9abc820c14775b2595616e5f7b08ed",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://podcasts.apple.com/us/podcast/vineet-edupuganti-cogent-security-ceo-on-ai-vulnerability/id1729243199?i=1000749991064",
+      "title": "Vineet Edupuganti, Cogent Secu\u2026 - Venture with Grace - Apple Podcasts",
+      "url": "https://podcasts.apple.com/us/podcast/vineet-edupuganti-cogent-security-ceo-on-ai-vulnerability/id1729243199?i=1000749991064",
+      "publishedDate": "2026-02-16T17:37:13.000Z",
+      "text": "Vineet Edupuganti, Cogent Secu\u2026 - Venture with Grace - Apple Podcasts\n\n- February 16\n- 57 min\n\n# Vineet Edupuganti, Cogent Security CEO on AI Vulnerability Management\n\nVenture with Grace\n\nPlay\n\nVineet Edupuganti is Co-Founder & CEO of Cogent Security, deploying generative AI to supercharge vulnerability management and risk reduction for global brands, after scaling Abnormal Security from early PM through Head of Multi-Product Platform where he grew his 30-person division 4X, launched Knowledge Base/Security Posture Management, rolled out RBAC platform capabilities, and drove PLG initiatives as ARR crossed $100M with 15X headcount growth. Ex-ML engineer at Meta (generative AI for Facebook Assistant), Stanford researcher (GANs/VAEs accelerating MRI 10X, 100+ citations at top ML conferences), New Relic (time-series forecasting), and Menlo Ventures (AI incubation), Vineet fuses hardcore AI systems with enterprise security product leadership giving him deep insight into scaling AI product strategy, engineering, and go-to-market execution.Topics:\n\n- AI operational excellence: building data labeling, ML pipelines, and PM systems\n- How Abnormal Security rocketed to $100M ARR with smart platform pivots and product-led growth\n- Lessons from growing teams 4X during 15X company hypergrowth while launching new products\n\n#AI #Cybersecurity #Startups #VulnerabilityManagement #ML\n\n## Information\n\nShow\n\nVenture with Grace\n\nFrequency\n\nUpdated Daily\n\nPublished\n\nFebruary 16, 2026 at 4:08 PM UTC\n",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts112/v4/6e/33/3a/6e333a90-7574-89fe-2a70-6d3499031f93/mza_17865916800776143293.jpg/1200x1200bf-60.jpg",
+      "favicon": "https://podcasts.apple.com/assets/favicon/favicon-32.png"
+    },
+    {
+      "id": "https://podcasts.apple.com/us/podcast/building-ai-agents-to-fight-cybercrime-vineet-edupuganti/id1504732284?i=1000748867878",
+      "title": "Building AI Agents to Fight Cy\u2026 - Uncharted Podcast - Apple Podcasts",
+      "url": "https://podcasts.apple.com/us/podcast/building-ai-agents-to-fight-cybercrime-vineet-edupuganti/id1504732284?i=1000748867878",
+      "publishedDate": "2026-02-09T17:00:06.000Z",
+      "text": "Building AI Agents to Fight Cy\u2026 - Uncharted Podcast - Apple Podcasts\n\n- February 9\n- 20 min\n\n# Building AI Agents to Fight Cybercrime: Vineet Edupuganti on Scaling Cogent Security and Winning Over Skeptical CISOs\n\nUncharted Podcast\n\nPlay\n\nPoya sits down with Vineet Edupuganti, Co-Founder & CEO of Cogent Security to talk about fighting AI-powered hackers with defensive AI agents, what Abnormal got right, and how to win over CISOs in one of the toughest markets in tech.\n\nVineet Edupuganti is the CEO and Co-Founder of Cogent Security. With a background in machine learning and product management, Vineet brings a product-first mindset to solving complex security challenges for modern enterprises. Prior to founding Cogent, Vineet was a GM at Abnormal Security, where he joined as an early employee and helped build it into a category-leading company.\n\n## Information\n\nShow\n\nUncharted Podcast\n\nPublished\n\nFebruary 9, 2026 at 6:55 AM UTC\n\nLength\n\n20 min\n\nRating\n\nClean",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts122/v4/35/90/9c/35909c05-b261-5d32-a47f-9c886a8e8fa1/mza_5510095870479779359.jpg/1200x1200bf-60.jpg",
+      "favicon": "https://podcasts.apple.com/assets/favicon/favicon-32.png"
+    },
+    {
+      "id": "https://podcasts.apple.com/is/podcast/how-cogent-builds-ai-agents-that-have-to-be-right-every/id1891551672?i=1000769089112",
+      "title": "How Cogent builds AI agents th\u2026\u2013Max Agency \u2013 Apple Podcasts",
+      "url": "https://podcasts.apple.com/is/podcast/how-cogent-builds-ai-agents-that-have-to-be-right-every/id1891551672?i=1000769089112",
+      "publishedDate": "2026-05-22T01:07:51.000Z",
+      "text": "How Cogent builds AI agents th\u2026\u2013Max Agency \u2013 Apple Podcasts\n\n- 22 May\n- 1hr 15min\n\n# How Cogent builds AI agents that have to be right every single time | Geng Sng (Co-founder & CTO - Cogent)\n\nPlay\n\nGeng Sng is co-founder and CTO of Cogent, which builds autonomous agents that remediate vulnerabilities for enterprise security teams. Today, Cogent's agents process billions of security events per day, maintaining a live context graph of every asset and vulnerability across customer environments. In this conversation, Geng walks through Cogent's hot vs cold context split, the sub-agents that handle side quests, and the two graphs they run in parallel.\n\n\u2013\n\nWe also discuss:\n\n- Why defensive security is harder for AI than offensive\n- Under the hood of Cogent's three agents\n- Inside Cogent's \u201cread only\u201d by-default sandboxes\n- Why graph databases don't scale for security data\n- Cogent Research and the move into formal verification\n- Why interactive agents need a deeper planning phase to one-shot\n\n\u2013\n\nReferenced:\n\n- Abnormal AI\n- Amazon S3\n- Anthropic\n- Bash\n- ChatGPT\n- Claude Code\n- Claude Mythos\n- CodeMender\n- Codex\n- Cogent\n- Cursor\n- Google DeepMind\n- GPT-5.5-Cyber\n- Jupyter\n- Letta\n- Mozilla\n- OpenAI\n- Opus 4.6\n- Opus 4.7\n- Vercel\n\n\u2013\n\nWhere to find Geng:\n\n- LinkedIn\n\n\u2013\n\nWhere to find Harrison:\n\n- LinkedIn\n- Twitter/X\n\n\u2013\n\nWhere to find LangChain:\n\n- Website\n- Docs\n\n\u2013\n\nSend feedback or questions to maxagency@langchain.dev\n\n\u2013\n\nTimestamps:\n\n00:00 Why mean time to exploit collapsed from",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/9d/3e/5d/9d3e5d68-efa8-ea82-cc85-81d8a2fff3f1/mza_8917004427431732491.jpg/1200x1200ECA.PESS01-60.jpg?imgShow=Podcasts211/v4/05/d3/83/05d383df-c608-e03d-2aa4-8cdfeded233a/mza_7146693305735765165.jpg"
+    },
+    {
+      "id": "https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/",
+      "title": "The Rise of the Autonomous Blue Team with Vineet Edupuganti | Hacker Valley Studio",
+      "url": "https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/",
+      "publishedDate": "2025-09-04T14:29:52.000Z",
+      "author": "PodBean Development",
+      "text": "The Rise of the Autonomous Blue Team with Vineet Edupuganti | Hacker Valley Studio\n\n# Hacker Valley Studio\n\nWelcome back to the show! Hacker Valley Studio podcast features Host Ron Eddings, as he explores the world of cybersecurity through the eyes of professionals in the industry. We cover everything from inspirational real-life stories in tech, to highlighting influential cybersecurity companies, and we do so in a fun and enthusiastic way. We\u2019re making cybersecurity accessible, creating a whole new form of entertainment: cybertainment.\n\n## Episodes\n\nSep 4, 2025\n\n### The Rise of the Autonomous Blue Team with Vineet Edupuganti\n\nSep 4, 2025\n\nSep 4, 2025\n\n37 min\n\nWhat if defenders had their own AI-powered task force, always on, always adapting, and finally one step ahead of attackers?\n\nIn this episode, Ron welcomes Vineet Edupuganti, Founder and CEO of Cogent Security, to discuss how AI agents are rewriting the rules of cybersecurity. Vineet shares why traditional vulnerability management is fundamentally broken, why exposure management matters more than ever, and how Cogent is building an \u201cAI Task Force\u201d to give defenders the edge. From his early days in machine learning to reshaping the future of cyber defense, Vineet breaks down the urgent need for automation, context-driven insights, and explainable AI in security.\n\nImpactful Moments:00:00 - Introduction02:00 - Vineet\u2019s journey into AI and cyber04:30 - Why vulnerability management is broken06:10 - Generative AI as a defende",
+      "image": "https://d2bwo9zemjwxh5.cloudfront.net/image-logo/5354112/HVS-2024-AlbumCover_1200x628.jpg?s=a657aaf88b0c9fec5f36eb981d04d114&e=png",
+      "favicon": "https://mcdn.podbean.com/mf/web/zudwhx/Podbean_Favicon_3_61e45791-1a9c-1d3e-0901-c32d71f84b5c.png"
+    },
+    {
+      "id": "https://open.spotify.com/episode/4WtjSSeAXMzA6MYqeqJXCV",
+      "title": "Building AI Agents to Fight Cybercrime: Vineet Edupuganti on Scaling Cogent Security and Winning Over Skeptical CISOs - Uncharted Podcast | Podcast on Spotify",
+      "url": "https://open.spotify.com/episode/4WtjSSeAXMzA6MYqeqJXCV",
+      "text": "Building AI Agents to Fight Cybercrime: Vineet Edupuganti on Scaling Cogent Security and Winning Over Skeptical CISOs - Uncharted Podcast | Podcast on Spotify\n\nSkip to main content\n\nPremiumSupportDownload\n\nInstall App\n\nSign upLog in\n\nResize main navigation\n\nPodcast Episode\n\n# Building AI Agents to Fight Cybercrime: Vineet Edupuganti on Scaling Cogent Security and Winning Over Skeptical CISOs\n\nUncharted Podcast\n\nFeb 9\n\n20 min 15 sec\n\n## Episode Description\n\nPoya sits down with Vineet Edupuganti, Co-Founder & CEO of Cogent Security to talk about fighting AI-powered hackers with defensive AI agents, what Abnormal got right, and how to win over CISOs in\n\n\u2026 Show more\n\nSee all episodes\n\nShow all\n\n---\n\nVideo\u2022 Inspired with Alexa von Tobel\n\nChainguard founder and CEO Dan Lorenc is building the security layer the entire software industry should run on. After nearly a decade at Google working on open source infrastructure, Dan co-founded Chainguard in 2021 to solve a problem hiding in plain sight. 90 to 95 percent of the code powering the world's software is open source, free, and largely unsecured. Now leading a $3.5B+ company with more than 600 customers, Dan shares his unfiltered take on where software security, AI, and the future of engineering are all headed. What You'll Learn: How Chainguard is securing the open source software the world runs on Why the AI coding boom is making software security harder, not easier What the future of software engineering actually looks like Why CI",
+      "image": "https://cdn.cookielaw.org/logos/static/ot_company_logo.png",
+      "favicon": "https://open.spotifycdn.com/cdn/images/favicon32.b64ecc03.png"
+    },
+    {
+      "id": "https://podcasts.apple.com/gb/podcast/rethinking-security-at-scale-cogents-mission-to-outpace/id1763243770?i=1000723724823",
+      "title": "Rethinking Security at Scale: \u2026\u2013CyberBytes: The Podcast \u2013 Apple Podcasts",
+      "url": "https://podcasts.apple.com/gb/podcast/rethinking-security-at-scale-cogents-mission-to-outpace/id1763243770?i=1000723724823",
+      "publishedDate": "2025-08-27T13:06:52.000Z",
+      "text": "Rethinking Security at Scale: \u2026\u2013CyberBytes: The Podcast \u2013 Apple Podcasts\n\n- 12 MIN\n- 27 AUGUST 2025\n\n# Rethinking Security at Scale: Cogent\u2019s Mission to Outpace Attackers - Cogent Security\n\nCyberBytes: The Podcast\n\nPlay\n\nIn this episode, we sit down with Vineet Edupuganti, CEO and Co-Founder of Cogent Security, an AI-powered vulnerability management company reshaping how enterprises defend against today\u2019s rapidly evolving threats. Vineet shares his journey from machine learning engineer to leading product and engineering at Abnormal Security, and now building Cogent to tackle one of cybersecurity\u2019s most persistent challenges: turning vulnerability data into real, actionable remediation.\n\nRecorded live at Black Hat 2025 in Las Vegas, this conversation dives into the founding story of Cogent, the shortcomings of legacy tools, how AI is shifting the balance between attackers and defenders, and what it takes to assemble world-class talent from companies like DeepMind, Stripe, and Tesla. Vineet also opens up about the role of investors, customer trust, and why he believes vulnerability management needs a complete rethink.\n\nWhether you\u2019re a security leader, builder, or simply curious about the future of AI in cybersecurity, this episode offers a candid look at how Cogent plans to close the gap between vulnerabilities and fixed, and why the time is now.\n\nVineet's LinkedIn - https://www.linkedin.com/in/vineetedupuganti/\n\nCogent Security - https://www.linkedin.com/company/cogentsecuri",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/e5/dc/74/e5dc7440-e39d-d992-145c-b4c995cf92c2/mza_3092412606675415817.jpg/1200x1200bf-60.jpg",
+      "favicon": "https://podcasts.apple.com/assets/favicon/favicon-180.png"
+    },
+    {
+      "id": "https://open.spotify.com/episode/0mBzCSl3R982rqlrWz3sNE",
+      "title": "Inside the first BizOps seat at Cogent Security (with Grace Hua) - Early Access | Podcast on Spotify",
+      "url": "https://open.spotify.com/episode/0mBzCSl3R982rqlrWz3sNE",
+      "text": "Inside the first BizOps seat at Cogent Security (with Grace Hua) - Early Access | Podcast on Spotify\n\nSkip to main content\n\nPremiumSupportDownload\n\nSign upLog in\n\nResize main navigation\n\nPodcast Episode\n\n# Inside the first BizOps seat at Cogent Security (with Grace Hua)\n\nVideo\u2022\n\nJun 3\n\n36 min 32 sec\n\n## Episode Description\n\nJoin me in conversation with Grace Hua, head of Biz Ops at Cogent Security. Cogent is building autonomous cyberdefense and recently announced its $42M Series A led by Greylock and BCV.\n\nGrace joined as employee ~15 and has spent the last 9 months working\n\n\u2026 Show more\n\n---\n\nThe Stacked Data Podcast\n\nIn this episode of the Stacked Data Podcast, we explore how modern data teams can drive real business impact by combining commercial thinking with a product mindset.I\u2019m joined by Ryan, a data leader at Viasat, who has built the company\u2019s only commercially-driven data roadmap across six data teams. With experience spanning analytics engineering, data product management, and team leadership, Ryan brings a practical perspective on how to bridge the gap between technical excellence and business value.We discuss what it really means to build a commercially-driven roadmap, why many data teams struggle to connect their work to outcomes, and the mindset shift required to become a truly commercial data professional.We also dive into the concept of \u201cdata as a product\u201d \u2014 what it looks like in practice, how to prioritise effectively, and how to measure success through adopt",
+      "image": "https://cdn.cookielaw.org/logos/f1b38160-cf19-4625-89df-35263d2d97c0/01917a7a-73f2-78b3-98e7-c1d45faf3ee7/84e08f74-1ac5-4262-ab75-153657f624c1/Spotify_Logo_RGB_Green.png"
+    },
+    {
+      "id": "https://podcasts.apple.com/ca/podcast/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/id1471881997?i=1000724973253",
+      "title": "The Rise of the Autonomous Blu\u2026\u2013Hacker Valley Studio \u2013 Apple\u00a0Podcasts",
+      "url": "https://podcasts.apple.com/ca/podcast/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/id1471881997?i=1000724973253",
+      "publishedDate": "2025-09-04T17:00:05.000Z",
+      "text": "The Rise of the Autonomous Blu\u2026\u2013Hacker Valley Studio \u2013 Apple Podcasts\n\n- September 4, 2025\n- 37 min\n\n# The Rise of the Autonomous Blue Team with Vineet Edupuganti\n\nHacker Valley Studio\n\nPlay\n\nWhat if defenders had their own AI-powered task force, always on, always adapting, and finally one step ahead of attackers?\n\nIn this episode, Ron welcomes Vineet Edupuganti, Founder and CEO of Cogent Security, to discuss how AI agents are rewriting the rules of cybersecurity. Vineet shares why traditional vulnerability management is fundamentally broken, why exposure management matters more than ever, and how Cogent is building an \u201cAI Task Force\u201d to give defenders the edge. From his early days in machine learning to reshaping the future of cyber defense, Vineet breaks down the urgent need for automation, context-driven insights, and explainable AI in security.\n\nImpactful Moments: 00:00 - Introduction 02:00 - Vineet\u2019s journey into AI and cyber 04:30 - Why vulnerability management is broken 06:10 - Generative AI as a defender\u2019s edge 08:20 - Why AI agents outperform brittle automation 09:45 - The first use cases for Cogent\u2019s agents 12:00 - Rethinking tier-one SOC analyst roles 13:30 - The rise of exposure management (CTEM) 17:10 - Cogent\u2019s vision for an AI task force 18:30 - Early wins and insights with Cogent 20:00 - Biggest misconceptions about AI in security 23:00 - What enterprises should demand from vendors 25:00 - Why explainability is essential in AI systems 27:00 - Startups vs incum",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/b9/80/d4/b980d499-5329-3fee-8fed-b4cab466ff63/mza_210949052098755978.png/1200x1200bf-60.jpg",
+      "favicon": "https://podcasts.apple.com/assets/favicon/favicon-32.png"
+    }
+  ],
+  "searchTime": 896.2,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 0.99,
+  "_request": {
+    "query": "\"Alexander Semien\" Cogent Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    },
+    "includeDomains": [
+      "podcasts.apple.com",
+      "open.spotify.com",
+      "podchaser.com",
+      "listennotes.com",
+      "player.fm",
+      "podbean.com",
+      "buzzsprout.com"
+    ]
+  }
+}

@@ -18,9 +18,16 @@ client's cloned nav or cloned site footer, and it refuses rather than falling
 back to one — every nav link is a way off the one page written for this
 account.
 
-Order of operations: author the page's own sections with `author_web_page`
-FIRST, then `assemble_abm_page`. A whole-page rewrite drops every pinned clone,
-so chrome pinned before it is chrome you lose.
+Order of operations: build the page's own sections FIRST — pinned clones with
+marker-bearing slot values, derived variants, and raw compositions
+(`assemble_cloned_sections` / `insert_cloned_section` / `repair_cloned_section`
+/ `compose_web_section`), with `author_web_page` reserved for the few bands
+that must carry `data-var`/`data-slot` attributes a slot value cannot express —
+then `assemble_abm_page`. (This line once said "author_web_page FIRST"; that
+wording predates the raw lane and taught a full-vocabulary page — the
+2026-09-04 Ramp run's generic-template regression. A whole-page rewrite drops
+every pinned clone, so chrome pinned before it is chrome you lose — another
+reason the largest verb comes last, if at all.)
 
 **The page is a TEMPLATE, not one account's page.** Slots hold the account
 markers — `{{account.name}}`, `{{account.domain}}`, `{{account.logo}}` — which
@@ -53,15 +60,17 @@ from cloned chrome. Pinned clones keep their own ids.
    the seller's mark, "Prepared for <account>", the target's logo when we hold
    one, and exactly one CTA. Never redraw or synthesize someone else's logo. A
    target's logo comes from exactly two places: the `{{account.logo}}` marker
-   the derive resolves, or the `fetch_logo` tool, which pulls their real
-   published assets off their own website. `fetch_logo` returns one id per slot
-   (`light`, `dark` for dark surfaces, `mark`, `wordmark`) and a missing slot
-   means the brand publishes nothing for it. If it answers `needs_review`, it
-   could not confirm the asset belongs to that company — that means ASK, not
-   guess: use the name alone and tell the user you need the file. AN EMPTY LOGO
-   SLOT IS CORRECT: a header with the seller's mark alone is a clean header, not
-   a broken one. NO nav links. Exactly one CTA, the conversion CTA. On phone:
-   both marks + CTA.
+   the derive resolves, or the `fetch_logo` tool, which returns their real
+   published assets — one per family cell (`light_lockup`, `dark_lockup`,
+   `light_mark`, `dark_mark`: `light_*` for light surfaces, `dark_*` for dark
+   surfaces, `*_lockup` the complete logo, `*_mark` the bare symbol). An empty
+   cell means the brand publishes nothing for it. `alternatives` are other real
+   assets found for them; a cell first, an alternative only when the cell does
+   not fit. If it answers `needs_review`, it could not confirm the asset belongs
+   to that company — that means ASK, not guess: use the name alone and tell the
+   user you need the file. AN EMPTY LOGO SLOT IS CORRECT: a header with the
+   seller's mark alone is a clean header, not a broken one. NO nav links.
+   Exactly one CTA, the conversion CTA. On phone: both marks + CTA.
 2. **personalized hero** — h1 names the ACCOUNT, not the market ("Acme's
    clinical notes, written for you" — never the generic tagline), one
    paragraph mapping the seller's value to the account's situation as given

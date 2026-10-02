@@ -61,4 +61,4 @@ pub use render::{
 };
 pub use runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS, PLATFORM_RUNTIME_VERSION};
 pub use theme::{compile_web_theme, WebTheme, WebThemeOptions};
-pub use validate::validate_web_doc;
+pub use validate::{route_is_valid, validate_web_doc};

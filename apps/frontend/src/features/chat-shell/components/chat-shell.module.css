@@ -266,25 +266,34 @@
 
 .composerDock {
   display: flex;
-  flex: 0 0 174px;
-  align-items: flex-start;
+  flex: 0 0 auto;
+  align-items: flex-end;
   justify-content: center;
-  min-height: 0;
+  min-height: 174px;
   padding: 24px 16px;
   background: linear-gradient(to bottom, rgb(255 255 255 / 0%), var(--chat-shell-neutral) 18px);
 }
 
 .composerDockWithTargets {
-  flex-basis: 210px;
+  min-height: 210px;
+}
+
+/* Extra controls take space from the conversation above, keeping the composer bottom anchored. */
+.composerDockWithResearchCard {
+  flex-basis: auto;
 }
 
 .shellPanelOpen .composerDock {
-  flex-basis: 174px;
+  flex-basis: auto;
   padding: 24px 16px;
 }
 
 .shellPanelOpen .composerDockWithTargets {
-  flex-basis: 210px;
+  min-height: 210px;
+}
+
+.shellPanelOpen .composerDockWithResearchCard {
+  flex-basis: auto;
 }
 
 .composerFrame {
@@ -374,6 +383,9 @@
 }
 
 .artifactWorkspace {
+  /* Replace-image Task 6: the anchored asset-library panel floats over the
+     stage, so the artifact section is its positioning context. */
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -387,6 +399,16 @@
     transform var(--clue-ds-product-motion-duration-view)
       var(--clue-ds-product-motion-easing-entry);
 }
+
+.workspaceSurface {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.workspaceSurface[hidden] { display: none; }
+.workspaceSurface > * { flex: 1; }
 
 .shellPanelOpen .artifactWorkspace {
   opacity: 1;
@@ -410,7 +432,10 @@
   flex: 1 1 auto;
   min-width: 0;
   height: 34px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
 }
 
 .galleryTabSegment {
@@ -1400,6 +1425,13 @@
   background: var(--clue-ds-color-bg-neutral-hover);
 }
 
+/* FLAGGED F5 T18: the page switcher's muted route suffix, on the same
+ * `.toolbarMenuItem` row as its page name. */
+.toolbarMenuItemHint {
+  margin-left: 6px;
+  color: var(--chat-shell-subtle);
+}
+
 .artifactHeading,
 .artifactHeaderActions,
 .deviceButton,
@@ -1748,6 +1780,34 @@
 }
 
 /*
+ * The header's device menu, made real (ported from the source dev shell's
+ * width chips — web.css `.web-preview-holder`): Tablet/Mobile pin the canvas
+ * to the engine's canonical viewport layers (768px is md:, 375px is the base
+ * layer — lumen-web LUMW0203); Desktop keeps the fluid full-bleed above.
+ * Auto side-margins center the pinned canvas when there is room and collapse
+ * to 0 (left-align + scroll) when it overflows the stage, which already
+ * scrolls (`.outputStage`). The px↔px width change animates; entering/leaving
+ * the fluid (percentage) desktop leg snaps, which is fine.
+ */
+.webCanvasTablet,
+.webCanvasMobile {
+  margin: 0 auto;
+  overflow: hidden;
+  border: 0.5px solid var(--chat-shell-subtle-border);
+  border-radius: 2px;
+  box-shadow: var(--clue-ds-shadow-card-subtle);
+  transition: width 200ms ease;
+}
+
+.webCanvasTablet {
+  width: 768px;
+}
+
+.webCanvasMobile {
+  width: 375px;
+}
+
+/*
  * AD2.10 (founder ruling, 2026-08-20): a MOUNTED ad canvas is an infinite
  * workspace, so its stage is the viewport — no centring frame, no padding
  * inset, and no scrollbars (the canvas pans itself). `.imageOutputStage` above
@@ -1764,6 +1824,7 @@
  * is the canvas's, painted by the engine — see `scene-artifact-canvas.module
  * .css`). */
 .sceneStage {
+  position: relative; /* the agent-working motion (lock + glow) pins to this box */
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -2067,6 +2128,7 @@
 }
 
 .inspectorInputControl input,
+.inspectorInputControl textarea,
 .opacityValue input {
   width: 100%;
   min-width: 0;
@@ -2076,6 +2138,20 @@
   background: transparent;
   color: inherit;
   font: inherit;
+}
+
+/* Rung A: the MULTILINE field. It wears the same chrome as every other input
+ * control (`.inspectorControl` + `.inspectorInputControl` above — border,
+ * radius, background, focus-within) and relaxes only what a single line implies:
+ * the fixed 34px height becomes the textarea's own, and the vertically centred
+ * line becomes a stretched block. No new visual vocabulary is introduced. */
+.inspectorTextAreaControl {
+  align-items: stretch;
+  height: auto;
+}
+
+.inspectorTextAreaControl textarea {
+  resize: vertical;
 }
 
 .inspectorSelectControl {
@@ -2124,6 +2200,51 @@
 .inspectorSelectPopup[data-ending-style] {
   opacity: 0;
   transform: translateY(-2px) scale(0.985);
+}
+
+/* Replace image, option A (founder ruling R-C): the two-row source chooser
+   behind the pill. Sits beside the select popup because it is the same
+   inspector-popup family — a Base UI Portal/Positioner/Popup nest with the
+   panel's own border, radius and surface. */
+.replaceImageMenu {
+  width: 236px;
+  padding: 6px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 10px;
+  background: var(--chat-shell-neutral);
+  box-shadow: 0 8px 24px rgb(0 24 62 / 12%), 0 1px 2px rgb(0 0 0 / 7%);
+  color: var(--chat-shell-content);
+  isolation: isolate;
+}
+
+.replaceImageMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.replaceImageMenuItem[data-highlighted] {
+  background: var(--chat-shell-page);
+}
+
+.replaceImageMenuIcon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+.imageReplaceCaret {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--chat-shell-subtle);
 }
 
 .inspectorSelectList {
@@ -2216,10 +2337,6 @@
   height: 16px;
   border: 0.5px solid rgb(0 24 62 / 8%);
   border-radius: 1px;
-}
-
-.inspectorInputControl input::selection {
-  background: rgb(0 245 155 / 24%);
 }
 
 .inspectorControl > span:not(.inspectorIcon),
@@ -3028,7 +3145,11 @@
 }
 
 .layerRowNested {
-  padding-left: 16px;
+  /* Layers tree (founder, 2026-09-04): indent by REAL depth. `InspectorLayerRow`
+     sets `--layer-depth` per row and `sceneLayerRows` walks any depth, but this
+     rule used to be a flat 16px, so depth 2+ rendered at the depth-1 indent and
+     the tree read as if it were capped at two levels. One step per level. */
+  padding-left: calc(var(--layer-depth) * 16px);
 }
 
 .layerRowNested .layerRowContent {
@@ -3045,8 +3166,23 @@
 .layerRowLabel {
   display: inline-flex;
   align-items: center;
+  /* Human display names (e.g. "Hero — Repaired x3 — ABM hero") are far longer
+   * than the short node ids this row was built for. The label must be allowed
+   * to SHRINK inside the fixed-height (32px) row, otherwise its text wraps to a
+   * second line that spills over the next row. */
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
   gap: 8px;
+}
+
+/* Single-line, ellipsized label text; the full name lives on the element's
+ * `title`, so a hover reveals what the ellipsis hides. */
+.layerRowLabelText {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 @keyframes inspector-enter {
@@ -3102,9 +3238,15 @@
 }
 
 @media (max-width: 760px) {
-  .shellPanelOpen {
+  .shellPanelOpen,
+  .shell.shellArtifactMaximized {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .artifactTabs { padding-left: 52px; padding-right: 12px; }
+  .galleryTab { padding-inline: 6px; }
+  .galleryTabSegment { padding-right: 0; margin-right: 0; border-right: 0; }
+  .artifactTabActions > button:first-child { display: none; }
 
   .shellPanelOpen .chatPane {
     display: none;
@@ -3142,6 +3284,111 @@
   color: var(--clue-ds-color-primitives-critical-700);
 }
 
+/* FLAGGED F5 T19: no designed slot in the dummy frontend for the page/route
+ * section. Minimal neutral treatment only, borrowed from this surface's own
+ * idioms — the message line is `.inspectorStatusError`'s exact treatment
+ * (12/16 in critical-700, no box, no icon), and the two buttons are the
+ * inspector's existing menu-item shape. Do not grow this into designed chrome
+ * without a founder/design ruling. */
+.inspectorPageMessage {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--clue-ds-color-primitives-critical-700);
+}
+
+/* Founder correction 2026-09-04: the Page section's two groups — "This page"
+ * (writes to the live page) and "New page" (what Add creates) — each under a
+ * small caption, so the two Name/Route pairs cannot be mistaken for one. */
+.inspectorPageGroup {
+  margin: 0;
+  padding-top: 6px;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--chat-shell-subtle);
+}
+
+.inspectorPageActions {
+  display: flex;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.inspectorPageButton {
+  flex: 1;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chat-shell-subtle);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.inspectorPageButton:hover:not(:disabled),
+.inspectorPageButton:focus-visible {
+  background: var(--clue-ds-color-bg-neutral-hover);
+  color: var(--chat-shell-content);
+}
+
+.inspectorPageButton:focus-visible {
+  outline: 2px solid rgb(27 102 255 / 45%);
+  outline-offset: -2px;
+}
+
+.inspectorPageButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Slice 3 (R-A6): the "Cloned text edits" rows. No designed slot either — the
+ * same minimal, borrowed treatment the Page section documents above: the row is
+ * the inspector's ordinary field control line, and the Clear button IS
+ * `.inspectorPageButton`, not a second button shape. The founder reviews the
+ * visual separately; do not grow this into designed chrome first. */
+.inspectorCloneEdits {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The row's LABEL is the structural path, verbatim — the client holds no HTML,
+ * so there is no honest human name for the element and a mono face is the one
+ * thing that says "this is an address, not a sentence". */
+.inspectorCloneEdits .inspectorFieldLabel {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  overflow-wrap: anywhere;
+}
+
+.inspectorCloneEditRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.inspectorCloneEditText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--chat-shell-content);
+}
+
+.inspectorCloneEditRow .inspectorPageButton {
+  flex: 0 0 auto;
+}
+
 /* W3.4: the action menu's Undo/Redo disable at empty engine stacks (native
  * button disabled; the dummy shipped no disabled treatment for menu items). */
 .artifactMenuItem:disabled {
@@ -3149,3 +3396,86 @@
   cursor: default;
   pointer-events: none;
 }
+
+/* Replace-image Task 6 (founder-approved option 2): the asset-library picker —
+ * a floating panel anchored beside the inspector, over the artifact stage. */
+.assetLibraryPanel {
+  /* Above BOTH of the scene canvas's absolute layers (its diagnostics
+     `.bannerLayer` is z-index 40, its sibling layer 41) — under them the banner
+     covered this panel's toolbar and first tile rows. The category chip's popup
+     is portalled and carries its own 1000, so nothing here caps it. */
+  position: absolute; left: 12px; top: 64px; z-index: 60;
+  width: 300px; max-height: calc(100% - 80px);
+  display: flex; flex-direction: column;
+  border: 0.5px solid var(--chat-shell-border); border-radius: 12px;
+  background: var(--chat-shell-neutral);
+  box-shadow: 0 12px 32px rgb(0 24 62 / 14%);
+  color: var(--chat-shell-content);
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family); font-size: 13px;
+}
+.assetLibraryHeader { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 0.5px solid var(--chat-shell-subtle-border); font-weight: 500; }
+.assetLibraryClose { border: 0; background: none; color: var(--chat-shell-subtle); cursor: pointer; font: inherit; }
+.assetLibraryTools { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 0.5px solid var(--chat-shell-subtle-border); }
+.assetLibrarySearch { flex: 1; min-width: 0; height: 30px; padding: 0 10px; border: 0.5px solid var(--chat-shell-border); border-radius: 8px; background: var(--chat-shell-neutral); font: inherit; }
+.assetLibraryCategory { flex: 0 0 148px; min-width: 0; }
+.assetLibraryBody { overflow-y: auto; padding-bottom: 8px; }
+.assetLibrarySection { padding: 10px 14px 0; font-size: 11px; color: var(--chat-shell-subtle); text-transform: uppercase; letter-spacing: 0.02em; }
+.assetLibraryGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px 14px 6px; }
+.assetLibraryTile { position: relative; aspect-ratio: 1; overflow: hidden; border: 0.5px solid var(--chat-shell-subtle-border); border-radius: 8px; background: var(--chat-shell-canvas); padding: 0; cursor: pointer; }
+.assetLibraryTile:focus-visible, .assetLibraryTileInUse { outline: 2px solid #4c8dff; outline-offset: 1px; }
+.assetLibraryTileName { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 6px 4px; font-size: 10px; color: #fff; background: linear-gradient(transparent, rgb(0 0 0 / 45%)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.assetLibraryBadge, .assetLibraryBadgeDark { position: absolute; top: 6px; z-index: 1; padding: 2px 5px; border-radius: 4px; font-size: 9px; font-weight: 500; }
+.assetLibraryBadge { left: 6px; background: var(--chat-shell-neutral); color: #44483F; border: 0.5px solid var(--chat-shell-border); }
+.assetLibraryBadgeDark { right: 6px; background: #44483F; color: #fff; }
+.assetLibraryEmpty { margin: 0; padding: 8px 14px 4px; color: var(--chat-shell-subtle); }
+.assetLibraryError { display: flex; gap: 8px; align-items: center; padding: 8px 14px; color: #b42318; font-size: 12px; }
+.assetLibraryRetry { border: 0.5px solid var(--chat-shell-border); border-radius: 6px; background: var(--chat-shell-neutral); font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; }
+.assetLibraryFooter { display: flex; padding: 10px 14px; border-top: 0.5px solid var(--chat-shell-subtle-border); }
+.assetLibraryUpload { height: 32px; padding: 0 12px; border: 0.5px solid var(--chat-shell-border); border-radius: 8px; background: var(--chat-shell-neutral); font: inherit; cursor: pointer; }
+
+/* The Target accounts tab's live-run spinner: the chat's own rotating loader glyph, at the
+ * shell's own timing. CSS modules cannot share a class across files, so `.rotatingLoader`
+ * (project-flow.module.css) is matched here rather than imported — 900ms, centred origin, and
+ * stopped by the reduced-motion block below. */
+.galleryTabSpinner {
+  margin-left: 4px;
+  animation: galleryTabSpin 900ms linear infinite;
+  transform-origin: center;
+}
+
+@keyframes galleryTabSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* The spinner stops for a user who asked motion to stop, exactly as `.rotatingLoader` does in
+ * its own file's reduced-motion block. This block sits AFTER the rule it cancels rather than in
+ * either of the file's earlier reduced-motion blocks (:3086, :3132): a media query adds no
+ * specificity, so an `animation: none` written above `.galleryTabSpinner` would simply lose to
+ * it on source order and stop nothing. */
+@media (prefers-reduced-motion: reduce) {
+  .galleryTabSpinner {
+    animation: none;
+  }
+}
+
+.queueControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 4px 10px;
+  color: var(--chat-shell-subtle);
+  font-size: 12px;
+}
+
+.queueControls button {
+  border: 1px solid var(--chat-shell-border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.queueControls button:disabled { opacity: 0.45; cursor: default; }

@@ -478,7 +478,7 @@ fn scene_brand_governance_flags_raw_layout_typography_and_hints() {
             && diagnostic
                 .hint
                 .as_deref()
-                .is_some_and(|hint| hint.contains("style($type.body)"))
+                .is_some_and(|hint| hint.contains("equivalent") && !hint.contains("style($type.body)"))
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "LUMB0806"
@@ -502,7 +502,7 @@ fn scene_brand_governance_flags_raw_layout_typography_and_hints() {
             && diagnostic
                 .hint
                 .as_deref()
-                .is_some_and(|hint| hint.contains("g($space.stack.default)"))
+                .is_some_and(|hint| hint.contains("resolved geometry") && !hint.contains("$space."))
     }));
     assert!(diagnostics.iter().any(|diagnostic| {
         diagnostic.code == "LUMB0806"
@@ -510,8 +510,91 @@ fn scene_brand_governance_flags_raw_layout_typography_and_hints() {
             && diagnostic
                 .hint
                 .as_deref()
-                .is_some_and(|hint| hint.contains("pad($space.card.padding)"))
+                .is_some_and(|hint| hint.contains("resolved geometry") && !hint.contains("$space."))
     }));
+}
+
+#[test]
+fn unbound_geometry_and_type_governance_preserves_policy_without_prescribing_replacements() {
+    for strictness in [BrandGovernanceStrictness::Advisory, BrandGovernanceStrictness::Strict] {
+        for empty in [false, true] {
+            let mut kit = platform_default_brand_kit().unwrap();
+            kit.tokens.spacing.clear();
+            kit.tokens.typography.clear();
+            if !empty {
+                kit.tokens.spacing.insert("bespoke.margin".to_owned(), NumberToken {
+                    value: ModeValue {
+                        default: NumberTokenValue::Number { value: 19.0, unit: NumberUnit::Px },
+                        modes: BTreeMap::new(),
+                    },
+                    role: None, description: None, provenance: None,
+                });
+            }
+            // Resolution requires a structurally valid kit. Keep its unrelated
+            // component references while testing the same bespoke/missing token.
+            let mut resolution_kit = platform_default_brand_kit().unwrap();
+            resolution_kit.tokens.spacing.extend(kit.tokens.spacing.clone());
+            let mut scene = Scene::new(DocumentId::from("doc_unbound"), "Intentional literals");
+            scene.meta.brand_kit = Some(resolution_kit.brand_ref());
+            let mut node = Node::new(NodeId::from("literal"), NodeKind::Text(TextNode {
+                font_family: "Inter".to_owned(), font_size: 37.0,
+                line_height: 1.4, letter_spacing: 0.7,
+                ..TextNode::default()
+            }));
+            node.layout = Some(lumen_core::AutoLayoutProps {
+                gap: 13.0, padding: [71.0, 62.0, 53.0, 44.0],
+                ..lumen_core::AutoLayoutProps::default()
+            });
+            scene.nodes.insert(node.id.clone(), node);
+            let before = scene.clone();
+            let diagnostics = validate_scene_brand_governance(&scene, &kit, strictness.clone());
+            let relevant: Vec<_> = diagnostics.iter().filter(|d| {
+                d.code == "LUMB0805" || (d.code == "LUMB0806" && d.message.contains("layout"))
+            }).collect();
+            assert_eq!(relevant.len(), 3);
+            for diagnostic in relevant {
+                assert_eq!(diagnostic.severity, if strictness == BrandGovernanceStrictness::Strict {
+                    DiagnosticSeverity::Error
+                } else { DiagnosticSeverity::Warning });
+                assert_eq!(diagnostic.subject, Some(lumen_core::DiagnosticSubject::Node(NodeId::from("literal"))));
+                assert!(diagnostic.message.contains("binding"));
+                let hint = diagnostic.hint.as_deref().unwrap();
+                assert!(!hint.contains('$'), "No arbitrary or invented replacement: {hint}");
+                assert!(hint.contains("advisory") && hint.contains("strict"));
+                if diagnostic.code == "LUMB0805" {
+                    assert!(hint.contains("equivalent") && hint.contains("tracking"));
+                } else {
+                    assert!(hint.contains("resolved geometry"));
+                }
+            }
+            assert_eq!(scene, before);
+            let resolved = resolve_scene_tokens(&scene, &resolution_kit, &TokenResolutionOptions::default());
+            assert!(!resolved.diagnostics.iter().any(|d| d.severity == DiagnosticSeverity::Error), "{:?}", resolved.diagnostics);
+            let literal_layout = resolved.scene.nodes[&NodeId::from("literal")].layout.as_ref().unwrap();
+            assert_eq!(literal_layout.gap, 13.0);
+            assert_eq!(literal_layout.padding, [71.0, 62.0, 53.0, 44.0]);
+            let node = scene.nodes.get_mut(&NodeId::from("literal")).unwrap();
+            let layout = node.layout.as_mut().unwrap();
+            layout.gap_token = Some("bespoke.margin".to_owned());
+            layout.padding_token = Some("bespoke.margin".to_owned());
+            if let NodeKind::Text(text) = &mut node.kind {
+                text.style_token = Some("authored.style".to_owned());
+            }
+            // Bindings suppress only missing-binding governance. Their validity
+            // and numeric precedence still belong to canonical token resolution.
+            let bound = validate_scene_brand_governance(&scene, &kit, strictness.clone());
+            assert!(!bound.iter().any(|d| d.code == "LUMB0805" || d.code == "LUMB0806"));
+            let resolved = resolve_scene_tokens(&scene, &resolution_kit, &TokenResolutionOptions::default());
+            let layout = resolved.scene.nodes[&NodeId::from("literal")].layout.as_ref().unwrap();
+            if empty {
+                assert_eq!(layout.padding, [71.0, 62.0, 53.0, 44.0]);
+                assert!(resolved.diagnostics.iter().any(|d| d.code == "LUMB0301"));
+            } else {
+                assert_eq!(layout.gap, 19.0);
+                assert_eq!(layout.padding, [19.0; 4]);
+            }
+        }
+    }
 }
 
 #[test]
@@ -1272,6 +1355,7 @@ fn scene_brand_governance_uses_computed_logo_size_when_available() {
             width: 40.0,
             height: 80.0,
         },
+        text_lines: Vec::new(),
     });
 
     let diagnostics =

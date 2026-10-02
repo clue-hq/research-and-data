@@ -211,9 +211,9 @@ it("R3: an OFFERED label names its token; anything else names none", () => {
   // have produced them — and a label the picker never rendered is not a write.
   assert.equal(scenePaletteToken(palette, "palette.primary.600"), null);
   assert.equal(scenePaletteToken(palette, "accent.primary"), null);
-  // The dummy's own fixture palette (`INSPECTOR_THEME_COLORS`), which
-  // `resolveInspectorThemeColors` falls back to when no kit is attached. Its
-  // labels are not this kit's tokens and must never reach the document.
+  // Labels the retired fixture palette used to offer (`resolveInspectorThemeColors`
+  // now returns nothing without a kit). They are not this kit's tokens and
+  // must never reach the document.
   for (const label of ["Primary", "Secondary", "Tertiary", "Dark", "Light", "Subtle"]) {
     assert.equal(scenePaletteToken(palette, label), null, label);
   }
@@ -227,7 +227,7 @@ it("§1.6: `normalizeHex` is the ported upstream normalization, minus its silent
   assert.equal(normalizeHex("#FF00AA"), "#ff00aa");
   assert.equal(normalizeHex("  #ff00aa  "), "#ff00aa");
   assert.equal(normalizeHex("#FF00AA80"), "#ff00aa");
-  for (const value of ["", "#FFF", "rebeccapurple", "00F59B", "none"]) {
+  for (const value of ["", "#FFF", "rebeccapurple", "123456", "none"]) {
     assert.equal(normalizeHex(value), null, value);
   }
 });

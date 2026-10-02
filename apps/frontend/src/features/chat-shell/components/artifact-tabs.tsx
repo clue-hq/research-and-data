@@ -1,10 +1,12 @@
 "use client";
 
+import type { useProjectDocumentTabs } from "@/features/projects/hooks/use-project-document-tabs";
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
 import type { ChatShellOpenArtifact, ChatShellSurface } from "../model/chat-shell";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
 import { ChatShellIcon } from "./chat-shell-icon";
+import { ProjectIcon } from "@/features/projects/components/project-icon";
 import styles from "./chat-shell.module.css";
 
 function ArtifactTab({
@@ -106,10 +108,13 @@ export function ArtifactTabs({
   onActivateArtifact,
   onCloseArtifact,
   onOpenGallery,
+  onOpenTargetAccounts,
+  documentTabs,
   onRenameArtifact,
   onToggleMaximized,
   onTogglePanel,
   surface,
+  targetAccountsBusy,
 }: {
   activeArtifactId: string | null;
   artifactMaximized: boolean;
@@ -118,11 +123,20 @@ export function ArtifactTabs({
   onActivateArtifact: (artifactId: string) => void;
   onCloseArtifact: (artifactId: string) => void;
   onOpenGallery?: () => void;
+  onOpenTargetAccounts?: () => void;
+  documentTabs?: ReturnType<typeof useProjectDocumentTabs>;
   onRenameArtifact: (artifactId: string, title: string) => void;
   onToggleMaximized: () => void;
   onTogglePanel: () => void;
   surface: ChatShellSurface;
+  /** True while the project's discovery run is live: the Target accounts label spins. */
+  targetAccountsBusy?: boolean;
 }) {
+  const tabListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    tabListRef.current?.querySelector('[role="tab"][aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [surface, documentTabs?.selectedPath]);
+
   const handleTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
 
@@ -150,6 +164,7 @@ export function ArtifactTabs({
         aria-label="Artifact tabs"
         className={styles.artifactTabList}
         onKeyDown={handleTabListKeyDown}
+        ref={tabListRef}
         role="tablist"
       >
         {galleryTabVisible ? (
@@ -165,9 +180,35 @@ export function ArtifactTabs({
               <ChatShellIcon name="layout-grid" size={12} />
               <span>Gallery</span>
             </button>
+            {onOpenTargetAccounts ? (
+              <button
+                aria-selected={surface === "target-accounts"}
+                className={`${styles.galleryTab} ${surface === "target-accounts" ? styles.galleryTabActive : ""}`}
+                onClick={onOpenTargetAccounts}
+                role="tab"
+                tabIndex={surface === "target-accounts" ? 0 : -1}
+                type="button"
+              >
+                <ProjectIcon name="target-accounts" size={12} />
+                <span>Target accounts</span>
+                {targetAccountsBusy ? (
+                  <ProjectIcon className={styles.galleryTabSpinner} name="loader" size={12} />
+                ) : null}
+              </button>
+            ) : null}
+
           </div>
         ) : null}
         <div className={styles.artifactTabScroller}>
+          {documentTabs?.paths.map((path) => {
+            const document = documentTabs.list.documents.find((item) => item.path === path);
+            if (!document) return null;
+            const active = surface === "plan" && documentTabs.selectedPath === path;
+            return <div key={path} role="presentation" className={`${styles.artifactTabUnit} ${active ? styles.artifactTabUnitActive : ""}`}>
+              <button role="tab" type="button" aria-selected={active} tabIndex={active ? 0 : -1} className={styles.artifactTabMain} title={document.title} onClick={() => documentTabs.openPath(path)}><ProjectIcon name="file-text" size={12} /><span>{document.title}</span></button>
+              <button type="button" className={styles.artifactTabClose} aria-label={`Close ${document.title}`} onClick={() => documentTabs.close(path)}><ChatShellIcon name="x" size={12} /></button>
+            </div>;
+          })}
           {artifacts.map((artifact) => (
             <ArtifactTab
               active={surface === "artifact" && activeArtifactId === artifact.id}

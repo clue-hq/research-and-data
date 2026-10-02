@@ -1,0 +1,78 @@
+3. dossier.md — the person dossier skill
+
+3.1 The ladder, with what each rung is for
+Free-first, then the sweep, then one deep call, then the two narrow follow-ups. Costs from the ten-person
+PoC run (PERSON-DEPTH-REPORT.md §4–5).
+
+Read what the account job left — the committee claim, confirmed_by, the account’s own claims
+(the “already established” block, compacted per the R2 follow-ups). The person’s LinkedIn page via Exa
+contents (indexed text; LinkedIn-native video is never fetched).
+lookup_person — the AI Ark record and email export (§1.2). Deterministic claims land in code.
+The trimmed sweep — six angles, unrestricted queries, name-quoted and context-rich. From §5a, in
+the order they earned their keep: (A12) prior employer + long-form voice — the best angle, run first;
+(A1) "name" podcast interview guest; (A4) authored articles / bylines; (A6) university / alumni —
+delivered alma mater 10/10, and Tyler Chonoles’s whole life-outside-work profile came from a college
+golf roster; (A10) volunteer / board / community, down-weighted; (A11) hometown / local press,
+down-weighted. Cut (zero unique URLs in ten people): domain-restricted podcast directories, video
+sites, Substack/Medium, X/Bluesky/Reddit; awards lists. includeDomains is a trap: it forces a
+same-name stranger. Personal site / GitHub folds into A12.
+One deep call (research_deep, report mode) with the charter in §3.2 and the known sources and
+media listed first (“ALREADY-KNOWN SOURCES — read these FIRST”). Charter at the front of the query:
+the PoC saw a silent truncation when it sat behind a long preamble. The thin-response guard already
+exists (results < 12 or cost < $0.018 → retry once).
+Media, where it exists (on by default). Every YouTube URL through Exa contents first (the ASR
+transcript for ~$0.001–0.004, no key); Gemini for MP3 audio and timestamps; verify who speaks
+before quoting (speaker_unverified already exists); LinkedIn-native and X-native video never fetched.
+read_media_feeds(alternate_urls=[…]) from the R2 follow-ups.
+Structuring — one broad structure_material(subject_kind="person") against the contact catalog,
+then one narrow unique_insight call (“the ONE thing a generic enrichment tool would never
+surface”) — $0.0018 each in the PoC, hit rate 3/10 → 10/10; model conservatism, not missing data.
+Never let one broad extraction decide whether something exists.
+Finalize — the person receipt: depth summary, the not-found list with channels checked, the
+same-name log, three openers.
+3.2 The person charter — ten sections (the two PoC charters merged)
+step8 (professional, eight sections) and p3_deep (personal, eight sections) overlap on identity,
+career, education, writing/talks, how they buy, hooks and openers; they differ in that step8 has what
+they own today and p3_deep has life outside work, voice, unique insight, what we could not
+find and the same-name log. Merged:
+
+Identity confirmation and same-name log — the primary sources tying this exact person to this
+company and title, with dates; every same-name person encountered, the URL, and how they were ruled
+out. (Both charters; the log is what proves the lock held.)
+Career and what they own today — every role with organisation, title, dates and responsibility;
+anything to do with outbound, demand generation, ABM, target-list building, sales development or GTM
+tooling highlighted; the current role’s scope, who reports to them, which open requisitions report
+into them, what they have said publicly about what they are building.
+Background — hometown; alma mater(s) with degree, subject, years, societies, teams, awards; first
+jobs and how they got into the field, in their own words; military / competitive-sport / arts
+background; languages; high school when self-published.
+Public writing, talks and podcasts — every post, article, byline, webinar, panel or podcast
+appearance with title, venue, date, URL; the most substantive one quoted.
+Life outside work — only as they state it themselves — hobbies and sports they posted about;
+pets; self-announced milestones; causes, volunteering, boards, mentoring, alumni service; side
+projects, newsletters, communities; books, podcasts, tools and people they publicly recommend.
+Voice — three to five verbatim quotes from long-form material — podcasts, webinars, talks,
+interviews, AMAs, authored articles; each with source, URL, date, and timestamp for audio/video;
+quotes that reveal how they think, not company boilerplate; if the only long-form material is a
+company press quote, say so.
+Professional identity and how they buy — what they personally own; what they are visibly proud
+of (quoted); stated pet peeves and things they say are broken; how they evaluate and buy software;
+tools publicly praised or criticised; methodologies; stated metrics; communication style (quoted).
+Unique insight — the one thing a generic enrichment tool would never surface, one paragraph,
+quote-backed; else “NOT FOUND — thin public footprint” naming the channels checked.
+Three grounded openers — each: the one-sentence opener, the specific hook, the verbatim quote
+behind it, the URL. No generic openers, no flattery, nothing tagged origin.
+What we could not find — the categories that came back empty and the source types checked.
+The compliance charter and sensitivity floor sit in the deep call’s system prompt (as LOCK_TEMPLATE
+
+EVIDENCE_RULES do for the account), not in the charter body.
+3.3 The narrow follow-up, and structuring
+unique_insight(subject) — one structuring-client call with the person’s material and the single
+question. It writes to a registered field of its own, proposed as contact.facet.unique_insight
+(string, use_class_hint=personal-public-non-sensitive, TTL 75d): a new pack row shipped with its
+data migration (the R2-close lesson: a pack-row change always ships with its migration). See §7
+question 2 for the alternative of folding it into self_summary.
+voice_quote carries media_url and timestamp as first-class sub-fields (PoC §5d); the registered
+object already has the shape — the structuring prompt must ask for the timestamp explicitly.
+hooks and openers stay list fields; every opener names its hook and the hook names its quote — the
+structuring pass writes them together, and an opener whose hook has no quote is dropped, never written.

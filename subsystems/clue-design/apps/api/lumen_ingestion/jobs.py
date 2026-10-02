@@ -82,37 +82,10 @@ class IngestionJobStore:
         :func:`~clue_design.ingestion.read_staged_request` and re-reads the same bytes.
         """
 
-        # Lazy, exactly as ``design_store.create_run_and_offer`` is lazy, and for the same
-        # reason: ``import clue_fleet`` reaches clue_research.durable -> langgraph -> langsmith ->
-        # httpx, and ``lumen_ingestion.describe`` has a standing guard test that importing it
-        # drags in neither PIL nor httpx. Only this one method needs the queue.
-        from clue_core import ProjectRunId
-        from clue_fleet.enums import FleetTaskKind
-        from clue_fleet.queue import enqueue_task
-
-        async def _create_and_offer(conn: Any) -> JsonObject:
-            job = await design_ingestion.create_job(
-                conn,
-                workspace_id=self.workspace_id,
-                kind=kind,
-                request=request,
-                job_id=job_id,
-                work_id=work_id,
-            )
-            await enqueue_task(
-                conn,
-                kind=FleetTaskKind.DESIGN_JOB,
-                project_run_id=ProjectRunId(work_id),
-                dedup_key=str(work_id),
-                payload=envelope,
-                priority=priority,
-                # The work id is freshly minted per dispatch, so there is no terminal row to
-                # reopen; the reaper's re-offer is the one path that needs that flag.
-                reopen_terminal=False,
-            )
-            return job
-
-        return self._bridge._run(_create_and_offer)
+        return self._bridge._run(lambda conn: create_and_offer(
+            conn, workspace_id=self.workspace_id, kind=kind, request=request,
+            job_id=job_id, work_id=work_id, envelope=envelope, priority=priority,
+        ))
 
     def update_request(self, job_id: str, request: JsonObject) -> JsonObject:
         """Replace the stored request_json for a job (e.g. to record the
@@ -141,11 +114,13 @@ class IngestionJobStore:
             )
         )
 
-    def list_recent(self, limit: int = 50) -> list[JsonObject]:
-        """Most-recent jobs first (by created_at, then job_id as a tiebreak)."""
+    def list_recent(
+        self, limit: int = 50, *, kinds: Optional[tuple[str, ...]] = None
+    ) -> list[JsonObject]:
+        """Most-recent jobs first (by created_at, then job_id as a tiebreak); ``kinds`` narrows."""
         return self._bridge._run(
             lambda conn: design_ingestion.list_recent(
-                conn, workspace_id=self.workspace_id, limit=limit
+                conn, workspace_id=self.workspace_id, limit=limit, kinds=kinds
             )
         )
 
@@ -174,8 +149,8 @@ class IngestionJobStore:
     def complete(
         self,
         job_id: str,
-        brand_kit_id: str,
-        version: int,
+        brand_kit_id: str | None,
+        version: int | None,
         evidence_json: Optional[str],
     ) -> JsonObject:
         return self._bridge._run(
@@ -211,7 +186,9 @@ class StageReporter(Protocol):
 def run_ingestion_job(
     store: IngestionJobStore,
     job_id: str,
-    work: Callable[[StageReporter], "tuple[str, int, Optional[str]]"],
+    work: Callable[[StageReporter], "tuple[Optional[str], Optional[int], Optional[str]]"],
+    *,
+    on_complete: Optional[Callable[[], Any]] = None,
 ) -> None:
     """Drive a job to a terminal state. Never raises.
 
@@ -227,6 +204,10 @@ def run_ingestion_job(
     and stop, never to retry and never to stamp ``failed`` over the live attempt's work. So a
     fence is caught, logged loudly (a zombie is visible in the logs) and returned from — the job
     is terminalized by whoever actually owns it.
+
+    ``on_complete`` runs once the job has been durably marked ``succeeded`` by THIS attempt, and
+    never after a failure or a fence. It is follow-on work (the ad-assets card offer), so its own
+    failure is logged and swallowed: the job it follows has already finished.
     """
     if not _fenced_guard(store.set_running, job_id, job_id=job_id, write="set_running"):
         return
@@ -243,14 +224,14 @@ def run_ingestion_job(
             store.fail,
             job_id,
             {
-                "code": "LUMI0401",
+                "code": _failure_code(error),
                 "message": f"{type(error).__name__}: {error}",
             },
             job_id=job_id,
             write="fail",
         )
         return
-    _fenced_guard(
+    completed = _fenced_guard(
         store.complete,
         job_id,
         brand_kit_id,
@@ -259,6 +240,27 @@ def run_ingestion_job(
         job_id=job_id,
         write="complete",
     )
+    if completed and on_complete is not None:
+        try:
+            on_complete()
+        except Exception:  # noqa: BLE001 - follow-on work must never touch the finished job
+            logger.exception("ingestion_job.on_complete_failed", job_id=job_id)
+
+
+def _failure_code(error: BaseException) -> str:
+    """The job's terminal failure code — ``LUMI0401`` unless a provider refused to SELL.
+
+    Lane 3 slice 5: an OpenRouter ``402``/out-of-credit latches the provider and raises
+    ``ProviderHalted`` out of the ingestion model clients (they swallow every other failure and
+    fall back). That is not "this stage did not work", it is "this deployment cannot buy" — the
+    only failure an operator fixes by topping up a key rather than by reading a traceback — so it
+    gets its own code, named after the provider and the reason it gave.
+    """
+    from clue_spend import ProviderHalted
+
+    if isinstance(error, ProviderHalted):
+        return f"provider_refused:{error.provider}:{error.reason_code}"
+    return "LUMI0401"
 
 
 def _fenced_guard(
@@ -278,3 +280,23 @@ def _fenced_guard(
         )
         return False
     return True
+
+
+async def create_and_offer(
+    conn: Any, *, workspace_id: str, kind: str, request: JsonObject,
+    job_id: str, work_id: UUID, envelope: JsonObject, priority: int = 0,
+) -> JsonObject:
+    """One shared transaction operation for ingestion offers and atomic asset uploads."""
+    from clue_core import ProjectRunId
+    from clue_fleet.enums import FleetTaskKind
+    from clue_fleet.queue import enqueue_task
+
+    job = await design_ingestion.create_job(
+        conn, workspace_id=workspace_id, kind=kind, request=request,
+        job_id=job_id, work_id=work_id,
+    )
+    await enqueue_task(
+        conn, kind=FleetTaskKind.DESIGN_JOB, project_run_id=ProjectRunId(work_id),
+        dedup_key=str(work_id), payload=envelope, priority=priority, reopen_terminal=False,
+    )
+    return job

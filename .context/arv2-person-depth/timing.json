@@ -1,0 +1,226 @@
+{
+  "phases": [
+    {
+      "phase": "P1_sweep",
+      "seconds": 4.09,
+      "note": "11 exa searches, 4 threads",
+      "ts": "2026-09-02T06:01:28Z"
+    },
+    {
+      "phase": "P1_sweep",
+      "seconds": 37.82,
+      "note": "110 exa searches, 4 threads",
+      "ts": "2026-09-02T06:02:20Z"
+    },
+    {
+      "phase": "P1c_targeted",
+      "seconds": 4.64,
+      "note": "1 contents batch (10 LinkedIn) + 10 targeted searches",
+      "ts": "2026-09-02T06:03:56Z"
+    },
+    {
+      "phase": "P2a_media_resolve",
+      "seconds": 15.12,
+      "note": "10 probes + 2 walled",
+      "ts": "2026-09-02T06:05:37Z"
+    },
+    {
+      "phase": "P2b_captions",
+      "seconds": 3.35,
+      "note": "youtube timedtext + podcast show-notes (no Gemini key)",
+      "ts": "2026-09-02T06:06:30Z"
+    },
+    {
+      "phase": "P2c_exa_media_pages",
+      "seconds": 2.13,
+      "note": "exa /contents over 10 media pages",
+      "ts": "2026-09-02T06:07:04Z"
+    },
+    {
+      "phase": "P2d_transcript_hunt",
+      "seconds": 3.4,
+      "note": "1 full contents pull + 2 transcript-page hunts",
+      "ts": "2026-09-02T06:07:57Z"
+    },
+    {
+      "phase": "P2e_extra_media",
+      "seconds": 2.58,
+      "note": "3 extra media pages",
+      "ts": "2026-09-02T06:08:18Z"
+    },
+    {
+      "phase": "P3_deep_vari_kaur",
+      "seconds": 31.1,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:11:26Z"
+    },
+    {
+      "phase": "P3_TOTAL",
+      "seconds": 31.11,
+      "note": "1 deep-reasoning calls, 3 threads",
+      "ts": "2026-09-02T06:11:26Z"
+    },
+    {
+      "phase": "P3_deep_nick_fisher",
+      "seconds": 17.93,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:11:56Z"
+    },
+    {
+      "phase": "P3_deep_sanaz_yashar",
+      "seconds": 29.7,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:12:09Z"
+    },
+    {
+      "phase": "P3_deep_cameron_coles",
+      "seconds": 13.25,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:12:09Z"
+    },
+    {
+      "phase": "P3_deep_alexander_semien",
+      "seconds": 33.19,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:12:14Z"
+    },
+    {
+      "phase": "P3_deep_vineet_edupuganti",
+      "seconds": 24.01,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:12:33Z"
+    },
+    {
+      "phase": "P3_deep_ana_corio",
+      "seconds": 27.55,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:12:37Z"
+    },
+    {
+      "phase": "P3_deep_tyler_chonoles",
+      "seconds": 25.57,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:12:39Z"
+    },
+    {
+      "phase": "P3_deep_alastair_paterson",
+      "seconds": 27.78,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:13:01Z"
+    },
+    {
+      "phase": "P3_deep_mandar_marathe",
+      "seconds": 25.54,
+      "note": "exa deep-reasoning, personal charter, 1 call",
+      "ts": "2026-09-02T06:13:03Z"
+    },
+    {
+      "phase": "P3_TOTAL",
+      "seconds": 84.27,
+      "note": "9 deep-reasoning calls, 3 threads",
+      "ts": "2026-09-02T06:13:03Z"
+    },
+    {
+      "phase": "P4_struct_vari_kaur",
+      "seconds": 30.07,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:14:42Z"
+    },
+    {
+      "phase": "P4_TOTAL",
+      "seconds": 30.07,
+      "note": "1 gpt-5-mini structuring calls",
+      "ts": "2026-09-02T06:14:42Z"
+    },
+    {
+      "phase": "P4_struct_vari_kaur",
+      "seconds": 31.21,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:15:34Z"
+    },
+    {
+      "phase": "P4_struct_nick_fisher",
+      "seconds": 30.36,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:16:04Z"
+    },
+    {
+      "phase": "P4_struct_sanaz_yashar",
+      "seconds": 31.97,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:16:36Z"
+    },
+    {
+      "phase": "P4_struct_alexander_semien",
+      "seconds": 24.44,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:17:01Z"
+    },
+    {
+      "phase": "P4_struct_cameron_coles",
+      "seconds": 18.48,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:17:19Z"
+    },
+    {
+      "phase": "P4_struct_vineet_edupuganti",
+      "seconds": 20.27,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:17:39Z"
+    },
+    {
+      "phase": "P4_struct_ana_corio",
+      "seconds": 21.68,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:18:01Z"
+    },
+    {
+      "phase": "P4_struct_tyler_chonoles",
+      "seconds": 17.91,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:18:19Z"
+    },
+    {
+      "phase": "P4_struct_alastair_paterson",
+      "seconds": 24.07,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:18:43Z"
+    },
+    {
+      "phase": "P4_struct_mandar_marathe",
+      "seconds": 17.27,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:19:00Z"
+    },
+    {
+      "phase": "P4_TOTAL",
+      "seconds": 237.69,
+      "note": "10 gpt-5-mini structuring calls",
+      "ts": "2026-09-02T06:19:00Z"
+    },
+    {
+      "phase": "P3_deep_cameron_coles_RETRY",
+      "seconds": 39.68,
+      "note": "retry after exa agent reported prompt truncation",
+      "ts": "2026-09-02T06:20:36Z"
+    },
+    {
+      "phase": "P4_struct_cameron_coles",
+      "seconds": 19.59,
+      "note": "gpt-5-mini, one person",
+      "ts": "2026-09-02T06:21:30Z"
+    },
+    {
+      "phase": "P4_TOTAL",
+      "seconds": 19.6,
+      "note": "1 gpt-5-mini structuring calls",
+      "ts": "2026-09-02T06:21:30Z"
+    },
+    {
+      "phase": "P4b_unique_repair",
+      "seconds": 49.38,
+      "note": "10 gpt-5-mini narrow calls",
+      "ts": "2026-09-02T06:22:19Z"
+    }
+  ]
+}

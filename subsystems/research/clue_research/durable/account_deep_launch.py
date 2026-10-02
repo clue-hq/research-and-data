@@ -21,7 +21,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
     EntityId,
-    ExtractionMethod,
     OperationId,
     ProjectPhase,
     ProjectRunId,
@@ -30,7 +29,6 @@ from clue_core import (
     ResearchDirectiveStatus,
     UtcDatetime,
 )
-from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.directives import (
     ResearchDirectiveConflict,
     ResearchDirectiveInvalid,
@@ -41,9 +39,6 @@ from clue_research.durable.enums import ProjectRunStatus
 from clue_research.durable.project_run import get_project_run
 
 _LAUNCH_NAMESPACE = UUID("ae69094d-cc02-5e63-a327-a17f0d4b51e0")
-# Stable claim-substrate key crossing the discovery-scoring -> durable launch boundary. Durable
-# may read scoring claims, but package contracts deliberately forbid importing the scoring worker.
-_TIER_FIELD = "account.scoring.tier"
 
 
 class AccountDeepLaunchError(RuntimeError):
@@ -213,27 +208,6 @@ async def preview_account_deep_launch(
                 directive_id=directive_id,
                 account_id=account_id,
             )
-            matching_tiers = []
-            for claim in await claims_for(
-                conn,
-                account_id,
-                _TIER_FIELD,
-                scope=WorkspaceScope.for_workspace(workspace_id),
-            ):
-                value = claim.value_json
-                if (
-                    isinstance(value, dict)
-                    and claim.extraction_method is ExtractionMethod.HUMAN
-                    and claim.source_tier == 1
-                    and value.get("project_run_id") == str(project_run_id)
-                    and value.get("tier") == effective.effort_policy.tier
-                    and value.get("disposition") == "selected"
-                ):
-                    matching_tiers.append(claim)
-            if len(matching_tiers) != 1:
-                raise AccountDeepLaunchInvalid(
-                    f"account {account_id} lacks one exact human-approved selected tier"
-                )
             estimate += effective.effort_policy.budget_cap_cents
             pins.append(effective.pin)
     except (ResearchDirectiveInvalid, ResearchDirectiveConflict) as exc:

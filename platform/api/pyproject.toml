@@ -12,6 +12,8 @@ dependencies = [
     "clue-db",
     "clue-obs",
     "clue-storage",
+    # lane 3 slice 5: the provider-caller seam ARV2 re-exports (it used to live in clue_api.arv2)
+    "clue-spend",
     "clue-execution",
     "clue-fleet",
     "clue-toolbelt",
@@ -20,6 +22,17 @@ dependencies = [
     # app-layer runtime
     "fastapi>=0.138.0",
     "uvicorn>=0.35.0",
+    # ARV2 (R1): the one HTTP library behind clue_api.arv2.transport.HttpxTransport —
+    # every ARV2 provider call goes over plain HTTP through the wrapper, never a vendor SDK.
+    "httpx>=0.28",
+    # Public YouTube audio extraction; EJS support matches the successful Deepgram trial.
+    "yt-dlp[default]>=2026.8.19",
+    # ARV2 onboarding (O2): YAML front matter on the knowledge documents.
+    "pyyaml>=6,<7",
+    # Custom-domain publishing S2: DNS lookups for the CNAME verification check.
+    "dnspython>=2.6,<3",
+    # Custom-domain publishing S2: multipart form parsing on the Settings → Pages uploads.
+    "python-multipart>=0.0.9,<1",
 ]
 
 [build-system]
@@ -36,6 +49,7 @@ clue-config = { workspace = true }
 clue-db = { workspace = true }
 clue-obs = { workspace = true }
 clue-storage = { workspace = true }
+clue-spend = { workspace = true }
 clue-execution = { workspace = true }
 clue-fleet = { workspace = true }
 clue-toolbelt = { workspace = true }

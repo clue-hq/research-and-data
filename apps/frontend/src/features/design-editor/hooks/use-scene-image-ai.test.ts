@@ -16,6 +16,8 @@ import type {
   Operation,
   Scene,
 } from "../engine/scene/contracts";
+import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import { sceneManualWriteGate } from "./use-scene-manual-edits";
 import {
   createSceneImageAiRunner,
   editSceneAsset,
@@ -96,14 +98,22 @@ function harness({
     savedNotice: null,
   };
   let cleared = 0;
-  /** Mutable so a case can disarm the write path mid-review. */
-  const live = { armed };
+  /** Mutable so a case can disarm the write path mid-review — or (task 4) lock
+   * it behind a running design turn. */
+  const live = { armed, locked: false };
+  const notes: string[] = [];
   const deps = {
     applyOps: (operations: Operation[], intent?: string) => {
       applied.push({ intent, operations });
       return accepted;
     },
-    canApply: () => live.armed,
+    writeGate: () =>
+      sceneManualWriteGate({
+        armed: live.armed,
+        engineReady: live.armed,
+        lockNote: AGENT_RUN_LOCK_NOTE,
+        locked: live.locked,
+      }),
     clearMessages: () => {
       cleared += 1;
       errors.length = 0;
@@ -119,6 +129,7 @@ function harness({
     },
     node,
     onError: (message: string) => errors.push(message),
+    onNote: (message: string) => notes.push(message),
     publish: (next: SceneImageAiState) => {
       state = next;
     },
@@ -132,6 +143,7 @@ function harness({
     errors,
     generations,
     live,
+    notes,
     runner: createSceneImageAiRunner(() => deps),
     state: () => state,
   };
@@ -256,6 +268,21 @@ test("generate: a write path that is NOT ARMED refuses before the spend", async 
   assert.equal(state.generations.length, 0, "nothing is minted when nothing can land");
   assert.equal(state.applied.length, 0);
   assert.deepEqual(state.errors, []);
+});
+
+test("task 4 (I3): generate under the agent-run lock spends nothing and SAYS why", async () => {
+  // Same non-spend as the not-armed case above, and the opposite silence: this
+  // refusal has words, and dropping them (the `canApply(): boolean` seam) left
+  // a live-looking Generate button whose click did nothing at all.
+  const state = harness();
+  state.live.locked = true;
+
+  await state.runner.generate("a hero image");
+
+  assert.equal(state.generations.length, 0, "nothing is minted while the agent works");
+  assert.equal(state.applied.length, 0);
+  assert.deepEqual(state.notes, [AGENT_RUN_LOCK_NOTE]);
+  assert.deepEqual(state.errors, [], "a locked editor is a state, not a failure");
 });
 
 test("generate: an empty or whitespace-only prompt spends nothing", async () => {

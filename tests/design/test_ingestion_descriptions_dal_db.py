@@ -203,6 +203,32 @@ def test_list_recent_orders_newest_first_and_honours_the_limit(
     run_async(_check())
 
 
+def test_list_recent_can_be_narrowed_to_named_kinds(require_design_db: None) -> None:
+    """An ad harvest is an ingestion job but builds no kit, so the kit-side readers ask by kind."""
+
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            website = await design_ingestion.create_job(
+                conn, workspace_id=ws, kind="website", request={"url": "https://x.example"}
+            )
+            ad = await design_ingestion.create_job(
+                conn, workspace_id=ws, kind="ad_assets", request={"phase": "harvest"}
+            )
+            kit_side = await design_ingestion.list_recent(
+                conn, workspace_id=ws, kinds=("website", "pdf", "asset_upload")
+            )
+            assert [row["job_id"] for row in kit_side] == [website["job_id"]]
+            ads = await design_ingestion.list_recent(conn, workspace_id=ws, kinds=("ad_assets",))
+            assert [row["job_id"] for row in ads] == [ad["job_id"]]
+            # No filter is every kind, exactly as before.
+            everything = await design_ingestion.list_recent(conn, workspace_id=ws)
+            assert {row["job_id"] for row in everything} == {website["job_id"], ad["job_id"]}
+            await txn.rollback()
+
+    run_async(_check())
+
+
 def test_require_job_is_fail_closed_across_workspaces(require_design_db: None) -> None:
     async def _check() -> None:
         async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:

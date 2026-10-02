@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseKnowledgeMarkdown } from "./brand-context";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   BRAND_BRIEF_TOKEN_BUDGET,
   BrandBriefSchema,
@@ -143,18 +146,13 @@ test("a band with no token says so rather than dropping out of the rhythm", () =
 });
 
 test("every band is a list item the panel can render", () => {
-  // The panel's markdown grammar knows `- ` and nothing else; a `1.` line folds
-  // the whole sequence into one run-on paragraph (caught in the browser walk).
   const { markdown } = renderBrandBrief(BRIEF, META);
   const rhythm = markdown.slice(
     markdown.indexOf("## Background rhythm"),
     markdown.indexOf("## Typographic posture"),
   );
-  const bands = parseKnowledgeMarkdown(rhythm).filter(
-    (block) => block.type === "list",
-  );
-  assert.equal(bands.length, 1);
-  assert.equal(bands[0].items?.length, 2);
+  const html = renderToStaticMarkup(createElement(Markdown, { remarkPlugins: [remarkGfm] }, rhythm));
+  assert.equal((html.match(/<li>/g) ?? []).length, 2);
 });
 
 test("a quiet brand's chromatic moment reads as a rule, not as an absence", () => {
@@ -174,10 +172,10 @@ test("a quiet brand's chromatic moment reads as a rule, not as an absence", () =
 
 test("the projection parses as the knowledge panel's markdown", () => {
   const { markdown } = renderBrandBrief(BRIEF, META);
-  const blocks = parseKnowledgeMarkdown(markdown);
-  assert.ok(blocks.some((block) => block.type === "heading" && block.depth === 1));
-  assert.ok(blocks.some((block) => block.type === "list"));
-  assert.ok(blocks.length > 10);
+  const html = renderToStaticMarkup(createElement(Markdown, { remarkPlugins: [remarkGfm] }, markdown));
+  assert.match(html, /<h1>Design\.md<\/h1>/);
+  assert.match(html, /<ul>/);
+  assert.match(html, /<strong>/);
 });
 
 test("the render is capped, and a truncated render says so", () => {

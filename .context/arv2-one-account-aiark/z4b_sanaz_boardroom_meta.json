@@ -1,0 +1,25 @@
+{
+  "mp3": "https://anchor.fm/s/f695d6d8/podcast/play/106390290/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2025-7-9%2F405396769-44100-2-7287bb9271f44.mp3",
+  "model": "gemini-3.5-flash-lite",
+  "duration_s": 2569,
+  "usageMetadata": {
+    "promptTokenCount": 64586,
+    "candidatesTokenCount": 12860,
+    "totalTokenCount": 77446,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 343
+      },
+      {
+        "modality": "AUDIO",
+        "tokenCount": 64243
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "cost_usd": 0.024451,
+  "elapsed_s": 44.11,
+  "chars": 44409,
+  "finishReason": "STOP"
+}

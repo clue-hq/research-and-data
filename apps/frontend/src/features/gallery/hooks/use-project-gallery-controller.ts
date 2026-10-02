@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ProjectDocument } from "@/features/projects/model/project-documents";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import {
-  countActiveGalleryFilters,
+  countActiveGalleryFilters, documentGalleryCards, galleryTypeOptions,
   DEFAULT_GALLERY_FILTERS,
   filterGalleryArtifacts,
   groupGalleryArtifacts,
@@ -17,7 +18,9 @@ import {
   type GallerySort,
 } from "../model/project-gallery";
 
-export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
+const NO_DOCUMENTS: ProjectDocument[] = [];
+
+export function useProjectGalleryController(artifacts: ProjectArtifact[], documents = NO_DOCUMENTS) {
   const [layout, setLayout] = useState<GalleryLayout>("grid");
   const [groupBy, setGroupBy] = useState<GalleryGroupBy>("none");
   const [sort, setSort] = useState<GallerySort>("last-viewed");
@@ -26,8 +29,8 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
   const [openMenu, setOpenMenu] = useState<GalleryMenu>(null);
 
   const normalizedArtifacts = useMemo(
-    () => artifacts.map(normalizeGalleryArtifact),
-    [artifacts],
+    () => [...artifacts.map(normalizeGalleryArtifact), ...documentGalleryCards(documents)],
+    [artifacts, documents],
   );
   const accounts = useMemo(() => {
     // Unattributed artifacts contribute no filter option — only real accounts
@@ -35,6 +38,16 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
     const index = new Map(
       normalizedArtifacts.flatMap((artifact) =>
         artifact.account ? [[artifact.account.id, artifact.account] as const] : [],
+      ),
+    );
+    return [...index.values()];
+  }, [normalizedArtifacts]);
+  // Only the library's artifacts carry a project, so a project gallery's
+  // controller offers no project options at all.
+  const projects = useMemo(() => {
+    const index = new Map(
+      normalizedArtifacts.flatMap((artifact) =>
+        artifact.project ? [[artifact.project.id, artifact.project] as const] : [],
       ),
     );
     return [...index.values()];
@@ -72,6 +85,8 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
 
   return {
     accounts,
+    projects,
+    typeOptions: galleryTypeOptions(normalizedArtifacts),
     activeFilterCount: countActiveGalleryFilters(filters),
     filters,
     groupBy,
@@ -96,6 +111,14 @@ export function useProjectGalleryController(artifacts: ProjectArtifact[]) {
     },
     toggleCollateralType(collateralType: GalleryFilters["collateralTypes"][number]) {
       toggleArrayFilter("collateralTypes", collateralType);
+    },
+    toggleProject(projectId: string) {
+      setFilters((current) => ({
+        ...current,
+        projectIds: current.projectIds?.includes(projectId)
+          ? current.projectIds.filter((id) => id !== projectId)
+          : [...(current.projectIds ?? []), projectId],
+      }));
     },
     toggleSizeCategory(sizeCategory: GalleryFilters["sizeCategories"][number]) {
       toggleArrayFilter("sizeCategories", sizeCategory);

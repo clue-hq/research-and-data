@@ -163,6 +163,55 @@ def test_structured_providers_are_tier1_structured() -> None:
     run_async(_run())
 
 
+def test_permitted_account_source_yields_are_pinned_to_the_31_ownership_table() -> None:
+    """The four permitted account field-sources declare exactly the §3.1 rows they own.
+
+    ``yields`` is what the M4.6 planner reads to answer "which source can populate this field", so
+    these four tuples decide whether the fixed 21-field account profile is plannable at all — and,
+    just as load-bearing, which provider is *not* offered a field it does not own. ``exa_deep``
+    deliberately no longer yields the whole ``account`` class: that claimed
+    ``account.hiring_velocity_eng``, which §3.1 grants Sumble Jobs alone. The two remaining class
+    tokens are whole-class ownership (§3.1's six ``account.resonance.*``, §7.1's nine
+    ``contact.facet.*``). Any change here is a contract change, not a tidy-up.
+    """
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            await seed_source_manifests(conn)
+            actual = {}
+            for key in ("sumble_organizations", "sumble_jobs", "sumble_tech_stack", "exa_deep"):
+                source = await get_source(conn, key)
+                assert source is not None, key
+                actual[key] = source.yields
+            assert actual == {
+                "sumble_organizations": (
+                    "core.employee_count",
+                    "core.primary_domain",
+                    "core.industry",
+                    "core.hq_location",
+                    "core.company_about",
+                    "core.company_linkedin_url",
+                    "account.total_funding",
+                    "account.recent_funding",
+                ),
+                "sumble_jobs": ("account.hiring_velocity_eng",),
+                "sumble_tech_stack": ("core.primary_tech_stack",),
+                "exa_deep": (
+                    "core.company_about",
+                    "core.industry",
+                    "core.annual_revenue",
+                    "account.total_funding",
+                    "account.recent_funding",
+                    "account.operational_pain",
+                    "account.strategic_moves",
+                    "account.resonance",
+                    "contact.facet",
+                ),
+            }
+
+    run_async(_run())
+
+
 # --- sources_for capability query ------------------------------------------
 
 

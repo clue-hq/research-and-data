@@ -1,0 +1,3627 @@
+[
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A1_podcast",
+    "op": "auto",
+    "query": "\"Vari Kaur\" podcast interview guest episode Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.15,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:25Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A4_authored",
+    "op": "auto",
+    "query": "\"Vari Kaur\" article blog post author byline Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.25,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:25Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Vari Kaur\" Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.45,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:25Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A2_video",
+    "op": "auto",
+    "query": "\"Vari Kaur\" Zafran Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.77,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:25Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Vari Kaur\" Zafran Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.21,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 1,
+    "ts": "2026-09-02T06:01:26Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A6_alumni",
+    "op": "auto",
+    "query": "\"Vari Kaur\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.12,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:26Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A8_personal_site",
+    "op": "auto",
+    "query": "\"Vari Kaur\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 0.83,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:26Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A7_awards",
+    "op": "auto",
+    "query": "\"Vari Kaur\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.29,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:26Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A9_social",
+    "op": "auto",
+    "query": "\"Varinder Kaur\" Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.04,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:27Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A10_community",
+    "op": "auto",
+    "query": "\"Vari Kaur\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 1.5,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:27Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Vari Kaur\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.48,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:27Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A2_video",
+    "op": "auto",
+    "query": "\"Vari Kaur\" Zafran Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Vari Kaur\" Zafran Security",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A1_podcast",
+    "op": "auto",
+    "query": "\"Vari Kaur\" podcast interview guest episode Zafran Security",
+    "http": 200,
+    "elapsed_s": 0.11,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A4_authored",
+    "op": "auto",
+    "query": "\"Vari Kaur\" article blog post author byline Zafran Security",
+    "http": 200,
+    "elapsed_s": 0.13,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Vari Kaur\" Zafran Security marketing security",
+    "http": 200,
+    "elapsed_s": 0.08,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 1,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A6_alumni",
+    "op": "auto",
+    "query": "\"Vari Kaur\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A7_awards",
+    "op": "auto",
+    "query": "\"Vari Kaur\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 0.09,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A8_personal_site",
+    "op": "auto",
+    "query": "\"Vari Kaur\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 0.09,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A9_social",
+    "op": "auto",
+    "query": "\"Varinder Kaur\" Zafran Security",
+    "http": 200,
+    "elapsed_s": 0.08,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A10_community",
+    "op": "auto",
+    "query": "\"Vari Kaur\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vari_kaur_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Vari Kaur\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 0.09,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:43Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A1_podcast",
+    "op": "auto",
+    "query": "\"Nick Fisher\" podcast interview guest episode Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.27,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:44Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A2_video",
+    "op": "auto",
+    "query": "\"Nick Fisher\" Zafran Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.16,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:45Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Nick Fisher\" Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.63,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:46Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Nick Fisher\" Zafran Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.77,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:46Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A6_alumni",
+    "op": "auto",
+    "query": "\"Nick Fisher\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.3,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:46Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A8_personal_site",
+    "op": "auto",
+    "query": "\"Nick Fisher\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 0.94,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:47Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A7_awards",
+    "op": "auto",
+    "query": "\"Nick Fisher\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.21,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:47Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A4_authored",
+    "op": "auto",
+    "query": "\"Nick Fisher\" article blog post author byline Zafran Security",
+    "http": 200,
+    "elapsed_s": 3.37,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:47Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A9_social",
+    "op": "auto",
+    "query": "\"Nicholas Fisher\" Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.0,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 2,
+    "ts": "2026-09-02T06:01:47Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A1_podcast",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" podcast interview guest episode Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:49Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A2_video",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" Zafran Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.31,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 1,
+    "ts": "2026-09-02T06:01:49Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A10_community",
+    "op": "auto",
+    "query": "\"Nick Fisher\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 2.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:49Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_nick_fisher_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Nick Fisher\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 2.16,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:49Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" Zafran Security",
+    "http": 200,
+    "elapsed_s": 1.03,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 1,
+    "ts": "2026-09-02T06:01:50Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" Zafran Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.42,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 4,
+    "ts": "2026-09-02T06:01:50Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A6_alumni",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.5,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:51Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A7_awards",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.26,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 3,
+    "ts": "2026-09-02T06:01:51Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A8_personal_site",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 0.94,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:51Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A9_social",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" Zafran Security",
+    "http": 200,
+    "elapsed_s": 0.84,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:51Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A10_community",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 1.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:52Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A1_podcast",
+    "op": "auto",
+    "query": "\"Alexander Semien\" podcast interview guest episode Cogent Security",
+    "http": 200,
+    "elapsed_s": 0.86,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:52Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.08,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:52Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_sanaz_yashar_A4_authored",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" article blog post author byline Zafran Security",
+    "http": 200,
+    "elapsed_s": 4.21,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 2,
+    "ts": "2026-09-02T06:01:53Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Alexander Semien\" Cogent Security",
+    "http": 200,
+    "elapsed_s": 0.99,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:53Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A2_video",
+    "op": "auto",
+    "query": "\"Alexander Semien\" Cogent Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.63,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:54Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A6_alumni",
+    "op": "auto",
+    "query": "\"Alexander Semien\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 0.96,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:54Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Alexander Semien\" Cogent Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.4,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:54Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A4_authored",
+    "op": "auto",
+    "query": "\"Alexander Semien\" article blog post author byline Cogent Security",
+    "http": 200,
+    "elapsed_s": 2.46,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:55Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A8_personal_site",
+    "op": "auto",
+    "query": "\"Alexander Semien\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 1.29,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:56Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A9_social",
+    "op": "auto",
+    "query": "\"Alex Semien\" Cogent Security",
+    "http": 200,
+    "elapsed_s": 1.37,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:56Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A7_awards",
+    "op": "auto",
+    "query": "\"Alexander Semien\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 2.37,
+    "cost_usd": 0,
+    "cost_breakdown": {
+      "total": 0
+    },
+    "n_results": 0,
+    "ts": "2026-09-02T06:01:56Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A10_community",
+    "op": "auto",
+    "query": "\"Alexander Semien\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 1.2,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:56Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A1_podcast",
+    "op": "auto",
+    "query": "\"Cameron Coles\" podcast interview guest episode Cogent Security",
+    "http": 200,
+    "elapsed_s": 1.14,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:57Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Cameron Coles\" Cogent Security",
+    "http": 200,
+    "elapsed_s": 0.92,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:57Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alexander_semien_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Alexander Semien\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.53,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:57Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Cameron Coles\" Cogent Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.05,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:58Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A2_video",
+    "op": "auto",
+    "query": "\"Cameron Coles\" Cogent Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 2.36,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:58Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A6_alumni",
+    "op": "auto",
+    "query": "\"Cameron Coles\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.23,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:58Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A7_awards",
+    "op": "auto",
+    "query": "\"Cameron Coles\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.27,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:59Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A9_social",
+    "op": "auto",
+    "query": "\"Cameron Coles\" Cogent Security",
+    "http": 200,
+    "elapsed_s": 1.16,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:01:59Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A4_authored",
+    "op": "auto",
+    "query": "\"Cameron Coles\" article blog post author byline Cogent Security",
+    "http": 200,
+    "elapsed_s": 2.83,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:00Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A8_personal_site",
+    "op": "auto",
+    "query": "\"Cameron Coles\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 1.47,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:00Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Cameron Coles\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.1,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:01Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A2_video",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" Cogent Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.01,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 2,
+    "ts": "2026-09-02T06:02:01Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A1_podcast",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" podcast interview guest episode Cogent Security",
+    "http": 200,
+    "elapsed_s": 1.81,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:02Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" Cogent Security",
+    "http": 200,
+    "elapsed_s": 1.03,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:02Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A4_authored",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" article blog post author byline Cogent Security",
+    "http": 200,
+    "elapsed_s": 1.03,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:02Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_cameron_coles_A10_community",
+    "op": "auto",
+    "query": "\"Cameron Coles\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 2.73,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:02Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" Cogent Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.02,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:03Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A7_awards",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.14,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:03Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A6_alumni",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.54,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:03Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A8_personal_site",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 1.26,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:03Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A9_social",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" Cogent Security",
+    "http": 200,
+    "elapsed_s": 0.77,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:03Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.36,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:05Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A1_podcast",
+    "op": "auto",
+    "query": "\"Ana Corio\" podcast interview guest episode Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.18,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:05Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_vineet_edupuganti_A10_community",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 1.61,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:05Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A2_video",
+    "op": "auto",
+    "query": "\"Ana Corio\" Harmonic Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.31,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:05Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Ana Corio\" Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.0,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:06Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Ana Corio\" Harmonic Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.69,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:06Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A6_alumni",
+    "op": "auto",
+    "query": "\"Ana Corio\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.84,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:07Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A7_awards",
+    "op": "auto",
+    "query": "\"Ana Corio\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.28,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 1,
+    "ts": "2026-09-02T06:02:07Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A4_authored",
+    "op": "auto",
+    "query": "\"Ana Corio\" article blog post author byline Harmonic Security",
+    "http": 200,
+    "elapsed_s": 2.26,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:07Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A8_personal_site",
+    "op": "auto",
+    "query": "\"Ana Corio\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 1.04,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:07Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A9_social",
+    "op": "auto",
+    "query": "\"Anastasia Corio\" Harmonic Security",
+    "http": 200,
+    "elapsed_s": 0.92,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:07Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Ana Corio\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.56,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:08Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A1_podcast",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" podcast interview guest episode Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.08,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:08Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_ana_corio_A10_community",
+    "op": "auto",
+    "query": "\"Ana Corio\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 2.11,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:09Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A2_video",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" Harmonic Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.48,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:09Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.11,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:09Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A4_authored",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" article blog post author byline Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.36,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:10Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" Harmonic Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.56,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:10Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A6_alumni",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.84,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:11Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A7_awards",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.51,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:11Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A9_social",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" Harmonic Security",
+    "http": 200,
+    "elapsed_s": 0.79,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:11Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A8_personal_site",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 1.55,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:11Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A10_community",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 0.89,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:12Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_tyler_chonoles_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.26,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:12Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A2_video",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" Harmonic Security talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.22,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:13Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A1_podcast",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" podcast interview guest episode Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.38,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:13Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.48,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:13Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A4_authored",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" article blog post author byline Harmonic Security",
+    "http": 200,
+    "elapsed_s": 0.96,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:13Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A6_alumni",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.07,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:14Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" Harmonic Security marketing security",
+    "http": 200,
+    "elapsed_s": 1.87,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 7,
+    "ts": "2026-09-02T06:02:14Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A7_awards",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.47,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 5,
+    "ts": "2026-09-02T06:02:15Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A8_personal_site",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 1.5,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:15Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A10_community",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 0.95,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:15Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A9_social",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.98,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:16Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A1_podcast",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" podcast interview guest episode UPTIQ, Inc.",
+    "http": 200,
+    "elapsed_s": 1.0,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:16Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_alastair_paterson_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.25,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:16Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A3_podcast_dirs",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" UPTIQ, Inc.",
+    "http": 200,
+    "elapsed_s": 0.9,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:17Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A4_authored",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" article blog post author byline UPTIQ, Inc.",
+    "http": 200,
+    "elapsed_s": 1.4,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:17Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A2_video",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" UPTIQ, Inc. talk webinar video keynote",
+    "http": 200,
+    "elapsed_s": 1.88,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:17Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A5_writing_platforms",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" UPTIQ, Inc. marketing security",
+    "http": 200,
+    "elapsed_s": 1.54,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:17Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A6_alumni",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" university college alumni degree graduated studied",
+    "http": 200,
+    "elapsed_s": 1.41,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:18Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A9_social",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" UPTIQ, Inc.",
+    "http": 200,
+    "elapsed_s": 1.05,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:19Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A8_personal_site",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" personal website portfolio github about me",
+    "http": 200,
+    "elapsed_s": 1.33,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:19Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A7_awards",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" award winner \"40 under 40\" top marketers recognition list",
+    "http": 200,
+    "elapsed_s": 1.59,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 3,
+    "ts": "2026-09-02T06:02:19Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A10_community",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" volunteer board member advisor mentor nonprofit community",
+    "http": 200,
+    "elapsed_s": 1.43,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:19Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1_mandar_marathe_A11_local_hometown",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" hometown grew up born raised local news feature",
+    "http": 200,
+    "elapsed_s": 1.93,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:02:20Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_linkedin_profiles",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.2,
+    "cost_usd": 0.01,
+    "cost_breakdown": {
+      "total": 0.01,
+      "contents": {
+        "text": 0.01
+      }
+    },
+    "n_requested": 10,
+    "n_results": 10,
+    "statuses": [
+      {
+        "id": "https://www.linkedin.com/in/varinderkaur",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/nicholastfisher",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/sanaz-yashar",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/alexander-semien",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/cameroncoles",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/vineetedupuganti",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/anastasiacorio",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/tyler-chonoles-106405a0",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/alastair-paterson-2586445",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/in/mandarmarathe",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "ts": "2026-09-02T06:03:51Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_vari_kaur_A12_targeted",
+    "op": "auto",
+    "query": "\"Vari Kaur\" OR \"Varinder Kaur\" Secureworks Ivanti demand generation webinar panel speaker interview quote",
+    "http": 200,
+    "elapsed_s": 1.12,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:52Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_sanaz_yashar_A12_targeted",
+    "op": "auto",
+    "query": "\"Sanaz Yashar\" Mandiant Cybereason \"Unit 8200\" background career keynote fireside interview",
+    "http": 200,
+    "elapsed_s": 1.2,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:52Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_alexander_semien_A12_targeted",
+    "op": "auto",
+    "query": "\"Alexander Semien\" growth marketing career background Black Hat post interview webinar previous company",
+    "http": 200,
+    "elapsed_s": 1.25,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:53Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_nick_fisher_A12_targeted",
+    "op": "auto",
+    "query": "\"Nick Fisher\" cybersecurity marketing executive Zafran Snyk OR Rapid7 OR Recorded Future interview panel webinar",
+    "http": 200,
+    "elapsed_s": 1.27,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:53Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_cameron_coles_A12_targeted",
+    "op": "auto",
+    "query": "\"Cameron Coles\" Netskope OR Skyhigh Networks OR McAfee cloud security report author webinar interview",
+    "http": 200,
+    "elapsed_s": 1.37,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:54Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_vineet_edupuganti_A12_targeted",
+    "op": "auto",
+    "query": "\"Vineet Edupuganti\" Stanford PhD research bioelectronics Siemens Competition background before Cogent",
+    "http": 200,
+    "elapsed_s": 1.33,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:54Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_ana_corio_A12_targeted",
+    "op": "auto",
+    "query": "\"Ana Corio\" OR \"Anastasia Corio\" Material Security demand generation podcast webinar panel interview",
+    "http": 200,
+    "elapsed_s": 1.35,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:54Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_tyler_chonoles_A12_targeted",
+    "op": "auto",
+    "query": "\"Tyler Chonoles\" marketing demand generation career background university interview webinar",
+    "http": 200,
+    "elapsed_s": 1.75,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:54Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_mandar_marathe_A12_targeted",
+    "op": "auto",
+    "query": "\"Mandar Marathe\" UPTIQ OR Cognizant OR fintech marketing background webinar interview India",
+    "http": 200,
+    "elapsed_s": 1.19,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:55Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p1c_alastair_paterson_A12_targeted",
+    "op": "auto",
+    "query": "\"Alastair Paterson\" Digital Shadows founder background university career keynote interview",
+    "http": 200,
+    "elapsed_s": 1.9,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T06:03:56Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "yt_vin_siemens",
+    "op": "GET https://www.youtube.com/watch?v=8x_RZ4yIRbw",
+    "http": 200,
+    "elapsed_s": 0.9,
+    "cost_usd": 0.0,
+    "bytes": 1231595,
+    "ts": "2026-09-02T06:05:23Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "yt_vin_ep297",
+    "op": "GET https://www.youtube.com/watch?v=_OHZyK0nugs",
+    "http": 200,
+    "elapsed_s": 0.92,
+    "cost_usd": 0.0,
+    "bytes": 1327259,
+    "ts": "2026-09-02T06:05:24Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "pod_vin_hackervalley",
+    "op": "GET https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/",
+    "http": 200,
+    "elapsed_s": 0.61,
+    "cost_usd": 0.0,
+    "bytes": 52571,
+    "ts": "2026-09-02T06:05:25Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "rss_vin_hackervalley",
+    "op": "GET https://feed.podbean.com/HackerValleyStudio/feed.xml",
+    "http": 200,
+    "elapsed_s": 2.64,
+    "cost_usd": 0.0,
+    "bytes": 3568819,
+    "ts": "2026-09-02T06:05:28Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "pod_ala_gcsp265",
+    "op": "GET https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act",
+    "http": 200,
+    "elapsed_s": 0.53,
+    "cost_usd": 0.0,
+    "bytes": 45629,
+    "ts": "2026-09-02T06:05:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "rss_ala_gcsp265",
+    "op": "GET http://feeds.libsyn.com/324875/rss",
+    "http": 200,
+    "elapsed_s": 1.5,
+    "cost_usd": 0.0,
+    "bytes": 1945670,
+    "ts": "2026-09-02T06:05:30Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "pod_ala_sysk",
+    "op": "GET https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security",
+    "http": 200,
+    "elapsed_s": 0.27,
+    "cost_usd": 0.0,
+    "bytes": 157989,
+    "ts": "2026-09-02T06:05:31Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "rss_ala_sysk",
+    "op": "GET https://feeds.buzzsprout.com/2215185.rss",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "cost_usd": 0.0,
+    "bytes": 566761,
+    "ts": "2026-09-02T06:05:31Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "applelookup_san_boardroom",
+    "op": "GET https://itunes.apple.com/lookup?id=1749699539&entity=podcast",
+    "http": 200,
+    "elapsed_s": 0.16,
+    "cost_usd": 0.0,
+    "bytes": 1575,
+    "ts": "2026-09-02T06:05:32Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "rss_san_boardroom",
+    "op": "GET https://anchor.fm/s/f695d6d8/podcast/rss",
+    "http": 200,
+    "elapsed_s": 0.15,
+    "cost_usd": 0.0,
+    "bytes": 894311,
+    "ts": "2026-09-02T06:05:32Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "yt_ana_coffee",
+    "op": "GET https://www.youtube.com/watch?v=DBRuxk0YrQk",
+    "http": 200,
+    "elapsed_s": 0.6,
+    "cost_usd": 0.0,
+    "bytes": 1236560,
+    "ts": "2026-09-02T06:05:33Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "yt_sem_cogentyt",
+    "op": "GET https://www.youtube.com/watch?v=fbn5EJagBmQ",
+    "http": 200,
+    "elapsed_s": 0.88,
+    "cost_usd": 0.0,
+    "bytes": 1311620,
+    "ts": "2026-09-02T06:05:34Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "yt_man_uptiqyt",
+    "op": "GET https://www.youtube.com/watch?v=GS8qgXDfpHM",
+    "http": 200,
+    "elapsed_s": 0.84,
+    "cost_usd": 0.0,
+    "bytes": 1143721,
+    "ts": "2026-09-02T06:05:36Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "pod_man_cu20",
+    "op": "GET https://www.buzzsprout.com/268738/episodes/13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors",
+    "http": 200,
+    "elapsed_s": 0.25,
+    "cost_usd": 0.0,
+    "bytes": 153934,
+    "ts": "2026-09-02T06:05:36Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "rss_man_cu20",
+    "op": "GET https://feeds.buzzsprout.com/268738.rss",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "cost_usd": 0.0,
+    "bytes": 3208645,
+    "ts": "2026-09-02T06:05:37Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "rss_ala_gcsp265_refix",
+    "op": "GET http://feeds.libsyn.com/324875/rss",
+    "http": 200,
+    "elapsed_s": 1.58,
+    "cost_usd": 0.0,
+    "bytes": 1945670,
+    "ts": "2026-09-02T06:06:28Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_vin_siemens_try0",
+    "op": "GET https://www.youtube.com/api/timedtext?v=8x_RZ4yIRbw&ei=oryXaojPIsSKsfIP17OI2A8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354322&sparams=ip,ipbits,expire,v,ei,ca",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:28Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_vin_siemens_try1",
+    "op": "GET https://www.youtube.com/api/timedtext?v=8x_RZ4yIRbw&ei=oryXaojPIsSKsfIP17OI2A8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354322&sparams=ip,ipbits,expire,v,ei,ca",
+    "http": 200,
+    "elapsed_s": 0.11,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_vin_siemens_try2",
+    "op": "GET https://www.youtube.com/api/timedtext?v=8x_RZ4yIRbw&ei=oryXaojPIsSKsfIP17OI2A8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354322&sparams=ip,ipbits,expire,v,ei,ca",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_vin_ep297_try0",
+    "op": "GET https://www.youtube.com/api/timedtext?v=_OHZyK0nugs&ei=o7yXaqC9OuSDut0Py4mSiQE&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354323&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_vin_ep297_try1",
+    "op": "GET https://www.youtube.com/api/timedtext?v=_OHZyK0nugs&ei=o7yXaqC9OuSDut0Py4mSiQE&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354323&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.2,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_vin_ep297_try2",
+    "op": "GET https://www.youtube.com/api/timedtext?v=_OHZyK0nugs&ei=o7yXaqC9OuSDut0Py4mSiQE&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354323&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.09,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_ana_coffee_try0",
+    "op": "GET https://www.youtube.com/api/timedtext?v=DBRuxk0YrQk&ei=rbyXauv9AsbAy_sP2vWc0Q8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354333&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_ana_coffee_try1",
+    "op": "GET https://www.youtube.com/api/timedtext?v=DBRuxk0YrQk&ei=rbyXauv9AsbAy_sP2vWc0Q8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354333&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.09,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_ana_coffee_try2",
+    "op": "GET https://www.youtube.com/api/timedtext?v=DBRuxk0YrQk&ei=rbyXauv9AsbAy_sP2vWc0Q8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354333&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.14,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_sem_cogentyt_try0",
+    "op": "GET https://www.youtube.com/api/timedtext?v=fbn5EJagBmQ&ei=rryXaoj7ArX4sfIPt86-0A8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354334&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:29Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_sem_cogentyt_try1",
+    "op": "GET https://www.youtube.com/api/timedtext?v=fbn5EJagBmQ&ei=rryXaoj7ArX4sfIPt86-0A8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354334&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.12,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:30Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_sem_cogentyt_try2",
+    "op": "GET https://www.youtube.com/api/timedtext?v=fbn5EJagBmQ&ei=rryXaoj7ArX4sfIPt86-0A8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354334&sparams=ip,ipbits,expire",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:30Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_man_uptiqyt_try0",
+    "op": "GET https://www.youtube.com/api/timedtext?v=GS8qgXDfpHM&ei=r7yXarawHI3Gy_sPs8bEmAs&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354335&sparams=ip,ipbits,expire,v,ei,ca",
+    "http": 200,
+    "elapsed_s": 0.18,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:30Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_man_uptiqyt_try1",
+    "op": "GET https://www.youtube.com/api/timedtext?v=GS8qgXDfpHM&ei=r7yXarawHI3Gy_sPs8bEmAs&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354335&sparams=ip,ipbits,expire,v,ei,ca",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:30Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "cap_man_uptiqyt_try2",
+    "op": "GET https://www.youtube.com/api/timedtext?v=GS8qgXDfpHM&ei=r7yXarawHI3Gy_sPs8bEmAs&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354335&sparams=ip,ipbits,expire,v,ei,ca",
+    "http": 200,
+    "elapsed_s": 0.1,
+    "cost_usd": 0.0,
+    "bytes": 0,
+    "ts": "2026-09-02T06:06:30Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p2c_media_pages",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 2.11,
+    "cost_usd": 0.01,
+    "cost_breakdown": {
+      "total": 0.01,
+      "contents": {
+        "text": 0.01
+      }
+    },
+    "n_requested": 10,
+    "n_results": 10,
+    "statuses": [
+      {
+        "id": "https://www.youtube.com/watch?v=8x_RZ4yIRbw",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.youtube.com/watch?v=_OHZyK0nugs",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://podcasts.apple.com/us/podcast/ai-summit-sanaz-yashar-co-founder-and-ceo-at-zafran-security/id1749699539?i=1000728",
+        "status": "success",
+        "source": "crawled"
+      },
+      {
+        "id": "https://www.youtube.com/watch?v=DBRuxk0YrQk",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.youtube.com/watch?v=fbn5EJagBmQ",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.youtube.com/watch?v=GS8qgXDfpHM",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.buzzsprout.com/268738/episodes/13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors",
+        "status": "success",
+        "source": "crawled"
+      }
+    ],
+    "ts": "2026-09-02T06:07:04Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p2d_vin_ep297_full",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.45,
+    "cost_usd": 0.001,
+    "cost_breakdown": {
+      "total": 0.001,
+      "contents": {
+        "text": 0.001
+      }
+    },
+    "n_requested": 1,
+    "n_results": 1,
+    "statuses": [
+      {
+        "id": "https://www.youtube.com/watch?v=_OHZyK0nugs",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "ts": "2026-09-02T06:07:54Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p2d_hunt_ala_gcsp265",
+    "op": "auto",
+    "query": "Cloud Security Podcast by Google EP265 \"Beyond Shadow IT\" transcript Alastair Paterson Harmonic Security",
+    "http": 200,
+    "elapsed_s": 1.32,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:07:56Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p2d_hunt_san_boardroom",
+    "op": "auto",
+    "query": "Boardroom Club podcast \"Sanaz Yashar\" Zafran Security episode transcript AI Summit",
+    "http": 200,
+    "elapsed_s": 1.61,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 8,
+    "ts": "2026-09-02T06:07:57Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p2e_extra_media",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 2.57,
+    "cost_usd": 0.002,
+    "cost_breakdown": {
+      "total": 0.002,
+      "contents": {
+        "text": 0.002
+      }
+    },
+    "n_requested": 3,
+    "n_results": 2,
+    "statuses": [
+      {
+        "id": "https://www.youtube.com/watch?v=qu51DBOkrNE",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://creators.spotify.com/pod/profile/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36ei62",
+        "status": "error",
+        "error": {
+          "httpStatusCode": 404,
+          "tag": "CRAWL_NOT_FOUND"
+        }
+      },
+      {
+        "id": "https://www.cnbc.com/video/2025/12/02/former-cyber-spy-on-why-ai-threats-are-getting-more-sophisticated.html",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "ts": "2026-09-02T06:08:18Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_vari_kaur",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Vari Kaur (also published as Varinder Kaur), Head of Growth Marketing at Zafran Security (zafran.io). LinkedIn: https://www.linkedin.com/in/varinderkaur.\nStated location: Easton, Pennsylvania, United States.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7",
+    "http": 200,
+    "elapsed_s": 31.09,
+    "cost_usd": 0.019,
+    "cost_breakdown": {
+      "total": 0.019
+    },
+    "n_results": 14,
+    "ts": "2026-09-02T06:11:26Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_nick_fisher",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Nick Fisher (also published as Nicholas Fisher, Nicholas T. Fisher), VP Marketing at Zafran Security (zafran.io). LinkedIn: https://www.linkedin.com/in/nicholastfisher.\nStated location: New York, United States.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/in/nicholastfisher  (Nick Fisher)\n- https://www.bloomberg.com/profi",
+    "http": 200,
+    "elapsed_s": 17.92,
+    "cost_usd": 0.02,
+    "cost_breakdown": {
+      "total": 0.02
+    },
+    "n_results": 15,
+    "ts": "2026-09-02T06:11:56Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_sanaz_yashar",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Sanaz Yashar, Co-Founder & CEO at Zafran Security (zafran.io). LinkedIn: https://www.linkedin.com/in/sanaz-yashar.\nStated location: Tel Aviv, Israel / New York.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.jpost.com/business-and-innovation/article-889428  (Iranian emigre entrepreneur wages war on hackers | The Jerusalem Post)\n- https:",
+    "http": 200,
+    "elapsed_s": 29.7,
+    "cost_usd": 0.025,
+    "cost_breakdown": {
+      "total": 0.025
+    },
+    "n_results": 20,
+    "ts": "2026-09-02T06:12:09Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_cameron_coles",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Cameron Coles, VP of Marketing at Cogent Security (cogent.com). LinkedIn: https://www.linkedin.com/in/cameroncoles.\nStated location: United States.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/in/cameroncoles  (Cameron Coles)\n- https://www.linkedin.com/posts/cameroncoles_im-thrilled-to-announce-that-im-joining-activity-73",
+    "http": 200,
+    "elapsed_s": 13.25,
+    "cost_usd": 0.015,
+    "cost_breakdown": {
+      "total": 0.015
+    },
+    "n_results": 9,
+    "ts": "2026-09-02T06:12:09Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_alexander_semien",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Alexander Semien (also published as Alex Semien), Head of Growth at Cogent Security (cogent.com). LinkedIn: https://www.linkedin.com/in/alexander-semien.\nStated location: United States.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/in/alexander-semien  (Alexander Semien)\n- https://www.threatcon1.org/speakers/alexander-semi",
+    "http": 200,
+    "elapsed_s": 33.18,
+    "cost_usd": 0.025,
+    "cost_breakdown": {
+      "total": 0.025
+    },
+    "n_results": 20,
+    "ts": "2026-09-02T06:12:14Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_vineet_edupuganti",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Vineet Edupuganti, Co-Founder & CEO at Cogent Security (cogent.com). LinkedIn: https://www.linkedin.com/in/vineetedupuganti.\nStated location: San Francisco, California.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/in/vineetedupuganti  (Vineet Edupuganti)\n- https://www.youtube.com/watch?v=_OHZyK0nugs  (Ep 297 AI, Cybersecu",
+    "http": 200,
+    "elapsed_s": 24.01,
+    "cost_usd": 0.024,
+    "cost_breakdown": {
+      "total": 0.024
+    },
+    "n_results": 19,
+    "ts": "2026-09-02T06:12:33Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_ana_corio",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Ana Corio (also published as Anastasia Corio), Director of Demand Generation at Harmonic Security (harmonic.security). LinkedIn: https://www.linkedin.com/in/anastasiacorio.\nStated location: United States.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/in/anastasiacorio  (Ana Corio)\n- https://www.linkedin.com/posts/anastasia",
+    "http": 200,
+    "elapsed_s": 27.53,
+    "cost_usd": 0.025,
+    "cost_breakdown": {
+      "total": 0.025
+    },
+    "n_results": 20,
+    "ts": "2026-09-02T06:12:37Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_tyler_chonoles",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Tyler Chonoles, Growth and Demand Gen Marketing Manager at Harmonic Security (harmonic.security). LinkedIn: https://www.linkedin.com/in/tyler-chonoles-106405a0.\nStated location: United States.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/in/tyler-chonoles-106405a0  (Tyler Chonoles)\n- https://www.linkedin.com/posts/tyler-c",
+    "http": 200,
+    "elapsed_s": 25.56,
+    "cost_usd": 0.025,
+    "cost_breakdown": {
+      "total": 0.025
+    },
+    "n_results": 20,
+    "ts": "2026-09-02T06:12:39Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_alastair_paterson",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Alastair Paterson, CEO & Co-Founder at Harmonic Security (harmonic.security). LinkedIn: https://www.linkedin.com/in/alastair-paterson-2586445.\nStated location: London, United Kingdom / San Francisco.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/in/alastair-paterson-2586445  (Alastair Paterson)\n- https://councils.forbes.co",
+    "http": 200,
+    "elapsed_s": 27.77,
+    "cost_usd": 0.023,
+    "cost_breakdown": {
+      "total": 0.023
+    },
+    "n_results": 18,
+    "ts": "2026-09-02T06:13:01Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_mandar_marathe",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Mandar Marathe, VP Marketing at UPTIQ, Inc. (uptiq.ai). LinkedIn: https://www.linkedin.com/in/mandarmarathe.\nStated location: Pune, Maharashtra, India.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n- https://www.linkedin.com/in/mandarmarathe  (Mandar Marathe)\n- https://www.linkedin.com/posts/mandarmarathe_aimarketing-activity-7480104338795802624-KPD",
+    "http": 200,
+    "elapsed_s": 25.53,
+    "cost_usd": 0.015,
+    "cost_breakdown": {
+      "total": 0.015
+    },
+    "n_results": 9,
+    "ts": "2026-09-02T06:13:03Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_vari_kaur",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 30.06,
+    "usage": {
+      "prompt_tokens": 5385,
+      "completion_tokens": 2527,
+      "total_tokens": 7912,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00640025,
+        "upstream_inference_prompt_cost": 0.00134625,
+        "upstream_inference_completions_cost": 0.005054
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00640025,
+    "ts": "2026-09-02T06:14:42Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_vari_kaur",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 31.2,
+    "usage": {
+      "prompt_tokens": 5527,
+      "completion_tokens": 2366,
+      "total_tokens": 7893,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00611375,
+        "upstream_inference_prompt_cost": 0.00138175,
+        "upstream_inference_completions_cost": 0.004732
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00611375,
+    "ts": "2026-09-02T06:15:34Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_nick_fisher",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 30.36,
+    "usage": {
+      "prompt_tokens": 4805,
+      "completion_tokens": 2157,
+      "total_tokens": 6962,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00551525,
+        "upstream_inference_prompt_cost": 0.00120125,
+        "upstream_inference_completions_cost": 0.004314
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00551525,
+    "ts": "2026-09-02T06:16:04Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_sanaz_yashar",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 31.97,
+    "usage": {
+      "prompt_tokens": 10901,
+      "completion_tokens": 2664,
+      "total_tokens": 13565,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00805325,
+        "upstream_inference_prompt_cost": 0.00272525,
+        "upstream_inference_completions_cost": 0.005328
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00805325,
+    "ts": "2026-09-02T06:16:36Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_alexander_semien",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 24.43,
+    "usage": {
+      "prompt_tokens": 6953,
+      "completion_tokens": 2579,
+      "total_tokens": 9532,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00689625,
+        "upstream_inference_prompt_cost": 0.00173825,
+        "upstream_inference_completions_cost": 0.005158
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00689625,
+    "ts": "2026-09-02T06:17:01Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_cameron_coles",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 18.47,
+    "usage": {
+      "prompt_tokens": 4574,
+      "completion_tokens": 1994,
+      "total_tokens": 6568,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0051315,
+        "upstream_inference_prompt_cost": 0.0011435,
+        "upstream_inference_completions_cost": 0.003988
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0051315,
+    "ts": "2026-09-02T06:17:19Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_vineet_edupuganti",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 20.27,
+    "usage": {
+      "prompt_tokens": 16244,
+      "completion_tokens": 2323,
+      "total_tokens": 18567,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.008707,
+        "upstream_inference_prompt_cost": 0.004061,
+        "upstream_inference_completions_cost": 0.004646
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.008707,
+    "ts": "2026-09-02T06:17:39Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_ana_corio",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 21.67,
+    "usage": {
+      "prompt_tokens": 5711,
+      "completion_tokens": 2402,
+      "total_tokens": 8113,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00623175,
+        "upstream_inference_prompt_cost": 0.00142775,
+        "upstream_inference_completions_cost": 0.004804
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00623175,
+    "ts": "2026-09-02T06:18:01Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_tyler_chonoles",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 17.9,
+    "usage": {
+      "prompt_tokens": 5917,
+      "completion_tokens": 1921,
+      "total_tokens": 7838,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00532125,
+        "upstream_inference_prompt_cost": 0.00147925,
+        "upstream_inference_completions_cost": 0.003842
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00532125,
+    "ts": "2026-09-02T06:18:19Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_alastair_paterson",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 24.05,
+    "usage": {
+      "prompt_tokens": 14948,
+      "completion_tokens": 3002,
+      "total_tokens": 17950,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.009741,
+        "upstream_inference_prompt_cost": 0.003737,
+        "upstream_inference_completions_cost": 0.006004
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.009741,
+    "ts": "2026-09-02T06:18:43Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_mandar_marathe",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 17.25,
+    "usage": {
+      "prompt_tokens": 6211,
+      "completion_tokens": 2095,
+      "total_tokens": 8306,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00574275,
+        "upstream_inference_prompt_cost": 0.00155275,
+        "upstream_inference_completions_cost": 0.00419
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00574275,
+    "ts": "2026-09-02T06:19:00Z"
+  },
+  {
+    "provider": "exa",
+    "label": "p3_deep_cameron_coles_retry",
+    "op": "deep-reasoning",
+    "query": "SUBJECT: Cameron Coles, VP of Marketing at Cogent Security (cogent.com). LinkedIn: https://www.linkedin.com/in/cameroncoles.\nStated location: United States.\n\nALREADY-KNOWN SOURCES \u2014 read these FIRST, they are confirmed to be about the target:\n(listed at the end of this message)\n\nKNOWN LONG-FORM MEDIA where this person speaks (mine these for verbatim quotes):\nNONE LOCATED\n\nProduce an exhaustive, ci",
+    "http": 200,
+    "elapsed_s": 39.67,
+    "cost_usd": 0.025,
+    "cost_breakdown": {
+      "total": 0.025
+    },
+    "n_results": 20,
+    "ts": "2026-09-02T06:20:36Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4_struct_cameron_coles",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 19.58,
+    "usage": {
+      "prompt_tokens": 7981,
+      "completion_tokens": 2279,
+      "total_tokens": 10260,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00655325,
+        "upstream_inference_prompt_cost": 0.00199525,
+        "upstream_inference_completions_cost": 0.004558
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00655325,
+    "ts": "2026-09-02T06:21:30Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_vari_kaur",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 4.78,
+    "usage": {
+      "prompt_tokens": 3210,
+      "completion_tokens": 568,
+      "total_tokens": 3778,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0019385,
+        "upstream_inference_prompt_cost": 0.0008025,
+        "upstream_inference_completions_cost": 0.001136
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0019385,
+    "ts": "2026-09-02T06:21:35Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_nick_fisher",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 4.45,
+    "usage": {
+      "prompt_tokens": 2009,
+      "completion_tokens": 524,
+      "total_tokens": 2533,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00155025,
+        "upstream_inference_prompt_cost": 0.00050225,
+        "upstream_inference_completions_cost": 0.001048
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00155025,
+    "ts": "2026-09-02T06:21:39Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_sanaz_yashar",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 4.61,
+    "usage": {
+      "prompt_tokens": 3553,
+      "completion_tokens": 537,
+      "total_tokens": 4090,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00196225,
+        "upstream_inference_prompt_cost": 0.00088825,
+        "upstream_inference_completions_cost": 0.001074
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00196225,
+    "ts": "2026-09-02T06:21:44Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_alexander_semien",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 5.52,
+    "usage": {
+      "prompt_tokens": 3756,
+      "completion_tokens": 573,
+      "total_tokens": 4329,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.002085,
+        "upstream_inference_prompt_cost": 0.000939,
+        "upstream_inference_completions_cost": 0.001146
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.002085,
+    "ts": "2026-09-02T06:21:50Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_cameron_coles",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 2.84,
+    "usage": {
+      "prompt_tokens": 4965,
+      "completion_tokens": 223,
+      "total_tokens": 5188,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00168725,
+        "upstream_inference_prompt_cost": 0.00124125,
+        "upstream_inference_completions_cost": 0.000446
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00168725,
+    "ts": "2026-09-02T06:21:52Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_vineet_edupuganti",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 3.14,
+    "usage": {
+      "prompt_tokens": 2825,
+      "completion_tokens": 312,
+      "total_tokens": 3137,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00133025,
+        "upstream_inference_prompt_cost": 0.00070625,
+        "upstream_inference_completions_cost": 0.000624
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00133025,
+    "ts": "2026-09-02T06:21:56Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_ana_corio",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 7.87,
+    "usage": {
+      "prompt_tokens": 2928,
+      "completion_tokens": 383,
+      "total_tokens": 3311,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.001498,
+        "upstream_inference_prompt_cost": 0.000732,
+        "upstream_inference_completions_cost": 0.000766
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.001498,
+    "ts": "2026-09-02T06:22:03Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_tyler_chonoles",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 3.91,
+    "usage": {
+      "prompt_tokens": 2946,
+      "completion_tokens": 348,
+      "total_tokens": 3294,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.0014325,
+        "upstream_inference_prompt_cost": 0.0007365,
+        "upstream_inference_completions_cost": 0.000696
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.0014325,
+    "ts": "2026-09-02T06:22:07Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_alastair_paterson",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 6.02,
+    "usage": {
+      "prompt_tokens": 3220,
+      "completion_tokens": 744,
+      "total_tokens": 3964,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.002293,
+        "upstream_inference_prompt_cost": 0.000805,
+        "upstream_inference_completions_cost": 0.001488
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.002293,
+    "ts": "2026-09-02T06:22:13Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "p4b_unique_mandar_marathe",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 6.13,
+    "usage": {
+      "prompt_tokens": 3105,
+      "completion_tokens": 606,
+      "total_tokens": 3711,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.00198825,
+        "upstream_inference_prompt_cost": 0.00077625,
+        "upstream_inference_completions_cost": 0.001212
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.00198825,
+    "ts": "2026-09-02T06:22:19Z"
+  }
+]

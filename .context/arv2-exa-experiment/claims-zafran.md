@@ -1,0 +1,80 @@
+- [1] **identity_and_founders** = Zafran Security was founded in 2022 by Sanaz Yashar, Ben Seri, and Snir Havdala; the company’s current About page identifies Sanaz Yashar as Co-Founder & CEO and Ben Seri as Co-Founder & CTO.
+  - url: https://www.zafran.io/resources/zafran-emerges-from-stealth-with-over-30m-as-the-first-risk-and-mitigation-platform-to-fight-threat-exploitation
+  - quote: “Founded in 2022 by Sanaz Yashar (CEO), Ben Seri (CTO) and Snir-Havdala (CPO)”
+  - claimed_by: company
+- [1] **headquarters_and_workforce** = Headquarters: New York, New York, United States; workforce distributed across the United States, Israel, and Germany. A separately published exact street HQ address was NOT FOUND.
+  - url: https://www.linkedin.com/in/ben-seri
+  - quote: “Headquartered in New York, New York, United States. Its workforce is distributed across United States, Israel, and Germany.”
+  - claimed_by: company
+- [2] **product_positioning** = AI-native exposure management platform focused on exploitable risk, mitigation, and remediation through existing security controls.
+  - url: https://www.zafran.io/
+  - quote: “Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.”
+  - claimed_by: company
+- [2] **integrations_and_deployment** = Zafran AIR is described as agentless and API-based, layering onto the existing security stack; the company says it integrates across existing tools.
+  - url: https://go.zafran.io/hubfs/zafran-air-datasheet.pdf
+  - quote: “Agentless, API-based. Layers on top of your existing security stack. No rip-and replace.”
+  - claimed_by: company
+- [4] **funding** = Company-reported Series C: $60 million, announced December 2, 2025, led by Menlo Ventures; company-reported cumulative funding then: $130 million.
+  - url: https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai
+  - quote: “This round brings the company’s total funding to $130 million.”
+  - claimed_by: company
+- [3] **traction_arr** = The company reported that ARR more than tripled since its prior funding round; an absolute ARR figure was NOT FOUND.
+  - url: https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai
+  - quote: “Since their last funding round, Zafran has doubled its valuation and more than tripled its annual recurring revenue (ARR)”
+  - claimed_by: company
+- [3] **named_customers** = Named customer evidence found for Chipotle, Kraft Heinz, and Lumen Technologies; the Lumen case study says its environment included 30,000+ assets. The supplied customer list also identifies Netskope, Ashland, Sallie Mae, and an unnamed Fortune 25 healthcare company, but individual source quotes for all of those were not retrieved in this search.
+  - url: https://www.zafran.io/customer-reviews
+  - quote: “Dave Estlick CISO, Chipotle”
+  - claimed_by: company
+- [3] **market_and_customer_profile** = The company reports multiple Fortune 500 enterprise customers and remediation-time reductions from weeks to hours.
+  - url: https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai
+  - quote: “The company now serves multiple Fortune 500 enterprises, with customers using Zafran to automate the manual work of assessing what is truly exploitable and reducing remediation times from weeks to hours.”
+  - claimed_by: company
+- [4] **investors** = Series C participants named by the company: Sequoia Capital, Cyberstarts, PSP Growth, Vintage Investment Partners, and Knollwood Investment; Menlo Ventures led the round.
+  - url: https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai
+  - quote: “with participation from existing investors Sequoia Capital and Cyberstarts, in addition to PSP Growth, Vintage Investment Partners, and Knollwood Investment.”
+  - claimed_by: company
+- [5] **leadership_and_board** = Current leadership page names Sanaz Yashar as Co-Founder & CEO and Ben Seri as Co-Founder & CTO; it also lists Rotem Peled-Dvir SVP Finance, Tom Anthony SVP Sales, Nick Fisher VP Business Operations, Hadas Bergman VP HR, Itay Nachum VP Product, and Christopher Phillips VP Customer Success. Board members listed include Doug Leone, Lior Simon, and Rama Sekhar.
+  - url: https://www.zafran.io/about
+  - quote: “### Sanaz Yashar Co-Founder & CEO ### Ben Seri Co-Founder & CTO”
+  - claimed_by: company
+- [6] **cisco_acquisition_status** = DENIED by Zafran CEO Sanaz Yashar and the company: Cisco was investing, not acquiring. CTech reported anonymous-source acquisition talks at $150–200 million, but the acquisition remained UNRESOLVED as a third-party report and was contradicted by Zafran’s denial. The July 22, 2026 Cisco strategic investment is reported; investment size was NOT FOUND.
+  - url: https://en.globes.co.il/en/article-cisco-investing-in-not-acquiring-zafran-security-1001550210
+  - quote: “Zafran is not being sold to Cisco but is about to make an investment by participating in our financing round.”
+  - claimed_by: third_party
+- [5] **snir_havdala_departure** = CONFIRMED by the company as planned: Snir Havdala transitioned to his next professional chapter; Itay Nachum, Vice President of Product, assumed product-organization leadership.
+  - url: https://www.calcalistech.com/ctechnews/article/by11gqei4zx
+  - quote: “Snir Havdala's transition to his next professional chapter was planned and coordinated with the company over several months. Itay Nachum, Zafran's Vice President of Product, based in New York, has assumed leadership of the product organization.”
+  - claimed_by: company
+- [7] **competitive_and_migration_positioning** = Zafran explicitly markets against Kenna Security and offers free Kenna migration services; other named competitors were NOT FOUND in the retrieved sources.
+  - url: https://www.zafran.io/replace-kenna-security-with-zafran
+  - quote: “Zafran offers customers free Kenna migration services, which can be completed in as little as 30 days”
+  - claimed_by: company
+- [8] **enterprise_operating_model** = The company describes an integration team connecting enterprise environments, security platforms, cloud infrastructure, and third-party systems through APIs.
+  - url: https://www.zafran.io/open-positions/56106e9ee6184782878f6308b53e7dbe
+  - quote: “Our Integration team is the backbone of the organization, connecting all security ecosystems into one intelligent platform.”
+  - claimed_by: company
+- [9] **geographic_and_vertical_focus** = The company reports adoption in healthcare, technology, financial services, and manufacturing, alongside global expansion.
+  - url: https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai
+  - quote: “driven by rapid adoption across sectors including healthcare, technology, financial services, and manufacturing.”
+  - claimed_by: company
+- [1] **employee_count_estimate** = Third-party/LinkedIn estimate: 100–150 employees; this is not a company-reported headcount. AI Ark employee count, revenue, and similar directory figures were NOT independently verified here and should be treated as estimates.
+  - url: https://www.linkedin.com/in/ben-seri
+  - quote: “Zafran Security has 100-150 employees (+50% YoY).”
+  - claimed_by: estimate
+- [10] **pricing** = Public pricing amounts or standard pricing tiers were NOT FOUND; Zafran AIR is described as having fast-track pricing.
+  - url: https://go.zafran.io/hubfs/zafran-air-datasheet.pdf
+  - quote: “with fast-track pricing”
+  - claimed_by: company
+- [1] **same_name_disambiguation** = This dossier is locked to the cybersecurity company at zafran.io. Zafran spice/food and grocery/recipe pages, HP ProBook/Probook laptop pages, Cogent entities, the cocktail YouTuber Nick Fisher, and unrelated Sanaz Yashar, Ben Seri, or Snir Havdala profiles were excluded as same-name/non-target entities. Exact legal-name filing, Tel Aviv R&D wording, LinkedIn company URL, and a separate public domain beyond zafran.io were NOT FOUND in the retrieved evidence.
+  - url: https://www.zafran.io/resources/zafran-emerges-from-stealth-with-over-30m-as-the-first-risk-and-mitigation-platform-to-fight-threat-exploitation
+  - quote: “Zafran, the leader in risk and mitigation”
+  - claimed_by: company
+- [11] **case_study_scale** = Lumen case study: 30,000+ assets across private cloud and hybrid infrastructure; Zafran says it reduced zero-day triage from hours or days to minutes in that case.
+  - url: https://www.zafran.io/case-studies/how-lumen-used-zafran-to-prioritize-detect-and-mitigate-real-risk
+  - quote: “Their environment includes 30,000+ assets spanning private cloud and hybrid infrastructure.”
+  - claimed_by: company
+- [12] **forward_strategy** = The company’s stated strategy is Agentic Exposure Management spanning asset inventory, vulnerability detection, risk assessment, and autonomous remediation workflows.
+  - url: https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai
+  - quote: “By launching Agentic Exposure Management, Zafran is now poised to complete the entire end-to-end lifecycle across asset inventory, vulnerability detection, risk assessment, and autonomous remediation workflows.”
+  - claimed_by: company

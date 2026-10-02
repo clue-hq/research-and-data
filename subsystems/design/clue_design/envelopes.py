@@ -6,12 +6,13 @@ work rather than re-reading state that has since moved. This is the ``entity_res
 authority-envelope discipline (M8D R2) applied to the design subsystem: the fleet carries ONE
 mechanical kind (``design_job``) and the envelope alone says which shape of work it is.
 
-Three shapes, one discriminated union on ``kind``:
+Four discriminants, one tagged union on ``kind``:
 
 * ``agent_turn`` / ``web_turn`` → :class:`DesignTurnEnvelope` (one design-agent turn; the two
   differ by which runtime harness executes them, which is why ``kind`` mirrors
   ``clue_design.enums.DesignRunKind`` rather than collapsing to a single tag).
 * ``ingestion`` → :class:`DesignIngestionEnvelope` (one brand-kit ingestion job).
+* ``asset_analysis`` → :class:`AssetAnalysisEnvelope` (one image, bound to its parent generation).
 
 **Purity (Rule S4).** This module imports only pydantic, the stdlib, and this package's own
 enums — deliberately NOT ``clue_fleet``. The design substrate may not learn the queue exists;
@@ -71,6 +72,12 @@ class DesignTurnEnvelope(_DesignEnvelopeBase):
     kind: Literal["agent_turn", "web_turn"]
     run_id: str = Field(min_length=1)
     checkpoint_thread_id: str = Field(min_length=1)
+    #: The platform project this turn's spend belongs to, when the offerer has one (lane 3
+    #: slice 5). Additive and optional because the model is ``extra="forbid"`` — a frozen
+    #: pre-slice-5 envelope replays unchanged and stamps its ledger rows with the workspace
+    #: alone. The design runtime itself never reads it: it is carried for the drain's
+    #: ``LedgerStamp``, so a design turn's money joins the project it was spent for.
+    project_id: str | None = None
     #: The document the turn edits, when it names one. Nullable for the same reason the column
     #: is: the shipped async-turn route legitimately carries a document id that is not stored.
     document_id: str | None = None
@@ -90,14 +97,26 @@ class DesignIngestionEnvelope(_DesignEnvelopeBase):
     ingestion_kind: DesignIngestionKind
 
 
+class AssetAnalysisEnvelope(_DesignEnvelopeBase):
+    """One image, fenced by both its own fleet lease and its parent ingestion."""
+
+    kind: Literal["asset_analysis"] = "asset_analysis"
+    job_id: str = Field(min_length=1)
+    parent_generation: int = Field(ge=1)
+    asset_id: str = Field(min_length=1)
+    target: ConfigPayload
+
+
 #: The tagged union a design fleet task carries. Round B's handler parses the stored envelope
 #: through this alias and dispatches on the validated model, never on a raw dict lookup.
 type DesignJobEnvelope = Annotated[
-    DesignTurnEnvelope | DesignIngestionEnvelope, Field(discriminator="kind")
+    DesignTurnEnvelope | DesignIngestionEnvelope | AssetAnalysisEnvelope,
+    Field(discriminator="kind"),
 ]
 
 __all__ = [
     "ConfigPayload",
+    "AssetAnalysisEnvelope",
     "DesignIngestionEnvelope",
     "DesignJobEnvelope",
     "DesignTurnEnvelope",

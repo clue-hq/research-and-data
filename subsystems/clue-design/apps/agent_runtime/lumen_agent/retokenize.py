@@ -14,11 +14,12 @@ Binding rules (v1):
   token (semantic names like space.md win over numeric space.3)
 - stroke width equal to a stroke token → width_token
 - node opacity equal to an opacity token → opacity_token
-- text without style_token: exact role match (family+weight+size) binds the
-  role; family+weight role match with the size on a type.size ramp step binds
-  role + size token; a near-miss size within ``size_snap_tolerance`` of a ramp
-  step SNAPS to the step (agent-draft mode: becoming *more* branded is the
-  point; the reviewer re-judges pixels afterwards).
+- text without explicit typography tokens: bind only roles whose effective
+  family, weight, leading, tracking and size are equivalent. An exact size-ramp
+  override can accompany an otherwise equivalent role, or bind alone. Size
+  snapping requires an explicit positive ``size_snap_tolerance``; all other
+  typography remains unchanged. Ambiguous mode/alias/font/color candidates are
+  left to the canonical resolver when explicitly authored.
 
 Every change is a real ``update_node`` operation applied through the core
 (validated, invertible) and logged to the operations ledger, so bindings
@@ -32,10 +33,9 @@ from typing import Any, Optional
 
 JsonObject = dict[str, Any]
 
-#: Text sizes within this fraction of a ramp step snap to it (agent drafts
-#: only). 6% keeps 80→85.5 out of reach unless the ramp really is that step's
-#: neighborhood; exact matches always win first.
-SIZE_SNAP_TOLERANCE = 0.06
+#: Automatic inference preserves size. Callers may explicitly opt into a
+#: fractional size-only snap; that never permits leading/tracking drift.
+SIZE_SNAP_TOLERANCE = 0.0
 
 _NUMERIC_SPACE = re.compile(r"^space\.\d+$")
 
@@ -113,19 +113,38 @@ def _number_index(brand_kit: JsonObject, group: str, prefer_semantic: bool = Fal
     return index
 
 
+def _invariant_value(brand_kit: JsonObject, name: str, token: JsonObject) -> JsonObject:
+    """Only index direct values that are identical in every declared mode.
+
+    Core owns selector precedence, alias lookup and font-asset resolution. This
+    pass has no resolved candidate values, so it declines indirection rather
+    than inventing a second resolver or treating defaults as the active mode.
+    """
+    if name in ((brand_kit.get("tokens") or {}).get("aliases") or {}):
+        return {}
+    values = (token or {}).get("value") or {}
+    default = values.get("default") or {}
+    if any(value != default for value in (values.get("modes") or {}).values()):
+        return {}
+    return default
+
+
 def _type_roles(brand_kit: JsonObject) -> list[JsonObject]:
     roles = []
     typography = (brand_kit.get("tokens") or {}).get("typography") or {}
     for name, token in typography.items():
-        default = ((token or {}).get("value") or {}).get("default") or {}
-        if default.get("kind") != "style":
+        default = _invariant_value(brand_kit, name, token)
+        if default.get("kind") != "style" or default.get("font_asset") is not None:
             continue
         roles.append(
             {
                 "token": name,
-                "family": str(default.get("font_family") or "").lower(),
+                "family": str(default.get("font_family") or ""),
                 "size": float(default.get("font_size") or 0),
                 "weight": int(default.get("font_weight") or 0),
+                "line_height": default.get("line_height"),
+                "letter_spacing": default.get("letter_spacing"),
+                "color": default.get("color"),
             }
         )
     return roles
@@ -137,7 +156,9 @@ def _ramp_index(brand_kit: JsonObject) -> dict[float, str]:
     for name in sorted(numbers):
         if not name.startswith("type.size."):
             continue
-        default = ((numbers[name] or {}).get("value") or {}).get("default") or {}
+        default = _invariant_value(brand_kit, name, numbers[name])
+        if default.get("kind") != "number" or default.get("unit") not in ("unitless", "px", "mm"):
+            continue
         value = default.get("value")
         if isinstance(value, (int, float)) and float(value) not in index:
             index[float(value)] = name
@@ -171,35 +192,48 @@ def _retokenize_text_kind(
     ramp: dict[float, str],
     kit_families: set[str],
     tolerance: float,
-) -> Optional[JsonObject]:
-    if kind.get("style_token"):
+) -> Optional[tuple[JsonObject, JsonObject]]:
+    # Scalar tokens can be newly authored while their numeric fields still
+    # contain the previous resolved values. Inferring a role/ramp from those
+    # stale literals would overwrite the requested repair before core resolves
+    # it. Leave explicit typography to the canonical resolver, including its
+    # missing-token diagnostics; this pass only fills in unbound literals.
+    if any(kind.get(token) is not None for token in (
+        "style_token", "font_size_token", "line_height_token", "letter_spacing_token"
+    )):
         return None
-    family = str(kind.get("font_family") or "").lower()
+    family = str(kind.get("font_family") or "")
     size = float(kind.get("font_size") or 0)
     weight = int(kind.get("font_weight") or 0)
 
-    exact = [r for r in roles if r["family"] == family and r["weight"] == weight]
+    exact = [
+        r for r in roles
+        if r["family"] == family and r["weight"] == weight
+        and all(r[field] is None or r[field] == kind.get(field)
+                for field in ("line_height", "letter_spacing"))
+    ]
     updated = dict(kind)
     for role in exact:
-        if abs(role["size"] - size) < 0.25:
+        if role["size"] == size:
             updated["style_token"] = role["token"]
-            return updated
-    if exact:
-        if size in ramp:
-            updated["style_token"] = exact[0]["token"]
-            updated["font_size_token"] = ramp[size]
-            return updated
-        if tolerance > 0 and ramp:
-            nearest = min(ramp, key=lambda step: abs(step - size))
-            if size > 0 and abs(nearest - size) / size <= tolerance:
-                updated["style_token"] = exact[0]["token"]
-                updated["font_size_token"] = ramp[nearest]
-                updated["font_size"] = nearest
-                return updated
-    # No role fits: a ramp-exact size still earns its size token.
-    if family in kit_families and size in ramp:
+            return updated, {"style": True}
+    if exact and size in ramp:
+        updated["style_token"] = exact[0]["token"]
         updated["font_size_token"] = ramp[size]
-        return updated
+        return updated, {"style": True, "font_size": True}
+    # No role fits: a ramp-exact size still earns its size token.
+    if family.lower() in kit_families and size in ramp:
+        updated["font_size_token"] = ramp[size]
+        return updated, {"font_size": True}
+    if family.lower() in kit_families and tolerance > 0 and ramp and size > 0:
+        nearest = min(ramp, key=lambda step: abs(step - size))
+        if abs(nearest - size) / size <= tolerance:
+            updated["font_size_token"] = ramp[nearest]
+            updated["font_size"] = nearest
+            if exact:
+                updated["style_token"] = exact[0]["token"]
+                return updated, {"style": True, "font_size": True}
+            return updated, {"font_size": True}
     return None
 
 
@@ -215,7 +249,7 @@ def build_retokenize_operations(
     opacity = _number_index(brand_kit, "opacity")
     roles = _type_roles(brand_kit)
     ramp = _ramp_index(brand_kit)
-    kit_families = {r["family"] for r in roles}
+    kit_families = {r["family"].lower() for r in roles}
     for font in ((brand_kit.get("assets") or {}).get("fonts") or {}).values():
         if isinstance(font, dict) and isinstance(font.get("family"), str):
             kit_families.add(font["family"].lower())
@@ -301,12 +335,35 @@ def build_retokenize_operations(
 
         kind = node.get("kind")
         if isinstance(kind, dict) and kind.get("kind") == "text":
-            new_kind = _retokenize_text_kind(
-                kind, roles, ramp, kit_families, size_snap_tolerance
+            # Core applies a role color only without an author-owned first
+            # fill. Its synthesized `<node>_text_fill` remains role-owned.
+            # Color resolution/contrast adaptation cannot be inferred here.
+            fills = node.get("fills") or []
+            has_author_fill = bool(fills and fills[0].get("id") != f"{node_id}_text_fill")
+            safe_roles = [r for r in roles if r["color"] is None or has_author_fill]
+            text_rebind = _retokenize_text_kind(
+                kind, safe_roles, ramp, kit_families, size_snap_tolerance
             )
-            if new_kind is not None:
+            if text_rebind is not None:
+                new_kind, explicit_tokens = text_rebind
                 patch["kind"] = _set(new_kind)
+                # The ledger replays against unresolved authoring state.
+                # Preserve deliberate same-token reapplication there too.
+                patch["explicit_text_tokens"] = explicit_tokens
                 touched = True
+            elif new_fills is not None:
+                # This is a paint rebind, not an authored text-color edit.
+                # A fills-only core operation would detach the role when
+                # replayed over unresolved authoring state and expose stale
+                # literals. Carry current text even when no equivalent role
+                # can be inferred, along with any explicit binding intent.
+                patch["kind"] = _set(dict(kind))
+                patch["explicit_text_tokens"] = {
+                    "style": kind.get("style_token") is not None,
+                    "font_size": kind.get("font_size_token") is not None,
+                    "line_height": kind.get("line_height_token") is not None,
+                    "letter_spacing": kind.get("letter_spacing_token") is not None,
+                }
 
         if touched:
             operations.append(

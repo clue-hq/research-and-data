@@ -1,0 +1,23 @@
+{
+  "zafran": {
+    "person": "Vari Kaur (Varinder Kaur)",
+    "chars": 13226,
+    "not_found": 12,
+    "elapsed_s": 31.8,
+    "cost_usd": 0.022
+  },
+  "cogent": {
+    "person": "Alexander Semien",
+    "chars": 16441,
+    "not_found": 12,
+    "elapsed_s": 40.5,
+    "cost_usd": 0.018
+  },
+  "harmonic": {
+    "person": "Ana Corio (Anastasia Corio)",
+    "chars": 20030,
+    "not_found": 8,
+    "elapsed_s": 70.6,
+    "cost_usd": 0.025
+  }
+}

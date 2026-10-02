@@ -301,8 +301,12 @@ export function arrangeShortcut(
  * input, textarea or contenteditable keeps its own shortcuts. Shared rather
  * than repeated so the two shortcut functions cannot drift on which targets
  * are "typing".
+ *
+ * EXPORTED (clipboard Task 7) so the scene clipboard's copy/cut/paste/⌘D
+ * handlers apply the SAME rule — the overlay textarea and every inspector
+ * field must keep their native clipboard. One copy, three keymaps.
  */
-function isTypingTarget(
+export function isTypingTarget(
   target: { isContentEditable: boolean; tagName: string } | null,
 ): boolean {
   return (

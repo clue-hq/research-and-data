@@ -1,6 +1,6 @@
 ---
 name: conversion-copywriting
-description: The language skill for converting pages — turn the evidence you were given into the clearest possible words for the specific reader: their vocabulary, their order of questions, claims no stronger than the evidence, proof beside every claim, one action stated as what they receive. Read this whenever you write or rewrite page copy — especially through a cloned section's slots.
+description: "The language skill for converting pages — turn the evidence you were given into the clearest possible words for the specific reader: their vocabulary, their order of questions, claims no stronger than the evidence, proof beside every claim, one action stated as what they receive. Read this whenever you write or rewrite page copy — especially through a cloned section's slots."
 ---
 
 # Conversion Copywriting — the words are the argument

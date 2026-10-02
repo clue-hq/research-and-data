@@ -1,0 +1,302 @@
+schema_version: "1"
+kind: profile
+name: head-of-abm
+version: v53
+status: active
+# v53 (brand index path, 2026-09-14): v52 with the skill pin moved v29→v30 — §1 names the
+# brand library's manifest at its real mounted path, `brand/index.json` (the tree root, beside
+# `knowledge/`). Nothing else moves.
+# v52 (the mounted libraries, 2026-09-13): v51 with the two read-only library mounts granted.
+# The brand's knowledge is materialized once per pinned version and mounted at `brand/`, and the
+# project's settled state — `status.md`, `decisions.md`, its own documents, the artifact index —
+# is compiled once per project and mounted at `project/`, so both prefixes join the readable list.
+# Neither is writable: a library is the platform's word about what is settled, and the agent
+# changes it only through a governed tool (the plan through `write_project_document@1`), never by
+# writing a file. Nothing is dropped — `inputs/` still carries this turn's message and cards, and
+# the per-turn seeds beneath it are still readable while they exist. Prompt pin moved v8→v9 and
+# skill pin v28→v29: both now name the mounted paths (`brand/knowledge/`, `project/`) instead of
+# the seed paths, and §1 describes the project library as one place every thread of the project
+# sees. No tool is added or dropped. Everything else is v51's.
+# v51 (thread workspace, 2026-09-13): v50 with the workspace block moved to the thread layout.
+# The workspace is now one persistent directory per chat thread, so `scratch/` — the agent's own
+# notebook, which survives every turn of the thread — is granted readable and writable, and
+# `reads/` is granted readable (the platform writes what a tool read back for it; the agent never
+# writes there). `work/` stays on BOTH lists, readable and writable, so a delegated specialist's
+# workspace is byte-for-byte what it was under v50 — the Head of ABM's own skill never names
+# `work/` and never writes there, because `scratch/` is its notebook. (The registry intersects a
+# child's workspace with its parent's on both lists, so dropping `work/` here would leave every
+# delegated research/content/reviewer child writable only in `outputs/` — its own scratch pad
+# taken away by a change to its parent. An unused `work/` costs the Head of ABM nothing.)
+# `context/` stays readable, because the assembler still materializes the turn's context cards
+# under it. Quota raised to 400 files / 20 MiB because the notebook
+# persists across a long conversation instead of dying with the turn. Skill pin moved v27→v28
+# (§1 names the notebook: what `scratch/` is for, and what belongs in the project's files instead).
+# Nothing else moves.
+# v50 (read-tool hotfix, 2026-09-13): v49 with the three reads' repaired contracts —
+# `read_account_research` pages its claims (`offset`/`next_offset`), names the account's claim
+# families (`prefixes`) and fits the governed receipt; `read_discovery_run` accepts the schema's
+# own `pass` on input so its result passes the runner's validation. Skill pin moved v26→v27 (§7c:
+# overviews render on first page view; read pages to the end; never invent a prefix; §1's
+# onboarding pointer names the real flow). Nothing else moves. Digests read off the live
+# descriptors.
+# v49 (read-tool output schemas typed, 2026-09-13): v48 with the three reads' contracts repaired;
+# skill pin moved v25→v26. The rows each read serves are now typed models in the output schema
+# (`ProjectAccountView`, `AccountOverviewSection`, `AccountClaimView`, `DiscoveryCandidateView`)
+# rather than opaque dicts, so a later change to a row shape moves the digest and this pin notices.
+# Three contract repairs ride with them: `read_account_research`'s claims mirror the account
+# page's own display gate (sensitive, unverified tier-4 and outreach-unsafe claims held back and
+# counted in `excluded`, each claim carrying its verification status), so chat cannot state a fact
+# the app refuses to print; `read_project_accounts` gains `query` and `offset`, so a named account
+# past the first page is reachable; `read_discovery_run`'s `verified` counts the candidates the
+# verifier judged rather than every candidate that is not pending. Nothing else moves: prompt v8,
+# the gates, the ICP-authoring pair, the plan write, the ARV2 launches and run read, model,
+# workspace, delegation and limits are v48's. Digests read off the live descriptors.
+# v48 (read tools, 2026-09-13): v47 plus the three ARV2 read tools; skill pin moved v24→v25.
+# `read_project_accounts@1`, `read_account_research@1` and `read_discovery_run@1` are effect-free
+# reads over the project's own rows: the accounts in the project with each one's research status,
+# what research found about one account (its written overview, or its live claims), and the latest
+# discovery run with its candidates. They spend nothing, approve nothing and launch nothing — they
+# are how this agent answers a question about accounts from the rows instead of from what its own
+# thread happened to start. stage0-interview v25 §7c is the procedure (read before you speak) and
+# its §7b says to read the last discovery run before proposing another. Nothing else moves: prompt
+# v8, the gates, the ICP-authoring pair, the plan write, the ARV2 launches and run read, model,
+# workspace, delegation and limits are v47's. Digests read off the live descriptors.
+# v47 (project plan, 2026-09-12): v46 plus `write_project_document@1`; skill pin moved v23→v24.
+# The agent may now write this project's one plan, `inputs/project/plan.md`, once the strategy is
+# settled — the section-2 answers, a confirmed and pinned ICP, a confirmed product set. The write
+# carries `expected_version`, so the human's own edits through the Plan tab are never overwritten
+# silently: a stale version is refused by name and the agent re-reads and writes again.
+# stage0-interview v24 §6b is the procedure (when the plan is written, what it contains, and the
+# `project_document` domain ref that makes the plan card appear). Nothing else moves: prompt v8,
+# the gates, the ICP-authoring pair, the ARV2 launches and run read, model, workspace, delegation
+# and limits are v46's. Digests read off the live descriptor.
+# v46 (ARV2 context and authoring, 2026-09-12): v45 plus `author_icp_document@1` and
+# `request_persona_synthesis@1`; skill pin moved v22→v23. The agent may now write a proposed ICP
+# document — brand-level or a project-local variant — and ask the platform to synthesize its
+# personas. Neither tool confirms anything: authoring sets the status to proposed and the human
+# still confirms through `open_icp_confirmation_gate@2`, and the persona request queues a
+# background turn rather than producing a document on this one. stage0-interview v23 is the
+# procedure (§5b authoring, §5c personas, §1 the project's own files). Nothing else moves:
+# prompt v8, the gates, the ARV2 launches and run read, model, workspace, delegation and limits
+# are v45's. Digests read off the live descriptors.
+# v45 (ARV2 Track R, R4): v44 plus ONE tool — `launch_arv2_discovery@1`, verified account
+# discovery for a project — and the skill version that teaches it, stage0-interview v22 (§7b,
+# "Discover accounts for this project"). Nothing else moves: prompt v8, the product-set gate, the
+# artifact-ref ICP gate and the ARV2 account/person launches and run read are v44's, and so are
+# model, workspace, delegation and limits. Finding candidate accounts from the ICP the project
+# pinned is the same act on the same lane as researching accounts a human named — it spends
+# against providers, so it stays a governed launch the human's own turn must ask for, and a
+# successful call means a run was queued, never that accounts were found or approved.
+role: head_of_abm
+prompt:
+  name: head-of-abm
+  version: v9
+  sha256: 4972d35cc33874b3d3b81c253c33fdc9ba236d8b3fe18090a557db7cdffed2d0
+skills:
+  - name: stage0-interview
+    version: v30
+    sha256: f173e81346a9bc221775902cfd30bfbf22d269c715874fab398aa1678d62364c
+tools:
+  # ARV2 context and authoring: the agent writes a PROPOSED ICP document — a new version of the
+  # brand profile under the same key, or a project-local variant with its own key and a
+  # `derived_from_icp_key` lineage. It is drafted only from the brand's knowledge files and what
+  # the human said; it confirms nothing, because confirmation is the human's act through
+  # `open_icp_confirmation_gate@2`. stage0-interview v23 §5b is the procedure. Digests read off
+  # the live descriptor.
+  - name: author_icp_document
+    version: "1"
+    input_schema_sha256: 9804550b06dffc9b0c73e01b6e3bb8f8b629f29f05f2c05fc8f42357c2445588
+    output_schema_sha256: 828888a15570dba9396cce0ac6c5edc312540e6a0367c23a76e696b9134b6ca6
+  - name: draft_account_research_directive
+    version: "5"
+    input_schema_sha256: 5cf321a59b2aa856a98ecca7ed85e90b0c6c89eb2f4092bbe74042f4e5b23292
+    output_schema_sha256: 1d805a759f731032c83ccb36b3b5f11b04b2e85682c6e6f1a503d2e0cb91bb8d
+  - name: get_research_view
+    version: "1"
+    input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+    output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  - name: inspect_statement_history
+    version: "1"
+    input_schema_sha256: 886263cab48572d3779e9a7d7dbb1b72f636f1441d0cd2d50c0dd696592daac6
+    output_schema_sha256: 6ce1ede45f5ab66f12b4530b58f1154df9f06167da45af785b4c11a5abf04875
+  # ARV2 Track R, R2 / O6: the new research lane's launch, granted to the Head of ABM with the
+  # skill (v22 §7) that says what must be confirmed first — a confirmed ICP document version and
+  # a confirmed product set — and its read-only status sibling below.
+  - name: launch_arv2_account_research
+    version: "1"
+    input_schema_sha256: 57638dc151a30c67905105bfe4d0a86650ccb31dc9675e3880fe173e17d88c2e
+    output_schema_sha256: 44180afee6410fe56bc94c928b5cbb543fa3bf175d4755b66b87f3abf690906a
+  # ARV2 Track R, R4: verified account DISCOVERY for one project — a long list built from the
+  # confirmed ICP document version the project pinned, then verified company by company against
+  # that document's hard gates, each answer carrying a quote and a source. It approves nothing:
+  # the candidates land on the accounts table and a human adds the ones they want. Granted with
+  # this version; stage0-interview v22 §7b is the procedure. Digests read off the live descriptor.
+  - name: launch_arv2_discovery
+    version: "1"
+    input_schema_sha256: 8a11c20903277320e3cb791efb977f512b9369169d346e4266508ff455bf8db1
+    output_schema_sha256: bbf0f09767552e89cb6744319152dc99c25e370abfb1e4948cf6248a700b3552
+  # ARV2 Track R, R3 / O6 (founder ruling 3, 2026-09-10): the same launch for named PEOPLE, on the
+  # same lane and the same preconditions. It researches contacts that already exist and never
+  # creates a person; the persona it names is the committee seat a person is given if they do not
+  # already hold one. Digests read off the live descriptor.
+  - name: launch_arv2_person_research
+    version: "1"
+    input_schema_sha256: d968b9e07d39af88cab9ce8ec9aaa211fb5ba62396cbd8f96e5be53ad100cead
+    output_schema_sha256: 63313e7dfdb79fe60dea37eb0284d1295c08026e33893afec9878a97e8fed067
+  # genad2 promotes the delegation entry to @4: a document-less doc_kind='scene' open now
+  # births a ZERO-PAGE scene and the design agent authors the page itself, so the platform
+  # owns no page geometry at all — ad_format/ad_width/ad_height are DELETED from the input
+  # (@3 required a format). The @3 schema is frozen for replay; only the input digest moves
+  # (the output shape is unchanged).
+  - name: open_design_leg
+    version: "4"
+    input_schema_sha256: b78a27a3e54aa0f67da8e5fdbe30030035d6e444af0949b254c8a39843821ad0
+    output_schema_sha256: aede29ad524cf857c31c2411cef4553ff75d7b555661b6de81ab339d09e3b21d
+  - name: open_directive_confirmation_gate
+    version: "1"
+    input_schema_sha256: 12d9a95bb3d8b4dc76fab84022edc45eeb1fb8fbd14aa18b0c6b597dff3dad69
+    output_schema_sha256: d07d0ec4416189ddf5395245bda7207587e256bfdc2f16b7e7a6f949e712786c
+  # ARV2 onboarding O6: @2 presents the brand's ICP knowledge document and its approval mints a
+  # confirmed version of that document. @1's subject was a draft `icp_spec` row, which this lane
+  # no longer writes; @1 stays registered and frozen for replay, ungranted here.
+  - name: open_icp_confirmation_gate
+    version: "2"
+    input_schema_sha256: fffd85eb3501052310dc55fda8977135e6600d4c17e85cf263b42c517a25dcea
+    output_schema_sha256: 53ca7fcd506f449992d9100b86a22df8e413d32eefb4cdb6bd8f918b0733eec0
+  # ARV2 onboarding O6: the SET-valued product gate. A project targets a set of products, and
+  # the candidates come from the brand's own product rows and catalog document — never a
+  # Client-KB version — so it replaces the single-product S5-F product gate.
+  - name: open_product_set_selection_gate
+    version: "1"
+    input_schema_sha256: 0c8e2b602a382a9ef2a202e297555d74ff8c41fdfbe4dddf95018e0af66e69f9
+    output_schema_sha256: 3586c05851a774dae4fa9c2801e762a15475a85de2f8d247b63040b806cbd919
+  - name: propose_field
+    version: "2"
+    input_schema_sha256: 381ff072e572d2a4a11818b527d7b36fe1a64c0de63d7f34cebd70b44e26a4a2
+    output_schema_sha256: 3250d58ae68070d2e2112986d8c91befd06795a506770b1ed62cf2f6c99f9842
+  - name: propose_source
+    version: "1"
+    input_schema_sha256: 641252341ba5eab67aefcc7748a3cc27cac07a158418a1d9855c61fddc21ef5b
+    output_schema_sha256: 708d9b5075c72103232daa51c12cbb83a5fe5bdf638bfa79659193f2324a851e
+  # ARV2 read tools: the project's own rows, read. `read_account_research` serves one account's
+  # written overview sections, or its live claims with value, source, evidence and tier, so a
+  # statement about an account carries a claim behind it instead of a memory of an earlier thread.
+  - name: read_account_research
+    version: "1"
+    input_schema_sha256: 3c24d0caeca2a1ec1a7458fbe950e15ad2d174dfc4b30d1872f215a29162bc79
+    output_schema_sha256: 1697e1587da18c201a767fbe1bea67fda72a31b7280d1f422182127434af44fe
+  - name: read_arv2_account_research_run
+    version: "1"
+    input_schema_sha256: 029dddd3db84fcdbb076aac5dd874d7e2cad14cdbefb945555b8e820a3b7d0ba
+    output_schema_sha256: 5663712620131bc9019b80e535f021552f2fcef08e410400d65bea71ad606162
+  # `read_discovery_run` serves the project's latest discovery run (or one named by id) with what
+  # it asked for, what it found and verified, and the top candidates with their verdict. It
+  # approves nothing and starts nothing; stage0-interview v26 §7b says to read it before
+  # proposing another discovery.
+  - name: read_discovery_run
+    version: "1"
+    input_schema_sha256: 82ddeee512c4d57f1d4af5ffc90004274b06bc5c45cb0d4502a9bf9ef3d60db5
+    output_schema_sha256: 2867fd55b3b7056381784632ee2449fe295ae14e26973ad0d6bcba0708009b9e
+  # `read_project_accounts` is the list `status.md` only summarizes: the accounts in this project,
+  # each one's research status and how it joined. stage0-interview v26 §7c is the procedure.
+  - name: read_project_accounts
+    version: "1"
+    input_schema_sha256: 9a7aa42aacc66b5dcf1834db46284e876e12406ecc814419b3b63d55d2275cdd
+    output_schema_sha256: b3d662ea77b66e6ed4d408e3b8c707ed2cae4efda9a3cc01b5c078a8f2cace08
+  - name: record_interview_answer
+    version: "1"
+    input_schema_sha256: 6e597a939a364afc1774e32331256d02c14101d33b2641e3851d449eef7c7ecc
+    output_schema_sha256: 5f0e0fe7baad009e16af713744ef7abbc390615d627a69f5f25c43eb8734e7a8
+  # ARV2 context and authoring: personas for a profile the human already confirmed. The call
+  # queues a background personas-only onboarding turn for the pinned ICP and returns when it is
+  # queued — never with a document. The persona file lands under the profile's own scope on a
+  # later turn. stage0-interview v23 §5c is the procedure. Digests read off the live descriptor.
+  - name: request_persona_synthesis
+    version: "1"
+    input_schema_sha256: b2f4e00f1a56bf493ed0a8e7238a038f5cda9ff448095158774d6aaf7b660e24
+    output_schema_sha256: a5ecd2ce31e93824bdde925e2cc9fc52c0fa2975777a7d4259a2d15b3bd17bbb
+  - name: submit_ingestion
+    version: "1"
+    input_schema_sha256: 9b0a3d6ca25706d310fafd8a28969d6d39cff1272d904f3e4943eddb0b8b83c9
+    output_schema_sha256: 8e2acc7a8819cb1eaff07dc0fa6f8a90b824572e5fb39cbf34a5380f3f1319bf
+  # The project plan: one document per project, `inputs/project/plan.md`, written by this agent and
+  # editable by the human in the Plan tab. That makes it a lost-update problem, so the write is
+  # version-checked — the model says which version it read and a stale write is refused by name,
+  # never merged and never silently overwritten. Scope, path, authorship and status are derived
+  # from the presenting turn and the project row; the model authors only the markdown.
+  # stage0-interview v24 §6b is the procedure. Digests read off the live descriptor.
+  - name: write_project_document
+    version: "1"
+    input_schema_sha256: 6c8ecc2bac5575e5ef93451f08f6653695e83b9e1a26542f14293062526ccccf
+    output_schema_sha256: ef2cb255ed0ca54194629108c49462797dc9a09302a14c6728d6dcb35c29886e
+model:
+  model_id: x-ai/grok-4.6
+  timeout_s: 30.0
+  max_retries: 2
+  max_output_tokens: 8192
+  temperature: 0.1
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 20971520
+  max_file_bytes: 1048576
+  max_file_count: 400
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes:
+    [
+      ".deepagent",
+      "inputs",
+      "context",
+      "scratch",
+      "reads",
+      "work",
+      "outputs",
+      "brand",
+      "project",
+    ]
+  writable_prefixes: ["scratch", "work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: [research, content_drafter, reviewer]
+delegation_tool_grants:
+  research:
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+    - name: run_verification
+      version: "1"
+      input_schema_sha256: a331a001f6b269a9daa97f2d861342d7dfae86a0e75a942ca8f1f4f9d302b0b2
+      output_schema_sha256: d93aeddfdd146ca7bc8dba48b2fcac40415934659c495905255dae3ceb32d91b
+  content_drafter:
+    - name: compose_handoff
+      version: "1"
+      input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+      output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+    - name: compose_contact_content_handoff
+      version: "1"
+      input_schema_sha256: 6976ebe684c36bcbf112149ebad4d5046817ccf0ac6516bd9ced5429c89278db
+      output_schema_sha256: 4802b53a210dc2e07b73da4263e144d1e030e9315ecda31ba4383d17038274d2
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+  reviewer:
+    - name: compose_handoff
+      version: "1"
+      input_schema_sha256: 96917935663e83ac72f50764d2b65d3c837c5e3ba05206aa6b996d692fbf9a0d
+      output_schema_sha256: 986b87c66d09bbbbebeff5a386b103bd2a4202d0f02d5fb8aae64b8e15ab05c5
+    - name: compose_contact_content_handoff
+      version: "1"
+      input_schema_sha256: 6976ebe684c36bcbf112149ebad4d5046817ccf0ac6516bd9ced5429c89278db
+      output_schema_sha256: 4802b53a210dc2e07b73da4263e144d1e030e9315ecda31ba4383d17038274d2
+    - name: get_research_view
+      version: "1"
+      input_schema_sha256: 6360a11ff59a91de844b9d07d403d46843d452379fb03a49dd823d4879390199
+      output_schema_sha256: e2ae2bfff71907c629df2db793f12a1db0b3d529bb89113f44009553b7055407
+max_delegation_depth: 1
+max_delegations: 6
+max_plan_nodes: 48
+turn_timeout_s: 300.0
+max_model_rounds: 24
+
+

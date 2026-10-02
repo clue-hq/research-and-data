@@ -35,14 +35,36 @@ export function isDesignLegEvent(type: string): type is DesignLegEventType {
 }
 
 /**
- * The honest wait sentence (founder requirement 4, verbatim).
+ * One committed design checkpoint, mid-run (scene live-streaming rung A).
+ *
+ * Not a leg frame: it announces no transition and closes nothing. It says a
+ * *version* of the leg's document was committed while the run is still going,
+ * which is the whole point — the canvas can now show work in progress instead
+ * of a blank wait until `leg.awaiting_user`.
+ */
+export const DESIGN_CHECKPOINT_EVENT_TYPE = "design.checkpoint";
+
+/**
+ * One streamed batch of operations, mid-mutation (scene live-streaming rung B).
+ *
+ * Weaker than a checkpoint and deliberately so: it announces work that is NOT
+ * yet durable, so it refreshes NOTHING here. A canvas may render it
+ * optimistically — that decision, and the cursor arithmetic that makes it safe,
+ * live in `design-editor/adapter/scene-stream-cursor`. Refreshing the feed or
+ * reloading the canvas on one would re-read the durable document several times
+ * a second to show it a version it does not yet have.
+ */
+export const DESIGN_OP_BATCH_EVENT_TYPE = "design.op_batch";
+
+/**
+ * The shared wait sentence for ad and website design sessions.
  *
  * Generation is minutes long and its duration is genuinely unknown, so the
- * surface states the range it has actually observed and stops there. A
+ * surface states that clearly without claiming a duration for every format. A
  * percentage or an ETA would be invented, and requirement 5 forbids both.
  */
 export const DESIGN_GENERATION_WAIT_NOTICE =
-  "Website generation often takes 5–15 minutes.";
+  "Design generation can take several minutes.";
 
 const LEG_CLOSED_NOTICES: Readonly<Record<string, string>> = {
   locked: "Design session closed — the page is locked in.",
@@ -68,9 +90,9 @@ export function designLegNotice({
 }): string | null {
   switch (type) {
     case "leg.opened":
-      return "Design session opened — your next message goes to Design.";
+      return "Design session opened — generating now.";
     case "leg.reopened":
-      return "Design session reopened — your next message goes to Design.";
+      return "Design session reopened — generating now.";
     case "leg.awaiting_user":
       return "Design is ready for your next message.";
     case "leg.closed":
@@ -81,6 +103,42 @@ export function designLegNotice({
     default:
       return null;
   }
+}
+
+// Mirrors clue_api.provider_incidents.provider_display / reason_words — the same words the
+// research card and the empty overview section use, so one outage reads one way everywhere. A
+// provider or reason the tables do not know still renders as itself (true, if terse), like every
+// other unknown code here.
+const PROVIDER_DISPLAY: Readonly<Record<string, string>> = {
+  openrouter: "Model provider",
+  exa: "Discovery provider",
+  exa_websets: "Discovery provider",
+  live_http: "Website fetch",
+};
+const REASON_WORDS: Readonly<Record<string, string>> = {
+  credits_exhausted: "credits exhausted",
+  key_limit: "key limit exceeded",
+  auth_invalid: "API key rejected",
+  account_suspended: "account suspended",
+  rate_limited: "rate limited",
+  server_error: "server errors",
+  timeout: "timeouts",
+};
+
+/**
+ * `provider_refused:<provider>:<reason>` / `provider_failed:…` as a sentence, or `null` when the
+ * code is not one of those. A refusal is a decision no retry changes, so its copy waits for the
+ * provider to be restored; a failure is a fault that usually passes, so its copy says try again.
+ */
+function providerFailureNotice(code: string): string | null {
+  const match = /^provider_(refused|failed):([a-z0-9_.-]+):([a-z_]+)$/.exec(code);
+  if (!match) return null;
+  const [, head, provider, reason] = match;
+  const who = PROVIDER_DISPLAY[provider] ?? provider;
+  const what = REASON_WORDS[reason] ?? reason.replace(/_/g, " ");
+  return head === "refused"
+    ? `${who} refused: ${what}. Send another message once it is restored — Clue has been notified.`
+    : `${who} failing: ${what}. Send another message to try again — Clue has been notified.`;
 }
 
 /**
@@ -97,15 +155,16 @@ export function designLegNotice({
  */
 export function designTurnFailureNotice(code: string | null): string | null {
   if (code === null) return null;
+  const provider = providerFailureNotice(code);
+  if (provider !== null) return provider;
   switch (code) {
     case "design_leg_document_finalized":
       return "This page is finalized; revising it needs a new draft revision.";
     case "design_leg_account_unresolved":
       return "This page's target account could not be resolved, so the turn was refused. Nothing was generated.";
     case "design_leg_turn_failed":
-      return "Design couldn't finish this page. Nothing was saved — send another message to try again.";
     case "design_leg_turn_crashed":
-      return "The design turn stopped unexpectedly. Nothing was saved — send another message to try again.";
+      return "Design stopped before completion. Any saved draft remains available.";
     default:
       return code;
   }
@@ -161,6 +220,18 @@ export function designRefreshForEvent(
     case "leg.opened":
     case "leg.reopened":
       return { refetchFeed: true, reloadCanvas: false };
+    case DESIGN_CHECKPOINT_EVENT_TYPE:
+      // The canvas, and only the canvas. A checkpoint is a new *version* of a
+      // document that already has its gallery card, so a feed refetch would
+      // re-run the rail's read several times a minute for a list that cannot
+      // have changed. The reload itself is throttled by the consumer — the
+      // rate is transport, this is the policy.
+      return { refetchFeed: false, reloadCanvas: true };
+    case DESIGN_OP_BATCH_EVENT_TYPE:
+      // Nothing. Stated as a case rather than left to fall through `default`,
+      // because "an op batch refreshes nothing" is a DECISION (see the
+      // constant's docstring), not an unhandled frame.
+      return NO_REFRESH;
     default:
       return NO_REFRESH;
   }

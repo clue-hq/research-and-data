@@ -41,7 +41,6 @@ from clue_research.resolvers.sumble import (
 )
 from clue_research.sources import seed_source_manifests
 from clue_research.stage0 import load_client_knowledge_pack
-from clue_research.verification import Corroborator
 
 
 class SumbleClaimMaterializationError(RuntimeError):
@@ -156,12 +155,14 @@ class SumbleClaimMaterializer:
             account_id=account_id,
             candidate=candidate,
         )
-        corroboration = await Corroborator(conn_factory=self._conn_factory).evaluate(
-            account_id,
-            field_key,
-            scope=WorkspaceScope.for_workspace(workspace_id),
-            entity_type=EntityType.ACCOUNT,
-        )
+        # R0 Part 3C fix 2: the inline `Corroborator` that used to run here was the second
+        # kill-switch inversion — a mechanical verdict that could block field resolution
+        # (disposition CONFLICT) regardless of the `CLUE_VERIFICATION_ENABLED` toggle, because it
+        # was constructed unconditionally rather than composed. Moot with Sumble off; removed as
+        # insurance so no verification-shaped judgement survives the flag flip on this path.
+        # Materialization now resolves on the provider value it just wrote. The `current_value`
+        # read stays: it is the merge's answer for this field, and its provenance supplies
+        # `current_claim_id`.
         async with self._conn_factory() as conn:
             merged = await current_value(
                 conn,
@@ -169,29 +170,11 @@ class SumbleClaimMaterializer:
                 field_key,
                 scope=WorkspaceScope.for_workspace(workspace_id),
             )
-        if corroboration.conflict or (merged is not None and merged.conflict):
-            conflicts = corroboration.conflicting_claim_ids or (
-                merged.conflicting_claim_ids if merged is not None else ()
-            )
-            return SumbleMaterializedField(
-                disposition=SumbleFieldDisposition.CONFLICT,
-                provider_claim_id=claim_id,
-                conflicting_claim_ids=conflicts,
-                reason_code="authoritative_sources_disagree",
-            )
-        corroborated = any(
-            claim_id in group.claim_ids and group.independent_sources >= 2
-            for group in corroboration.value_groups
-        )
         return SumbleMaterializedField(
-            disposition=(
-                SumbleFieldDisposition.CORROBORATED
-                if corroborated
-                else SumbleFieldDisposition.RESOLVED
-            ),
+            disposition=SumbleFieldDisposition.RESOLVED,
             provider_claim_id=claim_id,
             current_claim_id=(merged.provenance.claim_id if merged is not None else claim_id),
-            reason_code=("independent_sources_agree" if corroborated else "sumble_native_value"),
+            reason_code="sumble_native_value",
         )
 
     async def _ensure_claim(

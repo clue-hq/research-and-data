@@ -9,30 +9,11 @@ import {
   HomeSubmissionCoordinator,
   parseHomeBootstrapDraft,
 } from "../model/home-submission";
-import type { ProjectComposerAttachment } from "../model/project-composer";
 import type {
   ProjectEntity,
   ProjectHome,
 } from "../model/project-workspace";
-
-function getMediaType(file: File) {
-  if (file.type) return file.type;
-  const extension = file.name.split(".").pop()?.toLocaleLowerCase() ?? "";
-  const mediaTypes: Record<string, string> = {
-    csv: "text/csv",
-    doc: "application/msword",
-    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    gif: "image/gif",
-    jpeg: "image/jpeg",
-    jpg: "image/jpeg",
-    pdf: "application/pdf",
-    png: "image/png",
-    webp: "image/webp",
-    xls: "application/vnd.ms-excel",
-    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  };
-  return mediaTypes[extension] ?? "application/octet-stream";
-}
+import { useChatAttachments } from "./use-chat-attachments";
 
 export function useProjectHomeController(data: ProjectHome) {
   const router = useRouter();
@@ -40,7 +21,6 @@ export function useProjectHomeController(data: ProjectHome) {
   const httpMode = repositories.transport.mode === "http";
   const [home, setHome] = useState(data);
   const [prompt, setPromptState] = useState("");
-  const [attachments, setAttachments] = useState<ProjectComposerAttachment[]>([]);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
   const [selectedBrandId, setSelectedBrandIdState] = useState(
@@ -54,8 +34,11 @@ export function useProjectHomeController(data: ProjectHome) {
     ReadonlySet<string>
   >(new Set());
   const [error, setError] = useState<string | null>(null);
-  const attachmentUrls = useRef(new Set<string>());
-  const uploadTimers = useRef<number[]>([]);
+  // Real uploads, and only where one can land: the fixture transport has no
+  // upload endpoint, so the fixture Home carries no attachments at all rather
+  // than a simulated receipt that no submission could cite.
+  const attachmentsEnabled = httpMode && home.composerCapabilities.attachments;
+  const chatAttachments = useChatAttachments({ enabled: attachmentsEnabled });
   const mounted = useRef(true);
   const draft = useRef({
     agentProfileId:
@@ -64,7 +47,7 @@ export function useProjectHomeController(data: ProjectHome) {
     brandId: data.defaultBrandId ?? data.brands[0]?.id ?? "",
     contextRefs: [] as {
       objectId: string;
-      objectType: "account" | "contact";
+      objectType: ProjectEntity["type"];
       version: number | null;
     }[],
     message: "",
@@ -72,13 +55,9 @@ export function useProjectHomeController(data: ProjectHome) {
   const submissions = useRef(new HomeSubmissionCoordinator());
 
   useEffect(() => {
-    const timers = uploadTimers.current;
-    const urls = attachmentUrls.current;
     mounted.current = true;
     return () => {
       mounted.current = false;
-      timers.forEach((timer) => window.clearTimeout(timer));
-      urls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, []);
 
@@ -130,11 +109,6 @@ export function useProjectHomeController(data: ProjectHome) {
     [home.entities, selectedEntityIds],
   );
 
-  const suggestions = useMemo(() => {
-    if (prompt.trim().length <= 1) return home.suggestions;
-    return home.suggestions.map((suggestion, index) => index === 1 ? prompt.trim() : suggestion);
-  }, [home.suggestions, prompt]);
-
   const selectedModel =
     home.models.find((model) => model.id === selectedModelId) ?? home.models[0];
 
@@ -146,7 +120,9 @@ export function useProjectHomeController(data: ProjectHome) {
 
   const currentDraft = parseHomeBootstrapDraft({
     agentProfileId: selectedModel?.id ?? null,
-    attachmentRefs: [],
+    // The refs are part of the draft's identity, so the in-flight fingerprint
+    // this reads is the same one `submit` below registers.
+    attachmentRefs: [...(chatAttachments.snapshot() ?? [])],
     brandId: selectedBrandId,
     contextRefs,
     message: prompt,
@@ -208,40 +184,23 @@ export function useProjectHomeController(data: ProjectHome) {
     });
   }
 
-  function addAttachments(files: File[]) {
-    const incoming = files.map((file, index) => {
-      const mediaType = getMediaType(file);
-      const url = mediaType.startsWith("image/") ? URL.createObjectURL(file) : "";
-      if (url) attachmentUrls.current.add(url);
-      return {
-        filename: file.name,
-        id: `${file.name}-${file.lastModified}-${index}`,
-        mediaType,
-        status: "uploading" as const,
-        type: "file" as const,
-        url,
-      };
-    });
-    setAttachments((current) => [...current, ...incoming]);
-    incoming.forEach((attachment, index) => {
-      const timer = window.setTimeout(() => {
-        setAttachments((current) => current.map((item) =>
-          item.id === attachment.id ? { ...item, status: "ready" } : item,
-        ));
-      }, 650 + index * 180);
-      uploadTimers.current.push(timer);
-    });
-  }
-
   async function submit(promptOverride?: string, entityIdsOverride?: string[]) {
     const message = promptOverride ?? prompt;
     if (loading) return false;
+    // Snapshot before anything else: the project this starts carries the files
+    // that had finished uploading when the user pressed send, and a submission
+    // that would drop one still in flight is refused instead.
+    const attachmentSnapshot = chatAttachments.snapshot();
+    if (chatAttachments.attachments.length > 0 && attachmentSnapshot === null) {
+      setError("Wait for attachments to finish uploading.");
+      return false;
+    }
     const submittedEntities = (entityIdsOverride ?? selectedEntityIds)
       .map((id) => home.entities.find((entity) => entity.id === id))
       .filter((entity): entity is ProjectEntity => Boolean(entity));
     const parsed = parseHomeBootstrapDraft({
       agentProfileId: selectedModel?.id ?? null,
-      attachmentRefs: [],
+      attachmentRefs: [...(attachmentSnapshot ?? [])],
       brandId: selectedBrandId,
       contextRefs: submittedEntities.map((entity) => ({
         objectId: entity.id,
@@ -270,15 +229,19 @@ export function useProjectHomeController(data: ProjectHome) {
       });
       const outcome = submissions.current.succeeded(attempt);
       if (!mounted.current) return true;
-      const latestDraft = parseHomeBootstrapDraft(draft.current);
+      // The attachments live in their own hook, not in `draft.current`, so the
+      // comparison reads them where they are: a draft is still "the one that
+      // was sent" only if its files are also still the sent ones.
+      const latestDraft = parseHomeBootstrapDraft({
+        ...draft.current,
+        attachmentRefs: [...(chatAttachments.snapshot() ?? [])],
+      });
       if (latestDraft.success && latestDraft.fingerprint === parsed.fingerprint) {
         draft.current = { ...draft.current, contextRefs: [], message: "" };
         submissions.current.draftChanged();
         setPromptState("");
         setSelectedEntityIds([]);
-        attachmentUrls.current.forEach((url) => URL.revokeObjectURL(url));
-        attachmentUrls.current.clear();
-        setAttachments([]);
+        chatAttachments.clear();
       }
       if (outcome.navigate) router.push(created.href);
       return true;
@@ -307,29 +270,19 @@ export function useProjectHomeController(data: ProjectHome) {
   }
 
   return {
-    // The timer/object-URL preview belongs only to the isolated fixture
-    // transport. HTTP mode has no durable upload receipt endpoint, so it may
-    // never expose these handlers even if a mismatched server payload claimed
-    // attachments were available.
-    addAttachments: httpMode ? undefined : addAttachments,
-    attachments: httpMode ? [] : attachments,
+    // Withheld where no upload can land, so the composer hides the `+` button
+    // rather than offering one whose files would go nowhere.
+    addAttachments: attachmentsEnabled ? chatAttachments.onFiles : undefined,
+    // The hook's own refusals (an unsupported file, a failed upload) render
+    // inside the composer; `error` stays the submission's surface.
+    attachmentError: chatAttachments.error,
+    attachments: [...chatAttachments.attachments],
     data: home,
     error,
     loading,
     modelPickerOpen,
     prompt,
-    removeAttachment: httpMode
-      ? undefined
-      : (attachmentId: string) => {
-          setAttachments((current) => {
-            const attachment = current.find((item) => item.id === attachmentId);
-            if (attachment?.url) {
-              URL.revokeObjectURL(attachment.url);
-              attachmentUrls.current.delete(attachment.url);
-            }
-            return current.filter((item) => item.id !== attachmentId);
-          });
-        },
+    removeAttachment: attachmentsEnabled ? chatAttachments.remove : undefined,
     removeEntity,
     selectEntity,
     selectModel(modelId: string) {
@@ -348,6 +301,6 @@ export function useProjectHomeController(data: ProjectHome) {
     toggleModelPicker() {
       setModelPickerOpen((current) => !current);
     },
-    suggestions,
+    suggestions: home.suggestions,
   };
 }

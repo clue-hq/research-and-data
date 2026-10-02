@@ -3,12 +3,12 @@ use crate::ids::{NodeId, PageId};
 use crate::operations::{NodePatch, Operation, OptionalFieldPatch};
 use crate::page_geometry::page_geometry;
 use crate::scene::{
-    AutoLayoutDirection, ComputedGeometry, Dimension, LayoutAnchor, LayoutMode, Node, NodeKind,
-    PositionMode, Rect, Scene, SizeSpec, TextWrap,
+    valign_offset, AutoLayoutDirection, ComputedGeometry, Dimension, LayoutAnchor, LayoutMode,
+    Node, NodeKind, PositionMode, Rect, Scene, SizeSpec, TextAlign, TextNode, TextWrap,
 };
 use crate::slots::{ContentType, EmptyBehavior, ImagePolicy, OverflowPolicy, ReflowPolicy, Slot};
 use crate::text_measure::{
-    HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasurer,
+    HeuristicTextMeasurer, SharedTextMeasurer, TextMeasureInput, TextMeasureOutput, TextMeasurer,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -197,6 +197,24 @@ impl<'a> LayoutEngine<'a> {
         let size = pinned_size.unwrap_or_else(|| self.resolve_manual_size(node, parent_size));
         self.write_geometry(node, origin, size);
 
+        // Free mode: `fill` = the padded CONTENT box, positions = the author's
+        // transform relative to the OUTER origin (the freeze bakes them that
+        // way). Resolving a child's fill against the outer box was the other
+        // half of the 2026-09-20 defect: the same `fill × hug` row the Stack
+        // solve gave the content width (976) jumped to the outer width (1080)
+        // the moment its container was frozen to Free. Only an auto-layout
+        // node carries `layout`, so a plain group/frame pads by zero and its
+        // children see exactly what they saw before.
+        let padding = node
+            .layout
+            .as_ref()
+            .map(|layout| layout.padding)
+            .unwrap_or([0.0; 4]);
+        let content = Size2 {
+            width: (size.width - padding[1] - padding[3]).max(0.0),
+            height: (size.height - padding[0] - padding[2]).max(0.0),
+        };
+
         for child_id in &node.children {
             let Some(child) = self.scene.nodes.get(child_id) else {
                 continue;
@@ -207,7 +225,7 @@ impl<'a> LayoutEngine<'a> {
                     x: origin.x + child.transform.x,
                     y: origin.y + child.transform.y,
                 },
-                size,
+                content,
                 page_id,
             );
         }
@@ -682,17 +700,36 @@ impl<'a> LayoutEngine<'a> {
     }
 
     fn resolve_manual_size(&self, node: &Node, parent_size: Size2) -> Size2 {
-        Size2 {
-            width: match &node.size.width {
-                Dimension::Fixed(value) => *value,
-                Dimension::Fill { .. } => parent_size.width,
-                Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).width,
-            },
-            height: match &node.size.height {
-                Dimension::Fixed(value) => *value,
-                Dimension::Fill { .. } => parent_size.height,
-                Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).height,
-            },
+        let width = match &node.size.width {
+            Dimension::Fixed(value) => *value,
+            Dimension::Fill { .. } => parent_size.width,
+            Dimension::Hug | Dimension::Token { .. } => self.natural_size(node).width,
+        };
+        let height = match &node.size.height {
+            Dimension::Fixed(value) => *value,
+            Dimension::Fill { .. } => parent_size.height,
+            Dimension::Hug | Dimension::Token { .. } => self.natural_height_at_width(node, width),
+        };
+        Size2 { width, height }
+    }
+
+    /// Editor Quality Plan 4 (ruling R8): a text node's hug height is measured
+    /// at the width it is PAINTED at. The painters lay wrapped text out at the
+    /// box width, so a fixed- or fill-width text node measured without a bound
+    /// hugged its unwrapped line count — a 503-wide headline that paints three
+    /// lines hugged two, and the box stopped following the copy. Only a text
+    /// node whose width itself hugs measures unbounded (that IS its width).
+    /// Every other kind keeps `natural_size`.
+    fn natural_height_at_width(&self, node: &Node, width: f64) -> f64 {
+        match &node.kind {
+            NodeKind::Text(text)
+                if !matches!(node.size.width, Dimension::Hug | Dimension::Token { .. }) =>
+            {
+                let mut input = TextMeasureInput::from_text_node(text).for_node(&node.id);
+                input.max_width = Some(width.max(0.0));
+                self.measurer.measure(&input).height
+            }
+            _ => self.natural_size(node).height,
         }
     }
 
@@ -701,7 +738,7 @@ impl<'a> LayoutEngine<'a> {
             NodeKind::Text(text) => {
                 let measured = self
                     .measurer
-                    .measure(&TextMeasureInput::from_text_node(text));
+                    .measure(&TextMeasureInput::from_text_node(text).for_node(&node.id));
                 Size2 {
                     width: measured.width,
                     height: measured.height,
@@ -742,7 +779,7 @@ impl<'a> LayoutEngine<'a> {
     fn measure_context_for(&self, node: &Node) -> MeasureContext {
         match &node.kind {
             NodeKind::Text(text) => {
-                let mut input = TextMeasureInput::from_text_node(text);
+                let mut input = TextMeasureInput::from_text_node(text).for_node(&node.id);
                 // A slot-bound text node must hug to the WORST-CASE fixture (the
                 // largest data it will ever hold), not just its placeholder/sample.
                 // Otherwise a hug height sized to the sample under-reserves and the
@@ -792,6 +829,7 @@ impl<'a> LayoutEngine<'a> {
             ComputedGeometry {
                 layout_bounds,
                 render_bounds,
+                text_lines: Vec::new(),
             },
         );
     }
@@ -991,10 +1029,7 @@ impl<'a> LayoutEngine<'a> {
     /// A node whose author declared `bleed(true)` — deliberate off-canvas
     /// intent (A4). Per-node, never inherited.
     fn is_declared_bleed(&self, node_id: &NodeId) -> bool {
-        self.scene
-            .nodes
-            .get(node_id)
-            .is_some_and(|node| node.bleed)
+        self.scene.nodes.get(node_id).is_some_and(|node| node.bleed)
     }
 
     /// A node a human freehands directly: pinned Absolute, or a child of a
@@ -1049,6 +1084,7 @@ impl<'a> LayoutEngine<'a> {
     }
 
     fn validate_text_nodes(&mut self) {
+        let mut placed: Vec<(NodeId, Vec<Rect>)> = Vec::new();
         for node in self.scene.nodes.values() {
             let NodeKind::Text(text) = &node.kind else {
                 continue;
@@ -1077,10 +1113,7 @@ impl<'a> LayoutEngine<'a> {
             // A6a D3: `truncate(true)` on freely-wrapping text with no
             // max_lines can never fire — nothing ever cuts the copy. Teach,
             // don't block (advisory), so the author knows the flag is inert.
-            if text.truncate
-                && text.max_lines.is_none()
-                && matches!(text.wrap, TextWrap::Wrap)
-            {
+            if text.truncate && text.max_lines.is_none() && matches!(text.wrap, TextWrap::Wrap) {
                 self.diagnostics.push(
                     Diagnostic::warning(
                         Phase::Layout,
@@ -1157,8 +1190,18 @@ impl<'a> LayoutEngine<'a> {
             }
 
             let measured = self.measurer.measure(
-                &TextMeasureInput::from_text_node(text).with_bounds(&geometry.layout_bounds),
+                &TextMeasureInput::from_text_node(text)
+                    .for_node(&node.id)
+                    .with_bounds(&geometry.layout_bounds),
             );
+            // Plan 4 item F: keep what this measurement already knows — the
+            // line boxes — instead of discarding them after the overflow
+            // checks. Nodes that `continue`d above (invalid metrics, collapsed
+            // bounds) keep an empty `text_lines` and hit-test by their box.
+            placed.push((
+                node.id.clone(),
+                painted_text_lines(&geometry.layout_bounds, text, &measured),
+            ));
             // Taffy rounds computed geometry to whole pixels, so a hug box can
             // legitimately sit up to half a pixel under the fractional measured
             // height (e.g. stacked paragraph gaps or fractional line heights).
@@ -1230,6 +1273,11 @@ impl<'a> LayoutEngine<'a> {
                 );
             }
         }
+        for (node_id, text_lines) in placed {
+            if let Some(geometry) = self.geometry.get_mut(&node_id) {
+                geometry.text_lines = text_lines;
+            }
+        }
     }
 
     fn validate_slot_content(&mut self, slot: &Slot) {
@@ -1297,9 +1345,10 @@ impl<'a> LayoutEngine<'a> {
         for fixture in fixtures {
             let fit = text_fit(
                 self.measurer,
+                node_id,
                 fixture,
                 text,
-                text.font_size,
+                None,
                 &geometry.layout_bounds,
                 &slot.overflow,
             );
@@ -1334,9 +1383,10 @@ impl<'a> LayoutEngine<'a> {
                 OverflowPolicy::ShrinkFont { min_font_size, .. } => {
                     let shrink_fit = text_fit(
                         self.measurer,
+                        node_id,
                         fixture,
                         text,
-                        *min_font_size,
+                        Some(*min_font_size),
                         &geometry.layout_bounds,
                         &OverflowPolicy::Error,
                     );
@@ -1735,7 +1785,13 @@ fn measure_taffy_node(
 
     let natural = match context {
         Some(MeasureContext::Text(input)) => {
-            input.max_width = available_width(available_space.width);
+            // Plan 4 (ruling R8): a leaf with a definite width wraps at THAT
+            // width — the painters lay out at the box, not at the container's
+            // available space. A width-less leaf keeps the available bound.
+            input.max_width = match known_dimensions.width {
+                Some(width) => Some(f64::from(width)),
+                None => available_width(available_space.width),
+            };
             let measured = measurer.measure(input);
             Size2 {
                 width: measured.width,
@@ -1806,6 +1862,38 @@ fn pinned_box(node: &Node) -> Option<&Rect> {
         PositionMode::Absolute => node.absolute_box.as_ref(),
         PositionMode::Managed => None,
     }
+}
+
+/// Editor Quality Plan 4 (item F): place a measurer's line boxes where the
+/// painters draw them. Measurement lays every line out LEFT-aligned and
+/// paragraph-relative (`TextLineBox` docs); `lumen-skia::paint_text_paragraph`
+/// and the editor's `paintTextParagraph` both resolve the horizontal placement
+/// to `(box_width − line_width) × f(align)` — f is 0 for left and justify, ½
+/// for center, 1 for right — and shift the whole stack by
+/// `valign_offset(box_height, content_height, valign)`. Justified lines are
+/// placed like left (the painters stretch them; the hit slop covers the rest).
+/// Page-space, unrotated: the same frame as `layout_bounds`.
+pub fn painted_text_lines(
+    bounds: &Rect,
+    text: &TextNode,
+    measured: &TextMeasureOutput,
+) -> Vec<Rect> {
+    let factor = match text.align {
+        TextAlign::Left | TextAlign::Justify => 0.0,
+        TextAlign::Center => 0.5,
+        TextAlign::Right => 1.0,
+    };
+    let stack_offset = valign_offset(bounds.height, measured.height, text.valign);
+    measured
+        .lines
+        .iter()
+        .map(|line| Rect {
+            x: bounds.x + (bounds.width - line.width) * factor + line.x,
+            y: bounds.y + stack_offset + line.y,
+            width: line.width,
+            height: line.height,
+        })
+        .collect()
 }
 
 fn render_bounds_for(layout_bounds: &Rect, node: &Node) -> Rect {
@@ -1901,9 +1989,10 @@ struct TextFit {
 
 fn text_fit(
     measurer: &dyn TextMeasurer,
+    node_id: &NodeId,
     content: &str,
     text: &crate::scene::TextNode,
-    font_size: f64,
+    font_size_override: Option<f64>,
     bounds: &Rect,
     policy: &OverflowPolicy,
 ) -> TextFit {
@@ -1921,9 +2010,11 @@ fn text_fit(
         _ => (text.wrap.clone(), text.max_lines),
     };
     let measured = measurer.measure(&TextMeasureInput {
+        node_id: Some(node_id.to_string()),
+        font_size_override,
         content: content.to_owned(),
         font_family: text.font_family.clone(),
-        font_size,
+        font_size: font_size_override.unwrap_or(text.font_size),
         font_weight: text.font_weight,
         // Italic selects a different face, changing advances → a fit input.
         italic: text.italic,

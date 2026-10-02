@@ -22,10 +22,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Sequence
 from datetime import timedelta
 from typing import Any
 from uuid import uuid4
 
+from clue_api.design_event_forwarder import _DesignEventForwarder
+from clue_api.design_memory_runtime import PreferenceResolverFactory
+from clue_api.langfuse_callbacks import build_langfuse_callbacks
 from clue_db import transaction
 from clue_fleet import (
     LeaseGeneration,
@@ -50,8 +54,27 @@ class DesignRuntimeUnavailable(RuntimeError):
     """``design_runtime_enabled`` is on but the design app is not importable in this process."""
 
 
+async def _drain_design_spend(conn: Any, raw: Any, ledger: Any, stamp: Any) -> Any:
+    """Land a design unit of work's buffered provider calls — with the platform's incidents.
+
+    The shape ``lumen_api.spend.DrainFn`` names: the design side opens the connection and the
+    transaction (it runs on a synchronous executor with its own private engine) and hands them
+    here. ``artifacts=None`` because the design lane's response bodies are not persisted to the
+    platform's artifact store; the rows land citing nothing there, and the money trail is still
+    complete.
+    """
+    from clue_api.arv2.provider_ledger import drain_provider_calls
+
+    return await drain_provider_calls(conn, raw=raw, ledger=ledger, artifacts=None, stamp=stamp)
+
+
 def build_design_job_handler(
-    *, enabled: bool, purpose: str = "design_job_drain"
+    *,
+    enabled: bool,
+    purpose: str = "design_job_drain",
+    preference_resolver_factory: PreferenceResolverFactory | None = None,
+    turn_callbacks_factory: Any = None,
+    platform_reads_factory: Any = None,
 ) -> WorkHandler | None:
     """The ``design_job`` handler for :func:`build_multi_work_worker`, or ``None`` when off.
 
@@ -63,6 +86,17 @@ def build_design_job_handler(
     (:func:`build_design_leg_lane_driver`) — so the event fires twice, ~300ms apart, by design.
     Unlabelled it read as a double registration and sent a log-duplication hunt down the wrong
     path; the real duplication was two root console handlers (see ``clue_obs.config``).
+
+    ``turn_callbacks_factory`` (lane 3 slice 5) is called once per TURN envelope on the design
+    side and returns that turn's ``lumen_agent.usage_collector.TurnCallbacks``. The drain handler
+    here takes none by default; :func:`build_design_leg_lane_driver` passes one that opens the
+    platform's Langfuse handler, so a leg's design trio reports into the leg's own trace.
+
+    ``platform_reads_factory`` (design note 2026-09-19) is the leg turn's reads — the target
+    account's research through the governed tools and the seller's pinned knowledge — handed
+    over the same way the preference resolver is: a live callable composed HERE with the
+    worker's invoker and storage, which the design side calls and never assembles. Passed on
+    only when present, so a deployment without it composes exactly the handler it did before.
     """
     if not enabled:
         return None
@@ -74,7 +108,28 @@ def build_design_job_handler(
             "install the design app (subsystems/clue-design/apps/{api,agent_runtime}) or "
             "unset CLUE_DESIGN_RUNTIME_ENABLED"
         ) from error
-    handler: Any = _build()
+    extras: dict[str, Any] = {
+        # PRE-1b: the WHOLE drain, injected, so a design 402 opens a provider incident under the
+        # ARV2 close rule — written once, here, instead of once per design executor. The design
+        # side owns the connection and the transaction; this only says what to do with them.
+        "spend_drain": _drain_design_spend,
+        "turn_callbacks_factory": turn_callbacks_factory,
+    }
+    if platform_reads_factory is not None:
+        # The design side puts it on the host it builds, whichever host that is — so this rides
+        # beside the preference resolver's host_provider rather than inside it.
+        extras["platform_reads_factory"] = platform_reads_factory
+    if preference_resolver_factory is None:
+        handler: Any = _build(**extras)
+    else:
+        from lumen_api.fleet_handler import DesignTurnHost
+
+        handler = _build(
+            host_provider=lambda: DesignTurnHost(
+                preference_resolver_factory=preference_resolver_factory
+            ),
+            **extras,
+        )
     if handler.kind is not FleetTaskKind.DESIGN_JOB:
         raise DesignRuntimeUnavailable("the design handler does not own design_job tasks")
     log.info(
@@ -92,8 +147,9 @@ class InlineDesignLaneDriver:
     sense that matters — the same :class:`~lumen_api.fleet_handler.DesignJobWorkHandler`, the
     same claim CAS, the same generation fences, the same run-event stream — but it is *driven by
     the agent-turn worker* instead of queued as a second fleet task. The platform fleet drains
-    one task at a time per worker, so an ``AGENT_TURN`` handler that enqueued a ``design_job``
-    and awaited it would deadlock a single-worker deployment against itself; holding the design
+    one task per drain slot (``CLUE_FLEET_WORKER_CONCURRENCY``; exactly one by default),
+    so an ``AGENT_TURN`` handler that enqueued a ``design_job`` and awaited it would deadlock a
+    deployment whose slots are all busy against itself; holding the design
     work lease and calling the handler directly keeps single-flight, stop and fencing semantics
     without that hazard.
 
@@ -126,6 +182,7 @@ class InlineDesignLaneDriver:
         heartbeat_interval_s: float | None = None,
         join_poll_interval_s: float = 5.0,
         join_timeout_s: float = 1800.0,
+        checkpoint_poll_interval_s: float = 1.0,
     ) -> None:
         self._handler = handler
         self._conn_factory = conn_factory
@@ -137,11 +194,178 @@ class InlineDesignLaneDriver:
         )
         self._join_poll_interval_s = join_poll_interval_s
         self._join_timeout_s = join_timeout_s
+        #: How often the checkpoint tail reads the design run's outbox. Faster than the join
+        #: poll on purpose — the join is a rare recovery path, whereas this cadence is the
+        #: latency a marketer sees between the agent committing a round and the canvas showing
+        #: it. Slower than the design editor's own 4 Hz stream: rung B's op batches land once
+        #: per mutation and rung A's checkpoints once per authoring round (tens of seconds) —
+        #: neither is a per-compile-frame cadence, so a 1 Hz tail loses nothing but latency.
+        self._checkpoint_poll_interval_s = checkpoint_poll_interval_s
+        #: Every tail the CURRENT (or most recent) drive started — one per envelope, so a batch
+        #: of N documents reports the frames of all N rather than of whichever ran last.
+        #: :meth:`drive` sets it to its single forwarder; :meth:`drive_batch` to the batch's.
+        self._forwarders: list[_DesignEventForwarder] = []
         #: Successful renewals across this driver's lifetime — observable, so a test (or an
         #: operator counter) can prove the beat is real rather than infer it from silence.
         self.renewals = 0
 
+    @property
+    def frames_forwarded(self) -> int:
+        """Design frames — checkpoints and op batches alike — the current (or most recent) drive
+        has put on the thread.
+
+        Live rather than summed at the end, for the same reason :attr:`renewals` is: the tail's
+        whole claim is that it announces work *while* the turn runs, and a counter that only
+        settles afterwards could not tell that apart from a drain.
+
+        Summed across a batch's tails: a multi-document leg's frames all belong to the one chat
+        turn, so the count an operator (or a test) reads is the turn's, not one document's.
+        """
+
+        return sum(forwarder.forwarded for forwarder in self._forwarders)
+
     async def drive(self, *, envelope: Any) -> None:
+        """Drive the run terminal, tailing its progress onto the leg's thread as it goes.
+
+        The tail runs for the whole drive rather than on the join loop's tick, because the join
+        loop only runs when this lane is NOT the one driving: in the ordinary case the handler
+        holds the coroutine for the entire turn and the join never spins at all. A background
+        poller is therefore the only placement from which a checkpoint can be announced *while*
+        the turn is still running, which is the entire point (see
+        :class:`~clue_api.design_event_forwarder._DesignEventForwarder` for why every one of its
+        failures is swallowed).
+
+        One final drain follows the drive: the last checkpoint of a fast turn can land between
+        the tail's last poll and the terminal row, and a frame arriving a beat late is worth
+        much more than a frame lost.
+        """
+
+        forwarder = _DesignEventForwarder(
+            envelope=envelope,
+            conn_factory=self._conn_factory,
+            poll_interval_s=self._checkpoint_poll_interval_s,
+        )
+        self._forwarders = [forwarder]
+        tail = asyncio.create_task(forwarder.run())
+        try:
+            await self._drive_to_terminal(envelope=envelope)
+        finally:
+            tail.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await tail
+            # Unguarded on purpose: ``drain`` swallows its own failures, so the only thing this
+            # can raise is the ``CancelledError`` of a drive the caller is stopping — which must
+            # keep propagating rather than be absorbed into a silent normal return.
+            await forwarder.drain()
+
+    async def drive_batch(self, *, envelopes: Sequence[Any]) -> None:
+        """Drive every run of one leg turn's batch terminal — spec §3.3 step 3.
+
+        The single-run rule applied across siblings, unchanged: for every non-terminal run,
+        acquire its lease and drive it inline if nobody holds it; skip it while a LIVE foreign
+        lease proves another slot is driving it; when every run that is left is held elsewhere,
+        wait and poll. Parallelism is therefore whatever the fleet's free slots supply — an idle
+        fleet runs the siblings together, a fully busy one leaves them all to this slot, which
+        drives them one after another. There is no new knob (ruling 2026-09-10).
+
+        One tail per envelope for the whole drive, for the same reason :meth:`drive` starts one:
+        each document's canvas reloads on its OWN run's checkpoint frames, and the frames must
+        be announced while the batch is still running.
+
+        A single-envelope batch delegates to :meth:`drive` verbatim, so a one-document leg keeps
+        byte-identical behaviour (and byte-identical logs) to what shipped.
+        """
+
+        if len(envelopes) == 1:
+            await self.drive(envelope=envelopes[0])
+            return
+        forwarders = [
+            _DesignEventForwarder(
+                envelope=envelope,
+                conn_factory=self._conn_factory,
+                poll_interval_s=self._checkpoint_poll_interval_s,
+            )
+            for envelope in envelopes
+        ]
+        self._forwarders = forwarders
+        tails = [asyncio.create_task(forwarder.run()) for forwarder in forwarders]
+        try:
+            await self._drive_batch_to_terminal(envelopes=list(envelopes))
+        finally:
+            for tail in tails:
+                tail.cancel()
+            for tail in tails:
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await tail
+            # Unguarded, exactly as in ``drive``: ``drain`` swallows its own failures, so the
+            # only thing this can raise is the ``CancelledError`` of a drive being stopped.
+            for forwarder in forwarders:
+                await forwarder.drain()
+
+    async def _drive_batch_to_terminal(self, *, envelopes: list[Any]) -> None:
+        """The batch loop — drive what nobody holds, wait only on a live foreign lease.
+
+        The window is **progress-based** rather than a fixed deadline, which is the one thing
+        this loop does that the single-run one cannot: ``join_timeout_s`` is measured from the
+        last moment the batch moved (a run reached terminal, or one of our own drives returned),
+        so a busy fleet never fails a batch for being large — while a batch nobody is driving
+        still fails within the same window one run does.
+        """
+
+        loop = asyncio.get_running_loop()
+        last_progress = loop.time()
+        pending = list(envelopes)
+        while pending:
+            progressed = False
+            still: list[Any] = []
+            for envelope in pending:
+                if await self._run_is_terminal(envelope):
+                    progressed = True
+                    continue
+                work_id = WorkId(envelope.work_id)
+                async with self._conn_factory() as conn:
+                    lease = await acquire_work_lease(
+                        conn,
+                        work_id=work_id,
+                        worker_id=_DESIGN_LEG_LANE_WORKER_ID,
+                        ttl=self._lease_ttl,
+                    )
+                if lease is not None:
+                    await self._drive_claimed(envelope=envelope, work_id=work_id, lease=lease)
+                    progressed = True
+                    if not await self._run_is_terminal(envelope):
+                        # Fenced mid-drive (or abandoned): re-check it on the next round, where
+                        # it either re-acquires or waits on the takeover exactly like any other.
+                        still.append(envelope)
+                    continue
+                async with self._conn_factory() as conn:
+                    foreign = await get_work_lease(conn, work_id)
+                if foreign is None or not foreign.live:
+                    # Free, but our acquire raced someone's release: retry on the next round.
+                    # That race IS movement, so it counts as progress.
+                    still.append(envelope)
+                    progressed = True
+                    continue
+                # A live foreign holder: a real slot is executing this job. Skip it and wait.
+                log.info(
+                    "design_leg.lane_lease_held_elsewhere",
+                    work_id=str(work_id),
+                )
+                still.append(envelope)
+            pending = still
+            if not pending:
+                return
+            now = loop.time()
+            if progressed:
+                last_progress = now
+            elif now - last_progress >= self._join_timeout_s:
+                raise RuntimeError(
+                    "the design-leg batch made no progress within the lane's join window; "
+                    "the reaper (or an operator requeue) owns what is left"
+                )
+            await asyncio.sleep(self._join_poll_interval_s)
+
+    async def _drive_to_terminal(self, *, envelope: Any) -> None:
         """Drive the run terminal — actively (MED-6, adversarial-review fix).
 
         The old shape parked in a blind bounded join whenever it did not hold the lease —
@@ -216,7 +440,7 @@ class InlineDesignLaneDriver:
                 # The beat exited ⇒ it declared the lease lost. The handler races
                 # ``lease_lost`` itself and abandons cooperatively — await that abandonment
                 # rather than cancelling mid-write.
-                result = await work
+                result = await asyncio.shield(work)
                 log.warning(
                     "design_leg.lane_fenced_out",
                     work_id=str(work_id),
@@ -227,6 +451,17 @@ class InlineDesignLaneDriver:
                 work_id=str(work_id),
                 outcome=result.outcome,
             )
+        except asyncio.CancelledError:
+            from clue_design import runs as design_runs
+
+            async with self._conn_factory() as conn:
+                await design_runs.request_run_cancellation(
+                    conn, workspace_id=envelope.workspace_id, run_id=envelope.run_id
+                )
+            # Cancelling an asyncio wrapper does not stop its synchronous job thread.
+            # Keep the heartbeat and handler alive until the actual body exits.
+            await asyncio.shield(work)
+            raise
         finally:
             for task in (beat, work):
                 if not task.done():
@@ -335,15 +570,44 @@ class InlineDesignLaneDriver:
             await asyncio.sleep(self._join_poll_interval_s)
 
 
-def build_design_leg_lane_driver(*, enabled: bool) -> InlineDesignLaneDriver | None:
+def build_design_leg_lane_driver(
+    *,
+    enabled: bool,
+    preference_resolver_factory: PreferenceResolverFactory | None = None,
+    platform_reads_factory: Any = None,
+) -> InlineDesignLaneDriver | None:
     """The design-leg lane for :func:`build_agent_turn_work_handler`, or ``None`` when off.
 
     Same switch, same lazy import, same fail-loud stance as :func:`build_design_job_handler` —
     a deployment that drains design work can also drive a leg's design turns; one that does not
     must refuse loudly rather than wedge the leg (the ``None`` composes the runner's
     unavailable-lane backstop).
+
+    Lane 3 slice 5: this lane — and only this lane — hands the design side a per-turn Langfuse
+    handler. A leg turn runs inside ``design-leg.turn`` (``design_leg_wiring._dispatch``), so the
+    trio's generations nest under that observation and each collected receipt can name the
+    generation its money belongs to. The factory is called once per turn: the handler and its
+    run-id registry are per turn, and a shared instance would cross-attribute one turn's model
+    calls onto another's observation.
     """
-    handler = build_design_job_handler(enabled=enabled, purpose="design_leg_inline_lane")
+
+    def turn_callbacks() -> Any:
+        from lumen_agent.usage_collector import TurnCallbacks  # lazy, like fleet_handler
+
+        built = build_langfuse_callbacks()
+        if built is None:
+            return TurnCallbacks()
+        return TurnCallbacks(handlers=(built.handler,), langfuse_ids=built.registry)
+
+    handler = build_design_job_handler(
+        enabled=enabled,
+        purpose="design_leg_inline_lane",
+        preference_resolver_factory=preference_resolver_factory,
+        turn_callbacks_factory=turn_callbacks,
+        # Design note 2026-09-19: the SAME reads the queued drain handler gets — a leg turn
+        # driven inline and one taken over by a design_job worker are one unit of work.
+        platform_reads_factory=platform_reads_factory,
+    )
     if handler is None:
         return None
     return InlineDesignLaneDriver(handler=handler)

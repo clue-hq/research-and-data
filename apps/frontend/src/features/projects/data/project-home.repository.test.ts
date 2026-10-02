@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ClueChatApiError } from "./chat-api";
-import { createHttpProjectHomeRepository } from "./project-home.repository";
+import {
+  createFixtureProjectHomeRepository,
+  createHttpProjectHomeRepository,
+} from "./project-home.repository";
 
 const TRANSPORT = { mode: "http", prefix: "/api/clue" } as const;
 
@@ -76,7 +79,7 @@ test("Home create sends one atomic request and trusts only the returned href", a
           },
           thread: {
             id: "thr_real",
-            title: "Start Northstar research",
+            title: null,
             href: "/projects/prj_real/chats/thr_real",
             status: "running",
             pinned: false,
@@ -127,7 +130,7 @@ test("Home create sends one atomic request and trusts only the returned href", a
     });
     assert.equal(created.href, "/projects/prj_real/chats/thr_real");
     assert.equal(created.project.title, "Untitled project");
-    assert.equal(created.thread.title, "Start Northstar research");
+    assert.equal(created.thread.title, null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -163,4 +166,14 @@ test("Home refusals stay typed and never become fixture success", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("Home fixture create births an untitled thread", async () => {
+  const created = await createFixtureProjectHomeRepository().create({
+    brandId: "brd_1",
+    message: "Start Northstar research",
+    idempotencyKey: "home-project:fixture",
+  });
+  assert.equal(created.thread.title, null);
+  assert.equal(created.project.title, "Untitled project");
 });

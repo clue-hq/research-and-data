@@ -102,6 +102,30 @@ def _page(web_doc: Any, page_id: str) -> dict[str, Any] | None:
     return page if isinstance(page, dict) else None
 
 
+def web_doc_page_ids(web_doc: Any) -> list[str]:
+    """Every page id this document carries, in document order, once each.
+
+    The multi-page walks' index (F5): a caller that must answer for the WHOLE document — the
+    agent turn, which composes one package for a run that can move between pages — asks here
+    which pages exist rather than spelling one of them as a literal.
+
+    A page with no usable id is skipped: :func:`_page` resolves a page BY id, so an unnamed page
+    is not addressable by any of the per-page walks anyway, and inventing an index for it would
+    make this the one place in the module that means a different page than everywhere else.
+    """
+    pages = web_doc.get("pages") if isinstance(web_doc, dict) else None
+    if not isinstance(pages, list):
+        return []
+    ids: list[str] = []
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        page_id = page.get("id")
+        if isinstance(page_id, str) and page_id and page_id not in ids:
+            ids.append(page_id)
+    return ids
+
+
 def _reachable_nodes(web_doc: Any, page_id: str) -> list[dict[str, Any]]:
     """Every node reachable from the page root, in document order, root first.
 
@@ -176,6 +200,23 @@ def web_doc_fragment_ids(web_doc: Any, page_id: str) -> list[str]:
         fragment_id = node.get("fragment_id")
         if isinstance(fragment_id, str) and fragment_id and fragment_id not in ids:
             ids.append(fragment_id)
+    return ids
+
+
+def web_doc_all_fragment_ids(web_doc: Any) -> list[str]:
+    """Every fragment artifact id the WHOLE document references — every page's, in page order,
+    once each (F5).
+
+    :func:`web_doc_fragment_ids` answers for one page because a RENDER is of one page. A turn is
+    not: the agent can author on any page of the document, so the by-value package it is handed
+    must cover all of them or a band pinned on the second page comes back as the engine's
+    placeholder in the agent's own screenshots.
+    """
+    ids: list[str] = []
+    for page_id in web_doc_page_ids(web_doc):
+        for fragment_id in web_doc_fragment_ids(web_doc, page_id):
+            if fragment_id not in ids:
+                ids.append(fragment_id)
     return ids
 
 
@@ -273,6 +314,45 @@ def build_fragment_render_package(
             # and the artifact is the only thing that knows which they are.
             "asset_digests": list(loaded.asset_digests),
         }
+    return package
+
+
+def build_fragment_render_package_for_document(
+    storage: StorageBackend,
+    *,
+    workspace_id: str,
+    web_doc: Any,
+) -> dict[str, Any]:
+    """The same package, resolved for EVERY page of the document (F5).
+
+    A render is of one page, so :func:`build_fragment_render_package` is the primitive. A TURN is
+    of a document — the agent may author on any page during it — so the by-value package a turn
+    carries has to cover every page, or a band pinned on the second page renders as the engine's
+    placeholder in the agent's own screenshots and the visual reviewer judges a hole.
+
+    **The merge.** ``fragments`` is a dict union: resolution is keyed on ``(workspace, fragment
+    id)`` and never consults the page, so the same id resolves to the same record on every page
+    it is pinned to and the duplicate is a no-op. ``missing`` is an ordered union — a dead pin is
+    reported once for the document, not once per page that carries it. Every OTHER key a page
+    package carries is copied through as-is (today that is only ``schema_version``, a constant),
+    so a later key added to the primitive travels out of here instead of being silently dropped
+    by a variant that enumerated the shape.
+    """
+    package = empty_fragment_render_package()
+    for page_id in web_doc_page_ids(web_doc):
+        page_package = build_fragment_render_package(
+            storage,
+            workspace_id=workspace_id,
+            web_doc=web_doc,
+            page_id=page_id,
+        )
+        for key, value in page_package.items():
+            if key not in ("fragments", "missing"):
+                package[key] = value
+        package["fragments"].update(page_package["fragments"])
+        for fragment_id in page_package["missing"]:
+            if fragment_id not in package["missing"]:
+                package["missing"].append(fragment_id)
     return package
 
 
@@ -523,6 +603,7 @@ def _unique(values: Sequence[str]) -> list[str]:
 __all__ = [
     "FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION",
     "build_fragment_render_package",
+    "build_fragment_render_package_for_document",
     "css_class_names",
     "empty_fragment_render_package",
     "fragment_class_collisions",
@@ -532,6 +613,8 @@ __all__ = [
     "fragment_render_map",
     "rebase_artifact_assets",
     "slot_kinds",
+    "web_doc_all_fragment_ids",
     "web_doc_class_tokens",
     "web_doc_fragment_ids",
+    "web_doc_page_ids",
 ]

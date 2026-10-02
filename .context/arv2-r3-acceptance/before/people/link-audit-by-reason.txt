@@ -1,0 +1,4 @@
+EXACT|on_page|137
+fetch_failed|page_empty|3
+NOT_FOUND|not_on_page|13
+PARTIAL|partial_on_page|13

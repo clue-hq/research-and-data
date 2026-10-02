@@ -1,0 +1,2050 @@
+{
+  "schema": "research-model-run-inventory-v1",
+  "generated_at": "2026-09-28",
+  "scope": "Six isolated Zafran runs; no additional research purchased for this inventory",
+  "definitions": {
+    "research_wall_seconds": "Earliest research job start through latest actual research job finish; overlapping person jobs are not added. Includes dossier/import/narrative/finalization.",
+    "wall_seconds": "Same start through last finished reconciliation where present; otherwise latest research finish. Blocked, never-started person jobs do not have invented end times.",
+    "pre_formation_seconds": "Observable first formation-model-request boundary, not exclusive provider research time.",
+    "costs": "Researcher model ledger plus only result-phase provider rows plus one preflight. No estimate/result double count. AI Ark credits stay separate. Failed unpriced calls and external availability probe remain unknown.",
+    "null_link": "Artifact not produced or absent; not a broken link.",
+    "authored_vs_imported": "Grok47 authored draft has 30 findings but zero imported; typed enrichment claims excluded from authored counts.",
+    "job_costs": "Job provider_recorded_usd includes all ledger rows attributed to that job (including common reconciliation on account). research_stage_model_plus_provider_usd excludes that separate reconciliation. Preflight is run-level only. Do not add attributed reconciliation twice."
+  },
+  "runs": [
+    {
+      "id": "grok46",
+      "model": "x-ai/grok-4.6",
+      "reasoning_effort": "medium",
+      "effort_verified_in_actual_requests": true,
+      "scenario": "Clue \u2192 Zafran; fixed intended Nick Fisher + Vari Kaur",
+      "start": "2026-09-28 08:40:34.761052+00:00",
+      "end": "2026-09-28 09:10:50.298087+00:00",
+      "research_end": "2026-09-28 09:10:48.039663+00:00",
+      "wall_seconds": 1815.537035,
+      "research_wall_seconds": 1813.278611,
+      "end_semantics": "last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions",
+      "status": "partial",
+      "generation_settled": true,
+      "input_revision": 206,
+      "reconciled_revision": 206,
+      "persons_requested": 2,
+      "persons_nominated": 2,
+      "persons_started": 2,
+      "persons_with_imported_dossier": 2,
+      "authored_findings": 139,
+      "imported_findings": 139,
+      "cost_components_usd": {
+        "researcher_model": 12.102434,
+        "exa": 0.293,
+        "deepgram": 0.081146,
+        "embeddings": 0.001019,
+        "common_muse_reconciliation": 0.174809,
+        "other_providers": 0.0,
+        "preflight": 0.000818
+      },
+      "known_total_usd": 12.653226,
+      "ai_ark_credits": 3.1,
+      "unpriced_researcher_calls": 0,
+      "reconciliation": {
+        "model": "meta/muse-spark-1.3",
+        "effort": "separately configured; not inferred from researcher effort",
+        "paid_calls": 1,
+        "records": [
+          {
+            "input_revision": 205,
+            "status": "completed",
+            "start": "2026-09-28 09:08:10.220773+00:00",
+            "end": "2026-09-28 09:09:32.062559+00:00",
+            "wall_seconds": 81.841786,
+            "block_versions_count": 11
+          },
+          {
+            "input_revision": 206,
+            "status": "completed",
+            "start": "2026-09-28 09:10:50.211583+00:00",
+            "end": "2026-09-28 09:10:50.298087+00:00",
+            "wall_seconds": 0.086504,
+            "block_versions_count": 0
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "job_id": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+          "subject": "account",
+          "name": "Zafran Security",
+          "entity_id": null,
+          "status": "completed",
+          "failure_code": null,
+          "start": "2026-09-28 08:40:34.761052+00:00",
+          "end": "2026-09-28 08:56:19.586920+00:00",
+          "wall_seconds": 944.825868,
+          "formation_start": "2026-09-28 08:47:03.391587+00:00",
+          "import_completed": "2026-09-28T08:51:29.688612+00:00",
+          "narrative_stored": "2026-09-28T08:55:20.090298+00:00",
+          "pre_formation_seconds": 388.630535,
+          "formation_to_import_seconds": 266.297025,
+          "import_to_narrative_seconds": 230.401686,
+          "model_calls": 61,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 4.2804,
+          "model_seconds_sum": 815.7651397546288,
+          "input_tokens": 6346215,
+          "cache_read_input_tokens": 5812736,
+          "output_tokens": 51179,
+          "provider_recorded_usd": 0.317809,
+          "ai_ark_credits": 1.1,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 23,
+            "search_evidence": 3,
+            "nominate_committee_candidate": 2,
+            "save_dossier_section": 11,
+            "update_dossier_findings": 3,
+            "validate_dossier": 1,
+            "finish_dossier": 1,
+            "read_narrative_inputs": 1,
+            "write_research_narrative": 1
+          },
+          "dossier": {
+            "version": 15,
+            "state": "complete",
+            "findings": 52,
+            "sections": 11,
+            "receipt_complete": true,
+            "stored": 52,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 44,
+              "potential_conflict": 6,
+              "insufficient_context": 2
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md",
+            "narrative_markdown": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account/page.md",
+            "narrative_html": null,
+            "narrative_blocks": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account/display-blocks.json",
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/290f554826fcc0c26b41fa5069c958fa"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 4.598209,
+          "attributed_common_reconciliation_usd": 0.174809,
+          "provider_research_usd": 0.143,
+          "research_stage_model_plus_provider_usd": 4.4234
+        },
+        {
+          "job_id": "04070cd2-53e0-510c-8373-2f6511f15052",
+          "subject": "person",
+          "name": "Vari Kaur",
+          "entity_id": "3a15236a-f579-42f8-8c0a-070a67f30ff5",
+          "status": "needs_review",
+          "failure_code": "missing_finalize",
+          "start": "2026-09-28 08:51:36.840620+00:00",
+          "end": "2026-09-28 09:05:00.956943+00:00",
+          "wall_seconds": 804.116323,
+          "formation_start": "2026-09-28 08:57:35.728711+00:00",
+          "import_completed": "2026-09-28T09:01:12.285934+00:00",
+          "narrative_stored": "2026-09-28T09:03:57.261785+00:00",
+          "pre_formation_seconds": 358.888091,
+          "formation_to_import_seconds": 216.557223,
+          "import_to_narrative_seconds": 164.975851,
+          "model_calls": 44,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 3.13394,
+          "model_seconds_sum": 648.9961318317801,
+          "input_tokens": 4402831,
+          "cache_read_input_tokens": 3946112,
+          "output_tokens": 41241,
+          "provider_recorded_usd": 0.08,
+          "ai_ark_credits": 1.0,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 17,
+            "search_evidence": 5,
+            "save_dossier_section": 8,
+            "update_dossier_findings": 1,
+            "validate_dossier": 1,
+            "finish_dossier": 1,
+            "read_narrative_inputs": 1,
+            "write_research_narrative": 1
+          },
+          "dossier": {
+            "version": 10,
+            "state": "complete",
+            "findings": 38,
+            "sections": 7,
+            "receipt_complete": true,
+            "stored": 38,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 29,
+              "potential_conflict": 3,
+              "insufficient_context": 5,
+              "wrong_entity": 1
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/04070cd2-53e0-510c-8373-2f6511f15052/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/04070cd2-53e0-510c-8373-2f6511f15052/dossier.md",
+            "narrative_markdown": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/person-3a15236a-f579-42f8-8c0a-070a67f30ff5/page.md",
+            "narrative_html": null,
+            "narrative_blocks": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/person-3a15236a-f579-42f8-8c0a-070a67f30ff5/display-blocks.json",
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/cc14f19bb38c4dc8231497ed7ab55bef"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 3.21394,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.08,
+          "research_stage_model_plus_provider_usd": 3.21394
+        },
+        {
+          "job_id": "05d4fa83-5d48-5d21-ab82-867e8af0819d",
+          "subject": "person",
+          "name": "Nick Fisher",
+          "entity_id": "c438c42b-ea48-4b3c-b71d-22cb216f32f7",
+          "status": "needs_review",
+          "failure_code": "missing_finalize",
+          "start": "2026-09-28 08:51:37.197550+00:00",
+          "end": "2026-09-28 09:10:48.039663+00:00",
+          "wall_seconds": 1150.842113,
+          "formation_start": "2026-09-28 09:01:20.448148+00:00",
+          "import_completed": "2026-09-28T09:07:59.658347+00:00",
+          "narrative_stored": "2026-09-28T09:09:51.113654+00:00",
+          "pre_formation_seconds": 583.250598,
+          "formation_to_import_seconds": 399.210199,
+          "import_to_narrative_seconds": 111.455307,
+          "model_calls": 80,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 4.688094,
+          "model_seconds_sum": 902.2618086207658,
+          "input_tokens": 6897840,
+          "cache_read_input_tokens": 6265344,
+          "output_tokens": 48405,
+          "provider_recorded_usd": 0.152165,
+          "ai_ark_credits": 1.0,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 18,
+            "search_evidence": 32,
+            "save_dossier_section": 9,
+            "update_dossier_findings": 3,
+            "validate_dossier": 1,
+            "finish_dossier": 1,
+            "read_narrative_inputs": 1,
+            "write_research_narrative": 1
+          },
+          "dossier": {
+            "version": 12,
+            "state": "complete",
+            "findings": 49,
+            "sections": 8,
+            "receipt_complete": true,
+            "stored": 49,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 49
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/05d4fa83-5d48-5d21-ab82-867e8af0819d/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/05d4fa83-5d48-5d21-ab82-867e8af0819d/dossier.md",
+            "narrative_markdown": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/person-c438c42b-ea48-4b3c-b71d-22cb216f32f7/page.md",
+            "narrative_html": null,
+            "narrative_blocks": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/person-c438c42b-ea48-4b3c-b71d-22cb216f32f7/display-blocks.json",
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/4f46c67e7b578484ecb051982de67bf7"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 4.840259,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.152165,
+          "research_stage_model_plus_provider_usd": 4.840259
+        }
+      ],
+      "links": {
+        "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+        "initial_account_dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account-initial/dossier.json",
+        "initial_account_dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account-initial/dossier.md",
+        "initial_account_narrative": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account-initial/page.md",
+        "current_account_narrative": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account/page.md",
+        "intermediate_exa_dossier": null,
+        "raw_sources_manifest": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/all-raw/manifest.json",
+        "model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/grok46-model-calls.csv",
+        "original_model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/model-calls.csv",
+        "tool_activity": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/tool-activity.md",
+        "database_audit": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/audit.json",
+        "job_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/arv2_research_job.json",
+        "model_call_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/agent_model_call.json",
+        "provider_ledger": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/provider_call_ledger.json",
+        "reconciliation_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/arv2_narrative_reconciliation.json",
+        "timing": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/timing.json",
+        "trace_verification": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/trace-verification.json",
+        "skill_reads": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/skill-read-evidence.json",
+        "langfuse_traces": [
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/015093669e64fde931241f05264fe60a",
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/290f554826fcc0c26b41fa5069c958fa",
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/4f46c67e7b578484ecb051982de67bf7",
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/cc14f19bb38c4dc8231497ed7ab55bef"
+        ],
+        "working_tree_diff": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/working-tree.diff",
+        "failure_inventory": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md"
+      },
+      "trace_verification": {
+        "researcher_model_ids": 185,
+        "model_ids_found": 185,
+        "model_ids_missing": [],
+        "provider_attempt_ids": 56,
+        "provider_ids_found": 56,
+        "provider_ids_missing": [],
+        "scope": "Researcher model and provider HTTP-attempt IDs; not an exhaustive audit of every filesystem/tool callback."
+      },
+      "comparability": {
+        "resource_revision": 24,
+        "implementation_commit_at_setup": "7c3b898f279fa2d64bdaf2f8015fa8bc1b0efb7d",
+        "context_shas": [
+          "7ec2df47990dddc52cce4cac7f06dce42fde323dfc0e624211e5f3624ea8369c",
+          "193ffdc730709daad98752e90aac6195a87b65eb8829245c3bd9a4b9511ff18a",
+          "56efe25b7b1092ec320f55efd2db784f2df44e21a69490d02b651c0e19369d8f"
+        ],
+        "same_resource_pin_and_context_do_not_prove_identical_runtime": true
+      },
+      "extra_probes": [],
+      "operator_actions": [],
+      "cost_components_sum_check": true,
+      "failures": [
+        {
+          "id": "Z06",
+          "run_id": "grok46",
+          "category": "model behavior / ownership contract",
+          "subject_stage": "Grok 4.6 Nick and Vari completion",
+          "root_cause_classification": "Model completion-reference selection / tool ownership contract",
+          "confidence": "Confirmed saved references and rejection",
+          "explanation": "Both included account-owned committee-selection IDs in person completion files. Finalizer rejected references outside person context; finalizer retry did not change the invalid file. Both person dossiers, imports and narratives survived. Account completed; generation settled partial.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/finalize-audit.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md"
+          ]
+        },
+        {
+          "id": "Z15",
+          "run_id": "grok46",
+          "category": "model behavior",
+          "subject_stage": "Grok 4.6 formation; Grok 4.7 partial formation",
+          "root_cause_classification": "Model schema/navigation mistakes; recovered before later outcomes",
+          "confidence": "Confirmed tool feedback; not root terminal failure",
+          "explanation": "Missing `review` objects/unsupported review status in Grok4.6 were corrected before all 139 imports; navigation errors also occurred. Grok4.7 five save calls yielded four durable sections. Do not count failed attempts as completed sections.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "grok47",
+      "model": "x-ai/grok-4.7",
+      "reasoning_effort": "medium",
+      "effort_verified_in_actual_requests": true,
+      "scenario": "Clue \u2192 Zafran; fixed intended Nick Fisher + Vari Kaur",
+      "start": "2026-09-28 08:40:34.769424+00:00",
+      "end": "2026-09-28 09:07:11.875222+00:00",
+      "research_end": "2026-09-28 09:07:11.875222+00:00",
+      "wall_seconds": 1597.105798,
+      "research_wall_seconds": 1597.105798,
+      "end_semantics": "last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions",
+      "status": "provisional",
+      "generation_settled": false,
+      "input_revision": 53,
+      "reconciled_revision": -1,
+      "persons_requested": 2,
+      "persons_nominated": 2,
+      "persons_started": 0,
+      "persons_with_imported_dossier": 0,
+      "authored_findings": 30,
+      "imported_findings": 0,
+      "cost_components_usd": {
+        "researcher_model": 3.926011,
+        "exa": 0.095,
+        "deepgram": 0.065516,
+        "embeddings": 0.000759,
+        "common_muse_reconciliation": 0.0,
+        "other_providers": 0.0,
+        "preflight": 0.0008864
+      },
+      "known_total_usd": 4.0881724,
+      "ai_ark_credits": 4.6,
+      "unpriced_researcher_calls": 1,
+      "reconciliation": {
+        "model": "meta/muse-spark-1.3",
+        "effort": "separately configured; not inferred from researcher effort",
+        "paid_calls": 0,
+        "records": []
+      },
+      "jobs": [
+        {
+          "job_id": "ea54ef0e-91b7-501e-996e-97ce42a15264",
+          "subject": "person",
+          "name": "Vari Kaur",
+          "entity_id": "dddaf58e-77d3-4909-af52-acf725a538cd",
+          "status": "not_started",
+          "failure_code": null,
+          "start": null,
+          "end": null,
+          "wall_seconds": null,
+          "formation_start": null,
+          "import_completed": null,
+          "narrative_stored": null,
+          "pre_formation_seconds": null,
+          "formation_to_import_seconds": null,
+          "import_to_narrative_seconds": null,
+          "model_calls": 0,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 0.0,
+          "model_seconds_sum": 0.0,
+          "input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "provider_recorded_usd": 0.0,
+          "ai_ark_credits": 0.0,
+          "tool_counts": {},
+          "dossier": {},
+          "links": {
+            "dossier_json": null,
+            "dossier_readable": null,
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": []
+          },
+          "known_model_plus_attributed_provider_usd": 0.0,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.0,
+          "research_stage_model_plus_provider_usd": 0.0
+        },
+        {
+          "job_id": "5427e1bf-1da3-5af3-80c7-31100873f585",
+          "subject": "person",
+          "name": "Nick Fisher",
+          "entity_id": "631c9f10-767e-4a19-bf0c-c0fc0752418c",
+          "status": "not_started",
+          "failure_code": null,
+          "start": null,
+          "end": null,
+          "wall_seconds": null,
+          "formation_start": null,
+          "import_completed": null,
+          "narrative_stored": null,
+          "pre_formation_seconds": null,
+          "formation_to_import_seconds": null,
+          "import_to_narrative_seconds": null,
+          "model_calls": 0,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 0.0,
+          "model_seconds_sum": 0.0,
+          "input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "provider_recorded_usd": 0.0,
+          "ai_ark_credits": 0.0,
+          "tool_counts": {},
+          "dossier": {},
+          "links": {
+            "dossier_json": null,
+            "dossier_readable": null,
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": []
+          },
+          "known_model_plus_attributed_provider_usd": 0.0,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.0,
+          "research_stage_model_plus_provider_usd": 0.0
+        },
+        {
+          "job_id": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+          "subject": "account",
+          "name": "Zafran Security",
+          "entity_id": null,
+          "status": "needs_review",
+          "failure_code": "value_error",
+          "start": "2026-09-28 08:40:34.769424+00:00",
+          "end": "2026-09-28 09:07:11.875222+00:00",
+          "wall_seconds": 1597.105798,
+          "formation_start": "2026-09-28 08:57:13.731892+00:00",
+          "import_completed": null,
+          "narrative_stored": null,
+          "pre_formation_seconds": 998.962468,
+          "formation_to_import_seconds": null,
+          "import_to_narrative_seconds": null,
+          "model_calls": 68,
+          "model_failed_calls": 1,
+          "model_unpriced_calls": 1,
+          "model_usd": 3.926011,
+          "model_seconds_sum": 1453.570339748403,
+          "input_tokens": 7125036,
+          "cache_read_input_tokens": 6447488,
+          "output_tokens": 54779,
+          "provider_recorded_usd": 0.161275,
+          "ai_ark_credits": 4.6,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 21,
+            "search_evidence": 11,
+            "nominate_committee_candidate": 4,
+            "nominate_web_committee_candidate": 1,
+            "save_dossier_section": 4
+          },
+          "dossier": {
+            "version": 4,
+            "state": "draft",
+            "findings": 30,
+            "sections": 4,
+            "receipt_complete": null,
+            "stored": null,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 26,
+              "potential_conflict": 3,
+              "insufficient_context": 1
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md",
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/5ea4fb0ebeb9f545fc61f5c0bf534a3c"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 4.087286,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.161275,
+          "research_stage_model_plus_provider_usd": 4.087286
+        }
+      ],
+      "links": {
+        "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md",
+        "initial_account_dossier_json": null,
+        "initial_account_dossier_readable": null,
+        "initial_account_narrative": null,
+        "current_account_narrative": null,
+        "intermediate_exa_dossier": null,
+        "raw_sources_manifest": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/all-raw/manifest.json",
+        "model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/grok47-model-calls.csv",
+        "original_model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/model-calls.csv",
+        "tool_activity": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/tool-activity.md",
+        "database_audit": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/audit.json",
+        "job_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/arv2_research_job.json",
+        "model_call_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/agent_model_call.json",
+        "provider_ledger": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/provider_call_ledger.json",
+        "reconciliation_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/arv2_narrative_reconciliation.json",
+        "timing": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/timing.json",
+        "trace_verification": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/trace-verification.json",
+        "skill_reads": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/skill-read-evidence.json",
+        "langfuse_traces": [
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/5ea4fb0ebeb9f545fc61f5c0bf534a3c"
+        ],
+        "working_tree_diff": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/working-tree.diff",
+        "failure_inventory": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md"
+      },
+      "trace_verification": {
+        "researcher_model_ids": 68,
+        "model_ids_found": 68,
+        "model_ids_missing": [],
+        "provider_attempt_ids": 27,
+        "provider_ids_found": 27,
+        "provider_ids_missing": [],
+        "scope": "Researcher model and provider HTTP-attempt IDs; not an exhaustive audit of every filesystem/tool callback."
+      },
+      "comparability": {
+        "resource_revision": 24,
+        "implementation_commit_at_setup": "7c3b898f279fa2d64bdaf2f8015fa8bc1b0efb7d",
+        "context_shas": [
+          "7ec2df47990dddc52cce4cac7f06dce42fde323dfc0e624211e5f3624ea8369c",
+          "193ffdc730709daad98752e90aac6195a87b65eb8829245c3bd9a4b9511ff18a",
+          "56efe25b7b1092ec320f55efd2db784f2df44e21a69490d02b651c0e19369d8f"
+        ],
+        "same_resource_pin_and_context_do_not_prove_identical_runtime": true
+      },
+      "extra_probes": [
+        {
+          "kind": "post-failure availability recheck",
+          "at": "2026-09-28T09:30:51.251472+00:00",
+          "model": "x-ai/grok-4.7",
+          "effort": "medium",
+          "outcome": "502 provider_unavailable capacity",
+          "cost_usd": null,
+          "included_in_known_total": false,
+          "note": "No metered price retained; not assumed free; separate from initial preflight and failed account model call. No research rerun.",
+          "evidence": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/availability-recheck.json"
+        }
+      ],
+      "operator_actions": [],
+      "cost_components_sum_check": true,
+      "failures": [
+        {
+          "id": "Z01",
+          "run_id": "grok47",
+          "category": "provider",
+          "subject_stage": "Grok 4.7 medium account",
+          "root_cause_classification": "Provider capacity; downstream runtime termination",
+          "confidence": "Confirmed provider response and terminal job",
+          "explanation": "Model call 68 returned 502 `provider_unavailable`, explicitly capacity/high demand. Agent stopped during dossier assembly; 30 draft findings survived, no import/narrative. Nick and Vari never started. This is not an Exa timeout or evidence of poor completed research.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/agent_model_call.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/arv2_research_job.json"
+          ]
+        },
+        {
+          "id": "Z15",
+          "run_id": "grok47",
+          "category": "model behavior",
+          "subject_stage": "Grok 4.6 formation; Grok 4.7 partial formation",
+          "root_cause_classification": "Model schema/navigation mistakes; recovered before later outcomes",
+          "confidence": "Confirmed tool feedback; not root terminal failure",
+          "explanation": "Missing `review` objects/unsupported review status in Grok4.6 were corrected before all 139 imports; navigation errors also occurred. Grok4.7 five save calls yielded four durable sections. Do not count failed attempts as completed sections.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "glm53",
+      "model": "z-ai/glm-5.3",
+      "reasoning_effort": "medium",
+      "effort_verified_in_actual_requests": true,
+      "scenario": "Clue \u2192 Zafran; fixed intended Nick Fisher + Vari Kaur",
+      "start": "2026-09-28 08:40:34.768307+00:00",
+      "end": "2026-09-28 08:44:16.802453+00:00",
+      "research_end": "2026-09-28 08:44:16.802453+00:00",
+      "wall_seconds": 222.034146,
+      "research_wall_seconds": 222.034146,
+      "end_semantics": "last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions",
+      "status": "provisional",
+      "generation_settled": false,
+      "input_revision": 53,
+      "reconciled_revision": -1,
+      "persons_requested": 2,
+      "persons_nominated": 2,
+      "persons_started": 0,
+      "persons_with_imported_dossier": 0,
+      "authored_findings": 0,
+      "imported_findings": 0,
+      "cost_components_usd": {
+        "researcher_model": 1.120041,
+        "exa": 0.09,
+        "deepgram": 0.05093,
+        "embeddings": 0.000579,
+        "common_muse_reconciliation": 0.0,
+        "other_providers": 0.0,
+        "preflight": 3.7e-05
+      },
+      "known_total_usd": 1.261587,
+      "ai_ark_credits": 2.1,
+      "unpriced_researcher_calls": 0,
+      "reconciliation": {
+        "model": "meta/muse-spark-1.3",
+        "effort": "separately configured; not inferred from researcher effort",
+        "paid_calls": 0,
+        "records": []
+      },
+      "jobs": [
+        {
+          "job_id": "631ec33b-a46f-52f4-801e-9eab8cfc2efd",
+          "subject": "person",
+          "name": "Tom Anthony",
+          "entity_id": "d22b376e-3fe3-4995-8ac2-05f396937b1a",
+          "status": "not_started",
+          "failure_code": null,
+          "start": null,
+          "end": null,
+          "wall_seconds": null,
+          "formation_start": null,
+          "import_completed": null,
+          "narrative_stored": null,
+          "pre_formation_seconds": null,
+          "formation_to_import_seconds": null,
+          "import_to_narrative_seconds": null,
+          "model_calls": 0,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 0.0,
+          "model_seconds_sum": 0.0,
+          "input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "provider_recorded_usd": 0.0,
+          "ai_ark_credits": 0.0,
+          "tool_counts": {},
+          "dossier": {},
+          "links": {
+            "dossier_json": null,
+            "dossier_readable": null,
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": []
+          },
+          "known_model_plus_attributed_provider_usd": 0.0,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.0,
+          "research_stage_model_plus_provider_usd": 0.0
+        },
+        {
+          "job_id": "684b62dc-6ab1-5285-aded-984c4d580d49",
+          "subject": "person",
+          "name": "Kelly W.",
+          "entity_id": "f1441656-70dd-4b92-bacf-df9f18759dfb",
+          "status": "not_started",
+          "failure_code": null,
+          "start": null,
+          "end": null,
+          "wall_seconds": null,
+          "formation_start": null,
+          "import_completed": null,
+          "narrative_stored": null,
+          "pre_formation_seconds": null,
+          "formation_to_import_seconds": null,
+          "import_to_narrative_seconds": null,
+          "model_calls": 0,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 0.0,
+          "model_seconds_sum": 0.0,
+          "input_tokens": 0,
+          "cache_read_input_tokens": 0,
+          "output_tokens": 0,
+          "provider_recorded_usd": 0.0,
+          "ai_ark_credits": 0.0,
+          "tool_counts": {},
+          "dossier": {},
+          "links": {
+            "dossier_json": null,
+            "dossier_readable": null,
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": []
+          },
+          "known_model_plus_attributed_provider_usd": 0.0,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.0,
+          "research_stage_model_plus_provider_usd": 0.0
+        },
+        {
+          "job_id": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+          "subject": "account",
+          "name": "Zafran Security",
+          "entity_id": null,
+          "status": "needs_review",
+          "failure_code": "workspace_security_error",
+          "start": "2026-09-28 08:40:34.768307+00:00",
+          "end": "2026-09-28 08:44:16.802453+00:00",
+          "wall_seconds": 222.034146,
+          "formation_start": null,
+          "import_completed": null,
+          "narrative_stored": null,
+          "pre_formation_seconds": null,
+          "formation_to_import_seconds": null,
+          "import_to_narrative_seconds": null,
+          "model_calls": 50,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 1.120041,
+          "model_seconds_sum": 95.94271112116985,
+          "input_tokens": 3276036,
+          "cache_read_input_tokens": 3098752,
+          "output_tokens": 15038,
+          "provider_recorded_usd": 0.141509,
+          "ai_ark_credits": 2.1,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 22,
+            "search_evidence": 4,
+            "nominate_committee_candidate": 8
+          },
+          "dossier": {},
+          "links": {
+            "dossier_json": null,
+            "dossier_readable": null,
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/5f56c7dcbedbc8e6a34a6da394bed0e5"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 1.26155,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.141509,
+          "research_stage_model_plus_provider_usd": 1.26155
+        }
+      ],
+      "links": {
+        "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+        "initial_account_dossier_json": null,
+        "initial_account_dossier_readable": null,
+        "initial_account_narrative": null,
+        "current_account_narrative": null,
+        "intermediate_exa_dossier": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/account-exa-dossier.md",
+        "raw_sources_manifest": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/all-raw/manifest.json",
+        "model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/glm53-model-calls.csv",
+        "original_model_calls_csv": null,
+        "tool_activity": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/activity-latest.json",
+        "database_audit": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/audit.json",
+        "job_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/arv2_research_job.json",
+        "model_call_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/agent_model_call.json",
+        "provider_ledger": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/provider_call_ledger.json",
+        "reconciliation_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/arv2_narrative_reconciliation.json",
+        "timing": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/timing.json",
+        "trace_verification": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/trace-verification.json",
+        "skill_reads": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/skill-read-evidence.json",
+        "langfuse_traces": [
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/5f56c7dcbedbc8e6a34a6da394bed0e5"
+        ],
+        "working_tree_diff": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/working-tree.diff",
+        "failure_inventory": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md"
+      },
+      "trace_verification": {
+        "researcher_model_ids": 50,
+        "model_ids_found": 50,
+        "model_ids_missing": [],
+        "provider_attempt_ids": 21,
+        "provider_ids_found": 21,
+        "provider_ids_missing": [],
+        "scope": "Researcher model and provider HTTP-attempt IDs; not an exhaustive audit of every filesystem/tool callback."
+      },
+      "comparability": {
+        "resource_revision": 24,
+        "implementation_commit_at_setup": "7c3b898f279fa2d64bdaf2f8015fa8bc1b0efb7d",
+        "context_shas": [
+          "7ec2df47990dddc52cce4cac7f06dce42fde323dfc0e624211e5f3624ea8369c",
+          "193ffdc730709daad98752e90aac6195a87b65eb8829245c3bd9a4b9511ff18a",
+          "56efe25b7b1092ec320f55efd2db784f2df44e21a69490d02b651c0e19369d8f"
+        ],
+        "same_resource_pin_and_context_do_not_prove_identical_runtime": true
+      },
+      "extra_probes": [],
+      "operator_actions": [
+        {
+          "kind": "worker stopped then same queue restored",
+          "stop_at_utc": "2026-09-28T08:44:44Z",
+          "account_failed_at": "2026-09-28 08:44:16.802453+00:00",
+          "caused_account_failure": false,
+          "person_jobs_started": false,
+          "note": "Account naturally failed approximately 27 seconds before operator stop. Subsequent fresh run is separate glm53-untouched-02.",
+          "evidence": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/operator-stop.json"
+        }
+      ],
+      "cost_components_sum_check": true,
+      "failures": [
+        {
+          "id": "Z02",
+          "run_id": "glm53",
+          "category": "model behavior",
+          "subject_stage": "GLM initial account committee nomination",
+          "root_cause_classification": "Model instruction-following plus concurrent slot allocation",
+          "confidence": "Confirmed observable calls and retained jobs",
+          "explanation": "Four people nominated concurrently despite fixed Nick/Vari scope. Tom Anthony and Kelly W. acquired the two slots first. Nick/Vari cap retries did not repair the selection. This contributed to failure to complete the requested flow, but is not the final exception itself. No person research started.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/activity-latest.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/arv2_research_job.json"
+          ]
+        },
+        {
+          "id": "Z03",
+          "run_id": "glm53",
+          "category": "backend",
+          "subject_stage": "Both GLM account attempts",
+          "root_cause_classification": "Missing model-authored output plus backend finalization handling",
+          "confidence": "Confirmed missing file and exception; original attempt's model-stop cause not established",
+          "explanation": "Required `/outputs/research.json` was absent. `stat_entry` raised WorkspaceSecurityError outside the ValueError repair handling. This does not establish a permission denial. Exa output and original acquisitions survived, but no researcher JSON dossier/import/narrative.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_research_job.json"
+          ]
+        },
+        {
+          "id": "Z05",
+          "run_id": "glm53",
+          "category": "operator",
+          "subject_stage": "Initial GLM worker",
+          "root_cause_classification": "Operator action after natural failure",
+          "confidence": "Confirmed ordering; not the account-failure cause",
+          "explanation": "Account ended 08:44:16.802 UTC; worker stopped around 08:44:44, then same queue restored after user said not to interrupt. No account restart or person spending resulted. Fresh untouched-02 was a separate user-authorized test.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/operator-stop.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "glm53-untouched-02",
+      "model": "z-ai/glm-5.3",
+      "reasoning_effort": "medium",
+      "effort_verified_in_actual_requests": true,
+      "scenario": "Clue \u2192 Zafran; fixed intended Nick Fisher + Vari Kaur",
+      "start": "2026-09-28 08:51:41.330720+00:00",
+      "end": "2026-09-28 08:54:03.168397+00:00",
+      "research_end": "2026-09-28 08:54:01.961840+00:00",
+      "wall_seconds": 141.837677,
+      "research_wall_seconds": 140.63112,
+      "end_semantics": "last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions",
+      "status": "needs_review",
+      "generation_settled": true,
+      "input_revision": 51,
+      "reconciled_revision": 51,
+      "persons_requested": 2,
+      "persons_nominated": 0,
+      "persons_started": 0,
+      "persons_with_imported_dossier": 0,
+      "authored_findings": 0,
+      "imported_findings": 0,
+      "cost_components_usd": {
+        "researcher_model": 0.704624,
+        "exa": 0.09,
+        "deepgram": 0.0,
+        "embeddings": 0.0,
+        "common_muse_reconciliation": 0.0,
+        "other_providers": 0.0,
+        "preflight": 0.0
+      },
+      "known_total_usd": 0.794624,
+      "ai_ark_credits": 0.1,
+      "unpriced_researcher_calls": 0,
+      "reconciliation": {
+        "model": "meta/muse-spark-1.3",
+        "effort": "separately configured; not inferred from researcher effort",
+        "paid_calls": 0,
+        "records": [
+          {
+            "input_revision": 51,
+            "status": "completed",
+            "start": "2026-09-28 08:54:03.079684+00:00",
+            "end": "2026-09-28 08:54:03.168397+00:00",
+            "wall_seconds": 0.088713,
+            "block_versions_count": 0
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "job_id": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+          "subject": "account",
+          "name": "Zafran Security",
+          "entity_id": null,
+          "status": "needs_review",
+          "failure_code": "workspace_security_error",
+          "start": "2026-09-28 08:51:41.330720+00:00",
+          "end": "2026-09-28 08:54:01.961840+00:00",
+          "wall_seconds": 140.63112,
+          "formation_start": null,
+          "import_completed": null,
+          "narrative_stored": null,
+          "pre_formation_seconds": null,
+          "formation_to_import_seconds": null,
+          "import_to_narrative_seconds": null,
+          "model_calls": 26,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 0.704624,
+          "model_seconds_sum": 72.96080583333969,
+          "input_tokens": 1456640,
+          "cache_read_input_tokens": 1249728,
+          "output_tokens": 20459,
+          "provider_recorded_usd": 0.09,
+          "ai_ark_credits": 0.1,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 8
+          },
+          "dossier": {},
+          "links": {
+            "dossier_json": null,
+            "dossier_readable": null,
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/01059ef3685b2b8d3097412a482b762b"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 0.794624,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.09,
+          "research_stage_model_plus_provider_usd": 0.794624
+        }
+      ],
+      "links": {
+        "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+        "initial_account_dossier_json": null,
+        "initial_account_dossier_readable": null,
+        "initial_account_narrative": null,
+        "current_account_narrative": null,
+        "intermediate_exa_dossier": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/account-exa-dossier.md",
+        "raw_sources_manifest": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/all-raw/manifest.json",
+        "model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/glm53-untouched-02-model-calls.csv",
+        "original_model_calls_csv": null,
+        "tool_activity": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/activity-latest.json",
+        "database_audit": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/audit.json",
+        "job_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_research_job.json",
+        "model_call_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/agent_model_call.json",
+        "provider_ledger": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/provider_call_ledger.json",
+        "reconciliation_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_narrative_reconciliation.json",
+        "timing": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/timing.json",
+        "trace_verification": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/trace-verification.json",
+        "skill_reads": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/skill-read-evidence.json",
+        "langfuse_traces": [
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/01059ef3685b2b8d3097412a482b762b"
+        ],
+        "working_tree_diff": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/working-tree.diff",
+        "failure_inventory": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md"
+      },
+      "trace_verification": {
+        "researcher_model_ids": 26,
+        "model_ids_found": 26,
+        "model_ids_missing": [],
+        "provider_attempt_ids": 10,
+        "provider_ids_found": 10,
+        "provider_ids_missing": [],
+        "scope": "Researcher model and provider HTTP-attempt IDs; not an exhaustive audit of every filesystem/tool callback."
+      },
+      "comparability": {
+        "resource_revision": 24,
+        "implementation_commit_at_setup": "7c3b898f279fa2d64bdaf2f8015fa8bc1b0efb7d",
+        "context_shas": [
+          "7ec2df47990dddc52cce4cac7f06dce42fde323dfc0e624211e5f3624ea8369c",
+          "193ffdc730709daad98752e90aac6195a87b65eb8829245c3bd9a4b9511ff18a",
+          "56efe25b7b1092ec320f55efd2db784f2df44e21a69490d02b651c0e19369d8f"
+        ],
+        "same_resource_pin_and_context_do_not_prove_identical_runtime": true
+      },
+      "extra_probes": [],
+      "operator_actions": [],
+      "cost_components_sum_check": true,
+      "failures": [
+        {
+          "id": "Z03",
+          "run_id": "glm53-untouched-02",
+          "category": "backend",
+          "subject_stage": "Both GLM account attempts",
+          "root_cause_classification": "Missing model-authored output plus backend finalization handling",
+          "confidence": "Confirmed missing file and exception; original attempt's model-stop cause not established",
+          "explanation": "Required `/outputs/research.json` was absent. `stat_entry` raised WorkspaceSecurityError outside the ValueError repair handling. This does not establish a permission denial. Exa output and original acquisitions survived, but no researcher JSON dossier/import/narrative.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_research_job.json"
+          ]
+        },
+        {
+          "id": "Z04",
+          "run_id": "glm53-untouched-02",
+          "category": "provider/model output limit",
+          "subject_stage": "GLM untouched-02 last ordinary model response",
+          "root_cause_classification": "Provider/model output truncation interacting with runtime output allowance",
+          "confidence": "Confirmed `finish_reason=length`, 16,384 output tokens",
+          "explanation": "Last ordinary response had incomplete public output `[`; finalize-only recovery then failed on absent output file. Why the model produced this form is not proven. Fresh run was not interrupted.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/final-model-metadata.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deepseek4pro-high",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "reasoning_effort": "high",
+      "effort_verified_in_actual_requests": true,
+      "scenario": "Clue \u2192 Zafran; fixed intended Nick Fisher + Vari Kaur",
+      "start": "2026-09-28 09:04:57.109224+00:00",
+      "end": "2026-09-28 10:02:52.336039+00:00",
+      "research_end": "2026-09-28 10:01:18.156493+00:00",
+      "wall_seconds": 3475.226815,
+      "research_wall_seconds": 3381.047269,
+      "end_semantics": "last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions",
+      "status": "needs_review",
+      "generation_settled": true,
+      "input_revision": 162,
+      "reconciled_revision": 162,
+      "persons_requested": 2,
+      "persons_nominated": 2,
+      "persons_started": 2,
+      "persons_with_imported_dossier": 1,
+      "authored_findings": 101,
+      "imported_findings": 101,
+      "cost_components_usd": {
+        "researcher_model": 7.954206,
+        "exa": 0.201,
+        "deepgram": 0.0,
+        "embeddings": 0.0,
+        "common_muse_reconciliation": 0.258532,
+        "other_providers": 0.0,
+        "preflight": 1.87776e-05
+      },
+      "known_total_usd": 8.4137567776,
+      "ai_ark_credits": 1.6,
+      "unpriced_researcher_calls": 0,
+      "reconciliation": {
+        "model": "meta/muse-spark-1.3",
+        "effort": "separately configured; not inferred from researcher effort",
+        "paid_calls": 2,
+        "records": [
+          {
+            "input_revision": 161,
+            "status": "failed",
+            "start": "2026-09-28 09:56:12.604192+00:00",
+            "end": "2026-09-28 09:57:52.303527+00:00",
+            "wall_seconds": 99.699335,
+            "block_versions_count": 0
+          },
+          {
+            "input_revision": 162,
+            "status": "failed",
+            "start": "2026-09-28 10:01:23.334196+00:00",
+            "end": "2026-09-28 10:02:52.336039+00:00",
+            "wall_seconds": 89.001843,
+            "block_versions_count": 0
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "job_id": "a909b721-e744-59b8-89de-7668baec343b",
+          "subject": "person",
+          "name": "Vari Kaur",
+          "entity_id": "18243455-95ea-47a7-8666-9e582fb1d863",
+          "status": "needs_review",
+          "failure_code": "missing_finalize",
+          "start": "2026-09-28 09:24:40.771232+00:00",
+          "end": "2026-09-28 09:27:03.977111+00:00",
+          "wall_seconds": 143.205879,
+          "formation_start": null,
+          "import_completed": null,
+          "narrative_stored": null,
+          "pre_formation_seconds": null,
+          "formation_to_import_seconds": null,
+          "import_to_narrative_seconds": null,
+          "model_calls": 22,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 0.736717,
+          "model_seconds_sum": 128.14667353895493,
+          "input_tokens": 1686303,
+          "cache_read_input_tokens": 1583872,
+          "output_tokens": 15198,
+          "provider_recorded_usd": 0.052,
+          "ai_ark_credits": 0.0,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 7
+          },
+          "dossier": {},
+          "links": {
+            "dossier_json": null,
+            "dossier_readable": null,
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bcdc2cb74109684e8563960111250742"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 0.788717,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.052,
+          "research_stage_model_plus_provider_usd": 0.788717
+        },
+        {
+          "job_id": "436cb01b-602f-52fd-a83e-e1f08f8708fe",
+          "subject": "person",
+          "name": "Nick Fisher",
+          "entity_id": "6d5830fb-2429-40db-bf65-9b25eab59a14",
+          "status": "needs_review",
+          "failure_code": "missing_finalize",
+          "start": "2026-09-28 09:24:40.394907+00:00",
+          "end": "2026-09-28 10:01:18.156493+00:00",
+          "wall_seconds": 2197.761586,
+          "formation_start": "2026-09-28 09:48:59.809791+00:00",
+          "import_completed": "2026-09-28T09:56:06.134748+00:00",
+          "narrative_stored": null,
+          "pre_formation_seconds": 1459.414884,
+          "formation_to_import_seconds": 426.324957,
+          "import_to_narrative_seconds": null,
+          "model_calls": 89,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 2.262775,
+          "model_seconds_sum": 2062.881802630378,
+          "input_tokens": 9294601,
+          "cache_read_input_tokens": 8012800,
+          "output_tokens": 70776,
+          "provider_recorded_usd": 0.061,
+          "ai_ark_credits": 1.5,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 7,
+            "search_evidence": 1,
+            "save_dossier_section": 9,
+            "validate_dossier": 1,
+            "finish_dossier": 1,
+            "read_narrative_inputs": 1
+          },
+          "dossier": {
+            "version": 10,
+            "state": "complete",
+            "findings": 37,
+            "sections": 9,
+            "receipt_complete": true,
+            "stored": 37,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 34,
+              "wrong_entity": 3
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/436cb01b-602f-52fd-a83e-e1f08f8708fe/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/436cb01b-602f-52fd-a83e-e1f08f8708fe/dossier.md",
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/889dc8bf365e27725d163fd0668a34e7"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 2.323775,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.061,
+          "research_stage_model_plus_provider_usd": 2.323775
+        },
+        {
+          "job_id": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+          "subject": "account",
+          "name": "Zafran Security",
+          "entity_id": null,
+          "status": "needs_review",
+          "failure_code": "missing_finalize",
+          "start": "2026-09-28 09:04:57.109224+00:00",
+          "end": "2026-09-28 09:25:48.355763+00:00",
+          "wall_seconds": 1251.246539,
+          "formation_start": "2026-09-28 09:21:54.081444+00:00",
+          "import_completed": "2026-09-28T09:24:31.851393+00:00",
+          "narrative_stored": null,
+          "pre_formation_seconds": 1016.97222,
+          "formation_to_import_seconds": 157.769949,
+          "import_to_narrative_seconds": null,
+          "model_calls": 124,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 4.954714,
+          "model_seconds_sum": 1148.7198779995088,
+          "input_tokens": 11427762,
+          "cache_read_input_tokens": 10770176,
+          "output_tokens": 118748,
+          "provider_recorded_usd": 0.346532,
+          "ai_ark_credits": 0.1,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 10,
+            "nominate_web_committee_candidate": 4,
+            "save_dossier_section": 9,
+            "validate_dossier": 1,
+            "finish_dossier": 1,
+            "read_narrative_inputs": 1
+          },
+          "dossier": {
+            "version": 10,
+            "state": "complete",
+            "findings": 64,
+            "sections": 9,
+            "receipt_complete": true,
+            "stored": 64,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 64
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md",
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/6b4da01eb07ef9a8ec57c0f15b288de0"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 5.301246,
+          "attributed_common_reconciliation_usd": 0.258532,
+          "provider_research_usd": 0.088,
+          "research_stage_model_plus_provider_usd": 5.042714
+        }
+      ],
+      "links": {
+        "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+        "initial_account_dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/account-initial/dossier.json",
+        "initial_account_dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/account-initial/dossier.md",
+        "initial_account_narrative": null,
+        "current_account_narrative": null,
+        "intermediate_exa_dossier": null,
+        "raw_sources_manifest": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/all-raw/manifest.json",
+        "model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/deepseek4pro-high-model-calls.csv",
+        "original_model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-calls.csv",
+        "tool_activity": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/final-tool-activity.md",
+        "database_audit": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/audit.json",
+        "job_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/arv2_research_job.json",
+        "model_call_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/agent_model_call.json",
+        "provider_ledger": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/provider_call_ledger.json",
+        "reconciliation_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/arv2_narrative_reconciliation.json",
+        "timing": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/timing.json",
+        "trace_verification": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/trace-verification.json",
+        "skill_reads": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/skill-read-evidence.json",
+        "langfuse_traces": [
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/6b4da01eb07ef9a8ec57c0f15b288de0",
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/889dc8bf365e27725d163fd0668a34e7",
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bcdc2cb74109684e8563960111250742"
+        ],
+        "working_tree_diff": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/working-tree.diff",
+        "failure_inventory": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md"
+      },
+      "trace_verification": {
+        "researcher_model_ids": 235,
+        "model_ids_found": 235,
+        "model_ids_missing": [],
+        "provider_attempt_ids": 26,
+        "provider_ids_found": 26,
+        "provider_ids_missing": [],
+        "scope": "Researcher model and provider HTTP-attempt IDs; not an exhaustive audit of every filesystem/tool callback."
+      },
+      "comparability": {
+        "resource_revision": 24,
+        "implementation_commit_at_setup": "3df2336ec9bdf922685a36c03e6d65183b2c30ec",
+        "context_shas": [
+          "7ec2df47990dddc52cce4cac7f06dce42fde323dfc0e624211e5f3624ea8369c",
+          "193ffdc730709daad98752e90aac6195a87b65eb8829245c3bd9a4b9511ff18a",
+          "56efe25b7b1092ec320f55efd2db784f2df44e21a69490d02b651c0e19369d8f"
+        ],
+        "same_resource_pin_and_context_do_not_prove_identical_runtime": true
+      },
+      "extra_probes": [],
+      "operator_actions": [],
+      "cost_components_sum_check": true,
+      "failures": [
+        {
+          "id": "Z07",
+          "run_id": "deepseek4pro-high",
+          "category": "backend",
+          "subject_stage": "DeepSeek Nick parent-context read; Muse account completion and both person references",
+          "root_cause_classification": "Backend reference overwrite",
+          "confidence": "Confirmed persisted self-parent IDs and code path; downstream impact demonstrated",
+          "explanation": "`lookup_bound_person` replaced the stored input-reference object using the person job as `parent_job_id`. Nick's DeepSeek job subsequently could not read the completed account dossier; brief/generation references were lost. Both Muse person jobs point to themselves; account finalizer's child-parent query consequently rejects the correct Nick/Vari job IDs. Do not blame Muse for inventing those IDs.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/nick-parent-reference-failure.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+          ]
+        },
+        {
+          "id": "Z08",
+          "run_id": "deepseek4pro-high",
+          "category": "unresolved provider/parser/runtime",
+          "subject_stage": "DeepSeek account and Vari early stops",
+          "root_cause_classification": "Provider/parser/runtime boundary unresolved",
+          "confidence": "Stop metadata confirmed; exact responsible component unproven",
+          "explanation": "Last metadata says `finish_reason=tool_calls` with empty public content, then no accepted finalizer. Token counts 9,945 and 3,618 do not establish truncation. Serialized snapshots omit typed tool calls in successful cases too, so missing serialized calls alone cannot diagnose a lost provider tool call. Account 64 findings imported; Vari stopped before deep research/dossier.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-stop-metadata.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md"
+          ]
+        },
+        {
+          "id": "Z09",
+          "run_id": "deepseek4pro-high",
+          "category": "provider / observability",
+          "subject_stage": "DeepSeek Nick final call",
+          "root_cause_classification": "Provider response error plus observability/status mismatch",
+          "confidence": "Confirmed metadata; deeper provider cause unproven",
+          "explanation": "Final response has `finish_reason=error`, 571 output tokens and empty public content, but model ledger labels the call completed. Job ends missing_finalize. The earlier parent-reference bug is a separate failure. Nick's 37 findings imported; no narrative.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-stop-metadata.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/agent_model_call.json"
+          ]
+        },
+        {
+          "id": "Z10",
+          "run_id": "deepseek4pro-high",
+          "category": "common reconciliation model/schema",
+          "subject_stage": "DeepSeek's two common-Muse reconciliation calls",
+          "root_cause_classification": "Shared reconciliation model/schema contract",
+          "confidence": "Confirmed validator rejection",
+          "explanation": "First returned an object where `gaps[0]` required a string. Second returned missing/extra keys and malformed contact UUID containing prose. No account narrative was saved. These costs/failures belong to common Muse reconciliation, not DeepSeek research.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/arv2_narrative_reconciliation.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "muse-max",
+      "model": "meta/muse-spark-1.3",
+      "reasoning_effort": "max",
+      "effort_verified_in_actual_requests": true,
+      "scenario": "Clue \u2192 Zafran; fixed intended Nick Fisher + Vari Kaur",
+      "start": "2026-09-28 09:48:00.853979+00:00",
+      "end": "2026-09-28 10:24:04.322504+00:00",
+      "research_end": "2026-09-28 10:22:20.703231+00:00",
+      "wall_seconds": 2163.468525,
+      "research_wall_seconds": 2059.849252,
+      "end_semantics": "last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions",
+      "status": "needs_review",
+      "generation_settled": true,
+      "input_revision": 245,
+      "reconciled_revision": 245,
+      "persons_requested": 2,
+      "persons_nominated": 2,
+      "persons_started": 2,
+      "persons_with_imported_dossier": 2,
+      "authored_findings": 178,
+      "imported_findings": 178,
+      "cost_components_usd": {
+        "researcher_model": 12.399157,
+        "exa": 0.338,
+        "deepgram": 0.0,
+        "embeddings": 0.0,
+        "common_muse_reconciliation": 0.40414,
+        "other_providers": 0.0,
+        "preflight": 0.000117
+      },
+      "known_total_usd": 13.141414,
+      "ai_ark_credits": 3.1,
+      "unpriced_researcher_calls": 0,
+      "reconciliation": {
+        "model": "meta/muse-spark-1.3",
+        "effort": "separately configured; not inferred from researcher effort",
+        "paid_calls": 2,
+        "records": [
+          {
+            "input_revision": 244,
+            "status": "failed",
+            "start": "2026-09-28 10:15:15.791157+00:00",
+            "end": "2026-09-28 10:17:34.477941+00:00",
+            "wall_seconds": 138.686784,
+            "block_versions_count": 11
+          },
+          {
+            "input_revision": 245,
+            "status": "failed",
+            "start": "2026-09-28 10:22:26.472407+00:00",
+            "end": "2026-09-28 10:24:04.322504+00:00",
+            "wall_seconds": 97.850097,
+            "block_versions_count": 11
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "job_id": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+          "subject": "account",
+          "name": "Zafran Security",
+          "entity_id": null,
+          "status": "needs_review",
+          "failure_code": "missing_finalize",
+          "start": "2026-09-28 09:48:00.853979+00:00",
+          "end": "2026-09-28 10:03:07.451574+00:00",
+          "wall_seconds": 906.597595,
+          "formation_start": "2026-09-28 09:56:14.624835+00:00",
+          "import_completed": "2026-09-28T09:59:07.191952+00:00",
+          "narrative_stored": "2026-09-28T10:02:13.455678+00:00",
+          "pre_formation_seconds": 493.770856,
+          "formation_to_import_seconds": 172.567117,
+          "import_to_narrative_seconds": 186.263726,
+          "model_calls": 79,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 3.270071,
+          "model_seconds_sum": 782.609895168338,
+          "input_tokens": 7091181,
+          "cache_read_input_tokens": 5410956,
+          "output_tokens": 84270,
+          "provider_recorded_usd": 0.52014,
+          "ai_ark_credits": 0.1,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 19,
+            "nominate_web_committee_candidate": 2,
+            "save_dossier_section": 10,
+            "update_dossier_findings": 3,
+            "validate_dossier": 1,
+            "finish_dossier": 1,
+            "read_narrative_inputs": 1,
+            "write_research_narrative": 2
+          },
+          "dossier": {
+            "version": 13,
+            "state": "complete",
+            "findings": 54,
+            "sections": 10,
+            "receipt_complete": true,
+            "stored": 54,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 51,
+              "potential_conflict": 2,
+              "insufficient_context": 1
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md",
+            "narrative_markdown": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account/page.md",
+            "narrative_html": null,
+            "narrative_blocks": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account/display-blocks.json",
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/2b1c6302815f8d74a85af0d774c1f599"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 3.790211,
+          "attributed_common_reconciliation_usd": 0.40414,
+          "provider_research_usd": 0.116,
+          "research_stage_model_plus_provider_usd": 3.386071
+        },
+        {
+          "job_id": "41ba4d68-d1da-57fd-9163-a0ec041a44bd",
+          "subject": "person",
+          "name": "Nick Fisher",
+          "entity_id": "2e977b1d-844b-43b7-94c5-c7b4b7c3fcff",
+          "status": "needs_review",
+          "failure_code": "quality_unit_incomplete",
+          "start": "2026-09-28 09:59:13.767991+00:00",
+          "end": "2026-09-28 10:14:59.900043+00:00",
+          "wall_seconds": 946.132052,
+          "formation_start": "2026-09-28 10:09:23.825014+00:00",
+          "import_completed": "2026-09-28T10:13:31.013913+00:00",
+          "narrative_stored": null,
+          "pre_formation_seconds": 610.057023,
+          "formation_to_import_seconds": 247.188899,
+          "import_to_narrative_seconds": null,
+          "model_calls": 92,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 4.16695,
+          "model_seconds_sum": 768.5111135407351,
+          "input_tokens": 9506277,
+          "cache_read_input_tokens": 7285675,
+          "output_tokens": 70199,
+          "provider_recorded_usd": 0.109,
+          "ai_ark_credits": 1.5,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 18,
+            "search_evidence": 1,
+            "save_dossier_section": 9,
+            "validate_dossier": 1,
+            "finish_dossier": 1,
+            "read_narrative_inputs": 1
+          },
+          "dossier": {
+            "version": 10,
+            "state": "complete",
+            "findings": 68,
+            "sections": 9,
+            "receipt_complete": true,
+            "stored": 68,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 57,
+              "insufficient_context": 6,
+              "potential_conflict": 1,
+              "wrong_entity": 4
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/41ba4d68-d1da-57fd-9163-a0ec041a44bd/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/41ba4d68-d1da-57fd-9163-a0ec041a44bd/dossier.md",
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": null,
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/61b9dad798d5f67e468f2d9ef5d840c6"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 4.27595,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.109,
+          "research_stage_model_plus_provider_usd": 4.27595
+        },
+        {
+          "job_id": "92047fb7-01a5-5611-802e-c886da87eb6a",
+          "subject": "person",
+          "name": "Vari Kaur",
+          "entity_id": "0a838297-1efb-45cc-ab5a-aa224f200c36",
+          "status": "needs_review",
+          "failure_code": "quality_unit_incomplete",
+          "start": "2026-09-28 09:59:14.123270+00:00",
+          "end": "2026-09-28 10:22:20.703231+00:00",
+          "wall_seconds": 1386.579961,
+          "formation_start": "2026-09-28 10:12:14.549624+00:00",
+          "import_completed": "2026-09-28T10:15:09.369451+00:00",
+          "narrative_stored": null,
+          "pre_formation_seconds": 780.426354,
+          "formation_to_import_seconds": 174.819827,
+          "import_to_narrative_seconds": null,
+          "model_calls": 120,
+          "model_failed_calls": 0,
+          "model_unpriced_calls": 0,
+          "model_usd": 4.962136,
+          "model_seconds_sum": 1171.4271328230388,
+          "input_tokens": 10973017,
+          "cache_read_input_tokens": 8361253,
+          "output_tokens": 104293,
+          "provider_recorded_usd": 0.113,
+          "ai_ark_credits": 1.5,
+          "tool_counts": {
+            "null": 3,
+            "acquire_research_evidence": 19,
+            "save_dossier_section": 7,
+            "update_dossier_findings": 1,
+            "validate_dossier": 1,
+            "finish_dossier": 1,
+            "read_narrative_inputs": 2,
+            "write_research_narrative": 1
+          },
+          "dossier": {
+            "version": 9,
+            "state": "complete",
+            "findings": 56,
+            "sections": 7,
+            "receipt_complete": true,
+            "stored": 56,
+            "exact_original_mismatches": [],
+            "review_statuses": {
+              "supported": 43,
+              "insufficient_context": 9,
+              "potential_conflict": 1,
+              "wrong_entity": 3
+            }
+          },
+          "links": {
+            "dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/dossier.json",
+            "dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/dossier.md",
+            "narrative_markdown": null,
+            "narrative_html": null,
+            "narrative_blocks": null,
+            "uncommitted_narrative_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/narrative-payload.json",
+            "langfuse_traces": [
+              "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/a7b5aeb0b9b65ea305b4700b1981fe47"
+            ]
+          },
+          "known_model_plus_attributed_provider_usd": 5.075136,
+          "attributed_common_reconciliation_usd": 0,
+          "provider_research_usd": 0.113,
+          "research_stage_model_plus_provider_usd": 5.075136
+        }
+      ],
+      "links": {
+        "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md",
+        "initial_account_dossier_json": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/dossier.json",
+        "initial_account_dossier_readable": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/dossier.md",
+        "initial_account_narrative": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/page.md",
+        "current_account_narrative": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account/page.md",
+        "intermediate_exa_dossier": null,
+        "raw_sources_manifest": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/all-raw/manifest.json",
+        "model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/muse-max-model-calls.csv",
+        "original_model_calls_csv": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/model-calls.csv",
+        "tool_activity": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md",
+        "database_audit": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/audit.json",
+        "job_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+        "model_call_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/agent_model_call.json",
+        "provider_ledger": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/provider_call_ledger.json",
+        "reconciliation_snapshot": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_narrative_reconciliation.json",
+        "timing": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/timing.json",
+        "trace_verification": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/trace-verification.json",
+        "skill_reads": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/skill-read-evidence.json",
+        "langfuse_traces": [
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/2b1c6302815f8d74a85af0d774c1f599",
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/61b9dad798d5f67e468f2d9ef5d840c6",
+          "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/a7b5aeb0b9b65ea305b4700b1981fe47"
+        ],
+        "working_tree_diff": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/working-tree.diff",
+        "failure_inventory": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md"
+      },
+      "trace_verification": {
+        "researcher_model_ids": 291,
+        "model_ids_found": 291,
+        "model_ids_missing": [],
+        "provider_attempt_ids": 57,
+        "provider_ids_found": 57,
+        "provider_ids_missing": [],
+        "scope": "Researcher model and provider HTTP-attempt IDs; not an exhaustive audit of every filesystem/tool callback."
+      },
+      "comparability": {
+        "resource_revision": 24,
+        "implementation_commit_at_setup": "516294675a9be0cf7cf2195cdaaa8735f3bb868b",
+        "context_shas": [
+          "7ec2df47990dddc52cce4cac7f06dce42fde323dfc0e624211e5f3624ea8369c",
+          "193ffdc730709daad98752e90aac6195a87b65eb8829245c3bd9a4b9511ff18a",
+          "56efe25b7b1092ec320f55efd2db784f2df44e21a69490d02b651c0e19369d8f"
+        ],
+        "same_resource_pin_and_context_do_not_prove_identical_runtime": true
+      },
+      "extra_probes": [],
+      "operator_actions": [],
+      "cost_components_sum_check": true,
+      "failures": [
+        {
+          "id": "Z07",
+          "run_id": "muse-max",
+          "category": "backend",
+          "subject_stage": "DeepSeek Nick parent-context read; Muse account completion and both person references",
+          "root_cause_classification": "Backend reference overwrite",
+          "confidence": "Confirmed persisted self-parent IDs and code path; downstream impact demonstrated",
+          "explanation": "`lookup_bound_person` replaced the stored input-reference object using the person job as `parent_job_id`. Nick's DeepSeek job subsequently could not read the completed account dossier; brief/generation references were lost. Both Muse person jobs point to themselves; account finalizer's child-parent query consequently rejects the correct Nick/Vari job IDs. Do not blame Muse for inventing those IDs.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/nick-parent-reference-failure.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+          ]
+        },
+        {
+          "id": "Z11",
+          "run_id": "muse-max",
+          "category": "model behavior",
+          "subject_stage": "Muse max account narrative writes",
+          "root_cause_classification": "Model tool argument/schema use; recovered",
+          "confidence": "Confirmed validation and eventual saved page",
+          "explanation": "JSON string passed where `pages` required structured tuple, then wrong owned-page shape. Later corrected and saved 11 account sections. Retries changed wording/quote presentation, so semantic quality still needs review.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/page.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+          ]
+        },
+        {
+          "id": "Z12",
+          "run_id": "muse-max",
+          "category": "model behavior",
+          "subject_stage": "Muse max Nick person",
+          "root_cause_classification": "Model workflow omission; backend context issue also present",
+          "confidence": "Confirmed no narrative-write call/page; causal reason not inferred",
+          "explanation": "After importing 68 findings and reading narrative inputs/sources, agent wrote completion without saving a contact narrative. Ends `quality_unit_incomplete`. Parent-reference corruption is also present, but trace does not justify treating it as the sole cause of the missing write.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+          ]
+        },
+        {
+          "id": "Z13",
+          "run_id": "muse-max",
+          "category": "model behavior / repair contract",
+          "subject_stage": "Muse max Vari narrative",
+          "root_cause_classification": "Model tool arguments/repair reference; failed recovery",
+          "confidence": "Confirmed tool errors and draft only",
+          "explanation": "Literal string `null` supplied for account dossier version, then retry_of pointed to wrong slot/tool. Repair rejected; a narrative payload/review note was saved locally but not published through narrative writer. 56 findings imported; ends `quality_unit_incomplete`.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/narrative-payload.json",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md"
+          ]
+        },
+        {
+          "id": "Z14",
+          "run_id": "muse-max",
+          "category": "common reconciliation model/schema",
+          "subject_stage": "Muse max common reconciliation, revisions 244/245",
+          "root_cause_classification": "Shared reconciliation model/schema contract",
+          "confidence": "Confirmed parser rejection; response not retained as usable parsed artifact",
+          "explanation": "Both calls fail `Each update needs page and section only`; generation settles needs_review 245/245. Existing account narrative survives unchanged. This was two distinct input snapshots, not a proven infinite self-trigger loop.",
+          "evidence_paths": [
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md",
+            "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_narrative_reconciliation.json"
+          ]
+        }
+      ]
+    }
+  ],
+  "failures": [
+    {
+      "id": "Z01",
+      "run_id": "grok47",
+      "category": "provider",
+      "subject_stage": "Grok 4.7 medium account",
+      "root_cause_classification": "Provider capacity; downstream runtime termination",
+      "confidence": "Confirmed provider response and terminal job",
+      "explanation": "Model call 68 returned 502 `provider_unavailable`, explicitly capacity/high demand. Agent stopped during dossier assembly; 30 draft findings survived, no import/narrative. Nick and Vari never started. This is not an Exa timeout or evidence of poor completed research.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/agent_model_call.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/arv2_research_job.json"
+      ]
+    },
+    {
+      "id": "Z02",
+      "run_id": "glm53",
+      "category": "model behavior",
+      "subject_stage": "GLM initial account committee nomination",
+      "root_cause_classification": "Model instruction-following plus concurrent slot allocation",
+      "confidence": "Confirmed observable calls and retained jobs",
+      "explanation": "Four people nominated concurrently despite fixed Nick/Vari scope. Tom Anthony and Kelly W. acquired the two slots first. Nick/Vari cap retries did not repair the selection. This contributed to failure to complete the requested flow, but is not the final exception itself. No person research started.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/activity-latest.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/arv2_research_job.json"
+      ]
+    },
+    {
+      "id": "Z03",
+      "run_id": "glm53",
+      "category": "backend",
+      "subject_stage": "Both GLM account attempts",
+      "root_cause_classification": "Missing model-authored output plus backend finalization handling",
+      "confidence": "Confirmed missing file and exception; original attempt's model-stop cause not established",
+      "explanation": "Required `/outputs/research.json` was absent. `stat_entry` raised WorkspaceSecurityError outside the ValueError repair handling. This does not establish a permission denial. Exa output and original acquisitions survived, but no researcher JSON dossier/import/narrative.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_research_job.json"
+      ]
+    },
+    {
+      "id": "Z03",
+      "run_id": "glm53-untouched-02",
+      "category": "backend",
+      "subject_stage": "Both GLM account attempts",
+      "root_cause_classification": "Missing model-authored output plus backend finalization handling",
+      "confidence": "Confirmed missing file and exception; original attempt's model-stop cause not established",
+      "explanation": "Required `/outputs/research.json` was absent. `stat_entry` raised WorkspaceSecurityError outside the ValueError repair handling. This does not establish a permission denial. Exa output and original acquisitions survived, but no researcher JSON dossier/import/narrative.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_research_job.json"
+      ]
+    },
+    {
+      "id": "Z04",
+      "run_id": "glm53-untouched-02",
+      "category": "provider/model output limit",
+      "subject_stage": "GLM untouched-02 last ordinary model response",
+      "root_cause_classification": "Provider/model output truncation interacting with runtime output allowance",
+      "confidence": "Confirmed `finish_reason=length`, 16,384 output tokens",
+      "explanation": "Last ordinary response had incomplete public output `[`; finalize-only recovery then failed on absent output file. Why the model produced this form is not proven. Fresh run was not interrupted.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/final-model-metadata.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z05",
+      "run_id": "glm53",
+      "category": "operator",
+      "subject_stage": "Initial GLM worker",
+      "root_cause_classification": "Operator action after natural failure",
+      "confidence": "Confirmed ordering; not the account-failure cause",
+      "explanation": "Account ended 08:44:16.802 UTC; worker stopped around 08:44:44, then same queue restored after user said not to interrupt. No account restart or person spending resulted. Fresh untouched-02 was a separate user-authorized test.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/operator-stop.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z06",
+      "run_id": "grok46",
+      "category": "model behavior / ownership contract",
+      "subject_stage": "Grok 4.6 Nick and Vari completion",
+      "root_cause_classification": "Model completion-reference selection / tool ownership contract",
+      "confidence": "Confirmed saved references and rejection",
+      "explanation": "Both included account-owned committee-selection IDs in person completion files. Finalizer rejected references outside person context; finalizer retry did not change the invalid file. Both person dossiers, imports and narratives survived. Account completed; generation settled partial.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/finalize-audit.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z07",
+      "run_id": "deepseek4pro-high",
+      "category": "backend",
+      "subject_stage": "DeepSeek Nick parent-context read; Muse account completion and both person references",
+      "root_cause_classification": "Backend reference overwrite",
+      "confidence": "Confirmed persisted self-parent IDs and code path; downstream impact demonstrated",
+      "explanation": "`lookup_bound_person` replaced the stored input-reference object using the person job as `parent_job_id`. Nick's DeepSeek job subsequently could not read the completed account dossier; brief/generation references were lost. Both Muse person jobs point to themselves; account finalizer's child-parent query consequently rejects the correct Nick/Vari job IDs. Do not blame Muse for inventing those IDs.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/nick-parent-reference-failure.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z07",
+      "run_id": "muse-max",
+      "category": "backend",
+      "subject_stage": "DeepSeek Nick parent-context read; Muse account completion and both person references",
+      "root_cause_classification": "Backend reference overwrite",
+      "confidence": "Confirmed persisted self-parent IDs and code path; downstream impact demonstrated",
+      "explanation": "`lookup_bound_person` replaced the stored input-reference object using the person job as `parent_job_id`. Nick's DeepSeek job subsequently could not read the completed account dossier; brief/generation references were lost. Both Muse person jobs point to themselves; account finalizer's child-parent query consequently rejects the correct Nick/Vari job IDs. Do not blame Muse for inventing those IDs.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/nick-parent-reference-failure.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z08",
+      "run_id": "deepseek4pro-high",
+      "category": "unresolved provider/parser/runtime",
+      "subject_stage": "DeepSeek account and Vari early stops",
+      "root_cause_classification": "Provider/parser/runtime boundary unresolved",
+      "confidence": "Stop metadata confirmed; exact responsible component unproven",
+      "explanation": "Last metadata says `finish_reason=tool_calls` with empty public content, then no accepted finalizer. Token counts 9,945 and 3,618 do not establish truncation. Serialized snapshots omit typed tool calls in successful cases too, so missing serialized calls alone cannot diagnose a lost provider tool call. Account 64 findings imported; Vari stopped before deep research/dossier.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-stop-metadata.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z09",
+      "run_id": "deepseek4pro-high",
+      "category": "provider / observability",
+      "subject_stage": "DeepSeek Nick final call",
+      "root_cause_classification": "Provider response error plus observability/status mismatch",
+      "confidence": "Confirmed metadata; deeper provider cause unproven",
+      "explanation": "Final response has `finish_reason=error`, 571 output tokens and empty public content, but model ledger labels the call completed. Job ends missing_finalize. The earlier parent-reference bug is a separate failure. Nick's 37 findings imported; no narrative.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-stop-metadata.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/agent_model_call.json"
+      ]
+    },
+    {
+      "id": "Z10",
+      "run_id": "deepseek4pro-high",
+      "category": "common reconciliation model/schema",
+      "subject_stage": "DeepSeek's two common-Muse reconciliation calls",
+      "root_cause_classification": "Shared reconciliation model/schema contract",
+      "confidence": "Confirmed validator rejection",
+      "explanation": "First returned an object where `gaps[0]` required a string. Second returned missing/extra keys and malformed contact UUID containing prose. No account narrative was saved. These costs/failures belong to common Muse reconciliation, not DeepSeek research.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/arv2_narrative_reconciliation.json"
+      ]
+    },
+    {
+      "id": "Z11",
+      "run_id": "muse-max",
+      "category": "model behavior",
+      "subject_stage": "Muse max account narrative writes",
+      "root_cause_classification": "Model tool argument/schema use; recovered",
+      "confidence": "Confirmed validation and eventual saved page",
+      "explanation": "JSON string passed where `pages` required structured tuple, then wrong owned-page shape. Later corrected and saved 11 account sections. Retries changed wording/quote presentation, so semantic quality still needs review.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/page.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z12",
+      "run_id": "muse-max",
+      "category": "model behavior",
+      "subject_stage": "Muse max Nick person",
+      "root_cause_classification": "Model workflow omission; backend context issue also present",
+      "confidence": "Confirmed no narrative-write call/page; causal reason not inferred",
+      "explanation": "After importing 68 findings and reading narrative inputs/sources, agent wrote completion without saving a contact narrative. Ends `quality_unit_incomplete`. Parent-reference corruption is also present, but trace does not justify treating it as the sole cause of the missing write.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z13",
+      "run_id": "muse-max",
+      "category": "model behavior / repair contract",
+      "subject_stage": "Muse max Vari narrative",
+      "root_cause_classification": "Model tool arguments/repair reference; failed recovery",
+      "confidence": "Confirmed tool errors and draft only",
+      "explanation": "Literal string `null` supplied for account dossier version, then retry_of pointed to wrong slot/tool. Repair rejected; a narrative payload/review note was saved locally but not published through narrative writer. 56 findings imported; ends `quality_unit_incomplete`.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/narrative-payload.json",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md"
+      ]
+    },
+    {
+      "id": "Z14",
+      "run_id": "muse-max",
+      "category": "common reconciliation model/schema",
+      "subject_stage": "Muse max common reconciliation, revisions 244/245",
+      "root_cause_classification": "Shared reconciliation model/schema contract",
+      "confidence": "Confirmed parser rejection; response not retained as usable parsed artifact",
+      "explanation": "Both calls fail `Each update needs page and section only`; generation settles needs_review 245/245. Existing account narrative survives unchanged. This was two distinct input snapshots, not a proven infinite self-trigger loop.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_narrative_reconciliation.json"
+      ]
+    },
+    {
+      "id": "Z15",
+      "run_id": "grok46",
+      "category": "model behavior",
+      "subject_stage": "Grok 4.6 formation; Grok 4.7 partial formation",
+      "root_cause_classification": "Model schema/navigation mistakes; recovered before later outcomes",
+      "confidence": "Confirmed tool feedback; not root terminal failure",
+      "explanation": "Missing `review` objects/unsupported review status in Grok4.6 were corrected before all 139 imports; navigation errors also occurred. Grok4.7 five save calls yielded four durable sections. Do not count failed attempts as completed sections.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md"
+      ]
+    },
+    {
+      "id": "Z15",
+      "run_id": "grok47",
+      "category": "model behavior",
+      "subject_stage": "Grok 4.6 formation; Grok 4.7 partial formation",
+      "root_cause_classification": "Model schema/navigation mistakes; recovered before later outcomes",
+      "confidence": "Confirmed tool feedback; not root terminal failure",
+      "explanation": "Missing `review` objects/unsupported review status in Grok4.6 were corrected before all 139 imports; navigation errors also occurred. Grok4.7 five save calls yielded four durable sections. Do not count failed attempts as completed sections.",
+      "evidence_paths": [
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+        "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md"
+      ]
+    }
+  ]
+}

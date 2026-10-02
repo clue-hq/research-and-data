@@ -7,7 +7,7 @@ import { ClueAuthenticationError } from "./errors";
 import { providerSessionToken } from "./server";
 import { streamingFetchOptions } from "./streaming-dispatcher";
 import { loadProtectedSession } from "@/features/session/data/session-dal";
-import { WORKSPACE_COOKIE } from "@/features/session/model/session";
+import { workspaceCookieName } from "./local-workspace";
 
 export interface AuthenticatedBackendContext {
   requestedWorkspaceId: string | null;
@@ -33,7 +33,7 @@ export async function authenticatedBackendContext(): Promise<AuthenticatedBacken
 
   const cookieStore = await cookies();
   const requestedWorkspaceId =
-    cookieStore.get(WORKSPACE_COOKIE)?.value ?? null;
+    cookieStore.get(workspaceCookieName())?.value ?? null;
   const protectedSession = await loadProtectedSession(
     token,
     requestedWorkspaceId,

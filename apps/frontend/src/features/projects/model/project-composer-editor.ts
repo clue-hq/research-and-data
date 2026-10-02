@@ -21,10 +21,12 @@ export function createComposerMention(
     children: [{ text: "" }],
     entityId: entity.id,
     entityType: entity.type,
+    icon: entity.icon,
     imagePath: entity.imagePath,
     label: entity.label,
     secondaryLabel: entity.secondaryLabel,
     type: "mention",
+    version: entity.version,
   };
 }
 

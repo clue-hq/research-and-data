@@ -1,0 +1,675 @@
+{
+  "account": "UPTIQ, Inc.",
+  "domain": "uptiq.ai",
+  "entity": "account:uptiq",
+  "workspace_id": "workspace:clue-smoke-2026-08-31",
+  "run": "arv2-smoke-cluehq",
+  "research_date": "2026-08-31",
+  "claim_counts": {
+    "total": 30,
+    "by_tier": {
+      "1": 12,
+      "2": 0,
+      "4": 18
+    },
+    "by_priority": {
+      "1": 3,
+      "2": 17,
+      "3": 10
+    },
+    "account_entity": 18,
+    "contact_entity": 12,
+    "distinct_contacts": 6
+  },
+  "committee_same_name_audit": {
+    "admitted": [
+      {
+        "name": "Manuj Paliwal",
+        "title": "Engineering Lead",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/manujpaliwal",
+        "start": "2026-01-01"
+      },
+      {
+        "name": "Joe Rost",
+        "title": "VP, Wealth Solutions",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/joe-rost-02197819",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Ayushi Yadav",
+        "title": "Product Designer",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/uxayushi",
+        "start": "2026-01-01"
+      },
+      {
+        "name": "Kyle Kneubuhl",
+        "title": "Managing Director- Credit Union and Banking Solutions",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/kyle-kneubuhl-211b825b",
+        "start": "2023-05-01"
+      },
+      {
+        "name": "Atharva Joshi",
+        "title": "Senior Software Engineer",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/joshiatharva",
+        "start": "2022-06-01"
+      },
+      {
+        "name": "Craig McKeon",
+        "title": "VP, GTM Strategy",
+        "current_company": "UPTIQ",
+        "linkedin": "https://www.linkedin.com/in/craig-mckeon",
+        "start": "2026-04-01"
+      }
+    ],
+    "rejected_same_name": [],
+    "roster_returned": 6,
+    "roster_total_available": 151
+  },
+  "claims": [
+    {
+      "entity": "contact:manuj-paliwal",
+      "field_key": "contact.current_title",
+      "value_json": "Engineering Lead",
+      "evidence_span": "profile.title = \"Engineering Lead\" with position_groups[0].company.name = \"UPTIQ\"",
+      "source_url": "https://www.linkedin.com/in/manujpaliwal",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:manuj-paliwal",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "UPTIQ",
+          "role": "Engineering Lead",
+          "start": "2026-01-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"UPTIQ\", title: \"Engineering Lead\", date.start: \"2026-01-01\"}",
+      "source_url": "https://www.linkedin.com/in/manujpaliwal",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:joe-rost",
+      "field_key": "contact.current_title",
+      "value_json": "VP, Wealth Solutions",
+      "evidence_span": "profile.title = \"VP, Wealth Solutions\" with position_groups[0].company.name = \"UPTIQ\"",
+      "source_url": "https://www.linkedin.com/in/joe-rost-02197819",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:joe-rost",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "UPTIQ",
+          "role": "VP, Wealth Solutions",
+          "start": "2026-06-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"UPTIQ\", title: \"VP, Wealth Solutions\", date.start: \"2026-06-01\"}",
+      "source_url": "https://www.linkedin.com/in/joe-rost-02197819",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ayushi-yadav",
+      "field_key": "contact.current_title",
+      "value_json": "Product Designer",
+      "evidence_span": "profile.title = \"Product Designer\" with position_groups[0].company.name = \"UPTIQ\"",
+      "source_url": "https://www.linkedin.com/in/uxayushi",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:ayushi-yadav",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "UPTIQ",
+          "role": "Product Designer",
+          "start": "2026-01-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"UPTIQ\", title: \"Product Designer\", date.start: \"2026-01-01\"}",
+      "source_url": "https://www.linkedin.com/in/uxayushi",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kyle-kneubuhl",
+      "field_key": "contact.current_title",
+      "value_json": "Managing Director- Credit Union and Banking Solutions",
+      "evidence_span": "profile.title = \"Managing Director- Credit Union and Banking Solutions\" with position_groups[0].company.name = \"UPTIQ\"",
+      "source_url": "https://www.linkedin.com/in/kyle-kneubuhl-211b825b",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:kyle-kneubuhl",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "UPTIQ",
+          "role": "Managing Director- Credit Union and Banking Solutions",
+          "start": "2023-05-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"UPTIQ\", title: \"Managing Director- Credit Union and Banking Solutions\", date.start: \"2023-05-01\"}",
+      "source_url": "https://www.linkedin.com/in/kyle-kneubuhl-211b825b",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:atharva-joshi",
+      "field_key": "contact.current_title",
+      "value_json": "Senior Software Engineer",
+      "evidence_span": "profile.title = \"Senior Software Engineer\" with position_groups[0].company.name = \"UPTIQ\"",
+      "source_url": "https://www.linkedin.com/in/joshiatharva",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:atharva-joshi",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "UPTIQ",
+          "role": "Senior Software Engineer",
+          "start": "2022-06-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"UPTIQ\", title: \"Senior Software Engineer\", date.start: \"2022-06-01\"}",
+      "source_url": "https://www.linkedin.com/in/joshiatharva",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:craig-mckeon",
+      "field_key": "contact.current_title",
+      "value_json": "VP, GTM Strategy",
+      "evidence_span": "profile.title = \"VP, GTM Strategy\" with position_groups[0].company.name = \"UPTIQ\"",
+      "source_url": "https://www.linkedin.com/in/craig-mckeon",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:craig-mckeon",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "UPTIQ",
+          "role": "VP, GTM Strategy",
+          "start": "2026-04-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"UPTIQ\", title: \"VP, GTM Strategy\", date.start: \"2026-04-01\"}",
+      "source_url": "https://www.linkedin.com/in/craig-mckeon",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.primary_domain",
+      "value_json": "uptiq.ai",
+      "evidence_span": "uptiq.ai is the verified operating domain.",
+      "source_url": "https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.account_name",
+      "value_json": "UPTIQ, Inc.",
+      "evidence_span": "\u00a9 2026 UPTIQ, Inc. All rights reserved.",
+      "source_url": "https://www.uptiq.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.company_linkedin_url",
+      "value_json": "https://www.linkedin.com/company/uptiqai",
+      "evidence_span": "https://www.linkedin.com/company/uptiqai",
+      "source_url": "https://www.linkedin.com/company/uptiqai",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.company_about",
+      "value_json": "The AI Platform for Financial Services\n\nThe AI Platform for Financial Services\n\n# The only bank-grade AI platform.\n\nGeneral-purpose AI goes wide. Uptiq goes deep with agents built for financial services, running in 150+ institutions with the governance examiners expect.",
+      "evidence_span": "General-purpose AI goes wide. Uptiq goes deep with agents built for financial services, running in 150+ institutions with the governance examiners expect.",
+      "source_url": "https://www.uptiq.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.industry",
+      "value_json": "Financial AI / FinTech",
+      "evidence_span": "Uptiq - Financial AI Platform for Banks, Credit Unions & Wealth Firms",
+      "source_url": "https://www.uptiq.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.employee_range",
+      "value_json": {
+        "label": "51-200",
+        "min": 51,
+        "max": 200
+      },
+      "evidence_span": "Employees: 151 (51-200 employees).",
+      "source_url": "https://www.linkedin.com/company/uptiqai",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.75,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.hq_location",
+      "value_json": {
+        "raw": "10900 Stonelake Blvd Bldg II Ste 100, Austin, Texas 78759.",
+        "city": "Austin",
+        "region": "Texas",
+        "country": "United States",
+        "country_code": "US"
+      },
+      "evidence_span": "United States\n\n10900 Stonelake Blvd Bldg II Ste 100, Austin, Texas 78759.",
+      "source_url": "https://www.uptiq.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.7,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "account.total_funding",
+      "value_json": {
+        "amount_usd": 55000000,
+        "estimate_kind": "reported"
+      },
+      "evidence_span": "With over $10 billion in transactions processed and more than $55M in equity funding, Uptiq isn\u2019t just shaping the future of AI in financial services \u2014 it\u2019s leading it.",
+      "source_url": "https://www.uptiq.ai/about-us",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 1
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 25000000,
+        "round": "Series B"
+      },
+      "evidence_span": "Uptiq raises $25M to add AI agents to bank workflows",
+      "source_url": "https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 1
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 12000000,
+        "round": "Funding"
+      },
+      "evidence_span": "Uptiq AI raises $12 million to build the future of AI infrastructure for financial services",
+      "source_url": "https://www.uptiq.ai/press-releases/uptiq-ai-raises-12-million-to-build-the-future-of-ai-infrastructure-for-financial-services",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 3
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.revenue_band",
+      "value_json": "1m_10m",
+      "evidence_span": "UPTIQ Team\n\n... With over $10 billion in transactions processed and more than $55M in equity funding, Uptiq isn\u2019t just shaping the future of AI in financial services \u2014 it\u2019s leading it.",
+      "source_url": "https://www.uptiq.ai/about-us",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.4,
+      "priority": 3
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "account.strategic_moves",
+      "value_json": "Expand Qore access to credit union innovation teams and developers; scale distribution, integrations, and go-to-market programs; add AI agents to bank workflows.",
+      "evidence_span": "Curql's LP base is made up of credit unions, which \"gives us an amazing distribution opportunity,\" Fulzele says.",
+      "source_url": "https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 1
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "account.operational_pain",
+      "value_json": "Financial institutions rely on manual document review and spreadsheets for underwriting and onboarding; need to move AI from pilot to production with governance and exam-ready controls.",
+      "evidence_span": "Why it matters: Many financial institutions still rely on slower, manual document review and spreadsheets for underwriting and onboarding.",
+      "source_url": "https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.primary_tech_stack",
+      "value_json": [
+        "Qore AI Platform",
+        "AI agents",
+        "document intelligence"
+      ],
+      "evidence_span": "The Qore AI Platform\n\n## Everything you need to run AI.\n\nActions grounded in your institution's truth, provable to your examiners, and governed end to end as work moves front office to back.",
+      "source_url": "https://www.uptiq.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.75,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "account.resonance.culture",
+      "value_json": "High Ownership. High Velocity. High Growth \u2014 \"You\u2019ll own your work end-to-end\" and \"You\u2019ll ship fast.\"",
+      "evidence_span": "Company language: \u201cHigh Ownership. High Velocity. High Growth\u201d; \u201cYou\u2019ll own your work end-to-end\u201d; \u201cYou\u2019ll ship fast.\u201d",
+      "source_url": "https://www.uptiq.ai/careers",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 3
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "account.resonance.public_frustrations",
+      "value_json": [
+        {
+          "frustration": "General-purpose AI goes wide; need purpose-built, governed AI for financial services",
+          "summary": "Uptiq positions that general-purpose AI is too broad and that financial institutions require agents built specifically for regulated banking workflows."
+        }
+      ],
+      "evidence_span": "General-purpose AI goes wide. Uptiq goes deep with agents built for financial services, running in 150+ institutions with the governance examiners expect.",
+      "source_url": "https://www.uptiq.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.7,
+      "priority": 3
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "core.company_about",
+      "value_json": "Trusted by over 150+ financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks.",
+      "evidence_span": "Trusted by over 150+ financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks, Uptiq is the proven AI partner for highly regulated industries.",
+      "source_url": "https://www.uptiq.ai/about-us",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:uptiq",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 3,
+      "evidence_span": "the careers page showed only three India roles\u2014Site Reliability Engineer, Technical Support Engineer, SBA Loan Specialist",
+      "source_url": "https://www.uptiq.ai/careers",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.5,
+      "priority": 2
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "core.hq_location_note",
+      "entity_type": "account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "Note that a third-party automated record listed a McKinney, Texas address (7300 TX-121, McKinney, Texas 75070) but the company's site lists Austin and Pune offices; SO S legal-name record not found.",
+      "reuse_scope": "account:uptiq",
+      "hypothesis": "ABM programs need clarity on the true US GTM presence and HQ. Knowing potential multiple public addresses (Austin corporate address vs. third-party McKinney record vs. Pune GTM presence) helps plan regional SDR/field outreach and event targeting.",
+      "example_value": "Third-party record: 7300 TX-121, McKinney, Texas 75070 (automated); site lists Austin office and Pune, India.",
+      "example_evidence_span": "HQ: \u201c7300 TX-121, McKinney, Texas 75070, US\u201d appears in an automated Exa organization record.",
+      "example_source_url": "https://www.linkedin.com/company/uptiqai",
+      "priority": 3
+    },
+    {
+      "field_key": "growthspree_case_study_validity",
+      "entity_type": "account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "Flag describing provenance / relationship of GrowthSpree case study content (GrowthSpree claims $400K+ pipeline).",
+      "reuse_scope": "account:uptiq",
+      "hypothesis": "Knowing whether a third-party ABM case study is valid or marketing collateral helps Clue judge whether Uptiq has previously invested in outsourced ABM programs and what tactics resonated.",
+      "example_value": "GrowthSpree published a case study claiming $400K+ pipeline from a 120-day ABM program for Uptiq.ai.",
+      "example_evidence_span": "Uptiq.ai ABM Case Study: $400K+ Pipeline | GrowthSpree",
+      "example_source_url": "https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders",
+      "priority": 2
+    }
+  ]
+}

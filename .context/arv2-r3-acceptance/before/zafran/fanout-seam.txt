@@ -1,0 +1,6 @@
+ subject_type | jobs | fleet_tasks 
+--------------+------+-------------
+ account      |    1 |           1
+ person       |    4 |           4
+(2 rows)
+

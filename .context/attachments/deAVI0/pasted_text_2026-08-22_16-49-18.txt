@@ -1,0 +1,30 @@
+
+
+Aryan (my technical-cofounder/CTO) thoughts below:
+
+
+You need to adapt the exact claim store model and claim store schema, but from this claim store, you do not have to add any mechanical guardrails. No single deterministic mechanical guardrail in the claim store should be there about the tier of the source, the source tier, or anything. There should be no guardrails about the verification mechanism. As of now, the platform has to be a purely deep agent-focused architecture. Any decision, any routing, anything at all has to be purely man has to be purely managed by the deep agent itself. We want it to be a free-flowing platform which does not have much of the mechanical guardrails that oppose the work that the deep agent intends to do, even if the deep agent intends to do some work. There might be at least one or two guardrails, whatever mechanical deterministic approvers or whatever might be there. If they are there, those approval gates or whatever should have a mechanism such that, if the deep agent by itself is not able to figure things out in the first go, then, if it makes an error, the mechanical approval or whatever approval gate or whatever is there should be able to give useful feedback to the deep agent about what's missing and what's not missing. The deep agent by itself can then take an action to resolve that.
+
+Secondly, for every field class that you make, adopt the entire schema of field classes from our deep agent project, from our project repository. Make sure that every field class has a description that would be used by the deep agent when it deals with those pydantic classes in the form of a field class.
+
+From this mono repo, we will be extracting three main qualities:
+
+ 1. The claim store, without all of its verification guards and everything, just the idea of the claim store and the flexibility that it offers to us in storing the facts.
+ 2. The deep agent schema, about how there's a main platform deep agent which has all the understanding about how to strategize and run an ABM campaign, along with its sub-agents, which are specialized for various things.
+ 3. The idea of how there are things like core account packs and industry packs, and similarly, core packs for the account and all as well. The entire ski thing or inspiration of packs makes things very easy for us.
+
+The only thing that will not be there in this claim store schema, the industry pack, the account core pack, and the contact core pack is that they will not contain any detail about the source tiering. As of now, all this verification and mechanical guardrails that I am talking about, and the source pack tiering, we won't be including them in our project scope. As of now, we are not making a full-scale waterfall or anything of that sort. We just have three APIs:
+
+ • exa search API
+ • exa websites API
+ • exa deep API, which will be used for account discovery, buying, committed discovery, and accounts deep research
+
+exa search API additionally would be used as a handy tool by our deep agent to fetch any information from the internet. Another thing, apart from these things, is the fleet orchestrator that we are using, about how we have a mechanical worker orchestrator pattern in our code. What would happen is that, if you look into the codebase, there's something that goes by the name of account deep orchestrator, which is basically a fleet shell. Fleet shell is not a mechanical fleet. It's something that the main DP agent would run or dispatch, and when it's dispatched, it's basically an orchestrated worker kind of model. The main division would dispatch the workers, and each worker would have one agent to control, or maybe in the future we would modify that each worker would have two or three agents that it would be handling concurrently.
+
+The purpose of this mechanical fleet orchestrator with the orchestrator-worker pattern is that it would allow us to handle multiple accounts individually. In that scenario, this main platform deep agent would dispatch this fleet of agents as workers. Each of these agents in this fleet would contain n workers, where each worker would map to one agent and one agent would map to one account. This one account and that particular agent won't be just a simple Langraph note. It would be an actual Langraph langchain agent itself, so that it can dynamically make decisions and take actions while it's doing account deep research. That is another important thing that we need to take care of.
+
+As of now, these are the common qualities. Later on, it's very important that you maintain the same durability schema of the agents the way we have it in our repo as of now, so that I can just migrate the design subsystem in the future the same way as it is today.
+
+What we are trying to do here is create a project again, but without all the mechanical blockers, mechanical guardrails, approval gates, and all the complications of various source tiers. Because right now we are facing this problem: these mechanical blockers and approval gates are backfiring us. I get that we were trying to do this to ensure that everything is verified and all, but it's just backfiring us so much that nothing can work in our system at this point. That is why we want to start small first.
+
+When we are starting small, we do not want to worry about this mechanical deterministic gates or anything of the sort. We want a free-flowing system where the deep agent has the full agency and harnessing capabilities of the system too. We want to leverage this harness thing of the deep agent to make our platform okay

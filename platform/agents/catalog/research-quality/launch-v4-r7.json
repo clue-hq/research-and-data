@@ -1,0 +1,21 @@
+{
+  "catalog_version": "v4",
+  "recipe_version": 7,
+  "resources": {
+    "profiles/quality-account-research/v6/profile.yaml": "1329817ef22f5cc15ce02f6ee182e4320a34d57ec7c6e6a6c881dba01d1f1a72",
+    "profiles/quality-account-research/v7/profile.yaml": "630a6139ab75dd0ff104d334c5e3b196bd4b0c02af19205917b84f39641f7141",
+    "profiles/quality-research-claims/v6/profile.yaml": "5ff3b1f2b66ca117f48f58ed23a67735ca95930200419fb3ae6814056f91682d",
+    "profiles/quality-research-narrative/v6/profile.yaml": "b23189e1b9e92c9135f4962830b33ef6af047828e5f8fa53b9dbba9b518eea3c",
+    "prompts/quality-account-research/v6/SYSTEM.md": "3ebbf7f4ec558486675aade5bf62202f8a982616c6671bd1bd44aa4d0ac7d3a2",
+    "prompts/quality-account-research/v7/SYSTEM.md": "0d792a0f11bfb784aa8a14675a48054532f77ca34d8f6870a79f653121e60839",
+    "prompts/quality-research-claims/v6/SYSTEM.md": "5b0910389e2f62879f825f628a7dbacf6a3ae09d983102d109ce5b798a60fe71",
+    "prompts/quality-research-narrative/v6/SYSTEM.md": "3b1d0f9d51934724a8073674dcfcce17dfb328ac7426a7850f82db7a9b6ace74",
+    "provider-requests/account-deep/v1/exa-system.md": "283426f186e5f41c847b79f501e9a08dd01d02833976984bc618b22a22a0d83e",
+    "provider-requests/account-deep/v1/request-config.json": "fcc059b0b22ae43063ab8ff4c524357d0c1ec03de0b2ca42423b15bb2f33163f",
+    "recipe-v6.json": "df441c6373f01cca0ddb1e87a3b09facdbd17619acd50434ff8f2cc0fddd7199",
+    "recipe-v7.json": "66b0ca4dddfe8e74cfb986690551c73b8d2fdad330931147d5b6d0c83b12bd27",
+    "skills/account-dossier/v1/SKILL.md": "1e13a39799c21148bf7a397ed80383db29d48f7dade6537f2173c1a266c513fd",
+    "skills/governed-evidence/v2/SKILL.md": "5d12721970715a5f983ca01475cfea999fc4c6f4d0ace586b641a66387631137"
+  },
+  "review_policy": "advisory"
+}

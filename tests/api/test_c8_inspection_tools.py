@@ -875,10 +875,17 @@ def test_the_inspection_tools_are_granted_to_the_head_of_abm_and_nobody_else() -
     from clue_api.toolbelt_wiring import build_toolbelt
 
     registry = build_toolbelt(storage=None, gateway=None)
-    for name in ("inspect_statement_history", "inspect_readiness_history"):
-        assert name in registry.names()
-        assert C6_AGENT_TOOL_AUTHORITY[name] == (AgentRole.HEAD_OF_ABM,)
-        assert c6_roles_for_tool(f"{name}@1") == (AgentRole.HEAD_OF_ABM,)
+    # Both stay registered and addressable. ARV2 onboarding O6 split their grants:
+    # `inspect_statement_history` reads what the human said in this conversation, which the new
+    # lane still records, so the Head of ABM keeps it; `inspect_readiness_history` reads a
+    # readiness decision the new lane never makes, so `head-of-abm@v44` drops it and it is granted
+    # to nobody. "Granted to exactly one role" is still the claim under guard on the survivor.
+    assert "inspect_statement_history" in registry.names()
+    assert C6_AGENT_TOOL_AUTHORITY["inspect_statement_history"] == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("inspect_statement_history@1") == (AgentRole.HEAD_OF_ABM,)
+    assert "inspect_readiness_history" in registry.names()
+    assert C6_AGENT_TOOL_AUTHORITY["inspect_readiness_history"] == ()
+    assert c6_roles_for_tool("inspect_readiness_history@1") == ()
 
 
 def test_a_storageless_composition_still_builds_the_readiness_tool() -> None:

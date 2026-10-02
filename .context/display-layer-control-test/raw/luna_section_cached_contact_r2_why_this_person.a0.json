@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504644-3Tu5NCfBcfAssUtqLJdM",
+ "object": "chat.completion",
+ "created": 1788504644,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"why_this_person\",\"empty\":false,\"items\":[{\"h2\":\"VP Marketing with a full-stack B2B growth and storytelling remit\",\"body\":[{\"text\":\"Nick is VP of Marketing at Zafran Security. \",\"claimIds\":[\"zaf-038\"]},{\"text\":\"He describes himself as a full-stack B2B marketing leader and storyteller with experience building teams for early-stage growth and post-IPO scale.\",\"claimIds\":[\"zaf-044\"]}],\"sendLine\":\"In your email: Your background building B2B marketing teams across early-stage growth and post-IPO scale stood out to me.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":2},{\"h2\":\"Senior marketing buyer with deep cybersecurity and product-marketing experience\",\"body\":[{\"text\":\"Nick's listed career history includes VP of Marketing at Zafran Security from April 2024, preceded by product-marketing leadership roles at Sysdig, Okta, and Lookout.\",\"claimIds\":[\"zaf-045\"]},{\"text\":\"His profile identifies him as an economic buyer and a VP-level marketing leader, making him a relevant senior contact for a Clue conversation.\",\"claimIds\":[\"zaf-039\",\"zaf-041\"]}],\"sendLine\":\"In the platform: Route account-level research, buying-committee context, and campaign drafts to Nick as a senior marketing economic buyer.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Public point of view grounded in real-risk exposure, not vulnerability volume\",\"body\":[{\"text\":\"Nick published the LinkedIn article \\\"Why I joined Zafran Security\\\" describing the company's market and problem framing.\",\"claimIds\":[\"zaf-158\"]},{\"text\":\"In that article, he wrote that \\\"we revealed how 96% of vulnerabilities didn’t require patching and can be mitigated using existing controls.\\\"\",\"claimIds\":[\"zaf-159\"]}],\"sendLine\":\"In your email: Your point about 96% of vulnerabilities not requiring patching made me think about how marketing teams can turn account research into sharper risk-based campaigns.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmpK2juT_iqnF-BY_eCVHQnlb93w0UcUSf8zrbEeCOt4b6X2PIQ6e-Aswke5Aao2CQghC9ow99lE_84lOQ2yjID0csEZfiQeiy2E9f8bBp5vPk6A6fnQq4jvSk15m2llE-l_UZtHqQ-mmWhYkkqt7-SHUHi8tpOQNRtQD-wVM73AnHfrTNZoBdjQ7XXtCvLF0-YXgRI1HUqG7FiPMy01mMH3pVOr9L6RqH11aIGHTC8_H5CBb8Nixqw9ajPpgvK97Pmi7PoHw5icLcRUjAuoumSjhQNl6rNFJsy0AhyeIVkc9bj77FBecjkacijqFVDuE0VFZb4gseFSqGUTFmzLMvej_IecaNw2wvq94iHMj8wE5WjOSorQIX3s7XoxjCvqWBQD0p28iC5Mgv6zRgF732APXatZ8mA2xo40dvuPy8A-_G7XuvqENFHDpruN5XSTSCCsdF5o04MeqXU16IEKsFewCEEZEAb0uqn5DEaNVaIO0uCiDT6ZYexN0frwQkZ9HmqqI7SAsWWIjzqK70JFrIxQhWm12dv5yUWprQQUyH17XaU6ABfyehfwshkWf4ZZUGvp0A3QWkFi1Wa9Hb0NUrmb81jXDA7zBoJZh41dbMCDqZDJayCXwkzrPFyxlKZ47Mmur6zdChMyRaGGEJFJtj1HPcARfaMy_U_cbaKdrZCIU2p2Y45QuqJgmytniZH8DOZkTm0nmgYbNgUv3b_lSWeZLgLoUDH8vl5E8FwAag-bfpYgFj95u332eEErPLbYnn2Lq_7ldwG2971cTFqbgMAo1qbz7Jfk_93FuJtrHS5ov3Avz2mUvD7UNIOS0imrN27sbEmZW7qD4Ao55DOpKiuIeAQtfokJjwmW9AGlgv6H-rkWt5Y7lTULdshu8jcfGFc-qPJYIoA66YsfO5TLcHeFKYwxhMcDgwHUonZ1hrvLXgIU9kgdWGdQaEMaXdhKpYyKb_PkBgLcQ5aanWFBcjjb_9TdL6VHEbHDg7m0WTLKG40d3yhpfHstN1UkkBrHP1ftngjDRenn5GYxxmxmMMSP1Bbub_gF4wS--MmDWL9M6IoxYS9qqg2oU0y_XLgznOiEWYgEIQ__hy2D5IDwdh6hwiy9ca_vmF8UfA6pevDTdbmL2CUndwXxGdM_gkZ0Y5gEF5iKNK-7FZAe4h-PoPVtqq3YUD7HEi5BNy4oU7sPFW9LV_R7gzOHsSZFzXVU1W2k11w5iaJjF-rhf25OHjkenN_dz2vpZ8NUmNag-VA0FP7LY9-FNSPuYprCeEuyOxYjqyjlDB07IKxpJetRH9RPyO7mSyMKWNHs_vRuw40MdAkiLXcCclB64XOXbGNWd7jd2Rv2VOvRKiy9TgTgQM1dVpUb7TwWmw1wbIL0QJWluatpWpiM-M2eBXH6tGnCZQIinIi0FrQtZ2G1Fm4ijmldqnysA8YyC4RXxh4gOvFvCeDhrN81e7eW-xQdD_M7VtImmgza2hdy4zcA5tK92NC4GJjXsCiWAJuPOFnwpw5pZ_TcACYObxzHDT031oNYktpJ7Z_50lklqWbT5Nw10zywTl-NhZfewOn8YwRl113IAoe7Y-NlPmmQEesmP7e7VXzTl7ciJ6EWo6--lOMeiqWYi70ehM2bB9dtEsD30CSh8M_s7mc-KUtAcUBwMCVKwC3v3qGfX1zYTjk-gkQVwFQCR-RNpMIxUC75kzDyHzhspbc4TkhyvfilWuvAczH4BPjuteVAy7imtpsn8SGQToPjpk_HEz__zHnpafNZuQopD08Yn4scoyYkidKnD0Amdz3YepVM348OeEA0Lh82WmU_xGLLSeX3625hT-mkksaAg4YJsC9umhfDW03F2dwgpYDKUXF6IQb5IWJjOpsTAsyzRVzfh00O8eGzHRRMkUGddxeCsPvxWYtwbi8wAYyKljgLhQPJEUuXalQUqjxyQ273B0dwCouAtMzPllZnKYnQ_NF7jfEt13y5ZSkpCOpZ_OpByMy_Z0x8L0hVH1EcjW2gQ7Z7-1xvUC1quhKrVsf9rdyX47e-xahMfQ5-QMVbwXnpshWBCIgsNppO9ym2IBk0sRwSU8decjJi2x3YnPcZR38Ljqe-7kfMoaScWy8fyCOHsmAEuDOvYNexv7prJls0-WedBCSj8eKYmDUpbxixDWJcEcezf5Vgn3N3yp3_hiFSB-Zs-lUN38P1RU_CMUI3tXrAOL_sdmNgpTabQiQlyNMwbkWuE-6-8_Bs9pZVQJnP901iHRenzKY7HXd1d7TEPhBrh8zW6l2D00b6WeDMPt0wunCZ0tqBRJQezEiZhKJi16oLivojzcef7X_e9jcaAkZuI6d5XQVZWkWmYe3R27g-z35yxvCRhbG_Ul9FM0MSKA-RUxsvtYeTlXCaH__mHPB38kbSD7xnGwxsMj8IQkmqfifTIquVhrrig8cayQGKY7ZYc1MwJsDYv9HX8TzkUyywqYVwkJqfWVnrPG3yajHqw8aGA4JPkGLmwTGTsj25kXpC50-hb8c-wCl_sQ6O7Cy6MmAdMzaNPcpyUxGHKhB94-cjydo8E4_-mmS1vaYjPg4D0fYiXY-k7mKWIiiiOjP867Sp1QUd-hlHSb8jTBa8t2hHTj426jP7UgjTofU7cgk7YdC-ouFUh48olcHQAsgFfRvtgqB7LjjHOCUDos1b1AryT7Mgq05Mh402AjM5I-Kv0FHFrYYBJhASVPr4-hifnZyDWsOEfugTfnjyy2ImEvy8mvq_YWpEgIK4PwCaCTkzg46iTPxU2GMe-lceVWQChiWVPnSmtwsjmFqR05cn1yH1mkNx0xiKznjF11oW527MFDLe8iD8cCEEGhJ7PxQo0cV2X78USwLsYbxKcgbbntmxLVndSG7-Vj4j3IMp5iXh0qNUDOdc5HhftXfJtNwhGhl3rx8lFmUNxslkmxnK0Xcc5HbPo1AkprEwxCYbe9htvzb4carCnKfzud6cPVKI39gYsByaKcSarCkP0hXBEDX2B9-KP7eCfh2Et5vUdV9jQZwrph91AQieDi9RLXCN4T5T0UieC1J-XDH2t-Fb7_VLRpRCNn0v1J_hHCQp16PyRi0U5TBOCYTuk3lFtrF3cPdJaotroU4uALcRgxxhSKm1_FhLZMrOfQTV9yZO3RtOEdtIFcqoifFmkUzwQNbOve4X3B64E5t10PuwEkic8Zm8wUcoNRaF5u_qMUgINksKlL5d0r7oyjeTXKh87fU946GG0hJh81DHbD5JWluQrdVtET1yfY3iKMV7S9DCL6Yk-6UUN2HadGigyrlnQpoUxmQ85GnLbH4S4G2B-2umZ7aqXIQVQzM1Ili_kAQSVOOd73U7Z-t952kLf9CgYFp3PaeVqEWx2wvLq_t8prZwz5wfhuibrHr0P-3UPqP_pL4s5HI7s-erWSplBeo0HuNRDhxb_zO2hPQ-QataL2By35GEdooQZK_1WlaRREm2lJvVw6BJpSJQpoX3ddlAdkFopkiBJ-irGK9o0O60-TUAMnsF1bQDhDKqwqgvLuiX4JLTQajndC4sCyJHwYnKXaA3QG8Ck5mpMEE10o27Dt5NlqLMPj4TgC8-_LLicCWgRaKrXeY3t20UVJbYw49dwaEa2YnPV87EWtUcxmsC4pAvcUfua4xT-uBZBMXZtrT1Xz6UUGStiB1kasHcodxdBbIYa_OmjsB36irVpOdsJXcJM19GCbw2lYMNqfGSPEArgzRMkSp9DQCJYFOBbbW0aNn-1hRQlhGUZsdfMu2RKvlZ35fFbIRoyJFF0iLPWtEKsIIUqathCHUxqCj8128sge9FK_dQxf4u5ldr_N7hdJGZ6ZW-gEoqmmSdeiCLdl1iS5khAVLQg-3kmiytyTPijt_8ND_GHt1GLCoRMEkBJs-zrm4Os1Dc9iAWmRf6nR7rIheV1wYj67qFuDNN_iWpuLREdq-hL_mix4wzHxY3JJNm9t00-5bWjLtDwwADEFQjudGBZAZmw1aoKsHhL461ykbjP2Jzv8lJ3gJbAIWVEOaNM9uP5yLkQrWWNIwaMrb1Oog1NgvF9Zhc1pKCopzUzeLOoYsPLnGGSyfNQTjuBVgfSBLdLpQ1HUx76M97TmiWmrHOW8krUhVLFNGZaKLogab0J-D3q7q5krtBp38jhjPhcsMrkN166pLiAt_Mf9ZBIG_zu3hjafsZ2wv7e1ZZix161GkPKftA4nrpTNWULl20BUtd6jX4C0gZcDYfZkzdNTb-zzvLC5PQCVVOrD3zCuZ3cqDRGSZ8v0-JwsurUr45g-oBfk99oSAJHTsdgP3xizB5tP-nuTTXaW_WJwVQ1ge-PKUm8xx_AfpM-MW8gonnDjvJBGT0eQXFoLn4TajMdgE7RKW5UpXL-lSHFkl3YkngXkhCcIzQ7vcA1U2JpZHrzVo6C2_nQ9BqeXNeqCbo.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0c223052f70ef89b016a9a6a45772887d0b704db25a8128d60",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 15348,
+  "completion_tokens": 971,
+  "total_tokens": 16319,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 15345,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.0014727,
+   "upstream_inference_prompt_cost": 0.0003075,
+   "upstream_inference_completions_cost": 0.0011652
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.32,
+ "_attempt": 0
+}

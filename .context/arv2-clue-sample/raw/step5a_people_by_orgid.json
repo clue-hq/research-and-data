@@ -1,0 +1,105 @@
+{
+  "total_entries": 3,
+  "people": [
+    {
+      "id": "57dbc800a6da98685f258cce",
+      "first_name": "Julie",
+      "last_name_obfuscated": "Du***e",
+      "title": "Clinical Manager",
+      "last_refreshed_at": "2026-08-10T09:44:53.726+00:00",
+      "has_email": true,
+      "has_city": true,
+      "has_state": true,
+      "has_country": true,
+      "has_direct_phone": "Yes",
+      "organization": {
+        "name": "Charleston GI Specialists",
+        "has_industry": true,
+        "has_phone": true,
+        "has_city": true,
+        "has_state": true,
+        "has_country": true,
+        "has_zip_code": true,
+        "has_revenue": true,
+        "has_employee_count": true
+      }
+    },
+    {
+      "id": "5c49d228f6512587de644d43",
+      "first_name": "Stephanie",
+      "last_name_obfuscated": "An***s",
+      "title": "Director of Nursing Summerville Endoscopy Center",
+      "last_refreshed_at": "2026-08-09T02:10:19.000+00:00",
+      "has_email": true,
+      "has_city": true,
+      "has_state": true,
+      "has_country": true,
+      "has_direct_phone": "Yes",
+      "organization": {
+        "name": "Charleston GI Specialists",
+        "has_industry": true,
+        "has_phone": true,
+        "has_city": true,
+        "has_state": true,
+        "has_country": true,
+        "has_zip_code": true,
+        "has_revenue": true,
+        "has_employee_count": true
+      }
+    },
+    {
+      "id": "5cbe99d27c118e0b59a04f6e",
+      "first_name": "Jessica",
+      "last_name_obfuscated": "Ha***y",
+      "title": "HR Coordinator/Carnes Office Manager",
+      "last_refreshed_at": "2026-08-11T20:32:55.709+00:00",
+      "has_email": true,
+      "has_city": true,
+      "has_state": true,
+      "has_country": true,
+      "has_direct_phone": "Yes",
+      "organization": {
+        "name": "Charleston GI Specialists",
+        "has_industry": true,
+        "has_phone": true,
+        "has_city": true,
+        "has_state": true,
+        "has_country": true,
+        "has_zip_code": true,
+        "has_revenue": true,
+        "has_employee_count": true
+      }
+    }
+  ],
+  "_http_status": 200,
+  "_elapsed_s": 0.3,
+  "_rate_headers": {
+    "x-24-hour-requests-left": "49998",
+    "x-hourly-requests-left": "5998",
+    "x-minute-requests-left": "199",
+    "x-rate-limit-24-hour": "50000",
+    "x-rate-limit-hourly": "6000",
+    "x-rate-limit-minute": "200"
+  },
+  "_request": {
+    "method": "POST",
+    "path": "/mixed_people/api_search",
+    "body": {
+      "organization_ids": [
+        "5500af3d7369642de9450100"
+      ],
+      "person_seniorities": [
+        "owner",
+        "founder",
+        "c_suite",
+        "partner",
+        "vp",
+        "head",
+        "director",
+        "manager"
+      ],
+      "per_page": 25,
+      "page": 1
+    }
+  }
+}

@@ -10,7 +10,7 @@ import {
   authenticatedBackendContext,
   fetchAuthenticatedClueBackend,
 } from "@/auth/authenticated-backend";
-import { WORKSPACE_COOKIE } from "@/features/session/model/session";
+import { localProvisioningRefusal, workspaceCookieName } from "@/auth/local-workspace";
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
@@ -37,6 +37,10 @@ async function proxyRequest(request: Request, context: RouteContext) {
     return errorResponse(403, "REQUEST_ORIGIN_FORBIDDEN", "Mutation origin is not allowed");
   }
   const { path } = await context.params;
+  if (path.join("/") === "auth/v1/provision") {
+    const refusal = localProvisioningRefusal();
+    if (refusal) return refusal;
+  }
   let backendContext;
   try {
     backendContext = await authenticatedBackendContext();
@@ -53,7 +57,7 @@ async function proxyRequest(request: Request, context: RouteContext) {
   }
   if (backendContext.workspaceId !== backendContext.requestedWorkspaceId) {
     const cookieStore = await cookies();
-    cookieStore.set(WORKSPACE_COOKIE, backendContext.workspaceId, {
+    cookieStore.set(workspaceCookieName(), backendContext.workspaceId, {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",

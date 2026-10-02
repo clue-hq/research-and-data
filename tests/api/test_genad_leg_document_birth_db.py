@@ -24,6 +24,11 @@ The properties this file pins at @4:
   id, and a D5 brand pin READ BACK off the stored row);
 * **the gallery states nothing it does not know** — a pageless ad card carries no dimensions.
 
+**@5 (2026-09-19).** The single top-level ``title`` is retired into an ``artifacts`` list — one
+item per artifact the user asked for — so every open in this file now sends a list of ONE, which
+is the single-document case by construction (position 0's derived id is byte-identical to @4's).
+The batch contract itself lives in ``test_multi_artifact_leg_birth_db``.
+
 All writes run in rolled-back transactions against the session-migrated DB. Only the ENGINE
 round-trip is faked (:class:`_RecordingSceneMinter`), so these tests need no Rust binary; the
 scene it returns reproduces ``lumen_core::Scene::new``'s serialized shape (``scene.rs:25-42``)
@@ -309,6 +314,9 @@ async def _open(seeds: dict[str, Any], registry: ToolRegistry, **overrides: Any)
         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
         "brief": "A launch ad for Insight Health, aimed at clinical operations leads.",
         "doc_kind": "scene",
+        # @5 retired the single top-level `title` into the artifacts list; one artifact is a
+        # list of one, which is exactly what every @4 test in this file asks for.
+        "artifacts": [{"title": "A launch ad for Insight Health, aimed at"}],
     }
     args.update(overrides)
     return await invoke_tool(
@@ -351,7 +359,11 @@ def test_a_document_less_scene_open_births_a_zero_page_document(
         async with rollback_conn() as conn:
             seeds = await _seed_conversation(conn, storage_root=tmp_path, label="birth")
             minter = _RecordingSceneMinter()
-            result = await _open(seeds, _registry(seeds, minter), title="Insight Health launch ad")
+            result = await _open(
+                seeds,
+                _registry(seeds, minter),
+                artifacts=[{"title": "Insight Health launch ad"}],
+            )
             refs = result.references
             assert refs["created"] is True
             assert refs["document_created"] is True
@@ -608,7 +620,7 @@ def test_the_zero_page_birth_appears_in_the_gallery_feed_with_no_dimensions(
             result = await _open(
                 seeds,
                 _registry(seeds, minter),
-                title="Insight Health launch ad",
+                artifacts=[{"title": "Insight Health launch ad"}],
             )
 
             feed = await project_design_documents(

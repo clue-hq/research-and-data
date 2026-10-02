@@ -59,6 +59,7 @@ fn bleed_probe_scene(bleed: Option<Rect>) -> Scene {
             width: 20.0,
             height: 20.0,
         },
+        text_lines: Vec::new(),
     });
     node.fills = vec![solid_fill("paint_corner_rect", "#0000ff")];
     scene.nodes.insert(node.id.clone(), node);

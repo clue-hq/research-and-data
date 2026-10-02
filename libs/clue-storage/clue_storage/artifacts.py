@@ -1,7 +1,8 @@
 """The ``artifact`` table DAL (PB-B2.2) — snapshot rows + the durable erasure lifecycle.
 
 Plain async functions over ``AsyncConnection`` in the repo's raw-SQL style (the ``clue_spine``
-pattern: one implementation will ever exist, so no repository/service layer). The table's UNIQUE
+pattern: one implementation will ever exist, so no repository/service layer). The
+        table's UNIQUE
 ``storage_key`` makes :func:`record_artifact` the dedup — identical bytes in one workspace land
 on one row, however many times a fetch (or a re-flush of the same sink) records them.
 
@@ -37,6 +38,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import UtcDatetime
@@ -63,6 +65,8 @@ class ArtifactRecord(BaseModel):
     created_at: UtcDatetime
     erased_at: UtcDatetime | None = None
     purged_at: UtcDatetime | None = None
+    privacy_erased: bool = False
+    expires_at: datetime | None = None
 
 
 class PurgeResult(BaseModel):
@@ -76,7 +80,7 @@ class PurgeResult(BaseModel):
 
 _COLUMNS = (
     "artifact_id, storage_key, workspace_id, content_sha256, media_type, size_bytes, "
-    "source_key, source_url, created_at, erased_at, purged_at"
+    "source_key, source_url, created_at, erased_at, purged_at, privacy_erased, expires_at"
 )
 
 
@@ -94,35 +98,81 @@ async def record_artifact(
     """Upsert one snapshot row and return the canonical record. **Call before the blob put** —
     the row is the lock that serializes writers against a concurrent erasure.
 
-    On conflict (the key is content-addressed, so the identical bytes are already recorded) the
-    existing row wins — original timestamps and source link preserved — but its erasure state is
-    **cleared**: recording is the caller's statement that a live blob (re-)exists under this key,
-    so an ``erased_at``/``purged_at`` left by a prior DSAR purge must not survive (the
-    silent-resurrection contradiction, audit finding 4). ``DO UPDATE`` (unlike ``DO NOTHING``)
-    also takes the row lock, which is what serializes this writer against an in-flight
-    :func:`erase_if_unreferenced` / :func:`purge_erased_artifacts` on the same key.
+    An identical live record is reused under ``FOR SHARE``: its metadata needs no mutation,
+    and the shared lock still excludes concurrent erasure. Research transactions already hold
+    shared locks on their source artifacts; upgrading an unchanged output to an exclusive lock
+    can deadlock when two outputs also appear in each other's source sets (r13).
+
+    New records and changed/erased records take the upsert path. On conflict the existing
+    metadata wins, but ordinary erasure state is cleared: recording says a live blob (re-)exists
+    under this key. Privacy-erased records are never resurrected. Both paths hold a row lock
+    until the caller's transaction ends, serializing against erasure and purge.
+
+    **Concurrent duplicate bytes.** ``ON CONFLICT (storage_key)`` names one arbiter index, and
+    Postgres' speculative insertion resolves a conflict only on *that* index. The table also
+    carries the composite ``artifact_execution_anchor (storage_key, workspace_id)`` unique
+    constraint (the FK target every ``(artifact_key, workspace_id)`` evidence citation points at),
+    so a writer whose arbiter probe found nothing, but whose composite index insert then collides
+    with a *concurrently committed* row, raises a unique violation instead of taking the update
+    path. Two real provider calls legitimately return byte-identical responses (the same
+    zero-result organization document for two accounts), which crashed two live fleet jobs here.
+    The statement therefore runs inside a savepoint and is retried once: by the time the violation
+    surfaces the winner's row is committed, so the retry resolves through the arbiter and keeps the
+    resurrect/row-lock guarantees above intact.
     """
-    await conn.execute(
-        text(
-            "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
-            "size_bytes, source_key, source_url) "
-            "VALUES (:storage_key, :workspace_id, :content_sha256, :media_type, :size_bytes, "
-            ":source_key, :source_url) "
-            "ON CONFLICT (storage_key) DO UPDATE SET erased_at = NULL, purged_at = NULL"
-        ),
-        {
-            "storage_key": storage_key,
-            "workspace_id": workspace_id,
-            "content_sha256": content_sha256,
-            "media_type": media_type,
-            "size_bytes": size_bytes,
-            "source_key": source_key,
-            "source_url": source_url,
-        },
+    live = (
+        (
+            await conn.execute(
+                text(
+                    f"SELECT {_COLUMNS} FROM artifact WHERE storage_key=:key "
+                    "AND workspace_id IS NOT DISTINCT FROM :ws AND content_sha256=:sha "
+                    "AND media_type=:media AND size_bytes=:size "
+                    "AND erased_at IS NULL AND purged_at IS NULL AND NOT privacy_erased FOR SHARE"
+                ),
+                {
+                    "key": storage_key,
+                    "ws": workspace_id,
+                    "sha": content_sha256,
+                    "media": media_type,
+                    "size": size_bytes,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
     )
+    if live is not None:
+        data = dict(live)
+        data["artifact_id"] = str(data["artifact_id"])
+        return ArtifactRecord.model_validate(data)
+
+    statement = text(
+        "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
+        "size_bytes, source_key, source_url) "
+        "VALUES (:storage_key, :workspace_id, :content_sha256, :media_type, :size_bytes, "
+        ":source_key, :source_url) "
+        "ON CONFLICT (storage_key) DO UPDATE SET erased_at = NULL, purged_at = NULL "
+        "WHERE NOT artifact.privacy_erased"
+    )
+    parameters = {
+        "storage_key": storage_key,
+        "workspace_id": workspace_id,
+        "content_sha256": content_sha256,
+        "media_type": media_type,
+        "size_bytes": size_bytes,
+        "source_key": source_key,
+        "source_url": source_url,
+    }
+    try:
+        async with conn.begin_nested():
+            await conn.execute(statement, parameters)
+    except IntegrityError:
+        await conn.execute(statement, parameters)
     record = await get_artifact(conn, storage_key)
     if record is None:  # pragma: no cover - unreachable inside one transaction
         raise RuntimeError(f"artifact {storage_key!r} vanished during record")
+    if record.privacy_erased:
+        raise ArtifactIntegrityError("privacy-erased artifact cannot be restored")
     return record
 
 
@@ -153,8 +203,12 @@ async def read_verified_artifact(
         raise ArtifactIntegrityError(f"artifact row is missing for {storage_key!r}")
     if record.workspace_id != workspace_id:
         raise ArtifactIntegrityError("artifact belongs to another workspace")
-    if record.erased_at is not None or record.purged_at is not None:
-        raise ArtifactIntegrityError("artifact was erased or purged")
+    if (
+        record.erased_at is not None
+        or record.purged_at is not None
+        or (record.expires_at is not None and record.expires_at <= datetime.now(UTC))
+    ):
+        raise ArtifactIntegrityError("artifact was erased, expired or purged")
     try:
         data = await storage.get(storage_key)
     except StorageError as exc:
@@ -210,6 +264,65 @@ async def mark_erased(conn: AsyncConnection, storage_key: str) -> None:
     )
 
 
+async def retain_artifact(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    storage_key: str,
+    reference_kind: str,
+    reference_id: str,
+) -> None:
+    """Hold immutable bytes for a durable owner. Explicit privacy erasure always wins.
+
+    A shared lock excludes erasure while allowing concurrent evidence readers to retain the
+    same original. Upgrading their existing shared locks to exclusive locks would deadlock.
+    Owners release these references when their durable records/grants are retired.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT storage_key FROM artifact WHERE storage_key=:key AND workspace_id=:ws "
+                "AND erased_at IS NULL AND NOT privacy_erased "
+                "AND (expires_at IS NULL OR expires_at>now()) FOR SHARE"
+            ),
+            {"key": storage_key, "ws": workspace_id},
+        )
+    ).first()
+    if row is None:
+        raise ArtifactIntegrityError("artifact is unavailable for retention")
+    await conn.execute(
+        text(
+            "INSERT INTO artifact_reference(workspace_id,reference_kind,reference_id,storage_key) "
+            "VALUES (:ws,:kind,:id,:key) ON CONFLICT DO NOTHING"
+        ),
+        {"ws": workspace_id, "kind": reference_kind, "id": reference_id, "key": storage_key},
+    )
+
+
+async def release_artifacts(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    reference_kind: str,
+    reference_id: str,
+) -> None:
+    """Release one durable owner's retention, without deleting bytes or other owners' grants."""
+    await conn.execute(
+        text(
+            "DELETE FROM artifact_reference WHERE workspace_id=:ws "
+            "AND reference_kind=:kind AND reference_id=:id"
+        ),
+        {"ws": workspace_id, "kind": reference_kind, "id": reference_id},
+    )
+
+
+async def live_reference_count(conn: AsyncConnection, storage_key: str) -> int:
+    result = await conn.execute(
+        text("SELECT count(*) FROM artifact_reference WHERE storage_key=:key"), {"key": storage_key}
+    )
+    return await live_claim_count(conn, storage_key) + int(result.scalar_one())
+
+
 async def erase_if_unreferenced(conn: AsyncConnection, storage_key: str) -> bool:
     """Phase 1 of erasure: under the artifact **row lock**, recount live citers and stamp
     ``erased_at`` iff the count is zero. Returns whether the row was marked (the caller then
@@ -228,7 +341,7 @@ async def erase_if_unreferenced(conn: AsyncConnection, storage_key: str) -> bool
     row = locked.first()
     if row is None:
         return False
-    if await live_claim_count(conn, storage_key) != 0:
+    if await live_reference_count(conn, storage_key) != 0:
         return False
     await mark_erased(conn, storage_key)
     return True
@@ -256,6 +369,15 @@ async def purge_erased_artifacts(
       and ``purged_at`` is stamped. ``delete`` is idempotent, so a crash after delete but
       before commit converges on the next pass.
     """
+    # Expiry was committed with the source. Reads already refuse it, even if a purge rolls back.
+    await conn.execute(
+        text(
+            "UPDATE artifact SET privacy_erased=true, "
+            "erasure_reason=COALESCE(erasure_reason,'retention'), "
+            "erased_at=COALESCE(erased_at,now()), source_url=NULL WHERE "
+            "expires_at<=now() AND purged_at IS NULL"
+        )
+    )
     where = "erased_at IS NOT NULL AND purged_at IS NULL"
     params: dict[str, object] = {}
     if keys is not None:
@@ -265,13 +387,16 @@ async def purge_erased_artifacts(
         params["keys"] = list(keys)
     result = await conn.execute(
         # Ordered so two concurrent purges lock rows in the same order (no deadlock).
-        text(f"SELECT storage_key FROM artifact WHERE {where} ORDER BY storage_key FOR UPDATE"),
+        text(
+            f"SELECT storage_key,privacy_erased FROM artifact WHERE {where} "
+            "ORDER BY storage_key FOR UPDATE"
+        ),
         params,
     )
     purged: list[str] = []
     resurrected: list[str] = []
-    for (storage_key,) in result.all():
-        if await live_claim_count(conn, storage_key) != 0:
+    for storage_key, privacy_erased in result.all():
+        if not privacy_erased and await live_reference_count(conn, storage_key) != 0:
             await conn.execute(
                 text(
                     "UPDATE artifact SET erased_at = NULL, purged_at = NULL "

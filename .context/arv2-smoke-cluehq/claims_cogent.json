@@ -1,0 +1,1173 @@
+{
+  "account": "Cogent Security, Inc.",
+  "domain": "cogent.com",
+  "entity": "account:cogent-security",
+  "workspace_id": "workspace:clue-smoke-2026-08-31",
+  "run": "arv2-smoke-cluehq",
+  "research_date": "2026-08-31",
+  "claim_counts": {
+    "total": 48,
+    "by_tier": {
+      "1": 23,
+      "2": 1,
+      "4": 24
+    },
+    "by_priority": {
+      "1": 5,
+      "2": 28,
+      "3": 15
+    },
+    "account_entity": 18,
+    "contact_entity": 30,
+    "distinct_contacts": 12
+  },
+  "committee_same_name_audit": {
+    "admitted": [
+      {
+        "name": "Neil J.",
+        "title": "Founding Engineer",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/neil-j-b168509",
+        "start": "2024-12-01"
+      },
+      {
+        "name": "Justin Jancaric",
+        "title": "Founding GTM Sales Leader",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/justinjancaric",
+        "start": "2026-02-01"
+      },
+      {
+        "name": "Steven Do",
+        "title": "Head of Technical Recruiting",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/dosteven",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Ryan Marasco",
+        "title": "Solutions",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/ryanmarasco",
+        "start": "2025-09-01"
+      },
+      {
+        "name": "Karan Gugle",
+        "title": "Founding Engineer",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/karan-gugle-a8a80160",
+        "start": "2024-10-01"
+      },
+      {
+        "name": "Kimberli Nichols",
+        "title": "Southeast GTM",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/kimberlinichols",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Cameron Coles",
+        "title": "VP of Marketing",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/cameroncoles",
+        "start": "2025-11-01"
+      },
+      {
+        "name": "Peyman Mani",
+        "title": "Technical Lead Manager, Data Platform",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/peymanmani",
+        "start": "2024-10-01"
+      },
+      {
+        "name": "Geng Sng",
+        "title": "Co-Founder & CTO",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/geng-sng",
+        "start": "2024-10-01"
+      },
+      {
+        "name": "Rebecca Brock",
+        "title": "Regional Sales Manager",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/rebecca-brock-412782160",
+        "start": "2026-05-01"
+      },
+      {
+        "name": "Jia Z.",
+        "title": "Founding Engineer",
+        "current_company": "Cogent",
+        "linkedin": "https://www.linkedin.com/in/jia-z-2a4b7aa2",
+        "start": "2024-12-01"
+      }
+    ],
+    "rejected_same_name": [
+      {
+        "name": "Sheryl A. Culliver-Turner, MBA",
+        "title": "Founder & Chief Executive Officer",
+        "current_company": "sigma-Cogent Solutions, LLC",
+        "linkedin": "https://www.linkedin.com/in/scturner1",
+        "start": "2019-07-01"
+      }
+    ],
+    "roster_returned": 12,
+    "roster_total_available": 62
+  },
+  "claims": [
+    {
+      "entity": "contact:neil-j",
+      "field_key": "contact.current_title",
+      "value_json": "Founding Engineer",
+      "evidence_span": "profile.title = \"Founding Engineer\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/neil-j-b168509",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:neil-j",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Founding Engineer",
+          "start": "2024-12-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Founding Engineer\", date.start: \"2024-12-01\"}",
+      "source_url": "https://www.linkedin.com/in/neil-j-b168509",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:justin-jancaric",
+      "field_key": "contact.current_title",
+      "value_json": "Founding GTM Sales Leader",
+      "evidence_span": "profile.title = \"Founding GTM Sales Leader\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/justinjancaric",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:justin-jancaric",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Founding GTM Sales Leader",
+          "start": "2026-02-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Founding GTM Sales Leader\", date.start: \"2026-02-01\"}",
+      "source_url": "https://www.linkedin.com/in/justinjancaric",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:steven-do",
+      "field_key": "contact.current_title",
+      "value_json": "Head of Technical Recruiting",
+      "evidence_span": "profile.title = \"Head of Technical Recruiting\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/dosteven",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steven-do",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Head of Technical Recruiting",
+          "start": "2026-06-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Head of Technical Recruiting\", date.start: \"2026-06-01\"}",
+      "source_url": "https://www.linkedin.com/in/dosteven",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ryan-marasco",
+      "field_key": "contact.current_title",
+      "value_json": "Solutions",
+      "evidence_span": "profile.title = \"Solutions\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/ryanmarasco",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:ryan-marasco",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Solutions",
+          "start": "2025-09-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Solutions\", date.start: \"2025-09-01\"}",
+      "source_url": "https://www.linkedin.com/in/ryanmarasco",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:karan-gugle",
+      "field_key": "contact.current_title",
+      "value_json": "Founding Engineer",
+      "evidence_span": "profile.title = \"Founding Engineer\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/karan-gugle-a8a80160",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:karan-gugle",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Founding Engineer",
+          "start": "2024-10-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Founding Engineer\", date.start: \"2024-10-01\"}",
+      "source_url": "https://www.linkedin.com/in/karan-gugle-a8a80160",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kimberli-nichols",
+      "field_key": "contact.current_title",
+      "value_json": "Southeast GTM",
+      "evidence_span": "profile.title = \"Southeast GTM\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/kimberlinichols",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:kimberli-nichols",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Southeast GTM",
+          "start": "2026-06-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Southeast GTM\", date.start: \"2026-06-01\"}",
+      "source_url": "https://www.linkedin.com/in/kimberlinichols",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:cameron-coles",
+      "field_key": "contact.current_title",
+      "value_json": "VP of Marketing",
+      "evidence_span": "profile.title = \"VP of Marketing\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/cameroncoles",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:cameron-coles",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "VP of Marketing",
+          "start": "2025-11-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"VP of Marketing\", date.start: \"2025-11-01\"}",
+      "source_url": "https://www.linkedin.com/in/cameroncoles",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:peyman-mani",
+      "field_key": "contact.current_title",
+      "value_json": "Technical Lead Manager, Data Platform",
+      "evidence_span": "profile.title = \"Technical Lead Manager, Data Platform\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/peymanmani",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:peyman-mani",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Technical Lead Manager, Data Platform",
+          "start": "2024-10-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Technical Lead Manager, Data Platform\", date.start: \"2024-10-01\"}",
+      "source_url": "https://www.linkedin.com/in/peymanmani",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:geng-sng",
+      "field_key": "contact.current_title",
+      "value_json": "Co-Founder & CTO",
+      "evidence_span": "profile.title = \"Co-Founder & CTO\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/geng-sng",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:geng-sng",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Co-Founder & CTO",
+          "start": "2024-10-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Co-Founder & CTO\", date.start: \"2024-10-01\"}",
+      "source_url": "https://www.linkedin.com/in/geng-sng",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:rebecca-brock",
+      "field_key": "contact.current_title",
+      "value_json": "Regional Sales Manager",
+      "evidence_span": "profile.title = \"Regional Sales Manager\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/rebecca-brock-412782160",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:rebecca-brock",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Regional Sales Manager",
+          "start": "2026-05-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Regional Sales Manager\", date.start: \"2026-05-01\"}",
+      "source_url": "https://www.linkedin.com/in/rebecca-brock-412782160",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:jia-z",
+      "field_key": "contact.current_title",
+      "value_json": "Founding Engineer",
+      "evidence_span": "profile.title = \"Founding Engineer\" with position_groups[0].company.name = \"Cogent\"",
+      "source_url": "https://www.linkedin.com/in/jia-z-2a4b7aa2",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:jia-z",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent",
+          "role": "Founding Engineer",
+          "start": "2024-12-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Cogent\", title: \"Founding Engineer\", date.start: \"2024-12-01\"}",
+      "source_url": "https://www.linkedin.com/in/jia-z-2a4b7aa2",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:cameron-coles",
+      "field_key": "core.work_email",
+      "value_json": {
+        "address": "cameron@cogent.com",
+        "status": "VALID",
+        "domain_type": "SMTP",
+        "verdict": "verified",
+        "checked_at": "2026-08-31T07:52:29.000237"
+      },
+      "evidence_span": "email.output[0] = {address: \"cameron@cogent.com\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\", found: true}",
+      "source_url": null,
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 16.0,
+      "evidence_span": "Ashby public posting API job_board/cogent-security: 16 live engineering/R&D reqs of 29 total (isListed=true)",
+      "source_url": "https://api.ashbyhq.com/posting-api/job-board/cogent-security",
+      "source_key": "ashby_public",
+      "source_tier": 2,
+      "extraction_method": "official_scrape",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 3
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.account_name",
+      "value_json": "Cogent Security, Inc.",
+      "evidence_span": "Cogent Security Raises $42M Series A - Blog | Cogent\n\nSix months after launch, Cogent raises $42M led by Bain Capital Ventures to scale the first AI taskforce for vulnerability management.\n\nFeb 18, 2026, 2 min read, Vineet Edupuganti, Co-Founder and CEO",
+      "source_url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.87,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.primary_domain",
+      "value_json": "cogent.com",
+      "evidence_span": "Learn more at cogent.com.",
+      "source_url": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.hq_location",
+      "value_json": {
+        "raw": "San Francisco, California 94105, US",
+        "city": "San Francisco",
+        "region": "California",
+        "country": "United States",
+        "country_code": "US"
+      },
+      "evidence_span": "Cogent Security Raises $42M Series A to Arm Security Teams With Autonomous AI Agents ... SAN FRANCISCO, Feb. 18, 2026 /PRNewswire/ -- Cogent Security today announced $42 million in Series A funding ...",
+      "source_url": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.92,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.company_about",
+      "value_json": "Cogent is an applied AI lab building autonomous agents that close the execution gap in cybersecurity, the window between discovering vulnerabilities and actually fixing them. Cogent's AI agents investigate findings, determine ownership, assess real-world risk, generate remediation steps, and track fixes to verified completion.",
+      "evidence_span": "Cogent is an applied AI lab building autonomous agents that close the execution gap in cybersecurity, the window between discovering vulnerabilities and actually fixing them.",
+      "source_url": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.89,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "account.total_funding",
+      "value_json": {
+        "amount_usd": 53000000,
+        "estimate_kind": "reported"
+      },
+      "evidence_span": "This brings our total funding to $53 million.",
+      "source_url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.94,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 42000000,
+        "round": "Series A"
+      },
+      "evidence_span": "Today, I'm excited to share that we've raised $42 million in Series A funding led by Bain Capital Ventures, with continued support from Greylock Partners and Definition.",
+      "source_url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.96,
+      "priority": 1
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.employee_range",
+      "value_json": {
+        "label": "40-50",
+        "min": 40,
+        "max": 50
+      },
+      "evidence_span": "Cogent has 40-50 employees, founded in 2024.",
+      "source_url": "https://www.linkedin.com/in/alexander-semien",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.78,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.employee_count",
+      "value_json": 49,
+      "evidence_span": "its workforce is distributed across United States and India. URL: https://www.linkedin.com/in/justinjancaric. Conclusion: HQ is San Francisco; the revenue-marketing center appears to be New York, but an official \u201cGTM team sits in New York\u201d statement was NOT FOUND.\n- Founded: 2024. The independent industry report states \u201cCogent, founded in 2024.\u201d URL: https://www.healthcareinfosecurity.com/cogent-security-gets-42m-to-boost-ai-vulnerability-defense-a-30804.\n- Domains: cogent.com is the verified operating domain. Other company-owned domains: NOT FOUND.\n- LinkedIn URL: https://www.linkedin.com/com",
+      "source_url": "https://www.cogent.com/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.55,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.primary_domain",
+      "value_json": "cogent.com",
+      "evidence_span": "Learn more at cogent.com.",
+      "source_url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.industry",
+      "value_json": "Cybersecurity",
+      "evidence_span": "Cogent Security is an enterprise cybersecurity platform that deploys autonomous AI agents to investigate, prioritize, and remediate software vulnerabilities faster than human security teams can.",
+      "source_url": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.93,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "account.strategic_moves",
+      "value_json": "Double down on core data and AI platforms, scale go-to-market efforts, hire exceptional builders; launch Zero Day Response and Autonomous Remediation.",
+      "evidence_span": "This round of funding lets us double down on our core data and AI platforms, scale our go-to-market efforts, and hire exceptional builders.",
+      "source_url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.92,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "account.operational_pain",
+      "value_json": "Security teams face an execution problem: after vulnerabilities are found the hard part is fixing them\u2014figuring out ownership, assessing risk, coordinating fixes, and proving completion amid massive enterprise data volumes and complex environments.",
+      "evidence_span": "Finding vulnerabilities isn't the hard part. The bottleneck is everything after discovery: figuring out who owns the affected system, understanding why this specific vulnerability matters in this specific environment, getting the right fix in front of the right engineer, and confirming it actually got done.",
+      "source_url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.91,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "account.resonance.culture",
+      "value_json": "AI-first, research-driven, creative and fast-moving startup culture emphasizing high-impact early hires.",
+      "evidence_span": "We\u2019re looking for motivated, intelligent, and mission-driven individuals to join our team and innovate at the edge of agentic AI.",
+      "source_url": "https://www.cogent.com/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.78,
+      "priority": 3
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.company_linkedin_url",
+      "value_json": "https://www.linkedin.com/company/cogent-security/",
+      "evidence_span": "Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs.\n\nCogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. ... Check out the original post and comments for the link!\n\nhttps://www.linkedin.com/in/alexander-semien",
+      "source_url": "https://www.linkedin.com/in/alexander-semien",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.7,
+      "priority": 2
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 5,
+      "evidence_span": "Head of Demand Generation \u2014 published 2026-08-14; Field Marketing Manager \u2014 published 2026-08-21; Sales Enablement Lead \u2014 published 2026-08-14; Sales Operations Analyst \u2014 published 2026-08-21; Growth Lead / Head of Growth \u2014 posted 2026-05-10",
+      "source_url": "https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.66,
+      "priority": 1
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "account.resonance.public_frustrations",
+      "value_json": [
+        {
+          "frustration": "NOT FOUND",
+          "summary": "No attributable public employee or leader frustration was found in the research."
+        }
+      ],
+      "evidence_span": "Public frustration: no attributable public employee/leader frustration found. NOT FOUND.",
+      "source_url": "https://www.cogent.com/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.4,
+      "priority": 3
+    },
+    {
+      "entity": "account:cogent-security",
+      "field_key": "core.company_about",
+      "value_json": "Customers using Cogent have reduced their exposure windows for critical risks by an average of 97 percent; Cogent reports 3x increase in VM team output and \"3 hours from onboarding to full vulnerability assessment.\"",
+      "evidence_span": "Customers using Cogent have reduced their exposure windows for critical risks by an average of 97 percent. ... 3x increase in vulnerability management team output ... 3 hours from onboarding to full vulnerability assessment",
+      "source_url": "https://www.cogent.com/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.82,
+      "priority": 2
+    },
+    {
+      "entity": "contact:alexander-semien",
+      "field_key": "contact.current_title",
+      "value_json": "Head of Growth",
+      "evidence_span": "Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps.",
+      "source_url": "https://www.linkedin.com/in/alexander-semien",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:alexander-semien",
+      "field_key": "contact.current_location",
+      "value_json": {
+        "raw": "New York, New York, United States",
+        "country": "United States"
+      },
+      "evidence_span": "Location: New York, New York, United States.",
+      "source_url": "https://www.linkedin.com/in/alexander-semien",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:alexander-semien",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Cogent Security",
+          "role": "Head of Growth",
+          "start": "Aug 2025",
+          "end": "Present"
+        },
+        {
+          "org": "Sevco Security",
+          "role": "VP, Product Marketing",
+          "start": "Aug 2023",
+          "end": "Aug 2025"
+        },
+        {
+          "org": "Abnormal Security",
+          "role": "Director, Strategy & Analytics",
+          "start": "Aug 2020",
+          "end": "Aug 2023"
+        },
+        {
+          "org": "Zyper",
+          "role": "Manager, Finance & Operations",
+          "start": "Nov 2019",
+          "end": "Aug 2020"
+        },
+        {
+          "org": "Forward",
+          "role": "Associate",
+          "start": "Nov 2018",
+          "end": "Oct 2019"
+        },
+        {
+          "org": "Accenture",
+          "role": "Senior Analyst / Analyst",
+          "start": "Jul 2016",
+          "end": "Nov 2018"
+        }
+      ],
+      "evidence_span": "Cogent Security \u2014 Head of Growth / profile work-history label \u201cMarketing,\u201d August 2025\u2013present.\nSevco Security \u2014 VP, Product Marketing, August 2023\u2013August 2025, New York.\nAbnormal Security \u2014 Director, Strategy & Analytics, August 2020\u2013August 2023, New York.\nZyper (Acquired by Discord) \u2014 Manager, Finance & Operations, November 2019\u2013August 2020, San Francisco.\nForward \u2014 Associate, November 2018\u2013October 2019, San Francisco.\nAccenture \u2014 Senior Analyst, December 2017\u2013November 2018; Analyst, July 2016\u2013December 2017.",
+      "source_url": "https://www.linkedin.com/in/alexander-semien",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:alexander-semien",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles \ud83e\udd73 1. Head of Demand Generation Help Cogent win the market: turn attention into pipeline across field, channel, digital, content, outbound, and creative plays. 2. Sales Enablement Lead Make the sales team elite: curriculum, product education, assets, insights, and tool adoption. We\u2019re creative, operational, AI-first, and",
+      "evidence_span": "Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles \ud83e\udd73 1. Head of Demand Generation Help Cogent win the market: turn attention into pipeline across field, channel, digital, content, outbound, and creative plays. 2. Sales Enablement Lead Make the sales team elite: curriculum, product education, assets, insights, and tool adoption. We\u2019re creative, operational, AI-first, and",
+      "source_url": "https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:alexander-semien",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "energetic, conversational, builder-oriented",
+        "summary": "Uses energetic, conversational tone with informal language and emojis; mixes long explanatory posts with concise hiring/event announcements; emphasizes building and operational specifics."
+      },
+      "evidence_span": "I like the early stages; no playbook, just a vision and a lot to figure out\nlife is too short to do boring marketing.\nHey \ud83d\udc4b I\u2019m Alex\nChat, who should I hire\nWe started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more.\nWith AI, two people have the output of a team of ten.\nAnd we look cool doing it with premium experiences, branded moments, and TikTok-ad-level swag. \ud83d\udc85\n\ud83e\udd73\n\ud83d\udd39",
+      "source_url": "https://www.linkedin.com/in/alexander-semien",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:alexander-semien",
+      "field_key": "contact.persona",
+      "value_json": "champion",
+      "evidence_span": "Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs.",
+      "source_url": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.7,
+      "priority": 1,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:alexander-semien",
+      "field_key": "contact.facet.stated_interests",
+      "value_json": [
+        "Applied AI in cybersecurity",
+        "GTM strategy and revenue marketing",
+        "Data-driven automation and RevOps",
+        "Differentiated brand/community building"
+      ],
+      "evidence_span": "We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more.\nWith AI, two people have the output of a team of ten.\nI wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber.\nEvery decision we make is rooted in data.",
+      "source_url": "https://www.linkedin.com/in/alexander-semien",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "personal-public-non-sensitive"
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "account.revenue_band",
+      "entity_type": "the account",
+      "value_type": "enum",
+      "value_schema": {
+        "type": "string",
+        "enum": [
+          "under_1m",
+          "1m_10m",
+          "10m_50m",
+          "50m_100m",
+          "100m_500m",
+          "500m_1b",
+          "1b_plus"
+        ]
+      },
+      "description": "Bounded revenue band when exact sourced revenue is absent.",
+      "reuse_scope": "account:cogent-security",
+      "hypothesis": "Clue would benefit from a revenue-band signal to size opportunity and prioritize outreach; many startups do not publish ARR but funding and headcount can imply a likely revenue band.",
+      "example_value": "10m_50m",
+      "example_evidence_span": "ARR/revenue: NOT FOUND. The $53M figure is funding, not ARR or revenue.",
+      "example_source_url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "priority": 2
+    },
+    {
+      "field_key": "core.company_phone",
+      "entity_type": "the account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "Public general company contact phone.",
+      "reuse_scope": "account:cogent-security",
+      "hypothesis": "A public phone can be useful for enrichment or SDR outreach fallback when email/contact data is limited, especially for enterprise sales motions.",
+      "example_value": "+1-415-555-0123",
+      "example_evidence_span": "Contact Us (phone): NOT FOUND.",
+      "example_source_url": "https://www.cogent.com/",
+      "priority": 3
+    },
+    {
+      "field_key": "core.company_email",
+      "entity_type": "the account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "Public general company contact email.",
+      "reuse_scope": "account:cogent-security",
+      "hypothesis": "A verified public contact email (e.g., sales@ or press@) helps enable outbound cadence and personalization; when missing, sales teams must rely on individual contacts.",
+      "example_value": "sales@cogent.com",
+      "example_evidence_span": "Contact Us (email): NOT FOUND.",
+      "example_source_url": "https://www.cogent.com/",
+      "priority": 3
+    },
+    {
+      "field_key": "contact.role_on_committee",
+      "entity_type": "contact",
+      "value_type": "object",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "champion",
+              "economic_buyer",
+              "technical_evaluator",
+              "blocker"
+            ]
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Inferred buying-committee role + plausibility rationale (proposed; not directly evidenced in the reviewed sources).",
+      "reuse_scope": "account",
+      "hypothesis": "Knowing Alexander's committee role (e.g., champion) and a rationale explaining why he is likely to champion an ABM/orchestration purchase helps Clue prioritize outreach and tailor messaging \u2014 champions can advocate for product trials and cross-team pilots that drive early adoption.",
+      "example_value": {
+        "role": "champion",
+        "rationale": "Head of Growth building an AI-native RevOps and growth stack, publicly hiring for demand generation and emphasizing data-driven automation, likely to sponsor ABM tooling to convert attention into pipeline."
+      },
+      "example_evidence_span": "We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more.\nBlack Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates.",
+      "example_source_url": "https://www.linkedin.com/in/alexander-semien",
+      "priority": 1
+    }
+  ]
+}

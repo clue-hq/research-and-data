@@ -23,6 +23,7 @@ import {
   type GenerateAssetRequest,
 } from "../engine/scene/assetLibrary";
 import type { AssetRecord, Node, Operation, Scene } from "../engine/scene/contracts";
+import type { SceneWriteGate } from "./use-scene-manual-edits";
 
 /**
  * AD4.A step 3 (§1.3 row 2): the ad lane's image AI suite — generate from a
@@ -101,9 +102,11 @@ export interface SceneImageAiDeps {
   /** The manual-edits controller's one write path (optimistic apply → CAS
    * queue). `false` means the batch did not land. */
   applyOps: (operations: Operation[], intent?: string) => boolean;
-  /** Is the write path armed and the engine live? Asked BEFORE every spend,
-   * because a refusal after one strands a minted asset. */
-  canApply: () => boolean;
+  /** May a write land — armed, engine live, and (task 4) not locked behind a
+   * running design turn? Asked BEFORE every spend, because a refusal after one
+   * strands a minted asset. The whole gate rather than a boolean, so the ONE
+   * refusal that has words can use them (fix round 1, I3). */
+  writeGate: () => SceneWriteGate;
   /** Clears both inline slots. A new attempt supersedes what the last said. */
   clearMessages: () => void;
   /** The document a candidate would belong to. */
@@ -114,6 +117,9 @@ export interface SceneImageAiDeps {
   node: Node | null;
   /** Sets the inspector's existing inline error line. */
   onError: (message: string) => void;
+  /** Task 4 (I3): sets the inspector's existing inline NOTE line — where a
+   * refusal that is a STATE (the agent-run lock) belongs. No new UI. */
+  onNote: (message: string) => void;
   /** Hands the new snapshot to React. */
   publish: (state: SceneImageAiState) => void;
   /** The live scene — the asset registry the edit gate reads. */
@@ -137,6 +143,22 @@ export interface SceneImageAiRunner {
 
 /** Intent labels, for signature parity with the write path's other callers.
  * They stop at `applyOps`, which documents why the queue takes none. */
+/**
+ * Task 4 fix round 1 (I3): ask the write gate, and let the ONE refusal that has
+ * words say them.
+ *
+ * Returns whether the caller may proceed. The two silent refusals stay silent —
+ * a dead engine has the canvas's own G-D banner and "not armed" is a state no
+ * user can see — but the agent-run lock reaches the inspector's note line, so a
+ * Generate click while the design agent is working stops being a dead button.
+ */
+function refuseUnlessWritable(deps: SceneImageAiDeps): boolean {
+  const gate = deps.writeGate();
+  if (gate.allowed) return true;
+  if (gate.note !== null) deps.onNote(gate.note);
+  return false;
+}
+
 const GENERATE_INTENT = "inspector: generate image";
 const ACCEPT_INTENT = "inspector: accept edited image";
 
@@ -195,12 +217,10 @@ export function createSceneImageAiRunner(
     // Not an image selection, or §4's lock, or nothing armed — REFUSED BEFORE
     // THE SPEND. A generation that mints an asset the editor cannot place is a
     // half write: a registry row nothing references, paid for.
-    if (
-      !target ||
-      !documentId ||
-      !sceneImageReplacementTarget(target) ||
-      !before.canApply()
-    ) {
+    if (!target || !documentId || !sceneImageReplacementTarget(target)) {
+      return;
+    }
+    if (!refuseUnlessWritable(before)) {
       return;
     }
     // A new attempt supersedes what the last one said. Cleared HERE rather than
@@ -272,7 +292,7 @@ export function createSceneImageAiRunner(
     const source = sceneImageEditSource(target, before.scene);
     // Armed too: an edit whose candidate could never be accepted is the same
     // half write a generation would be, one click later.
-    if (!source || !before.canApply()) {
+    if (!source || !refuseUnlessWritable(before)) {
       return;
     }
     before.clearMessages();
@@ -323,7 +343,10 @@ export function createSceneImageAiRunner(
       // §4 and the armed check are asked BEFORE anything is cleared, because a
       // refused write must not update the panel's record of the document — the
       // candidate stays staged so the user can unlock and try again.
-      if (!sceneImageReplacementTarget(deps.node) || !deps.canApply()) {
+      if (
+        !sceneImageReplacementTarget(deps.node) ||
+        !refuseUnlessWritable(deps)
+      ) {
         return false;
       }
       deps.clearMessages();
@@ -367,7 +390,6 @@ export function createSceneImageAiRunner(
 
 export function useSceneImageAi(options: {
   applyOps: (operations: Operation[], intent?: string) => boolean;
-  canApply: () => boolean;
   clearMessages: () => void;
   documentId: string | null;
   /** Injectable for tests; the platform's BFF transports by default. */
@@ -375,18 +397,21 @@ export function useSceneImageAi(options: {
   generate?: (request: GenerateAssetRequest) => Promise<AssetRecord>;
   node: Node | null;
   onError: (message: string) => void;
+  onNote: (message: string) => void;
   scene: Scene | null;
+  writeGate: () => SceneWriteGate;
 }): SceneImageAiBinding {
   const {
     applyOps,
-    canApply,
     clearMessages,
     documentId,
     edit = editSceneAsset,
     generate = generateSceneAsset,
     node,
     onError,
+    onNote,
     scene,
+    writeGate,
   } = options;
   const [state, setState] = useState<SceneImageAiState>(EMPTY);
   // A stable publisher rather than the raw setter, so the latest-value effect
@@ -401,28 +426,30 @@ export function useSceneImageAi(options: {
   // rules — the same adaptation every other hook on this lane made).
   const depsRef = useRef<SceneImageAiDeps>({
     applyOps,
-    canApply,
     clearMessages,
     documentId,
     edit,
     generate,
     node,
     onError,
+    onNote,
     publish,
     scene,
+    writeGate,
   });
   useEffect(() => {
     depsRef.current = {
       applyOps,
-      canApply,
       clearMessages,
       documentId,
       edit,
       generate,
       node,
       onError,
+      onNote,
       publish,
       scene,
+      writeGate,
     };
   });
 

@@ -35,10 +35,11 @@ from uuid import UUID
 from pydantic import Field, JsonValue, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.account_research_estimate import (
-    AccountTierCheckpointMissing,
-    compute_account_research_estimate,
+from clue_api.account_research_discovery_readiness import (
+    AccountResearchDiscoveryNotReady,
+    require_sealed_account_discovery,
 )
+from clue_api.account_research_estimate import compute_account_research_estimate
 from clue_api.agent_gate import (
     DEFAULT_GATE_CURRENCY,
     KIND_DIRECTIVE_CONFIRMATION,
@@ -328,6 +329,16 @@ class OpenDirectiveConfirmationGateTool(Tool):
                 "no such project run in this conversation's project",
                 reason_code="gate_project_run_not_found",
             )
+        try:
+            await require_sealed_account_discovery(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_run_id=project_run_id,
+                icp_key=project_run.icp_key,
+                icp_version=project_run.icp_version,
+            )
+        except AccountResearchDiscoveryNotReady as exc:
+            raise _GateRefused(str(exc), reason_code=exc.reason_code) from exc
         directive = await get_research_directive(conn, directive_id, workspace_id=ctx.workspace_id)
         if directive is None or directive.project_id != turn.project_id:
             raise _GateRefused(
@@ -350,8 +361,6 @@ class OpenDirectiveConfirmationGateTool(Tool):
                 # directive with the identical computation.
                 allow_draft=True,
             )
-        except AccountTierCheckpointMissing as exc:
-            raise _GateRefused(str(exc), reason_code="account_tier_checkpoint_missing") from exc
         except ResearchDirectiveError as exc:
             raise _GateRefused(str(exc), reason_code="research_directive_invalid") from exc
         first = estimate.effective_by_account[account_ids[0]]

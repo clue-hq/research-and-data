@@ -35,8 +35,13 @@ export function OnboardingScreen({
     return (
       <main className={`${styles.page} ${styles.subtlePage}`}>
         {controller.authMode === "clerk" ? (
-          // Slice 2: real lane-level recon truth; the presentation timer never runs here.
-          <LiveSetupScreen compact={step === "finalizing"} setup={flow.setup} />
+          // Real lane truth; the presentation timer never runs here. The website is the
+          // profile draft's — the same value provisioning posted — not the fixture account's.
+          <LiveSetupScreen
+            companyWebsite={controller.draft.companyWebsite}
+            compact={step === "finalizing"}
+            setup={flow.setup}
+          />
         ) : (
           <SetupScreen compact={step === "finalizing"} setup={flow.setup} />
         )}

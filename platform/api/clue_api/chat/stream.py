@@ -51,23 +51,32 @@ from uuid import UUID, uuid5
 
 from fastapi import APIRouter, Depends, FastAPI, Header, Query
 from fastapi.responses import StreamingResponse
-from pydantic import JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue
 from sqlalchemy import text
 
 from clue_api.agent_turn_submission import (
     dispatch_next_thread_turn,
     get_submission,
     insert_submission,
+    lock_thread_queue,
+    submission_attachment_refs_for_turns,
     submission_context_refs,
     submission_context_refs_for_turns,
     turn_id_for_submission,
 )
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.chat.composer_context import context_ref_presentations
 from clue_api.chat.message_bodies import hydrate_message_bodies
 from clue_api.chat.principal import (
     PERMISSION_THREAD_READ,
     PERMISSION_THREAD_WRITE,
     RequestPrincipal,
+)
+from clue_api.chat.queue_controls import (
+    QueueResumeConflict,
+    hold_queue,
+    queue_control,
+    resume_queue,
 )
 from clue_api.chat.router import (
     CHAT_PREFIX,
@@ -79,7 +88,11 @@ from clue_api.chat.schemas import (
     TurnAcceptedResponse,
     TurnAcceptedWire,
 )
-from clue_api.chat.turn_controls import get_control_request, insert_control_request
+from clue_api.chat.turn_controls import (
+    get_control_request,
+    insert_control_request,
+    lock_turn_control,
+)
 from clue_api.chat.turn_events import (
     TERMINAL_TURN_EVENTS,
     TURN_STREAM_SCHEMA_VERSION,
@@ -110,6 +123,12 @@ __all__ = [
 ]
 
 PrincipalDep = Annotated[RequestPrincipal, Depends(chat_principal_resolver)]
+
+
+class ResumeQueueRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hold_control_id: UUID
+
 
 #: A turn state that means the conversation owes the user an answer. ``queued`` counts: from the
 #: user's side a submitted turn nobody has claimed yet is the conversation working, not idle.
@@ -236,6 +255,25 @@ def build_chat_stream_router(
             thread_id=thread_id,
             conn_factory=conn_factory,
         )
+        async with conn_factory() as conn:
+            queue_state = await queue_control(
+                conn, workspace_id=who.workspace_id, thread_id=thread_id
+            )
+            stops = (
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT turn_id, control_id, requested_at "
+                            "FROM agent_turn_control_request "
+                            "WHERE workspace_id=:workspace AND thread_id=:thread AND kind='stop'"
+                        ),
+                        {"workspace": who.workspace_id, "thread": thread_id},
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        stop_by_turn = {row["turn_id"]: row for row in stops}
         submission_messages: dict[UUID, dict[str, JsonValue]] = {}
         if include is not None:
             if storage is None:
@@ -277,8 +315,48 @@ def build_chat_stream_router(
                     workspace_id=who.workspace_id,
                     turn_ids=tuple(item.turn_id for item in pending),
                 )
+                attachments_by_turn = await submission_attachment_refs_for_turns(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    turn_ids=tuple(item.turn_id for item in pending),
+                )
+                presentations = await context_ref_presentations(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    refs=tuple(ref for refs in context_by_turn.values() for ref in refs),
+                    storage=storage,
+                )
             for item in pending:
                 hydrated = bodies.get(item.message_artifact_key)
+                refs: list[JsonValue] = [
+                    {
+                        "flavor": "context",
+                        "workspace_id": ref.workspace_id,
+                        "object_type": ref.object_type,
+                        "object_id": ref.object_id,
+                        "version": ref.version,
+                        "ordinal": ordinal,
+                        **presentations.get((ref.object_type, ref.object_id), {}),
+                    }
+                    for ordinal, ref in enumerate(context_by_turn.get(item.turn_id, ()))
+                ]
+                # The attachment rows already carry their own presentation — the human's
+                # filename, the media type, and the upload the bytes are served from — so a
+                # pending turn's chips read exactly like the durable ones they become.
+                refs.extend(
+                    {
+                        "flavor": "attachment",
+                        "workspace_id": who.workspace_id,
+                        "object_type": "artifact",
+                        "object_id": attachment.ref.artifact_key,
+                        "version": None,
+                        "ordinal": attachment.ordinal,
+                        "label": attachment.filename,
+                        "media_type": attachment.ref.media_type,
+                        "upload_id": str(attachment.upload_id),
+                    }
+                    for attachment in attachments_by_turn.get(item.turn_id, ())
+                )
                 submission_messages[item.turn_id] = {
                     "id": str(uuid5(item.turn_id, "user")),
                     "turn_id": str(item.turn_id),
@@ -292,17 +370,7 @@ def build_chat_stream_router(
                         "unavailable" if hydrated is None else hydrated.reason
                     ),
                     "created_at": item.requested_at.isoformat(),
-                    "refs": [
-                        {
-                            "flavor": "context",
-                            "workspace_id": ref.workspace_id,
-                            "object_type": ref.object_type,
-                            "object_id": ref.object_id,
-                            "version": ref.version,
-                            "ordinal": ordinal,
-                        }
-                        for ordinal, ref in enumerate(context_by_turn.get(item.turn_id, ()))
-                    ],
+                    "refs": refs,
                 }
         return {
             "data": [
@@ -314,11 +382,24 @@ def build_chat_stream_router(
                     "requested_at": item.requested_at.isoformat(),
                     "last_event_id": item.last_event_id,
                     "generation_attempts": item.generation_attempts,
+                    "derivation": item.derivation,
+                    "stop_request": (
+                        {
+                            "control_id": str(stop_by_turn[item.turn_id]["control_id"]),
+                            "requested_at": stop_by_turn[item.turn_id]["requested_at"].isoformat(),
+                            "pending": item.state != "cancelled",
+                        }
+                        if item.turn_id in stop_by_turn
+                        else None
+                    ),
                     "submission_message": submission_messages.get(item.turn_id),
                 }
                 for item in turns
             ],
-            "meta": {"thread_status": "running" if _running(turns) else "idle"},
+            "meta": {
+                "thread_status": "running" if _running(turns) else "idle",
+                "queue_control": queue_state,
+            },
         }
 
     # --- attach ---------------------------------------------------------------------------------
@@ -448,6 +529,32 @@ def build_chat_stream_router(
                         turn_id=turn_id,
                         after_event_id=last_seen,
                     )
+                if not fresh:
+                    async with conn_factory() as conn:
+                        acknowledged = await conn.scalar(
+                            text(
+                                "SELECT 1 FROM agent_turn_stop_ack a "
+                                "JOIN agent_turn_control_request c USING (control_id) "
+                                "WHERE c.workspace_id=:workspace AND c.turn_id=:turn"
+                            ),
+                            {"workspace": who.workspace_id, "turn": turn_id},
+                        )
+                    if acknowledged:
+                        # A worker may die after the durable acknowledgement but before
+                        # its terminal stream frame. Rehydrate history without replaying a model.
+                        yield _sse_frame(
+                            event="stream.reset",
+                            data={
+                                "schema_version": TURN_STREAM_SCHEMA_VERSION,
+                                "type": "stream.reset",
+                                "turn_id": str(turn_id),
+                                "thread_id": thread_id,
+                                "project_id": project_id,
+                                "reason": "cancellation_acknowledged",
+                                "rehydrate": "transcript",
+                            },
+                        )
+                        return
                 for row in fresh:
                     yield _event_frame(row)
                     last_seen = row.event_id
@@ -479,6 +586,8 @@ def build_chat_stream_router(
             who=who, project_id=project_id, thread_id=thread_id, turn_id=turn_id
         )
         async with conn_factory() as conn:
+            await lock_thread_queue(conn, workspace_id=who.workspace_id, thread_id=thread_id)
+            await lock_turn_control(conn, workspace_id=who.workspace_id, turn_id=turn_id)
             existing = await get_control_request(
                 conn,
                 workspace_id=who.workspace_id,
@@ -494,7 +603,14 @@ def build_chat_stream_router(
                     thread_id=thread_id,
                     turn_id=turn_id,
                 )
-                if target is None or target.state != "running":
+                finalized = await conn.scalar(
+                    text(
+                        "SELECT 1 FROM agent_finalization_commit "
+                        "WHERE workspace_id=:workspace AND turn_id=:turn"
+                    ),
+                    {"workspace": who.workspace_id, "turn": turn_id},
+                )
+                if finalized or target is None or target.state != "running":
                     raise _refuse(
                         status_code=409,
                         code="TURN_NOT_RUNNING",
@@ -511,6 +627,12 @@ def build_chat_stream_router(
                     requested_by_user_id=who.user_id,
                     requested_via_membership_id=who.membership_id,
                 )
+                await hold_queue(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    thread_id=thread_id,
+                    control_id=control.control_id,
+                )
         return {
             "data": {
                 "turn_id": str(turn_id),
@@ -519,6 +641,29 @@ def build_chat_stream_router(
                 "already_requested": not created,
             }
         }
+
+    @router.post("/projects/{project_id}/threads/{thread_id}/queue/resume", status_code=202)
+    async def resume_queue_route(
+        project_id: str,
+        thread_id: str,
+        body: ResumeQueueRequest,
+        who: PrincipalDep,
+    ) -> dict[str, JsonValue]:
+        _require(who, PERMISSION_THREAD_WRITE)
+        await _scope(who=who, project_id=project_id, thread_id=thread_id)
+        try:
+            async with conn_factory() as conn:
+                receipt = await resume_queue(
+                    conn,
+                    workspace_id=who.workspace_id,
+                    thread_id=thread_id,
+                    hold_control_id=body.hold_control_id,
+                    user_id=who.user_id,
+                    membership_id=who.membership_id,
+                )
+        except QueueResumeConflict as error:
+            raise _refuse(status_code=409, code=error.code, message=str(error)) from error
+        return {"data": receipt}
 
     if artifacts is not None:
 

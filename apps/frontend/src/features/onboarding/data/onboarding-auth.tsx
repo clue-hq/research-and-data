@@ -7,6 +7,7 @@ import type {
   OnboardingAuthResult,
 } from "../model/onboarding";
 import {
+  acceptInvitationTicket,
   pendingVerificationEmail,
   resendPendingEmailCode,
   runClerkStep,
@@ -69,6 +70,7 @@ function ClerkOnboardingAuth({ children }: { children: React.ReactNode }) {
         startPasswordSignIn(signIn, identifier, password),
       signUpWithPassword: (emailAddress, password) =>
         startPasswordSignUp(signUp, emailAddress, password),
+      acceptInvitation: (params) => acceptInvitationTicket(signUp, params),
       verifyEmailCode: (code) => verifyPendingEmailCode(signIn, signUp, code),
       resendEmailCode: () => resendPendingEmailCode(signIn, signUp),
       signInWithGoogle: () =>

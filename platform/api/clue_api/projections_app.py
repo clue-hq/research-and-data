@@ -22,7 +22,8 @@ import contextlib
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from datetime import datetime
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
@@ -33,9 +34,11 @@ import clue_obs
 from clue_agents import AgentProfileRegistry
 from clue_api.auth_tool_context import tool_context_for_principal
 from clue_api.auth_wiring import (
+    REQUEST_ID_HEADER,
     authenticated_route_resolvers,
     install_auth_wiring,
     principal_from_request,
+    request_id_for,
 )
 from clue_api.brand_kit_ingestion import build_brand_kit_ingestion_trigger
 from clue_api.chat import PrincipalResolver, chat_workspace_resolver, install_chat_surface
@@ -53,7 +56,13 @@ from clue_api.ingestion_tools import (
 from clue_api.ingestion_tools import (
     header_workspace_resolver as ingestion_header_workspace_resolver,
 )
+from clue_api.onboarding_routes import (
+    DbOnboardingEnqueuer,
+    create_onboarding_router,
+    onboarding_workspace_resolver,
+)
 from clue_api.production_metrics import production_metrics_lifespan
+from clue_api.production_tracing import production_tracing_lifespan
 from clue_api.research_view_api import (
     build_research_view_router,
     research_actor_resolver,
@@ -63,8 +72,9 @@ from clue_api.research_view_owner_refs import ProductionOwnerReferenceResolver
 from clue_api.stage0_setup import create_stage0_setup_router, setup_workspace_resolver
 from clue_api.stage0_setup_fleet import DbStage0ReconEnqueuer, Stage0ReconEnqueuer
 from clue_api.stream_tokens import consume_stream_token, mint_stream_token
+from clue_api.transactional_account_launch import TransactionalToolInvokerFactory
 from clue_auth import MembershipStateChanged, PrincipalService
-from clue_config import Settings, load_settings
+from clue_config import Secrets, Settings, load_settings
 from clue_core import (
     EntityId,
     EvidenceAccessService,
@@ -81,11 +91,15 @@ from clue_core.proposals import ProposalStatus
 from clue_db import ConnFactory, db_lifespan, transaction
 from clue_execution import DbRunEventReader, OperationConflict, ToolAuthorityStateChanged
 from clue_execution.run_events import list_run_events
+from clue_fleet import DbWorkQueue
+from clue_obs import bound_context
+from clue_obs.otel import TracingRuntime, bind_and_annotate
 from clue_projections import (
     DEFAULT_TURN_PAGE_SIZE,
     MANIFEST_OP_TOOLS,
     MAX_TURN_PAGE_SIZE,
     PROJECTIONS_SCHEMA_VERSION,
+    CostFilters,
     InvalidCursorError,
     account_progress,
     agent_progress,
@@ -93,6 +107,7 @@ from clue_projections import (
     agent_telemetry,
     agent_turn,
     agent_turns_for_project,
+    cost_report,
     field_proposals,
     ingestion_status,
     plan_replay,
@@ -121,6 +136,10 @@ from clue_toolbelt import (
     UnknownTool,
 )
 
+if TYPE_CHECKING:  # the refresher's module imports this package's neighbours; type only
+    from clue_api.frontend_read.project_memory import MemoryWriteFactory
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
+
 # Served on every projection/tool response so a consumer can confirm the shape it negotiated.
 PROJECTIONS_SCHEMA_HEADER = "X-Projections-Schema-Version"
 
@@ -136,6 +155,10 @@ def header_workspace_resolver(
     ``dependency_overrides``; the routes never change."""
     if not x_workspace_id:
         raise HTTPException(status_code=401, detail="missing X-Workspace-Id (tenant) header")
+    # Lane 3 slice 2: the header tenant seam. ``bind_and_annotate`` (not a plain bind): the
+    # instrumentor's server span opened before any route dependency ran, so the span that is
+    # already open needs the workspace written onto it, not just bound for what comes after.
+    bind_and_annotate(workspace_id=x_workspace_id)
     return x_workspace_id
 
 
@@ -307,6 +330,46 @@ def create_projections_router(
         return {
             "schema_version": PROJECTIONS_SCHEMA_VERSION,
             "route": view.model_dump(mode="json"),
+        }
+
+    # -- cost (lane 3 slice 1): the two ledgers summed once each, workspace-scoped --
+
+    @router.get("/cost/report")
+    async def get_cost_report(
+        workspace_id: WorkspaceDep,
+        project_id: str | None = None,
+        project_run_id: str | None = None,
+        job_id: UUID | None = None,
+        thread_id: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> dict[str, Any]:
+        # The filters are built first so a naive ``since``/``until`` is refused (``CostFilters``
+        # takes ``AwareDatetime``) before the window comparison — comparing a naive to an aware
+        # datetime raises, and a half-aware window must be a 422 like any other bad input.
+        try:
+            filters = CostFilters(
+                project_id=project_id,
+                project_run_id=project_run_id,
+                job_id=job_id,
+                thread_id=thread_id,
+                since=since,
+                until=until,
+            )
+        except ValidationError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        if (
+            filters.since is not None
+            and filters.until is not None
+            and filters.since >= filters.until
+        ):
+            raise HTTPException(status_code=422, detail="since must be before until")
+        report = await cost_report(
+            workspace_id=workspace_id, filters=filters, conn_factory=conn_factory
+        )
+        return {
+            "schema_version": PROJECTIONS_SCHEMA_VERSION,
+            "report": report.model_dump(mode="json"),
         }
 
     @router.get("/project_runs/{project_run_id}/overview")
@@ -748,6 +811,7 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Production lifespan: configure logging once, open the DB engine for the app's lifetime."""
     clue_obs.setup()
     async with (
+        production_tracing_lifespan(getattr(_app.state, "tracing", None)),
         production_metrics_lifespan(
             _app.state.settings,
             service_name="clue-projections-api",
@@ -763,6 +827,9 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
             auth_closer = getattr(_app.state, "auth_closer", None)
             if auth_closer is not None:
                 await auth_closer()
+            library_closer = getattr(_app.state, "project_library_closer", None)
+            if library_closer is not None:
+                library_closer()
 
 
 def create_projections_app(
@@ -790,6 +857,11 @@ def create_projections_app(
     auth_closer: Callable[[], Awaitable[None]] | None = None,
     contact_email_lookup: Any | None = None,
     stage0_recon_enqueuer: Stage0ReconEnqueuer | None = None,
+    transactional_tool_invoker_factory: TransactionalToolInvokerFactory | None = None,
+    project_library: ProjectLibraryRefresher | None = None,
+    project_library_closer: Callable[[], None] | None = None,
+    tracing: TracingRuntime | None = None,
+    memory_write_factory: MemoryWriteFactory | None = None,
 ) -> FastAPI:
     """Construct the B4 read-side FastAPI app (projections + tool route + manifest ops + SSE).
 
@@ -804,7 +876,22 @@ def create_projections_app(
     supplying both is refused at composition rather than resolved silently.
     ``sse_live_tail=False`` makes the SSE stream replay-then-close (deterministic for tests);
     production leaves it ``True`` (an open live stream). ``chat_stream_live_tail`` is the same
-    switch for FI Lane D D3's turn stream."""
+    switch for FI Lane D D3's turn stream.
+
+    ``project_library`` is the project-library refresher the two surfaces that write a project's
+    settled state call once their transaction commits — the human's project-document PUT and the
+    ICP-confirmation pin. It is ``None`` on a deployment with no agent-workspace root, and both
+    hooks are then no-ops. ``project_library_closer`` releases the workspace factory that
+    refresher was built over; this process owns one only for that purpose, so it is closed with
+    the other shutdown closers rather than left to process exit.
+
+    ``tracing`` is the process's tracer runtime; when given and the settings ask for it, the app
+    is instrumented at construction.
+
+    ``memory_write_factory`` binds the project home's memory panel to the scoped-memory write
+    seam. It is ``None`` on a deployment that composes no model gateway (reconciliation needs a
+    judge), and the memory writes then refuse ``MEMORY_UNAVAILABLE`` while the list still
+    serves."""
     resolved = settings if settings is not None else load_settings()
     if resolved.auth_environment == "production" and auth_service is None:
         raise RuntimeError("production projections require the authenticated principal service")
@@ -813,9 +900,22 @@ def create_projections_app(
         version=PROJECTIONS_SCHEMA_VERSION,
         lifespan=_projections_lifespan if manage_db_lifespan else None,
     )
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> dict[str, str]:
+        """Liveness for Railway's health check, the uptime monitors and the boot smoke test
+        (first deployment spec §9.5). Touches no database or Redis; needs no auth or workspace."""
+        return {"status": "ok"}
+
     app.state.startup_check = startup_check
     app.state.auth_closer = auth_closer
+    app.state.project_library_closer = project_library_closer
     app.state.settings = resolved
+    app.state.tracing = tracing
+    if tracing is not None and resolved.otel_instrument_fastapi:
+        # Lane 3 slice 2: server spans. At construction on purpose — Starlette refuses new
+        # middleware once the app has started.
+        tracing.instrument_app(app)
 
     # Review F3: actually serve the declared schema header on EVERY response (JSON routes and the
     # SSE stream alike — response headers precede the streamed body), so a consumer can confirm the
@@ -826,23 +926,61 @@ def create_projections_app(
         response.headers[PROJECTIONS_SCHEMA_HEADER] = PROJECTIONS_SCHEMA_VERSION
         return response
 
+    @app.middleware("http")
+    async def _request_context(request: Any, call_next: Any) -> Any:
+        """Bind the request id for the whole request (log lines, span attributes, Sentry tags)
+        and echo it. The frontend-read envelope middleware, when it runs first, has already
+        minted one on ``request.state``; a safe incoming ``X-Request-Id`` is kept; else new."""
+        existing = getattr(request.state, "request_id", None)
+        request_id = existing if isinstance(existing, str) else request_id_for(request)
+        request.state.request_id = request_id
+        with bound_context(request_id=request_id):
+            # The FastAPI instrumentor wraps ``build_middleware_stack``, so its server span is
+            # OUTSIDE every HTTP middleware — it had already opened when this one ran, and the
+            # start-of-span context copy missed the id. Annotate the open span too, as the tenant
+            # seams do. ``bound_context`` still owns the scope: the binding is undone on exit.
+            bind_and_annotate(request_id=request_id)
+            response = await call_next(request)
+        response.headers.setdefault(REQUEST_ID_HEADER, request_id)
+        return response
+
     # FI-2 slice 1: the `/frontend/v1` read surface — its own router, error envelope, request id,
     # and the process's CORS policy. Both halves are default-off (flag / empty origins), so an
     # unconfigured deployment is byte-identical to the pre-FI-2 app.
+    # ``Secrets()`` is read ONCE, here, and reaches exactly one consumer: the D3 display seam's
+    # runner (the only thing under `/frontend/v1` that spends money). A deployment with no key —
+    # every test app included — composes a seam that cannot generate, so the read surface stays a
+    # pure projection instead of refusing to start.
+    runtime_secrets = Secrets()
     install_frontend_read_surface(
         app,
         settings=resolved,
         conn_factory=conn_factory,
         evidence_storage=ingestion_storage,
         contact_email_lookup=contact_email_lookup,
+        secrets=runtime_secrets,
+        project_library=project_library,
+        memory_write_factory=memory_write_factory,
+        # The display seam schedules page writes on the fleet instead of writing them on the
+        # request — the same default work queue the onboarding enqueuer and the persona request
+        # service already use in this process.
+        work_queue=DbWorkQueue(),
     )
     if auth_service is not None:
+        from clue_auth.providers.clerk_api import ClerkApi
+
+        clerk_secret = runtime_secrets.auth_clerk_secret_key
         # The provision route (workspace-creating write) mounts only behind its default-off
         # flag, matching the rollout discipline of every neighbouring surface.
         install_auth_wiring(
             app,
             service=auth_service,
-            conn_factory=(conn_factory if resolved.self_serve_provisioning_enabled else None),
+            conn_factory=conn_factory,
+            provision_enabled=resolved.self_serve_provisioning_enabled,
+            clerk_api=ClerkApi(clerk_secret.get_secret_value()) if clerk_secret else None,
+            pages_system_suffix=resolved.pages_system_suffix,
+            # The workspace switcher's company logo (Brandfetch's embed-only Logo API).
+            brandfetch_client_id=resolved.brandfetch_client_id,
         )
         if workspace_resolver is None and actor_resolver is None:
             workspace_resolver, actor_resolver = authenticated_route_resolvers(auth_service)
@@ -861,6 +999,8 @@ def create_projections_app(
         # D2's turn submission captures the user's bytes as a durable artifact before enqueueing.
         # The same backend the ingestion surface already uses; nothing model-shaped is added here.
         storage=ingestion_storage,
+        transactional_tool_invoker_factory=transactional_tool_invoker_factory,
+        project_library=project_library,
     )
 
     # FI Lane D D3: the turn stream (attach/stop/retry/hydrated cold load), behind the same
@@ -880,6 +1020,7 @@ def create_projections_app(
         app.dependency_overrides[frontend_read_workspace_resolver] = workspace_resolver
         app.dependency_overrides[chat_workspace_resolver] = workspace_resolver
         app.dependency_overrides[setup_workspace_resolver] = workspace_resolver
+        app.dependency_overrides[onboarding_workspace_resolver] = workspace_resolver
     if actor_resolver is not None:
         app.dependency_overrides[header_actor_resolver] = actor_resolver
         app.dependency_overrides[ingestion_header_actor_resolver] = actor_resolver
@@ -906,7 +1047,8 @@ def create_projections_app(
     # FI-4 slice 2: the onboarding workspace-setup composition (capture → onboarding_input →
     # recon driver + the lane-truth read). Rides the same default-off flag as the provisioning
     # route it continues; needs the storage backend for capture-before-use.
-    if resolved.self_serve_provisioning_enabled and ingestion_storage is not None:
+    # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer implies it.
+    if resolved.legacy_stage0_recon_enabled and ingestion_storage is not None:
         app.include_router(
             create_stage0_setup_router(
                 tool_invoker=tool_invoker,
@@ -920,6 +1062,21 @@ def create_projections_app(
                 # Brand-kit slice 2: None unless CLUE_DESIGN_API_BASE_URL names the design API,
                 # in which case first-time onboarding also enqueues one draft brand-kit
                 # ingestion of the captured website.
+                brand_kit_ingestion=build_brand_kit_ingestion_trigger(
+                    settings=resolved, conn_factory=conn_factory
+                ),
+            )
+        )
+    # ARV2 Track O (O3): the onboarding run surface — POST records the run and hands it to the
+    # fleet, GET polls the run and its steps. Default-off; nothing but the row insert and the
+    # enqueue happens on this loop.
+    if resolved.onboarding_v2_enabled:
+        app.include_router(
+            create_onboarding_router(
+                conn_factory=conn_factory,
+                enqueuer=DbOnboardingEnqueuer(),
+                # Same posture as the Stage-0 mount: None unless CLUE_DESIGN_API_BASE_URL names
+                # the design API, in which case onboarding also seeds one draft brand kit.
                 brand_kit_ingestion=build_brand_kit_ingestion_trigger(
                     settings=resolved, conn_factory=conn_factory
                 ),

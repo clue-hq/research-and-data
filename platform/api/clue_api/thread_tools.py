@@ -82,6 +82,7 @@ THREAD_TOOL_REASON_CODES: tuple[tuple[str, str], ...] = (
     ("project_not_found", "no such project in this workspace"),
     ("thread_not_found", "no such thread in this workspace"),
     ("thread_archived", "an archived thread cannot be renamed or pinned; reactivate it first"),
+    ("project_archived", "restore this project before starting a chat"),
 )
 
 _TITLE = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
@@ -133,16 +134,24 @@ class _ThreadTool(Tool):
         async with self._conn_factory() as conn:
             return await get_thread(conn, workspace_id=workspace_id, thread_id=thread_id)
 
-    async def _project_exists(self, *, workspace_id: str, project_id: str) -> bool:
+    async def _project_status(self, *, workspace_id: str, project_id: str) -> str | None:
+        """The project's status, or ``None`` when this workspace has no such project.
+
+        Status rather than a bare boolean because a thread may not be opened on an *archived*
+        project: the row exists, so ``project_not_found`` would be a lie, and silently opening a
+        chat on an archived project would resurrect it by the side door.
+        """
+
         async with self._conn_factory() as conn:
             found = await conn.execute(
                 text(
-                    "SELECT 1 FROM project "
+                    "SELECT status FROM project "
                     "WHERE project_id = :project_id AND workspace_id = :workspace_id"
                 ),
                 {"project_id": project_id, "workspace_id": workspace_id},
             )
-        return found.first() is not None
+        row = found.first()
+        return str(row[0]) if row is not None else None
 
 
 class ThreadScopedInput(ToolInput):
@@ -227,10 +236,13 @@ class CreateThreadTool(_ThreadTool):
         self, inputs: ToolInput, ctx: ToolContext
     ) -> Sequence[PreconditionFailure]:
         assert isinstance(inputs, CreateThreadInput)
-        if not await self._project_exists(
+        status = await self._project_status(
             workspace_id=ctx.workspace_id, project_id=inputs.project_id
-        ):
+        )
+        if status is None:
             return _failure("project_not_found", "no such project in this workspace")
+        if status == "archived":
+            return _failure("project_archived", "restore this project before starting a chat")
         return ()
 
     async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:

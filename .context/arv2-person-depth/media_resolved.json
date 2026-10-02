@@ -1,0 +1,464 @@
+[
+  {
+    "person": "vineet_edupuganti",
+    "id": "vin_siemens",
+    "url": "https://www.youtube.com/watch?v=8x_RZ4yIRbw",
+    "kind": "youtube",
+    "title_hint": "Vineet Edupuganti - 2016 Siemens Competition Individual Grand Prize Winner",
+    "target_speaks": "likely",
+    "note": "short clip -> the raw-audio-embedding demo candidate",
+    "probe": {
+      "video_id": "8x_RZ4yIRbw",
+      "http": 200,
+      "title": "Vineet Edupuganti - 2016 Siemens Competition Individual Grand Prize Winner",
+      "author": "siemensfoundation",
+      "length_s": 702,
+      "short_description": "Vineet Edupuganti - 2016 Siemens Competition Presentation \n \nHIGH SCHOOL: Oregon Episcopal School, Portland, OR\n\nPROJECT: \u201cDevelopment of a High-Performance Biodegradable Battery for Transient Electronics\u201d\n\nFIELD: Engineering\n\nMENTOR: Raj Solanki, Professor, Physics, Portland State University\n\nThe Siemens Competition in Math, Science and Technology is the nation's premier research competition for high school students. $500,000 in scholarships, including two top prizes of $100,000 are awarded at National Finals.",
+      "view_count": "2813",
+      "caption_tracks": [
+        {
+          "lang": "en",
+          "kind": "asr",
+          "name": "English (auto-generated)",
+          "baseUrl": "https://www.youtube.com/api/timedtext?v=8x_RZ4yIRbw&ei=oryXaojPIsSKsfIP17OI2A8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354322&sparams=ip,ipbits,expire,v,ei,caps,opi,exp,xoaf&signature=8A8FA95ACD8632EA59B815CCC44B4281D6A289EF.954C2A6481C8249C7EEC3007CD232B4FC308B4F9&key=yt8&kind=asr&lang=en"
+        }
+      ],
+      "playability": "OK",
+      "playability_reason": null
+    },
+    "transcript": {
+      "status": "empty_or_blocked",
+      "source": "youtube_timedtext_public_no_key",
+      "url_form": "none",
+      "http": 200,
+      "parse_fmt": "xml",
+      "n_cues": 0,
+      "asr": true,
+      "covers_s": 0,
+      "exa_fallback": {
+        "exa_indexed_chars": 11674,
+        "exa_title": "Vineet Edupuganti - 2016 Siemens Competition Individual Grand Prize Winner",
+        "looks_like_transcript": false,
+        "file": "transcripts/vin_siemens_exa_page.txt"
+      }
+    }
+  },
+  {
+    "person": "vineet_edupuganti",
+    "id": "vin_ep297",
+    "url": "https://www.youtube.com/watch?v=_OHZyK0nugs",
+    "kind": "youtube",
+    "title_hint": "Ep 297 AI, Cybersecurity & the Future of Business - Vineet Edupuganti CEO @Cogent",
+    "target_speaks": "likely",
+    "note": "long-form interview",
+    "probe": {
+      "video_id": "_OHZyK0nugs",
+      "http": 200,
+      "title": "Ep 297 AI, Cybersecurity & the Future of Business Vineet Edupuganti CEO @Cogent Security on",
+      "author": "The Silicon Valley Podcast",
+      "length_s": 1886,
+      "short_description": "What happens when AI becomes both the weapon and the defender?\nOn this episode of The Silicon Valley Podcast, we sit down with Vineet Edupuganti to explore the rapidly changing landscape of artificial intelligence, cybersecurity, entrepreneurship, and how founders should think about building companies in an AI-native world.\n\nVineet shares lessons from working with generative AI and hallucinations before today's AI boom, including how early challenges helped shape his approach to solving real-world problems. We also explore the idea that \u201ctech debt has never been cheaper\u201d and what that means for founders deciding what to build, buy, or wait for.\n\nIn This Episode\nWhy Vineet believes \u201ctech debt has never been cheaper\u201d and what that means for today's founders\nHow early work with generative AI and hallucinations shaped his thinking\nThe story behind his approach to combating fraud in the inbox\nWhat \u201cAI fighting AI\u201d means for the future of cybersecurity\nHow founders can build an AI-native culture from day one\nHow investor conversations around capital deployment are changing\nWhether relationships or technology skills will become more valuable for employees\nWhen companies should build custom technology versus waiting for the market to catch up\nThe overlooked second-order effects that could reshape business over the next five years\nWhy strategic alliances may become increasingly important as technology levels the playing field\nWhat's next for Vineet and his company\nVineet brings a prac",
+      "view_count": "58",
+      "caption_tracks": [
+        {
+          "lang": "en",
+          "kind": "asr",
+          "name": "English (auto-generated)",
+          "baseUrl": "https://www.youtube.com/api/timedtext?v=_OHZyK0nugs&ei=o7yXaqC9OuSDut0Py4mSiQE&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354323&sparams=ip,ipbits,expire,v,ei,caps,opi,exp,xoaf&signature=A350B5299E96CF23CE30300B7E934B1F250B0569.EDF126F61F2416BA408C17C394B8BC5611DEE655&key=yt8&kind=asr&lang=en&variant=gemini"
+        }
+      ],
+      "playability": "OK",
+      "playability_reason": null
+    },
+    "transcript": {
+      "status": "empty_or_blocked",
+      "source": "youtube_timedtext_public_no_key",
+      "url_form": "none",
+      "http": 200,
+      "parse_fmt": "xml",
+      "n_cues": 0,
+      "asr": true,
+      "covers_s": 0,
+      "exa_fallback": {
+        "exa_indexed_chars": 34417,
+        "exa_title": "Ep 297 AI, Cybersecurity & the Future of Business Vineet Edupuganti CEO @Cogent Security on",
+        "looks_like_transcript": true,
+        "file": "transcripts/vin_ep297_exa_page.txt",
+        "full_pull": true
+      }
+    }
+  },
+  {
+    "person": "vineet_edupuganti",
+    "id": "vin_hackervalley",
+    "url": "https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/",
+    "kind": "podcast",
+    "title_hint": "The Rise of the Autonomous Blue Team with Vineet Edupuganti",
+    "target_speaks": "likely",
+    "note": "podbean -> RSS enclosure",
+    "probe": {
+      "page_http": 200,
+      "page_bytes": 52571,
+      "feed_url": "https://feed.podbean.com/HackerValleyStudio/feed.xml",
+      "mp3_on_page": [
+        "https://mcdn.podbean.com/mf/web/3zewen7za624jpfj/HVS25_EP391_Cogent_Audiobns0t.mp3"
+      ],
+      "feed_http": 200,
+      "feed_bytes": 3568819,
+      "match_score": 10,
+      "episode": {
+        "episode_title": "The Rise of the Autonomous Blue Team with Vineet Edupuganti",
+        "mp3_url": "https://mcdn.podbean.com/mf/web/3zewen7za624jpfj/HVS25_EP391_Cogent_Audiobns0t.mp3",
+        "itunes_duration": "2244",
+        "pub_date": "Thu, 04 Sep 2025 06:00:00 -0500",
+        "description_head": " What if defenders had their own AI-powered task force, always on, always adapting, and finally one step ahead of attackers? \n \nIn this episode, Ron welcomes Vineet Edupuganti, Founder and CEO of Cogent Security, to discuss how AI agents are rewriting the rules of cybersecurity. Vineet shares why traditional vulnerability management is fundamentally broken, why exposure management matters more than ever, and how Cogent is building an \u201cAI Task Force\u201d to give defenders the edge. From his early days in machine learning to reshaping the future of cyber defense, Vineet breaks down the urgent need for automation, context-driven insights, and explainable AI in security. \n \nImpactful Moments:\n00:00 - Introduction\n02:00 - Vineet\u2019s journey into AI and cyber\n04:30 - Why vulnerability management is broken\n06:10 - Generative AI as a defender\u2019s edge\n08:20 - Why AI agents outperform brittle automation\n09:45 - The first use cases for Cogent\u2019s agents\n12:00 - Rethinking tier-one SOC analyst roles\n13:30 - The rise of exposure management (CTEM)\n17:10 - Cogent\u2019s vision for an AI task force\n18:30 - Early wins and insights with Cogent\n20:00 - Biggest misconceptions about AI in security\n23:00 - What enterprises should demand from vendors\n25:00 - Why explainability is essential in AI systems\n27:00 - Startups vs incumbents in cybersecurity innovation\n29:30 - Why enterprises must invest in AI now \n \u00a0 \n \nLinks:\nConnect with our guest, Vineet Edupuganti, on LinkedIn:  https://www.linkedin.com/in/vineetedupuganti  \n \nLearn more about Cogent Security:  https://www.cogent.security\u00a0  \n \u00a0 \n Check out our upcoming events:  https://www.hackervalley.com/livestreams  \n \nJoin our creative mastermind and stand out as a cybersecurity professional:\n https://www.patreon.com/hackervalleystudio  \n \nLove Hacker Valley Studio? Pick up some swag:  https://store.hackervalley.com  \n \nContinue the conversation by joining our Discord:  https://hackervalley.com/discord  \n \nBecome a sponsor of the show to amplify your brand:  https://hackervalley.com/work-with-us/  \n \u00a0 \n \u00a0 \n"
+      },
+      "n_items_in_feed": 439
+    },
+    "transcript": {
+      "status": "shownotes_only_no_key",
+      "source": "rss_description",
+      "chars": 2057,
+      "mp3_url_present": true,
+      "file": "transcripts/vin_hackervalley_shownotes.txt",
+      "exa_fallback": {
+        "exa_indexed_chars": 2753,
+        "exa_title": "The Rise of the Autonomous Blue Team with Vineet Edupuganti | Hacker Valley Studio",
+        "looks_like_transcript": false,
+        "file": "transcripts/vin_hackervalley_exa_page.txt"
+      }
+    }
+  },
+  {
+    "person": "alastair_paterson",
+    "id": "ala_gcsp265",
+    "url": "https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act",
+    "kind": "podcast",
+    "title_hint": "Cloud Security Podcast by Google EP265",
+    "target_speaks": "likely",
+    "note": "libsyn -> RSS enclosure",
+    "probe": {
+      "page_http": 200,
+      "page_bytes": 45629,
+      "feed_url": "http://feeds.libsyn.com/324875/rss",
+      "mp3_on_page": [
+        "https://traffic.libsyn.com/secure/cloudsecuritypodcast/EP265_not261_CloudSecPodcast.mp3"
+      ],
+      "feed_http": 200,
+      "feed_bytes": 1945670,
+      "match_score": "exact_EP265",
+      "episode": {
+        "episode_title": "EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!",
+        "mp3_url": "https://traffic.libsyn.com/secure/cloudsecuritypodcast/EP265_not261_CloudSecPodcast.mp3?dest-id=2641814",
+        "itunes_duration": "28:54",
+        "pub_date": "Mon, 02 Mar 2026 14:48:00 +0000",
+        "description_head": " Guest:      Alastair Paterson , CEO and co-founder @  Harmonic Security      Topics:      Harmonic Security  focuses on securing generative AI in use. Can you walk us through a real, anonymized example of a data leak caused by employee AI usage that your platform has identified?   AI governance gets thrown around a lot. What does this mean in the context of Shadow AI? How should organizations be thinking about governing AI in light of upcoming AI regulations in the US and in the EU?   If we generally agree that employees are using AI tools before they are sanctioned, how can organizations control this? Network, API, endpoint?   Many organizations struggle with the \"ban vs. embrace\" debate for generative AI. Based on your experience, what's a compelling argument for moving from a blanket ban to a managed, secure adoption model? Can you share a success story where this approach demonstrably reduced risk?   The term \"shadow AI\" is often used interchangeably with \"shadow IT\" (but for AI-powered applications)\u00a0 but you've highlighted that AI is a different beast. What is the single biggest distinction between managing the risk of unsanctioned AI tools versus unsanctioned IT applications?   Looking forward, where do you see the biggest risks in the evolution of shadow AI? For instance, will the next threat be from highly specialized AI agents trained on proprietary data, or from the rapid proliferation of new, unmonitored open-source models?   Given the speed of change in this space, what's one piece of advice you'd give to a CISO today who is just beginning to get a handle on their organization's shadow AI problem?     Resources:      Video version      Harmonic Security research      Shadow AI Strikes Back: Enterprise AI Absent Oversight in the Age of Gen AI  blog     Shadow Agents: A New Era of Shadow AI Risk in the Enterprise  blog (RSA 2026 presentation coming!)     Spotlighting 'shadow AI': How to protect against risky AI practices  blog     EP171 GenAI in the Wrong Hands: Unmasking the Threat of Malicious AI and Defending Against the Dark Side  (aka \"dirty bomb episode\")    A Conversation with Alastair Paterson from Harmonic Security  video   "
+      },
+      "n_items_in_feed": 295
+    },
+    "transcript": {
+      "status": "shownotes_only_no_key",
+      "source": "rss_description",
+      "chars": 2182,
+      "mp3_url_present": true,
+      "file": "transcripts/ala_gcsp265_shownotes.txt",
+      "exa_fallback": {
+        "exa_indexed_chars": 2504,
+        "exa_title": "Cloud Security Podcast by Google: EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!",
+        "looks_like_transcript": false,
+        "file": "transcripts/ala_gcsp265_exa_page.txt"
+      },
+      "transcript_page_hunt": {
+        "query_verbatim": "Cloud Security Podcast by Google EP265 \"Beyond Shadow IT\" transcript Alastair Paterson Harmonic Security",
+        "n_results": 8,
+        "transcript_like_hits": [
+          "https://www.youtube.com/watch?v=qu51DBOkrNE"
+        ],
+        "verdict": "found"
+      }
+    }
+  },
+  {
+    "person": "alastair_paterson",
+    "id": "ala_sysk",
+    "url": "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security",
+    "kind": "podcast",
+    "title_hint": "Security You Should Know - Harmonic Security",
+    "target_speaks": "unknown",
+    "note": "buzzsprout -> RSS enclosure",
+    "probe": {
+      "page_http": 200,
+      "page_bytes": 157989,
+      "feed_url": "https://feeds.buzzsprout.com/2215185.rss",
+      "mp3_on_page": [
+        "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security-ceo-alastair-paterson.mp3?client_source=twitter_card",
+        "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security-ceo-alastair-paterson.mp3?client_source=buzzsprout_website&amp;referrer=https%3A%2F%2Fwww.buzzsprout.com%2F2215185%2Fepisodes%2F19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security"
+      ],
+      "feed_http": 200,
+      "feed_bytes": 566761,
+      "match_score": 3,
+      "episode": {
+        "episode_title": "Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson",
+        "mp3_url": "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security-ceo-alastair-paterson.mp3",
+        "itunes_duration": "1791",
+        "pub_date": "Wed, 24 Jun 2026 06:00:00 -0500",
+        "description_head": " In this episode of CYBR.SEC.CAST, hosts Michael and Sam sit down with Alastair Patterson, CEO of Harmonic Security, to discuss the rapid evolution of AI in the enterprise. They explore the shift from chatbots to autonomous agents, the challenges CISOs face in governing AI adoption, and how security teams can enable innovation without becoming blockers. Alastair also shares his founder journey, lessons from Digital Shadows, and how Harmonic is helping organizations gain visibility and control over AI usage.   Sponsored by Harmonic Security    Things Mentioned:    Harmonic Security \u2013  https://www.harmonic.security   CYBR.SEC.CON. Tickets -  https://www.xcdsystem.com/cybrseccommunity/attendee/index.cfm?ID=iV8mb8T   Crew Member Application -  https://www.cybrseccon.com/jointhecrew   CYBR.SEC.CON. Speakers (Partial List) -  https://www.xcdsystem.com/cybrseccommunity/program/Wh1YEUW/index.cfm?pgid=761   CYBR.SEC.CON. Lightning Talk CFP -  https://www.cybrseccon.com/callforpapers   CYBR.SEC.CON. Sponsorship -  https://www.xcdsystem.com/cybrseccommunity/exhibitor/index.cfm?ID=7nYn7df  \u00a0    Do you have a question for the hosts? Reach out to us at  media@cscgroupllc.com\u00a0    In this episode:    Host:  Michael Farnum   Host:  Sam Van Ryder   Guest:  Alastair Paterson   Producer:  Bill Brenner   Music by:  August Honey     Keep up with our Conferences and Events:     LinkedIn    X    Facebook    Instagram    TikTok    CYBR.SEC.CON.    OT.SEC.CON.    CYBR.HAK.CON.     Keep up with CYBR.SEC.Media:     LinkedIn    X    Facebook    Instagram    TikTok    YouTube     Support CYBR.SEC.Careers Non-Profit Efforts     CYBR.SEC.Careers     \u00a0Subscribe to the podcast:\u00a0     Apple    Spotify     Listen to our other shows:     CYBR.HAK.CAST    CYBR.Minded     Thank you to our Media Partners:   CYBR.SEC.CON. and OT.SEC.CON.\u00a0    OGGN (Oil &amp; Gas Global Network)    UtilSec    Packet Pushers    CYBR.SEC.CON. and CYBR.HAK.CON.\u00a0    BarCode Podcast    Cyber Distortion Podcast    Kill Chain Radio    The Phillip Wylie Show    Vulnerable U   "
+      },
+      "n_items_in_feed": 74
+    },
+    "transcript": {
+      "status": "shownotes_only_no_key",
+      "source": "rss_description",
+      "chars": 2044,
+      "mp3_url_present": true,
+      "file": "transcripts/ala_sysk_shownotes.txt",
+      "exa_fallback": {
+        "exa_indexed_chars": 1787,
+        "exa_title": "Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson",
+        "looks_like_transcript": false,
+        "file": "transcripts/ala_sysk_exa_page.txt"
+      }
+    }
+  },
+  {
+    "person": "sanaz_yashar",
+    "id": "san_boardroom",
+    "url": "https://podcasts.apple.com/us/podcast/ai-summit-sanaz-yashar-co-founder-and-ceo-at-zafran-security/id1749699539?i=1000728",
+    "kind": "podcast",
+    "title_hint": "Boardroom Club - AI Summit: Sanaz Yashar",
+    "target_speaks": "likely",
+    "note": "apple podcasts -> lookup API -> feedUrl",
+    "probe": {
+      "feed_url": "https://anchor.fm/s/f695d6d8/podcast/rss",
+      "podcast_name": "Boardroom Club",
+      "feed_http": 200,
+      "feed_bytes": 894311,
+      "match_score": 3,
+      "episode": {
+        "episode_title": "AI Summit: Sanaz Yashar, Co-Founder and CEO at Zafran Security",
+        "mp3_url": "https://anchor.fm/s/f695d6d8/podcast/play/106390290/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2025-7-9%2F405396769-44100-2-7287bb9271f44.mp3",
+        "itunes_duration": "00:42:49",
+        "pub_date": "Sun, 10 Aug 2025 14:00:00 GMT",
+        "description_head": " Watch our exclusive interview with  Sanaz Yashar , Co-Founder and CEO at  Zafran Security .     Born in Iran, moved to Israel, studied  #Biology  and ended up in Cyber. There\u2019s never a dull moment with Sanaz!     Join us as  Sanaz  walks us through her incredible journey, building  Zafran Security  . It all started with a  #cyber  incident at a hospital \u2014an event that pushed them to think differently and develop a way to quickly identify and reduce real threats without relying solely on  #patching .     Sounds simple? Well, not when you\u2019re dealing with 30 million  #vulnerabilities . It\u2019s all about the order\u2014just like making  #PersianRice . As  Sanaz  says: you only add the Zafran at the end. That\u2019s why we even got a live  #demo ! (of their cyber product)     We also discussed  Zafran Security \u2019s  #GTM  approach, how they initially engage with  #clients , and explored real-world cases where they\u2019ve made a major  #impact .     So how are Biology, Cyber, Persian rice, and  #StephCurry  all connected? \ud83e\uddec\ud83d\udcbb\ud83c\udf5a\ud83c\udfc0     Check our new website:  https://www.boardroomclub.net     Check out our new YouTube Channel:  https://www.youtube.com/@BoardroomClub     Interviewers:  \u2060Yossi Garmazi\u2060  &amp;  \u2060\u00c1lvaro Jim\u00e9nez Cabello de los Cobos\u2060 .      #tech   #innovation   #ai   #cyber   #biology        Chapters:   00:00 Intro  00:43 Born in Iran, moved to Israel  02:06 Lessons from Biology to Cyber  06:03 Zafran beginning: Cyber hospital incident  11:07 Zafran products &amp; platform  19:16 Investors: Sequoia, Cyberstarts, Steph Curry  21:36 Steph Curry as Investor  23:24 Trends in Cyber  28:51 GTM Strategy  31:45 Client's success stories  35:01 Advice for entrepreneurs  35:46 Mentor  37:46 Favorite Hobby: Thai Boxing  39:29 Favorite book  40:16 Breaking Bad series  41:49 Persian names lesson \n"
+      },
+      "n_items_in_feed": 100
+    },
+    "transcript": {
+      "status": "shownotes_only_no_key",
+      "source": "rss_description",
+      "chars": 1798,
+      "mp3_url_present": true,
+      "file": "transcripts/san_boardroom_shownotes.txt",
+      "exa_fallback": {
+        "exa_indexed_chars": 15838,
+        "exa_title": "Boardroom Club - Podcast - Apple Podcasts",
+        "looks_like_transcript": true,
+        "file": "transcripts/san_boardroom_exa_page.txt"
+      },
+      "transcript_page_hunt": {
+        "query_verbatim": "Boardroom Club podcast \"Sanaz Yashar\" Zafran Security episode transcript AI Summit",
+        "n_results": 8,
+        "transcript_like_hits": [
+          "https://www.linkedin.com/in/sanaz-yashar"
+        ],
+        "verdict": "found"
+      }
+    }
+  },
+  {
+    "person": "ana_corio",
+    "id": "ana_coffee",
+    "url": "https://www.youtube.com/watch?v=DBRuxk0YrQk",
+    "kind": "youtube",
+    "title_hint": "Autocomply AI presents Coffee and Compliance with guests Harmonic Security",
+    "target_speaks": "unknown",
+    "note": "verify who actually speaks",
+    "probe": {
+      "video_id": "DBRuxk0YrQk",
+      "http": 200,
+      "title": "Autocomply AI presents Coffee and Compliance with guests Harmonic Security",
+      "author": "Autocomply AI",
+      "length_s": 3634,
+      "short_description": "AI Risk, Governance, and Compliance in 2026: Trust, Verification, and Continuous Monitoring\n\nWe sit down with Ed and James from Harmonic Security as we take a look at how AI tooling is being adopted quickly, and the pace of change is creating a growing gap between what an organisation believes is under control and what is actually happening in day-to-day operations. Tools are entering environments through standard routes such as integrations and approvals, but also through unauthorised use, including personal subscriptions and ad hoc uploads of company documents into AI services. This creates exposure that leadership and assurance functions may not have visibility into, even though obligations to customers remain constant.\n\nRecent incidents have intensified scrutiny on third-party risk and assurance. Allegations of invalid SOC 2 certifications and the downstream impact on third parties, subprocessors, and \u201csubprocessors of subprocessors\u201d highlight how quickly risk can propagate when trust is misplaced. The issue is not limited to a single incident; it reflects broader pressure in the market to obtain certifications quickly as a route to enterprise sales.",
+      "view_count": "18",
+      "caption_tracks": [
+        {
+          "lang": "en",
+          "kind": "asr",
+          "name": "English (auto-generated)",
+          "baseUrl": "https://www.youtube.com/api/timedtext?v=DBRuxk0YrQk&ei=rbyXauv9AsbAy_sP2vWc0Q8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354333&sparams=ip,ipbits,expire,v,ei,caps,opi,exp,xoaf&signature=2B78536C5767ECEE63F522FBCDF1D450BEC08447.E51C717FCCF297C51B53712210D2AD7172560AE3&key=yt8&kind=asr&lang=en"
+        }
+      ],
+      "playability": "OK",
+      "playability_reason": null
+    },
+    "transcript": {
+      "status": "empty_or_blocked",
+      "source": "youtube_timedtext_public_no_key",
+      "url_form": "none",
+      "http": 200,
+      "parse_fmt": "xml",
+      "n_cues": 0,
+      "asr": true,
+      "covers_s": 0,
+      "exa_fallback": {
+        "exa_indexed_chars": 25000,
+        "exa_title": "Autocomply AI presents Coffee and Compliance with guests Harmonic Security",
+        "looks_like_transcript": true,
+        "file": "transcripts/ana_coffee_exa_page.txt"
+      }
+    }
+  },
+  {
+    "person": "alexander_semien",
+    "id": "sem_cogentyt",
+    "url": "https://www.youtube.com/watch?v=fbn5EJagBmQ",
+    "kind": "youtube",
+    "title_hint": "How Cogent Security sandboxes AI agents that touch customer data",
+    "target_speaks": "unknown",
+    "note": "likely Geng Sng, verify",
+    "probe": {
+      "video_id": "fbn5EJagBmQ",
+      "http": 200,
+      "title": "How Cogent Security sandboxes AI agents that touch customer data | Max Agency #podcast",
+      "author": "LangChain",
+      "length_s": 50,
+      "short_description": "Gng Sng, Co-Founder and CTO of Cogent Security, breaks down how they approach defense in depth for AI agents. Their sandboxes run with read-only permissions by default, a policy engine handles access elevation, and any write action happens outside the box \u2014 fully secure and deterministic. The rule: agents should never be able to do something the system is disallowing.\n\nThis clip is from Max Agency, a #podcast about how the best AI agents are actually being built. Hosted by Harrison Chase, CEO of LangChain, each episode goes deep with the builders designing, deploying, and learning from real agent systems in the wild. From architecture decisions to evals, tooling, and failure modes, Max Agency is for people who want to understand what it really takes to build useful agents.\n\n#AIAgents #AISecurity",
+      "view_count": "1717",
+      "caption_tracks": [
+        {
+          "lang": "en",
+          "kind": "asr",
+          "name": "English (auto-generated)",
+          "baseUrl": "https://www.youtube.com/api/timedtext?v=fbn5EJagBmQ&ei=rryXaoj7ArX4sfIPt86-0A8&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&xospf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354334&sparams=ip,ipbits,expire,v,ei,caps,opi,exp,xoaf&signature=04EF51A5704D637A40C64B468992A864FA85FA59.11105835E7972430F0EDFDCB7A6295ACCDEF30&key=yt8&kind=asr&lang=en&variant=gemini"
+        }
+      ],
+      "playability": "OK",
+      "playability_reason": null
+    },
+    "transcript": {
+      "status": "empty_or_blocked",
+      "source": "youtube_timedtext_public_no_key",
+      "url_form": "none",
+      "http": 200,
+      "parse_fmt": "xml",
+      "n_cues": 0,
+      "asr": true,
+      "covers_s": 0,
+      "exa_fallback": {
+        "exa_indexed_chars": 2165,
+        "exa_title": "How Cogent Security sandboxes AI agents that touch customer data | Max Agency #podcast",
+        "looks_like_transcript": false,
+        "file": "transcripts/sem_cogentyt_exa_page.txt"
+      }
+    }
+  },
+  {
+    "person": "mandar_marathe",
+    "id": "man_uptiqyt",
+    "url": "https://www.youtube.com/watch?v=GS8qgXDfpHM",
+    "kind": "youtube",
+    "title_hint": "See Uptiq for Equipment Finance in Action",
+    "target_speaks": "unknown",
+    "note": "product video, verify",
+    "probe": {
+      "video_id": "GS8qgXDfpHM",
+      "http": 200,
+      "title": "See Uptiq for Equipment Finance in Action",
+      "author": "Uptiq",
+      "length_s": 174,
+      "short_description": "Uptiq helps equipment finance teams scale with real-time validation, LOS integration, and intelligent workflow automation.",
+      "view_count": "220",
+      "caption_tracks": [
+        {
+          "lang": "en",
+          "kind": "asr",
+          "name": "English (auto-generated)",
+          "baseUrl": "https://www.youtube.com/api/timedtext?v=GS8qgXDfpHM&ei=r7yXarawHI3Gy_sPs8bEmAs&caps=asr&opi=112496729&exp=xpe&xoaf=5&xowf=1&hl=en&ip=0.0.0.0&ipbits=0&expire=1788354335&sparams=ip,ipbits,expire,v,ei,caps,opi,exp,xoaf&signature=4300172A11721DD0883C01FB4620A79D4182335E.65D509FE676619655785ABD36F2D862877A47336&key=yt8&kind=asr&lang=en"
+        }
+      ],
+      "playability": "OK",
+      "playability_reason": null
+    },
+    "transcript": {
+      "status": "empty_or_blocked",
+      "source": "youtube_timedtext_public_no_key",
+      "url_form": "none",
+      "http": 200,
+      "parse_fmt": "xml",
+      "n_cues": 0,
+      "asr": true,
+      "covers_s": 0,
+      "exa_fallback": {
+        "exa_indexed_chars": 926,
+        "exa_title": "See Uptiq for Equipment Finance in Action - YouTube",
+        "looks_like_transcript": false,
+        "file": "transcripts/man_uptiqyt_exa_page.txt"
+      }
+    }
+  },
+  {
+    "person": "mandar_marathe",
+    "id": "man_cu20",
+    "url": "https://www.buzzsprout.com/268738/episodes/13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors",
+    "kind": "podcast",
+    "title_hint": "CU 2.0 Podcast Episode 273 UPTIQ",
+    "target_speaks": "unknown",
+    "note": "buzzsprout -> RSS enclosure",
+    "probe": {
+      "page_http": 200,
+      "page_bytes": 153934,
+      "feed_url": "https://feeds.buzzsprout.com/268738.rss",
+      "mp3_on_page": [
+        "https://www.buzzsprout.com/268738/episodes/13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors-and-credit-unions-too.mp3?client_source=twitter_card",
+        "https://www.buzzsprout.com/268738/episodes/13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors-and-credit-unions-too.mp3?client_source=buzzsprout_website&amp;referrer=https%3A%2F%2Fwww.buzzsprout.com%2F268738%2Fepisodes%2F13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors"
+      ],
+      "feed_http": 200,
+      "feed_bytes": 3208645,
+      "match_score": 5,
+      "episode": {
+        "episode_title": "CU 2.0 Podcast Episode 273 UPTIQ&#39;s Lending Platform for Holistic Advisors - and Credit Unions Too",
+        "mp3_url": "https://www.buzzsprout.com/268738/episodes/13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors-and-credit-unions-too.mp3",
+        "itunes_duration": "3360",
+        "pub_date": "Wed, 01 Nov 2023 04:00:00 -0400",
+        "description_head": "  Send us Fan Mail    Picture this: a member comes into your office and says he wants a million dollar loan and he has collateral.       What kind of collateral?       The head of a    tyrannosaurus rex   , a huge dinosaur and, yes, there is a    market    for t rex bones       What do you do?       The temptation is to say get the hell outta here.       But just maybe the smarter, very 21 century solution is to call    UPTIQ    where the mantra is THE LENDING PLATFORM FOR HOLISTIC ADVISORS.       On its website, there\u2019s this elaboration: \u201cWhether its money to buy a new home, start a new business or fund working capital, UPTIQ&apos;s turnkey technology enables financial advisors to connect their clients to a network of lenders who can fund any liquidity objective.\u201d       Yes, UPTIQ also will handle mainstream lending and borrowing needs.       But it does not shy away from the exotic, said    Taylor Adkins   , chief product and marketing officer.       To simplify what UPTIQ has done is stick together software that helps match up financial advisors who have clients with borrowing needs with lenders who have cash on hand to lend.\u00a0 If it\u2019s an exotic loan, fine. If it\u2019s a more conventional loan, that may be fine too.       There definitely is a place for credit unions in this equation, said Adkins.\u00a0 What, you don\u2019t have any financial advisors on staff anymore? That may not matter with UPTIQ - in the show Adkins explains.       Definitely, credit unions have tightened up lending practices but just about every credit union wants to make loans - and a talk with UPTIQ very well might help get some additional loans funded.       Listen up.     Like what you are hearing? Find out how you can help sponsor this podcast here. Very affordable sponsorship packages are available. Email rjmcgarvey@gmail.com \u00a0 \u00a0    And like this podcast on whatever service you use to stream it. That matters. \u00a0 \u00a0    Find out more about    CU2.0 a   nd the digital transformation of credit unions here. It&apos;s a journey every credit union needs to take. Pronto  "
+      },
+      "n_items_in_feed": 524
+    },
+    "transcript": {
+      "status": "shownotes_only_no_key",
+      "source": "rss_description",
+      "chars": 2063,
+      "mp3_url_present": true,
+      "file": "transcripts/man_cu20_shownotes.txt",
+      "exa_fallback": {
+        "exa_indexed_chars": 2096,
+        "exa_title": "CU 2.0 Podcast Episode 273 UPTIQ's Lending Platform for Holistic Advisors - and Credit Unions Too",
+        "looks_like_transcript": false,
+        "file": "transcripts/man_cu20_exa_page.txt"
+      }
+    }
+  },
+  {
+    "person": "alexander_semien",
+    "url": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460449",
+    "kind": "linkedin_native_video",
+    "note": "Cogent's own post featuring Semien on camera. LinkedIn-native video is walled -> never fetched.",
+    "id": "walled_alexander_semien",
+    "probe": {
+      "status": "unfetchable_walled"
+    },
+    "target_speaks": "n/a"
+  },
+  {
+    "person": "mandar_marathe",
+    "url": "https://www.linkedin.com/posts/mandarmarathe_financial-expertise-meets-ai-inside-uptiq-activity-7452",
+    "kind": "linkedin_native_video",
+    "note": "'Watch the full video' UPTIQ post. LinkedIn-native video is walled -> never fetched.",
+    "id": "walled_mandar_marathe",
+    "probe": {
+      "status": "unfetchable_walled"
+    },
+    "target_speaks": "n/a"
+  }
+]

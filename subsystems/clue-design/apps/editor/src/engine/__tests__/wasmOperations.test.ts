@@ -151,6 +151,35 @@ describe.skipIf(!wasmArtifactPresent)("engine operation application (wasm)", () 
     return new WasmEngine(module, scene);
   }
 
+  it("replays explicit same-token sizes while raw inspector edits detach them", () => {
+    const scene = cloneScene();
+    const node = scene.nodes.node_contact_name;
+    if (node.kind.kind !== "text") throw new Error("expected text node");
+    node.kind.font_size_token = "type.size.7xl";
+    node.kind.style_token = "type.display";
+    const engine = engineWith(scene);
+    const authoredKind = { ...node.kind, font_size: 80 };
+    const authored = engine.applyOperations([{
+      kind: "update_node",
+      node_id: node.id,
+      patch: nodePatch({ kind: set(authoredKind), explicit_text_tokens: { font_size: true } })
+    }]);
+    expect(authored.accepted).toBe(true);
+    expect(engine.scene.nodes[node.id].kind).toMatchObject({
+      font_size: 80,
+      font_size_token: "type.size.7xl"
+    });
+    const raw = engine.applyOperations([updateTextNode(engine.scene.nodes[node.id], {
+      font_size: 44
+    })]);
+    expect(raw.accepted).toBe(true);
+    const rawKind = engine.scene.nodes[node.id].kind;
+    if (rawKind.kind !== "text") throw new Error("expected text node");
+    expect(rawKind.font_size).toBe(44);
+    expect(rawKind.font_size_token).toBeUndefined();
+    expect(rawKind.style_token).toBeUndefined();
+  });
+
   it("applies editor-generated update node operations optimistically", () => {
     const scene = cloneScene();
     const engine = engineWith(scene);

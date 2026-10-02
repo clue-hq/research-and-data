@@ -1,0 +1,11 @@
+   job    | subject_type |      person       |   status    | failure_code | model_rounds | tool_calls |      wall       | cost_usd | credits | media_seconds 
+----------+--------------+-------------------+-------------+--------------+--------------+------------+-----------------+----------+---------+---------------
+ 2d3f74ca | person       | Alexander Semien  | completed   |              |           10 |         36 | 00:05:20.017928 | 0.624712 |   0.500 |             0
+ c013f842 | person       | Cameron Coles     | completed   |              |           14 |         38 | 00:06:26.72473  | 0.755589 |   0.500 |             0
+ d91556be | person       | Vineet Edupuganti | completed   |              |           14 |         42 | 00:20:32.207121 | 0.946237 |   0.500 |          2244
+ 4443097f | person       | Alastair Paterson | completed   |              |           12 |         40 | 00:08:08.839624 | 0.903257 |   1.500 |          3525
+ 2e3803bb | person       | Ana Corio         | completed   |              |           10 |         30 | 00:05:13.81742  | 0.590588 |   1.500 |             0
+ 2fc8981d | person       | Tyler Chonoles    | completed   |              |           12 |         28 | 00:05:23.669646 | 0.667762 |   1.500 |             0
+ c6fabe0f | person       | Mandar Marathe    | not_started |              |            0 |          0 |                 | 0.000000 |   0.000 |             0
+(7 rows)
+

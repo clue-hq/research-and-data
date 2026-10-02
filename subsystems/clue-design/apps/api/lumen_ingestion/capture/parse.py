@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
 
 import tinycss2
+from clue_core.normalize import canonical_workspace_name
 from selectolax.parser import HTMLParser
 
 from .budget import (
@@ -87,6 +88,9 @@ class ParsedAsset:
     height: int | None = None
     kind_hint: str | None = None
     locator: str = ""
+    alt: str | None = None
+    surrounding_text: str | None = None
+    placement: str | None = None
 
 
 @dataclass
@@ -764,29 +768,53 @@ def _fallback_stack(value: str) -> list[str]:
     return [part.strip().strip("'\"") for part in value.split(",") if part.strip()]
 
 
-def _line_height(value: str) -> float | None:
+_ROOT_FONT_SIZE_PX = 16.0
+
+
+def _line_height(value: str, font_size_px: float | None) -> float | None:
+    """CSS ``line-height`` as a ratio of the ELEMENT's font size.
+
+    unitless / ``em`` / ``%`` are ratios already; ``px`` divides by the element size; ``rem``
+    is root-relative (× 16) and then divides by the element size. A length with no element
+    size is unconvertible → ``None`` (an honest blank). It must never fall back to ``px / 16``:
+    that was the 2026-09-04 Apollo bug — a 72px headline leading stored as 4.5.
+    """
     value = value.strip().lower()
+    if not value or value in ("normal", "inherit", "initial", "unset"):
+        return None
     try:
         return float(value)
     except ValueError:
-        px = _px_from_length(value)
-        return px / 16.0 if px is not None else None
+        pass
+    m = re.match(r"^(-?[\d.]+)(px|rem|em|%)$", value)
+    if not m:
+        return None
+    number, unit = float(m.group(1)), m.group(2)
+    if unit == "em":
+        return number
+    if unit == "%":
+        return number / 100.0
+    px = number if unit == "px" else number * _ROOT_FONT_SIZE_PX
+    if not font_size_px or font_size_px <= 0:
+        return None
+    return px / font_size_px
 
 
-def _letter_spacing(value: str) -> float | None:
+def _letter_spacing(value: str, font_size_px: float | None) -> float | None:
+    """CSS ``letter-spacing`` in em of the ELEMENT's font size (same rules as ``_line_height``)."""
     value = value.strip().lower()
-    if value in ("normal", "inherit"):
+    if not value or value in ("normal", "inherit", "initial", "unset"):
         return None
     m = re.match(r"^(-?[\d.]+)(px|rem|em)$", value)
     if not m:
         return None
-    number = float(m.group(1))
-    unit = m.group(2)
+    number, unit = float(m.group(1)), m.group(2)
     if unit == "em":
         return number
-    if unit == "rem":
-        return number
-    return number / 16.0  # px → em approximation
+    px = number if unit == "px" else number * _ROOT_FONT_SIZE_PX
+    if not font_size_px or font_size_px <= 0:
+        return None
+    return px / font_size_px
 
 
 def _weight_int(value: str) -> int | None:
@@ -1104,8 +1132,8 @@ def _parse_rule(
         family = None
         size_px = None
         font_weight = None
-        line_height = None
-        letter_spacing = None
+        line_height_raw: str | None = None
+        letter_spacing_raw: str | None = None
         for decl in decls:
             if getattr(decl, "type", None) != "declaration":
                 continue
@@ -1127,9 +1155,16 @@ def _parse_rule(
             elif name == "font-weight":
                 font_weight = _weight_int(value)
             elif name == "line-height":
-                line_height = _line_height(value)
+                line_height_raw = value
             elif name == "letter-spacing":
-                letter_spacing = _letter_spacing(value)
+                letter_spacing_raw = value
+
+        # Resolved AFTER the loop: a rule may declare line-height before font-size, and both
+        # lengths are relative to this rule's own element size.
+        line_height = _line_height(line_height_raw, size_px) if line_height_raw is not None else None
+        letter_spacing = (
+            _letter_spacing(letter_spacing_raw, size_px) if letter_spacing_raw is not None else None
+        )
 
         label = _type_label([selector])
         if label and (family or size_px or font_weight):
@@ -1220,14 +1255,15 @@ def _parse_computed_samples(snapshot: SiteSnapshot, parsed: ParsedSite) -> None:
         label = tag if tag in ("h1", "h2", "h3", "h4", "h5", "h6", "body", "button", "nav") else None
         family = sample.get("fontFamily")
         if label and family:
+            size_px = _px_from_length(str(sample.get("fontSize") or ""))
             parsed.type_samples.append(
                 ParsedType(
                     label="body" if label == "html" else label,
                     family=_first_family(str(family)),
                     weight=_weight_int(str(sample.get("fontWeight") or "")),
-                    size_px=_px_from_length(str(sample.get("fontSize") or "")),
-                    line_height=_line_height(str(sample.get("lineHeight") or "")),
-                    letter_spacing=_letter_spacing(str(sample.get("letterSpacing") or "")),
+                    size_px=size_px,
+                    line_height=_line_height(str(sample.get("lineHeight") or ""), size_px),
+                    letter_spacing=_letter_spacing(str(sample.get("letterSpacing") or ""), size_px),
                     locator=locator,
                 )
             )
@@ -1564,7 +1600,7 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
         data = snapshot.download_bytes(sha)
         return len(data) if data else 0
 
-    for node in tree.css("img"):
+    for image_index, node in enumerate(tree.css("img")):
         # THE SHARED LADDER. `static._collect_assets` enqueued exactly these URLs, so the
         # first rung with bytes is the best rendition that actually arrived; if the widened
         # request was refused we simply walk down to the bare `src` and are no worse off
@@ -1598,6 +1634,17 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
         locator = "dom :: img" if url == ladder[-1] else "dom :: img :: hi-res rendition"
         if _is_dark_scheme(snapshot, url):
             locator += " :: prefers-color-scheme: dark"
+        surrounding = None
+        parent = node.parent
+        for _ in range(4):
+            if parent is None:
+                break
+            heading = parent.css_first("h1,h2,h3,h4,figcaption")
+            if heading is not None:
+                surrounding = parent.text(separator=" ", strip=True)[:2000]
+                break
+            parent = parent.parent
+        locator += f" :: img-index {image_index}"
         candidates.append(
             (
                 area,
@@ -1610,6 +1657,9 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
                     width=width,
                     height=height,
                     locator=locator,
+                    alt=node.attributes.get("alt"),
+                    surrounding_text=surrounding,
+                    placement="img element",
                 ),
             )
         )
@@ -1617,7 +1667,9 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
     # CSS background-image art (gradients, hero panels) — same shared chooser the collector
     # used, so the bytes are already in the snapshot. No DOM size hints exist for these, so
     # they rank by file size alone.
-    seen = {asset.source_url for _, _, asset in candidates} | logo_urls
+    # A URL used in an <img> and as a CSS background has two source occurrences.
+    # Custody/analysis deduplicate the asset later; do not erase placement evidence here.
+    seen = set()
     for url in background_image_urls(tree, snapshot.stylesheets, base_url):
         if url in seen:
             continue
@@ -1635,6 +1687,7 @@ def _parse_images(snapshot: SiteSnapshot, tree, parsed: ParsedSite, base_url: st
                     kind="image",
                     kind_hint="illustration",
                     locator="dom :: css background-image",
+                    placement="CSS background-image",
                 ),
             )
         )
@@ -1722,11 +1775,5 @@ def _parse_narrative(snapshot: SiteSnapshot, parsed: ParsedSite, base_url: str) 
 
 
 def _host_brand_name(base_url: str) -> str | None:
-    from urllib.parse import urlparse
-
-    host = urlparse(base_url).hostname or ""
-    host = host.removeprefix("www.")
-    stem = host.split(".")[0] if host else ""
-    if not stem:
-        return None
-    return " ".join(part.capitalize() for part in re.split(r"[-_]", stem) if part)
+    """The one canonical name-from-a-domain rule; it lives in ``clue_core.normalize``."""
+    return canonical_workspace_name(base_url)

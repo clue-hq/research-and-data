@@ -7,15 +7,19 @@ import {
 import { FIXTURE_SETUP_PROGRESS_SCRIPT } from "./setup-progress.fixture";
 
 /**
- * The setting-up flow's transport seam (FI-4 slice 3).
+ * The setting-up flow's transport seam.
  *
  * `useSetupProgress` owns the lifecycle — start once, poll durable lane truth, release on the
- * fast lane's completion — and knows nothing about *where* the frames come from. Everything the
+ * fast steps' completion — and knows nothing about *where* the frames come from. Everything the
  * hook needs is these two calls, so a scripted local stream and the live BFF are interchangeable
  * without touching a line of the lifecycle.
+ *
+ * `start` takes the profile's company website because the onboarding lane is started FOR a
+ * company: the live path derives the run's company domain from it. The fixture path ignores it —
+ * a scripted stream has no company to research.
  */
 export interface SetupProgressSource {
-  start(): Promise<void>;
+  start(input: { companyWebsite: string }): Promise<void>;
   read(): Promise<SetupStatus>;
 }
 
@@ -49,7 +53,8 @@ export function createFixtureSetupProgressSource(
   let cursor = 0;
   return {
     async start() {
-      // No-op: the scripted stream's first frame already reflects a started run.
+      // No-op, and the company website is deliberately ignored: the scripted stream's first
+      // frame already reflects a started run, and it researches nobody.
     },
     async read() {
       const frame = script[cursor];

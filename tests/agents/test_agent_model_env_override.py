@@ -25,6 +25,30 @@ _PINNED = ModelPolicy(
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_deployment_timeout_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The deployment-wide timeout override (2026-09-08) rides the same seam; a sourced repo
+    ``.env`` sets it, so every test here starts from the profile pin unless it sets it itself."""
+    monkeypatch.delenv("CLUE_AGENT_MODEL_TIMEOUT_S", raising=False)
+
+
+def test_deployment_timeout_env_overrides_every_role_envelope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("HEAD_OF_ABM_AGENT_MODEL", raising=False)
+    monkeypatch.setenv("CLUE_AGENT_MODEL_TIMEOUT_S", "60")
+    raised = _env_model_policy(AgentRole.HEAD_OF_ABM, _PINNED)
+    assert raised.timeout_s == 60.0
+    assert raised.model_id == _PINNED.model_id
+    assert (raised.max_retries, raised.max_output_tokens, raised.temperature) == (
+        _PINNED.max_retries,
+        _PINNED.max_output_tokens,
+        _PINNED.temperature,
+    )
+    monkeypatch.setenv("CLUE_AGENT_MODEL_TIMEOUT_S", str(_PINNED.timeout_s))
+    assert _env_model_policy(AgentRole.HEAD_OF_ABM, _PINNED) is _PINNED
+
+
 def test_env_var_overrides_the_profile_pin(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HEAD_OF_ABM_AGENT_MODEL", "x-ai/grok-4.6")
     resolved = _env_model_policy(AgentRole.HEAD_OF_ABM, _PINNED)

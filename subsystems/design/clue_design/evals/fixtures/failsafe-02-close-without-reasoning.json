@@ -1,0 +1,14 @@
+{
+  "name": "failsafe-02-close-without-reasoning",
+  "kind": "fail_safe",
+  "brief": "Launch-day artboard for Acme's Q3 campaign.",
+  "history": [],
+  "message": "OK.",
+  "judgment": null,
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": true
+  },
+  "why": "The model answered close_this_session=true with no reasoning. A verdict without its reasoning is malformed (parse_exit_judgment rejects a blank reasoning), so the envelope continues; a golden fixture can only carry that as a null judgment."
+}

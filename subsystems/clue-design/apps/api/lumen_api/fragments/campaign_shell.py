@@ -20,10 +20,13 @@ a thousand accounts share two fragments.
 
 The three structural rules, stated as code rather than as prompt advice:
 
-* :func:`assert_campaign_shell_shape` is the Ploy campaign-shell rule (ruling R23-3). The header
-  holds exactly one anchor and it is the CTA; the footer's anchors are all legal links; neither
-  holds a ``<nav>``, a menu or a button. It runs at MINT, on the rendered subtree, so no caller —
-  not this module's own composer, not a future one — can put an escape route into a shell.
+* :func:`campaign_shell_shape_notes` is the Ploy campaign-shell rule (ruling R23-3), DEMOTED TO
+  ADVICE by founder ruling R-F5-8. The header holds exactly one anchor and it is the CTA; the
+  footer's anchors are all legal links; neither holds a ``<nav>``, a menu or a button. It runs at
+  MINT, on the rendered subtree, so every caller — this module's own composer and any future one
+  — is TOLD what it just put into a shell. It refuses nothing: links are structurally free.
+  (:func:`assert_campaign_shell_shape` is the same detections in raising form, kept for the tests
+  that pin them; no production path calls it.)
 * :func:`campaign_shell_slots` is the slot contract (ruling R23-2), spelled once. The header
   declares exactly ``prepared_for``, ``target_logo``, ``cta_href``, ``cta_label``; the footer
   declares none, because nothing in it is per-account.
@@ -415,13 +418,21 @@ def compose_campaign_footer(
 
 
 # --------------------------------------------------------------------------- #
-# the no-escape-route rule (ruling R23-3)
+# the campaign-shell shape (ruling R23-3), as ADVICE (founder ruling R-F5-8)
 # --------------------------------------------------------------------------- #
+#
+# FOUNDER RULING R-F5-8 (2026-09-02): links are structurally FREE. The shape below is the
+# campaign-shell PRACTICE — one call to action in the header, the seller's legal links in the
+# footer, no navigation landmark, menu or second control — and every detection it ever made is
+# kept exactly as it was. What changed is the consequence: the findings are handed to the agent
+# as sentences it can read and judge, not as a refusal that stops a mint. A shell carrying a nav
+# is poor practice on a campaign page; it is not forbidden, and nothing here decides for the
+# human whose page it is.
 
-#: Elements a shell may not contain at all. A ``<nav>`` is a menu by declaration; a ``<button>``,
-#: a ``<select>``, an ``<input>`` or a ``<textarea>`` is a second control competing with the one
-#: action the page is for; and a ``<map>``/``<area>`` is a navigation target ``css("a")`` does
-#: not count (fix-round M3).
+#: Elements the campaign-shell practice keeps out of a shell. A ``<nav>`` is a menu by
+#: declaration; a ``<button>``, a ``<select>``, an ``<input>`` or a ``<textarea>`` is a second
+#: control competing with the one action the page is for; and a ``<map>``/``<area>`` is a
+#: navigation target ``css("a")`` does not count (fix-round M3).
 _FORBIDDEN_SHELL_ELEMENTS = (
     "nav",
     "button",
@@ -434,68 +445,89 @@ _FORBIDDEN_SHELL_ELEMENTS = (
 )
 
 
-def assert_campaign_shell_shape(role: str, html: str) -> None:
-    """Refuse a shell that offers a visitor anywhere to go except the one place it is for.
+#: How every note below signs itself, so an agent reading one knows it is reading practice.
+_R_F5_8 = "(R-F5-8: allowed, not recommended)"
 
-    Structural, not advisory (ruling R23-3), and it runs at the MINT rather than in the composer
-    — so it holds for markup this module composed and for markup anything else ever hands the
-    same door. The header carries exactly one anchor and that anchor is the CTA; the footer's
-    anchors are all legal links and there are at most two; neither carries a nav landmark, a menu
-    or a second control.
 
-    Raises :class:`FragmentRefused` with ``fragment.shell_escape_route``; returns nothing when
-    the shape is lawful.
+def campaign_shell_shape_notes(role: str, html: str) -> list[str]:
+    """What is off the campaign-shell practice in this markup, as plain sentences.
+
+    The DETECTOR (ruling R23-3, unchanged): the header carries one anchor and that anchor is the
+    CTA; the footer's anchors are all legal links and there are at most two; neither carries a
+    nav landmark, a menu or a second control. It runs at the MINT rather than in the composer, so
+    it sees markup this module composed and markup anything else ever hands the same door.
+
+    The CONSEQUENCE (founder ruling R-F5-8, 2026-09-02): a finding is a note the caller hands
+    back to the agent in ``advice``, never a refusal. Every sentence names what was found and
+    what the practice is; none of them says the markup is forbidden, because it is not.
+
+    Returns an empty list when the shape follows the practice. Raises :class:`ValueError` on a
+    role that is not a shell role at all — that is a programming mistake, not a page's taste.
     """
     if role not in CAMPAIGN_SHELL_ROLES:
         raise ValueError(
             f"{role!r} is not a campaign shell role; expected one of "
             f"{', '.join(CAMPAIGN_SHELL_ROLES)}"
         )
+    notes: list[str] = []
     tree = LexborHTMLParser(html)
     body = tree.body
     if body is None:
-        raise FragmentRefused(
-            "fragment.shell_escape_route", f"the composed {role} has no markup to check"
-        )
+        return [f"the composed {role} has no markup to check against the campaign-shell practice"]
     for name in _FORBIDDEN_SHELL_ELEMENTS:
         if body.css_first(name) is not None:
-            raise FragmentRefused(
-                "fragment.shell_escape_route",
-                f"a campaign shell carries no <{name}>: every navigation link on an ABM page is "
-                "a way off it. The header holds one call to action and the footer holds the "
-                "seller's legal links; nothing else.",
-                reference=name,
+            notes.append(
+                f"the composed {role} carries a <{name}>; the campaign-shell practice is no "
+                "navigation landmark, menu or second control — the header holds one call to "
+                "action and the footer holds the seller's legal links. On a campaign page a "
+                f"link that leaves is usually poor practice {_R_F5_8}"
             )
 
     anchors = body.css("a")
+    # The COUNT first, then which links: the count is the sentence about the shape, and the
+    # per-link ones are the detail underneath it.
+    if role == CAMPAIGN_SHELL_HEADER and len(anchors) != 1:
+        notes.append(
+            f"the campaign header carries {len(anchors)} anchors; the campaign-shell practice "
+            f"is one CTA {_R_F5_8}"
+        )
+    if role == CAMPAIGN_SHELL_FOOTER and len(anchors) > MAX_LEGAL_LINKS:
+        notes.append(
+            f"the campaign footer carries {len(anchors)} anchors; the campaign-shell practice "
+            f"is at most {MAX_LEGAL_LINKS} legal links {_R_F5_8}"
+        )
     marker = MARK_CTA if role == CAMPAIGN_SHELL_HEADER else MARK_LEGAL
     for anchor in anchors:
         classes = set((anchor.attributes.get("class") or "").split())
         if marker not in classes:
             href = (anchor.attributes.get("href") or "").strip()
-            raise FragmentRefused(
-                "fragment.shell_escape_route",
+            notes.append(
                 f"the composed {role} links to {href or '(no href)'!r}, which is not "
                 + (
                     "its one call to action"
                     if role == CAMPAIGN_SHELL_HEADER
                     else "one of the seller's legal links"
                 )
-                + ". Every extra link on an ABM page is a way off it.",
-                reference=href or None,
+                + f"; on a campaign page an extra link is a way off it, which is usually poor "
+                f"practice {_R_F5_8}"
             )
-    if role == CAMPAIGN_SHELL_HEADER and len(anchors) != 1:
-        raise FragmentRefused(
-            "fragment.shell_escape_route",
-            f"a campaign header carries exactly ONE call to action; this one carries "
-            f"{len(anchors)}.",
-        )
-    if role == CAMPAIGN_SHELL_FOOTER and len(anchors) > MAX_LEGAL_LINKS:
-        raise FragmentRefused(
-            "fragment.shell_escape_route",
-            f"a campaign footer carries at most {MAX_LEGAL_LINKS} legal links; this one carries "
-            f"{len(anchors)}.",
-        )
+    return notes
+
+
+def assert_campaign_shell_shape(role: str, html: str) -> None:
+    """The same findings in raising form — KEPT FOR TESTS AND CALLERS THAT WANT A HARD GATE.
+
+    Since founder ruling R-F5-8 (2026-09-02) NO production path calls this: the mint doors read
+    :func:`campaign_shell_shape_notes` and hand the sentences to the agent as advice. It survives
+    because the detections deserve a form that can be asserted on in one line, and because
+    deleting a public name is a separate decision from demoting a rule.
+
+    Raises :class:`FragmentRefused` with ``fragment.shell_escape_route`` when the markup draws
+    any note at all; returns nothing when it draws none.
+    """
+    notes = campaign_shell_shape_notes(role, html)
+    if notes:
+        raise FragmentRefused("fragment.shell_escape_route", " ".join(notes))
 
 
 __all__ = [
@@ -523,6 +555,7 @@ __all__ = [
     "PREPARED_FOR_PREFIX",
     "LegalLink",
     "assert_campaign_shell_shape",
+    "campaign_shell_shape_notes",
     "campaign_shell_slots",
     "compose_campaign_footer",
     "compose_campaign_header",

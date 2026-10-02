@@ -20,6 +20,9 @@ from clue_agents.catalog import (
     SkillResource,
 )
 from clue_agents.context import (
+    IMAGE_TOKEN_ALLOWANCE,
+    AttachmentDescriber,
+    AttachmentDescription,
     CompiledContextCard,
     CompiledContextCardReader,
     ContextAssemblyPolicy,
@@ -106,6 +109,7 @@ from clue_agents.execution import (
     operation_id_for_plan_node,
     review_agent_plan,
 )
+from clue_agents.library_tree import LibraryFile, LibraryTree
 from clue_agents.model import ScriptedAgentChatModel
 from clue_agents.ports import (
     AgentArtifactReader,
@@ -158,11 +162,23 @@ from clue_agents.turns import (
     PrivacyEraseResult,
     ReplayArtifactRef,
 )
+from clue_agents.versioned_root import (
+    VersionedRootWriter,
+    VersionedWriteOutcome,
+    VersionedWriteRefused,
+)
 from clue_agents.workspace import (
+    ATTACHMENTS_DIR,
+    LIBRARY_DIR,
+    PROJECTS_DIR,
+    THREADS_DIR,
     AgentWorkspaceFactory,
     AgentWorkspaceLease,
     AnchoredAgentWorkspaceBackend,
+    MountMode,
+    MountRequest,
     WorkspaceIdentity,
+    WorkspaceMount,
     WorkspaceUsageSnapshot,
 )
 from clue_agents.workspace_policy import (
@@ -176,6 +192,7 @@ from clue_agents.workspace_policy import (
 )
 
 __all__ = [
+    "IMAGE_TOKEN_ALLOWANCE",
     "AgentArtifactSink",
     "AgentArtifactReader",
     "AgentArtifactState",
@@ -218,6 +235,8 @@ __all__ = [
     "AnchoredAgentWorkspaceBackend",
     "ArtifactRef",
     "AssembledAgentContext",
+    "AttachmentDescriber",
+    "AttachmentDescription",
     "CatalogResourcePin",
     "ClueDeepAgentState",
     "CompiledContextCard",
@@ -274,6 +293,14 @@ __all__ = [
     "LayerBudget",
     "MemoryLayerSource",
     "ModelPolicy",
+    "ATTACHMENTS_DIR",
+    "LIBRARY_DIR",
+    "LibraryFile",
+    "LibraryTree",
+    "PROJECTS_DIR",
+    "THREADS_DIR",
+    "MountMode",
+    "MountRequest",
     "ProjectContextArtifact",
     "PreparedWorkspaceRoot",
     "ProfileCatalog",
@@ -304,11 +331,15 @@ __all__ = [
     "ToolPin",
     "ValidatedOperation",
     "ValidatedPlan",
+    "VersionedRootWriter",
+    "VersionedWriteOutcome",
+    "VersionedWriteRefused",
     "WorkspaceConfigurationError",
     "WorkspaceConflict",
     "WorkspaceEntry",
     "WorkspaceError",
     "WorkspaceIdentity",
+    "WorkspaceMount",
     "WorkspaceUsageSnapshot",
     "WorkspacePolicy",
     "WorkspaceQuotaExceeded",

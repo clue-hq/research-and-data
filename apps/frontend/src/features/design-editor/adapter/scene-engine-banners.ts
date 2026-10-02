@@ -1,5 +1,6 @@
 import type { SceneEngineStatus } from "../hooks/use-scene-document";
 import type { Diagnostic } from "../engine/scene/contracts";
+import type { Derivation } from "../engine/scene/wasmEngine";
 
 /**
  * Gate G-D (founder, 2026-08-21): what the two engine-forced failure states
@@ -21,9 +22,9 @@ import type { Diagnostic } from "../engine/scene/contracts";
  *     platform's real remedies are the ones our own vendor script already
  *     prints (`scripts/copy-design-vendor.mjs:96`), so those are what the chip
  *     says. Copy that instructs is worth nothing if the instruction is false.
- *  2. **Two live banners stack** (the renderer's flex column). Upstream both are
- *     `position: absolute; top: 14px`, so a simultaneous engine + measurement
- *     failure would paint one on top of the other.
+ *  2. **Multiple diagnostics share one disclosure.** The platform presents them
+ *     with Clue product tokens and a dismiss control (founder, 2026-09-15),
+ *     preserving the diagnostic copy while leaving the artboard unobstructed.
  *
  * The third state in the gate — the CAS conflict — needs nothing here: it stays
  * the web lane's existing inspector note ("Document moved on — reloaded."),
@@ -38,12 +39,14 @@ export type SceneTextMeasurementStatus = string;
 
 export interface SceneEngineBanner {
   /** Stable key + test hook; mirrors the source's `data-testid` names. */
-  kind: "engine-disabled" | "heuristic-measurement" | "font-fallback";
+  kind: "engine-disabled" | "heuristic-measurement" | "font-fallback" | "render-context";
+  /** Controls the status accent and whether the explanation starts expanded. */
+  severity: "warning" | "error";
   /** The bold first line. */
   title: string;
   /** The sentence under it. */
   body: string;
-  /** The monospace chip: the command, then the machine detail (if any). */
+  /** Recovery guidance, with a separate machine detail when available. */
   command: string;
   detail: string | null;
 }
@@ -91,6 +94,7 @@ export function sceneEngineBanners(
   engineStatus: SceneEngineStatus,
   measurementStatus: SceneTextMeasurementStatus,
   fontDiagnostics: Diagnostic[] = [],
+  derivation?: Pick<Derivation, "status" | "diagnostics">,
 ): SceneEngineBanner[] {
   const banners: SceneEngineBanner[] = [];
 
@@ -98,6 +102,7 @@ export function sceneEngineBanners(
     const copy = engineDisabledCopy(engineStatus.reason);
     banners.push({
       kind: "engine-disabled",
+      severity: "error",
       title: "Canvas editing is disabled",
       body: `${copy.headline} You can’t select or edit anything on the canvas until the in-browser engine is running. ${copy.fix}`,
       command: REBUILD_ENGINE_COMMAND,
@@ -105,14 +110,45 @@ export function sceneEngineBanners(
     });
   }
 
+  if (derivation && (derivation.status !== "ready" || derivation.diagnostics.length > 0)) {
+    const first = derivation.diagnostics.find(diagnostic => diagnostic.severity === "error")
+      ?? derivation.diagnostics[0];
+    const blocked = derivation.status !== "ready";
+    const additional = Math.max(0, derivation.diagnostics.length - 1);
+    banners.push({
+      kind: "render-context",
+      severity: blocked || first?.severity === "error" ? "error" : "warning",
+      title: blocked ? "Canvas rendering unavailable" : "Canvas rendering diagnostics",
+      body: `${first?.message ?? "Waiting for a valid render context."}${additional > 0
+        ? ` ${additional} additional render diagnostic${additional === 1 ? "" : "s"} reported.` : ""}`,
+      command: blocked ? "Resolve the render context and reload" : "Review rendering diagnostics",
+      detail: first?.hint ?? null,
+    });
+    // There is no painted canvas while the derivation is blocked: neither
+    // approximate geometry nor an Inter fallback is being displayed.
+    if (blocked) return banners;
+  }
+
   // The dangerous one: the ad still renders, so nothing LOOKS broken while the
   // geometry it renders is approximate.
   if (measurementStatus === "heuristic") {
     banners.push({
       kind: "heuristic-measurement",
+      severity: "warning",
       title: "Text measurement degraded",
       body: "Canvas geometry is approximate (font engine unavailable). On-canvas text is laid out with a heuristic estimate and may misfit or not appear as it will on export. Reload the editor; if it persists, rebuild the CanvasKit and font assets, then hard-refresh (⌘⇧R).",
       command: REVENDOR_ASSETS_COMMAND,
+      detail: null,
+    });
+  }
+
+  if (measurementStatus === "unsettled") {
+    banners.push({
+      kind: "heuristic-measurement",
+      severity: "warning",
+      title: "Text layout needs verification",
+      body: "The editor could not confirm every text measurement. Some text may clip or differ from the export. Reload the editor and check the affected text before exporting.",
+      command: "Reload editor",
       detail: null,
     });
   }
@@ -127,6 +163,7 @@ export function sceneEngineBanners(
     const additional = fontDiagnostics.length - 1;
     banners.push({
       kind: "font-fallback",
+      severity: first.severity === "error" ? "error" : "warning",
       title:
         first.code === "EDITOR_PINNED_BRAND_KIT_UNAVAILABLE"
           ? "Pinned Brand Kit unavailable"

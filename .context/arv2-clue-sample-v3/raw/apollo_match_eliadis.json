@@ -1,0 +1,422 @@
+{
+  "person": {
+    "id": "5e777a53dc363c00011e2049",
+    "first_name": "George",
+    "last_name": "Eliadis",
+    "name": "George Eliadis",
+    "linkedin_url": "http://www.linkedin.com/in/george-eliadis",
+    "title": "Co-Founder & CEO",
+    "photo_url": "https://media.licdn.com/dms/image/v2/D4E03AQExfBy4fCtVjQ/profile-displayphoto-scale_200_200/B4EZ8lTZ68JkAc-/0/1783037272692?e=2147483647&v=beta&t=206-rfa9Qg1oZekTuIcyUdT8uTgJLo1oySzd-HcqrmI",
+    "twitter_url": null,
+    "github_url": null,
+    "facebook_url": null,
+    "extrapolated_email_confidence": null,
+    "headline": "Co-Founder & CEO at Probook",
+    "organization_id": "6448986fd1863a00014df823",
+    "employment_history": [
+      {
+        "_id": "6a8c2d9cba88ad00018dd1d5",
+        "created_at": null,
+        "current": true,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": null,
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "6448986fd1863a00014df823",
+        "organization_name": "Probook",
+        "raw_address": null,
+        "start_date": "2021-11-01",
+        "title": "Co-Founder & CEO",
+        "updated_at": null,
+        "id": "6a8c2d9cba88ad00018dd1d5",
+        "key": "6a8c2d9cba88ad00018dd1d5"
+      },
+      {
+        "_id": "6a8c2d9cba88ad00018dd1d6",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2023-08-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "66fa25889c4c1b0001bc971e",
+        "organization_name": "A2Z Exterior Pressure Washing",
+        "raw_address": null,
+        "start_date": "2018-06-01",
+        "title": "Contractor",
+        "updated_at": null,
+        "id": "6a8c2d9cba88ad00018dd1d6",
+        "key": "6a8c2d9cba88ad00018dd1d6"
+      },
+      {
+        "_id": "6a8c2d9cba88ad00018dd1d7",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2021-08-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "672688e093302b0001f683bd",
+        "organization_name": "Eliadis Numismatics",
+        "raw_address": null,
+        "start_date": "2015-06-01",
+        "title": "Numismatist",
+        "updated_at": null,
+        "id": "6a8c2d9cba88ad00018dd1d7",
+        "key": "6a8c2d9cba88ad00018dd1d7"
+      }
+    ],
+    "street_address": "",
+    "city": "New York",
+    "state": "New York",
+    "country": "United States",
+    "postal_code": null,
+    "formatted_address": "New York, NY, USA",
+    "time_zone": "America/New_York",
+    "email": "george@probook.ai",
+    "email_status": "verified",
+    "organization": {
+      "id": "6448986fd1863a00014df823",
+      "name": "Probook",
+      "website_url": "http://www.probook.ai",
+      "angellist_url": null,
+      "linkedin_url": "http://www.linkedin.com/company/probook-ai",
+      "twitter_url": null,
+      "facebook_url": null,
+      "languages": [],
+      "alexa_ranking": null,
+      "phone": null,
+      "linkedin_uid": "93780122",
+      "founded_year": 2024,
+      "publicly_traded_symbol": null,
+      "publicly_traded_exchange": null,
+      "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/6a5d7f3913cb3f00016d28b3/picture",
+      "crunchbase_url": null,
+      "primary_domain": "probook.ai",
+      "sic_codes": [
+        "7389",
+        "7372"
+      ],
+      "naics_codes": [
+        "54133",
+        "51321"
+      ],
+      "industry": "information technology & services",
+      "estimated_num_employees": 52,
+      "keywords": [
+        "software development",
+        "dispatch automation",
+        "ai dispatching",
+        "construction & real estate",
+        "ai-driven dispatch decisions",
+        "workforce management",
+        "dynamic workload balancing",
+        "geographic route optimization",
+        "customer service",
+        "automated job assignment",
+        "job verification",
+        "revenue heatmap",
+        "service technician scheduling",
+        "sales increase",
+        "tech performance metrics",
+        "services",
+        "customer service enhancement",
+        "roi estimation",
+        "technician performance tracking",
+        "b2b",
+        "historical data analysis",
+        "short-term trend analysis",
+        "servicetitan integration",
+        "engineering services",
+        "real-time dispatch optimization",
+        "live updates",
+        "transportation & logistics",
+        "saas",
+        "information technology & services",
+        "computer software"
+      ],
+      "organization_revenue_printed": null,
+      "organization_revenue": 0.0,
+      "industries": [
+        "information technology & services",
+        "computer software"
+      ],
+      "secondary_industries": [
+        "computer software"
+      ],
+      "snippets_loaded": true,
+      "industry_tag_id": "5567cd4773696439b10b0000",
+      "industry_tag_hash": {
+        "information technology & services": "5567cd4773696439b10b0000",
+        "computer software": "5567cd4e7369643b70010000"
+      },
+      "retail_location_count": 0,
+      "raw_address": "new york, new york, united states, 10022",
+      "street_address": "",
+      "city": "New York",
+      "state": "New York",
+      "postal_code": "10022",
+      "country": "United States",
+      "owned_by_organization_id": null,
+      "short_description": "Probook is a New York-based vertical AI company that provides an AI Operating System tailored for home services. Founded in 2022, the company focuses on automating and unifying the front-office workflow for plumbing, HVAC, electrical, and other skilled-trades businesses. Probook utilizes historical shop data and AI to efficiently match technicians to jobs in real time, while managing customer intake, data cleaning, messaging, and outbound communications.\n\nThe platform's primary service is automated dispatch, which features automated board filling, lead capture, booking cleanup, and real-time customer updates through SMS and AI-driven voice agents. Probook also offers a comprehensive system that includes intake, data cleaning, chat, outbound communications, and route optimization, enabling operators to enhance their customer experience. The software is delivered as a Chrome extension that integrates seamlessly with existing CRM systems. Probook serves hundreds of major home service brands in the HVAC, plumbing, and electrical sectors, contributing to a $700 billion industry. The company has raised $40 million in funding from notable investors, including Andreessen Horowitz and Sequoia Capital.",
+      "suborganizations": [],
+      "num_suborganizations": 0,
+      "total_funding": 40000000,
+      "total_funding_printed": "40M",
+      "latest_funding_round_date": "2026-06-01T00:00:00.000+00:00",
+      "latest_funding_stage": "Series A",
+      "funding_events": [
+        {
+          "id": "6a3b3a85daf438000195a65c",
+          "date": "2026-06-01T00:00:00.000+00:00",
+          "news_url": "https://itnerd.blog/2026/06/23/probook-raises-40m-from-andreessen-horowitz-and-sequoia-to-scale-the-ai-operating-system-for-home-services/",
+          "type": "Series A",
+          "investors": "Andreessen Horowitz, Sequoia",
+          "amount": "40M",
+          "currency": "$"
+        }
+      ],
+      "technology_names": [
+        "AI",
+        "Amazon AWS",
+        "Amazon CloudFront",
+        "Cursor",
+        "Excel Impact",
+        "Frame",
+        "Gmail",
+        "Google Meet",
+        "Google Search Console",
+        "Google Search Console",
+        "Google Sheets",
+        "Google Tag Manager",
+        "Google Workspace",
+        "HSTS",
+        "LinkedIn Ads",
+        "LinkedIn Recruiter",
+        "Microsoft 365",
+        "Microsoft 365 Apps & Services",
+        "Microsoft Email Providers",
+        "Microsoft Exchange",
+        "Microsoft Exchange Online",
+        "Mobile Friendly",
+        "Next.js",
+        "Outlook",
+        "Priority Hints",
+        "React",
+        "Vercel",
+        "Viewport Meta",
+        "YouTube",
+        "webpack"
+      ],
+      "current_technologies": [
+        {
+          "uid": "ai",
+          "name": "AI",
+          "category": "Other"
+        },
+        {
+          "uid": "amazon_aws",
+          "name": "Amazon AWS",
+          "category": "Hosting"
+        },
+        {
+          "uid": "amazon_cloudfront",
+          "name": "Amazon CloudFront",
+          "category": "Content Delivery Networks"
+        },
+        {
+          "uid": "cursor",
+          "name": "Cursor",
+          "category": "Other"
+        },
+        {
+          "uid": "excel_impact",
+          "name": "Excel Impact",
+          "category": "Advertising Networks"
+        },
+        {
+          "uid": "frame",
+          "name": "Frame",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "gmail",
+          "name": "Gmail",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "google_meet",
+          "name": "Google Meet",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "google_search_console",
+          "name": "Google Search Console",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_search_console",
+          "name": "Google Search Console",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_sheets",
+          "name": "Google Sheets",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "google_tag_manager",
+          "name": "Google Tag Manager",
+          "category": "Tag Management"
+        },
+        {
+          "uid": "google workspace",
+          "name": "Google Workspace",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "hsts",
+          "name": "HSTS",
+          "category": "Security"
+        },
+        {
+          "uid": "linkedin_ads",
+          "name": "LinkedIn Ads",
+          "category": "Advertising Networks"
+        },
+        {
+          "uid": "linkedin_recruiter",
+          "name": "LinkedIn Recruiter",
+          "category": "Recruitment"
+        },
+        {
+          "uid": "microsoft_365",
+          "name": "Microsoft 365",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "microsoft_365_apps_services",
+          "name": "Microsoft 365 Apps & Services",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "microsoft_email_providers",
+          "name": "Microsoft Email Providers",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "microsoft_exchange",
+          "name": "Microsoft Exchange",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "microsoft_exchange_online",
+          "name": "Microsoft Exchange Online",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "mobile_friendly",
+          "name": "Mobile Friendly",
+          "category": "Other"
+        },
+        {
+          "uid": "nextjs",
+          "name": "Next.js",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "outlook",
+          "name": "Outlook",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "priority_hints",
+          "name": "Priority Hints",
+          "category": "Web Performance Monitoring"
+        },
+        {
+          "uid": "react",
+          "name": "React",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "vercel",
+          "name": "Vercel",
+          "category": "Hosting"
+        },
+        {
+          "uid": "viewport_meta",
+          "name": "Viewport Meta",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "youtube",
+          "name": "YouTube",
+          "category": "Online Video Platforms"
+        },
+        {
+          "uid": "webpack",
+          "name": "webpack",
+          "category": "CSS and JavaScript Libraries"
+        }
+      ],
+      "org_chart_root_people_ids": [
+        "5e777a53dc363c00011e2049"
+      ],
+      "org_chart_sector": "OrgChart::SectorHierarchy::Rules::IT",
+      "org_chart_removed": true,
+      "org_chart_show_department_filter": true,
+      "is_placeholder_organization": null,
+      "organization_headcount_six_month_growth": 0.7777777777777778,
+      "organization_headcount_twelve_month_growth": 2.428571428571428,
+      "organization_headcount_twenty_four_month_growth": 8.6
+    },
+    "departments": [
+      "c_suite"
+    ],
+    "subdepartments": [
+      "executive",
+      "founder"
+    ],
+    "seniority": "founder",
+    "functions": [
+      "entrepreneurship"
+    ],
+    "intent_strength": null,
+    "show_intent": false,
+    "email_domain_catchall": true,
+    "email_domain_catchall_verdict": "allow",
+    "revealed_for_current_team": true
+  },
+  "request_id": 5128078323381378393,
+  "_http_status": 200,
+  "_elapsed_s": 0.5,
+  "_rate_headers": {
+    "x-minute-requests-left": "999",
+    "x-rate-limit-24-hour": "",
+    "x-rate-limit-hourly": "",
+    "x-rate-limit-minute": "1000"
+  },
+  "_request": {
+    "method": "POST",
+    "path": "/people/match",
+    "body": {
+      "linkedin_url": "https://www.linkedin.com/in/george-eliadis",
+      "name": "George Eliadis",
+      "domain": "probook.ai",
+      "reveal_personal_emails": false
+    }
+  }
+}

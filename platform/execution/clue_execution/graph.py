@@ -319,6 +319,14 @@ def _schemas_compatible(
     destination: Mapping[str, object],
     destination_root: Mapping[str, object],
 ) -> bool:
+    # Pydantic's JsonValue emits an empty schema. It admits any JSON value, including
+    # another JsonValue binding, but cannot prove compatibility with a narrower target.
+    resolved_source = _resolve_ref(source, source_root)
+    resolved_destination = _resolve_ref(destination, destination_root)
+    if not resolved_destination:
+        return True
+    if not resolved_source:
+        return False
     source_types = _schema_types(source, source_root)
     destination_types = _schema_types(destination, destination_root)
     if not source_types or not destination_types:
@@ -326,8 +334,6 @@ def _schemas_compatible(
     widened_source = source_types | ({"number"} if "integer" in source_types else set())
     if not widened_source & destination_types:
         return False
-    resolved_source = _resolve_ref(source, source_root)
-    resolved_destination = _resolve_ref(destination, destination_root)
     source_enum = resolved_source.get("enum")
     destination_enum = resolved_destination.get("enum")
     if (

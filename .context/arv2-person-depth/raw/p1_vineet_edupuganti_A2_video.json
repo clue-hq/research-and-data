@@ -1,0 +1,47 @@
+{
+  "requestId": "e668652d2a70aff384164a90ea739088",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.youtube.com/watch?v=_OHZyK0nugs",
+      "title": "Ep 297 AI, Cybersecurity & the Future of Business Vineet Edupuganti CEO @Cogent Security on",
+      "url": "https://www.youtube.com/watch?v=_OHZyK0nugs",
+      "author": "The Silicon Valley Podcast",
+      "text": "the way we're doing things depending on people and process alone is not going to be sufficient and shift gears if there truly is a better way to go and conquer something. And that's the only way that we can actually operate and survive in this new world. Machine against human is going to be too slow. It's not a fair fight. You need machine against machine to actually be able to neutralize what the threat actors are doing right now. [music] All right, I'm super excited for this week's episode of the Silicon Valley podcast. But before we begin, I got to give you the famous disclaimer. The views expressed in this podcast [clears throat] are for informational purposes only. They do not constitute financial or legal advice, nor do they necessarily reflect the views of Fenox Inc. Fenox Securities LLC, member member FINRA SIPC. And with that, I mean, I'm I'm excited for today's episode. I mean, your company, I everyone's going to learn about it in a moment who doesn't already know about it. It it's it's had an incredible boom. But uh before we dive into that, tell our audience a little bit about your background, a little bit of your career up into this point. Absolutely. And thank you for having me, Shawn. So, a little bit about myself, I've been in the cyber industry now for several years, but my career, interestingly, didn't start there. So, it began as a machine learning engineer. I was working on generative AI of all things over a decade ago. And you know, I was doing that at bi",
+      "image": "https://i.ytimg.com/vi/_OHZyK0nugs/sddefault.jpg"
+    },
+    {
+      "id": "https://www.youtube.com/watch?v=8x_RZ4yIRbw",
+      "title": "Vineet Edupuganti - 2016 Siemens Competition Individual Grand Prize Winner",
+      "url": "https://www.youtube.com/watch?v=8x_RZ4yIRbw",
+      "publishedDate": "2017-01-12T15:10:34.000Z",
+      "author": "siemensfoundation",
+      "text": "# Vineet Edupuganti - 2016 Siemens Competition Individual Grand Prize Winner\n\n- Channel: siemensfoundation\n- Length: 11:42\n- Views: 2.8K\n- Likes: 13\n- Published: 2017-01-12T07:10:34-08:00\n- Category: Education\n- Language: en\n\n## Description\n\nVineet Edupuganti - 2016 Siemens Competition Presentation \n \nHIGH SCHOOL: Oregon Episcopal School, Portland, OR\n\nPROJECT: \u201cDevelopment of a High-Performance Biodegradable Battery for Transient Electronics\u201d\n\nFIELD: Engineering\n\nMENTOR: Raj Solanki, Professor, Physics, Portland State University\n\nThe Siemens Competition in Math, Science and Technology is the nation's premier research competition for high school students. $500,000 in scholarships, including two top prizes of $100,000 are awarded at National Finals.\n\n## Transcript\n\ngood afternoon my name is Vanitas a poo grantee I'm a senior at Oregon Episcopal School in Portland and for my research I investigated the fascinating area of transient or biodegradable electronics so that gots a boy sounds a little bit counterintuitive because traditionally we place a lot of emphasis or durable long-lasting devices but devices that can degrade intentionally over time using biologically and environmentally compatible materials can actually have a lot of applications from environmental sensors to consumer electronics let me give you a specific example in the field of medicine so right now there are lots of problems that arise from infections in the gastrointestinal tract of the human body so imagine ",
+      "image": "https://i.ytimg.com/vi/8x_RZ4yIRbw/sddefault.jpg"
+    }
+  ],
+  "searchTime": 939.8,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.01,
+  "_request": {
+    "query": "\"Vineet Edupuganti\" Cogent Security talk webinar video keynote",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    },
+    "includeDomains": [
+      "youtube.com",
+      "youtu.be",
+      "vimeo.com"
+    ]
+  }
+}

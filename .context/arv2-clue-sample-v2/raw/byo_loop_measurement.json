@@ -1,0 +1,16 @@
+{
+  "pages": 23,
+  "corpus_chars": 124620,
+  "synthesis_model": "openai/gpt-5-mini@minimal",
+  "synthesis_cost_usd": 0.02439,
+  "synthesis_elapsed_s": 79.6,
+  "synthesis_usage": {
+    "prompt_tokens": 28429,
+    "completion_tokens": 8639
+  },
+  "retrieval_cost_est_usd": 0.037,
+  "byo_total_est_usd": 0.06139,
+  "exa_deep_reasoning_actual_usd": 0.021,
+  "report_chars": 35308,
+  "exa_report_chars": 19368
+}

@@ -16,13 +16,13 @@
   "outputSchema": {
     "additionalProperties": false,
     "properties": {
-      "f_6163636f756e742e6f7065726174696f6e616c5f7061696e": {
+      "k_g32m4d2u": {
         "type": [
           "string",
           "null"
         ]
       },
-      "f_6163636f756e742e7374726174656769635f6d6f766573": {
+      "k_t8u69a2b": {
         "type": [
           "string",
           "null"
@@ -30,13 +30,13 @@
       }
     },
     "required": [
-      "f_6163636f756e742e6f7065726174696f6e616c5f7061696e",
-      "f_6163636f756e742e7374726174656769635f6d6f766573"
+      "k_g32m4d2u",
+      "k_t8u69a2b"
     ],
     "type": "object"
   },
   "query": "Research the exact account Cascade Gastroenterology Associates at cascade-gastro.example for grounded operational and strategic evidence.",
   "stream": false,
-  "systemPrompt": "Research only the exact account at cascade-gastro.example. Prefer primary sources, retain every source URL, do not drift to similarly named organizations, and leave the field null when target-locked evidence is absent. Use this exact property map: f_6163636f756e742e6f7065726174696f6e616c5f7061696e=account.operational_pain; f_6163636f756e742e7374726174656769635f6d6f766573=account.strategic_moves.",
+  "systemPrompt": "Research only the exact account at cascade-gastro.example. Prefer primary sources, retain every source URL, do not drift to similarly named organizations, and leave the field null when target-locked evidence is absent. Use this exact property map: k_g32m4d2u=account.operational_pain; k_t8u69a2b=account.strategic_moves.",
   "type": "deep-reasoning"
 }

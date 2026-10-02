@@ -1,0 +1,548 @@
+{
+ "http": 200,
+ "elapsed": 0.9,
+ "body": {
+  "id": "88117c69-2c95-4eae-0251-9af01d2f9621",
+  "identifier": "kibrady12",
+  "profile": {
+   "first_name": "Kate",
+   "middle_name": null,
+   "last_name": "Blumberg",
+   "full_name": "Kate Blumberg",
+   "headline": "Growth @ Probook",
+   "title": "Director of Growth",
+   "picture": {
+    "source": "https://images.ai-ark.com/E86vMz1K8D-sbcFWjLnJ5ts34n1V5xaRD2pNmUGv050/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/88117c69-2c95-4eae-0251-9af01d2f9621.jpg"
+   },
+   "background": {
+    "source": "https://media.licdn.com/dms/image/v2/D5616AQHt0NRxcAtdYQ/profile-displaybackgroundimage-shrink_350_1400/B56Z70tAM5GsAU-/0/1782221898899?e=1786579200&v=beta&t=-bpuK7IywZU13W_FAMsQYIoZvDyTJk3OwXnd5nqcq_Y"
+   },
+   "birth_date": null,
+   "summary": null
+  },
+  "link": {
+   "linkedin": "https://www.linkedin.com/in/kibrady12",
+   "twitter": null,
+   "github": null,
+   "facebook": null
+  },
+  "location": {
+   "default": "New York, New York, United States, North America",
+   "short": "New York, New York",
+   "country": "United States",
+   "state": "New York",
+   "city": "New York",
+   "position": null
+  },
+  "languages": {
+   "primary_locale": {
+    "country": "US",
+    "language": "en"
+   },
+   "supported_locales": [
+    {
+     "country": "US",
+     "language": "en"
+    }
+   ],
+   "profile_languages": null
+  },
+  "industry": "Computer Software",
+  "educations": [
+   {
+    "school": {
+     "id": "f8b3e04d-98bd-3992-dff2-d1144b3721d8",
+     "name": "The College of Wooster",
+     "logo": "https://images.ai-ark.com/rknhNCwEdFHbnqPncs7F4BWSXJTJ5BRYenJ0Kia5_xY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f8b3e04d-98bd-3992-dff2-d1144b3721d8.jpg",
+     "url": "https://www.linkedin.com/school/the-college-of-wooster"
+    },
+    "degree_name": "Bachelor of Arts (B.A.)",
+    "field_of_study": "Religion/Religious Studies",
+    "grade": null,
+    "date": null
+   }
+  ],
+  "position_groups": [
+   {
+    "company": {
+     "id": "05108578-3649-f40c-a81b-22fe1965b0cd",
+     "name": "Probook",
+     "logo": "https://images.ai-ark.com/E-sI5Kv4lg4jwUeSq_nPQ6Yz9ehTAQBsg0Jo7gYFzoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05108578-3649-f40c-a81b-22fe1965b0cd.jpg",
+     "url": "https://www.linkedin.com/company/probook-ai",
+     "employees": {
+      "start": 51,
+      "end": 200
+     }
+    },
+    "date": {
+     "start": "2026-06-01",
+     "end": null
+    },
+    "profile_positions": [
+     {
+      "company": "Probook",
+      "description": null,
+      "title": "Director of Growth",
+      "employment_type": "Full-time",
+      "location": "New York, United States",
+      "date": {
+       "start": "2026-06-01",
+       "end": null
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "3bf988e6-0deb-e19e-5d29-17ae875cb717",
+     "name": "BuildOps",
+     "logo": "https://images.ai-ark.com/6StB5Vbo9w5VGhg0heh7l7_bQTFXd-RTZ1MsIPO8vUc/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/3bf988e6-0deb-e19e-5d29-17ae875cb717.jpg",
+     "url": "https://www.linkedin.com/company/buildops",
+     "employees": {
+      "start": 201,
+      "end": 500
+     }
+    },
+    "date": {
+     "start": "2024-06-01",
+     "end": "2026-04-30"
+    },
+    "profile_positions": [
+     {
+      "company": "BuildOps",
+      "description": null,
+      "title": "Director of Demand Generation",
+      "employment_type": "Full-time",
+      "location": null,
+      "date": {
+       "start": "2024-06-01",
+       "end": "2026-04-30"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "f27ce9e3-cb8a-dbb6-904a-5e25d3dce101",
+     "name": "Middesk",
+     "logo": "https://images.ai-ark.com/6f6GeSgDNdmYi7caVh6gdyEhohu_W9IcnRUqi3FT6Xo/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f27ce9e3-cb8a-dbb6-904a-5e25d3dce101.jpg",
+     "url": "https://www.linkedin.com/company/middesk",
+     "employees": {
+      "start": 51,
+      "end": 200
+     }
+    },
+    "date": {
+     "start": "2023-01-01",
+     "end": "2024-06-30"
+    },
+    "profile_positions": [
+     {
+      "company": "Middesk",
+      "description": null,
+      "title": "Head of Growth",
+      "employment_type": "Full-time",
+      "location": "New York, New York, United States",
+      "date": {
+       "start": "2023-01-01",
+       "end": "2024-06-30"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "78fce993-c056-90fe-d02d-7c781c285fa6",
+     "name": "SafeGraph",
+     "logo": "https://images.ai-ark.com/byq9g_tKuAMspANdsbcdv5peOL5JqasVb1NB6P1l2_M/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/78fce993-c056-90fe-d02d-7c781c285fa6.jpg",
+     "url": "https://www.linkedin.com/company/safegraph",
+     "employees": {
+      "start": 51,
+      "end": 200
+     }
+    },
+    "date": {
+     "start": "2020-01-01",
+     "end": "2022-12-31"
+    },
+    "profile_positions": [
+     {
+      "company": "SafeGraph",
+      "description": null,
+      "title": "Director of Demand Generation",
+      "employment_type": "Full-time",
+      "location": null,
+      "date": {
+       "start": "2022-01-01",
+       "end": "2022-12-31"
+      }
+     },
+     {
+      "company": "SafeGraph",
+      "description": null,
+      "title": "Demand Generation",
+      "employment_type": null,
+      "location": null,
+      "date": {
+       "start": "2020-01-01",
+       "end": "2022-01-31"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "cff8bca4-1df8-d523-1f78-06b7d6e3c114",
+     "name": "Upwave",
+     "logo": "https://images.ai-ark.com/gGEyE74P0Ls3JwuaJXKhTAfSzwxpzmckPDJ4Y8GDS0M/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/cff8bca4-1df8-d523-1f78-06b7d6e3c114.jpg",
+     "url": "https://www.linkedin.com/company/upwaveinc",
+     "employees": {
+      "start": 51,
+      "end": 200
+     }
+    },
+    "date": {
+     "start": "2018-07-01",
+     "end": "2020-01-31"
+    },
+    "profile_positions": [
+     {
+      "company": "Survata",
+      "description": null,
+      "title": "Head of Demand Generation",
+      "employment_type": null,
+      "location": "San Francisco, California",
+      "date": {
+       "start": "2018-07-01",
+       "end": "2020-01-31"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "7e5c1602-b9f2-ea7d-98f2-a48b9e854265",
+     "name": "Branch",
+     "logo": "https://images.ai-ark.com/lY6JPL577ogOker3b9_hixnVjEx7HcTv5B6tHG5KwdI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/7e5c1602-b9f2-ea7d-98f2-a48b9e854265.jpg",
+     "url": "https://www.linkedin.com/company/branch-metrics",
+     "employees": {
+      "start": 201,
+      "end": 500
+     }
+    },
+    "date": {
+     "start": "2015-11-01",
+     "end": "2018-06-30"
+    },
+    "profile_positions": [
+     {
+      "company": "Branch",
+      "description": null,
+      "title": "Sales Development Team Lead",
+      "employment_type": null,
+      "location": "Palo Alto, California",
+      "date": {
+       "start": "2018-01-01",
+       "end": "2018-06-30"
+      }
+     },
+     {
+      "company": "Branch",
+      "description": null,
+      "title": "ABM Manager",
+      "employment_type": null,
+      "location": "Palo Alto, CA",
+      "date": {
+       "start": "2017-07-01",
+       "end": "2018-06-30"
+      }
+     },
+     {
+      "company": "Branch",
+      "description": null,
+      "title": "Global Events Manager",
+      "employment_type": null,
+      "location": null,
+      "date": {
+       "start": "2017-01-01",
+       "end": "2017-12-31"
+      }
+     },
+     {
+      "company": "Branch Metrics",
+      "description": null,
+      "title": "Marketing Coordinator",
+      "employment_type": null,
+      "location": "San Francisco Bay Area",
+      "date": {
+       "start": "2015-11-01",
+       "end": "2017-01-31"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": null,
+     "name": "Meeting Solutions Inc.",
+     "logo": null,
+     "url": null
+    },
+    "date": {
+     "start": "2014-03-01",
+     "end": "2015-11-30"
+    },
+    "profile_positions": [
+     {
+      "company": "Meeting Solutions Inc.",
+      "description": "o Assist all member\u2019s of the MSI team with event management, including; registration, regularly updating registration reports, printing badges, preparing onsite registration lists, executing onsite registration, and reconciling registration. \no Provide on site account management and support for large tech events such as Microsoft Global Exchange 2015, Gartner Symposium and the Grace Hopper Celebration. \no Support MSI\u2019s senior managers by; conducting venue and service research, managing all sponsors\u2019 shipments for events, maintaining inventory and premium items for event use, and other pre-event activities.\no Support Microsoft US-DX, external Microsoft developer training, event series by creating and implementing supply shipments, providing weekly registration reports and managing inventory.\no Work closely with national Microsoft contacts to build DX event schedules and determine availability for regularly occurring series.\no Manage DX post-event analysis; reconciling registration, processing evaluations, compiling speakers\u2019 input, and creating post-event series decks.",
+      "title": "Event Coordinator",
+      "employment_type": null,
+      "location": "Baltimore, Maryland",
+      "date": {
+       "start": "2014-03-01",
+       "end": "2015-11-30"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "4ca47b74-5d28-3efa-9fbe-1083ef4e8655",
+     "name": "Federal Realty Investment Trust",
+     "logo": "https://images.ai-ark.com/bczES-M1RVnbFlTMEP5ZEltlcuSVimakkGY00Zekfck/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/4ca47b74-5d28-3efa-9fbe-1083ef4e8655.jpg",
+     "url": "https://www.linkedin.com/company/federal-realty-investment-trust",
+     "employees": {
+      "start": 201,
+      "end": 500
+     }
+    },
+    "date": {
+     "start": "2013-05-01",
+     "end": "2013-12-31"
+    },
+    "profile_positions": [
+     {
+      "company": "Federal Realty Investment Trust",
+      "description": "o In collaboration with the Senior Marketing Manager, design campaigns aimed at building brand awareness which achieve positive results through a combination of in-store events, promotional materials and advertising.\no Developed the idea for a progressive wine tour through the Bethesda Row property with the goal of highlighting the wide variety of restaurant merchants and promoting the Bethesda Row brand, surpassed it\u2019s ticket goals, and concluded with 95% of surveyed participants responding that they would return as a result of the event. \no Built and maintained merchant/developer relationships by orchestrating seasonal merchant meetings, developing merchant communications and acting as the point of contact.\no Independently managed and executed the activation of a weekly Farm Market, scheduling and training brand ambassadors, managing the budget, and obtaining all necessary materials. \no Leveraged the Farm Market event space to engage and inform patrons of Federal Reality future developments, specifically Pike and Rose, the companies largest mixed use project, resulting in the expansion of the database by over 450 sign ups.\no Continuously identified and activated off-property opportunities for Pike & Rose brand awareness efforts.",
+      "title": "Marketing Intern",
+      "employment_type": null,
+      "location": "Rockville, Maryland",
+      "date": {
+       "start": "2013-05-01",
+       "end": "2013-12-31"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "efe9ebe9-261e-9401-52fa-b602c80d0ddd",
+     "name": "The Brand Guild",
+     "logo": "https://images.ai-ark.com/OAfWHnAnaWNKRBbmyS-ESukwuApRYpXdOR4Euv_jF2E/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/efe9ebe9-261e-9401-52fa-b602c80d0ddd.jpg",
+     "url": "https://www.linkedin.com/company/brandguild",
+     "employees": {
+      "start": 51,
+      "end": 200
+     }
+    },
+    "date": {
+     "start": "2012-09-01",
+     "end": "2013-05-31"
+    },
+    "profile_positions": [
+     {
+      "company": "BrandLinkDC",
+      "description": "\u25cb Researched and brainstormed possible marketing activations and identified appropriate clientele. \n\u25cb Employed strategic public relations tactics to communicate marketing campaigns and planned events, resulting in sold- out events such at District Sample Sale and Fight for Kids.\n\u25cb Strategically presented ideas to improve BrandLink\u2019s brand equity and help gain market share including Drybar\u2019s DC area openings gorilla marketing campaign.\n\u25cb Responsible for the construction and updating of media contacts lists for clients\u2019 media outreach.\n\u25cb Created media lists and event opportunities for clients.",
+      "title": "PR, Markerting and Events Intern",
+      "employment_type": null,
+      "location": null,
+      "date": {
+       "start": "2012-09-01",
+       "end": "2013-05-31"
+      }
+     }
+    ]
+   },
+   {
+    "company": {
+     "id": "235261f2-b9b7-c801-e831-a340df497fa0",
+     "name": "Fund for the Public Interest",
+     "logo": "https://images.ai-ark.com/GSR9D4zmAD0J9qvFPeJKl1xkaol4S_6cOmOAx1WNWzk/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/235261f2-b9b7-c801-e831-a340df497fa0.jpg",
+     "url": "https://www.linkedin.com/company/fund-for-the-public-interest",
+     "employees": {
+      "start": 201,
+      "end": 500
+     }
+    },
+    "date": {
+     "start": "2011-05-01",
+     "end": "2011-08-31"
+    },
+    "profile_positions": [
+     {
+      "company": "Fund for the Public Interest",
+      "description": "o Raised a minimum of $200 dollars daily to fund campaigns and build an organization by influencing and inspiring decision-makers through grass-routes marketing\no Successfully informed and engaged the public in conversations about political issues\no Build name recognition for an organization and campaign",
+      "title": "Citizen Outreach Staff",
+      "employment_type": null,
+      "location": "Greater Boston Area",
+      "date": {
+       "start": "2011-05-01",
+       "end": "2011-08-31"
+      }
+     }
+    ]
+   }
+  ],
+  "skills": [
+   "Public Relations",
+   "Public Speaking",
+   "Event Planning",
+   "Research",
+   "Community Outreach",
+   "Event Management",
+   "Marketing",
+   "Strategy",
+   "Communication",
+   "Microsoft Office",
+   "Interpersonal Skill",
+   "Logistics Management",
+   "Social Networking",
+   "Event Marketing Strategy",
+   "Social Media",
+   "Media Relations"
+  ],
+  "member_badges": {
+   "premium": true,
+   "creator": false,
+   "open_to_work": false,
+   "hiring": false,
+   "verified": false,
+   "influencer": false
+  },
+  "statistics": {
+   "network": {
+    "influencer": false,
+    "followable": null,
+    "followers_count": 1896,
+    "connections_count": 1665
+   },
+   "experience": {
+    "prev_job_titles": null,
+    "tenure": {
+     "company": "2026-06-01",
+     "start": "2012-07-30",
+     "title": "2026-06-01"
+    }
+   }
+  },
+  "company": {
+   "id": "05108578-3649-f40c-a81b-22fe1965b0cd",
+   "summary": {
+    "name": "Probook",
+    "description": "Increase flip rates, boost ticket sizes, and reduce windshield time\u2014 all without scaling your dispatch department. \n\nProbook learns from your historical sales data and sends your technicians to the right calls every time. \n\nOur dispatcher-friendly interface overlays your dispatch board so you never have to leave ServiceTitan. \n\nDispatchers can now focus on higher-value tasks like verifying job info and keeping customers updated. \n\nSee why top operators nationwide trust Probook!",
+    "founded_year": 2022,
+    "type": "PRIVATELY_HELD",
+    "industry": "software development",
+    "staff": {
+     "total": 30,
+     "range": {
+      "start": 2,
+      "end": 10
+     }
+    },
+    "logo": {
+     "source": "https://images.ai-ark.com/E-sI5Kv4lg4jwUeSq_nPQ6Yz9ehTAQBsg0Jo7gYFzoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05108578-3649-f40c-a81b-22fe1965b0cd.jpg"
+    }
+   },
+   "link": {
+    "website": "https://www.probook.ai",
+    "domain": "probook.ai",
+    "linkedin": "https://www.linkedin.com/company/probook-ai"
+   },
+   "financial": {
+    "revenue": {
+     "annual": {
+      "start": 1000000,
+      "end": 5000000,
+      "amount": "1000000-5000000"
+     }
+    }
+   },
+   "location": {
+    "headquarter": {
+     "continent": "North America",
+     "country": "United States",
+     "state": "New York",
+     "city": "New York",
+     "postal_code": "10022",
+     "raw_address": "New York, New York, United States, North America",
+     "position": {
+      "lng": -73.98556,
+      "lat": 40.748295
+     }
+    },
+    "locations": [
+     {
+      "continent": "North America",
+      "country": "United States",
+      "state": "New York",
+      "city": "New York",
+      "postal_code": "10022",
+      "raw_address": "New York, New York, United States, North America",
+      "position": {
+       "lng": -73.98556,
+       "lat": 40.748295
+      }
+     }
+    ]
+   },
+   "industries": [
+    "software development"
+   ],
+   "hashtags": [
+    "airconditioning",
+    "heating",
+    "hvac"
+   ],
+   "languages": [
+    "english"
+   ],
+   "last_updated": "2026-08-22"
+  },
+  "department": {
+   "departments": [
+    "marketing"
+   ],
+   "sub_departments": [
+    "growth_marketing"
+   ],
+   "functions": [
+    "marketing"
+   ],
+   "seniority": "director"
+  },
+  "email": {
+   "state": "DONE",
+   "output": [
+    {
+     "address": "kate@probook.ai",
+     "mx": {
+      "record": "smtp.google.com",
+      "google": false,
+      "found": true,
+      "provider": "g-suite"
+     },
+     "domainType": "CATCH_ALL",
+     "status": "VALID",
+     "subStatus": "EMPTY",
+     "date": "2026-08-29T21:01:47.000829",
+     "free": false,
+     "generic": false,
+     "found": true
+    }
+   ]
+  },
+  "last_updated": "2026-08-22"
+ }
+}

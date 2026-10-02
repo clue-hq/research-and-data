@@ -1,0 +1,1090 @@
+{
+  "content": [
+    {
+      "id": "0010b9d7-d3ce-64d1-02c6-c6d170a8762f",
+      "identifier": "brian-sams",
+      "profile": {
+        "first_name": "Brian",
+        "middle_name": null,
+        "last_name": "Sams",
+        "full_name": "Brian Sams",
+        "headline": "RSM SLED at Zafran Security",
+        "title": "RSM SLED",
+        "picture": {
+          "source": "https://images.ai-ark.com/soCWe5AO7rGL8qNEPANbwwIfn4GuX9xispQrFVjspDg/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/0010b9d7-d3ce-64d1-02c6-c6d170a8762f.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D5616AQGpBPbB8-0ACw/profile-displaybackgroundimage-shrink_350_1400/B56ZYMX8KAH0AY-/0/1743964325636?e=1786579200&v=beta&t=QtxpAvRmHhZ_PSKaZPPQx5XuoI22PQkIFXcqGvovLPo"
+        },
+        "birth_date": null,
+        "summary": "Experienced Vice President of Sales with a demonstrated history of working in the information technology and services industry."
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/brian-sams",
+        "twitter": null,
+        "github": null,
+        "facebook": null
+      },
+      "location": {
+        "default": "Seattle, Washington, United States, North America",
+        "short": "Seattle, Washington",
+        "country": "United States",
+        "state": "Washington",
+        "city": "Seattle",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": null
+      },
+      "industry": "Computer & Network Security",
+      "educations": [
+        {
+          "school": {
+            "id": "bc87892d-442f-64ed-dac5-8136cb4d12ec",
+            "name": "Washington State University",
+            "logo": "https://media.licdn.com/dms/image/v2/C560BAQGfChk-QhW3ug/company-logo_400_400/company-logo_400_400/0/1631713534923/washington_state_university_logo?e=1788393600&v=beta&t=_m5xdMwdZcD4NOlJ6WOOBcbmrGAblfqHaxIkY5GEtU8",
+            "url": "https://www.linkedin.com/school/washington-state-university"
+          },
+          "degree_name": null,
+          "field_of_study": null,
+          "grade": null,
+          "date": null
+        },
+        {
+          "school": {
+            "id": "7af93e6d-1c6a-28a5-35e4-39247d2a2450",
+            "name": "Columbia Basin College",
+            "logo": "https://media.licdn.com/dms/image/v2/C560BAQElKvCH3vglUQ/company-logo_400_400/company-logo_400_400/0/1630568428110/columbia_basin_college_logo?e=1788393600&v=beta&t=pmmTMs-YEi6OB5r8UMCxuzVKmoLTgDwqw1aIxhtlRwY",
+            "url": "https://www.linkedin.com/school/columbia-basin-college"
+          },
+          "degree_name": null,
+          "field_of_study": null,
+          "grade": null,
+          "date": null
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+            "name": "Zafran Security",
+            "logo": "https://media.licdn.com/dms/image/v2/D560BAQG6RaRZbmOqiw/company-logo_400_400/company-logo_400_400/0/1722727455442/zafran_security_logo?e=1788393600&v=beta&t=PoKBW_999QuBBr7hOvBJwSm9eh0lYoJbRF3j8V61fmE",
+            "url": "https://www.linkedin.com/company/zafran-security",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2026-08-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "Zafran Security",
+              "description": null,
+              "title": "RSM SLED",
+              "employment_type": "Full-time",
+              "location": null,
+              "date": {
+                "start": "2026-08-01",
+                "end": null
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "d3da324b-f07a-fcc3-8060-a16a9d098f72",
+            "name": "Palo Alto Networks",
+            "logo": "https://media.licdn.com/dms/image/v2/C560BAQFZg72Sfni4SA/company-logo_400_400/company-logo_400_400/0/1657225156841/palo_alto_networks_logo?e=1788393600&v=beta&t=CdRAw3xdfxwpebZkRVz71kXI15-bBWqsdcj8aaOqDaM",
+            "url": "https://www.linkedin.com/company/palo-alto-networks",
+            "employees": {
+              "start": 10001,
+              "end": null
+            }
+          },
+          "date": {
+            "start": "2024-12-01",
+            "end": "2026-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Palo Alto Networks",
+              "description": null,
+              "title": "Cortex Cloud SLED Mountain & PNW",
+              "employment_type": "Full-time",
+              "location": null,
+              "date": {
+                "start": "2024-12-01",
+                "end": "2026-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "58f7deb2-9da0-329f-3b6b-73c51fd30ac9",
+            "name": "Adaptiva",
+            "logo": "https://media.licdn.com/dms/image/v2/D4E0BAQErvPPoSEDkoA/company-logo_400_400/B4EZ_d5dNlGoAY-/0/1786134254858/adaptiva_logo?e=1788393600&v=beta&t=9C2Vbebxk0xg-HmWbCAOfN2OWSFbo-ZI_eqMjS2CpiE",
+            "url": "https://www.linkedin.com/company/adaptiva",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2022-06-01",
+            "end": "2024-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Adaptiva",
+              "description": null,
+              "title": "Vice President US Sales",
+              "employment_type": "Full-time",
+              "location": "Kirkland, Washington, United States",
+              "date": {
+                "start": "2022-06-01",
+                "end": "2024-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "c6ed8b65-221d-15b2-a3c5-1c3ce5c9ba5b",
+            "name": "Tanium",
+            "logo": "https://media.licdn.com/dms/image/v2/D4E0BAQFe3r7SgU5dJA/company-logo_400_400/B4EZ.PKbyHHoAU-/0/1784813305248/tanium_logo?e=1788393600&v=beta&t=URozhUaWpd72FjRsygHm-YhxCd5QCgwcHXOAtCcfE8E",
+            "url": "https://www.linkedin.com/company/tanium",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2018-04-01",
+            "end": "2022-06-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Tanium",
+              "description": null,
+              "title": "Regional SLED Sales Director",
+              "employment_type": "Full-time",
+              "location": "Greater Seattle Area",
+              "date": {
+                "start": "2018-04-01",
+                "end": "2022-06-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "42ab8b5b-4770-89a6-06d4-61272e7f242d",
+            "name": "Level 3 Communications",
+            "logo": "https://media.licdn.com/dms/image/v2/C560BAQFiYetqbG6whw/company-logo_400_400/company-logo_400_400/0/1630624078119/level_3_communications_logo?e=1788393600&v=beta&t=9TE2pR-rn7a5cSFdNmLdV-B8fKUEJbXohg_hBXM6-SM",
+            "url": "https://www.linkedin.com/company/level-3-communications",
+            "employees": {
+              "start": 10001,
+              "end": null
+            }
+          },
+          "date": {
+            "start": "2016-01-01",
+            "end": "2018-04-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Level 3 Communications",
+              "description": null,
+              "title": "SLED/Enterprise Manager",
+              "employment_type": null,
+              "location": "Greater Seattle Area",
+              "date": {
+                "start": "2016-01-01",
+                "end": "2018-04-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "b479e1da-d0ca-7a7c-d3f3-91c20d788325",
+            "name": "Integra",
+            "logo": "https://media.licdn.com/dms/image/v2/C4E0BAQFTF31FzP9sgw/company-logo_400_400/company-logo_400_400/0/1630654295941/integra_logo?e=1788393600&v=beta&t=G62w9grKaeUW3YukujGz3kUEXVFzaVTHVLnaVNsDT_8",
+            "url": "https://www.linkedin.com/company/integra",
+            "employees": {
+              "start": 501,
+              "end": 1000
+            }
+          },
+          "date": {
+            "start": "2013-01-01",
+            "end": "2016-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Integra",
+              "description": null,
+              "title": "SLED/Enterprise Manager",
+              "employment_type": null,
+              "location": "Greater Seattle Area",
+              "date": {
+                "start": "2013-01-01",
+                "end": "2016-01-31"
+              }
+            }
+          ]
+        }
+      ],
+      "skills": [
+        "Team Management",
+        "Passionate about Work",
+        "Marketing",
+        "Leadership",
+        "Telecommunications",
+        "Managed Services",
+        "Solution Selling",
+        "Direct Sales",
+        "Co-location",
+        "Account Management",
+        "Unified Communications",
+        "MPLS",
+        "Wireless",
+        "Salesforce.com",
+        "B2B",
+        "Customer Service",
+        "VoIP",
+        "Negotiation",
+        "Miller Heiman",
+        "Sales Management"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": false,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 1871,
+          "connections_count": 1869
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2026-08-01",
+            "start": "2013-03-18",
+            "title": "2026-08-01"
+          }
+        }
+      },
+      "company": {
+        "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+        "summary": {
+          "name": "Zafran Security",
+          "legal_name": "Zafran Security Ltd.",
+          "description": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe\u2019re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+          "overview": "Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability management lifecycle. With threat actors rapidly exploiting newly revealed security vulnerabilities through AI automation, Zafran's platform enables organizations to take action before these vulnerabilities result in incidents. The company\u2019s solutions work alongside current security tools, utilizing AI agents to pinpoint weaknesses, provide contextual information, and address these issues by linking them to controls and evaluating the potential for exploitation.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "computer and network security",
+          "staff": {
+            "total": 167,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/3uLyRIuwaKLBcbjmX1dmxaJR3Qms6QgDhf__-a5n9O4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.zafran.io",
+          "domain": "zafran.io",
+          "domain_ltd": "zafran.io",
+          "linkedin": "https://www.linkedin.com/company/zafran-security",
+          "twitter": "https://x.com/Zafran_io",
+          "crunchbase": "https://www.crunchbase.com/organization/zafran"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_C",
+            "total_amount": 130500000,
+            "last_amount": 60000000,
+            "num_investor": 9,
+            "num_funding_rounds": 4,
+            "rounds": [
+              {
+                "announced_at": "2025-12-02",
+                "raised_amount": 60000000,
+                "type": "SERIES_C",
+                "investors": [
+                  "Vintage Investment Partners",
+                  "Cyberstarts",
+                  "Amex Ventures",
+                  "PSP Growth",
+                  "Knollwood Investment Advisory",
+                  "Sequoia Capital",
+                  "Menlo Ventures"
+                ]
+              },
+              {
+                "announced_at": "2024-09-08",
+                "raised_amount": 40000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "Penny Jar Capital",
+                  "Cerca Partners",
+                  "Cyberstarts"
+                ]
+              },
+              {
+                "announced_at": "2024-03-28",
+                "raised_amount": 25000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2024-03-28",
+                "raised_amount": 5500000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2025-12-02"
+          },
+          "aberdeen": {
+            "it_spend": 7626866
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "city": "New York, New York",
+            "raw_address": "New York, New York, United States, North America",
+            "position": {
+              "lng": -73.98556,
+              "lat": 40.748295
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "city": "New York, New York",
+              "raw_address": "New York, New York, United States, North America",
+              "position": {
+                "lng": -73.98556,
+                "lat": 40.748295
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon s3",
+            "category": "cdn"
+          },
+          {
+            "name": "envoy",
+            "category": "server"
+          },
+          {
+            "name": "floc opt-out",
+            "category": "ads"
+          },
+          {
+            "name": "cloudflare automatic challenge",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare challenge",
+            "category": "cdn"
+          },
+          {
+            "name": "hubspot hosted",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon oregon region",
+            "category": "hosting"
+          },
+          {
+            "name": "zendesk mail",
+            "category": "mx"
+          }
+        ],
+        "industries": [
+          "risk management",
+          "cyber security",
+          "information technology",
+          "network security",
+          "software",
+          "computer and network security"
+        ],
+        "languages": [
+          "english"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "sales"
+        ],
+        "sub_departments": [
+          "account_executive_and_new_business_sales"
+        ],
+        "functions": [
+          "sales"
+        ],
+        "seniority": "mid_level"
+      },
+      "last_updated": "2026-08-22"
+    },
+    {
+      "id": "00b61224-c103-3644-2f12-0ffda514ead9",
+      "identifier": "tomanthonyjr",
+      "profile": {
+        "first_name": "Tom",
+        "middle_name": null,
+        "last_name": "Anthony",
+        "full_name": "Tom Anthony",
+        "headline": "SVP, Global Sales",
+        "title": "SVP, Global Sales",
+        "picture": {
+          "source": "https://images.ai-ark.com/HUeTcNu__E0bxB8jVk35TObpeop0v1L8ihiSgQnRfys/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/00b61224-c103-3644-2f12-0ffda514ead9.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D5616AQEfjY44l6ydrA/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1731460125985?e=1786579200&v=beta&t=haDc7F4ZMmvuRWotcFy_IbMa1FGXOE78fo5-aqoS-mY"
+        },
+        "birth_date": null,
+        "summary": null
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/tomanthonyjr",
+        "twitter": null,
+        "github": null,
+        "facebook": "https://www.facebook.com/tom.anthony.351"
+      },
+      "location": {
+        "default": "San Francisco, California, United States, North America",
+        "short": "San Francisco, California",
+        "country": "United States",
+        "state": "California",
+        "city": "San Francisco",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": null
+      },
+      "industry": "Computer Software",
+      "educations": [
+        {
+          "school": {
+            "id": "656937d3-d940-f638-9212-505669e2f18b",
+            "name": "University of San Diego",
+            "logo": "https://images.ai-ark.com/XDa1j4w4yppK7KqxfUylb7yuYUq9-HilwLLNKtUuiII/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/656937d3-d940-f638-9212-505669e2f18b.jpg",
+            "url": "https://www.linkedin.com/school/university-of-san-diego"
+          },
+          "degree_name": null,
+          "field_of_study": null,
+          "grade": null,
+          "date": null
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+            "name": "Zafran Security",
+            "logo": "https://images.ai-ark.com/3uLyRIuwaKLBcbjmX1dmxaJR3Qms6QgDhf__-a5n9O4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg",
+            "url": "https://www.linkedin.com/company/zafran-security",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2024-11-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "Zafran Security",
+              "description": null,
+              "title": "SVP, Global Sales",
+              "employment_type": "Full-time",
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2024-11-01",
+                "end": null
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "2a9021b6-d34f-6133-6336-e341fe941f9a",
+            "name": "Upbound",
+            "logo": "https://images.ai-ark.com/XZ_DsvHTr0RybLw6WXCAJxBplnBldErKk32fXQK2O3M/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/2a9021b6-d34f-6133-6336-e341fe941f9a.jpg",
+            "url": "https://www.linkedin.com/company/upbound-io",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2022-08-01",
+            "end": "2024-11-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Upbound",
+              "description": "Building and leading all GTM functions including Sales, Customer Success, Marketing and Partnerships",
+              "title": "VP, Global Sales & Customer Success",
+              "employment_type": "Full-time",
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2022-08-01",
+                "end": "2024-11-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "fa4969c7-1e2f-8722-5043-fd8dee1e93aa",
+            "name": "Okta",
+            "logo": "https://images.ai-ark.com/oYyTpJTIRVTdQvi0zePSPtcvDB7NyGlLDMTXz7AkqCc/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/fa4969c7-1e2f-8722-5043-fd8dee1e93aa.jpg",
+            "url": "https://www.linkedin.com/company/okta-inc-",
+            "employees": {
+              "start": 5001,
+              "end": 10000
+            }
+          },
+          "date": {
+            "start": "2014-09-01",
+            "end": "2022-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Okta",
+              "description": null,
+              "title": "VP, Enterprise Sales",
+              "employment_type": "Full-time",
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2021-08-01",
+                "end": "2022-08-31"
+              }
+            },
+            {
+              "company": "Okta, Inc.",
+              "description": null,
+              "title": "Director, Enterprise Sales",
+              "employment_type": null,
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2018-02-01",
+                "end": "2021-08-31"
+              }
+            },
+            {
+              "company": "Okta, Inc.",
+              "description": null,
+              "title": "Director, Corporate Sales",
+              "employment_type": null,
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2016-01-01",
+                "end": "2018-02-28"
+              }
+            },
+            {
+              "company": "Okta, Inc.",
+              "description": null,
+              "title": "Enterprise Account Manager",
+              "employment_type": null,
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2014-09-01",
+                "end": "2016-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "5c8c400a-3f16-43a4-27a0-ad5974e9a8c9",
+            "name": "Bluebox Security (Acquired by Lookout)",
+            "logo": "https://images.ai-ark.com/JCsjKqaAZcgJ1XeMJeDoyXKg1jKwRKHpa0sNPxOXBP0/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/5c8c400a-3f16-43a4-27a0-ad5974e9a8c9.jpg",
+            "url": "https://www.linkedin.com/company/bluebox-security",
+            "employees": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "date": {
+            "start": "2013-08-01",
+            "end": "2014-09-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Bluebox Security (Acquired by Lookout)",
+              "description": null,
+              "title": "Enterprise Sales & GTM",
+              "employment_type": null,
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2013-08-01",
+                "end": "2014-09-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "f5c5c3a6-f529-3fef-365a-cf16a565d053",
+            "name": "Fortinet",
+            "logo": "https://images.ai-ark.com/m2Kn5E-Ick31RDhM9dCgOzyU87mtaBUgcB96RcRuOCw/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f5c5c3a6-f529-3fef-365a-cf16a565d053.jpg",
+            "url": "https://www.linkedin.com/company/fortinet",
+            "employees": {
+              "start": 10001,
+              "end": null
+            }
+          },
+          "date": {
+            "start": "2010-01-01",
+            "end": "2013-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Fortinet",
+              "description": "Responsible for enterprise sales and enterprise channel development around Fortinet's network security appliances. Our products and subscription services provide broad, integrated and high-performance protection against dynamic security threats while simplifying the IT security infrastructure.",
+              "title": "Major Account Manager",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2010-01-01",
+                "end": "2013-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "b683f481-8d35-afb3-2b60-3492a3f86f26",
+            "name": "Raytheon|Websense",
+            "logo": "https://images.ai-ark.com/A8VTYp4TeJahKfXTtDkXHSMzDx13yKkJyUaVX6crJcM/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/b683f481-8d35-afb3-2b60-3492a3f86f26.jpg",
+            "url": "https://www.linkedin.com/company/websense",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2005-08-01",
+            "end": "2010-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Websense",
+              "description": "Responsible for the sale of Websense\u2019s solutions for Web Security, Data Security and Email Security in the North Central Territory.  Responsible for revenue with existing and new Enterprise Class customers by leveraging Channel Partners to exceed sales growth expectations.",
+              "title": "Territory Account Manager: Enterprise Sales",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2006-09-01",
+                "end": "2010-01-31"
+              }
+            },
+            {
+              "company": "Websense",
+              "description": null,
+              "title": "Sr. Account Manager, SMB",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2005-08-01",
+                "end": "2006-09-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "b61e4b08-f759-5747-2b1d-036f06321fb1",
+            "name": "NexPrise",
+            "logo": null,
+            "url": "https://www.linkedin.com/company/nexprise",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2002-01-01",
+            "end": "2005-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "NexPrise, Inc",
+              "description": "Responsible for cultivating territory in southwest, closing sales opportunities, and managing customer accounts. Work with prospect business unit leaders and C-level executives to understand needs, communicate value proposition, and sell document control and business process automation solutions for quality, engineering, and supply chain operations.  Target mid-sized discrete manufacturing companies, primarily in the high-tech, automotive, and aerospace & defense industries.",
+              "title": "Regional Sales Manager, Southwest",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2004-01-01",
+                "end": "2005-08-31"
+              }
+            },
+            {
+              "company": "NexPrise, Inc",
+              "description": "Responsible for re-establishing, building, and managing a team that built the sales pipeline, primarily via outbound calling. Responsibilities included identifying, hiring, training, motivating, mentoring and monitoring of entire inside sales development team and third party lead generation providers. Worked with multiple outsourced lead generation partners to implement successful program and optimize NexPrise\u2019s ROI around marketing, lead generation and appoitment scheduling",
+              "title": "Inside Sales Manager",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2003-02-01",
+                "end": "2004-01-31"
+              }
+            },
+            {
+              "company": "NexPrise, Inc.",
+              "description": "Worked directly with the VP of Sales and Marketing in the development of various sales programs for Business Process Automation Software Solutions. Assigned latent customers with the objective of extending current projects and stimulating new business. Analyzed firm\u2019s competition and developed a complete competitive matrix for use in future marketing programs",
+              "title": "Sales Development and Marketing Associate",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2002-01-01",
+                "end": "2003-02-28"
+              }
+            }
+          ]
+        }
+      ],
+      "skills": [
+        "Open-Source Software",
+        "Revenue Generation",
+        "Forecasting",
+        "Cybersecurity",
+        "Identity and Access Management (IAM)",
+        "Software as a Service (SaaS)",
+        "DLP",
+        "Enterprise Software",
+        "Security",
+        "Channel Partners",
+        "Identity Management",
+        "Network Security",
+        "SaaS",
+        "Data Security",
+        "Sales Process",
+        "Solution Selling",
+        "Internet Security",
+        "Cloud Computing",
+        "Firewalls",
+        "Sales Management",
+        "Encryption",
+        "Selling",
+        "Web Security",
+        "Email Security"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": false,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 6514,
+          "connections_count": 6354
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2024-11-01",
+            "start": "2002-01-01",
+            "title": "2024-11-01"
+          }
+        }
+      },
+      "company": {
+        "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+        "summary": {
+          "name": "Zafran Security",
+          "legal_name": "Zafran Security Ltd.",
+          "description": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe\u2019re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+          "overview": "Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability management lifecycle. With threat actors rapidly exploiting newly revealed security vulnerabilities through AI automation, Zafran's platform enables organizations to take action before these vulnerabilities result in incidents. The company\u2019s solutions work alongside current security tools, utilizing AI agents to pinpoint weaknesses, provide contextual information, and address these issues by linking them to controls and evaluating the potential for exploitation.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "computer and network security",
+          "staff": {
+            "total": 167,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/3uLyRIuwaKLBcbjmX1dmxaJR3Qms6QgDhf__-a5n9O4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.zafran.io",
+          "domain": "zafran.io",
+          "domain_ltd": "zafran.io",
+          "linkedin": "https://www.linkedin.com/company/zafran-security",
+          "twitter": "https://x.com/Zafran_io",
+          "crunchbase": "https://www.crunchbase.com/organization/zafran"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_C",
+            "total_amount": 130500000,
+            "last_amount": 60000000,
+            "num_investor": 9,
+            "num_funding_rounds": 4,
+            "rounds": [
+              {
+                "announced_at": "2025-12-02",
+                "raised_amount": 60000000,
+                "type": "SERIES_C",
+                "investors": [
+                  "Vintage Investment Partners",
+                  "Cyberstarts",
+                  "Amex Ventures",
+                  "PSP Growth",
+                  "Knollwood Investment Advisory",
+                  "Sequoia Capital",
+                  "Menlo Ventures"
+                ]
+              },
+              {
+                "announced_at": "2024-09-08",
+                "raised_amount": 40000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "Penny Jar Capital",
+                  "Cerca Partners",
+                  "Cyberstarts"
+                ]
+              },
+              {
+                "announced_at": "2024-03-28",
+                "raised_amount": 25000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2024-03-28",
+                "raised_amount": 5500000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2025-12-02"
+          },
+          "aberdeen": {
+            "it_spend": 7626866
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "city": "New York, New York",
+            "raw_address": "New York, New York, United States, North America",
+            "position": {
+              "lng": -73.98556,
+              "lat": 40.748295
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "city": "New York, New York",
+              "raw_address": "New York, New York, United States, North America",
+              "position": {
+                "lng": -73.98556,
+                "lat": 40.748295
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon s3",
+            "category": "cdn"
+          },
+          {
+            "name": "envoy",
+            "category": "server"
+          },
+          {
+            "name": "floc opt-out",
+            "category": "ads"
+          },
+          {
+            "name": "cloudflare automatic challenge",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare challenge",
+            "category": "cdn"
+          },
+          {
+            "name": "hubspot hosted",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon oregon region",
+            "category": "hosting"
+          },
+          {
+            "name": "zendesk mail",
+            "category": "mx"
+          }
+        ],
+        "industries": [
+          "risk management",
+          "cyber security",
+          "information technology",
+          "network security",
+          "software",
+          "computer and network security"
+        ],
+        "languages": [
+          "english"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "sales"
+        ],
+        "sub_departments": [
+          "enterprise_sales"
+        ],
+        "functions": [
+          "sales"
+        ],
+        "seniority": "vp"
+      },
+      "last_updated": "2026-08-22"
+    }
+  ],
+  "size": 2,
+  "totalElements": 163,
+  "pageable": {
+    "pageNumber": 0,
+    "pageSize": 2,
+    "sort": {
+      "sorted": true,
+      "empty": false,
+      "unsorted": false
+    },
+    "offset": 0,
+    "paged": true,
+    "unpaged": false
+  },
+  "last": false,
+  "totalPages": 82,
+  "sort": {
+    "sorted": true,
+    "empty": false,
+    "unsorted": false
+  },
+  "numberOfElements": 2,
+  "trackId": "3b9f4629-edac-4cc7-b96f-fdd7ab0f83d5",
+  "first": true,
+  "number": 0,
+  "empty": false,
+  "_http_status": 200,
+  "_elapsed_s": 1.69,
+  "_request": {
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "zafran.io"
+          ]
+        }
+      }
+    },
+    "contact": {
+      "title": {
+        "any": {
+          "include": {
+            "mode": "BROAD",
+            "content": [
+              "marketing"
+            ]
+          }
+        }
+      }
+    },
+    "page": 0,
+    "size": 2
+  }
+}

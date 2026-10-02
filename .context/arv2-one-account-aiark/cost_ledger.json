@@ -1,0 +1,1354 @@
+[
+  {
+    "provider": "ai_ark",
+    "label": "z1a_credit_before",
+    "op": "/v1/credit",
+    "http": 401,
+    "elapsed_s": 0.69,
+    "credits": 0.0,
+    "cost_usd": 0.0,
+    "request": null,
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-02T07:15:36Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1a_companies_zafran",
+    "op": "/v1/companies",
+    "http": 200,
+    "elapsed_s": 1.99,
+    "credits": 0.1,
+    "cost_usd": 0.0,
+    "request": {
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "zafran.io"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-02T07:15:49Z",
+    "credits_estimated_prebooked": 0.3,
+    "note": "actual: 1 company returned x 0.1cr (size 3 requested, totalElements=1)"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1b_people_domain",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.99,
+    "credits": 6.0,
+    "cost_usd": 0.0,
+    "request": {
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "zafran.io"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 12
+    },
+    "totalElements": 163,
+    "n_returned": 12,
+    "ts": "2026-09-02T07:16:33Z"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1b_people_name_vari_kaur",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.69,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Vari Kaur",
+                "Varinder Kaur"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "zafran.io"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-02T07:16:44Z",
+    "credits_estimated_prebooked": 1.5,
+    "note": "credits corrected to actual returned x 0.5cr"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1b_people_name_nick_fisher",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.69,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Nick Fisher",
+                "Nicholas Fisher"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "zafran.io"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-02T07:16:55Z",
+    "credits_estimated_prebooked": 1.5,
+    "note": "credits corrected to actual returned x 0.5cr"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1b_people_name_ben_seri",
+    "op": "/v1/people",
+    "http": 200,
+    "elapsed_s": 0.51,
+    "credits": 0.5,
+    "cost_usd": 0.0,
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Ben Seri"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "zafran.io"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "totalElements": 1,
+    "n_returned": 1,
+    "ts": "2026-09-02T07:17:06Z",
+    "credits_estimated_prebooked": 1.5,
+    "note": "credits corrected to actual returned x 0.5cr"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1c_email_varinderkaur",
+    "op": "/v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 0.83,
+    "credits": 1.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/varinderkaur"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-02T07:17:44Z",
+    "credits_estimated_prebooked": 1.0,
+    "note": "actual: found=True -> 1.0cr"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1c_email_nicholastfisher",
+    "op": "/v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 0.69,
+    "credits": 1.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/nicholastfisher"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-02T07:17:55Z",
+    "credits_estimated_prebooked": 1.0,
+    "note": "actual: found=True -> 1.0cr"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1c_email_sanaz-yashar",
+    "op": "/v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 2.76,
+    "credits": 1.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/sanaz-yashar"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-02T07:18:08Z",
+    "credits_estimated_prebooked": 1.0,
+    "note": "actual: found=True -> 1.0cr"
+  },
+  {
+    "provider": "ai_ark",
+    "label": "z1c_email_tomanthonyjr",
+    "op": "/v1/people/export/single",
+    "http": 200,
+    "elapsed_s": 3.3,
+    "credits": 1.0,
+    "cost_usd": 0.0,
+    "request": {
+      "url": "https://www.linkedin.com/in/tomanthonyjr"
+    },
+    "totalElements": null,
+    "n_returned": 0,
+    "ts": "2026-09-02T07:18:22Z",
+    "credits_estimated_prebooked": 1.0,
+    "note": "actual: found=True -> 1.0cr"
+  },
+  {
+    "provider": "live_http",
+    "label": "ashby_zafran",
+    "op": "GET https://api.ashbyhq.com/posting-api/job-board/zafran?includeCompensation=true",
+    "http": 404,
+    "elapsed_s": 0.23,
+    "cost_usd": 0.0,
+    "bytes": 9,
+    "ts": "2026-09-02T07:19:36Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z2_own_site",
+    "op": "contents/preferred",
+    "http": 200,
+    "elapsed_s": 0.12,
+    "cost_usd": 0.004,
+    "cost_breakdown": {
+      "total": 0.004,
+      "contents": {
+        "text": 0.004
+      }
+    },
+    "n_requested": 4,
+    "n_results": 4,
+    "statuses": [
+      {
+        "id": "https://www.zafran.io/",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/platform",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/about",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "ts": "2026-09-02T07:19:36Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z2_search_media_nick",
+    "op": "auto",
+    "query": "Cocktail Chemistry YouTube channel Nick Fisher creator cocktail book",
+    "http": 200,
+    "elapsed_s": 0.86,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 6,
+    "ts": "2026-09-02T07:19:37Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z2_search_media_sanaz",
+    "op": "auto",
+    "query": "Sanaz Yashar Zafran Security podcast interview episode audio",
+    "http": 200,
+    "elapsed_s": 0.97,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 6,
+    "ts": "2026-09-02T07:19:38Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z2_search_rumour_cisco",
+    "op": "auto",
+    "query": "Zafran Security Cisco acquisition talks Calcalist report",
+    "http": 200,
+    "elapsed_s": 0.84,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 6,
+    "ts": "2026-09-02T07:19:39Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z2_search_customers",
+    "op": "auto",
+    "query": "Zafran Security customer case study named enterprise deployment",
+    "http": 200,
+    "elapsed_s": 1.3,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 6,
+    "ts": "2026-09-02T07:19:40Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z2_search_abm_stack",
+    "op": "auto",
+    "query": "Zafran Security marketing 6sense Demandbase HubSpot ABM intent platform",
+    "http": 200,
+    "elapsed_s": 1.02,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 6,
+    "ts": "2026-09-02T07:19:41Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z2_search_compete",
+    "op": "auto",
+    "query": "Zafran Security vs Tenable Wiz exposure management competitive comparison 2026",
+    "http": 200,
+    "elapsed_s": 1.17,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 6,
+    "ts": "2026-09-02T07:19:42Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "ashby_zafran-security",
+    "op": "GET https://api.ashbyhq.com/posting-api/job-board/zafran-security?includeCompensation=true",
+    "http": 200,
+    "elapsed_s": 0.22,
+    "cost_usd": 0.0,
+    "bytes": 288322,
+    "ts": "2026-09-02T07:19:53Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "boardroom_rss",
+    "op": "GET https://anchor.fm/s/f695d6d8/podcast/rss",
+    "http": 200,
+    "elapsed_s": 0.28,
+    "cost_usd": 0.0,
+    "bytes": 894311,
+    "ts": "2026-09-02T07:20:22Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z3_identity_bind",
+    "op": "contents",
+    "http": 200,
+    "elapsed_s": 0.74,
+    "cost_usd": 0.002,
+    "cost_breakdown": {
+      "total": 0.002,
+      "contents": {
+        "text": 0.002
+      }
+    },
+    "n_requested": 3,
+    "n_results": 2,
+    "statuses": [
+      {
+        "id": "https://www.cocktailchemistrylab.com/about",
+        "status": "error",
+        "error": {
+          "httpStatusCode": 404,
+          "tag": "CRAWL_NOT_FOUND"
+        }
+      },
+      {
+        "id": "https://www.simonandschuster.com/authors/Nick-Fisher/177280135",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+        "status": "success",
+        "source": "cached"
+      }
+    ],
+    "ts": "2026-09-02T07:20:23Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z3_cc_videos",
+    "op": "auto",
+    "query": "Cocktail Chemistry youtube video how to make cocktail from movie",
+    "http": 200,
+    "elapsed_s": 1.01,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T07:20:24Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z4a_yt_nick_moscow_mule",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 9.37,
+    "usage": {
+      "promptTokenCount": 23403,
+      "candidatesTokenCount": 1626,
+      "totalTokenCount": 25029,
+      "promptTokensDetails": [
+        {
+          "modality": "VIDEO",
+          "tokenCount": 23109
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 294
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.002991,
+    "audio_seconds": 0.0,
+    "ts": "2026-09-02T07:21:13Z"
+  },
+  {
+    "provider": "live_http",
+    "label": "z4b_mp3_download_sanaz_boardroom",
+    "op": "GET mp3 enclosure",
+    "http": 200,
+    "elapsed_s": 1.28,
+    "cost_usd": 0.0,
+    "bytes": 41116315,
+    "ts": "2026-09-02T07:22:02Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z4b_files_upload_sanaz_boardroom",
+    "op": "files.upload",
+    "http": 200,
+    "elapsed_s": 2.9,
+    "cost_usd": 0.0,
+    "bytes": 41116315,
+    "note": "Files API upload is free",
+    "ts": "2026-09-02T07:22:05Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z4b_podcast_sanaz_boardroom",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 44.11,
+    "usage": {
+      "promptTokenCount": 64586,
+      "candidatesTokenCount": 12860,
+      "totalTokenCount": 77446,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 343
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 64243
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.024451,
+    "audio_seconds": 2569,
+    "ts": "2026-09-02T07:22:49Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z5_deep_zafran",
+    "op": "deep-reasoning",
+    "query": "Produce an exhaustive, cited markdown dossier on Zafran Security (zafran.io) covering:\n\n1. WHAT THEY ACTUALLY SELL \u2014 the product in their own words, the exact buyer titles, the buying\n   process they describe, deal size / pricing model if published anywhere, and how they position\n   against Tenable, Wiz, Rapid7, Qualys, Kenna/Cisco and other exposure-management vendors. Quote.\n2. FUNDING \u2014 confirm",
+    "http": 200,
+    "elapsed_s": 42.26,
+    "cost_usd": 0.025,
+    "cost_breakdown": {
+      "total": 0.025
+    },
+    "n_results": 20,
+    "ts": "2026-09-02T07:23:41Z"
+  },
+  {
+    "provider": "exa",
+    "label": "z4c_nick_video_hunt",
+    "op": "auto",
+    "query": "Cocktail Chemistry channel announcement book Nick Fisher behind the scenes why I started thank you subscribers",
+    "http": 200,
+    "elapsed_s": 1.29,
+    "cost_usd": 0.007,
+    "cost_breakdown": {
+      "total": 0.007,
+      "search": {
+        "neural": 0.007
+      }
+    },
+    "n_results": 10,
+    "ts": "2026-09-02T07:23:49Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z4a_yt_nick_supporting_cc",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 23.22,
+    "usage": {
+      "promptTokenCount": 8493,
+      "candidatesTokenCount": 855,
+      "totalTokenCount": 9348,
+      "promptTokensDetails": [
+        {
+          "modality": "VIDEO",
+          "tokenCount": 8199
+        },
+        {
+          "modality": "TEXT",
+          "tokenCount": 294
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.001191,
+    "audio_seconds": 0.0,
+    "ts": "2026-09-02T07:24:27Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z4a_yt_nick_faceless",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 14.12,
+    "usage": {
+      "promptTokenCount": 49538,
+      "candidatesTokenCount": 3085,
+      "totalTokenCount": 52623,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 294
+        },
+        {
+          "modality": "VIDEO",
+          "tokenCount": 49244
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.006188,
+    "audio_seconds": 0.0,
+    "ts": "2026-09-02T07:24:50Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.42,
+    "usage": {
+      "promptTokenCount": 487,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 487
+        }
+      ]
+    },
+    "cost_usd": 9.74e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:29Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 470,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 470
+        }
+      ]
+    },
+    "cost_usd": 9.4e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:29Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.45,
+    "usage": {
+      "promptTokenCount": 553,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 553
+        }
+      ]
+    },
+    "cost_usd": 0.0001106,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:30Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.71,
+    "usage": {
+      "promptTokenCount": 583,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 583
+        }
+      ]
+    },
+    "cost_usd": 0.0001166,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:30Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.34,
+    "usage": {
+      "promptTokenCount": 567,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 567
+        }
+      ]
+    },
+    "cost_usd": 0.0001134,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:31Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.33,
+    "usage": {
+      "promptTokenCount": 491,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 491
+        }
+      ]
+    },
+    "cost_usd": 9.82e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:31Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 446,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 446
+        }
+      ]
+    },
+    "cost_usd": 8.92e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:31Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 423,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 423
+        }
+      ]
+    },
+    "cost_usd": 8.46e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:32Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.3,
+    "usage": {
+      "promptTokenCount": 467,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 467
+        }
+      ]
+    },
+    "cost_usd": 9.34e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:32Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 537,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 537
+        }
+      ]
+    },
+    "cost_usd": 0.0001074,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:32Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.34,
+    "usage": {
+      "promptTokenCount": 514,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 514
+        }
+      ]
+    },
+    "cost_usd": 0.0001028,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:33Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.37,
+    "usage": {
+      "promptTokenCount": 553,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 553
+        }
+      ]
+    },
+    "cost_usd": 0.0001106,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:33Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.36,
+    "usage": {
+      "promptTokenCount": 530,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 530
+        }
+      ]
+    },
+    "cost_usd": 0.000106,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:34Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.34,
+    "usage": {
+      "promptTokenCount": 485,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 485
+        }
+      ]
+    },
+    "cost_usd": 9.7e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:34Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.5,
+    "usage": {
+      "promptTokenCount": 579,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 579
+        }
+      ]
+    },
+    "cost_usd": 0.0001158,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:34Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 469,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 469
+        }
+      ]
+    },
+    "cost_usd": 9.38e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:35Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.35,
+    "usage": {
+      "promptTokenCount": 604,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 604
+        }
+      ]
+    },
+    "cost_usd": 0.0001208,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:35Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.4,
+    "usage": {
+      "promptTokenCount": 466,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 466
+        }
+      ]
+    },
+    "cost_usd": 9.32e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:35Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.46,
+    "usage": {
+      "promptTokenCount": 530,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 530
+        }
+      ]
+    },
+    "cost_usd": 0.000106,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:36Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.4,
+    "usage": {
+      "promptTokenCount": 514,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 514
+        }
+      ]
+    },
+    "cost_usd": 0.0001028,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:36Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.41,
+    "usage": {
+      "promptTokenCount": 536,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 536
+        }
+      ]
+    },
+    "cost_usd": 0.0001072,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:37Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.43,
+    "usage": {
+      "promptTokenCount": 523,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 523
+        }
+      ]
+    },
+    "cost_usd": 0.0001046,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:37Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "usage": {
+      "promptTokenCount": 518,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 518
+        }
+      ]
+    },
+    "cost_usd": 0.0001036,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:37Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.33,
+    "usage": {
+      "promptTokenCount": 284,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 284
+        }
+      ]
+    },
+    "cost_usd": 5.68e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:38Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.34,
+    "usage": {
+      "promptTokenCount": 521,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 521
+        }
+      ]
+    },
+    "cost_usd": 0.0001042,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:38Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.37,
+    "usage": {
+      "promptTokenCount": 14,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 14
+        }
+      ]
+    },
+    "cost_usd": 2.8e-06,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:39Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.31,
+    "usage": {
+      "promptTokenCount": 414,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 414
+        }
+      ]
+    },
+    "cost_usd": 8.28e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:39Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.29,
+    "usage": {
+      "promptTokenCount": 434,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 434
+        }
+      ]
+    },
+    "cost_usd": 8.68e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:39Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_doc",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.32,
+    "usage": {
+      "promptTokenCount": 382,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 382
+        }
+      ]
+    },
+    "cost_usd": 7.64e-05,
+    "dim": 768,
+    "task_type": "RETRIEVAL_DOCUMENT",
+    "ts": "2026-09-02T07:25:39Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_query",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.38,
+    "usage": {
+      "promptTokenCount": 18,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 18
+        }
+      ]
+    },
+    "cost_usd": 3.6e-06,
+    "dim": 768,
+    "task_type": "RETRIEVAL_QUERY",
+    "ts": "2026-09-02T07:25:40Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_query",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.27,
+    "usage": {
+      "promptTokenCount": 19,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 19
+        }
+      ]
+    },
+    "cost_usd": 3.8e-06,
+    "dim": 768,
+    "task_type": "RETRIEVAL_QUERY",
+    "ts": "2026-09-02T07:25:40Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z6_query",
+    "op": "gemini-embedding-2:embedContent",
+    "http": 200,
+    "elapsed_s": 0.27,
+    "usage": {
+      "promptTokenCount": 13,
+      "promptTokenDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 13
+        }
+      ]
+    },
+    "cost_usd": 2.6e-06,
+    "dim": 768,
+    "task_type": "RETRIEVAL_QUERY",
+    "ts": "2026-09-02T07:25:40Z"
+  },
+  {
+    "provider": "openrouter",
+    "label": "z7_structure",
+    "op": "openai/gpt-5-mini",
+    "http": 200,
+    "elapsed_s": 81.76,
+    "usage": {
+      "prompt_tokens": 19019,
+      "completion_tokens": 8329,
+      "total_tokens": 27348,
+      "cost": 0,
+      "is_byok": true,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.02141275,
+        "upstream_inference_prompt_cost": 0.00475475,
+        "upstream_inference_completions_cost": 0.016658
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    },
+    "cost_usd": 0.02141275,
+    "ts": "2026-09-02T07:28:19Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z4d_transcribe_sanaz",
+    "op": "gemini-3.5-transcribe:generateContent",
+    "http": 200,
+    "elapsed_s": 30.31,
+    "usage": {
+      "promptTokenCount": 64358,
+      "totalTokenCount": 64358,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 115
+        },
+        {
+          "modality": "AUDIO",
+          "tokenCount": 64243
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.019284,
+    "audio_seconds": 2569,
+    "ts": "2026-09-02T07:33:51Z"
+  },
+  {
+    "provider": "gemini",
+    "label": "z4e_second_half_quotes",
+    "op": "gemini-3.5-flash-lite:generateContent",
+    "http": 200,
+    "elapsed_s": 1.94,
+    "usage": {
+      "promptTokenCount": 4289,
+      "candidatesTokenCount": 517,
+      "totalTokenCount": 4806,
+      "promptTokensDetails": [
+        {
+          "modality": "TEXT",
+          "tokenCount": 4289
+        }
+      ],
+      "serviceTier": "standard"
+    },
+    "cost_usd": 0.000636,
+    "audio_seconds": 0.0,
+    "ts": "2026-09-02T07:34:35Z"
+  }
+]

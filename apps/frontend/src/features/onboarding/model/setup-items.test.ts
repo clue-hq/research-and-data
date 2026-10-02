@@ -2,337 +2,153 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { onboardingFixture } from "../data/onboarding.fixture";
 import { SETUP_GROUPS, type SetupGroup } from "../data/setup-groups";
+import type { SetupStatus, SetupStep } from "../data/setup";
 import {
   BRAND_KIT_ITEM_ID,
-  BUDGET_STOP_ANNOTATION,
-  DEEPENING_ANNOTATION,
+  CONTINUING_ANNOTATION,
   FAILED_MEMBER_ANNOTATION,
   deriveSetupItems,
   groupStatus,
-  laneItemStatus,
-  type SetupFieldSnapshot,
+  type SetupBrandKitJobSnapshot,
 } from "./setup-items";
 
 const SETUP = onboardingFixture.setup;
 
-function field(
-  field_key: string,
-  status: SetupFieldSnapshot["status"],
-  lane: SetupFieldSnapshot["lane"] = "fast",
-): SetupFieldSnapshot {
-  return { field_key, lane, status };
+function step(
+  kind: string,
+  status: SetupStep["status"],
+  phase: SetupStep["phase"] = "fast",
+  subjectRef: string | null = null,
+): SetupStep {
+  return { kind, status, phase, subjectRef, startedAt: null, finishedAt: null, costUsd: "0", failureCode: null };
 }
 
-/** The ratified group-1 members, so the tests read against the table rather than restate it. */
-const GROUP_1 = SETUP_GROUPS[0] as SetupGroup;
-const GROUP_2 = SETUP_GROUPS[1] as SetupGroup;
+function progress(status: SetupStatus["status"], steps: SetupStep[] = []): SetupStatus {
+  return { status, run_id: "run-1", steps, brand_kit_ingestion: null };
+}
 
-test("laneItemStatus covers every real recon lane status explicitly", () => {
-  assert.equal(laneItemStatus("queued"), "queued");
-  assert.equal(laneItemStatus("running"), "running");
-  assert.equal(laneItemStatus("completed"), "complete");
-  // failed/paused must NOT read as queued — that would assert "this will happen".
-  assert.equal(laneItemStatus("failed"), "stopped");
-  assert.equal(laneItemStatus("paused"), "stopped");
-  assert.equal(laneItemStatus(null), "queued");
+const byId = <T extends { id: string }>(items: T[]): Record<string, T> =>
+  Object.fromEntries(items.map((i) => [i.id, i]));
+
+test("the row table covers the four fast kinds once, plus the persona kind on the audience row", () => {
+  const kinds = SETUP_GROUPS.flatMap((g) => g.stepKinds);
+  for (const kind of ["overview", "lineup", "reviews", "synthesis"]) {
+    assert.equal(kinds.filter((k) => k === kind).length, 1);
+  }
+  assert.ok(SETUP_GROUPS.find((g) => g.id === "audience")?.stepKinds.includes("persona"));
 });
 
-test("the ratified table partitions the eleven onboarding fields, once each", () => {
-  const keys = SETUP_GROUPS.flatMap((group) => [...group.fieldKeys]);
-  assert.equal(keys.length, 11);
-  assert.equal(new Set(keys).size, 11);
-  assert.equal(keys.includes("client.product_catalog"), false);
-  assert.equal(SETUP_GROUPS.length, 4);
+test("before the first poll every row is queued and the brand kit row rides along", () => {
+  const items = byId(deriveSetupItems(SETUP, null));
+  for (const g of SETUP_GROUPS) assert.equal(items[g.id].status, "queued");
+  assert.ok(items[BRAND_KIT_ITEM_ID]);
 });
 
-test("pre-first-poll derivation renders four queued groups plus the dummy brand kit", () => {
-  const items = deriveSetupItems(SETUP, null);
-  assert.equal(items.length, 5);
-  assert.deepEqual(
-    items.map((item) => item.status),
-    ["queued", "queued", "queued", "queued", "queued"],
+test("starting shows motion on the first row only", () => {
+  const items = deriveSetupItems(SETUP, progress("starting"));
+  assert.equal(items[0].status, "running");
+  assert.ok(items.slice(1, SETUP_GROUPS.length).every((i) => i.status === "queued"));
+});
+
+test("a running run with no step yet warms up too, not a checklist of dead rows", () => {
+  // Between `mark_run_running` and the first `start_step` the run reports `running` with zero
+  // steps. Every row queued with nothing spinning would read as a lane that had stalled.
+  const items = deriveSetupItems(SETUP, progress("running"));
+  assert.equal(items[0].status, "running");
+  assert.ok(items.slice(1, SETUP_GROUPS.length).every((i) => i.status === "queued"));
+  // The first real step supersedes the placeholder — the warm-up never outlives step truth.
+  const stepped = deriveSetupItems(SETUP, progress("running", [step("lineup", "running")]));
+  assert.equal(stepped[0].status, "queued");
+});
+
+test("a row runs when its step runs and completes when its fast step is completed or empty", () => {
+  assert.equal(groupStatus([step("overview", "running")], SETUP_GROUPS[0], progress("running")), "running");
+  assert.equal(groupStatus([step("overview", "completed")], SETUP_GROUPS[0], progress("running")), "complete");
+  // `empty` is a CORRECT outcome — nobody found reviews to cite — not a failure.
+  assert.equal(groupStatus([step("reviews", "empty")], SETUP_GROUPS[2], progress("running")), "complete");
+});
+
+test("a step of another row never moves this one", () => {
+  assert.equal(groupStatus([step("lineup", "running")], SETUP_GROUPS[0], progress("running")), "queued");
+});
+
+test("the continuing note is table truth, and it is not empty", () => {
+  // `CONTINUING_ANNOTATION` is sourced from `SetupGroup.continuingNote`, so a row that lost its
+  // note would silently turn every `endsWith(CONTINUING_ANNOTATION)` assertion into a tautology.
+  assert.notEqual(CONTINUING_ANNOTATION, "");
+  assert.equal(SETUP_GROUPS.find((g) => g.id === "audience")?.continuingNote, CONTINUING_ANNOTATION);
+  assert.ok(SETUP_GROUPS.filter((g) => g.continuingNote !== undefined).length === 1);
+});
+
+test("the audience row completes on the ICP turn and says personas continue in the background", () => {
+  const audience = SETUP_GROUPS.find((g) => g.id === "audience")!;
+  const items = byId(
+    deriveSetupItems(
+      SETUP,
+      progress("running", [
+        step("synthesis", "completed"),
+        step("persona", "running", "background", "clue-abm-buyers"),
+      ]),
+    ),
   );
-  assert.deepEqual(
-    items.slice(0, 4).map((item) => item.id),
-    SETUP_GROUPS.map((group) => group.id),
+  assert.equal(items[audience.id].status, "complete");
+  assert.ok(items[audience.id].detail?.endsWith(CONTINUING_ANNOTATION));
+});
+
+test("the promise is made on the release tick, before a persona step exists", () => {
+  // Persona steps are created AFTER `synthesis` completes — usually the very tick that releases
+  // the user. Waiting for one to appear means the promise is never rendered at all.
+  const items = byId(deriveSetupItems(SETUP, progress("running", [step("synthesis", "completed")])));
+  assert.equal(items.audience.status, "complete");
+  assert.ok(items.audience.detail?.endsWith(CONTINUING_ANNOTATION));
+  // …and it disappears once the persona work has actually finished.
+  const done = byId(
+    deriveSetupItems(
+      SETUP,
+      progress("running", [
+        step("synthesis", "completed"),
+        step("persona", "completed", "background", "clue-abm-buyers"),
+      ]),
+    ),
   );
-  const brandKit = items.find((item) => item.id === BRAND_KIT_ITEM_ID);
-  assert.ok(brandKit);
-  assert.equal(brandKit.label, "Creating brand kit");
+  assert.ok(!done.audience.detail?.includes(CONTINUING_ANNOTATION));
+  // A row with no continuing note never claims one.
+  assert.ok(!items.company.detail?.includes(CONTINUING_ANNOTATION));
 });
 
-test("starting shows motion on the first group only while no field event exists yet", () => {
-  const items = deriveSetupItems(SETUP, { status: "starting" });
-  assert.deepEqual(
-    items.map((item) => item.status),
-    ["running", "queued", "queued", "queued", "queued"],
+test("a failed fast step annotates its row and overall failed stops every spinner", () => {
+  const items = byId(
+    deriveSetupItems(SETUP, progress("failed", [step("lineup", "failed"), step("overview", "running")])),
   );
-  // No fabricated detail: the motion rule never annotates.
-  assert.equal(items[0]?.detail, SETUP_GROUPS[0]?.detail);
-});
-
-test("the first real field event supersedes the starting motion rule", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "starting",
-    fields: [field(GROUP_2.fieldKeys[0]!, "started")],
-  });
-  // Group 1 has no event of its own: event truth wins over the warm-up placeholder.
-  assert.equal(items[0]?.status, "queued");
-  assert.equal(items[1]?.status, "running");
-});
-
-test("a group runs on its first member event and completes only when every member is terminal", () => {
-  const partial = deriveSetupItems(SETUP, {
-    status: "running",
-    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
-  });
-  assert.equal(partial[0]?.status, "running");
-
-  const done = deriveSetupItems(SETUP, {
-    status: "running",
-    fields: [
-      field(GROUP_1.fieldKeys[0]!, "resolved"),
-      // `empty` and `failed` are terminal too: an unanswerable field is a correct outcome,
-      // and a failed one is finished work, not pending work.
-      field(GROUP_1.fieldKeys[1]!, "empty"),
-      field(GROUP_1.fieldKeys[2]!, "failed"),
-    ],
-  });
-  assert.equal(done[0]?.status, "complete");
-});
-
-test("an in-flight member keeps the group running even when its siblings are terminal", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fields: [
-      field(GROUP_1.fieldKeys[0]!, "resolved"),
-      field(GROUP_1.fieldKeys[1]!, "resolved"),
-      field(GROUP_1.fieldKeys[2]!, "started"),
-    ],
-  });
-  assert.equal(items[0]?.status, "running");
+  assert.ok(items.products.detail?.endsWith(FAILED_MEMBER_ANNOTATION));
+  assert.equal(items.company.status, "queued");
 });
 
 test("overall complete forces every group complete (release consistency)", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "complete",
-    fields: [field(GROUP_1.fieldKeys[0]!, "started")],
-  });
-  assert.deepEqual(
-    items.slice(0, 4).map((item) => item.status),
-    ["complete", "complete", "complete", "complete"],
-  );
-});
-
-test("a halted run never leaves a spinner running on work nothing is doing", () => {
-  const fields = [
-    field(GROUP_1.fieldKeys[0]!, "resolved"),
-    field(GROUP_1.fieldKeys[1]!, "failed"),
-    // GROUP_1.fieldKeys[2] and every later group were never reached.
-  ];
-  for (const status of ["failed", "unavailable"]) {
-    const items = deriveSetupItems(SETUP, { status, fields });
-    assert.deepEqual(
-      items.map((item) => item.status),
-      ["queued", "queued", "queued", "queued", "queued"],
-      `${status} must not fabricate motion`,
-    );
-    // The truth of what happened stays on the detail line (plus the screen's failure block).
-    assert.equal(items[0]?.detail, `${GROUP_1.detail}${FAILED_MEMBER_ANNOTATION}`);
-  }
-});
-
-test("a halted run still credits a group that genuinely finished", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "failed",
-    fields: GROUP_2.fieldKeys.map((key) => field(key, "resolved")),
-  });
-  assert.equal(items[1]?.status, "complete");
-});
-
-test("a PAUSED fast lane stops the spinner even though overall status still reads running", () => {
-  // The backend maps every non-failed, non-completed fast lane to overall "running"
-  // (stage0_setup.py), so lane truth is the only place a pause is visible.
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fast_status: "paused",
-    background_status: "queued",
-    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
-  });
-  assert.equal(items[0]?.status, "queued");
-  assert.equal(items[1]?.status, "queued");
-});
-
-test("a paused fast lane the background lane picked up is real motion, not a halt", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fast_status: "paused",
-    background_status: "running",
-    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
-  });
-  assert.equal(items[0]?.status, "running");
-});
-
-test("a running fast lane is motion regardless of a stopped background lane", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fast_status: "running",
-    background_status: "paused",
-    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
-  });
-  assert.equal(items[0]?.status, "running");
-});
-
-test("a stopped background lane cannot un-complete a released run", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "complete",
-    fast_status: "completed",
-    background_status: "failed",
-    fields: [field(GROUP_1.fieldKeys[0]!, "started", "background")],
-  });
-  assert.deepEqual(
-    items.slice(0, 4).map((item) => item.status),
-    ["complete", "complete", "complete", "complete"],
-  );
-});
-
-test("a failed member is annotated on the detail line, never as a new visual state", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fields: [field(GROUP_2.fieldKeys[0]!, "failed")],
-  });
-  assert.equal(items[1]?.detail, `${GROUP_2.detail}${FAILED_MEMBER_ANNOTATION}`);
-  // The frozen three-state vocabulary is untouched.
-  assert.ok(["complete", "running", "queued"].includes(items[1]?.status ?? ""));
-});
-
-test("a budget-stopped lane annotates every group holding an unreached member", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fast_budget_exhausted: true,
-    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
-  });
-  // Group 1 still has unreached members, group 2 was never started at all.
-  assert.equal(items[0]?.detail, `${GROUP_1.detail}${BUDGET_STOP_ANNOTATION}`);
-  assert.equal(items[1]?.detail, `${GROUP_2.detail}${BUDGET_STOP_ANNOTATION}`);
-});
-
-test("a released run still admits the members its budget never reached", () => {
-  // The pairing a user actually sees: the fast lane completed (release), but it stopped at the
-  // cap first, so "complete" must not be allowed to imply full coverage.
-  const items = deriveSetupItems(SETUP, {
-    status: "complete",
-    fast_status: "completed",
-    fast_budget_exhausted: true,
-    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
-  });
-  assert.equal(items[0]?.status, "complete");
-  assert.equal(items[0]?.detail, `${GROUP_1.detail}${BUDGET_STOP_ANNOTATION}`);
-});
-
-test("the background lane's own budget verdict annotates on its own", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fast_budget_exhausted: false,
-    background_budget_exhausted: true,
-    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
-  });
-  assert.equal(items[0]?.detail, `${GROUP_1.detail}${BUDGET_STOP_ANNOTATION}`);
-});
-
-test("an unknown budget verdict never fabricates a budget claim", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fast_budget_exhausted: null,
-    background_budget_exhausted: null,
-    fields: [field(GROUP_1.fieldKeys[0]!, "resolved")],
-  });
-  assert.equal(items[0]?.detail, GROUP_1.detail);
-  assert.equal(items[1]?.detail, GROUP_2.detail);
-});
-
-test("a background re-run of an already-covered group reads as deepening, not a bare restart", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fields: [
-      field(GROUP_1.fieldKeys[0]!, "started", "background"),
-      field(GROUP_1.fieldKeys[1]!, "resolved"),
-      field(GROUP_1.fieldKeys[2]!, "resolved"),
-    ],
-  });
-  assert.equal(items[0]?.status, "running");
-  assert.equal(items[0]?.detail, `${GROUP_1.detail}${DEEPENING_ANNOTATION}`);
-});
-
-test("deepening also explains a completed group the background lane is revisiting", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "complete",
-    fields: [
-      field(GROUP_1.fieldKeys[0]!, "started", "background"),
-      field(GROUP_1.fieldKeys[1]!, "resolved"),
-      field(GROUP_1.fieldKeys[2]!, "resolved"),
-    ],
-  });
-  assert.equal(items[0]?.status, "complete");
-  assert.equal(items[0]?.detail, `${GROUP_1.detail}${DEEPENING_ANNOTATION}`);
-});
-
-test("a budget-stopped fast lane never lets background work be called deepening", () => {
-  // With the fast lane cut off at the cap, a background `started` may be FIRST contact with
-  // that field, not a second pass — so the deepening claim is withheld.
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fast_budget_exhausted: true,
-    fields: [
-      field(GROUP_1.fieldKeys[0]!, "started", "background"),
-      field(GROUP_1.fieldKeys[1]!, "resolved"),
-      field(GROUP_1.fieldKeys[2]!, "resolved"),
-    ],
-  });
-  assert.equal(items[0]?.detail, GROUP_1.detail);
-});
-
-test("a first-pass fast-lane group is never called deepening", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fields: [
-      field(GROUP_1.fieldKeys[0]!, "started"),
-      field(GROUP_1.fieldKeys[1]!, "resolved"),
-      field(GROUP_1.fieldKeys[2]!, "resolved"),
-    ],
-  });
-  assert.equal(items[0]?.detail, GROUP_1.detail);
-});
-
-test("a failed member outranks the budget and deepening annotations (one clause only)", () => {
-  const items = deriveSetupItems(SETUP, {
-    status: "running",
-    fast_budget_exhausted: true,
-    fields: [
-      field(GROUP_1.fieldKeys[0]!, "failed"),
-      field(GROUP_1.fieldKeys[1]!, "started", "background"),
-    ],
-  });
-  assert.equal(items[0]?.detail, `${GROUP_1.detail}${FAILED_MEMBER_ANNOTATION}`);
+  const items = deriveSetupItems(SETUP, progress("complete", [step("overview", "running")]));
+  assert.ok(items.slice(0, SETUP_GROUPS.length).every((i) => i.status === "complete"));
 });
 
 test("row ids are stable across ticks so the live region never re-keys its rows", () => {
   const ticks = [
     deriveSetupItems(SETUP, null),
-    deriveSetupItems(SETUP, { status: "starting" }),
-    deriveSetupItems(SETUP, {
-      status: "running",
-      fields: [field(GROUP_1.fieldKeys[0]!, "started")],
-    }),
-    deriveSetupItems(SETUP, { status: "complete", fast_budget_exhausted: true }),
+    deriveSetupItems(SETUP, progress("starting")),
+    deriveSetupItems(SETUP, progress("running", [step("overview", "running")])),
+    deriveSetupItems(SETUP, progress("complete", [step("overview", "completed")])),
   ];
   const ids = ticks.map((items) => items.map((item) => item.id).join(","));
   assert.equal(new Set(ids).size, 1);
 });
 
 /** The brand-kit row after a derivation, or `undefined` when the fixture dropped it. */
-function brandKitRow(progress: Parameters<typeof deriveSetupItems>[1]) {
-  return deriveSetupItems(SETUP, progress).find((item) => item.id === BRAND_KIT_ITEM_ID);
+function brandKitRow(status: SetupStatus | null) {
+  return deriveSetupItems(SETUP, status).find((item) => item.id === BRAND_KIT_ITEM_ID);
+}
+
+/** A tick carrying an ingestion job. The job status is structurally typed (`SetupBrandKitJobSnapshot`)
+ * so the unrecognized-status case below is expressible; the schema's `.catch` is its real defence. */
+function withJob(job: SetupBrandKitJobSnapshot | null, status: SetupStatus["status"] = "running"): SetupStatus {
+  return { ...progress(status), brand_kit_ingestion: job as SetupStatus["brand_kit_ingestion"] };
 }
 
 /** The fixture's own brand-kit detail line — the base every mapping keeps. */
@@ -342,77 +158,55 @@ test("no ingestion job leaves the brand-kit row queued, and the fixture status n
   // The fixture claims `running` for the design-review theatre; live truth is the only input.
   assert.equal(SETUP.items.find((item) => item.id === BRAND_KIT_ITEM_ID)?.status, "running");
   assert.equal(brandKitRow(null)?.status, "queued");
-  assert.equal(brandKitRow({ status: "complete" })?.status, "queued");
-  // A pre-slice payload carries no field at all; an explicit null says the same thing.
-  assert.equal(brandKitRow({ status: "running", brand_kit_ingestion: null })?.status, "queued");
-  assert.equal(brandKitRow({ status: "running" })?.detail, BRAND_KIT_DETAIL);
+  assert.equal(brandKitRow(progress("complete"))?.status, "queued");
+  assert.equal(brandKitRow(withJob(null))?.status, "queued");
+  assert.equal(brandKitRow(withJob(null))?.detail, BRAND_KIT_DETAIL);
 });
 
 test("a queued or running ingestion job runs the brand-kit row", () => {
   for (const status of ["queued", "running"]) {
-    const row = brandKitRow({
-      status: "running",
-      brand_kit_ingestion: { job_id: "ingest_1", status },
-    });
+    const row = brandKitRow(withJob({ job_id: "ingest_1", status }));
     assert.equal(row?.status, "running", `job ${status} must read as running`);
     assert.equal(row?.detail, BRAND_KIT_DETAIL);
   }
 });
 
 test("a succeeded ingestion job completes the brand-kit row", () => {
-  const row = brandKitRow({
-    status: "running",
-    brand_kit_ingestion: { job_id: "ingest_1", status: "succeeded" },
-  });
+  const row = brandKitRow(withJob({ job_id: "ingest_1", status: "succeeded" }));
   assert.equal(row?.status, "complete");
   assert.equal(row?.detail, BRAND_KIT_DETAIL);
 });
 
 test("a failed ingestion job annotates instead of claiming a kit exists", () => {
   // The row vocabulary has no failed state: `complete` would claim a kit nothing produced, so
-  // the failure rides the detail line — the same idiom a failed recon field uses.
-  const row = brandKitRow({
-    status: "complete",
-    brand_kit_ingestion: { job_id: "ingest_1", status: "failed" },
-  });
+  // the failure rides the detail line — the same idiom a failed step uses on its own row.
+  const row = brandKitRow(withJob({ job_id: "ingest_1", status: "failed" }, "complete"));
   assert.equal(row?.status, "queued");
   assert.equal(row?.detail, `${BRAND_KIT_DETAIL}${FAILED_MEMBER_ANNOTATION}`);
 });
 
 test("an unrecognized job status reads as in-flight, never as a kit that exists", () => {
-  const row = brandKitRow({
-    status: "running",
-    brand_kit_ingestion: { job_id: "ingest_1", status: "some-future-status" },
-  });
+  const row = brandKitRow(withJob({ job_id: "ingest_1", status: "some-future-status" }));
   assert.equal(row?.status, "running");
   assert.equal(row?.detail, BRAND_KIT_DETAIL);
 });
 
-test("the brand-kit row is independent of the recon groups it sits under", () => {
+test("the brand-kit row is independent of the step rows it sits under", () => {
   // The warm-up rule is index-0-only and the group reduction never sees the job: a released,
-  // fully-complete recon run with a still-running ingestion keeps the two truths separate.
-  const items = deriveSetupItems(SETUP, {
-    status: "complete",
-    brand_kit_ingestion: { job_id: "ingest_1", status: "running" },
-  });
+  // fully-complete run with a still-running ingestion keeps the two truths separate.
+  const items = deriveSetupItems(SETUP, withJob({ job_id: "ingest_1", status: "running" }, "complete"));
   assert.deepEqual(
     items.map((item) => item.status),
     ["complete", "complete", "complete", "complete", "running"],
   );
-  // …and a halted recon run does not demote a kit that genuinely published.
-  const halted = deriveSetupItems(SETUP, {
-    status: "failed",
-    brand_kit_ingestion: { job_id: "ingest_1", status: "succeeded" },
-  });
+  // …and a halted run does not demote a kit that genuinely published.
+  const halted = deriveSetupItems(SETUP, withJob({ job_id: "ingest_1", status: "succeeded" }, "failed"));
   assert.deepEqual(
     halted.map((item) => item.status),
     ["queued", "queued", "queued", "queued", "complete"],
   );
   // The warm-up row stays the first GROUP even when the brand kit is the only thing moving.
-  const warming = deriveSetupItems(SETUP, {
-    status: "starting",
-    brand_kit_ingestion: { job_id: "ingest_1", status: "queued" },
-  });
+  const warming = deriveSetupItems(SETUP, withJob({ job_id: "ingest_1", status: "queued" }, "starting"));
   assert.equal(warming[0]?.id, SETUP_GROUPS[0]?.id);
   assert.equal(warming[0]?.status, "running");
 });
@@ -423,41 +217,15 @@ test("a fixture without the brand-kit row drops it cleanly", () => {
     items: SETUP.items.filter((item) => item.id !== BRAND_KIT_ITEM_ID),
   };
   const items = deriveSetupItems(withoutBrandKit, null);
-  assert.equal(items.length, 4);
+  assert.equal(items.length, SETUP_GROUPS.length);
 });
 
 test("the group table is a parameter, not a hard-wired dependency", () => {
   const table: readonly SetupGroup[] = [
-    { id: "solo", label: "Solo", detail: "One field", fieldKeys: ["client.product"] },
+    { id: "solo", label: "Solo", detail: "One step", stepKinds: ["overview"] },
   ];
-  const items = deriveSetupItems(
-    SETUP,
-    { status: "running", fields: [field("client.product", "resolved")] },
-    table,
-  );
+  const items = deriveSetupItems(SETUP, progress("running", [step("overview", "completed")]), table);
   assert.equal(items.length, 2);
   assert.equal(items[0]?.id, "solo");
   assert.equal(items[0]?.status, "complete");
-});
-
-test("groupStatus is a pure reduction over member events and run truth", () => {
-  assert.equal(groupStatus([], GROUP_1, { status: "running" }), "queued");
-  assert.equal(groupStatus([], GROUP_1, { status: "complete" }), "complete");
-  assert.equal(
-    groupStatus([field(GROUP_1.fieldKeys[0]!, "started")], GROUP_1, { status: "running" }),
-    "running",
-  );
-  // A field outside the group never moves it.
-  assert.equal(
-    groupStatus([field(GROUP_2.fieldKeys[0]!, "resolved")], GROUP_1, { status: "running" }),
-    "queued",
-  );
-  // Lane truth is part of the reduction, not just the overall status.
-  assert.equal(
-    groupStatus([field(GROUP_1.fieldKeys[0]!, "started")], GROUP_1, {
-      status: "running",
-      fast_status: "paused",
-    }),
-    "queued",
-  );
 });

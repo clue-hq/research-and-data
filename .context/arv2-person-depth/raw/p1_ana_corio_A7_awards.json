@@ -1,0 +1,240 @@
+{
+  "requestId": "808b3387c04bb2b90976669315d663b9",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/dgk0txtrb6b",
+      "title": "Lexy Marchbank",
+      "url": "https://www.linkedin.com/in/lexymarchbank",
+      "publishedDate": "2026-08-22T05:51:12.000Z",
+      "text": "# Lexy Marchbank\n\nFounder of FieldSavvy | Event & Field Marketing for Startups\n\nChicago, Illinois, United States (US)\n\n500 connections \u2022 1,400 followers\n\n## About\n\nI help fast moving startups turn events into actual results - not just branded\u2026\n\nTotal Experience: 13 years and 5 months\n\n## Experience\n\n### Director of Events - [Harmonic Security](https://www.linkedin.com/company/harmonic-security) (Current)\n\nJul 2026 - Present (1 month)\n\nDepartment: Marketing \u2022 Level: Director\n\nHarmonic Security is a Technology, Information and Internet company. Harmonic Security has 50-60 employees and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and United Kingdom. Has $24.5M in total funding, with 2 prior funding rounds.\n\n### Founder - [Field Savvy](https://www.linkedin.com/company/field-savvy) (Current)\n\nJun 2024 - Present (2 years and 2 months)\n\nAs founder, I lead strategy, client partnerships, and team development. I work closely with high-growth B2B startups, particularly in cybersecurity and tech, to create field marketing programs that drive real results. That includes everything from pre-event planning and staffing to onsite execution and post-event follow-up.\n\nDepartment: General Management \u2022 Level: Founder\n\nField Savvy is a Marketing Services company. FieldSavvy is a company that offers summer slowdown packages and provides consulting services for quick meetings ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/dgk0txtrb6b",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Lexy Marchbank",
+            "firstName": "Lexy",
+            "lastName": "Marchbank",
+            "location": "Chicago, Illinois, United States",
+            "workHistory": [
+              {
+                "title": "Director of Events",
+                "location": null,
+                "dates": {
+                  "from": "2026-07-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9j6bkrfw0m4",
+                  "name": "Harmonic Security"
+                }
+              },
+              {
+                "title": "Founder",
+                "location": null,
+                "dates": {
+                  "from": "2024-06-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/561yzwtyr7v",
+                  "name": "Field Savvy"
+                }
+              },
+              {
+                "title": "Director Of Field Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2024-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9qjtt6h5xy3",
+                  "name": "Material Security"
+                }
+              },
+              {
+                "title": "Global Events & Field Marketing Manager - Google Cloud Security",
+                "location": null,
+                "dates": {
+                  "from": "2019-09-01",
+                  "to": "2022-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/k7t465sztky",
+                  "name": "Google"
+                }
+              },
+              {
+                "title": "Field Marketing Manager - Chronicle",
+                "location": null,
+                "dates": {
+                  "from": "2019-04-01",
+                  "to": "2019-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/k7t465sztky",
+                  "name": "Google"
+                }
+              },
+              {
+                "title": "Manager, Marketing Events",
+                "location": null,
+                "dates": {
+                  "from": "2018-01-01",
+                  "to": "2019-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/10pnymgmrgk",
+                  "name": "Exabeam"
+                }
+              },
+              {
+                "title": "Global and Field Event Manager Marketing Demand Generation Manager",
+                "location": null,
+                "dates": {
+                  "from": "2015-10-01",
+                  "to": "2017-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/10pnymgmrgk",
+                  "name": "Exabeam"
+                }
+              },
+              {
+                "title": "Branding and Marcom Specialist",
+                "location": "Menlo Park, CA",
+                "dates": {
+                  "from": "2015-09-01",
+                  "to": "2015-10-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Delphix"
+                }
+              },
+              {
+                "title": "Marketing Coordinator",
+                "location": "Menlo Park, CA",
+                "dates": {
+                  "from": "2014-06-01",
+                  "to": "2015-08-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Delphix"
+                }
+              },
+              {
+                "title": "Consultant",
+                "location": "Los Gatos",
+                "dates": {
+                  "from": "2013-11-01",
+                  "to": "2015-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Haute Bride"
+                }
+              },
+              {
+                "title": "Marketing Coordinator",
+                "location": null,
+                "dates": {
+                  "from": "2012-02-01",
+                  "to": "2012-09-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "BeWhys Marketing"
+                }
+              },
+              {
+                "title": "Public Relations Intern",
+                "location": "West Hollywood, CA",
+                "dates": {
+                  "from": "2012-01-01",
+                  "to": "2012-05-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "The Shop Public Relations"
+                }
+              },
+              {
+                "title": "Public Relations Intern",
+                "location": "Newport Beach, CA",
+                "dates": {
+                  "from": "2011-09-01",
+                  "to": "2011-12-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Brower, Miller and Cole"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": null,
+                "dates": {
+                  "from": "2013",
+                  "to": "2013"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Victoria University of Wellington"
+                }
+              },
+              {
+                "degree": "Bachelor's degree Public Relations and Advertising",
+                "dates": {
+                  "from": "2010",
+                  "to": "2013"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Chapman University"
+                }
+              },
+              {
+                "degree": "Master's degree Management",
+                "dates": {
+                  "from": "2021",
+                  "to": "2024"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Harvard Extension School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 1189.9,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.28,
+  "_request": {
+    "query": "\"Ana Corio\" award winner \"40 under 40\" top marketers recognition list",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

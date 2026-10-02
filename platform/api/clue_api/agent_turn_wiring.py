@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Sequence
-from typing import Literal
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID, uuid5
 
+from pydantic import JsonValue
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
+from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import (
     AgentExecutionStatus,
@@ -53,13 +58,18 @@ from clue_agents.turns import (
 )
 from clue_api.agent_gate import redact_gate_snapshots_for_subject
 from clue_api.context_observability import record_context_receipt
+from clue_api.conversation_continuation import thread_message_refs
 from clue_api.thread_store import ensure_platform_thread
 from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
+from clue_execution.run_events import emit_design_run_event
 from clue_obs import get_logger
 from clue_storage import StorageBackend, artifact_key, content_address
 from clue_storage.artifacts import mark_erased, purge_erased_artifacts, record_artifact
 from clue_storage.protocol import ArtifactNotFound
+
+if TYPE_CHECKING:  # the refresher's module imports this one; only the type is needed here
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 __all__ = [
     "DbAgentContextReceiptStore",
@@ -68,6 +78,9 @@ __all__ = [
     "DbAgentTurnJournal",
     "DurableAgentArtifactStore",
     "AgentPrivacyService",
+    "DesignRunPrivacyTarget",
+    "DesignRunPrivacyPurger",
+    "is_agent_turn_privacy_tombstoned",
 ]
 
 _EVENT_NAMESPACE = UUID("f16bca96-c8c9-5fad-9f42-35ad7873f021")
@@ -75,6 +88,24 @@ _REF_NAMESPACE = UUID("9431adab-a359-59ee-b2f3-af522f93016b")
 _PRIVACY_NAMESPACE = UUID("f4d51cff-a92e-5ed6-a07f-826cb2348241")
 _PROJECT_PRIVACY_NAMESPACE = UUID("cd318be1-c3cf-50c1-9ddd-826cd63fa5b3")
 log = get_logger("clue_api.agent_turn")
+
+
+async def is_agent_turn_privacy_tombstoned(
+    conn: AsyncConnection, *, workspace_id: str, turn_id: UUID
+) -> bool:
+    """Erasure is permanent even if a stale writer appends a later status event."""
+    return bool(
+        (
+            await conn.execute(
+                text(
+                    "SELECT EXISTS (SELECT 1 FROM agent_turn_event "
+                    "WHERE workspace_id=:workspace AND turn_id=:turn "
+                    "AND status='privacy_tombstoned')"
+                ),
+                {"workspace": workspace_id, "turn": turn_id},
+            )
+        ).scalar_one()
+    )
 
 
 def _event_id(turn_id: UUID, status: str) -> UUID:
@@ -621,11 +652,15 @@ class DbAgentTurnJournal:
                     "INSERT INTO agent_model_call "
                     "(id, turn_id, execution_id, workspace_id, sequence, requested_model, "
                     " answering_model, status, input_tokens, cache_read_input_tokens, "
-                    " cache_creation_input_tokens, output_tokens, cost_millicredits, latency_ms, "
+                    " cache_creation_input_tokens, output_tokens, cost_millicredits, "
+                    " cost_usd, cost_source, langfuse_trace_id, langfuse_observation_id, "
+                    " latency_ms, "
                     " error_code, role, started_at, completed_at) "
                     "VALUES (:id, :turn, :execution, :workspace, :sequence, :requested, "
                     " :answering, :status, :input_tokens, :cache_read, :cache_creation, "
-                    " :output_tokens, :cost, :latency, :error, :role, :started, :completed) "
+                    " :output_tokens, :cost, :cost_usd, :cost_source, "
+                    " :langfuse_trace, :langfuse_observation, "
+                    " :latency, :error, :role, :started, :completed) "
                     "ON CONFLICT (id) DO NOTHING RETURNING id"
                 ),
                 {
@@ -642,6 +677,10 @@ class DbAgentTurnJournal:
                     "cache_creation": receipt.cache_creation_input_tokens,
                     "output_tokens": receipt.output_tokens,
                     "cost": receipt.cost_millicredits,
+                    "cost_usd": receipt.cost_usd,
+                    "cost_source": receipt.cost_source,
+                    "langfuse_trace": receipt.langfuse_trace_id,
+                    "langfuse_observation": receipt.langfuse_observation_id,
                     "latency": receipt.latency_ms,
                     "error": receipt.error_code,
                     "role": receipt.role.value if receipt.role is not None else None,
@@ -655,6 +694,8 @@ class DbAgentTurnJournal:
                         "SELECT turn_id, execution_id, workspace_id, sequence, requested_model, "
                         "answering_model, status, input_tokens, cache_read_input_tokens, "
                         "cache_creation_input_tokens, output_tokens, cost_millicredits, "
+                        "cost_usd, cost_source, "
+                        "langfuse_trace_id, langfuse_observation_id, "
                         "latency_ms, error_code, role, started_at, completed_at "
                         "FROM agent_model_call WHERE id=:id"
                     ),
@@ -674,6 +715,15 @@ class DbAgentTurnJournal:
                     int(row["cache_creation_input_tokens"]),
                     int(row["output_tokens"]),
                     int(row["cost_millicredits"]),
+                    # Lane 3 slice 1: the measured cost is part of the immutable receipt, so a
+                    # replay that reports a different figure is refused like any other drift. A
+                    # row written before the columns existed reads NULL/NULL — absent, which only
+                    # an equally cost-free receipt matches.
+                    None if row["cost_usd"] is None else Decimal(row["cost_usd"]),
+                    row["cost_source"],
+                    # Lane 3 slice 3: the Langfuse ids are part of the immutable receipt too.
+                    row["langfuse_trace_id"],
+                    row["langfuse_observation_id"],
                     float(row["latency_ms"]),
                     row["error_code"],
                     row["role"],
@@ -693,6 +743,10 @@ class DbAgentTurnJournal:
                     receipt.cache_creation_input_tokens,
                     receipt.output_tokens,
                     receipt.cost_millicredits,
+                    receipt.cost_usd,
+                    receipt.cost_source,
+                    receipt.langfuse_trace_id,
+                    receipt.langfuse_observation_id,
                     receipt.latency_ms,
                     receipt.error_code,
                     receipt.role.value if receipt.role is not None else None,
@@ -963,6 +1017,8 @@ class DbAgentTurnJournal:
     ) -> None:
         """Atomically make a previously recorded envelope authoritative for turn state."""
 
+        from clue_api.chat.turn_controls import TurnStopRequested, lock_turn_control, stop_requested
+
         if envelope_ref.workspace_id != workspace_id:
             raise ValueError("finalization envelope artifact crosses the turn workspace")
         status = {
@@ -972,6 +1028,9 @@ class DbAgentTurnJournal:
             "failed": AgentTurnStatus.FAILED,
         }[envelope.status.value]
         async with self._conn_factory() as conn:
+            await lock_turn_control(conn, workspace_id=workspace_id, turn_id=turn_id)
+            if await stop_requested(conn, workspace_id=workspace_id, turn_id=turn_id):
+                raise TurnStopRequested("Stop accepted before finalization")
             inserted = await conn.execute(
                 text(
                     """
@@ -1079,7 +1138,18 @@ class DbAgentTurnJournal:
         status: AgentTurnStatus,
         reason_code: str | None,
     ) -> None:
+        from clue_api.chat.turn_controls import lock_turn_control
+
         async with self._conn_factory() as conn:
+            await lock_turn_control(conn, workspace_id=workspace_id, turn_id=turn_id)
+            if await conn.scalar(
+                text(
+                    "SELECT 1 FROM agent_turn_event WHERE workspace_id=:workspace "
+                    "AND turn_id=:turn AND status='cancelled'"
+                ),
+                {"workspace": workspace_id, "turn": turn_id},
+            ):
+                return
             exists = await conn.execute(
                 text("SELECT 1 FROM agent_turn WHERE id=:turn AND workspace_id=:workspace"),
                 {"turn": turn_id, "workspace": workspace_id},
@@ -1316,33 +1386,7 @@ class DbAgentHistoryStore(AgentHistoryStore):
 
     async def load(self, *, workspace_id: str, thread_id: str) -> Sequence[HistoryMessageRef]:
         async with self._conn_factory() as conn:
-            result = await conn.execute(
-                text(
-                    "SELECT m.id, m.turn_id, m.sequence, m.role, m.body_artifact_key, "
-                    "m.body_sha256, a.media_type, a.size_bytes "
-                    "FROM agent_thread_message m "
-                    "JOIN artifact a ON a.storage_key=m.body_artifact_key "
-                    "WHERE m.workspace_id=:workspace AND m.thread_id=:thread "
-                    "ORDER BY m.sequence"
-                ),
-                {"workspace": workspace_id, "thread": thread_id},
-            )
-            return tuple(
-                HistoryMessageRef(
-                    message_id=row["id"],
-                    turn_id=row["turn_id"],
-                    sequence=int(row["sequence"]),
-                    role=row["role"],
-                    body_ref=ArtifactRef(
-                        workspace_id=workspace_id,
-                        artifact_key=row["body_artifact_key"],
-                        sha256=row["body_sha256"],
-                        media_type=row["media_type"],
-                        byte_count=int(row["size_bytes"]),
-                    ),
-                )
-                for row in result.mappings()
-            )
+            return await thread_message_refs(conn, workspace_id=workspace_id, thread_id=thread_id)
 
     async def append(
         self,
@@ -1354,82 +1398,103 @@ class DbAgentHistoryStore(AgentHistoryStore):
         role: Literal["system", "user", "assistant", "tool"],
         body_ref: ArtifactRef,
     ) -> HistoryMessageRef:
-        if body_ref.workspace_id != workspace_id:
-            raise ValueError("history body ref crosses the thread workspace")
         async with self._conn_factory() as conn:
-            existing = await conn.execute(
-                text(
-                    "SELECT turn_id, sequence, role, body_artifact_key, body_sha256 "
-                    "FROM agent_thread_message "
-                    "WHERE workspace_id=:workspace AND id=:id"
-                ),
-                {"workspace": workspace_id, "id": message_id},
-            )
-            row = existing.mappings().first()
-            if row is not None:
-                if (
-                    row["turn_id"] != turn_id
-                    or row["role"] != role
-                    or row["body_artifact_key"] != body_ref.artifact_key
-                    or row["body_sha256"] != body_ref.sha256
-                ):
-                    raise ValueError("history message id already has different immutable content")
-                return HistoryMessageRef(
-                    message_id=message_id,
-                    turn_id=turn_id,
-                    sequence=int(row["sequence"]),
-                    role=role,
-                    body_ref=body_ref,
-                )
-            await conn.execute(
-                text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
-                {"scope": _thread_lock_key(workspace_id, thread_id)},
-            )
-            next_result = await conn.execute(
-                text(
-                    "SELECT COALESCE(max(sequence), 0) + 1 "
-                    "FROM agent_thread_message "
-                    "WHERE workspace_id=:workspace AND thread_id=:thread"
-                ),
-                {"workspace": workspace_id, "thread": thread_id},
-            )
-            sequence = int(next_result.scalar_one())
-            await conn.execute(
-                text(
-                    "INSERT INTO agent_thread_message "
-                    "(id, workspace_id, thread_id, turn_id, sequence, role, body_artifact_key, "
-                    " body_sha256, retention_class) "
-                    "SELECT :id, :workspace, :thread, :turn, :sequence, :role, :key, :sha, "
-                    " t.retention_class FROM agent_turn t "
-                    "WHERE t.id=:turn AND t.workspace_id=:workspace"
-                ),
-                {
-                    "id": message_id,
-                    "workspace": workspace_id,
-                    "thread": thread_id,
-                    "turn": turn_id,
-                    "sequence": sequence,
-                    "role": role,
-                    "key": body_ref.artifact_key,
-                    "sha": body_ref.sha256,
-                },
-            )
-            await _insert_artifact_ref(
+            return await self.append_in_transaction(
                 conn,
-                turn_id=turn_id,
-                owner_kind="history",
-                owner_id=message_id,
-                role="history_body",
-                ordinal=0,
-                ref=body_ref,
-            )
-            return HistoryMessageRef(
                 message_id=message_id,
                 turn_id=turn_id,
-                sequence=sequence,
+                workspace_id=workspace_id,
+                thread_id=thread_id,
                 role=role,
                 body_ref=body_ref,
             )
+
+    @staticmethod
+    async def append_in_transaction(
+        conn: AsyncConnection,
+        *,
+        message_id: UUID,
+        turn_id: UUID,
+        workspace_id: str,
+        thread_id: str,
+        role: Literal["system", "user", "assistant", "tool"],
+        body_ref: ArtifactRef,
+    ) -> HistoryMessageRef:
+        if body_ref.workspace_id != workspace_id:
+            raise ValueError("history body ref crosses the thread workspace")
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
+            {"scope": _thread_lock_key(workspace_id, thread_id)},
+        )
+        existing = await conn.execute(
+            text(
+                "SELECT turn_id, sequence, role, body_artifact_key, body_sha256 "
+                "FROM agent_thread_message "
+                "WHERE workspace_id=:workspace AND id=:id"
+            ),
+            {"workspace": workspace_id, "id": message_id},
+        )
+        row = existing.mappings().first()
+        if row is not None:
+            if (
+                row["turn_id"] != turn_id
+                or row["role"] != role
+                or row["body_artifact_key"] != body_ref.artifact_key
+                or row["body_sha256"] != body_ref.sha256
+            ):
+                raise ValueError("history message id already has different immutable content")
+            return HistoryMessageRef(
+                message_id=message_id,
+                turn_id=turn_id,
+                sequence=int(row["sequence"]),
+                role=role,
+                body_ref=body_ref,
+            )
+        next_result = await conn.execute(
+            text(
+                "SELECT COALESCE(max(sequence), 0) + 1 "
+                "FROM agent_thread_message "
+                "WHERE workspace_id=:workspace AND thread_id=:thread"
+            ),
+            {"workspace": workspace_id, "thread": thread_id},
+        )
+        sequence = int(next_result.scalar_one())
+        await conn.execute(
+            text(
+                "INSERT INTO agent_thread_message "
+                "(id, workspace_id, thread_id, turn_id, sequence, role, body_artifact_key, "
+                " body_sha256, retention_class) "
+                "SELECT :id, :workspace, :thread, :turn, :sequence, :role, :key, :sha, "
+                " t.retention_class FROM agent_turn t "
+                "WHERE t.id=:turn AND t.workspace_id=:workspace"
+            ),
+            {
+                "id": message_id,
+                "workspace": workspace_id,
+                "thread": thread_id,
+                "turn": turn_id,
+                "sequence": sequence,
+                "role": role,
+                "key": body_ref.artifact_key,
+                "sha": body_ref.sha256,
+            },
+        )
+        await _insert_artifact_ref(
+            conn,
+            turn_id=turn_id,
+            owner_kind="history",
+            owner_id=message_id,
+            role="history_body",
+            ordinal=0,
+            ref=body_ref,
+        )
+        return HistoryMessageRef(
+            message_id=message_id,
+            turn_id=turn_id,
+            sequence=sequence,
+            role=role,
+            body_ref=body_ref,
+        )
 
 
 class DbAgentReplayReader:
@@ -1465,6 +1530,10 @@ class DbAgentReplayReader:
             )
             artifacts: list[ReplayArtifactRef] = []
             blockers: list[str] = []
+            if await is_agent_turn_privacy_tombstoned(
+                conn, workspace_id=workspace_id, turn_id=turn_id
+            ):
+                blockers.append("turn_privacy_tombstoned")
             for row in artifact_rows.mappings():
                 if row["media_type"] is None:
                     state = AgentArtifactState.MISSING
@@ -1639,6 +1708,22 @@ class DbAgentReplayReader:
         )
 
 
+@dataclass(frozen=True)
+class DesignRunPrivacyTarget:
+    """Authoritative locator metadata retained until the host confirms physical erasure."""
+
+    run_id: str
+    checkpoint_thread_id: str
+    result_json: dict[str, Any] | None
+    events: tuple[dict[str, Any], ...]
+
+
+class DesignRunPrivacyPurger(Protocol):
+    async def __call__(self, *, workspace_id: str, runs: Sequence[DesignRunPrivacyTarget]) -> None:
+        """Delete only the named runs' owned files; raise on unresolved or unsafe ownership."""
+        ...
+
+
 class AgentPrivacyService:
     """Erase subject-bound agent artifacts and every affected isolated materialization."""
 
@@ -1648,10 +1733,14 @@ class AgentPrivacyService:
         storage: StorageBackend,
         workspaces: AgentWorkspaceFactory,
         conn_factory: ConnFactory = transaction,
+        design_run_purger: DesignRunPrivacyPurger | None = None,
+        library: ProjectLibraryRefresher | None = None,
     ) -> None:
         self._storage = storage
         self._workspaces = workspaces
         self._conn_factory = conn_factory
+        self._design_run_purger = design_run_purger
+        self._library = library
 
     async def erase_subject(
         self,
@@ -1730,6 +1819,9 @@ class AgentPrivacyService:
             subject_entity_id=project_subject,
             artifact_keys=exclusive_keys,
             reason_code=reason_code,
+            # This project is going away. Recompiling its library would rebuild a tree on disk
+            # behind the deletion — the opposite of what a project erasure is for.
+            refresh_libraries=False,
         )
         async with self._conn_factory() as conn:
             await conn.execute(
@@ -1752,6 +1844,7 @@ class AgentPrivacyService:
         subject_entity_id: UUID,
         artifact_keys: Sequence[str],
         reason_code: str = "dsar_subject_erasure",
+        refresh_libraries: bool = True,
     ) -> PrivacyEraseResult:
         """Erase an explicit artifact-key set on behalf of one subject.
 
@@ -1804,7 +1897,10 @@ class AgentPrivacyService:
                                 JOIN agent_context_ref r ON r.context_bundle_id=b.id
                                 JOIN memory m ON r.object_type='scoped_memory'
                                   AND m.memory_id=r.object_id
-                                WHERE b.turn_id=t.id AND m.subject_entity_id=:subject
+                                WHERE b.turn_id=t.id AND b.workspace_id=t.workspace_id
+                                  AND m.workspace_id=t.workspace_id
+                                  AND r.disposition='included'
+                                  AND m.subject_entity_id=:subject
                             )
                         )
                     ), thread_closure AS (
@@ -1838,6 +1934,65 @@ class AgentPrivacyService:
             )
             turns = tuple(affected_result.mappings())
             turn_ids = [turn["id"] for turn in turns]
+            design_rows = tuple(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT r.run_id, r.checkpoint_thread_id, r.result_json, t.id turn_id, "
+                            "COALESCE((SELECT jsonb_agg(e.payload ORDER BY e.seq) FROM run_event e "
+                            "WHERE e.workspace_id=r.workspace_id AND e.subject_kind='design_run' "
+                            "AND e.subject_id=r.run_id), '[]'::jsonb) events "
+                            "FROM design_agent_run r JOIN agent_turn t "
+                            "ON t.execution_id=r.execution_id AND t.workspace_id=r.workspace_id "
+                            "WHERE r.workspace_id=:workspace "
+                            "AND t.id=ANY(CAST(:turn_ids AS uuid[])) ORDER BY r.run_id"
+                        ),
+                        {"workspace": workspace_id, "turn_ids": turn_ids},
+                    )
+                ).mappings()
+            )
+            design_purge_ids = {
+                row["run_id"]: uuid5(
+                    _PRIVACY_NAMESPACE, f"{workspace_id}:{row['run_id']}:design-runtime"
+                )
+                for row in design_rows
+            }
+            completed_design_purges = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT event_id FROM agent_privacy_event "
+                            "WHERE workspace_id=:workspace "
+                            "AND event_id=ANY(CAST(:ids AS uuid[])) AND action='workspace_purged'"
+                        ),
+                        {"workspace": workspace_id, "ids": list(design_purge_ids.values())},
+                    )
+                ).scalars()
+            )
+            pending_design_rows = tuple(
+                row
+                for row in design_rows
+                if design_purge_ids[row["run_id"]] not in completed_design_purges
+            )
+            if pending_design_rows and self._design_run_purger is None:
+                raise RuntimeError("design runtime privacy purge is not configured")
+            # Fence in-flight workers before erasing their local files. Preserve the locator
+            # bodies until the host hook succeeds so a partial physical failure can be retried.
+            for row in pending_design_rows:
+                await conn.execute(
+                    text(
+                        "UPDATE design_agent_run SET status='failed', "
+                        "lease_generation=COALESCE(lease_generation, 0)+1, "
+                        "leased_by=COALESCE(leased_by, 'privacy-erasure'), "
+                        "leased_at=COALESCE(leased_at, now()), "
+                        "cancel_requested_at=COALESCE(cancel_requested_at, now()), "
+                        "updated_at=now() "
+                        "WHERE workspace_id=:workspace AND run_id=:run AND NOT EXISTS ("
+                        "SELECT 1 FROM agent_turn_event WHERE workspace_id=:workspace "
+                        "AND turn_id=:turn AND status='privacy_tombstoned')"
+                    ),
+                    {"workspace": workspace_id, "run": row["run_id"], "turn": row["turn_id"]},
+                )
             if turn_ids:
                 propagated_result = await conn.execute(
                     text(
@@ -1944,28 +2099,98 @@ class AgentPrivacyService:
                     ),
                     {"workspace": workspace_id, "turn": turn["id"]},
                 )
-                for table_name in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
-                    exists = (
-                        await conn.execute(
-                            text("SELECT to_regclass(:table_name)"),
-                            {"table_name": table_name},
-                        )
-                    ).scalar_one()
-                    if exists is not None:
-                        await conn.execute(
-                            text(
-                                f"DELETE FROM {table_name} "  # noqa: S608 -- frozen table set
-                                "WHERE thread_id=:thread_id"
-                            ),
-                            {
-                                # A production AgentTurn has its own immutable execution id. Real
-                                # LangGraph versions may persist the root namespace as either the
-                                # configured value or the empty string and may add subgraph
-                                # namespaces. The execution id is therefore the durable, complete,
-                                # turn-local DSAR boundary.
-                                "thread_id": str(turn["execution_id"]),
-                            },
-                        )
+            # Platform checkpoints use execution ids; design checkpoints use outer run ids.
+            # Include every namespace and write/blob channel, including empty root namespaces.
+            checkpoint_threads = sorted(
+                {str(turn["execution_id"]) for turn in turns}
+                | {str(row["checkpoint_thread_id"]) for row in design_rows}
+            )
+            for table_name in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+                exists = (
+                    await conn.execute(
+                        text("SELECT to_regclass(:table_name)"), {"table_name": table_name}
+                    )
+                ).scalar_one()
+                if exists is not None:
+                    await conn.execute(
+                        text(
+                            f"DELETE FROM {table_name} "  # noqa: S608 -- frozen table set
+                            "WHERE thread_id=ANY(CAST(:thread_ids AS text[]))"
+                        ),
+                        {"thread_ids": checkpoint_threads},
+                    )
+
+        if pending_design_rows:
+            assert self._design_run_purger is not None  # checked before any erasure writes
+            await self._design_run_purger(
+                workspace_id=workspace_id,
+                runs=tuple(
+                    DesignRunPrivacyTarget(
+                        run_id=row["run_id"],
+                        checkpoint_thread_id=row["checkpoint_thread_id"],
+                        result_json=row["result_json"],
+                        events=tuple(row["events"]),
+                    )
+                    for row in pending_design_rows
+                ),
+            )
+            async with self._conn_factory() as conn:
+                for row in pending_design_rows:
+                    # Original payloads, traces and result summaries may all contain model
+                    # echoes. Keep only a body-free failed terminal event for SSE completion.
+                    erased_result: dict[str, JsonValue] = {
+                        "status": "failed",
+                        "error": {
+                            "code": "privacy_erased",
+                            "message": "Design run erased for privacy.",
+                        },
+                    }
+                    await conn.execute(
+                        text(
+                            "UPDATE design_agent_run SET payload='{}'::jsonb, "
+                            "result_json=CAST(:result AS jsonb) "
+                            "WHERE workspace_id=:workspace AND run_id=:run"
+                        ),
+                        {
+                            "workspace": workspace_id,
+                            "run": row["run_id"],
+                            "result": json.dumps(erased_result),
+                        },
+                    )
+                    await conn.execute(
+                        text(
+                            "DELETE FROM run_event WHERE workspace_id=:workspace "
+                            "AND subject_kind='design_run' AND subject_id=:run"
+                        ),
+                        {"workspace": workspace_id, "run": row["run_id"]},
+                    )
+                    await emit_design_run_event(
+                        conn,
+                        workspace_id=workspace_id,
+                        design_run_id=row["run_id"],
+                        topic="design.run.failed",
+                        payload={
+                            "event_type": "privacy_erased",
+                            "data": {},
+                            "result": erased_result,
+                        },
+                    )
+                    await conn.execute(
+                        text(
+                            "INSERT INTO agent_privacy_event "
+                            "(event_id, workspace_id, subject_entity_id, turn_id, "
+                            "action, reason_code) VALUES "
+                            "(:event, :workspace, :subject, :turn, 'workspace_purged', :reason) "
+                            "ON CONFLICT (event_id) DO NOTHING"
+                        ),
+                        {
+                            "event": design_purge_ids[row["run_id"]],
+                            "workspace": workspace_id,
+                            "subject": subject_entity_id,
+                            "turn": row["turn_id"],
+                            "reason": reason_code,
+                        },
+                    )
 
         if keys:
             async with self._conn_factory() as conn:
@@ -1980,7 +2205,7 @@ class AgentPrivacyService:
             removed = self._workspaces.erase_for_privacy(
                 workspace_id=workspace_id,
                 project_id=turn["project_id"],
-                execution_id=ExecutionId(turn["execution_id"]),
+                thread_id=turn["thread_id"],
             )
             if removed:
                 purged_roots.append(turn["workspace_root_id"])
@@ -2002,6 +2227,18 @@ class AgentPrivacyService:
                         "turn": turn["id"],
                         "reason": reason_code,
                     },
+                )
+        # The purge above removes *thread* workspaces. Each of those threads' projects also has a
+        # library beside them — a compiled rendering that quotes the interview in ``decisions.md``
+        # — and a rendering is not an artifact: nothing tombstones it, so it is rewritten here.
+        # Forced, because an erasure moves no row the library's digest hashes (the statement row
+        # survives as audit; only its evidence is gone), so an unforced refresh would do nothing.
+        # Best-effort, like every other refresh: a DSAR that erased must not report failure
+        # because a markdown tree could not be rebuilt, and the next turn rebuilds it anyway.
+        if self._library is not None and refresh_libraries:
+            for project_id in sorted({str(turn["project_id"]) for turn in turns}):
+                await self._library.refresh(
+                    workspace_id=workspace_id, project_id=project_id, force=True
                 )
         return PrivacyEraseResult(
             workspace_id=workspace_id,

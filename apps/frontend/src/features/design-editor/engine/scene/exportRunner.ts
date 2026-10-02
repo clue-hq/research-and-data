@@ -253,7 +253,7 @@ export function exportProfilesForScene(scene: Scene): ExportProfile[] {
   return [...profilesByName.values()];
 }
 
-function exportResultFromUnknown(payload: unknown): EditorExportResult {
+export function exportResultFromUnknown(payload: unknown): EditorExportResult {
   if (!isRecord(payload)) {
     return {
       status: "failed",

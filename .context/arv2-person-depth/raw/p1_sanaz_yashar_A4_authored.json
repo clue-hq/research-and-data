@@ -1,0 +1,153 @@
+{
+  "requestId": "9e15dbab295a37879c76f8568a574c7e",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/3xswfg89hgf",
+      "title": "sanaz yashar",
+      "url": "https://www.linkedin.com/in/sanaz-yashar",
+      "publishedDate": "2026-08-30T04:07:30.000Z",
+      "text": "# Sanaz Yashar\n\nCo-Founder & CEO @ Zafran Security\n\nIsrael\n\n500 connections \u2022 5,985 followers\n\n## About\n\nAnalyst, team leader, threat intelligence, intelligence, cyber security, PM,\n\nTotal Experience: 26 years and 11 months\n\n## Experience\n\n### Co-Founder & CEO - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)\n\nNov 2022 - Present (3 years and 9 months) in Tel Aviv, Israel\n\nZafran's Threat Exposure Management Platform integrates with your security tools to reveal, remediate, and mitigate risk\n\nDepartment: General Management \u2022 Level: Founder\n\nZafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management Platform that helps security teams buried in vulnerabilities and manual work to unify vulnerability findings and create a unified view of exposure across their existing tools. Zafran Security has 100-150 employees (+50% YoY). Headquartered in New York, New York, United States. Its workforce is distributed across United States, Israel, and Germany. Has $136M in total funding, with 4 prior funding rounds.\n\n### Senior Manager - [Mandiant](https://www.linkedin.com/company/mandiant)\n\nNov 2021 - Nov 2022 (1 year)\n\nDepartment: Other \u2022 Level: Senior\n\nMandiant (part of Google Cloud) (MNDT) is a Computer and Network Security company. Mandiant is a cyber threat defense company that offers a multi-vendor XDR platform, integrated with leading security operations technology. They provide solutions for attack surface ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/3xswfg89hgf",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Sanaz Yashar",
+            "firstName": "Sanaz",
+            "lastName": "Yashar",
+            "location": "Israel",
+            "workHistory": [
+              {
+                "title": "Co-Founder & CEO",
+                "location": "Tel Aviv, Israel",
+                "dates": {
+                  "from": "2022-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h5w450p0h1f",
+                  "name": "Zafran Security"
+                }
+              },
+              {
+                "title": "Senior Manager",
+                "location": null,
+                "dates": {
+                  "from": "2021-11-01",
+                  "to": "2022-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x5rq3y7dcvl",
+                  "name": "Mandiant"
+                }
+              },
+              {
+                "title": "Manager",
+                "location": null,
+                "dates": {
+                  "from": "2017-10-01",
+                  "to": "2022-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/vtbn8njtbf9",
+                  "name": "FireEye, Inc."
+                }
+              },
+              {
+                "title": "Director of Intelligence",
+                "location": null,
+                "dates": {
+                  "from": "2016-09-01",
+                  "to": "2017-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/g6wwqlmntpk",
+                  "name": "Cybereason"
+                }
+              },
+              {
+                "title": "Head of Department",
+                "location": null,
+                "dates": {
+                  "from": "2001-10-01",
+                  "to": "2016-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/s9s8bpn1g8s",
+                  "name": "Israeli Military Intelligence"
+                }
+              },
+              {
+                "title": "Research Assistant",
+                "location": null,
+                "dates": {
+                  "from": "1999-01-01",
+                  "to": "2001-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qc4sd27rz1n",
+                  "name": "Tel Aviv University"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master of Business Administration (M.B.A.)",
+                "dates": {
+                  "from": "2008",
+                  "to": "2010"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/zjhbn48568v",
+                  "name": "Ben-Gurion University of the Negev"
+                }
+              },
+              {
+                "degree": "Bachelor\u2019s of science, Biochemistry and Molecular Biology",
+                "dates": {
+                  "from": "1999",
+                  "to": "2002"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qc4sd27rz1n",
+                  "name": "Tel Aviv University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/adamsewall_disrupting-the-first-reported-ai-orchestrated-activity-7396590724953092096-jaQz",
+      "title": "Agentic AI breaches high-value targets: A new threat landscape",
+      "url": "https://www.linkedin.com/posts/adamsewall_disrupting-the-first-reported-ai-orchestrated-activity-7396590724953092096-jaQz",
+      "publishedDate": "2025-11-18T00:00:00.000Z",
+      "author": "Adam Sewall",
+      "text": "# A Major Inflection Point in Cyber + AI Security | Adam Sewall \u00b7 LinkedIn \u00b7 2025-11-18\n\n**Adam Sewall**: Founder and Board Member at Waterleaf International for 9 months with 35 years 7 months of total professional experience. Previous roles include Board Member at Tradeworx, President and CEO at T3Communications, and SVP Business Development and Operations at fastmobile. Based in Fort Myers, Florida, United States [US].\n\n---\n\nA Major Inflection Point in Cyber + AI Security\n\nWe\u2019re starting to see press coverage around a development that represents a fundamental shift in the threat landscape\u2014but I wanted to offer a bit more detail than what has circulated publicly.\n\nFor the first time, we now have a documented case of agentic AI autonomously obtaining access to confirmed high-value intelligence targets\u2014including major technology companies and government agencies.\nWhile many of us expected these capabilities to evolve, what stands out is how quickly they have done so, and at scale.\n\nThe link below provides deeper context on the TTPs involved. It\u2019s highly relevant for anyone thinking about how to build defensive measures that can keep pace with this new class of threats. More to come on this soon.\nOne immediate takeaway: I\u2019m recommending the use of custom and specific classifiers embedded within LLMs to help mitigate this emerging category of AI-driven intrusion techniques.\n\nAnthropic captured the moment well:\n\u201cThe cybersecurity community needs to assume a fundamental change ha"
+    }
+  ],
+  "searchTime": 4141.9,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 4.21,
+  "_request": {
+    "query": "\"Sanaz Yashar\" article blog post author byline Zafran Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

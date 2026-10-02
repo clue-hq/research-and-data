@@ -3,7 +3,6 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import type {
-  GalleryCollateralType,
   GallerySizeCategory,
 } from "@/features/projects/model/project-workspace";
 import { ProjectIcon } from "@/features/projects/components/project-icon";
@@ -39,7 +38,6 @@ const DATE_OPTIONS: Array<{ label: string; value: GalleryDateRange }> = [
   { label: "Last 30 days", value: "last-30-days" },
 ];
 
-const COLLATERAL_TYPES = Object.keys(COLLATERAL_TYPE_LABELS) as GalleryCollateralType[];
 const SIZE_CATEGORIES = Object.keys(SIZE_CATEGORY_LABELS) as GallerySizeCategory[];
 
 function MenuOption({
@@ -88,10 +86,25 @@ function FilterCheck({
   );
 }
 
-export function GalleryToolbar({ controller }: { controller: ProjectGalleryController }) {
+export function GalleryToolbar({
+  controller,
+  library = false,
+}: {
+  controller: ProjectGalleryController;
+  library?: boolean;
+}) {
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [accountQuery, setAccountQuery] = useState("");
-  const sortLabel = SORT_OPTIONS.find((option) => option.value === controller.sort)?.label;
+  // Cross-project grouping and sorting only mean something in the library; the
+  // project gallery keeps exactly the options it had before.
+  const groupOptions = library ? [...GROUP_OPTIONS, { label: "Project", value: "project" as const }] : GROUP_OPTIONS;
+  const sortOptions = library
+    ? [...SORT_OPTIONS,
+       { label: "Account · A–Z", value: "account-asc" as const },
+       { label: "Type · A–Z", value: "type-asc" as const },
+       { label: "Project · A–Z", value: "project-asc" as const }]
+    : SORT_OPTIONS;
+  const sortLabel = sortOptions.find((option) => option.value === controller.sort)?.label;
   const normalizedAccountQuery = accountQuery.trim().toLocaleLowerCase();
   const selectedAccounts = controller.accounts.filter((account) =>
     controller.filters.accountIds.includes(account.id)
@@ -135,7 +148,7 @@ export function GalleryToolbar({ controller }: { controller: ProjectGalleryContr
           </button>
           {controller.openMenu === "sort" ? (
             <div aria-label="Sort artifacts" className={styles.compactMenu} role="menu">
-              {SORT_OPTIONS.map((option) => (
+              {sortOptions.map((option) => (
                 <MenuOption
                   active={controller.sort === option.value}
                   key={option.value}
@@ -158,12 +171,12 @@ export function GalleryToolbar({ controller }: { controller: ProjectGalleryContr
             onClick={() => controller.setOpenMenu(controller.openMenu === "group" ? null : "group")}
             type="button"
           >
-            {controller.groupBy === "none" ? "Group by" : `Group: ${GROUP_OPTIONS.find((option) => option.value === controller.groupBy)?.label}`}
+            {controller.groupBy === "none" ? "Group by" : `Group: ${groupOptions.find((option) => option.value === controller.groupBy)?.label}`}
             <ProjectIcon name="chevron-down" size={12} />
           </button>
           {controller.openMenu === "group" ? (
             <div aria-label="Group artifacts" className={styles.compactMenu} role="menu">
-              {GROUP_OPTIONS.map((option) => (
+              {groupOptions.map((option) => (
                 <MenuOption
                   active={controller.groupBy === option.value}
                   key={option.value}
@@ -207,6 +220,20 @@ export function GalleryToolbar({ controller }: { controller: ProjectGalleryContr
                   Clear all
                 </button>
               </div>
+              {library ? (
+                <section className={styles.accountFilterSection}>
+                  <h3>Project</h3>
+                  {controller.projects.map((project) => (
+                    <FilterCheck
+                      checked={controller.filters.projectIds?.includes(project.id) ?? false}
+                      key={project.id}
+                      onChange={() => controller.toggleProject(project.id)}
+                    >
+                      {project.title}
+                    </FilterCheck>
+                  ))}
+                </section>
+              ) : null}
               <section className={styles.accountFilterSection}>
                 <h3>Account</h3>
                 {selectedAccounts.length > 0 ? (
@@ -220,7 +247,7 @@ export function GalleryToolbar({ controller }: { controller: ProjectGalleryContr
                         type="button"
                       >
                         {account.logoPath ? (
-                          <Image alt="" height={14} src={account.logoPath} width={14} />
+                          <Image alt="" height={14} src={account.logoPath} unoptimized width={14} />
                         ) : null}
                         <span>{account.name}</span>
                         <ProjectIcon name="close" size={10} />
@@ -254,7 +281,7 @@ export function GalleryToolbar({ controller }: { controller: ProjectGalleryContr
                         type="button"
                       >
                         {account.logoPath ? (
-                          <Image alt="" height={16} src={account.logoPath} width={16} />
+                          <Image alt="" height={16} src={account.logoPath} unoptimized width={16} />
                         ) : null}
                         <span>{account.name}</span>
                       </button>
@@ -268,7 +295,7 @@ export function GalleryToolbar({ controller }: { controller: ProjectGalleryContr
               </section>
               <section>
                 <h3>Collateral type</h3>
-                {COLLATERAL_TYPES.map((type) => (
+                {controller.typeOptions.map((type) => (
                   <FilterCheck
                     checked={controller.filters.collateralTypes.includes(type)}
                     key={type}
@@ -324,7 +351,7 @@ export function GalleryToolbar({ controller }: { controller: ProjectGalleryContr
         <label className={styles.searchField}>
           <ProjectIcon name="search" size={14} />
           <input
-            aria-label="Search project artifacts"
+            aria-label={library ? "Search all artifacts" : "Search project artifacts"}
             onChange={(event) => controller.setQuery(event.target.value)}
             placeholder="Search"
             type="search"

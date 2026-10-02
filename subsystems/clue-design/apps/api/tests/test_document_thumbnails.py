@@ -418,3 +418,163 @@ def test_unknown_document_is_404(client: TestClient) -> None:
     # The route's own refusal, not the router's "no such path" — asserted so this
     # test cannot pass while the route is missing.
     assert response.json()["detail"]["code"] == "document.not_found"
+
+
+# --- the scene branch preflights like the export route (2026-09-06) ---------------------------
+
+
+def _brand_seed(version: int = 2) -> dict:
+    """The seed `test_api` generates its brand kit from — it defines `surface.brand`."""
+    return {
+        "id": "brand_kit_thumbnail_tokens",
+        "version": version,
+        "name": "Thumbnail Tokens",
+        "primary_color": "#075E68",
+        "description": "Healthcare automation brand kit generated from seed inputs.",
+        "secondary_color": "#0F766E",
+        "accent_color": "#22C55E",
+        "neutral_color": "#111827",
+        "preferred_fonts": ["Source Sans 3", "Arial"],
+        "logo_refs": [],
+        "tone_words": ["clinical", "calm", "expert"],
+        "website_url": "https://example.test",
+        "style_guide_asset_ids": [],
+        "sources": [],
+        "default_mode": {
+            "values": {
+                "theme": "light",
+                "density": "comfortable",
+                "accessibility": "standard",
+                "medium": "digital",
+            }
+        },
+    }
+
+
+def _token_scene(document_id: str) -> dict:
+    """An agent-authored ad in miniature: a brand TOKEN fill, a HUG-sized text node,
+    and no stored geometry anywhere (`computed: null`)."""
+    scene = json.loads(MINIMAL_SCENE_PATH.read_text())
+    scene["meta"]["id"] = document_id
+    # The slot's length caps are what `test_api.preflightable_scene` relaxes so a
+    # preflight can run at all; without it the fixture would prove the route's
+    # diagnostics, not its rendering.
+    slot = scene["slots"]["slot_contact_name"]
+    slot["formatting"]["max_length"] = None
+    slot["validation"]["samples"] = []
+    slot["validation"]["max_length"] = None
+    text = scene["nodes"]["node_contact_name"]
+    text["size"] = {"width": {"kind": "hug"}, "height": {"kind": "hug"}}
+    text["computed"] = None
+    scene["nodes"]["node_brand_panel"] = {
+        "id": "node_brand_panel",
+        "name": "Brand panel",
+        "kind": {"kind": "rect"},
+        "transform": {
+            "x": 20.0,
+            "y": 60.0,
+            "rotation": 0.0,
+            "skew_x": 0.0,
+            "skew_y": 0.0,
+            "flip_x": False,
+            "flip_y": False,
+        },
+        # FILL, not fixed: a fixed box carries enough geometry for the raw export to
+        # place it (it just paints the magenta unresolved-paint sentinel over it), so
+        # only a size the LAYOUT has to solve reproduces the blank card.
+        "size": {
+            "width": {"kind": "fill", "value": {"weight": 1.0}},
+            "height": {"kind": "fill", "value": {"weight": 1.0}},
+        },
+        "children": [],
+        "fills": [
+            {
+                "id": "paint_brand_panel",
+                "paint": {"kind": "token", "token": "surface.brand"},
+            }
+        ],
+        "strokes": [],
+        "corner": {
+            "top_left": 0.0,
+            "top_right": 0.0,
+            "bottom_right": 0.0,
+            "bottom_left": 0.0,
+        },
+        "opacity": 1.0,
+        "clip": False,
+        "layout": None,
+        "computed": None,
+        "locked": False,
+    }
+    # In FRONT of the text, so the panel cannot paint over the copy it frames.
+    scene["pages"]["page_a4"]["children"].insert(0, "node_brand_panel")
+    return scene
+
+
+@pytest.fixture()
+def seeded_token_scene_document(client: TestClient) -> str:
+    """A scene document shaped like every agent-authored ad: token fills, hug sizes,
+    `computed: null`, and a brand kit attached that DEFINES the token."""
+    generated = client.post("/brand-kits/generate", json={"seed": _brand_seed()})
+    assert generated.status_code == 200, generated.text
+    brand_kit_id = generated.json()["brand_kit"]["id"]
+
+    created = client.post(
+        "/documents",
+        json={"title": "Token thumbnail", "scene": _token_scene("doc_thumb_tokens")},
+    )
+    assert created.status_code == 200, created.text
+    document_id = created.json()["document"]["id"]
+
+    attached = client.post(
+        f"/documents/{document_id}/brand-kit",
+        json={
+            "brand_kit_id": brand_kit_id,
+            "version": 2,
+            "mode": {
+                "values": {
+                    "theme": "light",
+                    "density": "comfortable",
+                    "accessibility": "standard",
+                    "medium": "digital",
+                }
+            },
+            "snapshot_reason": "attach kit for thumbnail fixture",
+        },
+    )
+    assert attached.status_code == 200, attached.text
+    return document_id
+
+
+def test_scene_thumbnail_resolves_tokens_and_geometry(
+    client: TestClient, seeded_token_scene_document: str
+) -> None:
+    """A token-filled, unsolved scene (every agent-authored ad) used to export raw and come back
+    as a blank white PNG (LUME0209 / LUME0205, raise_on_error=False). The route now preflights
+    like the export route, so the card shows the design."""
+    before = client.get(f"/documents/{seeded_token_scene_document}")
+    assert before.status_code == 200, before.text
+
+    response = client.get(f"/documents/{seeded_token_scene_document}/thumbnail")
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "image/png"
+    image = Image.open(io.BytesIO(response.content)).convert("RGB")
+    colours = image.getcolors(maxcolors=1 << 20) or []
+    non_white = [count for count, rgb in colours if rgb != (255, 255, 255)]
+    assert non_white, "the thumbnail is blank: nothing but white pixels"
+    assert (
+        sum(non_white) > image.width * image.height * 0.05
+    ), "barely any ink — tokens or geometry still unresolved"
+    # The other half of the same bug, and the one the ink count cannot see: an
+    # UNRESOLVED paint rasters as the engine's opaque magenta sentinel (LUME0213,
+    # lumen-skia/src/render.rs), which is ink too. A card painted in it would pass
+    # the assertion above while showing nobody's brand.
+    assert (255, 0, 255) not in [
+        rgb for _count, rgb in colours
+    ], "the unresolved-paint sentinel is on the card: brand tokens did not resolve"
+
+    # Read-only: preflighting for the card must not persist a thing.
+    after = client.get(f"/documents/{seeded_token_scene_document}")
+    assert after.status_code == 200, after.text
+    assert after.json()["current_version"] == before.json()["current_version"]
+    assert after.json()["scene"] == before.json()["scene"]

@@ -37,6 +37,7 @@ ISO-string timestamps.
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -155,6 +156,53 @@ async def create_web_account(
         },
     )
     return await require_web_account(conn, workspace_id=workspace_id, account_id=account_id)
+
+
+async def ensure_web_account_for_entity(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_entity_id: str,
+    name: str,
+    domain: str | None,
+) -> str:
+    """The design account that projects onto ``account_entity_id`` — found, or born here.
+
+    Spec 2026-09-19 §3.6: a document born for a research account must carry a design-plane
+    account (``design_document.account_id`` references ``design_account``). This is the inverse
+    direction of :func:`clue_design.joins.resolve_account_entity_id`: the entity is known, the
+    design row is derived. Idempotent — one design account per entity per workspace; a second
+    call returns the first row's id.
+    """
+    found = (
+        await conn.execute(
+            text(
+                "SELECT account_id FROM design_account "
+                "WHERE workspace_id = :w AND account_entity_id = CAST(:e AS uuid) "
+                "ORDER BY created_at ASC, account_id ASC LIMIT 1"
+            ),
+            {"w": workspace_id, "e": account_entity_id},
+        )
+    ).first()
+    if found is not None:
+        return str(found.account_id)
+    account_id = "acc_" + uuid4().hex
+    await conn.execute(
+        text(
+            "INSERT INTO design_account "
+            "(account_id, workspace_id, account_entity_id, name, domain, logo_asset_id, "
+            " data_json, notes) "
+            "VALUES (:a, :w, CAST(:e AS uuid), :name, :domain, NULL, '{}'::jsonb, NULL)"
+        ),
+        {
+            "a": account_id,
+            "w": workspace_id,
+            "e": account_entity_id,
+            "name": name,
+            "domain": normalize_domain(domain),
+        },
+    )
+    return account_id
 
 
 async def list_web_accounts(conn: AsyncConnection, *, workspace_id: str) -> list[JsonObject]:

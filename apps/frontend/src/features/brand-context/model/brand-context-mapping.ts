@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { registryCategory } from "@/features/design-editor/adapter/scene-asset-library";
 import {
   DESIGN_BRIEF_DOCUMENT,
   renderBrandBrief,
@@ -23,6 +24,7 @@ import {
   type BrandKitDetail,
   type BrandLogoAsset,
   type BrandTypographyToken,
+  type DesignAssetListRecord,
   type DesignAssetRecord,
 } from "./brand-kit";
 
@@ -69,6 +71,13 @@ export interface BrandContextMappingOptions {
    * in the registry. A missing record degrades that one asset, never the page.
    */
   readonly assetRecords?: ReadonlyMap<string, DesignAssetRecord>;
+  /**
+   * `GET /assets` rows for the whole workspace registry. The Assets section is
+   * the kit UNION the registry, so a picture uploaded in the editor is a
+   * first-class brand asset here too — the same library the editor's Replace
+   * image panel composes, so the two surfaces cannot disagree.
+   */
+  readonly registryRecords?: readonly DesignAssetListRecord[];
 }
 
 /**
@@ -94,13 +103,19 @@ export function toBrandContextWorkspace(
 ): BrandContextWorkspace {
   const json = kit.brand_kit_json;
   return {
-    assets: toAssets(kit, options.assetRecords),
+    assets: [
+      ...toAssets(kit, options.assetRecords),
+      ...toRegistryAssets(
+        options.registryRecords ?? [],
+        new Set(brandKitAssetIds(kit)),
+      ),
+    ],
     colorGroups: toColorGroups(json.tokens?.colors),
     id: kit.brand_kit.id,
     knowledgeFolders: toKnowledgeFolders(kit),
     name: kit.brand_kit.name,
     textStyles: toTextStyles(json.tokens?.typography),
-    typefaces: toTypefaces(json.assets?.fonts),
+    typefaces: toTypefaces(json.assets?.fonts, kit),
   };
 }
 
@@ -114,10 +129,10 @@ export function toBrandContextWorkspace(
  * design rules", which is a different (and false) claim from "we have not
  * extracted them".
  *
- * The dummy's other folders (Company, Product, Audience, Proof, Memories) stay
- * absent: nothing in the store fills them, and an empty folder is the honest
- * report. They remain the future work `docs/api-contracts/brand-context.md`
- * already records.
+ * The dummy's other folders are not this mapping's to serve: Company, Product,
+ * Audience and Proof hold the platform's onboarding documents, which the
+ * repository reads separately and lists BEFORE this Design folder. Memories stays
+ * absent — nothing writes it yet, and an empty folder is the honest report.
  */
 function toKnowledgeFolders(kit: BrandKitDetail): BrandKnowledgeFolder[] {
   const brief: BrandBrief | null | undefined = kit.brand_kit_json.brief;
@@ -226,17 +241,28 @@ type FontAssets = Readonly<Record<string, BrandFontAsset | null>>;
  * platform/library face, everything else (a webfont captured from the client's
  * own site, an upload) is the brand's own — the screen's "Custom".
  */
-function toTypefaces(fonts: FontAssets | undefined): BrandTypeface[] {
+function toTypefaces(fonts: FontAssets | undefined, kit: BrandKitDetail): BrandTypeface[] {
   if (!fonts) return [];
   return Object.keys(fonts)
     .sort()
     .flatMap((id) => {
       const font = fonts[id];
       if (!font) return [];
+      const faces = (font.faces ?? []).flatMap((face) => {
+        if (!face) return [];
+        const url = face.asset_id
+          ? `${DESIGN_ASSET_BFF_PREFIX}/${encodeURIComponent(face.asset_id)}/bytes`
+          : webFontUrl(face.source_url);
+        return url ? [{ url, weight: face.weight, style: face.style }] : [];
+      });
       return [
         {
           family: font.family,
           id,
+          ...(faces.length ? {
+            faces,
+            previewFamily: `clue-brand-${encodeURIComponent(kit.brand_kit.id)}-${kit.brand_kit.version}-${encodeURIComponent(id)}`,
+          } : {}),
           source:
             font.source && font.source.kind !== "system"
               ? ("custom" as const)
@@ -244,6 +270,17 @@ function toTypefaces(fonts: FontAssets | undefined): BrandTypeface[] {
         },
       ];
     });
+}
+
+/** Website font references must be browser-loadable URLs, never script/data URLs. */
+function webFontUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 type TypographyTokens = Readonly<Record<string, BrandTypographyToken | null>>;
@@ -322,7 +359,7 @@ interface KitAssetEntry {
  * "mockup", and every other role falls to `background`. `ai-generated` is
  * unreachable from website ingestion — nothing here generates imagery.
  */
-function kitAssetEntries(kit: BrandKitDetail): KitAssetEntry[] {
+export function kitAssetEntries(kit: BrandKitDetail): KitAssetEntry[] {
   const logos: Readonly<Record<string, BrandLogoAsset | null>> =
     kit.brand_kit_json.assets?.logos ?? {};
   const images: Readonly<Record<string, BrandImageAsset | null>> =
@@ -411,6 +448,7 @@ function toAssets(
         UNKNOWN,
       id: entry.assetId,
       name: record?.label ?? media?.filename ?? entry.fallbackName,
+      origin: "kit" as const,
       sizeBytes: media?.byte_length ?? 0,
       sizeLabel:
         media?.byte_length != null ? byteLabel(media.byte_length) : UNKNOWN,
@@ -421,6 +459,50 @@ function toAssets(
       },
     };
   });
+}
+
+/**
+ * Registry images the kit does not carry — the section's "Uploads" and
+ * "AI-generated images" rows (spec R-F). An archived asset is not offered, and
+ * an id the kit already listed is dropped here so the kit's own richer row (its
+ * description, its measured logo geometry) wins the dedupe.
+ */
+export function toRegistryAssets(
+  records: readonly DesignAssetListRecord[],
+  kitIds: ReadonlySet<string>,
+): BrandAsset[] {
+  const seen = new Set<string>();
+  const out: BrandAsset[] = [];
+  for (const record of records) {
+    if (record.status === "archived" || kitIds.has(record.id) || seen.has(record.id)) continue;
+    seen.add(record.id);
+    const media = record.media;
+    const geometry = record.vector
+      ? { width: record.vector.width, height: record.vector.height }
+      : { width: record.raster?.pixel_width, height: record.raster?.pixel_height };
+    const createdAt = record.provenance?.created_at ?? "";
+    out.push({
+      category: registryCategory(record),
+      sources: [record.source.kind === "uploaded" ? "user_upload" : record.source.kind === "generated" ? "generated" : record.source.kind === "website" ? "website" : "unknown"],
+      createdAt,
+      createdLabel: dateLabel(createdAt),
+      // The registry stores no prose about an asset; an invented caption would
+      // be the first lie on this page.
+      description: "",
+      dimensions: dimensionLabel(geometry.width, geometry.height) ?? UNKNOWN,
+      id: record.id,
+      name: record.label ?? media?.filename ?? record.id,
+      origin: "registry",
+      sizeBytes: media?.byte_length ?? 0,
+      sizeLabel: media?.byte_length != null ? byteLabel(media.byte_length) : UNKNOWN,
+      type: mediaTypeLabel(media?.mime_type ?? null),
+      visual: {
+        imagePath: `${DESIGN_ASSET_BFF_PREFIX}/${encodeURIComponent(record.id)}/bytes`,
+        kind: "image",
+      },
+    });
+  }
+  return out;
 }
 
 function dimensionLabel(
@@ -448,7 +530,7 @@ const DATE_LABEL = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-function dateLabel(iso: string): string {
+export function dateLabel(iso: string): string {
   const at = Date.parse(iso);
   return Number.isNaN(at) ? UNKNOWN : DATE_LABEL.format(at);
 }

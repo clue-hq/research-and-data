@@ -1,10 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useChatRepositories } from "../data/projects-transport";
 import type { SidebarProject } from "../model/sidebar-project";
 import { useProjectCatalogInvalidation } from "../model/project-catalog-invalidation";
+
+/**
+ * Folds a reload's server truth over the tree's local view state.
+ *
+ * Expansion is a purely local affordance — nothing durable records which
+ * folders a reader opened — so a reload keeps it; every other field, `pinned`
+ * included, is the server's answer and replaces what the browser held.
+ */
+export function mergeExpandedState(
+  current: SidebarProject[],
+  data: SidebarProject[],
+): SidebarProject[] {
+  const expanded = new Map(current.map((project) => [project.id, project.expanded]));
+  return data.map((project) => ({
+    ...project,
+    expanded: expanded.get(project.id) ?? project.expanded,
+  }));
+}
 
 /**
  * The sidebar tree.
@@ -21,27 +39,38 @@ export function useSidebarProjectsController() {
   const repositories = useChatRepositories();
   const catalogInvalidation = useProjectCatalogInvalidation();
   const sidebar = repositories.sidebar;
-  const projectMutationsAvailable = repositories.transport.mode === "fixture";
+  // Pin and archive are durable against both transports now that the directory
+  // repository has a fixture adapter as well as an HTTP one, so the sidebar no
+  // longer hides them behind a mode check.
+  const projectMutationsAvailable = true;
+  const projectRenameAvailable = repositories.transport.mode === "http";
   const [projects, setProjects] = useState<SidebarProject[]>([]);
   const [menuProjectId, setMenuProjectId] = useState<string | null>(null);
   const [editProjectId, setEditProjectId] = useState<string | null>(null);
   const [editProjectName, setEditProjectName] = useState("");
+  const [editProjectError, setEditProjectError] = useState<string | null>(null);
+  const [savingProject, setSavingProject] = useState(false);
+  const saveInFlight = useRef(false);
+
+  const receiveProjects = useCallback((data: SidebarProject[]) => {
+    setProjects((current) => mergeExpandedState(current, data));
+  }, []);
 
   const reload = useCallback(async () => {
     const response = await sidebar.list();
-    setProjects(response.data);
-  }, [sidebar]);
+    receiveProjects(response.data);
+  }, [receiveProjects, sidebar]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const response = await sidebar.list();
-      if (!cancelled) setProjects(response.data);
+      if (!cancelled) receiveProjects(response.data);
     })();
     return () => {
       cancelled = true;
     };
-  }, [catalogInvalidation.revision, pathname, sidebar]);
+  }, [catalogInvalidation.revision, pathname, receiveProjects, sidebar]);
 
   const editProject = useMemo(
     () => projects.find((project) => project.id === editProjectId) ?? null,
@@ -54,6 +83,7 @@ export function useSidebarProjectsController() {
     function handleEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       setMenuProjectId(null);
+      if (saveInFlight.current) return;
       setEditProjectId(null);
     }
 
@@ -111,41 +141,86 @@ export function useSidebarProjectsController() {
     router.push(thread.href);
   }
 
-  function togglePinned(projectId: string) {
-    if (!projectMutationsAvailable) return;
-    updateProject(projectId, (project) => ({
-      ...project,
-      pinned: !project.pinned,
-    }));
+  async function togglePinned(projectId: string) {
     setMenuProjectId(null);
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) return;
+    try {
+      await repositories.directory.update(projectId, { pinned: !project.pinned });
+      await reload();
+      catalogInvalidation.invalidate();
+    } catch (failure) {
+      setEditProjectError(
+        failure instanceof Error
+          ? failure.message
+          : "Your change could not be saved. Please try again.",
+      );
+    }
   }
 
   function beginEditProject(projectId: string) {
-    if (!projectMutationsAvailable) return;
+    if (!projectRenameAvailable) return;
     const project = projects.find((item) => item.id === projectId);
     if (!project) return;
     setEditProjectId(project.id);
     setEditProjectName(project.title);
+    setEditProjectError(null);
     setMenuProjectId(null);
   }
 
   function cancelEditProject() {
+    if (saveInFlight.current) return;
     setEditProjectId(null);
     setEditProjectName("");
+    setEditProjectError(null);
   }
 
-  function saveEditProject() {
-    if (!projectMutationsAvailable) return;
+  async function saveEditProject() {
+    if (!projectRenameAvailable || saveInFlight.current) return;
     const nextName = editProjectName.trim();
-    if (!editProjectId || !nextName) return;
-    // Project rename is not served: the as-built contract keeps project
-    // lifecycle outside the chat shell (item 9), so this stays a local edit
-    // until a project surface exists. It is not written anywhere.
-    updateProject(editProjectId, (project) => ({
-      ...project,
-      title: nextName,
-    }));
-    cancelEditProject();
+    if (!editProjectId || !nextName || nextName.length > 200) return;
+    saveInFlight.current = true;
+    setSavingProject(true);
+    setEditProjectError(null);
+    try {
+      const saved = await repositories.projects.rename(editProjectId, nextName);
+      updateProject(saved.id, (project) => ({ ...project, title: saved.title }));
+      setEditProjectId(null);
+      setEditProjectName("");
+      catalogInvalidation.invalidate();
+    } catch (failure) {
+      setEditProjectError(
+        failure instanceof Error
+          ? failure.message
+          : "Unable to rename this project. Please try again.",
+      );
+    } finally {
+      saveInFlight.current = false;
+      setSavingProject(false);
+    }
+  }
+
+  async function archiveProject() {
+    if (!editProjectId || saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSavingProject(true);
+    setEditProjectError(null);
+    try {
+      await repositories.directory.setArchived(editProjectId, true);
+      setEditProjectId(null);
+      setEditProjectName("");
+      await reload();
+      catalogInvalidation.invalidate();
+    } catch (failure) {
+      setEditProjectError(
+        failure instanceof Error
+          ? failure.message
+          : "Your change could not be saved. Please try again.",
+      );
+    } finally {
+      saveInFlight.current = false;
+      setSavingProject(false);
+    }
   }
 
   async function archiveProjectChats(projectId: string) {
@@ -160,18 +235,11 @@ export function useSidebarProjectsController() {
     }
     await reload();
   }
-
-  function removeProject() {
-    if (!projectMutationsAvailable) return;
-    if (!editProjectId) return;
-    setProjects((current) =>
-      current.filter((project) => project.id !== editProjectId),
-    );
-    cancelEditProject();
-  }
-
   return {
     activePathname: pathname,
+    archiveProject: () => {
+      void archiveProject();
+    },
     archiveProjectChats: (projectId: string) => {
       void archiveProjectChats(projectId);
     },
@@ -183,14 +251,23 @@ export function useSidebarProjectsController() {
     },
     editProject,
     editProjectName,
+    editProjectError,
+    savingProject,
+    canSaveProject: Boolean(editProjectName.trim())
+      && editProjectName.trim().length <= 200
+      && !savingProject,
     menuProjectId,
     projects,
     projectMutationsAvailable,
-    removeProject,
-    saveEditProject,
+    projectRenameAvailable,
+    saveEditProject: () => {
+      void saveEditProject();
+    },
     setEditProjectName,
     toggleMenu,
-    togglePinned,
+    togglePinned: (projectId: string) => {
+      void togglePinned(projectId);
+    },
     toggleProject,
   };
 }

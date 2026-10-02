@@ -1,0 +1,25 @@
+{
+  "catalog_version": "v4",
+  "recipe_version": 14,
+  "resources": {
+    "provider-requests/account-deep/v1/exa-system.md": "283426f186e5f41c847b79f501e9a08dd01d02833976984bc618b22a22a0d83e",
+    "provider-requests/account-deep/v1/request-config.json": "fcc059b0b22ae43063ab8ff4c524357d0c1ec03de0b2ca42423b15bb2f33163f",
+    "skills/person-dossier/v1/SKILL.md": "2f0122124fd67a69b0c21838d11bd981481b54cb450811f998c2715804486c61",
+    "skills/person-depth-charter/v1/SKILL.md": "6d8c699dec4a0250be7bbc7ecb3f26ad1c09fa822ce3a2604bae175925d32981",
+    "provider-requests/person-deep/v1/exa-system.md": "f5add6a444e962aaa431425d29599c8593291e31b0d81dcd9ee10c9661f52c6a",
+    "provider-requests/person-deep/v1/request-config.json": "efa29f22347258deaa5cda957c7d4b2af8fc54911e784ba27e0788e54592a7bc",
+    "skills/governed-evidence/v3/SKILL.md": "8a7395a71f1c85e29b6519604c36819f8da553747cea45957211edebf787de22",
+    "skills/account-dossier/v5/SKILL.md": "3eaf64041c62df447db8c9ce5c39446a08583b6bdd27a2609919fa80e01fb430",
+    "skills/person-research-briefing/v3/SKILL.md": "75c1250c28373c715e00f5f17f41c4c4889c3f32e0cae3986f4c70d8882f7aa1",
+    "prompts/quality-account-research/v14/SYSTEM.md": "6ec4e86709dfb6684837d8a059568e5c63c2e0f54b3f7c3ccd26d76d54058e2f",
+    "profiles/quality-account-research/v14/profile.yaml": "cfe376a513fcdda3e6c7be2c571f30f78c1008a0e1352e1cb25255bd6d2c9757",
+    "prompts/quality-person-research/v14-person/SYSTEM.md": "d2316b064720d1ca21057da8027881a53cd85748b4318943338a58a6bd5f875f",
+    "profiles/quality-person-research/v14-person/profile.yaml": "a4b60213477a8904256c7dbc74c2b8fd8cfd1dbf235239b44799f6b1e90cadfd",
+    "prompts/quality-research-claims/v14/SYSTEM.md": "1815ae9faa45a0fb1cc9715311b26be35a7527bce9fa0bcc3185f3fdc5ffdb6a",
+    "profiles/quality-research-claims/v14/profile.yaml": "4c0b39dbc75079e14c573545374da34c6bba6d5cb8b65d0fe90a3fbfdf0a987d",
+    "prompts/quality-research-narrative/v14/SYSTEM.md": "0a2c426c98d3eb3aa0732c7e9ee16b5d9c334dd0b347741e5a0a403c835b8a35",
+    "profiles/quality-research-narrative/v14/profile.yaml": "491271c6898ac8928c0c6a0a277ece55fbad3680f760fb84817d3dfa47669109",
+    "recipe-v14.json": "bffeca549bd554f994076814381607c4a36e1de3d9810d379e7da9fdc9403500"
+  },
+  "review_policy": "advisory"
+}

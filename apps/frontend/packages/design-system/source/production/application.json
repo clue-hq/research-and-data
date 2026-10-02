@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "fileKey": "NcLl2r0dzVDN28xAQCwvM1",
+    "fileName": "Clue",
+    "capturedAt": "2026-08-18",
+    "role": "production-shell-geometry"
+  },
+  "tokens": [
+    { "name": "dimension/sidebar/width", "unit": "px", "value": 240 },
+    { "name": "dimension/sidebar/header-height", "unit": "px", "value": 41 },
+    { "name": "dimension/sidebar/item-height", "unit": "px", "value": 32 },
+    { "name": "dimension/sidebar/profile-height", "unit": "px", "value": 40 },
+    { "name": "dimension/header/action-bar-height", "unit": "px", "value": 58 },
+    { "name": "dimension/header/search-height", "unit": "px", "value": 34 },
+    { "name": "dimension/table/header-height", "unit": "px", "value": 48 },
+    { "name": "dimension/table/selection-column-width", "unit": "px", "value": 56 },
+    { "name": "dimension/table/row-compact", "unit": "px", "value": 44 },
+    { "name": "dimension/table/row-comfortable", "unit": "px", "value": 56 },
+    { "name": "dimension/table/row-spacious", "unit": "px", "value": 64 },
+    { "name": "spacing/table/cell-inline", "unit": "px", "value": 16 },
+    { "name": "spacing/header/inline", "unit": "px", "value": 24 },
+    { "name": "spacing/header/block", "unit": "px", "value": 12 },
+    { "name": "border/grid-width", "unit": "px", "value": 0.5 },
+    { "name": "border/structural-width", "unit": "px", "value": 1 },
+    { "name": "motion/duration/fast", "unit": "ms", "value": 140 },
+    { "name": "motion/duration/view", "unit": "ms", "value": 160 },
+    { "name": "motion/duration/standard", "unit": "ms", "value": 180 },
+    { "name": "motion/easing/entry", "kind": "raw", "value": "ease-out" },
+    { "name": "motion/easing/standard", "kind": "raw", "value": "cubic-bezier(0.2, 0.8, 0.2, 1)" }
+  ]
+}

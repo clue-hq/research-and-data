@@ -787,8 +787,14 @@ class _FakeBrowser:
         self.pages: list[_FakePage] = []
         self.waits: list[int] = []
         self.html = ""
+        # What each `new_context` call was asked for — including a pass that then refuses — so a
+        # test can pin what the walk asks the browser for (the QA User-Agent override, D11).
+        self.context_kwargs: list[dict] = []
 
-    def new_context(self, *, viewport: dict, reduced_motion: str) -> "_FakeBrowser":
+    def new_context(self, *, viewport: dict, reduced_motion: str, **kwargs) -> "_FakeBrowser":
+        self.context_kwargs.append(
+            {"viewport": viewport, "reduced_motion": reduced_motion, **kwargs}
+        )
         # The pass identity a test can refuse on: desktop / mobile / reduced-motion.
         if viewport["width"] == 375:
             name = "mobile"

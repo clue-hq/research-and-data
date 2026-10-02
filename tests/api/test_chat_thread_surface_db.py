@@ -124,11 +124,28 @@ def _principal(workspace_id: str, *, permissions: frozenset[str] | None = None) 
 def _app(conn, *, settings: Settings, permissions: frozenset[str] | None = None):
     """The real projections app with the chat surface mounted and a real thread toolbelt."""
 
+    from clue_api.project_tools import (
+        CreateProjectTool,
+        RenameProjectTool,
+        SetProjectArchivedTool,
+        SetProjectPinnedTool,
+        UpdateProjectDetailsTool,
+    )
     from clue_api.thread_wiring import register_thread_tools
 
     cf = conn_session_factory(conn)
     registry = ToolRegistry()
     register_thread_tools(registry, conn_factory=cf)
+    # The same project tool set ``toolbelt_wiring`` registers, so every surface test shares one
+    # registry shape: rename plus the four project-row tools the directory routes drive.
+    for tool in (
+        RenameProjectTool(conn_factory=cf),
+        CreateProjectTool(conn_factory=cf),
+        UpdateProjectDetailsTool(conn_factory=cf),
+        SetProjectPinnedTool(conn_factory=cf),
+        SetProjectArchivedTool(conn_factory=cf),
+    ):
+        registry.register(tool, make_default=True)
     return create_projections_app(
         surface=build_surface(conn),
         tool_invoker=build_tool_invoker(
@@ -478,3 +495,121 @@ def test_enabling_chat_in_production_without_a_real_principal_fails_at_startup()
         principal_resolver=lambda workspace_id: _principal(workspace_id),
     )
     assert "/api/v1/projects/{project_id}/threads" in app.openapi()["paths"]
+
+
+# --- C5: the transcript loads newest-first and pages backward --------------------------------
+
+
+def test_the_transcript_loads_newest_first_and_pages_backward_to_exhaustion(
+    require_chat_db: None,
+) -> None:
+    """The Slice C C5 contract, over HTTP: reload a 120-message thread and the *latest* messages
+    are the first page.
+
+    The defect this replaces: the read served the **oldest** 50 and the frontend never followed
+    the cursor, so in a long thread the user's most recent prompts vanished on reload while
+    streamed assistant output stayed visible. Now the default page is the newest 50 in ascending
+    display order; ``meta.next_cursor`` is a *before*-cursor naming the preceding page; walking it
+    to exhaustion yields every message exactly once; and a thread under one page is served whole
+    with no cursor.
+    """
+
+    del require_chat_db
+    from uuid import uuid4
+
+    from clue_api.thread_store import create_thread, new_thread_id
+    from tests.projections.test_thread_shell_db import _message, _turn
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "ws-c5-page", name="C5 backward paging")
+            long_thread = await create_thread(
+                conn,
+                thread_id=new_thread_id(),
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+            )
+            turn_id = await _turn(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                thread_id=long_thread.id,
+                requested_at=_AUTHENTICATED_AT,
+                turn_id=uuid4(),
+            )
+            for sequence in range(1, 121):
+                await _message(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    thread_id=long_thread.id,
+                    turn_id=turn_id,
+                    sequence=sequence,
+                    # Odd = user: the newest user prompt lands at sequence 119 and MUST be on
+                    # the first page — it is exactly the message the audited defect lost.
+                    role="user" if sequence % 2 else "assistant",
+                )
+            short_thread = await create_thread(
+                conn,
+                thread_id=new_thread_id(),
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+            )
+            # The message FK is composite over (turn, workspace, thread): the short thread
+            # needs its own turn.
+            short_turn_id = await _turn(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                thread_id=short_thread.id,
+                requested_at=_AUTHENTICATED_AT,
+                turn_id=uuid4(),
+            )
+            for sequence in range(1, 4):
+                await _message(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    thread_id=short_thread.id,
+                    turn_id=short_turn_id,
+                    sequence=sequence,
+                    role="user" if sequence % 2 else "assistant",
+                )
+
+            async with _client(_app(conn, settings=_settings())) as client:
+
+                async def page_of(
+                    thread_id: str, cursor: str | None
+                ) -> tuple[list[int], str | None]:
+                    response = await client.get(
+                        f"/api/v1/projects/{project.project_id}/threads/{thread_id}/messages",
+                        params={} if cursor is None else {"cursor": cursor},
+                        headers={"X-Workspace-Id": project.workspace_id},
+                    )
+                    assert response.status_code == 200
+                    body = response.json()
+                    return (
+                        [item["sequence"] for item in body["data"]],
+                        body["meta"]["next_cursor"],
+                    )
+
+                # The default page is the NEWEST 50, in ascending display order.
+                first, cursor = await page_of(long_thread.id, None)
+                assert first == list(range(71, 121))
+                assert 119 in first  # the latest user prompt — the message the defect lost
+                assert cursor is not None
+
+                # The before-cursor walks backward through history...
+                second, cursor = await page_of(long_thread.id, cursor)
+                assert second == list(range(21, 71))
+                assert cursor is not None
+
+                # ...and exhausts cleanly: every message served exactly once, then no cursor.
+                third, cursor = await page_of(long_thread.id, cursor)
+                assert third == list(range(1, 21))
+                assert cursor is None
+
+                # A thread under one page is the whole thread, ascending, cursorless.
+                short, cursor = await page_of(short_thread.id, None)
+                assert short == [1, 2, 3]
+                assert cursor is None
+
+    run_async(scenario())

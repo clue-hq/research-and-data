@@ -1,0 +1,68 @@
+{
+  "id": "gen-1788163202-8LrzwXTe2tf3xW1cVDPH",
+  "object": "chat.completion",
+  "created": 1788163202,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"contact_claims\": [\n    {\n      \"field_key\": \"contact.current_title\",\n      \"value_json\": \"Director of Demand Generation\",\n      \"evidence_span\": \"Director of Demand Generation - Harmonic Security (Current)\",\n      \"source_url\": \"https://www.linkedin.com/in/anastasiacorio\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"contact.current_location\",\n      \"value_json\": {\n        \"raw\": \"San Francisco, California, United States\",\n        \"country\": \"United States\"\n      },\n      \"evidence_span\": \"San Francisco, California, United States\",\n      \"source_url\": \"https://www.linkedin.com/in/anastasiacorio\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"contact.facet.career_history\",\n      \"value_json\": [\n        {\n          \"org\": \"Harmonic Security\",\n          \"role\": \"Director of Demand Generation\",\n          \"start\": \"Sep 2024\",\n          \"end\": \"Present\"\n        },\n        {\n          \"org\": \"Material Security\",\n          \"role\": \"Director of Demand Generation\",\n          \"start\": \"Jul 2021\",\n          \"end\": \"Sep 2024\"\n        },\n        {\n          \"org\": \"CrowdStrike\",\n          \"role\": \"Growth Marketing Strategist\",\n          \"start\": \"Jul 2020\",\n          \"end\": \"Jul 2021\"\n        },\n        {\n          \"org\": \"Digital Shadows (Acquired by Reliaquest)\",\n          \"role\": \"Senior Content Marketing & Digital Strategy Manager\",\n          \"start\": \"Dec 2015\",\n          \"end\": \"Jun 2020\"\n        },\n        {\n          \"org\": \"Cisco\",\n          \"role\": \"Security Marketing Project Specialist and Social Media Channel Manager\",\n          \"start\": \"Jun 2013\",\n          \"end\": \"Dec 2015\"\n        },\n        {\n          \"org\": \"Malwarebytes\",\n          \"role\": \"Marketing Intern\",\n          \"start\": \"Jun 2012\",\n          \"end\": \"Jun 2013\"\n        },\n        {\n          \"org\": \"First Allied Securities\",\n          \"role\": \"Event Planning Intern\",\n          \"start\": \"Aug 2011\",\n          \"end\": \"Aug 2011\"\n        },\n        {\n          \"org\": \"Choura Events\",\n          \"role\": \"Event Planning Intern\",\n          \"start\": \"Jul 2011\",\n          \"end\": \"Jul 2011\"\n        },\n        {\n          \"org\": \"Santa Clara University Activities Programming Board\",\n          \"role\": \"Promo Team Member\",\n          \"start\": \"Sep 2010\",\n          \"end\": \"Jun 2011\"\n        },\n        {\n          \"org\": \"Palos Verdes High School Associated Student Body\",\n          \"role\": \"Special Events Coordinator\",\n          \"start\": \"Sep 2009\",\n          \"end\": \"Jun 2010\"\n        }\n      ],\n      \"evidence_span\": \"Material Security \u2014 Director of Demand Generation, July 2021\u2013September 2024, San Francisco Bay Area.\",\n      \"source_url\": \"https://www.linkedin.com/in/anastasiacorio\",\n      \"confidence\": 0.9,\n      \"priority\": 2,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.facet.recent_post\",\n      \"value_json\": \"Hiring post! \ud83d\udce3 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. https://lnkd.in/gH9DJVPY There'll be the classic stuff: account mapping, outreach, direct mail, events + some weird creative stuff nobody's tried yet \ud83e\udd13 Whatever gets Harmonic Security in front of the right folks. \ud83d\udc9a If that sounds more fun than another boring nurture campaign, let's chat.\",\n      \"evidence_span\": \"Hiring post! \ud83d\udce3 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. https://lnkd.in/gH9DJVPY There'll be the classic stuff: account mapping, outreach, direct mail, events + some weird creative stuff nobody's tried yet \ud83e\udd13 Whatever gets Harmonic Security in front of the right folks. \ud83d\udc9a If that sounds more fun than another boring nurture campaign, let's chat. p.s. anddddd you get to work with all these fun folks Michael Marriott Mariana Padilla Lexy Marchbank Tyler Chonoles Maya Smith Jackson Harrower+ many more!\",\n      \"source_url\": \"https://www.linkedin.com/posts/anastasiacorio_hiring-post-im-hiring-an-abm-account-activity-7490847280472879104-iDH9\",\n      \"confidence\": 0.95,\n      \"priority\": 1,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.facet.recent_post\",\n      \"value_json\": \"One of my favorite parts of this role is exactly this. Taking something genuinely exciting that the team has built and figuring out how to get it in front of the right people. It's a lot of creativity, outside the box thinking, and TEAMWORK \ud83e\udd1d With that... we just launched AI Usage Explorer at Harmonic Security! Now you can finally understand what your organization is actually doing with AI. And make smarter decisions with that information. \ud83d\udc4f Fun time celebrating with this crew in SF \ud83c\udf89 Jackson Harrower Maya Smith Heidi Nickles (Newiger) Oliver Smith\",\n      \"evidence_span\": \"With that... we just launched AI Usage Explorer at Harmonic Security! Now you can finally understand what your organization is actually doing with AI. And make smarter decisions with that information.\",\n      \"source_url\": \"https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-role-is-activity-7465427324197572608-VrVm\",\n      \"confidence\": 0.9,\n      \"priority\": 2,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.facet.communication_style\",\n      \"value_json\": {\n        \"style_label\": \"informal_energetic\",\n        \"summary\": \"Concise, operational, energetic, uses emoji and playful humor; favors concrete lists and anti-hype language (e.g., 'zero fluff', 'weird creative stuff nobody's tried yet').\"\n      },\n      \"evidence_span\": \"She uses frequent emoji and visual emphasis: \u201c\ud83d\udce3,\u201d \u201c\ud83d\ude80,\u201d \u201c\ud83e\udd13,\u201d \u201c\ud83d\udc9a,\u201d \u201c\ud83e\udd1d,\u201d \u201c\ud83d\udc4f,\u201d \u201c\ud83c\udf89,\u201d \u201c\u2705,\u201d \u201c\ud83c\udfb8,\u201d and \u201c\u270c\ufe0f.\u201d\",\n      \"source_url\": \"https://www.linkedin.com/in/anastasiacorio\",\n      \"confidence\": 0.9,\n      \"priority\": 3,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.persona\",\n      \"value_json\": \"champion\",\n      \"evidence_span\": \"Ana Corio (also publicly shown as Ana Alessandra Corio) \u2014 cited profile as of 2026-08-31 1. IDENTITY Full name: Ana Corio; the Harmonic welcome post identifies her as \u201cAna Alessandra (Corio),\u201d while her LinkedIn profile URL uses \u201canastasiacorio.\u201d\",\n      \"source_url\": \"https://www.linkedin.com/posts/harmonic-security_welcome-to-the-team-activity-7241817592636563456--L83\",\n      \"confidence\": 0.7,\n      \"priority\": 1\n    }\n  ],\n  \"proposed_fields\": [\n    {\n      \"field_key\": \"core.account_name\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"str\",\n      \"value_schema\": {\n        \"type\": \"string\"\n      },\n      \"description\": \"Canonical account name observation.\",\n      \"reuse_scope\": \"company\",\n      \"hypothesis\": \"Knowing the canonical account name helps map account-level signals (like open ABM headcount) to the right legal entity so an ABM vendor can prioritize outreach and avoid targeting the wrong organization.\",\n      \"example_value\": \"Harmonic Security\",\n      \"example_evidence_span\": \"Harmonic Security\",\n      \"example_source_url\": \"https://www.linkedin.com/in/anastasiacorio\",\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"contact.role_on_committee\",\n      \"entity_type\": \"contact\",\n      \"value_type\": \"object\",\n      \"value_schema\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"role\"\n        ],\n        \"properties\": {\n          \"role\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"champion\",\n              \"economic_buyer\",\n              \"technical_evaluator\",\n              \"blocker\"\n            ]\n          },\n          \"rationale\": {\n            \"type\": \"string\"\n          }\n        }\n      },\n      \"description\": \"Inferred buying-committee role + plausibility rationale.\",\n      \"reuse_scope\": \"deal\",\n      \"hypothesis\": \"Explicitly stating a contact's role on the buying committee (and why) helps sellers craft messaging and identify whether to pursue feature demos, ROI conversations, or internal influence strategies.\",\n      \"example_value\": {\n        \"role\": \"champion\",\n        \"rationale\": \"Hiring the ABM manager and owning demand generation indicates she will champion ABM tooling decisions and manage day-to-day evaluation.\"\n      },\n      \"example_evidence_span\": \"I'm hiring an ABM (account based marketing) manager for our most strategic accounts.\",\n      \"example_source_url\": \"https://www.linkedin.com/posts/anastasiacorio_hiring-post-im-hiring-an-abm-account-activity-7490847280472879104-iDH9\",\n      \"priority\": 1\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqlTSDqk-7ygoNUVkafSY4O0ZOFUMYAl97BW1D58ahdIcAkJE6WsCF2qB6_JCmthrOJDWJ1MoLvjezi74EsxNyx-lpo4BKUDwmTVkGLZGOfkwvKVyG1B-uYixBEX505lmke3gea-ErhUWZWtzAHVbtdeZOyzqYVeb4A3jp8FaNsD2H42WtyoDhInnpw6eIgoQJDK6iWMJihWEQFGHBKhb2P2YbBcvFbcazE5n8w8anIhoPiGiexIo4T_1D-iXO6FmyI7dMvPunDCodCC8g66owIdVOPf5_bjHTv6zSq-9PV8k-weYoa4m1cnc1h3QGFSzrEsE-jvZ6XSr-S_dXur0hq_oLkNd8AznzEPj3XEP02ySjTpkBcbTHN2e9-JPJa1qdfbutOjoykJeUTTeQjSYO1FblI260G6XiNmtX-VAiJkLxGioSJn8uaAD3pIXju0czyLSUKARQZ_rJUGyDfnMc5oiHsgHKDD6-bvbBcl_y8ex85p_7oI80edl4tT_zva819G8CCbnpB7x4tdhjZ6kjtjB9uL3ryHYCE0gBeTvlUeVj238iMv5404IRrY1MSHJ5xZnoWBLAXSkKpV248tRFUTE2O0Yr3LabTkdAooDk9VXrc6_wQGNhyTu_BX_ptjF2qUAFME4NBHnC7uvi4csl8gAzUMN1vO30Ffi3mndbwbZ8Y01Fx_zPzxSxnBo9jVpOQ6T9YWGgkmMd16sCk574Amch0mzbsjqoCxBVK8lWAACqQcZhnk9-VfjYDu2-ZfDQ9IUw1asWwTGWgU1-iYLuieSj4TL1bhdgwiW3Geoyv0iErPeeDDbCRSMCvNtP4k8di8KwvPp5xrM6pCeZ0-zKaXmFwe7TEbTzKhA4A32W5WEG0v8q8mRsr1n38K8r5fi8xsP5EtluNScyE0uiMXv6tXL03_N2er6tv-CgNcCNwwCMQJxcwYikC9zLcmVF2JqHmSsNwOw2AZdt3qZOkeHr_clA-htmSWEOzaa24auFo5RVKBaOuuf-loqycAfTDLYBSFriOPBTSYV9sqt3kgbgyeW2b9vWZEfIcu8sxRqqJ8cdDF3fahgjp1ftZQFziPnTaAhV0aeVpqFYJC_i7fZICpMajzJP-uEjFnb7CnS390Fb8czjw2E4j7ZdvI0pKdmtJKeBa61dF3Qz5owF3EGf6UO1JHZPtzZADt4PvVI4V5GJEzdh8q_qrxsymRLfvd1kencT5-tTJW6d0qnTZPRcEghNW8mI184YUSpqaWg4eGKWVXU0xn3V955aEyLotxYdIC7_TknbBTXACZaQuXo-fb4Q319bZrvG6jwKUHz7xYxQZlV71uXWGQ7bAvqSJyiIP-P_nyyiGsthovQb_qXRLSkZ5zZtcxLlfs8UMT2Jw2Fb12zycPEHkfdosb_oQuj7sDF-S2ykeCFy1TGOZDQ-6-oCKQ==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_07fec500b25e6753016a95348323a487d0b7aeff6b14907423",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 8058,
+    "completion_tokens": 2101,
+    "total_tokens": 10159,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 2816,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0055829,
+      "upstream_inference_prompt_cost": 0.0013809,
+      "upstream_inference_completions_cost": 0.004202
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 19.52,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 32584,
+    "response_format": {
+      "type": "json_object"
+    },
+    "reasoning": {
+      "effort": "minimal"
+    }
+  }
+}

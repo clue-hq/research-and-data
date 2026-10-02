@@ -40,7 +40,12 @@ def register_agent_gate_tools(
         budget_controls_enabled=budget_controls_enabled,
     ):
         registry.register(tool, make_default=True)
+    # ARV2 onboarding O6 (T6): ``open_icp_confirmation_gate@1`` is no longer the default alias for
+    # its name. ``head-of-abm@v44`` pins ``@2`` — the gate over the ICP knowledge document — and a
+    # default that disagreed with the active profile's pin would hand an unversioned caller the
+    # gate nobody holds. ``@1`` stays registered, frozen, and resolvable by exact address for
+    # replay. The ``@2`` registration claims the alias, in ``toolbelt_wiring`` (it needs storage).
     for tool in build_stage0_icp_gate_tools(conn_factory=conn_factory):
-        registry.register(tool, make_default=True)
+        registry.register(tool, make_default=False)
     for tool in build_product_selection_gate_tools(conn_factory=conn_factory):
         registry.register(tool, make_default=True)

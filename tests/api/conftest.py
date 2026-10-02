@@ -39,14 +39,23 @@ from tests.profiling.conftest import (
 
 # Every boolean ``Settings`` field is an activation switch, and each is read from ``CLUE_<FIELD>``.
 # Enumerated from the model rather than hand-listed so a flag added later is neutralised
-# automatically. Deliberately narrow: booleans only — credentials, ``CLUE_DATABASE_URL``,
-# Redis/storage URLs and model ids are left exactly as the ambient environment supplies them (the
-# DB skip-gate and the operator's model selection must keep working).
+# automatically. Deliberately narrow otherwise: credentials, ``CLUE_DATABASE_URL``, Redis/storage
+# URLs and model ids are left exactly as the ambient environment supplies them (the DB skip-gate
+# and the operator's model selection must keep working).
+#
+# ``CLUE_PRODUCT_PATH`` is added explicitly: it is a ``Literal``, not a bool, but it is an
+# activation switch of exactly the kind this fixture exists to neutralise — the
+# ``integration_pilot`` overlay turns a dozen of the enumerated flags *on* as defaults, so leaving
+# it exported flips the very wiring these tests assert is off (and the overlay wins wherever the
+# stripped ``=false`` lines used to hold it back).
 FLAG_ENV_VARS: tuple[str, ...] = tuple(
     sorted(
-        f"{Settings.model_config['env_prefix']}{name.upper()}"
-        for name, field in Settings.model_fields.items()
-        if field.annotation is bool
+        {
+            f"{Settings.model_config['env_prefix']}{name.upper()}"
+            for name, field in Settings.model_fields.items()
+            if field.annotation is bool
+        }
+        | {f"{Settings.model_config['env_prefix']}PRODUCT_PATH"}
     )
 )
 

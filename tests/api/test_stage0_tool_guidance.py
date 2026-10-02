@@ -19,11 +19,7 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from clue_api.agent_registry_wiring import C6_AGENT_TOOL_AUTHORITY
 from clue_api.agent_runtime_wiring import _with_trusted_runtime
 from clue_api.stage0_tools import (
-    EvaluateStage0ReadinessTool,
     RecordInterviewAnswerTool,
-    StartConfirmedProjectRunTool,
-    StartReconTool,
-    SubmitOnboardingInputTool,
     _Stage0Tool,
 )
 from clue_gateway.agent_model import provider_compatible_tool_schema
@@ -31,23 +27,25 @@ from clue_gateway.agent_model import provider_compatible_tool_schema
 # The model-invocable Stage-0 surface. ``confirm_project_product`` and
 # ``override_stage0_readiness`` are human-only (no role holds authority), which
 # ``test_guidance_covers_every_model_invocable_stage0_tool`` re-derives rather than trusts.
+#
+# ARV2 onboarding O6 left exactly one entry. `head-of-abm@v44` dropped `submit_onboarding_input`,
+# `start_recon`, `evaluate_stage0_readiness` and `start_confirmed_project_run` from every model
+# surface — the new lane reads the brand's knowledge documents instead of recon-ing, has no
+# readiness check, and launches per account rather than starting a phase-machine run. Their classes
+# are still registered and their descriptions still frozen for replay; what changed is that no
+# model fills their fields, so this gate (state the rule where the model authors it) has nothing to
+# assert about them. It re-derives the set from the live authority map, so re-granting any of them
+# without restoring its guidance is a failing build again.
 _TOOLS: dict[str, type[_Stage0Tool]] = {
-    "submit_onboarding_input": SubmitOnboardingInputTool,
-    "start_recon": StartReconTool,
     "record_interview_answer": RecordInterviewAnswerTool,
-    "evaluate_stage0_readiness": EvaluateStage0ReadinessTool,
-    "start_confirmed_project_run": StartConfirmedProjectRunTool,
 }
 
 # enforced constraint -> (tool, field path, substrings the description must carry).
 # Each entry names the code that refuses the call when the rule is broken.
 _REQUIRED_GUIDANCE: dict[tuple[str, tuple[str, ...]], tuple[str, ...]] = {
-    # stage0_tools.SubmitOnboardingInputTool.preconditions: artifact must exist here.
-    ("submit_onboarding_input", ("artifact_key",)): ("captured", "workspace"),
-    # governed.submit_onboarding_input immutability + the record_interview_answer sha check.
-    ("submit_onboarding_input", ("content_sha256",)): ("sha-256", "exact"),
-    # stage0_tools.StartReconTool.preconditions: non-empty, resolvable, same-workspace refs.
-    ("start_recon", ("onboarding_input_ids",)): ("at least one", "workspace"),
+    # ARV2 onboarding O6 removed the `submit_onboarding_input`, `start_recon`,
+    # `evaluate_stage0_readiness` and `start_confirmed_project_run` entries with their tools: the
+    # gate only binds fields a model actually fills, and no model surface fills theirs any more.
     # `answer`, `onboarding_input_id` and `artifact_key` are engine-injected turn authority
     # (PC-C8 §6a, clue_api.turn_binding): the model never fills them, so under this gate's own
     # rule — state a constraint where the model authors the field — they have nothing to state
@@ -120,23 +118,6 @@ _REQUIRED_GUIDANCE: dict[tuple[str, tuple[str, ...]], tuple[str, ...]] = {
     ("record_interview_answer", ("statements", "use_class")): ("contact",),
     # interview._write_claim: a correction must match workspace, entity, and field.
     ("record_interview_answer", ("statements", "correction_of_claim_id")): ("field",),
-    # governed.evaluate_readiness: the deterministic floor reads exactly these metric keys.
-    ("evaluate_stage0_readiness", ("metrics",)): (
-        "coverage_ratio",
-        "verified_claims",
-        "open_policy_blocks",
-        "available_field_keys",
-    ),
-    ("evaluate_stage0_readiness", ("agent_sufficiency_status",)): ("advisory", "never"),
-    # stage0_tools.start_confirmed_project_run: exact lineage + ready-or-overridden decision.
-    ("start_confirmed_project_run", ("readiness_decision_id",)): (
-        "discovery_spend",
-        "override",
-    ),
-    ("start_confirmed_project_run", ("icp_key",)): ("lineage",),
-    ("start_confirmed_project_run", ("icp_version",)): ("lineage",),
-    ("start_confirmed_project_run", ("client_kb_version",)): ("lineage",),
-    ("start_confirmed_project_run", ("product_context_version_id",)): ("lineage",),
 }
 
 

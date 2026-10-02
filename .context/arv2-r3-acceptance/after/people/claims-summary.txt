@@ -1,0 +1,10 @@
+      subject      | claims | contact_claims | schema_false | insight | media_items | emails 
+-------------------+--------+----------------+--------------+---------+-------------+--------
+ Alastair Paterson |     67 |             67 |            0 |       1 |           6 |      2
+ Alexander Semien  |     48 |             48 |            0 |       1 |           1 |      0
+ Ana Corio         |     57 |             57 |            3 |       1 |           1 |      2
+ Cameron Coles     |     57 |             57 |            1 |       0 |           2 |      1
+ Tyler Chonoles    |     45 |             45 |            0 |       1 |           1 |      1
+ Vineet Edupuganti |     62 |             62 |            7 |       1 |           8 |      1
+(6 rows)
+

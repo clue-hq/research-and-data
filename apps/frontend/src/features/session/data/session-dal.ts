@@ -6,10 +6,10 @@ import { fetchClueAuthentication } from "@/auth/backend";
 import { ClueAuthenticationError } from "@/auth/errors";
 import { isAuthenticationEnabled } from "@/auth/config";
 import { requireProviderSessionToken } from "@/auth/server";
+import { assertLocalWorkspaceSelection, localWorkspaceInstance, workspaceCookieName } from "@/auth/local-workspace";
 import {
   AuthenticatedSessionSchema,
   RequestPrincipalSchema,
-  WORKSPACE_COOKIE,
   type AuthenticatedSession,
   type ProtectedSession,
   resolveWorkspaceMembership,
@@ -22,6 +22,9 @@ import {
 function handleAuthenticationError(error: unknown): never {
   if (error instanceof ClueAuthenticationError) {
     if (error.status === 401) redirect("/sign-in?reason=session_expired");
+    if (localWorkspaceInstance() && ["IDENTITY_NOT_PROVISIONED", "WORKSPACE_MEMBERSHIP_REQUIRED"].includes(error.code)) {
+      redirect("/access-denied?code=WORKSPACE_FORBIDDEN");
+    }
     // FI-4 slice 1 routing repair: an authenticated user who simply has no Clue footprint
     // yet (fresh Clerk identity, or identity without a workspace) belongs in onboarding —
     // the provisioning profile step — not at a dead-end access-denied page.
@@ -56,7 +59,7 @@ export async function getProtectedSession(): Promise<ProtectedSession | null> {
   if (!isAuthenticationEnabled()) return null;
   const token = await requireProviderSessionToken();
   const cookieStore = await cookies();
-  const requested = cookieStore.get(WORKSPACE_COOKIE)?.value;
+  const requested = cookieStore.get(workspaceCookieName())?.value;
   try {
     return await loadProtectedSession(token, requested);
   } catch (error) {
@@ -88,8 +91,14 @@ export async function loadProtectedSession(
   const session = AuthenticatedSessionSchema.parse(
     await fetchClueAuthentication("/auth/v1/session", { token }),
   );
-  const membership = resolveWorkspaceMembership(session, requestedWorkspaceId);
+  const instance = localWorkspaceInstance();
+  const membership = resolveWorkspaceMembership(session, requestedWorkspaceId, instance?.workspaceId);
   if (!membership) {
+    if (instance) {
+      throw new ClueAuthenticationError("No active membership in this local workspace", {
+        code: "WORKSPACE_FORBIDDEN", status: 403,
+      });
+    }
     if (session.memberships.length > 0) {
       throw new ClueAuthenticationError(
         "An explicit workspace selection is required",
@@ -117,6 +126,11 @@ export async function loadProtectedSession(
       workspaceId: membership.workspace_id,
     }),
   );
+  if (principal.workspace_id !== membership.workspace_id) {
+    throw new ClueAuthenticationError("The resolved principal does not match the selected workspace", {
+      code: "WORKSPACE_FORBIDDEN", status: 403,
+    });
+  }
   return {
     userId: session.user_id,
     memberships: session.memberships,
@@ -127,6 +141,7 @@ export async function loadProtectedSession(
 export async function requireWorkspaceMembership(
   workspaceId: string,
 ): Promise<void> {
+  assertLocalWorkspaceSelection(workspaceId);
   const token = await requireProviderSessionToken();
   try {
     RequestPrincipalSchema.parse(

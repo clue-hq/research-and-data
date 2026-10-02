@@ -112,7 +112,15 @@ def test_the_flag_mounts_the_probe_router() -> None:
     enabled = _settings(frontend_read_enabled=True)
     assert _probe_paths(enabled) == {("GET", f"{FRONTEND_READ_PREFIX}/health")}
     # The scoped router is where Tasks 2-4 register; Task 2 added the accounts list.
-    assert ("GET", f"{FRONTEND_READ_PREFIX}/accounts") in _scoped_paths(enabled)
+    scoped = _scoped_paths(enabled)
+    assert ("GET", f"{FRONTEND_READ_PREFIX}/accounts") in scoped
+    # ARV2 O5 — the brand-context Knowledge reads.
+    assert ("GET", f"{FRONTEND_READ_PREFIX}/brand-context/knowledge") in scoped
+    assert (
+        "GET",
+        f"{FRONTEND_READ_PREFIX}/brand-context/knowledge/documents/{{document_id}}",
+    ) in scoped
+    assert ("GET", f"{FRONTEND_READ_PREFIX}/brand-context/onboarding/current") in scoped
 
 
 def test_flag_off_keeps_routes_absent_but_returns_a_correlatable_error() -> None:
@@ -125,11 +133,14 @@ def test_flag_off_keeps_routes_absent_but_returns_a_correlatable_error() -> None
 
 def test_flag_off_error_ownership_remains_prefix_scoped() -> None:
     with TestClient(_app(_settings())) as client:
-        response = client.get("/not-a-frontend-read-route")
+        response = client.get(
+            "/not-a-frontend-read-route", headers={REQUEST_ID_HEADER: "off-prefix-not-found"}
+        )
         assert response.status_code == 404
         assert "detail" in response.json()
         assert "error" not in response.json()
-        assert REQUEST_ID_HEADER not in response.headers
+        # App-wide telemetry echoes request ids without changing this route's error envelope.
+        assert response.headers[REQUEST_ID_HEADER] == "off-prefix-not-found"
 
 
 def test_flag_on_the_app_serves_the_router_health_probe() -> None:
@@ -209,11 +220,14 @@ def test_an_unhandled_error_serves_the_envelope_without_leaking_the_cause() -> N
 def test_routes_outside_the_router_keep_their_own_error_shape() -> None:
     """The handlers are path-scoped: the B4 projection routes still answer ``{"detail": …}``."""
     with TestClient(_probe_app(_settings(frontend_read_enabled=True))) as client:
-        response = client.get("/project_runs/00000000-0000-0000-0000-000000000000/overview")
+        response = client.get(
+            "/project_runs/00000000-0000-0000-0000-000000000000/overview",
+            headers={REQUEST_ID_HEADER: "off-prefix-unauthorized"},
+        )
         assert response.status_code == 401
         assert "detail" in response.json()
         assert "error" not in response.json()
-        assert REQUEST_ID_HEADER not in response.headers
+        assert response.headers[REQUEST_ID_HEADER] == "off-prefix-unauthorized"
 
 
 def test_an_off_prefix_unhandled_error_still_propagates_to_the_server() -> None:

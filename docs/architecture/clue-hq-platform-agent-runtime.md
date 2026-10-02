@@ -269,6 +269,31 @@ lift-out design (harness doc §10, agent-location decision) is exactly this land
 this section is speculative architecture: every mechanism cited above has a live, tested
 implementation in havana with recorded evidence trails; the work is instantiation, not invention.
 
+### 2.5 Tool-error recovery (implemented 2026-09-25)
+
+Native parallel tool batches settle completely before the next model call. Governed failures
+return per-call feedback; successful sibling receipts remain valid. The checkpointed allowance
+counts failed batches followed by corrective model rounds, not the number of sibling errors.
+Ten corrective rounds are available per agent turn; an eleventh failed batch stops before another call.
+Finalization must be a separate call after reading sibling results, so it cannot commit midway
+through an unfinished batch.
+
+A corrected governed call may supply `retry_of`, naming failed node keys for that same work.
+This is plan metadata, never a provider argument or authority field. The executor validates the
+same execution, workspace, agent interaction slot and tool, and requires a successful replacement
+receipt before appending `node.recovered`. The original `node.failed` event remains unchanged.
+Recovery applies to direct agent leaves without dependent graph nodes; it does not rewrite graph
+edges or turn the original failure into a successful receipt. Unrelated successes clear nothing.
+An execution can settle after all its failed leaves are explicitly recovered; unresolved failures
+still prevent a successful finalization. Replaying an already recovered failed attempt is refused.
+
+`PlanToolStep.retry_of` defaults to an empty tuple and is omitted from serialized historical
+plans when empty. Migration `4c916b02ed9b` adds the recovery event vocabulary. Downgrade is safe
+on a clean database; it refuses to rewrite existing recovery audit records into older event types.
+Research `record_research_finding@3` independently derives exact-retry write identities from
+canonical finding content and resolved sources within its job. This does not deduplicate meaning
+or replace the explicit claim-correction tools.
+
 ## Part III — Context assembly (the pipeline, exactly)
 
 **Assembly is engine code.** The agent never "gathers its own context" for a turn's opening

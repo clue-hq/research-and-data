@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Scene } from "@/features/design-editor/engine/scene/contracts";
 import { HARVESTED_AD_PAGE } from "@/features/design-editor/adapter/__fixtures__/scene-nodes";
-import { editTargetChips, editTargetContextRefs } from "./edit-targets";
+import {
+  annotationChips,
+  annotationContextRefs,
+  editTargetChips,
+  editTargetContextRefs,
+} from "./edit-targets";
 
 test("edit-target chips mirror ordered selection and use document node names", () => {
   const scene = HARVESTED_AD_PAGE as Scene;
@@ -31,5 +36,44 @@ test("the target context snapshot keeps one version across document and ordered 
     { objectId: "doc_ad", objectType: "design_document", version: 12 },
     { objectId: "headline", objectType: "design_node", version: 12 },
     { objectId: "logo", objectType: "design_node", version: 12 },
+  ]);
+});
+
+test("annotations become one document ref plus ordered noted node refs; chips are numbered", () => {
+  const items = [
+    {
+      n: 2,
+      note: "Make the headline shorter and punchier please",
+      address: { nodeId: "frg_a", path: ":nth-child(1)", tag: "h2" },
+      name: "h2",
+      pageId: "home",
+      textLike: true,
+    },
+    {
+      n: 3,
+      note: "Remove",
+      address: { nodeId: "sec_b", tag: "section" },
+      name: "Proof",
+      pageId: "home",
+      textLike: false,
+    },
+  ];
+
+  assert.deepEqual(
+    annotationContextRefs({ documentId: "doc_1", documentVersion: 9, items }),
+    [
+      { objectId: "doc_1", objectType: "design_document", version: 9 },
+      {
+        objectId: "frg_a#:nth-child(1)",
+        objectType: "design_node",
+        version: 9,
+        note: "2. Make the headline shorter and punchier please",
+      },
+      { objectId: "sec_b", objectType: "design_node", version: 9, note: "3. Remove" },
+    ],
+  );
+  assert.deepEqual(annotationChips(items), [
+    { n: 2, label: "Make the headline shorter an\u2026" },
+    { n: 3, label: "Remove" },
   ]);
 });

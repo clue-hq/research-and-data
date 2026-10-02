@@ -13,7 +13,16 @@ import type {
   Operation,
   Scene,
 } from "../engine/scene/contracts";
-import { createSceneReplaceImageHandler } from "./use-scene-replace-image";
+import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import { sceneManualWriteGate } from "./use-scene-manual-edits";
+import {
+  NOT_ACCEPTING_EDITS,
+  NOT_AN_IMAGE_TARGET,
+  SAME_IMAGE_IN_USE,
+  SELECTION_MOVED,
+  SceneReplaceImageRefused,
+  createSceneReplaceImageHandler,
+} from "./use-scene-replace-image";
 
 /**
  * AD4.A step 2 (§1.3 row 1): the Replace-image ORCHESTRATION — the gate before
@@ -66,16 +75,20 @@ function pngFile(name = "hero-v2.png"): File {
 function harness({
   accepted = true,
   armed = true,
+  locked = false,
   node = adImage() as Node | null,
   upload = async () => RECORD,
 }: {
   accepted?: boolean;
   armed?: boolean;
+  /** Task 4 fix round 1 (I3): a design turn is running on this document. */
+  locked?: boolean;
   node?: Node | null;
   upload?: (file: File) => Promise<AssetRecord>;
 } = {}) {
   const applied: { intent?: string; operations: Operation[] }[] = [];
   const errors: string[] = [];
+  const notes: string[] = [];
   const uploads: File[] = [];
   let cleared = 0;
   const deps = {
@@ -83,7 +96,13 @@ function harness({
       applied.push({ intent, operations });
       return accepted;
     },
-    canApply: () => armed,
+    writeGate: () =>
+      sceneManualWriteGate({
+        armed,
+        engineReady: armed,
+        lockNote: AGENT_RUN_LOCK_NOTE,
+        locked,
+      }),
     clearMessages: () => {
       cleared += 1;
       errors.length = 0;
@@ -91,6 +110,7 @@ function harness({
     documentId: AD_DOCUMENT_ID as string | null,
     node,
     onError: (message: string) => errors.push(message),
+    onNote: (message: string) => notes.push(message),
     upload: (candidate: File) => {
       uploads.push(candidate);
       return upload(candidate);
@@ -103,6 +123,7 @@ function harness({
     deps,
     errors,
     handler,
+    notes,
     uploads,
   };
 }
@@ -159,9 +180,9 @@ test("§4: a LOCKED image never reaches the transport — a half write is refuse
 
   assert.equal(uploads.length, 0, "no asset is minted for a write §4 refuses");
   assert.equal(applied.length, 0);
-  // Silent, exactly like every other §4 refusal on this lane: the panel simply
-  // does not record it (the rejection is what puts the preview back).
-  assert.deepEqual(errors, []);
+  // Task 3: this used to assert SILENCE. The silence was the bug (spec §1) — a
+  // preview that snapped back with no explanation reads as "upload does nothing".
+  assert.deepEqual(errors, [NOT_AN_IMAGE_TARGET]);
 });
 
 test("a non-image selection, and no selection at all, never upload", async () => {
@@ -212,7 +233,7 @@ test("a write the ENGINE refuses rejects too — the panel must not keep the pre
   assert.deepEqual(errors, []);
 });
 
-test("re-picking the file the node already carries is NOT a write, and is not a failure", async () => {
+test("re-picking the file the node already carries is NOT a write, and now SAYS so", async () => {
   const { applied, errors, handler } = harness({
     upload: async () => ({
       ...RECORD,
@@ -221,12 +242,13 @@ test("re-picking the file the node already carries is NOT a write, and is not a 
     }),
   });
 
-  // Resolves: the document really does hold this picture, so the preview
-  // showing it is true.
-  await handler(pngFile());
+  // Task 3: this used to RESOLVE silently on the theory that the document really
+  // does hold this picture. From the user's chair a silent resolve after a wait
+  // is indistinguishable from a broken upload — so it now reports and rejects.
+  await assert.rejects(handler(pngFile()), SceneReplaceImageRefused);
 
-  assert.equal(applied.length, 0);
-  assert.deepEqual(errors, []);
+  assert.equal(applied.length, 0, "still not a write");
+  assert.deepEqual(errors, [SAME_IMAGE_IN_USE]);
 });
 
 test("a second pick while one is in flight is refused, never applied out of order", async () => {
@@ -303,8 +325,26 @@ test("FIX 1: a write path that is NOT ARMED refuses before the transport", async
 
   assert.equal(uploads.length, 0, "no asset is minted when nothing can land");
   assert.equal(applied.length, 0);
-  // Silent, like the lock: the canvas's own read-only banner already explains
-  // this state and a second message would be new failure UI.
+  // Task 3: this used to assert SILENCE, on the theory that the canvas's
+  // read-only banner explains the state. It does not explain why THIS control
+  // did nothing, so the refusal now names itself in the slot beside the control.
+  assert.deepEqual(errors, [NOT_ACCEPTING_EDITS]);
+});
+
+test("task 4 (I3): a pick refused by the agent-run lock says SO, and spends nothing", async () => {
+  // The defect: the lock reached this flow through `canApply(): boolean`, which
+  // threw away the gate's reason — so a pick made while the design agent was
+  // working reported "the write path is not armed", a false statement about a
+  // perfectly armed editor.
+  const { applied, errors, handler, notes, uploads } = harness({ locked: true });
+
+  await assert.rejects(handler(pngFile()));
+
+  assert.equal(uploads.length, 0, "no asset is minted while the agent works");
+  assert.equal(applied.length, 0);
+  assert.deepEqual(notes, [AGENT_RUN_LOCK_NOTE]);
+  // The NOTE line, never the error line: a locked editor is a state to wait
+  // out, not a failure.
   assert.deepEqual(errors, []);
 });
 
@@ -338,13 +378,20 @@ test("FIX 3: a new attempt clears the slot, so a stale refusal cannot outlive it
     id: "asset_ing_2b0928ca4f3a3c70",
     label: "Brand gradient backdrop",
   });
-  await state.handler(pngFile());
+  await assert.rejects(state.handler(pngFile()), SceneReplaceImageRefused);
 
-  assert.deepEqual(state.errors, [], "the 413 no longer describes anything true");
+  // Task 3: the slot used to end EMPTY here. What this test is about is that the
+  // stale 413 is gone — the clear ran, and the only thing left is what the new
+  // attempt itself has to say.
+  assert.deepEqual(
+    state.errors,
+    [SAME_IMAGE_IN_USE],
+    "the 413 no longer describes anything true",
+  );
   assert.equal(state.applied.length, 0, "and it is still not a write");
 });
 
-test("FIX 3: a pick the pre-transport gate refuses changes nothing at all, messages included", async () => {
+test("FIX 3: a pick the pre-transport gate refuses does not CLEAR the slot — it speaks into it", async () => {
   const { clearCount, handler } = harness({
     node: heroWith((node) => {
       node.locked = true;
@@ -353,7 +400,10 @@ test("FIX 3: a pick the pre-transport gate refuses changes nothing at all, messa
 
   await assert.rejects(handler(pngFile()));
 
-  assert.equal(clearCount(), 0, "a complete non-event does not touch the slots");
+  // Task 3 narrowed this: the clear still belongs after the gate (a refused pick
+  // does not get to wipe what the last attempt said), but the refusal is no
+  // longer a complete non-event — it writes its own sentence, proven above.
+  assert.equal(clearCount(), 0, "the gate refusal never reaches the clear");
 });
 
 test("AD4.A step 3 review: an upload that lands after the ARTIFACT TAB changed writes nothing", () => {
@@ -383,4 +433,107 @@ test("AD4.A step 3 review: a pick with no document armed never reaches the trans
 
   assert.equal(state.uploads.length, 0, "nothing is minted with nothing to write to");
   assert.equal(state.applied.length, 0);
+});
+
+// ══ Task 3: every refusal SPEAKS ════════════════════════════════════════════
+// The founder's report was "upload does nothing": four refusal paths threw a
+// diagnostic-only `SceneReplaceImageRefused` and put NOTHING in the inspector's
+// error slot, so the preview snapped back with no explanation. The silence was
+// the bug (spec §1); these four cases pin the sentence each refusal now says.
+// Deps are built directly here rather than through `harness`, so the sentences
+// are asserted against the runner and not against a test-local clearing rule.
+
+function speakingDeps(
+  over: Partial<{
+    armed: boolean;
+    documentId: string | null;
+    node: Node | null;
+    upload: (f: File) => Promise<AssetRecord>;
+  }> = {},
+) {
+  const errors: string[] = [];
+  const applied: Operation[][] = [];
+  const deps = {
+    applyOps: (ops: Operation[]) => {
+      applied.push(ops);
+      return true;
+    },
+    clearMessages: () => undefined,
+    documentId: over.documentId === undefined ? AD_DOCUMENT_ID : over.documentId,
+    node: over.node === undefined ? (adImage() as Node) : over.node,
+    onError: (message: string) => {
+      errors.push(message);
+    },
+    onNote: () => undefined,
+    // The merged gate: a silent "not armed" refusal (no note), never the lock.
+    writeGate: () =>
+      (over.armed ?? true)
+        ? { allowed: true, note: null, refusal: null }
+        : { allowed: false, note: null, refusal: "not_armed" as const },
+    upload: over.upload ?? (async () => RECORD),
+  };
+  return { applied, deps, errors };
+}
+
+test("a refusal because the write path is not armed SPEAKS, then throws", async () => {
+  const { deps, errors } = speakingDeps({ armed: false });
+  await assert.rejects(
+    createSceneReplaceImageHandler(() => deps)(pngFile()),
+    SceneReplaceImageRefused,
+  );
+  assert.deepEqual(errors, [NOT_ACCEPTING_EDITS]);
+});
+
+test("a refusal because the selection is not an unlocked image SPEAKS", async () => {
+  const locked = heroWith((node) => {
+    node.locked = true;
+  });
+  const { deps, errors } = speakingDeps({ node: locked });
+  await assert.rejects(
+    createSceneReplaceImageHandler(() => deps)(pngFile()),
+    SceneReplaceImageRefused,
+  );
+  assert.deepEqual(errors, [NOT_AN_IMAGE_TARGET]);
+  const text = speakingDeps({ node: adTokenText() as Node });
+  await assert.rejects(
+    createSceneReplaceImageHandler(() => text.deps)(pngFile()),
+    SceneReplaceImageRefused,
+  );
+  assert.deepEqual(text.errors, [NOT_AN_IMAGE_TARGET]);
+});
+
+test("a refusal because the selection moved during the upload SPEAKS", async () => {
+  const gate = deferred<AssetRecord>();
+  let current: Node | null = adImage() as Node;
+  const errors: string[] = [];
+  const deps = () => ({
+    applyOps: () => true,
+    clearMessages: () => undefined,
+    documentId: AD_DOCUMENT_ID,
+    node: current,
+    onError: (m: string) => {
+      errors.push(m);
+    },
+    onNote: () => undefined,
+    writeGate: () => ({ allowed: true, note: null, refusal: null }),
+    upload: () => gate.promise,
+  });
+  const run = createSceneReplaceImageHandler(deps)(pngFile());
+  current = adTokenText() as Node;
+  gate.resolve(RECORD);
+  await assert.rejects(run, SceneReplaceImageRefused);
+  assert.deepEqual(errors, [SELECTION_MOVED]);
+});
+
+test("uploading the very image already in use SPEAKS instead of silently doing nothing", async () => {
+  const same = heroWith((node) => {
+    if (node.kind.kind === "image") node.kind.asset_id = RECORD.id;
+  });
+  const { applied, deps, errors } = speakingDeps({ node: same });
+  await assert.rejects(
+    createSceneReplaceImageHandler(() => deps)(pngFile()),
+    SceneReplaceImageRefused,
+  );
+  assert.deepEqual(errors, [SAME_IMAGE_IN_USE]);
+  assert.equal(applied.length, 0);
 });

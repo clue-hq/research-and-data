@@ -1,0 +1,36 @@
+# EXA INDEXED COPY of https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security
+# title: Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson
+# chars: 1787
+
+Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson
+
+Join CYBR.SEC.CON. cofounders Michael and Sam each week as they chat with conference speakers about the latest topics and trends in the cybersecurity space. 
+
+# Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson
+
+ June 24, 2026 • CYBR.SEC.Media • Season 2 • Episode 67 
+
+In this episode of CYBR.SEC.CAST, hosts Michael and Sam sit down with Alastair Patterson, CEO of Harmonic Security, to discuss the rapid evolution of AI in the enterprise. They explore the shift from chatbots to autonomous agents, the challenges CISOs face in governing AI adoption, and how security teams can enable innovation without becoming blockers. Alastair also shares his founder journey, lessons from Digital Shadows, and how Harmonic is helping organizations gain visibility and control over AI usage.
+
+Sponsored by Harmonic Security
+
+Things Mentioned:
+
+- Harmonic Security – https://www.harmonic.security
+- CYBR.SEC.CON. Tickets - https://www.xcdsystem.com/cybrseccommunity/attendee/index.cfm?ID=iV8mb8T
+- Crew Member Application - https://www.cybrseccon.com/jointhecrew
+- CYBR.SEC.CON. Speakers (Partial List) - https://www.xcdsystem.com/cybrseccommunity/program/Wh1YEUW/index.cfm?pgid=761
+- CYBR.SEC.CON. Lightning Talk CFP - https://www.cybrseccon.com/callforpapers
+- CYBR.SEC.CON. Sponsorship - https://www.xcdsystem.com/cybrseccommunity/exhibitor/index.cfm?ID=7nYn7df 
+
+Do you have a question for the hosts? Reach out to us at media@cscgroupllc.com 
+
+In this episode:
+
+- Host: Michael Farnum
+- Host: Sam Van Ryder
+- Guest: Alastair Paterson
+- Producer: Bill Brenner
+- Music by: August Honey
+
+### People on this episode

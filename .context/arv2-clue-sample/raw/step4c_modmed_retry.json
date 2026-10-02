@@ -1,0 +1,38 @@
+{
+  "requestId": "d4e39c1faef1d6a374f8b81dd1019616",
+  "results": [
+    {
+      "id": "https://www.modmed.com/resources/gi/charleston-gi-improves-revenue-cycle-with-modmed-suite-of-products",
+      "title": "Charleston GI Improves Revenue Cycle with ModMed Suite of Products",
+      "url": "https://www.modmed.com/resources/gi/charleston-gi-improves-revenue-cycle-with-modmed-suite-of-products",
+      "author": null,
+      "text": "Charleston GI Improves Revenue Cycle with ModMed Suite of Products\n\n# Charleston GI Improves Revenue Cycle with ModMed Suite of Products \n\n Published Date August 7, 2025",
+      "image": "https://content.cdntwrk.com/files/aT0xNTM4Mjc2JnA9MCZ2ZXJzaW9uPTEmY21kPXYmc2lnPTkxOWVhNzdmMzVjZTkzNDRiZjQ5ODg5Mjc3YmI1OGZi/-w-320.jpg"
+    }
+  ],
+  "statuses": [
+    {
+      "id": "https://www.modmed.com/resources/gi/charleston-gi-improves-revenue-cycle-with-modmed-suite-of-products",
+      "status": "success",
+      "source": "cached"
+    }
+  ],
+  "costDollars": {
+    "total": 0.001,
+    "contents": {
+      "text": 0.001
+    }
+  },
+  "searchTime": 8.460473000013735,
+  "_http_status": 200,
+  "_elapsed_s": 0.1,
+  "_request": {
+    "urls": [
+      "https://www.modmed.com/resources/gi/charleston-gi-improves-revenue-cycle-with-modmed-suite-of-products"
+    ],
+    "text": {
+      "maxCharacters": 12000
+    },
+    "livecrawl": "fallback"
+  }
+}

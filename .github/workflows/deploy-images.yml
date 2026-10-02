@@ -1,0 +1,93 @@
+name: deploy-images
+# First deployment spec §9.1, §9.5: build the backend and sandbox images, prove they boot, then —
+# only on a push to main (the deployment branch) — move the `production` tags the VM deploys from.
+# A pull request into main runs every check without moving the tags, so a release PR proves its
+# images before it can be merged. No test suite runs here: these are boot checks, minutes long.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  BACKEND: ghcr.io/clue-hq/clue-backend
+  SANDBOX: ghcr.io/clue-hq/clue-agent-sandbox
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: clue
+          POSTGRES_PASSWORD: clue
+          POSTGRES_DB: clue
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clue -d clue"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sandbox image
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/agent-sandbox
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.SANDBOX }}:${{ github.sha }}
+      - name: Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.BACKEND }}:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Pull the images just built
+        run: |
+          docker pull "$BACKEND:${{ github.sha }}"
+          docker pull "$SANDBOX:${{ github.sha }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Engine handshake — committed browser wasm vs the helper inside the built image
+        env:
+          HANDSHAKE_HELPER_CMD: >-
+            docker run --rm -i --entrypoint /app/subsystems/clue-design/target/release/lumen-api-helper
+            ${{ env.BACKEND }}:${{ github.sha }}
+        run: |
+          WASM_PREFLIGHT_STRICT=1 node subsystems/clue-design/scripts/preflight_editor_wasm.mjs
+          node subsystems/clue-design/scripts/verify_handshake.mjs
+      - name: Static smoke (contents)
+        run: docker/backend/smoke.sh "$BACKEND:${{ github.sha }}"
+      - name: Boot smoke (every service starts)
+        run: |
+          PGPASSWORD=clue psql -h 127.0.0.1 -U clue -d clue -c "CREATE EXTENSION IF NOT EXISTS vector"
+          docker/backend/boot_smoke.sh "$BACKEND:${{ github.sha }}" "$SANDBOX:${{ github.sha }}"
+      - name: Move the production tags (only after every check above passed)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker buildx imagetools create -t "$BACKEND:production" "$BACKEND:${{ github.sha }}"
+          docker buildx imagetools create -t "$SANDBOX:production" "$SANDBOX:${{ github.sha }}"

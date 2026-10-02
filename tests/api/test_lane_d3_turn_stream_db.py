@@ -64,6 +64,7 @@ from clue_api.agent_turn_submission import (
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
 from clue_api.chat import CHAT_PERMISSIONS, RequestPrincipal
 from clue_api.chat.finalize_stream import FINALIZE_TOOL_NAME
+from clue_api.chat.interrupted_turn import commit_interrupted_turn
 from clue_api.chat.schemas import thread_status
 from clue_api.chat.turn_controls import get_control_request, stop_requested
 from clue_api.chat.turn_events import (
@@ -320,7 +321,14 @@ async def _agent_turn_row(conn: Any, *, project: Any, thread_id: str, turn_id: U
     )
 
 
-async def _emitter(conn: Any, *, project: Any, thread_id: str, turn_id: UUID) -> TurnStreamEmitter:
+async def _emitter(
+    conn: Any,
+    *,
+    project: Any,
+    thread_id: str,
+    turn_id: UUID,
+    policy: TurnStreamPolicy | None = None,
+) -> TurnStreamEmitter:
     return await TurnStreamEmitter.open(
         workspace_id=project.workspace_id,
         project_id=project.project_id,
@@ -329,7 +337,7 @@ async def _emitter(conn: Any, *, project: Any, thread_id: str, turn_id: UUID) ->
         conn_factory=conn_session_factory(conn),
         # Zero-length batching: every delta is its own frame, so the ordering and boundary
         # assertions below are about the mechanism and not about a buffer's timing.
-        policy=TurnStreamPolicy(batch_max_chars=1, batch_interval_s=0.0),
+        policy=policy or TurnStreamPolicy(batch_max_chars=1, batch_interval_s=0.0),
     )
 
 
@@ -988,6 +996,95 @@ def test_tool_parts_carry_the_lifecycle_and_the_durable_receipt(tmp_path: Path) 
             steps = last["steps"]
             assert isinstance(steps, list)
             assert [step["status"] for step in steps] == ["complete", "error"]
+
+    run_async(scenario())
+
+
+# --- the clarification card (spec 2026-09-20 §2.1) ----------------------------------------------
+
+
+def test_a_clarification_part_lands_on_the_outbox_with_its_questions(tmp_path: Path) -> None:
+    """A design document's opening questions reach the transcript field for field.
+
+    The part id derives from the document, so a re-emission replaces the same card; the payload
+    carries exactly what ``request_clarification`` asked, including a question with no options at
+    all — an open question is a legal question, not a malformed one.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d3-clarify", name="D3 clarify")
+            thread_id = await _thread(
+                conn, workspace_id=project.workspace_id, project_id=project.project_id, label="clr"
+            )
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="make me an ad",
+                key="k-clarify",
+                storage=FsStorage(tmp_path / "artifacts"),
+            )
+            emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            run_id = str(uuid4())
+            await emitter.emit_clarification_part(
+                document_id="doc_x",
+                document_title="Acme launch ad",
+                doc_kind="ad",
+                account_name="Acme",
+                run_id=run_id,
+                questions=[
+                    {
+                        "id": "q1",
+                        "question": "Which offer should lead?",
+                        "why_it_matters": "It sets the headline.",
+                        "options": ["Free trial", "Demo"],
+                        "default": "Free trial",
+                        "allow_freeform": False,
+                    },
+                    {
+                        "id": "q2",
+                        "question": "Any proof point to feature?",
+                        "default": "the 40% figure",
+                    },
+                ],
+            )
+
+            frames = await _frames(conn, workspace_id=project.workspace_id, turn_id=turn_id)
+            cards = [frame for frame in frames if frame.part_kind == PartKind.CLARIFICATION.value]
+            assert len(cards) == 1
+            card = cards[0]
+            assert card.event_type == TurnEventType.PART_CREATED.value
+            assert card.part_kind == "clarification"
+            assert card.part_id == "clarification:doc_x"
+
+            part = card.payload["part"]
+            assert isinstance(part, dict)
+            assert part["document_id"] == "doc_x"
+            assert part["document_title"] == "Acme launch ad"
+            assert part["doc_kind"] == "ad"
+            assert part["account_name"] == "Acme"
+            assert part["run_id"] == run_id
+            questions = part["questions"]
+            assert isinstance(questions, list)
+            assert questions == [
+                {
+                    "id": "q1",
+                    "question": "Which offer should lead?",
+                    "why_it_matters": "It sets the headline.",
+                    "options": ["Free trial", "Demo"],
+                    "default": "Free trial",
+                    "allow_freeform": False,
+                },
+                {
+                    "id": "q2",
+                    "question": "Any proof point to feature?",
+                    "why_it_matters": "",
+                    "options": [],
+                    "default": "the 40% figure",
+                    "allow_freeform": True,
+                },
+            ]
 
     run_async(scenario())
 
@@ -1660,7 +1757,9 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
                 generation_attempt_id=emitter.generation_attempt_id,
             )
 
+            await _agent_turn_row(conn, project=project, thread_id=thread_id, turn_id=turn_id)
             engine = _SleepingEngine()
+            engine.artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=cf)
             runner = ProjectConversationTurnRunner(
                 engine=engine,  # type: ignore[arg-type]
                 executor=None,  # type: ignore[arg-type]
@@ -1676,6 +1775,7 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
                 {
                     "workspace_id": project.workspace_id,
                     "project_id": project.project_id,
+                    "thread_id": thread_id,
                     "submitted_by_user_id": USER_ID,
                     "submitted_via_membership_id": f"{MEMBERSHIP_ID}-{project.workspace_id}",
                 },
@@ -1690,7 +1790,31 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
                     stream=emitter,
                 )
             assert engine.cancelled is True
-            assert engine.cancelled_turns == [(turn_id, project.workspace_id)]
+            assert (
+                await conn.scalar(
+                    text(
+                        "SELECT status FROM agent_turn_event WHERE turn_id=:turn "
+                        "ORDER BY seq DESC LIMIT 1"
+                    ),
+                    {"turn": turn_id},
+                )
+                == "cancelled"
+            )
+            async with _client(app) as client:
+                history = await client.get(
+                    base.removesuffix("/turns") + "/messages?include=bodies", headers=headers
+                )
+            bodies = [
+                item.get("body") for item in history.json()["data"] if item["role"] == "assistant"
+            ]
+            assert bodies == ["I was saying som"]
+            assert (
+                await conn.scalar(
+                    text("SELECT count(*) FROM agent_finalization_commit WHERE turn_id=:turn"),
+                    {"turn": turn_id},
+                )
+                == 0
+            )
 
             frames = await _frames(conn, workspace_id=project.workspace_id, turn_id=turn_id)
             cancelled = _of_type(frames, TurnEventType.TURN_CANCELLED)
@@ -1711,10 +1835,10 @@ def test_stop_cancels_the_active_attempt_and_cannot_look_like_a_finished_message
     run_async(scenario())
 
 
-def test_three_turn_stop_releases_the_queue_in_order_and_reload_reconstructs_it(
+def test_stop_holds_queue_until_explicit_idempotent_resume(
     tmp_path: Path,
 ) -> None:
-    """R5: A is stopped, then B and C become the one running turn in order."""
+    """Stop holds B/C durably; Resume releases FIFO without submitting another message."""
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -1783,13 +1907,66 @@ def test_three_turn_stop_releases_the_queue_in_order_and_reload_reconstructs_it(
             assert stopped.status_code == 202
             assert stopped.json()["data"]["turn_id"] == str(turn_a)
 
+            hold_id = stopped.json()["data"]["control_id"]
+            resume_path = base.removesuffix("/turns") + "/queue/resume"
+            async with _client(app) as client:
+                pending = await client.post(
+                    resume_path, headers=headers, json={"hold_control_id": hold_id}
+                )
+            assert pending.status_code == 409 and pending.json()["error"]["code"] == "STOP_PENDING"
+            await commit_interrupted_turn(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                turn_id=turn_a,
+                body_ref=None,
+            )
             await emitter_a.turn_cancelled()
             await finish(task_a, "worker-a", "cancelled")
             assert (
                 await dispatch_next_thread_turn(
                     conn, workspace_id=project.workspace_id, thread_id=thread_id
                 )
-                == turn_b
+                is None
+            )
+            turn_d = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="Turn D while held",
+                key="r5-4",
+                storage=storage,
+            )
+            assert (
+                await conn.scalar(
+                    text("SELECT 1 FROM fleet_task WHERE dedup_key=:key"),
+                    {"key": agent_turn_dedup_key(turn_d)},
+                )
+                is None
+            )
+            async with _client(app) as client:
+                held = await client.get(base, headers=headers)
+                assert held.json()["meta"]["queue_control"]["paused"] is True
+                assert [t["state"] for t in held.json()["data"]] == [
+                    "cancelled",
+                    "queued",
+                    "queued",
+                    "queued",
+                ]
+                resumed = await client.post(
+                    resume_path, headers=headers, json={"hold_control_id": hold_id}
+                )
+                assert resumed.status_code == 202, resumed.text
+                assert resumed.json()["data"]["dispatched_turn_id"] == str(turn_b)
+                again = await client.post(
+                    resume_path, headers=headers, json={"hold_control_id": hold_id}
+                )
+                assert again.json()["data"]["replayed"] is True
+            assert (
+                await dispatch_next_thread_turn(
+                    conn, workspace_id=project.workspace_id, thread_id=thread_id
+                )
+                is None
             )
 
             task_b = await claim("worker-b")
@@ -1802,10 +1979,12 @@ def test_three_turn_stop_releases_the_queue_in_order_and_reload_reconstructs_it(
                 str(turn_a),
                 str(turn_b),
                 str(turn_c),
+                str(turn_d),
             ]
             assert [item["state"] for item in during_b.json()["data"]] == [
                 "cancelled",
                 "running",
+                "queued",
                 "queued",
             ]
 
@@ -1831,7 +2010,22 @@ def test_three_turn_stop_releases_the_queue_in_order_and_reload_reconstructs_it(
                 "cancelled",
                 "completed",
                 "running",
+                "queued",
             ]
+
+            async with _client(app) as client:
+                newer_stop = await client.post(f"{base}/{turn_c}/stop", headers=headers)
+                assert newer_stop.status_code == 202
+                newer_hold = newer_stop.json()["data"]["control_id"]
+                stale_resume = await client.post(
+                    resume_path, headers=headers, json={"hold_control_id": hold_id}
+                )
+                assert stale_resume.status_code == 409
+                assert stale_resume.json()["error"]["code"] == "QUEUE_HOLD_CHANGED"
+                still_held = await client.get(base, headers=headers)
+                assert still_held.json()["meta"]["queue_control"]["hold_control_id"] == newer_hold
+                assert still_held.json()["data"][-1]["turn_id"] == str(turn_d)
+                assert still_held.json()["data"][-1]["state"] == "queued"
 
     run_async(scenario())
 
@@ -1957,13 +2151,9 @@ def test_the_turn_read_surface_unions_queued_submissions_with_turn_events(
             assert states[running_turn] == "running"
             # The one that has no execution evidence at all is still visible — and honest.
             assert states[queued_turn] == "queued"
-            # Submission order — the same ``(requested_at, turn_id)`` key the single-flight
-            # dispatcher offers turns in, so the visible queue is the executed queue (§3.5). (All
-            # three share a timestamp here because one test transaction is one ``now()``; the tie
-            # break is what makes the order total.)
-            assert [item.turn_id for item in turns] == sorted(
-                (done_turn, running_turn, queued_turn), key=str
-            )
+            # Acceptance assigns monotonic timestamps under the thread lock, even within
+            # one transaction. Visible and execution order both follow submission order.
+            assert [item.turn_id for item in turns] == [done_turn, running_turn, queued_turn]
             # Each carries the cursor a client attaches after.
             assert next(i for i in turns if i.turn_id == running_turn).last_event_id is not None
             assert next(i for i in turns if i.turn_id == queued_turn).last_event_id is None
@@ -2457,3 +2647,225 @@ def test_the_projection_dedup_prefix_matches_its_authoring_module() -> None:
     """The projections package restates a constant it may not import; this is the drift guard."""
 
     assert AGENT_TURN_TASK_DEDUP_PREFIX == AGENT_TURN_DEDUP_PREFIX
+
+
+def test_stop_recovery_without_stream_persists_only_latest_answer_and_survives_pruning(
+    tmp_path: Path,
+) -> None:
+    from clue_api.agent_turn_wiring import DbAgentHistoryStore
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-stop-recovery", name="Stop recovery")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="recover",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="recover",
+                key="recovery",
+                storage=storage,
+            )
+            await _agent_turn_row(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            await emitter.turn_started()
+            await emitter.text_delta(round_ordinal=1, call_index=0, delta="superseded answer")
+            await emitter.text_delta(round_ordinal=2, call_index=0, delta="Exact partial `")
+            await emitter.reasoning_delta(round_ordinal=2, delta="never history")
+            app = _app(conn, settings=_settings(), storage=storage)
+            base = f"/api/v1/projects/{project.project_id}/threads/{thread_id}"
+            headers = {"X-Workspace-Id": project.workspace_id}
+            async with _client(app) as client:
+                assert (
+                    await client.post(f"{base}/turns/{turn_id}/stop", headers=headers)
+                ).status_code == 202
+            cf = conn_session_factory(conn)
+            engine = _SleepingEngine()
+            engine.artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=cf)
+            runner = ProjectConversationTurnRunner(
+                engine=engine,
+                executor=None,
+                recipes=None,
+                starter=None,
+                parameters=None,
+                conn_factory=cf,
+            )
+            submission = SimpleNamespace(
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                thread_id=thread_id,
+            )
+            for _ in range(2):
+                with pytest.raises(TurnStopped):
+                    await runner._finish_stop(submission=submission, turn_id=turn_id, stream=None)
+            assert not engine.cancelled  # Recovery never started the model.
+            await emitter.turn_cancelled()
+            assert (
+                await prune_turn_events(
+                    conn, retention_s=1, now=datetime.now(UTC) + timedelta(days=2)
+                )
+                > 0
+            )
+            async with _client(app) as client:
+                history = await client.get(f"{base}/messages?include=bodies", headers=headers)
+                turns = await client.get(f"{base}/turns", headers=headers)
+            assert [x["body"] for x in history.json()["data"] if x["role"] == "assistant"] == [
+                "Exact partial `"
+            ]
+            assert turns.json()["data"][0]["state"] == "cancelled"
+            assert turns.json()["meta"]["queue_control"]["paused"] is False
+            refs = await DbAgentHistoryStore(conn_factory=cf).load(
+                workspace_id=project.workspace_id, thread_id=thread_id
+            )
+            assert next(x for x in refs if x.role == "assistant").interrupted is True
+
+    run_async(scenario())
+
+
+def test_openrouter_wire_reaches_reasoning_parts_without_duplicate_aliases(tmp_path: Path) -> None:
+    from tests.gateway.test_openrouter_reasoning import _provider, _stream_response
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-reasoning-wire", name="Reasoning wire")
+            thread_id = await _thread(
+                conn, workspace_id=project.workspace_id, project_id=project.project_id, label="wire"
+            )
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="wire",
+                key="wire",
+                storage=FsStorage(tmp_path),
+            )
+            emitter = await _emitter(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                turn_id=turn_id,
+                policy=TurnStreamPolicy(reasoning_trace=True, batch_max_chars=1),
+            )
+            model = _provider(_stream_response)
+            async for _ in model.astream(
+                "Inspect the project",
+                config={"callbacks": [TurnStreamCallbackHandler(emitter=emitter)]},
+            ):
+                pass
+            frames = await _frames(conn, workspace_id=project.workspace_id, turn_id=turn_id)
+            deltas = [
+                f for f in frames if f.event_type == "text.delta" and f.part_kind == "reasoning"
+            ]
+            assert (
+                "".join(str(f.payload["delta"]) for f in deltas)
+                == "Check `a_long_identifier` then continue."
+            )
+            assert not [f for f in frames if f.event_type == "text.delta" and f.part_kind == "text"]
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize("stop_first", [True, False])
+def test_stop_and_finalization_preserve_the_first_durable_winner(
+    tmp_path: Path,
+    stop_first: bool,
+) -> None:
+    from clue_agents.contracts import AgentFinalizeEnvelope, FinalizeStatus
+    from clue_api.agent_turn_wiring import DbAgentTurnJournal
+    from clue_api.chat.turn_controls import TurnStopRequested
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-stop-finalize", name="Stop race")
+            thread_id = await _thread(
+                conn, workspace_id=project.workspace_id, project_id=project.project_id, label="race"
+            )
+            storage = FsStorage(tmp_path)
+            turn_id = await _submit_turn(
+                conn,
+                project=project,
+                thread_id=thread_id,
+                message="race",
+                key="race",
+                storage=storage,
+            )
+            await _agent_turn_row(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            emitter = await _emitter(conn, project=project, thread_id=thread_id, turn_id=turn_id)
+            await emitter.turn_started()
+            cf = conn_session_factory(conn)
+            artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=cf)
+            body = await artifacts.persist_body(
+                workspace_id=project.workspace_id, data=b"Final answer", media_type="text/plain"
+            )
+            envelope = AgentFinalizeEnvelope(
+                finalization_id=uuid4(),
+                execution_id=await conn.scalar(
+                    text("SELECT execution_id FROM agent_turn WHERE id=:turn"), {"turn": turn_id}
+                ),
+                status=FinalizeStatus.COMPLETED,
+                user_message_artifact_ref=body,
+                finalized_at=datetime.now(UTC),
+            )
+            ref = await artifacts.persist_body(
+                workspace_id=project.workspace_id,
+                data=envelope.model_dump_json().encode(),
+                media_type="application/json",
+            )
+            journal = DbAgentTurnJournal(conn_factory=cf)
+            await journal.record_finalization(
+                turn_id=turn_id, workspace_id=project.workspace_id, envelope=envelope
+            )
+            app = _app(conn, settings=_settings(), storage=storage)
+            path = f"/api/v1/projects/{project.project_id}/threads/{thread_id}/turns/{turn_id}/stop"
+            headers = {"X-Workspace-Id": project.workspace_id}
+            if not stop_first:
+                await journal.commit_finalization_authority(
+                    turn_id=turn_id,
+                    workspace_id=project.workspace_id,
+                    envelope=envelope,
+                    envelope_ref=ref,
+                )
+            async with _client(app) as client:
+                stopped = await client.post(path, headers=headers)
+            if stop_first:
+                assert stopped.status_code == 202
+                with pytest.raises(TurnStopRequested):
+                    await journal.commit_finalization_authority(
+                        turn_id=turn_id,
+                        workspace_id=project.workspace_id,
+                        envelope=envelope,
+                        envelope_ref=ref,
+                    )
+                await commit_interrupted_turn(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                    body_ref=None,
+                )
+            else:
+                assert stopped.status_code == 409
+            assert await conn.scalar(
+                text("SELECT count(*) FROM agent_finalization_commit WHERE turn_id=:turn"),
+                {"turn": turn_id},
+            ) == int(not stop_first)
+            assert await conn.scalar(
+                text("SELECT count(*) FROM agent_turn_control_request WHERE turn_id=:turn"),
+                {"turn": turn_id},
+            ) == int(stop_first)
+            if not stop_first:
+                assert (
+                    await conn.scalar(
+                        text("SELECT queue_hold_control_id FROM agent_thread WHERE id=:thread"),
+                        {"thread": thread_id},
+                    )
+                    is None
+                )
+
+    run_async(scenario())

@@ -1,0 +1,199 @@
+{
+  "insights": {
+    "checks": {
+      "buying-signals": {
+        "aliases": 13,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      },
+      "money-and-momentum": {
+        "aliases": 1,
+        "floor_regenerated": false,
+        "model_said_empty": false,
+        "off_recipe": [],
+        "prompt_version": "display-v1",
+        "reply_invalid": false,
+        "reply_retried": false,
+        "segments_dropped": 0,
+        "uncited_sentences": 0,
+        "unknown_aliases": [],
+        "unresolved_refs": 0,
+        "verbatim": null
+      }
+    },
+    "cost_usd": "0.0035081",
+    "display_block": {
+      "page": "insights",
+      "sections": [
+        {
+          "defaultOpen": true,
+          "empty": false,
+          "h1": "Buying signals",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "aceea557-1680-46c1-bb17-512be2001ace",
+                    "8fa8e425-1fd8-455c-97ea-18091c91bcab"
+                  ],
+                  "text": "Probook still lists \u201cSales Development Representative \u2014 GTM\u201d, published 23 April 2026, and \u201cStrategic Account Executive \u2014 GTM\u201d, published 23 June 2026."
+                },
+                {
+                  "claimIds": [
+                    "aceea557-1680-46c1-bb17-512be2001ace",
+                    "8fa8e425-1fd8-455c-97ea-18091c91bcab"
+                  ],
+                  "text": "What it means for us: this creates a timely opening to position account and committee research around GTM hiring."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "GTM roles remain listed, including an SDR published 23 April 2026",
+              "id": "buying-signals-1",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "5678ac59-0637-42d4-94f1-97eb4be08a87",
+                    "57ee04b5-c378-4420-9b84-bd5a65cb4799"
+                  ],
+                  "text": "Probook still lists \u201cDeployment Strategist \u2014 Customer\u201d, published 4 September 2026, and \u201cForward Deployed Engineer \u2014 Customer\u201d, published 26 August 2026."
+                },
+                {
+                  "claimIds": [
+                    "5678ac59-0637-42d4-94f1-97eb4be08a87",
+                    "57ee04b5-c378-4420-9b84-bd5a65cb4799"
+                  ],
+                  "text": "What it means for us: this makes customer-facing deployment work a relevant lens for account-specific messaging and research."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Customer hiring includes a Deployment Strategist published 4 September 2026",
+              "id": "buying-signals-2",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            },
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "c68a837e-094d-4694-849b-0402c7eb4a18",
+                    "798193ec-16fa-473d-9b2c-70ece0aba5ca"
+                  ],
+                  "text": "The open requisitions include \u201cSenior Software Engineer \u2014 Engineering\u201d and \u201cStaff Software Engineer \u2014 Engineering\u201d, both published 13 January 2026."
+                },
+                {
+                  "claimIds": [
+                    "c68a837e-094d-4694-849b-0402c7eb4a18",
+                    "798193ec-16fa-473d-9b2c-70ece0aba5ca"
+                  ],
+                  "text": "What it means for us: this gives us a technical hiring angle for account research and personalised content."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Senior and Staff Software Engineer roles remain open from 13 January 2026",
+              "id": "buying-signals-3",
+              "newSinceLastVisit": false,
+              "priority": 1,
+              "sendLine": null
+            }
+          ],
+          "key": "buying-signals",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": false,
+          "h1": "Money & momentum",
+          "items": [
+            {
+              "body": [
+                {
+                  "claimIds": [
+                    "d69f110f-ae73-4289-a6dc-ac0cb281a485"
+                  ],
+                  "text": "The claimed revenue band is 1m_10m."
+                },
+                {
+                  "claimIds": [
+                    "d69f110f-ae73-4289-a6dc-ac0cb281a485"
+                  ],
+                  "text": "What it means for us: We have revenue-band context, but no funding round or total raised is claimed here."
+                }
+              ],
+              "contactRefs": [],
+              "h2": "Revenue band: 1m_10m",
+              "id": "money-and-momentum-1",
+              "newSinceLastVisit": false,
+              "priority": 2,
+              "sendLine": null
+            }
+          ],
+          "key": "money-and-momentum",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": true,
+          "h1": "Tools they already use",
+          "items": [],
+          "key": "tools-they-already-use",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": true,
+          "h1": "How they sell, and who they win",
+          "items": [],
+          "key": "how-they-sell",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": true,
+          "h1": "Contact insights",
+          "items": [],
+          "key": "contact-insights",
+          "restricted": false
+        },
+        {
+          "defaultOpen": false,
+          "empty": true,
+          "h1": "Context only",
+          "items": [],
+          "key": "context-only",
+          "restricted": true
+        }
+      ]
+    },
+    "evidence_count": 7,
+    "failed": [],
+    "generated": [
+      "buying-signals",
+      "money-and-momentum"
+    ],
+    "regenerated": [],
+    "skipped_empty": [
+      "tools-they-already-use",
+      "how-they-sell",
+      "contact-insights",
+      "context-only"
+    ],
+    "stale_served": []
+  },
+  "total_cost_usd": "0.0035081"
+}

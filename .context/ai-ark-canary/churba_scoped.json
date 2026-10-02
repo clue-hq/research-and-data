@@ -1,0 +1,642 @@
+{
+ "http": 200,
+ "body": {
+  "content": [
+   {
+    "id": "1b575d60-8951-dd1c-2bd6-a5ea639fa129",
+    "identifier": "aaronloganchurba",
+    "profile": {
+     "first_name": "Aaron",
+     "middle_name": null,
+     "last_name": "Churba",
+     "full_name": "Aaron Churba",
+     "headline": "Director of Sales & Development at Probook",
+     "title": "Director of Sales & Development",
+     "picture": {
+      "source": "https://images.ai-ark.com/PGb7ZMBSAFFFHczmItLdDCkvZWahpHiUbnzcON9uW70/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/1b575d60-8951-dd1c-2bd6-a5ea639fa129.jpg"
+     },
+     "background": {
+      "source": "https://media.licdn.com/dms/image/v2/D4E16AQHOtz2MikJZ8w/profile-displaybackgroundimage-shrink_350_1400/B4EZ70ksMGHAAU-/0/1782219719775?e=1786579200&v=beta&t=emoQwx2wZPjt59J2OBdQB5SfAujkFkNJZb1cRyQdwbQ"
+     },
+     "birth_date": null,
+     "summary": "Sales leader with a demonstrated history of working in the information technology and services industry; a sales professional pursuing a Master of Science - MS focused in Law from Nova Southeastern University Shepard Broad College of Law."
+    },
+    "link": {
+     "linkedin": "https://www.linkedin.com/in/aaronloganchurba",
+     "twitter": "https://x.com/aguschurba",
+     "github": null,
+     "facebook": null
+    },
+    "location": {
+     "default": "New York City Metropolitan Area, United States, North America",
+     "short": "New York City Metropolitan Area",
+     "country": "United States",
+     "state": null,
+     "city": "New York City Metropolitan Area",
+     "position": null
+    },
+    "languages": {
+     "primary_locale": {
+      "country": "US",
+      "language": "en"
+     },
+     "supported_locales": [
+      {
+       "country": "US",
+       "language": "en"
+      }
+     ],
+     "profile_languages": [
+      {
+       "name": "English",
+       "proficiency": "NATIVE_OR_BILINGUAL"
+      },
+      {
+       "name": "Hebrew",
+       "proficiency": "ELEMENTARY"
+      },
+      {
+       "name": "Spanish",
+       "proficiency": "PROFESSIONAL_WORKING"
+      }
+     ]
+    },
+    "industry": "Management Consulting",
+    "educations": [
+     {
+      "school": {
+       "id": "f1435b3c-1718-5b54-d69d-ccab96c44090",
+       "name": "Nova Southeastern University Shepard Broad College of Law",
+       "logo": "https://images.ai-ark.com/JoHT9ylIcPUdrkDKnoDftN5UjDTdGCk_F82AhJHSS_U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f1435b3c-1718-5b54-d69d-ccab96c44090.jpg",
+       "url": "https://www.linkedin.com/school/nova-southeastern-university-shepard-broad-college-of-law"
+      },
+      "degree_name": "Master of Science - MS",
+      "field_of_study": "Law",
+      "grade": null,
+      "date": {
+       "start": "2018-01-01",
+       "end": "2022-12-31"
+      }
+     },
+     {
+      "school": {
+       "id": "621dddab-b08c-0b24-9451-7c9aac22d988",
+       "name": "Penn State University",
+       "logo": "https://images.ai-ark.com/QMw8K8_u1HZcsj_FXc1m9Lw_T27WVpqwQHblPrfEw4U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/621dddab-b08c-0b24-9451-7c9aac22d988.jpg",
+       "url": "https://www.linkedin.com/school/penn-state-university"
+      },
+      "degree_name": "Bachelor\u2019s Degree",
+      "field_of_study": "Telecommunications",
+      "grade": null,
+      "date": {
+       "start": "2012-01-01",
+       "end": "2016-12-31"
+      }
+     }
+    ],
+    "certifications": [
+     {
+      "name": "SaaS Sales Methodology",
+      "authority": "Winning by Design",
+      "url": null,
+      "license_number": null,
+      "display_source": null,
+      "company": {
+       "id": "5999ce7d-4e03-a3e5-e647-04f04e15cc76",
+       "name": "Winning by Design",
+       "logo": "https://images.ai-ark.com/xpzApyCXBwer1oSofa4uQP1XxeGpxgAgk7rXRbhqGKo/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/5999ce7d-4e03-a3e5-e647-04f04e15cc76.jpg",
+       "url": "https://www.linkedin.com/company/winningbydesign"
+      },
+      "date": {
+       "start": "2021-01-01",
+       "end": null
+      }
+     },
+     {
+      "name": "Jon Barrows On-Site Sales Training",
+      "authority": "JBarrows Sales Training",
+      "url": null,
+      "license_number": null,
+      "display_source": null,
+      "company": {
+       "id": "f866c583-6a01-2948-482d-074ebbc2ed52",
+       "name": "Sell Better",
+       "logo": "https://images.ai-ark.com/C3eTmYpUvTCVnxzR9G3mAC7RfA9ixIO0FjqPNqsmvYU/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f866c583-6a01-2948-482d-074ebbc2ed52.jpg",
+       "url": "https://www.linkedin.com/company/sellbetterxyz"
+      },
+      "date": {
+       "start": "2019-07-01",
+       "end": null
+      }
+     },
+     {
+      "name": "SOAR On-Site Sales Training",
+      "authority": "SOAR Performance Group",
+      "url": null,
+      "license_number": null,
+      "display_source": null,
+      "company": {
+       "id": "8f9c59fc-1b98-be37-ba2b-e4e4692c2f15",
+       "name": "SOAR Performance Group",
+       "logo": "https://images.ai-ark.com/I_IuKak4vwaZfQvGLRGni98tM2zq6ZCAU94CDBvIdlQ/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/8f9c59fc-1b98-be37-ba2b-e4e4692c2f15.jpg",
+       "url": "https://www.linkedin.com/company/soar-performance-group-inc-"
+      },
+      "date": {
+       "start": "2018-06-01",
+       "end": null
+      }
+     },
+     {
+      "name": "Span the Chasm On-Site Sales Training",
+      "authority": "Span the Chasm",
+      "url": null,
+      "license_number": null,
+      "display_source": null,
+      "company": {
+       "id": "9a7f4788-1e2e-8acd-65b5-43c1e7bf6dfd",
+       "name": "Span the Chasm",
+       "logo": "https://images.ai-ark.com/nO1HyxtXIapr5BEZ147XWDR4qhPoKPl1HOFi6Ook29E/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/9a7f4788-1e2e-8acd-65b5-43c1e7bf6dfd.jpg",
+       "url": "https://www.linkedin.com/company/span-the-chasm-llc"
+      },
+      "date": {
+       "start": "2018-03-01",
+       "end": null
+      }
+     }
+    ],
+    "organizations": [
+     {
+      "name": "Beta Sigma Beta",
+      "position": "Special Events Coordinator",
+      "date": {
+       "start": "2013-12-01",
+       "end": null
+      }
+     },
+     {
+      "name": "Penn State Dance MaraTHON",
+      "position": "Overall Canning Chairman",
+      "date": {
+       "start": "2013-08-01",
+       "end": null
+      }
+     },
+     {
+      "name": "Blue and White Society",
+      "position": "Active Member",
+      "date": {
+       "start": "2012-08-01",
+       "end": null
+      }
+     },
+     {
+      "name": "Beta Sigma Beta",
+      "position": "Recruitment Chairman",
+      "date": {
+       "start": "2013-08-01",
+       "end": "2014-03-31"
+      }
+     },
+     {
+      "name": "Beta Sigma Beta",
+      "position": "Head Greek Week Chairman",
+      "date": {
+       "start": "2013-03-01",
+       "end": "2013-04-30"
+      }
+     }
+    ],
+    "position_groups": [
+     {
+      "company": {
+       "id": "05108578-3649-f40c-a81b-22fe1965b0cd",
+       "name": "Probook",
+       "logo": "https://images.ai-ark.com/E-sI5Kv4lg4jwUeSq_nPQ6Yz9ehTAQBsg0Jo7gYFzoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05108578-3649-f40c-a81b-22fe1965b0cd.jpg",
+       "url": "https://www.linkedin.com/company/probook-ai",
+       "employees": {
+        "start": 51,
+        "end": 200
+       }
+      },
+      "date": {
+       "start": "2026-02-01",
+       "end": null
+      },
+      "profile_positions": [
+       {
+        "company": "Probook",
+        "description": "The AI Operating System for Home Services. Backed by Sequoia and a16z.\n\nDispatch makes or breaks the customer experience, Probook is the only AI platform built around it.\nAmerica's leading home services companies trust Probook to drive revenue growth, improve operational efficiency, and add points to their EBITDA.\n\nCurrently leading a team of 5 sellers and counting. DM me if you're interested in joining Probook!",
+        "title": "Director of Sales & Development",
+        "employment_type": "Full-time",
+        "location": "New York, NY",
+        "date": {
+         "start": "2026-02-01",
+         "end": null
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "e621257f-b94f-10ce-d4e9-36a7bb2ccd5c",
+       "name": "Bite",
+       "logo": "https://images.ai-ark.com/j-MHzNsURZH01uSCr2q_fNriEJtZN0lZaqA-bSNtUsg/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/e621257f-b94f-10ce-d4e9-36a7bb2ccd5c.jpg",
+       "url": "https://www.linkedin.com/company/bitekiosk",
+       "employees": {
+        "start": 11,
+        "end": 50
+       }
+      },
+      "date": {
+       "start": "2024-05-01",
+       "end": "2026-02-28"
+      },
+      "profile_positions": [
+       {
+        "company": "Bite",
+        "description": null,
+        "title": "Advisor",
+        "employment_type": null,
+        "location": "New York, NY",
+        "date": {
+         "start": "2025-08-01",
+         "end": "2026-02-28"
+        }
+       },
+       {
+        "company": "Bite",
+        "description": "Overseeing the sales team at Bite - focused on driving sales, nurturing client relationships, and achieving high growth revenue numbers.\n\nBite develops digital ordering technology that elevates hospitality by personalizing each guest interaction.",
+        "title": "Director of Sales",
+        "employment_type": "Full-time",
+        "location": "New York, New York, United States",
+        "date": {
+         "start": "2024-05-01",
+         "end": "2025-08-31"
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "2522b4b6-0ffc-816b-f90d-a65d727e8a7a",
+       "name": "Techvera",
+       "logo": "https://images.ai-ark.com/3Vo2rIXEM8QJ6YPj94AqkU14Vwi0Kw6XVnPDs9JkGcM/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/2522b4b6-0ffc-816b-f90d-a65d727e8a7a.jpg",
+       "url": "https://www.linkedin.com/company/techvera",
+       "employees": {
+        "start": 51,
+        "end": 200
+       }
+      },
+      "date": {
+       "start": "2025-08-01",
+       "end": "2026-01-31"
+      },
+      "profile_positions": [
+       {
+        "company": "Techvera",
+        "description": "Building Techvera under the leadership of the Tynrose team \u2014 focused on delivering scalable, secure, and forward-thinking managed IT solutions. We\u2019re driving operational efficiency for businesses through proactive support, digital transformation, and cybersecurity.",
+        "title": "Sales",
+        "employment_type": "Contract",
+        "location": "New York, NY",
+        "date": {
+         "start": "2025-08-01",
+         "end": "2026-01-31"
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "fcac63bf-f339-8071-68ef-add8af6b9580",
+       "name": "Zip Security",
+       "logo": "https://images.ai-ark.com/48Ytl0D6S7Mr5I8uj_8y1oDTa6BBDG79GuneADb4H4Y/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/fcac63bf-f339-8071-68ef-add8af6b9580.jpg",
+       "url": "https://www.linkedin.com/company/zipsec",
+       "employees": {
+        "start": 11,
+        "end": 50
+       }
+      },
+      "date": {
+       "start": "2022-09-01",
+       "end": "2024-05-31"
+      },
+      "profile_positions": [
+       {
+        "company": "Zip Security",
+        "description": "Transitioned into a full-time role following a successful engagement as an advisor.\n\nFounding Team\nEmployee #8",
+        "title": "Director of Sales",
+        "employment_type": "Full-time",
+        "location": "New York, New York, United States",
+        "date": {
+         "start": "2023-06-01",
+         "end": "2024-05-31"
+        }
+       },
+       {
+        "company": "Zip Security",
+        "description": "GTM & Sales Strategy",
+        "title": "Advisor",
+        "employment_type": null,
+        "location": null,
+        "date": {
+         "start": "2022-09-01",
+         "end": "2023-06-30"
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "d849339f-4d1f-624b-b513-44128c0eca6e",
+       "name": "Electric",
+       "logo": "https://images.ai-ark.com/ckiCwv0QwtbX_LaqBoEPtNHHSMqDl7l44D3jZzZqgAc/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/d849339f-4d1f-624b-b513-44128c0eca6e.jpg",
+       "url": "https://www.linkedin.com/company/electric-ai",
+       "employees": {
+        "start": 51,
+        "end": 200
+       }
+      },
+      "date": {
+       "start": "2019-01-01",
+       "end": "2023-06-30"
+      },
+      "profile_positions": [
+       {
+        "company": "Electric",
+        "description": "President's Club Member FY 2022\n\nOne of the early sales hires and a consistent top performer. Promoted to running a team of sellers while continuously exceeding sales targets on an individual basis.\n\nPart of Series A, B, C, D fundraising rounds.",
+        "title": "Manager, Sales",
+        "employment_type": "Full-time",
+        "location": "Greater New York City Area",
+        "date": {
+         "start": "2022-05-01",
+         "end": "2023-06-30"
+        }
+       },
+       {
+        "company": "Electric",
+        "description": "President's Club Member FY 2021 (Inaugural Year)",
+        "title": "Senior Account Executive",
+        "employment_type": null,
+        "location": "Greater New York City Area",
+        "date": {
+         "start": "2022-01-01",
+         "end": "2022-05-31"
+        }
+       },
+       {
+        "company": "Electric",
+        "description": "Electric is the world\u2019s first all-in-one IT support solution for small and midsize offices delivered in real-time. Through a chat interface, personalized service and flat-rate pricing we keep your email, computers, Wi-Fi and software running smoothly at a fraction of the cost and headaches normally experienced with traditional managed service providers.",
+        "title": "Account Executive",
+        "employment_type": null,
+        "location": "Greater New York City Area",
+        "date": {
+         "start": "2019-01-01",
+         "end": "2022-01-31"
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "1ffabdcc-9aec-7b88-0b57-06d00108ded6",
+       "name": "VTS",
+       "logo": "https://images.ai-ark.com/aQQA2M9cHT3FHQC2Lm7IPnx4gb5ObSqA-Zw3_5GXvis/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ffabdcc-9aec-7b88-0b57-06d00108ded6.jpg",
+       "url": "https://www.linkedin.com/company/we-are-vts",
+       "employees": {
+        "start": 501,
+        "end": 1000
+       }
+      },
+      "date": {
+       "start": "2017-08-01",
+       "end": "2019-01-31"
+      },
+      "profile_positions": [
+       {
+        "company": "VTS, Inc.",
+        "description": "VTS is the world's leading asset management and leasing platform built to provide real-time portfolio analytics to the top landlords and brokerage firms in the world. VTS allows brokers and landlords to manage deal activity, identify trends and quantify portfolio performance from their desktop or mobile device. With over 5 billion square feet under management, VTS is the driving force behind the industry's shift towards real-time data and is quickly becoming the market standard.",
+        "title": "Business Development",
+        "employment_type": null,
+        "location": "Greater New York City Area",
+        "date": {
+         "start": "2017-08-01",
+         "end": "2019-01-31"
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "c34255c7-3362-3634-47ba-35665e62b625",
+       "name": "SinglePlatform",
+       "logo": "https://images.ai-ark.com/zBb9yTb5KRI1YDcMOw-nahP0-BOb_RZ8_n4AnAtPbkc/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/c34255c7-3362-3634-47ba-35665e62b625.jpg",
+       "url": "https://www.linkedin.com/company/singleplatform",
+       "employees": {
+        "start": 51,
+        "end": 200
+       }
+      },
+      "date": {
+       "start": "2016-05-01",
+       "end": "2017-08-31"
+      },
+      "profile_positions": [
+       {
+        "company": "SinglePlatform",
+        "description": "Onboarded over 150+ locations including restaurants, salons, spas, and fitness studios in less than five months. \n\nSince being founded in 2010, SinglePlatform helps local businesses get new customers by enabling them to publish their most important information everywhere consumers are making decisions online. Tens of thousands of businesses rely on SinglePlatform every day to showcase and update their menus, products, and services on the web's most popular sites and apps, all from one place.\n\nSingleplatform was acquired by TripAdvisor.",
+        "title": "Senior Business Analyst",
+        "employment_type": null,
+        "location": "Greater New York City Area",
+        "date": {
+         "start": "2016-05-01",
+         "end": "2017-08-31"
+        }
+       }
+      ]
+     }
+    ],
+    "volunteer_experiences": [
+     {
+      "role": "Supervisor",
+      "company": null,
+      "cause": null,
+      "description": "\u2022\tAssisted autistic children with basic every day needs in order to make their life easier \n\u2022\tTutored autistic children in basic English, math, science, and history\n",
+      "date": {
+       "start": "2010-06-01",
+       "end": "2010-08-31"
+      }
+     },
+     {
+      "role": "Supervisor",
+      "company": null,
+      "cause": "SOCIAL_SERVICES",
+      "description": "\u2022\tAssisted autistic children with basic every day needs in order to make their life easier \n\u2022\tTutored autistic children in basic English, math, science, and history\n",
+      "date": {
+       "start": "2009-06-01",
+       "end": "2009-08-31"
+      }
+     }
+    ],
+    "skills": [
+     "Microsoft Word",
+     "Microsoft Excel",
+     "PowerPoint",
+     "Microsoft Office",
+     "Leadership",
+     "Public Speaking",
+     "Teamwork",
+     "Customer Service",
+     "Marketing",
+     "Social Media",
+     "Social Media Marketing",
+     "Social Networking",
+     "Marketing Communications",
+     "Group Work",
+     "Group Training",
+     "Intercultural Communication",
+     "Interpersonal Communication",
+     "Spanish Translation",
+     "Digital Marketing",
+     "Digital Media"
+    ],
+    "member_badges": {
+     "premium": false,
+     "creator": false,
+     "open_to_work": false,
+     "hiring": true,
+     "verified": true,
+     "influencer": false
+    },
+    "statistics": {
+     "network": {
+      "influencer": false,
+      "followable": null,
+      "followers_count": 3590,
+      "connections_count": 3547
+     },
+     "experience": {
+      "prev_job_titles": null,
+      "tenure": {
+       "company": "2026-02-01",
+       "start": "2016-05-01",
+       "title": "2026-02-01"
+      }
+     }
+    },
+    "company": {
+     "id": "05108578-3649-f40c-a81b-22fe1965b0cd",
+     "summary": {
+      "name": "Probook",
+      "description": "Increase flip rates, boost ticket sizes, and reduce windshield time\u2014 all without scaling your dispatch department. \n\nProbook learns from your historical sales data and sends your technicians to the right calls every time. \n\nOur dispatcher-friendly interface overlays your dispatch board so you never have to leave ServiceTitan. \n\nDispatchers can now focus on higher-value tasks like verifying job info and keeping customers updated. \n\nSee why top operators nationwide trust Probook!",
+      "founded_year": 2022,
+      "type": "PRIVATELY_HELD",
+      "industry": "software development",
+      "staff": {
+       "total": 30,
+       "range": {
+        "start": 2,
+        "end": 10
+       }
+      },
+      "logo": {
+       "source": "https://images.ai-ark.com/E-sI5Kv4lg4jwUeSq_nPQ6Yz9ehTAQBsg0Jo7gYFzoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05108578-3649-f40c-a81b-22fe1965b0cd.jpg"
+      }
+     },
+     "link": {
+      "website": "https://www.probook.ai",
+      "domain": "probook.ai",
+      "linkedin": "https://www.linkedin.com/company/probook-ai"
+     },
+     "financial": {
+      "revenue": {
+       "annual": {
+        "start": 1000000,
+        "end": 5000000,
+        "amount": "1000000-5000000"
+       }
+      }
+     },
+     "location": {
+      "headquarter": {
+       "continent": "North America",
+       "country": "United States",
+       "state": "New York",
+       "city": "New York",
+       "postal_code": "10022",
+       "raw_address": "New York, New York, United States, North America",
+       "position": {
+        "lng": -73.98556,
+        "lat": 40.748295
+       }
+      },
+      "locations": [
+       {
+        "continent": "North America",
+        "country": "United States",
+        "state": "New York",
+        "city": "New York",
+        "postal_code": "10022",
+        "raw_address": "New York, New York, United States, North America",
+        "position": {
+         "lng": -73.98556,
+         "lat": 40.748295
+        }
+       }
+      ]
+     },
+     "industries": [
+      "software development"
+     ],
+     "hashtags": [
+      "airconditioning",
+      "heating",
+      "hvac"
+     ],
+     "languages": [
+      "english"
+     ],
+     "last_updated": "2026-08-22"
+    },
+    "department": {
+     "departments": [
+      "sales"
+     ],
+     "sub_departments": [
+      "sales_development"
+     ],
+     "functions": [
+      "sales"
+     ],
+     "seniority": "director"
+    },
+    "last_updated": "2026-08-22"
+   }
+  ],
+  "size": 3,
+  "totalElements": 1,
+  "pageable": {
+   "pageNumber": 0,
+   "pageSize": 3,
+   "sort": {
+    "sorted": true,
+    "empty": false,
+    "unsorted": false
+   },
+   "offset": 0,
+   "paged": true,
+   "unpaged": false
+  },
+  "last": true,
+  "totalPages": 1,
+  "sort": {
+   "sorted": true,
+   "empty": false,
+   "unsorted": false
+  },
+  "numberOfElements": 1,
+  "trackId": "4185237a-005a-4226-874a-df6f3205f607",
+  "first": true,
+  "number": 0,
+  "empty": false
+ }
+}

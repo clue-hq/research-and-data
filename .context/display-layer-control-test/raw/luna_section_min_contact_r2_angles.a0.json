@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504664-EAn8TPdPCESQxnhz9rEH",
+ "object": "chat.completion",
+ "created": 1788504664,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"angles\",\"empty\":false,\"items\":[{\"h2\":\"Direct mail: Cocktail Chemistry creates a personal opening\",\"body\":[{\"text\":\"Nick Fisher created the Cocktail Chemistry YouTube channel and authored the book Cocktail Chemistry.\",\"claimIds\":[\"zaf-110\"]},{\"text\":\"A cocktail-focused mailer gives us a concrete way to make the first touch personal rather than generic.\",\"claimIds\":[\"zaf-110\",\"zaf-101\",\"zaf-102\"]}],\"sendLine\":\"In the direct-mail brief: Create a cocktail-themed mailer for Nick Fisher, with a note that says “I invest a lot in top quality liquors that I love and want to recommend to you guys, um as well as equipment that I use...”\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1},{\"h2\":\"Landing page: Build around Zafran’s partner ecosystem from scratch\",\"body\":[{\"text\":\"Zafran says its partner ecosystem is becoming one of the fastest ways security teams discover and adopt Zafran, while the Director of Alliances role will build that engine from scratch.\",\"claimIds\":[\"zaf-091\"]},{\"text\":\"A dedicated page can connect Clue’s account research and activation workflow to the alliances strategy Zafran is standing up.\",\"claimIds\":[\"zaf-091\"]}],\"sendLine\":\"Brief the design agent with: Build a landing page around Zafran’s partner ecosystem, using the theme “build that engine from scratch” and showing how Clue supports account research and activation.\",\"contactRefs\":[],\"priority\":1},{\"h2\":\"Content: Turn fragmented scanner output into one actionable view\",\"body\":[{\"text\":\"Zafran positions its product around noisy scanners, manual triage, and the need to normalize and de-duplicate findings.\",\"claimIds\":[\"zaf-136\"]},{\"text\":\"This gives us a clear content angle for CISOs and security practitioners: explain how Zafran unifies findings and routes the result as a single ticket through Jira or ServiceNow.\",\"claimIds\":[\"zaf-140\",\"zaf-149\"]}],\"sendLine\":\"On the landing page: Lead with “Turn fragmented scanner output into one actionable view.” Follow with Zafran’s claims about “Normalize and de-duplicate findings” and a single source of truth.\",\"contactRefs\":[],\"priority\":1},{\"h2\":\"Event: Make the New York office a practical meeting point\",\"body\":[{\"text\":\"Zafran describes regular in-office presence of approximately three days a week at its NYC office for the BDR seat.\",\"claimIds\":[\"zaf-092\"]},{\"text\":\"A New York event or office-adjacent meeting gives us a location-specific reason to invite Nick rather than sending a broad event message.\",\"claimIds\":[\"zaf-042\",\"zaf-092\"]}],\"sendLine\":\"For the event: Plan a New York security-marketing gathering and invite Nick Fisher with a message tied to Zafran’s NYC presence.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmpcXjZ5qBc0ikuPiDfRVNz7kVunAVIlO3vqFNAWMAWNtLcYHIleP2YR9nRk3Hy0qXcJAuDmnCCPGkxRy656WlgaeLuxpBL5vj43JKKOb704xSloLhp4el7_wNXbagGiteQh9wwhAnOtnZ2qMWKPiMUo93Yp8e_Lo4IvC86nc4Kmqry-vYWL1hFKlCgrex4SyIBiEkC2crpJqOF4Dea_c0R622Tgs0PQLXZNmTblf3UHRtxhX9xRKoJMJXS7Uc8pl1xepmxfpdPn7QYA6ICwZ4MghQA06G3IweZVlz3ZHIZ4_OFnrO38jlwwyl2lsjwf88K_TvqS0-HVPhdPdbxc4tKFG_5I0isPQhOupCOQQK30leJuPJYGXxBOCuirwbV2w9nTPjuVM7-ntAogf9jSDBEHc2UbMZeUgD1TQYzfxrUrylzVZXHgI8dJB8-R5y-IMWV6l3ir5tw5_EbcG8gxSeAxS4uwWsNpHzToVnmELDB6VNsPWZpTrVxludlR-f-mtbNxvDYu-UTjWUc_awpx4YHqpREklzn5mamOySz3VdLQbemL7GvISBVb3lJBvjKx6Mqu7VFhu60rkP5LudJhqGjhovP44SSc3b900xTQZ0RDHkwHl-_G4aGElvRVfrONDV2QWdxZRpCaCYuD2SofYCnSMj3rlboqAFU-8ZNbRWzlnFHy2ky12dfsfQzEfXETfNsqUCKGE8pHgsAnJF6YgUUiUZVo1GFv2OvJVJ-IY8EuPB0CssvX9d6FH-sZiYPWZtXK5ShS_t9wXsuWlUTdlX3icfKxiEwgXIK8kJaJMdSvaXTcbFLmZ_k5jgYwrq5lNWmiEQsmpCO4-6egtCJVq1ma7BkzAFazQ0DvGGkUmLPf3yvNNy-CYhDkWuCD0XLiM_2zy_goH3slzifevVRiPxmllFlwbDioiwZeReFdEp9IDRdD2-wGS6cGFaF3zWHoMrVdc_82I9qn44GDs56F7S3Dz5DFeu1cpUsGIZS36kdIUuEl5XwzYN831NGFzPpDlF_mR73A9Y7SzALcs_29PnLyHSjvc5qdCssUN1pF4gKFqrvD8EcJWqIBs9l5uP11uc5aLZZ36rEEjH7GI_HBOWCewp9Or-IEP9iCwyNtYiyK7cGjrafqJryEJHUKOsBciR-QpJBvb8HeWKPL59HIqH6b5oSFicZ94x_Ox4FWZesXC3rNHi4bcwRYvlMqk1_j8KKWQdwRNjsUYkr4XjwwgQseLPuuqjb1m4LH4Lv7qeADl2zJFF8VX3ICGAEuvFxCTg80xmQi4ax6RORdgS0rU6w8Dc7d6SvDaYUhLbVIaRkyASjr-xuv7duSQZAglz9Znyo1AA-C1nGYaoPC5t51ee9KehjWWCj4FXK88g-y57n65J_E4assRZSSSygCFLiVM3joagcHmBlckRqCfQ8sx1BxRTRw5F3fEAZVpS7WKd1ycFQQhSmSEv1SzCYivXJZbd6O0qB9TFaI-zLNpRQGwOqqSSVKUwYeZF1rapXq6qTmpDzbNIhaY5yA-A3sg2L_DJUefBt6tPVFpOwWg8QaryUGtudSAz2Iz8k41aTRuIt_Wsxn0tpQnqfN9J20-NJ2LdvhUpnFrH8HiIHrOF8l1LAa18Hx-C_uxkekKdCZr_fNly8mDJaI1-xbkySyylHZmELCppntMFZWSjl7aS_nI99EMnRz-oY_oEgyVw1tkxlybapbGBYrwoIGGPiSDLHnTj01r_GhbPkMtxY3dGq1sUqvXc2vHU0dqct5i1WZURmvOMxf6Q3Wk7hOI7A5iFiukMlRS6WMxDf2HBhHO1Kk0x66A_Gbi8TEWhAqSPon2dxg3DOQ1MWf3Pz_tnOX_xx8R35a8a2TxK_bPLhy9f-PosQqY-1FJT3E8VvX-m26FkwnO2zYpe3UEcA1Vj5RspKoWFfzA5JMi36UyEFn2jM-bERFz1NosCBbzRZJgJyP14XcRIyPiQ8R-VHA0ENyxqIecypxkM-73BTJoyMY350tl7AobMZ0VSUrY9EQGQu2xPGS9QQMtj3QXV0gmHHOvPdlhKgyWl6FfYS02UGtG47rmb37tMTNO3YP4Ep5LS0DWKYXMIQk849l_JucVMGDOHUh3pIYLUhM14wDmo6R1vo6MEeGyKrDiZJ18dpgzetYhyXJ107-f4YlccRMvK93dhOKivNZaSYDc06GVVfXaBQm45Z4dkILwcYY6CFJHEOPv_2d-dENa4iJ8uTYIWaCMeL9A7MUrn3UoZn2msd9G0yVp47vQ2QrJ3wbVymE8EHtYtMmV-Ij9SkOb3rTEvaOm7A_RrjobRV2YMKXnZ0qlZUgb6hjBOGCWjbCMrMBoGTDlXKaEm7NbpC1kz0Y7EqZDMqbOd81ntAWrhGzyY60iAeWlt6IOrxtRYb04nDhaf9a_VxTTcZuBUyv-WEMkR-VcvF0u0flrK2Q6OetT-6_7wOeBBUJF4pr3s6LP68nJAzPGaSGTTwMR0u5UNNePzlETsEvQpEvFSALMhWJXgo_gI_3sx5yeyvs_6bMabQLk3KIDrUG5_GGBRWJmLP4qGf_h7c5olvcULjV0mCRHSK7q8D7wVtdrcl2vS_Lanblw5IM3LlEoVsoToQuPNokoCwQFxO7Vmacp86uNtAMMvIy7O32MvZsNCwVFxG1lQYWkR2xhHiefUj5rVpzGLu-0mRlt3N8jjU0TBEhjTKyP4erMPQUh1YmDVvWdAGvRFqH_N5Cm1CMGfJp-sHXYuVXucD3zRlsnJQYxVdDRwAho0bWPU_ANkeQp-yFB0rF1zjsEN4Kcf7HtDJgTGY_YP7xEyQj35K3L7RyryWV_AkBBGOPu0w26E666qJis7gswabWW8OgVWqupP932qi8LdRh4UciIe8EkVYQDwD6PRd73dr3BfmqOw5LkY820mJNiUtWdwZ_cFLdzsG-NvaRtHEyMqZvikn8Lk6sSRmQ5_mosWoOil_Jkkdf53bzIhwQBWF9WlNvQIKvrBPGnbSXCMwv2RizcgXhiJ5dyM_1LW11OoeoB0UxVq2Q8nqUJQ0xcPCWBuBjjEDIqTwBqmetDeNj9B9_xitz5TBFcj28y5PFoCFy0gNF6pCg0VyBK0BxxyVoaSEQg-gO1iE6UzMx_r_TpFuKLp-PtuhLIl_WRC0oca8HazAcSWhh9QQQSM6Xtw7hT3uhRFgu8lqLjd1goX7RlfRXXaoZQJzS96Jm98qBIaQWhTasrWOUo6qo5eQqaAf98s8Tcf2tyP3TmNWF0KzsCEpMD9KzfE4B59_1ZXJCikAu2Zj9GAr9q5cj3F1lWyu_Irw2pVKEmuS-R2tFd0riTQm1zmoT7nR_99zY5adv9LYe1CErri8nqUCDcfIh2-fm_N6rCzypPOCaz_2ettLSu4sOTsaC_eutjKcd69V4aJIc3d9LHJ8tYMTQ9wpxiOqv48PHSqKFgQ4qjogqvWdvFJn_oAzbRUP3KbhcbqyirpzI0BmZL8_-7nUTJ5Ek5BoS2oCKmkSQmtSZnflQRhqEqvI5VA82Lc2CVztpMa9oj3-BQK6DQFw_Yk0gPXMYHyFULYsGY0fqd33mwc8GqPwKPcVmoAXUrZAHuOWsXHiFWDWbvZ3bO_POUO4UVa35zvGenHdyhq2q1VB7fJeM7dDJ9p7sKK4RhhNphTpxu6LQSzBcBBPfmCgitE9zZf52pDrD49C-7Y23Ww5nrm1lKl6jHkWsjJArkbsvzzmil6Td0RwuxfN2FFHB1oowFxL9JuNVQN5tfcjpx_A=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0323c44c56aca8ab016a9a6a58e8bc87d0b8e1b3a837a5d498",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 4503,
+  "completion_tokens": 1015,
+  "total_tokens": 5518,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 4500,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.0013086,
+   "upstream_inference_prompt_cost": 9.06e-05,
+   "upstream_inference_completions_cost": 0.001218
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 382,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.29,
+ "_attempt": 0
+}

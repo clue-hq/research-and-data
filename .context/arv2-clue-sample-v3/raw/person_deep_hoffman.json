@@ -1,0 +1,300 @@
+{
+  "requestId": "817744aeadec4ef5a065e519b313c57d",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/qt8xcdkc327",
+      "title": "Mark Hoffman",
+      "url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+      "publishedDate": "2026-08-09T00:00:00.000Z",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQH7Fl9b5KNjUw/profile-displayphoto-scale_200_200/B4EZxr22YYIMAY-/0/1771336071800?e=2147483647&v=beta&t=yveZeG1e__briLIywfWVUa-fuLVfNmpl_3IeHhRzd9Y",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/qt8xcdkc327",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Mark Hoffman",
+            "firstName": "Mark",
+            "lastName": "Hoffman",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Chief Revenue Officer",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2026-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Chief Sales Officer (CSO)",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2024-12-01",
+                  "to": "2026-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ngpxw8vzzyd",
+                  "name": "Tennr"
+                }
+              },
+              {
+                "title": "Senior Vice President of Sales",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2021-08-01",
+                  "to": "2024-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Vice President of Sales",
+                "location": null,
+                "dates": {
+                  "from": "2019-07-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Director of Sales",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2019-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Director of Inside Sales",
+                "location": null,
+                "dates": {
+                  "from": "2016-06-01",
+                  "to": "2016-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wztvqrvj0h5",
+                  "name": "Hightower Inc."
+                }
+              },
+              {
+                "title": "Inside Sales Manager",
+                "location": null,
+                "dates": {
+                  "from": "2014-05-01",
+                  "to": "2016-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Senior Sales Executive",
+                "location": null,
+                "dates": {
+                  "from": "2014-02-01",
+                  "to": "2014-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Inside Sales Executive",
+                "location": "New York",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": "2014-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Business Origination Associate",
+                "location": null,
+                "dates": {
+                  "from": "2012-06-01",
+                  "to": "2013-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "BA Political Science",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qsyjywp56l3",
+                  "name": "Binghamton University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+      "title": "Mark Hoffman's Post",
+      "url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+      "publishedDate": "2026-06-27T05:25:06.110Z",
+      "author": "Mark Hoffman",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQHF4qL0R9UtCg/feedshare-shrink_800/B56Z71cUsiIUAk-/0/1782234304277?e=2147483647&v=beta&t=OsWpJ__m3cXrT0kyNyUtwgUcaxYOOX36ZWgLd3Din1M"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/george-eliadis_after-19-months-of-running-literally-every-activity-7440761527470710784-GQm6",
+      "title": "After 19 months of running literally every demo myself, I couldn't be more excited to welcome Mark Hoffman as Probook's CRO. | George Eliadis",
+      "url": "https://www.linkedin.com/posts/george-eliadis_after-19-months-of-running-literally-every-activity-7440761527470710784-GQm6",
+      "publishedDate": "2026-03-20T00:00:00.000Z",
+      "author": "George Eliadis",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFWN30R7haFNA/feedshare-image-high-res/B4EZ0LlLX_JAAU-/0/1774015789597?e=2147483647&v=beta&t=Vm90aZy31nxs1EGrWXMPV4_HGQJsK9xEmGHCZ6gS7_U",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f",
+      "title": "Ten years ago, our CRO, Mark Hoffman, hired Aaron Churba for his first job out of college. | Probook",
+      "url": "https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f",
+      "publishedDate": "2026-06-16T00:00:00.000Z",
+      "author": "Probook",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFBYclyTHwqvw/feedshare-image-high-res/B4EZ7RYdhyKwAU-/0/1781629312479?e=2147483647&v=beta&t=5p16n1ZkYjkYgqQ48Z6Th6L_cPNuMhZ3fUWKKwU0Mh8",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mark-hoffman-582a5741_this-team-just-wow-things-are-just-starting-activity-7341107094747533312-cdTA",
+      "title": "This team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C, led by IVP with new participation from ICONIQ, GV (Google Ventures), and \u2026 | Mark Hoffman",
+      "url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_this-team-just-wow-things-are-just-starting-activity-7341107094747533312-cdTA",
+      "publishedDate": "2025-06-18T00:00:00.000Z",
+      "author": "Mark Hoffman",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQGBtU62Lwfqpw/feedshare-shrink_800/B4EZeDOLMJGcAk-/0/1750253221236?e=2147483647&v=beta&t=ptLRAQ3ScXGyfiyduyhbMGilXxO7sDIDoJEFIorFP-I"
+    },
+    {
+      "id": "https://www.probook.ai/company",
+      "title": "Probook \u00b7 The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/company",
+      "image": "https://www.probook.ai/v5/company/wall-team-1.jpg",
+      "favicon": "https://www.probook.ai/favicon.ico?favicon.0q8dxn6zqy7ot.ico?dpl=dpl_CNjsY4sWP7U9Nc4gg2pRhRyRKTVP"
+    },
+    {
+      "id": "https://www.probook.ai/careers",
+      "title": "Probook",
+      "url": "https://www.probook.ai/careers",
+      "image": "https://www.probook.ai/probook.svg",
+      "favicon": "https://www.probook.ai/icon.svg?1f6a6a7b2a3160a7"
+    },
+    {
+      "id": "https://www.probook.ai/letter",
+      "title": "Probook \u00b7 The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/letter",
+      "image": "https://www.probook.ai/v5/letter/byline-founders.jpg",
+      "favicon": "https://www.probook.ai/favicon.ico?favicon.0q8dxn6zqy7ot.ico?dpl=dpl_CNjsY4sWP7U9Nc4gg2pRhRyRKTVP"
+    },
+    {
+      "id": "https://people.equilar.com/bio/person/mark-hoffman-tennr/60830083",
+      "title": "Mark Hoffman - Executive Bio, Work History, and Contacts - Equilar ExecAtlas",
+      "url": "https://people.equilar.com/bio/person/mark-hoffman-tennr/60830083",
+      "image": "https://www.execatlas.com/images/company-logos/execatlas-logo.svg"
+    },
+    {
+      "id": "https://growjo.com/employee/Mark-Hoffman-36498741",
+      "title": "Mark Hoffman Email for Tennr",
+      "url": "https://growjo.com/employee/Mark-Hoffman-36498741",
+      "author": "Growjo",
+      "image": "https://growjo.com/static/quickenrich_ad.png"
+    }
+  ],
+  "searchTime": 33459.9,
+  "costDollars": {
+    "total": 0.015
+  },
+  "output": {
+    "content": {
+      "report": "# Mark Hoffman \u2014 Chief Revenue Officer, Probook Research cutoff: 2026-08-27. Scope is limited to the New York\u2013area sales executive whose supplied LinkedIn URL is linkedin.com/in/mark-hoffman-582a5741; sensitive personal information was excluded. ## 1. Identity confirmation Confirmed identity/title. The supplied LinkedIn profile identifies Mark Hoffman as \u201cChief Revenue Officer (CRO)\u201d at Probook, \u201cFeb 2026 - Present.\u201d URL: https://www.linkedin.com/in/mark-hoffman-582a5741. The strongest independent confirmation is Probook co-founder George Eliadis\u2019s announcement: \u201cI couldn't be more excited to welcome Mark Hoffman as Probook's CRO\u201d; it says Hoffman \u201cspent 8 years at VTS \u2026 working his way from Director of Sales to SVP\u201d and \u201cwas Chief Sales Officer at Tennr.\u201d URL: https://www.linkedin.com/posts/george-eliadis_after-19-months-of-running-literally-every-activity-7440761527470710784-GQm6. Probook itself calls him \u201cour CRO\u201d and states that he hired Aaron Churba ten years earlier. URL: https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f. Dates. LinkedIn\u2019s indexed profile gives Probook \u201cFeb 2026 - Present.\u201d The source does not give a day-level start date. NOT FOUND: an official Probook executive bio with a dated appointment announcement. Same-name people excluded. The following indexed Mark Hoffman profiles were discarded because their employment histories do not match Probook \u2192 Tennr \u2192 VTS \u2192 Hightower \u2192 Zocdoc: (a) linkedin.com/in/mark-hoffman-5433653, Fort Lauderdale, with Consure Medical, Wability, ConvaTec, Adolor and Bayer. URL: https://www.linkedin.com/in/mark-hoffman-5433653; (b) linkedin.com/in/mark-hoffman-0200002, Greater Boston attorney/contracts professional at Mass General Brigham, T-Mobile and ADT. URL: https://www.linkedin.com/in/mark-hoffman-0200002; (c) linkedin.com/in/mark-hoffman-168603364, Florida logistics sales manager at FirstMile/TST-CF Express. URL: https://www.linkedin.com/in/mark-hoffman-168603364; (d) linkedin.com/in/mark-hoffman-a3865053, Bismarck-area roofing/HVAC sales professional. URL: https://www.linkedin.com/in/mark-hoffman-a3865053; (e) linkedin.com/in/mark-hoffman-1a72416, Tennessee owner of Hoffman Holdings and former Amscan/Office Depot/Allstate employee. URL: https://www.linkedin.com/in/mark-hoffman-1a72416; (f) linkedin.com/in/mark-hoffman-20478a3, Indiana strategic-accounts executive at BP3 Global. URL: https://www.linkedin.com/in/mark-hoffman-20478a3; (g) Mark Hoffman, principal of Hoffman Management, appearing on Habitat Magazine\u2019s \u201cInside Track.\u201d URL: https://castro.fm/episode/ozi7gA; (h) Mark Hoffman, Larson Packaging owner and Chicago Booth MBA \u201991. URL: https://larsonpkg.com/articles/go-do-it-youll-figure-it-out-mark-hoffman-talks-24-years-of-building-a-boring-business/; (i) Mark Hoffman of LifeYield, appearing on WealthTech Today. URL: https://wealthtechtoday.com/2020/07/03/itzonwealthtech-ep-56-unlocking-the-secrets-of-tax-optimization-with-mark-hoffman/. These are excluded because each source names a different employer, geography, role or career history; none ties the person to the supplied Probook/Tennr/VTS/Zocdoc sequence. The Josh Hoffman podcast result is also not this person: the page says the guest is \u201cJosh Hoffman,\u201d CRO of ControlCase. URL: https://www.iheart.com/podcast/269-selling-the-cloud-77107934/episode/ep-97-driving-symbiotic-outcomes-300608505/. ## 2. Career The indexed LinkedIn record supplies the following chronology; it does not provide detailed responsibility statements for most roles, so responsibilities beyond the title/company descriptions are NOT FOUND. URL: https://www.linkedin.com/in/mark-hoffman-582a5741. | Organisation | Role | Dates | Evidence/responsibility |\n|---|---|---|---|\n| Probook | Chief Revenue Officer | Feb 2026\u2013present | The profile says \u201cChief Revenue Officer - Probook (Current).\u201d URL above. Eliadis says Probook needed \u201creal leadership, real development, and a real process.\u201d URL above. |\n| Tennr | Chief Sales Officer | Dec 2024\u2013Feb 2026 | The profile says \u201cChief Sales Officer (CSO) - Tennr,\u201d Dec 2024\u2013Feb 2026. URL above. Hoffman\u2019s own post discusses Tennr\u2019s Series C and \u201cgiving more providers the tools to create a world-class experience for their referral sources and their patients.\u201d URL: https://www.linkedin.com/posts/mark-hoffman-582a5741_this-team-just-wow-things-are-just-starting-activity-7341107094747533312-cdTA |\n| VTS | Senior Vice President of Sales | Aug 2021\u2013Dec 2024 | The profile gives the title and dates. It describes VTS as a SaaS platform for commercial-real-estate owners/operators/investors/brokers that increases \u201crevenue, efficiency and reduce[s] risk.\u201d URL above. |\n| VTS | Vice President of Sales | Jul 2019\u2013Aug 2021 | Title and dates are stated in the profile. URL above. Detailed remit NOT FOUND. |\n| VTS | Director of Sales | Jan 2017\u2013Jul 2019 | Title and dates are stated in the profile. URL above. Detailed remit NOT FOUND. |\n| Hightower Inc. | Director of Inside Sales | Jun 2016\u2013Dec 2016 | Title and dates are stated in the profile. URL above. Detailed remit NOT FOUND. |\n| ZocDoc | Inside Sales Manager | May 2014\u2013Apr 2016 | Title and dates are stated in the profile. URL above. Detailed remit NOT FOUND. |\n| ZocDoc | Senior Sales Executive | Feb 2014\u2013May 2014 | Title and dates are stated in the profile. URL above. Detailed remit NOT FOUND. |\n| ZocDoc | Inside Sales Executive | Jan 2013\u2013Feb 2014 | Title and dates are stated in the profile. URL above. Detailed remit NOT FOUND. |\n| ZocDoc | Business Origination Associate | Jun 2012\u2013Jan 2013 | Title and dates are stated in the profile. URL above. Detailed remit NOT FOUND. | Outbound/ demand generation/ABM/target-account list building/SDR tooling. The record clearly shows inside-sales and business-origination experience through the ZocDoc and Hightower titles, and Probook\u2019s announcement says Hoffman is \u201cexceptional at building teams from the ground up.\u201d URLs above. Specific evidence of outbound sales methodology, demand generation, account-based marketing, target-account-list construction, or named sales-development GTM tools is NOT FOUND in the sources reviewed. Probook\u2019s hiring post says the GTM team needs \u201csupport and coaching\u201d and that Aaron Churba will help businesses \u201cdiscover Probook\u201d and communicate its value clearly. URL above. ## 3. Education Institution/degree. The indexed LinkedIn record lists \u201cBA Political Science\u201d at \u201cBinghamton University.\u201d URL: https://www.linkedin.com/in/mark-hoffman-582a5741. Dates are NOT FOUND. Post-graduate degrees and professional programmes are NOT FOUND in the reviewed sources. Do not confuse this person with the excluded Larson Packaging owner, whose source says \u201cMBA \u201991\u201d and is a different career identity. URL above. ## 4. Public writing, talks and podcasts Located items attributable to this exact person: 1. Mark Hoffman LinkedIn post, \u201cThis team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C,\u201d venue: LinkedIn, 2025-06-18. URL: https://www.linkedin.com/posts/mark-hoffman-582a5741_this-team-just-wow-things-are-just-starting-activity-7341107094747533312-cdTA.\n2. Mark Hoffman LinkedIn post, \u201cToday is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz,\u201d venue: LinkedIn, indexed publication 2026-06-23 (search result page dated 2026-06-27). URL: https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU. NOT FOUND: additional verified articles, bylines, webinars, panels, interviews or podcasts attributable to the target identity. The Habitat, Larson Packaging and WealthTech results were excluded as different Mark Hoffmans. URLs above. Most substantive located quotation. In the Probook financing post, Hoffman writes: \u201cThe first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them. The GTM team is inching up towards 20 now, with many more to go.\u201d URL above. ## 5. What he owns at Probook today Publicly evidenced scope. The CRO role is associated with building and leading the GTM/revenue organisation: Hoffman says, \u201cThe GTM team is inching up towards 20 now, with many more to go,\u201d and invites people to join the team. URL above. Eliadis says Hoffman brings \u201creal leadership, real development, and a real process\u201d and was selected because Probook was scaling quickly and needed someone \u201cexceptional at building teams from the ground up and driving outcomes.\u201d URL above. Reports and open roles. Direct reports are NOT FOUND. Probook publicly announced Aaron Churba as \u201cDirector of Sales & Development\u201d; the post says he will help businesses discover Probook, communicate value, and support/coach the growing GTM team. URL above. The post does not explicitly say Churba reports to Hoffman, so that reporting line is NOT FOUND. Probook\u2019s careers page says it is \u201ca small, cracked team\u201d and invites applicants, but the reviewed result does not identify which open roles report to Hoffman. URL: https://www.probook.ai/careers. Therefore open Probook roles reporting to Hoffman: NOT FOUND. What he says he is building. His public statement is: \u201cThe GTM team is inching up towards 20 now, with many more to go.\u201d URL above. Probook\u2019s founder describes the company as \u201cthe AI Operating System for home services\u201d and says it serves \u201chundreds of locations nationwide.\u201d URL: https://www.probook.ai/letter. Those company statements describe the product/company, not additional personal claims by Hoffman. ## 6. How they think and buy Evidence located. Hoffman\u2019s Tennr post says funding signals that investors have been \u201cstudying our market, talking to customers, and surveying the field\u201d before reaching \u201ca shared conviction\u201d that the company is solving an important problem. URL above. This is the clearest public evidence of a customer/market-validation orientation, but it is a company financing post, not a disclosed software-buying framework. His Probook post describes the first months as \u201cfar less easy, which is exactly how it should be,\u201d with \u201cBig problems every day\u201d solved by \u201csmartest, most thoughtful people.\u201d URL above. Eliadis characterizes the required operating model as \u201creal leadership, real development, and a real process.\u201d URL above. Tools/methodologies/metrics. Named software tools publicly praised or criticised: NOT FOUND. Specific purchasing criteria, evaluation process, ABM methodology, sales methodology, or sales-development tooling: NOT FOUND. Stated metrics: \u201cdriving outcomes\u201d is stated by Eliadis, and Hoffman states the GTM team is \u201cinching up towards 20\u201d; no quota, pipeline, conversion, CAC, win-rate or revenue metric is publicly stated in the reviewed sources. URLs above. Communication style. The available writing is direct, energetic and team-oriented: \u201cToday is a big day at Probook\u201d; \u201cThe first 4 months have been far less easy\u201d; \u201cBig problems every day\u201d; and \u201cmessage me directly.\u201d URL above. This characterization is an inference from those quoted words, not a psychological claim. ## 7. Non-sensitive personal hooks Publicly stated professionally relevant hook: Hoffman previously hired Aaron Churba \u201cten years ago,\u201d and they have now reunited at Probook. URL: https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f. Other publicly stated interests, hobbies, sports, schools beyond Binghamton University, awards, volunteering or side projects: NOT FOUND in the reviewed sources. Sensitive material was not collected or reported. ## 8. Three grounded conversation openers 1. Exact hook: Probook\u2019s $40M financing and Hoffman\u2019s observation that \u201cThe GTM team is inching up towards 20 now, with many more to go.\u201d Opener: \u201cYou mentioned the GTM team is approaching 20 after the $40M raise\u2014what part of the revenue machine are you most focused on scaling next?\u201d Evidence: https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU. 2. Exact hook: His public description of the early Probook period as \u201cfar less easy, which is exactly how it should be,\u201d involving \u201cBig problems every day.\u201d Opener: \u201cYour comment that the first four months were \u2018far less easy\u2019 stood out\u2014what problem has taught the GTM team the most so far?\u201d Evidence: https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU. 3. Exact hook: Reuniting with Aaron Churba, whom Probook says Hoffman hired \u201cten years ago.\u201d Opener: \u201cProbook said you hired Aaron Churba ten years ago and are now on the same team again\u2014what have you deliberately carried forward from that earlier working relationship?\u201d Evidence: https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f. ## Evidence limitations The public search evidence is concentrated in LinkedIn-indexed profile/posts and Probook announcements. LinkedIn\u2019s indexed profile is a secondary/search-index representation rather than a directly accessible r\u00e9sum\u00e9, and Growjo/Comparably/Equilar are aggregators or third-party directories; they were not used to add unsupported facts. For every requested item not explicitly supported above, the report says NOT FOUND rather than inferring it."
+    },
+    "grounding": [
+      {
+        "field": "report",
+        "citations": [
+          {
+            "url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+            "title": "Mark Hoffman"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+            "title": "Mark Hoffman's Post"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/george-eliadis_after-19-months-of-running-literally-every-activity-7440761527470710784-GQm6",
+            "title": "After 19 months of running literally every demo myself, I couldn't be more excited to welcome Mark Hoffman as Probook's CRO. | George Eliadis"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/probook-ai_ten-years-ago-our-cro-mark-hoffman-hired-activity-7472694957506707456-MK6f",
+            "title": "Ten years ago, our CRO, Mark Hoffman, hired Aaron Churba for his first job out of college. | Probook"
+          },
+          {
+            "url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_this-team-just-wow-things-are-just-starting-activity-7341107094747533312-cdTA",
+            "title": "This team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C, led by IVP with new participation from ICONIQ, GV (Google Ventures), and \u2026 | Mark Hoffman"
+          },
+          {
+            "url": "https://www.probook.ai/company",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.probook.ai/careers",
+            "title": "Probook"
+          },
+          {
+            "url": "https://www.probook.ai/letter",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://people.equilar.com/bio/person/mark-hoffman-tennr/60830083",
+            "title": "Mark Hoffman - Executive Bio, Work History, and Contacts - Equilar ExecAtlas"
+          }
+        ],
+        "confidence": "medium"
+      }
+    ]
+  },
+  "_http_status": 200,
+  "_elapsed_s": 33.7,
+  "_request": {
+    "query": "Produce an exhaustive, cited markdown profile of Mark Hoffman (Chief Revenue Officer at Probook):\n\n1. IDENTITY CONFIRMATION \u2014 the primary sources that tie this exact person to Probook and this\n   exact title, with dates. List the same-name people you excluded.\n2. CAREER \u2014 every role with organisation, title and start/end dates, and what they were\n   responsible for at each. Highlight anything to do with outbound sales, demand generation,\n   account-based marketing, target-account list building, sales development or GTM tooling.\n3. EDUCATION \u2014 institutions, degrees, dates, and any post-graduate or professional programmes.\n4. PUBLIC WRITING, TALKS AND PODCASTS \u2014 every post, article, byline, webinar, panel or podcast\n   appearance you can find, with title, venue, date and URL. Quote the most substantive one.\n5. WHAT THEY OWN AT PROBOOK TODAY \u2014 scope of the role, who reports to them, which open Probook\n   roles report into them, and what they have publicly said about what they are building.\n6. HOW THEY THINK AND BUY \u2014 evidence about how they evaluate and purchase software: tools they\n   have publicly praised or criticised, methodologies they advocate, their stated metrics, and\n   their communication style (quote them).\n7. NON-SENSITIVE PERSONAL HOOKS \u2014 publicly stated interests, hobbies, sports, schools, awards,\n   volunteering, side projects. Nothing from the compliance exclusion list.\n8. THREE GROUNDED CONVERSATION OPENERS \u2014 each must name the exact hook it uses and the URL that\n   evidences it. No opener may rest on an unsourced fact.\n",
+    "type": "deep-reasoning",
+    "systemPrompt": "You are researching ONE named professional for a B2B buying-committee dossier.\n\nTARGET LOCK \u2014 the ONLY subject is:\n  Mark Hoffman, currently Chief Revenue Officer at Probook (probook.ai), the AI operating system for home-services\n  businesses (plumbing / HVAC / electrical), headquartered in New York, NY.\n  LinkedIn: https://www.linkedin.com/in/mark-hoffman-582a5741\n  Known employment history (already verified, use it to disambiguate): Probook (CRO, since Feb 2026), Tennr (Chief Sales Officer, Dec 2024\u2013Feb 2026), VTS (SVP/VP/Director of Sales, 2017\u20132024), Hightower Inc., Zocdoc (2013\u20132016)\n\nAny person with the same or a similar name who does NOT match that employment history is a\nDIFFERENT PERSON. Name every same-name person you encountered and discarded, and say why.\n\nCOMPLIANCE CHARTER \u2014 hard exclusions. Do NOT collect, report, quote or allude to: health or\nmedical information, religion or religious activity, political opinions or affiliation, sexual\norientation, racial or ethnic origin, trade-union membership, criminal matters, family or\nbereavement details, home address, personal phone number or personal email address, or anything\nabout their children. If a source contains such material, skip it and say you skipped it. Only\nprofessionally-public and clearly non-sensitive personal material is in scope.\n\nRULES: every assertion carries a verbatim quote and its URL. Write \"NOT FOUND\" rather than\nguessing. Prefer the person's own words (their posts, talks, interviews, bylines) over third-party\nprofiles. Aggregator/people-directory pages are the weakest evidence and must be labelled as such.\n",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "report"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "type": "string",
+          "description": "The exhaustive cited markdown profile answering every numbered section, with a verbatim quote and URL behind every assertion and explicit NOT FOUND markers."
+        }
+      }
+    }
+  }
+}

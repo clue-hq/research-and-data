@@ -1,0 +1,100 @@
+{
+  "phases": [
+    {
+      "phase": "Z1a_ark_company",
+      "seconds": 13.2,
+      "note": "credit + company search",
+      "ts": "2026-09-02T07:15:49Z"
+    },
+    {
+      "phase": "Z1b_ark_people",
+      "seconds": 34.4,
+      "note": "domain roster + 3 name-scoped",
+      "ts": "2026-09-02T07:17:06Z"
+    },
+    {
+      "phase": "Z1c_ark_emails",
+      "seconds": 39.09,
+      "note": "4 exports",
+      "ts": "2026-09-02T07:18:22Z"
+    },
+    {
+      "phase": "Z2_free_sources",
+      "seconds": 6.54,
+      "note": "ashby + own site + 6 searches",
+      "ts": "2026-09-02T07:19:42Z"
+    },
+    {
+      "phase": "Z2b_ashby",
+      "seconds": 0.22,
+      "note": "free ATS API",
+      "ts": "2026-09-02T07:19:53Z"
+    },
+    {
+      "phase": "Z3_media_resolve",
+      "seconds": 2.05,
+      "note": "rss + identity + video list",
+      "ts": "2026-09-02T07:20:24Z"
+    },
+    {
+      "phase": "Z4a_gemini_youtube_nick_moscow_mule",
+      "seconds": 9.37,
+      "note": "https://www.youtube.com/watch?v=avcD5WVLCYs",
+      "ts": "2026-09-02T07:21:13Z"
+    },
+    {
+      "phase": "Z4b_gemini_podcast_sanaz_boardroom",
+      "seconds": 49.1,
+      "note": "https://anchor.fm/s/f695d6d8/podcast/play/106390290/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fst",
+      "ts": "2026-09-02T07:22:49Z"
+    },
+    {
+      "phase": "Z5_exa_deep",
+      "seconds": 42.27,
+      "note": "one deep-reasoning call",
+      "ts": "2026-09-02T07:23:41Z"
+    },
+    {
+      "phase": "Z4c_nick_video_hunt",
+      "seconds": 1.29,
+      "note": "exa search",
+      "ts": "2026-09-02T07:23:49Z"
+    },
+    {
+      "phase": "Z4a_gemini_youtube_nick_supporting_cc",
+      "seconds": 23.22,
+      "note": "https://www.youtube.com/watch?v=8_YWBtq4eic",
+      "ts": "2026-09-02T07:24:27Z"
+    },
+    {
+      "phase": "Z4a_gemini_youtube_nick_faceless",
+      "seconds": 14.12,
+      "note": "https://www.youtube.com/watch?v=4gKLZrv2p8g",
+      "ts": "2026-09-02T07:24:50Z"
+    },
+    {
+      "phase": "Z6_embed_retrieval",
+      "seconds": 12.03,
+      "note": "29 chunks + 3 queries",
+      "ts": "2026-09-02T07:25:40Z"
+    },
+    {
+      "phase": "Z7_structure",
+      "seconds": 81.77,
+      "note": "one gpt-5-mini call",
+      "ts": "2026-09-02T07:28:19Z"
+    },
+    {
+      "phase": "Z4d_retranscribe",
+      "seconds": 30.32,
+      "note": "gemini-3.5-transcribe",
+      "ts": "2026-09-02T07:33:51Z"
+    },
+    {
+      "phase": "Z4e_quote_verify",
+      "seconds": 1.95,
+      "note": "verify + mine",
+      "ts": "2026-09-02T07:34:35Z"
+    }
+  ]
+}

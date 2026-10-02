@@ -50,6 +50,7 @@ __all__ = [
     "set_thread_pinned",
     "set_thread_status",
     "set_thread_title",
+    "set_thread_title_if_unset",
     "thread_id_for_operation",
 ]
 
@@ -280,6 +281,33 @@ async def set_thread_title(
         assignment="title = :title",
         params={"title": title},
     )
+
+
+async def set_thread_title_if_unset(
+    conn: AsyncConnection, *, workspace_id: str, thread_id: str, title: str
+) -> AgentThreadRow | None:
+    """Give an untitled thread its generated title — and only an untitled one.
+
+    ``title IS NULL`` is the manual-wins rule (spec 2026-09-18-conversation-naming-design §4.5):
+    a rename that landed first makes this a zero-row no-op, reported as ``None``. Not routed
+    through :func:`_update` because that helper has no room for an extra predicate.
+    """
+
+    row = (
+        (
+            await conn.execute(
+                text(
+                    "UPDATE agent_thread SET title = :title, updated_at = now() "
+                    "WHERE id = :id AND workspace_id = :workspace_id AND title IS NULL "
+                    f"RETURNING {_COLUMNS}"
+                ),
+                {"id": thread_id, "workspace_id": workspace_id, "title": title},
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return AgentThreadRow.model_validate(dict(row)) if row is not None else None
 
 
 async def set_thread_pinned(

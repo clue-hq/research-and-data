@@ -1,0 +1,71 @@
+{
+ "id": "gen-1788504815-i8QUU1D3DdBQqudEuIFM",
+ "object": "chat.completion",
+ "created": 1788504815,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"money_momentum\",\"empty\":false,\"items\":[{\"h2\":\"Dec 2, 2025: $60M Series C brought reported total funding to $130M\",\"body\":[{\"text\":\"On December 2, 2025, Zafran announced a $60 million Series C led by Menlo Ventures, bringing reported total funding to $130 million.\",\"claimIds\":[\"zaf-125\",\"zaf-124\"]},{\"text\":\"The company said, \\\"The new capital will accelerate product innovation and global expansion as Zafran advances its mission to stop the exploitation of vulnerabilities, everywhere.\\\"\",\"claimIds\":[\"zaf-144\"]},{\"text\":\"What it means for us: We should frame Clue around supporting the product innovation and global expansion Zafran identified.\",\"claimIds\":[\"zaf-144\"]}],\"sendLine\":\"\",\"contactRefs\":[],\"priority\":1},{\"h2\":\"As of Aug 22, 2026: $10M–$25M estimated revenue and 167 employees\",\"body\":[{\"text\":\"As of August 22, 2026, a provider estimate places annual revenue at $10 million–$25 million, while Zafran is listed with 167 employees.\",\"claimIds\":[\"zaf-015\",\"zaf-005\"]},{\"text\":\"Zafran is also listed in the 10m_50m revenue band.\",\"claimIds\":[\"zaf-016\"]},{\"text\":\"What it means for us: We can tailor outreach to the company’s listed 10m_50m revenue band and 167-employee profile.\",\"claimIds\":[\"zaf-016\",\"zaf-005\"]}],\"sendLine\":\"\",\"contactRefs\":[],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": "**Framing the strategy**\n\nI think I’ll focus on framing Clue's strategy around supporting product innovation and global expansion, as Zafran suggested. It seems essential to base this on their claims. Also, I noticed that the total funding may have duplicates. I should clarify the revenue band and employee count, highlighting that \"Zafran is listed in the 10m-50m revenue band and has 167 employees.\" It's important to include those specific details, maybe under a heading with numbers.",
+    "reasoning_details": [
+     {
+      "type": "reasoning.summary",
+      "summary": "**Framing the strategy**\n\nI think I’ll focus on framing Clue's strategy around supporting product innovation and global expansion, as Zafran suggested. It seems essential to base this on their claims. Also, I noticed that the total funding may have duplicates. I should clarify the revenue band and employee count, highlighting that \"Zafran is listed in the 10m-50m revenue band and has 167 employees.\" It's important to include those specific details, maybe under a heading with numbers.",
+      "format": "openai-responses-v1",
+      "index": 0
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmr1ZH4nvBfgPDznngHPqlOAIBNMwdXZEMJl_YQ1fKFByNep-C5rz3cC2AhDnvaeRZJapLVVIIKnyQQ1E6l8aMqsyvmWxnROf8TPXql55Pp7H5YmquZN1ynnKlazVlFAnnVJJx1bmC6PMOk_gpD_G4WeaKLLJvFiDsnXlgaSFi5q2NGFS50RzZdOxEjFCh2qMltXQN0sOCLDq1_811-a3oAk5J06kj43HYedElYIASEJJkqBUYpF6txuVW6PARHMnHM_LO0wD2lpsSh3CVYMmZSb47dHj0yUWCQa1J3OiVzwuIew2SwSvmh8vRBGhaLmoGe98NywHGEF9eZmxrMEsF_TBq8GjQDAfD24dQ7I5rjlzeeXZn4WEqiUmlAe6pq-UmKRkfwcMeWSsJZn8FznDkppPXCRAoRq4N2n78maSGl-t1GPfravEiprOD6qrw3pSHQZtlfD1et-lioQ-NLTMXcmHtp8pKfiKgbqyGAsuQB084sCl3iRj551PmfAI4ZIZLkbRoSmBsGG-W_HobD6X-se_yf9IcyhKx-zEu18Ro0TQ9UpOv74V6mDXHbCXbTzuAxhrN6a5-DdNkyWaHDPTSXYhGaKwHLaHumg_qj_-3JRhZ3aUzr5W1U-o34haGvt9-ca43FZkbzK6WEVB3osbagwDXH0hV6ikk4MvUjhyCvROuZq6JIJgpwsnh6A1oaf6uxYm_H87VmP0j3T2nWumKm3LS_KlxlOITXqaqOz9Ay_X3XxTF-ABPJ68TeY4iQnSm5grLL4j_mCNG5Zh1o41pIiqPYJHceBGZgwClr7sESdVj8TVBiN_4n4b6nIkGJJxmuq0ZZDRZrZwvonvJRck0wrC7D2mrhVRkvVsXSb_EbUef6plz2Z1pR9HwWkbB1qoM4-eeuoQvUHSdq7X1KlrW6wZTZd02fgS8zPSMsW-6YSJlZuqgqGfuiEYQTKh6mk3xyNaA08k0Nz4N9XVApDOLk_iDcmI3oSM0szFFyHln55r1KCYgoYgWUkjfg6tSxNX6WhzNTG7640ZHb7OSt0YWisVrnGTZF3-YFXaTQF3UIiJXqvqUgvksJe6PC7Dyz30dmCnGURgT5aw5EeDjvDOF4hwo2UknduYweJiRwjkMdzTFEPDqXYO3yW5T6DYFg3B2Lf-N4QFVMfdljT6IHr1kQf3RI3CfV8vjke6O9mi8DKYPECRaekoyykhyvaZBUBJmt8XZt4NMz-tnwdBrqTEvLQr8ddH2m0jIl5KRGuOR-HqSlZyhedLCO7bmPH9VSr1X2pXhODqnPT-pdTU_gjSOlTXuq3r_IPY9D1MWIYDPojUkMlVVLa1A3Pn4B7xMcBVj2oHym-Jbp0t8-CFYvxg5tJb9TFEm0w8hG5yYxBxDAoimDUIYuhddUmk0BH8EQy4FJ4XgORLk9EA2TL_c7674LgdQxPr-NtrXzV-AQ8RCgRBGiz4qH1XBHWlwOM__4c5qkHzAk6Nza6nFaXzo2coAbxGjJ7gOJtKSIre8X_PQenpN2mSICIMKZtr6n80ddMBci-sVSYeZVuFLITMFIi8oshtGuUVZTWgTbA6G5PH0lRDrIPs89hiAXzAqSxhlygKEW_0r8RDWV8QTVRHBm5snIu3OCyQ4AoMV3EeVb4z8HsCMjIYo0oP75PokJosUjad-nlv3524gFA6PLl8vgBB9hTbDIwohymwqtoZo0Mi4ucsCVHSeBuKIUk9HFLtLHMiI5omXGZhYk9ddKRAMFNjAfTLG6P13HRKTw-pawPa_GJE0rnqvPYX9KQ2bmPVl--1wJL6lC1o-VygSI15TaboHeKs5ZWic_5VFuicNwsRTR9HpUz4T54empiGrc0bOgQrMShO7zf4D7RP-36V9yvvLjVaR4t4642JNe79BksjDrEq8cc4yuh8dz3lQ7jam4ZxYJO4FZS48YcEk195GTMJmswlAtl6h9dZ_Eu6sh3SjidtWsyZ5Xy8ih3heYKoWpeytSZHphSSiVkxJlygS4GFTo4QQHR8sFcQfTMzeAd7d7jYp6KKmQ_aTtFUA6ZBb5_ZbMIki8OWuC9mpT07FNGhNLhnA8E6a3j3mUkG6aZiVTnvQy3tBA-VHgKvAq-Y6gO1GedT-Wwv33e5UV3O43_O7gsEYB64kljuONL16V5UtSE6pkVpBXzIHD9C7NVSLTbKwEVZNPn0o9X_Ca6ctdCiOJTFflhRRzTU2CJ0M8_DMbICJF-UUA8M9NB1cnpVWlKJpbLyTZIsLMo7d4eTPINB0AcMPwrxFQfQy1iEm68_3fPoNzTkuDEHQAappJ-EIb_4cXKvrG-Rf_pk_K_uccwxXBAnf3lacC7QGuJJhs96v8xhGYt_3nHqt5mtQ9xCw0jpWzsJzkEJUJFlCxnDNfNhpOEPmD5uMsNX0-ZfpnJqmMxsyhq-XpVfLnHyyy4biS_EymeBg_U3l4YCzSKrNiTBXRtq4A092enVJsnNnaiW2mg959ux05bMWbFbmc1mtx6s2lp4iFSjtm9rJS2FV2GyVWj4tlP-_IUCeqic2mr-XDBXRKb9us2H8eMl9zNJppBB065PqIAaUNYLK3WAXgYbsrIHxkn0tPTP4PGWZCPdUZcN5mqKWk9DxdeAk86QcMLLjl68utID5P84JXY-lNzBEd34HcDJsWDpZ75wROvV1-fMg0wVwzugt3IvQI-FLIrdP9SJnl1gw35gPWJlBMaD4aHcG2ccFZyxY41AXie__3ct0PxWda10OZymTaYQl2yU6ezfnzra9R-ahMJxiBfLR8HCohWg2_lgWBS6PnjvEcCzO78HwfDy73yMQwzzWPj5wX-Bibj0uj8zq1eB_z--LYpR2yj_eMM0gb7YV7CuGQZYl0sY78rP_7thANaZ2WCeX86hJZjlilZ1XNrNxC0-kmhJ6Y3GV3AxmsXFY0fOOWqjGtqZwG89Dnw0iIYVPeyxnBU3Cx7Sy0yzPdReOwEJ_Q0SVvNuW4EEMIeaA31K45G9I0mS_3fuV5PvCZfcCH4txt1oO4j_sPTYMy58Ljjut__Jl4bXEA7fR5uYQBZLtu2o1RalFlkdrhVPFmFynPoifA5GN9_Jm3ccX_1FNxzZnNUROLM1dkVB5G_qmu_Xsv5BXbnpPxf2sxt4bilTK3MYItpSXCyA-Ln9UUziqKzZaJvDJrO0wZZgM7k8LqbaieA8ca4CoXyOwdvun2sUGox8CXdUzk3_OLRz2HX5A1DzDdA0XYFpmaFShFaeS_NKT40tPE77XNUBdbLshGqW5B_2FiyC5wCGbtz23vtQW6Lz4R_PJFNrNx9RbfmQqqtrpUCEOyYGNCG4r4BRsubFWp6Ts3KefU4y9r3jTKvHOKUUt84oUcHsCeLQ9lmThdnUIZgz0tuKDFVQRsSnrarTKD_Qn4JSPtTmHIm8z0mTatDL5p1U3l0TnswNaBr7RyrphFIp_2vDhwrd0lBTdwLZEYxToHxV60MF5cQ_9cmcMFx4jP39C9_lPdkxAKDuy4C4Dhpfpv8KTLrWyx8750KqzF8BNxJoXmb9QyJk1tGCfT6LcMmDcYPYHL40SR4nAdd5vnhYtE4OlVZKZ5EiqSJgHM3QDbYF6aPhkOA7yxPIo5r7yTsFgZcVM3QUuWJO66IXEKxvJk8Iynha5ERI9ve8t-y7FpPJZYgEcPhDm9P1me4k4zZJm_teuQJnDoWmqRKfV-u_YQVHHhia1eTiu79pqzaV8_Ncsd0_1rxhYaFmCPYCjkO29_Rf2ry72EUHwzekAZMiQbXwDTT0BR7y5U5SpuRILO1IPc1J-hVV_Kzytw1sBPcGHay4I5ylnj9EtGySwrVS59M1W5sxlluulEpNh6XYuSP2ygbhrokFUlqV70JlnOVft3DpacXG5uXH-x0wQ3nD3SZ7QeRUBbJi_wfO5g7wXAs51gsMGqOOrqd6ykM33776AwL5Oa7YR7y2HmiNH-JT5XwAO_55MIBFOnhEO-B3mISf-HuYFoBsj8t0NhEOhiywe5pn1CcJWBqqFhm6me15nnNURVeVdK-RRE0wlL3SV-3AavSjkNLTlvmFvuzbvtmdp9p0Mttg5nJ7OruNB3WCg6mTxSygRgoaUO_DYN2yvcAGH_qnX5zX2_8Wk64fWGFrvwIaQkMq2H3Uhwj3vKB5UQZ-Br3MQC4MySa-u_8bpzM1rO9AEkzd7uik3AngOyg8a4C4kAEGP1UaEa1RrzlIEGzvLItgOpWiwfmQzumAfD0yX50k7IKblY76LMbPl8-_UaP3D2U5sZvYgReGBGB0xs0Qi2j5kytwGQs8SvqkDzgu-Z5JG1Y9P-Z4lzL8u235i4Z-OctXGrP7XWI5JS1jDZuX27tv5chnoplx4lS0OdM99zyAszyvV3ZR_uhi2dl8pSgnxf248k1GgiIxbtk-zLU146rbJ8nDf5Rl51fY_1w.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0dac8e2e936763ba016a9a6af0e10c87d08d01efada47d00bc",
+      "index": 1
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmr41jEogN5oR3aqYHqJ6E-L4uWGTZK5zEG0-ItRHgrgiQUt59xrRhLRa7MFPbW7VofC3K8FjUTa9xig88di7CTFlvQu1QOS85IAebwFX6oGLq2tBQDDX0j1BxneGlPLj9I3knkOrlN0RjqIOXb56umiI_PUGNe74RkZ3lkRGHzBDDlQtiITae_97RuOXsmcRRpWZTy5ycR0Azti2jfJLTJVTpaen25sSrnq5I7P2hUIRZo-RFrq0t9HWR1CpQpgY1kfIuCYwrC5olvQd1uBRPt915qU6SrmzsdjBXpF23C9wTGkrmabBoDV7gIpN1h1FQLFLvVvRbxdtYKArG-cmxH69H7MqGawuaRQSpK_fq1gRPyZl4QSaYCszdiFYGpYeLsi1--YaZS33W-sNk0hOdMtP6DVBWIwGc4sRLBfkDp5fICSP6zc6zouVY-9SRxgznO1Pal6PNTo7ZyTiZNE089zzz_7_ctPdNR69VCpALXIgvHWvUJvpYkV3zWRmd2hgyA4ydBKbJH_yD2X3b2137tXOpmIV79_hl__noQDABCQqOBgyLyBepN8zxqK-CSd9KCQUkfrn3ydxPqZtsyue2j-sAsAy0jWedBF9Tg-Z-C68uWXvbaSIwpL5afR4wut2W_VpovHaPfz2H0vkwCLQEzotbRK_urW0PsDutKjhZG1fykZEAom7amkloelNRw8IrBO3wEAee0-mhwECgTprYPs1lSJQfl7xxpycV_v3U3O-AoPBp2KZc_ZNW4uNGSkcbtwTFUcIS4WAwe-tWECRCK-GOPGcFUMvDvVTdTh3cv2axJCxa42E-rPNxynEQwRjjphM4wCj6TzhAoprItDWKDxod_JaXCK_KyntYtnos-k44WZfZgKyRadUjoSa1DoXKzi9enayMlTYL4LiyNuCZCOseyfGyuCfDeuQpqfm1cTaiDKgf1oDXwzD4z6WB6SHN4BuHwSb1uATZzhjBAeDNn_Iopv_F_9BOfyHTSLlZWkCUTg0A4HTfnRPQzm0Xre-TU6ii-mjFEF3AJFjrcdU-xfkWaFigSCRqcpVUPtUrm896tFP_XbZbE1BkqXDyvkSnVgctY5DjvONgTeA22eRRqonkRnB3DBsHbJuMsEA4-pSiURuhMNwq86jd_uMsh3-Q3RjJso7SxRtplASXva0ISWOw_LnjxPyQlO8Zu1gkCR7ymw78iGOKgC0eMwPM3HG_XBnDSprN27kdDhbPxn0hUomJAd_5VY1Xk592GE0q-XahFwDNKlJu3JccwB-LYBRTRBYqrGUu0I5FONZVqpSviYWytaAPaMg_5s5B8OBL8isLQwGKvruFBiHiKE-pwcm4hTurDAqj1yzAoBWEYGYXnAYoz4WYxIZHbudSWxKYj5cQhkAmSmEBJNfc-aOn_0IsRF2xMY8opaftMDoARdibqcjO_CcmwFDzizu49mqXCJEa79eIv1c_-PUVsbk3z9scz22AXLdu2_Qc5jemAx3fYnqtiWcxTir9RcaXBpmyzj6oP5yejMX_xMB8EQbC1EDuT4O_vA6OWqe7P_ZpQ-K74JlwMW-kLj1jx3enRHgAIADvp2py05gAkFBODtH63KW5RUOnlyLHaJjqO7EmBR6BjZifVtGQs5WC4XkMZMNYMa6HrS61RQQlMKkE-1i81Lxh3ZP9B69MkPLdk1g_8TpxC-soxFpaCvPluPaa4EsReR_5YAwHKPXiArVJwBkhf0C2_DPd728j0qVYdL0htjGtdzwGxi8FAYjB-r3j1KI4NJp0THmPS4TogO4pmT7Q62Xc4d5EvfnLzdFHBMIzauRvrA7nRYHTUg23MLvOjEpHoYFIvvu63txg5wasPi43mIhqxpPA9bBes2qBwr56UQmqwY_jaubo1EvmM9aXh7oO-Ct2O-vpjB9X9y6VeuW9RltmX7F2k_HfDwpgI7YA2GD-aJWd-bY8rINEq5gMUaJfFqkhuGSebgB96uDh0JyWsjVTq0M8dEB4W-AJoy_Igbl90Dl-UzHIuH0dXGO6PXNPNatPaMUbQoM5JFGg2wqCxIJhpcP8u8ua0iiiF4cSJKYkRAKsxWYyLLKVyyxaXhgyLzxpK5t-DJlpJQpILnAtZlZu4RyB2Uw-hSghW593dUZUBR_iWrCi66ZkJGWI39_QNR9NtS65DwDH7zKV73MYDKICpgm5jt0Us4bt2yF1VbTjrE_K4TriUSTzzASLcKRhrseygaHtlDQ4y968tsBzlYMB0bd4lSolka9UD63CCCGaeV-OTGDGfL7iNqCuyW85Vf3vZDxDSyQpU28rFdoLoNopqFodvmLi7HAYHhwicCFZaaAiYk7K6ZeRjDGq20k-utWV5RCMkxUBl4SoEOn3DFh2A_vltBkusnXdNdXfl4hafIjhmApcXrOmLWtgXawmS4YMCIVkx-8dEBMBR6C8h9VeebKbEpTKqBg2DyCjL14hnP2EXZZjd7BfTZEyf601HgPbpmc0OLQhba-F094n_a5BlZ9gP3NrwVgmdWK88dDhXG7uV7wAP7gIfcbihLpPUaziZ268hPNoiBPi_UPzFaB0-aGkP5dWjMqJKZZBcJd8CDgKu69WGK6QrJxDiCbRHC71CV9QwFPwWWdKg1gIUrEs_xHngXUILlR2arkFDrBhWzoLG85ure4-2nqo-9cRBOZxP1wyO2pqH1SIZCnOonwCkcUV6IlTZEV0R2eFfS_ugy9f4HmHI_QRI86lxUVV9l2pUPaIekiD5LbIRs-O7d4CHHDlSY8ZlODZQsuPYkaV0X6gZBOhhXwN50i5yfGLiz7lU6F7swVGN0viPC_uGKxlY5RK5UJXaSTLag4NR8wekiCta0I-fCZC6LAR5MF0KGh4EWxbEGwH2fCLjxsvZv3U_0U98mGmnql3ybMjFkldTxatfjLuvjdeJbh10wfFITXEfAE17k9y0t4be4CFlb8fkfXRoB3fbds6rnhL_Cels7kv1LhxUMIBjVvHK-RAaHlsAb8E5MI6rQ8p3erq9VRZOEicNxJJRHoPO3WOEiKU-tr16d1s5y30UB5zUp3snCC5UIWFACWLo8OgpjZmRC8e8I6i374dioykD1w_13hG4Utihp5bFQd59TB7ixJLp__WRXHbWvWJmCHSa9r7MHaucXqJ6IhZVIZcJ5MAtQRI1K9oLvKoA63dw7-fLB68un7mxnXeWUa3t58SI8lhC_h6ospl978MhmuVcgky3fa4fx4B3hnJxhRQaKrzOCZA7GlXSW9b3bC4i8FISIMcqItI765MizfxZqLSMjcVmUVwBsRRL9BhosVy2zeU6o21xMUAxxrZ5obz4aVw8GfLICLn5e4_6eh-PPR61TAMdaTvQr8V-ww9VvTLWZudw3cLyrF1UP1Ec1BR0JcWNZHxPvxly8g6JoGt3Ovt33_0qHlQ45T67qWEhpQUtnXsxie8lq0sqx-AJKqKYfF0jUaREus2HshQukuToa8CzojpdX99VYw4yrHKFEGpTp54MiNR0-ahsPP5ws0NQH7iQkSZGBYBhl8OeK7ahcRSCeMFqJIr5OE18W5Xa0fP0ctoINTr5YPhwAQWC7tMXjjvlfszHKUxvlt0PqIa7WfZ0czRyYuk0noZQ1c17OYPBqGK67Ph6eobKy25cK68B2vFn1FzSSnOYowJ7NSxASceIrdqlf6MZXliH4DThz576r4BXs2cH2kuSWNAaya0v-UCIxGM_hmu6aYLr_aOHxmxqrfPIb57qorqKgyRzGx6v9FGg5pldjhLaCVxuz07GUy_IB7ptc8GFK.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0dac8e2e936763ba016a9a6af5adc487d0a81a467b95b1c31c",
+      "index": 2
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25232,
+  "completion_tokens": 1333,
+  "total_tokens": 26565,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 25229,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00790745,
+   "upstream_inference_prompt_cost": 0.00630785,
+   "upstream_inference_completions_cost": 0.0015996
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 969,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 10.27,
+ "_attempt": 0
+}

@@ -1,0 +1,300 @@
+{
+  "claims": [
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "core.work_email",
+      "is_proposed_field": false,
+      "value_json": "wanda.punteney@charlestongi.com",
+      "evidence_span": "wanda.punteney@charlestongi.com",
+      "source_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_json": "Administrator, CEO",
+      "evidence_span": "Administrator, CEO at Charleston GI",
+      "source_url": "https://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_json": "Chief Executive Officer",
+      "evidence_span": "Chief Executive Officer",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.job_function",
+      "is_proposed_field": false,
+      "value_json": "Operations",
+      "evidence_span": "Administrator, CEO at Charleston GI",
+      "source_url": "https://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.job_level",
+      "is_proposed_field": false,
+      "value_json": "c_suite",
+      "evidence_span": "seniority\": \"c_suite\"",
+      "source_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_location",
+      "is_proposed_field": false,
+      "value_json": {
+        "raw": "Charleston, South Carolina, United States",
+        "country": "United States"
+      },
+      "evidence_span": "Charleston, South Carolina, United States",
+      "source_url": "https://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.organization_relationship",
+      "is_proposed_field": false,
+      "value_json": {
+        "relationship": "employed",
+        "basis": "current_employment",
+        "organization_id": "charleston-gi-specialists"
+      },
+      "evidence_span": "organization_name\": \"Charleston GI\"",
+      "source_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.persona",
+      "is_proposed_field": false,
+      "value_json": "economic_buyer",
+      "evidence_span": "Chief Executive Officer",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.role_on_committee",
+      "is_proposed_field": false,
+      "value_json": {
+        "role": "economic_buyer",
+        "confidence": "high",
+        "plausible": true,
+        "rationale": "Holds the Chief Executive Officer title for the practice and is named as CEO in regulatory filings for affiliated centers."
+      },
+      "evidence_span": "Chief Executive Officer",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.career_history",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "org": "Charleston Gastroenterology Specialists",
+          "role": "Chief Executive Officer",
+          "start": "1989",
+          "end": null
+        }
+      ],
+      "evidence_span": "Member of Charleston GI since 1989",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.stated_interests",
+      "is_proposed_field": false,
+      "value_json": [
+        "Practice growth",
+        "Regional access to care"
+      ],
+      "evidence_span": "we recognize the need to be here and we\u2019re thrilled to find a home in Carnes Crossroads",
+      "source_url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.public_appearances",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "title": "Windmill Station Groundbreaking",
+          "venue": "Post and Courier",
+          "url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+          "date": "2017-04-30"
+        }
+      ],
+      "evidence_span": "Wanda Punteney, CEO of Charleston GI",
+      "source_url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.causes",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "cause": "Medical Group Management Association",
+          "context": "2005 Governor SCMGMA"
+        }
+      ],
+      "evidence_span": "2005 Governor SCMGMA - Wanda Punteney",
+      "source_url": "https://www.southcarolinamgma.org/about/cog",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "core.work_email",
+      "is_proposed_field": false,
+      "value_json": "tommy.punteney@charlestongi.com",
+      "evidence_span": "tommy.punteney@charlestongi.com",
+      "source_url": "https://app.apollo.io/#/people/6a8e800333952b00141258ca",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_json": "Chief Operating Officer",
+      "evidence_span": "Thomas D. Punteney, Chief Operating Officer of Charleston (S.C.) GI Specialists",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.job_function",
+      "is_proposed_field": false,
+      "value_json": "Operations",
+      "evidence_span": "manages operations for three offices and two surgery centers",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.job_level",
+      "is_proposed_field": false,
+      "value_json": "executive",
+      "evidence_span": "Chief Operating Officer",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.current_location",
+      "is_proposed_field": false,
+      "value_json": {
+        "raw": "Charleston, South Carolina, United States",
+        "country": "United States"
+      },
+      "evidence_span": "Charleston, South Carolina, United States",
+      "source_url": "https://app.apollo.io/#/people/6a8e800333952b00141258ca",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.organization_relationship",
+      "is_proposed_field": false,
+      "value_json": {
+        "relationship": "employed",
+        "basis": "current_employment",
+        "organization_id": "charleston-gi-specialists"
+      },
+      "evidence_span": "organization_name\": \"Charleston GI Specialists\"",
+      "source_url": "https://app.apollo.io/#/people/6a8e800333952b00141258ca",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.persona",
+      "is_proposed_field": false,
+      "value_json": "technical_evaluator",
+      "evidence_span": "Charleston GI Specialists implemented gGastro and its practice management system, gPM, in 2013",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.role_on_committee",
+      "is_proposed_field": false,
+      "value_json": {
+        "role": "technical_evaluator",
+        "confidence": "high",
+        "plausible": true,
+        "rationale": "Identified as the leader managing operations and the executive who selected and implemented the practice's EHR system."
+      },
+      "evidence_span": "manages operations for three offices and two surgery centers",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.facet.public_appearances",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "title": "Thoughts on the Right EHR for Gastroenterologists",
+          "venue": "Becker's ASC / ModMed",
+          "url": "https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/",
+          "date": "2018-07-03"
+        }
+      ],
+      "evidence_span": "3 experts share their thoughts on the right EHR for gastroenterologists",
+      "source_url": "https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    }
+  ],
+  "proposed_fields": []
+}

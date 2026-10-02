@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504652-veuIT8gvmUJOU3ABWYte",
+ "object": "chat.completion",
+ "created": 1788504652,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"problem_now\",\"empty\":false,\"items\":[{\"h2\":\"ABM is being built from scratch while account programs need structure\",\"body\":[{\"text\":\"Zafran is hiring a Senior Manager, ABM & Integrated Campaigns to own ABM from the ground up, including 1:1, 1:few, and 1:many programs.\",\"claimIds\":[\"zaf-090\"]},{\"text\":\"The role has been open for 77 days, making the need for account prioritisation, buying-group mapping, and coordinated plays current.\",\"claimIds\":[\"zaf-090\"]}],\"sendLine\":\"In your email: I saw Zafran is building ABM from the ground up across 1:1, 1:few, and 1:many programs—how are you handling account prioritisation and buying-group mapping while that seat is open?\",\"priority\":1},{\"h2\":\"A growing GTM motion spans several systems without a clear ABM layer\",\"body\":[{\"text\":\"Zafran's SDR stack includes Salesforce, LinkedIn Sales Navigator, ZoomInfo, and Outreach, while the marketing stack includes HubSpot, Salesforce, and unnamed major ABM platforms.\",\"claimIds\":[\"zaf-089\"]},{\"text\":\"That creates a coordination problem for aligning account signals, marketing activity, and sales outreach across the buying committee.\",\"claimIds\":[\"zaf-089\",\"zaf-090\"]}],\"sendLine\":\"In the platform: Connect the account research and buying-group view to the systems Zafran's teams already use, including Salesforce, HubSpot, and Outreach.\",\"priority\":1},{\"h2\":\"Marketing capacity is stretched during a broad hiring push\",\"body\":[{\"text\":\"Zafran has 27 open requisitions, including 3 in Marketing, with the longest-open marketing requisition at 77 days.\",\"claimIds\":[\"zaf-088\"]},{\"text\":\"The open ABM role and additional marketing openings indicate that the team needs to support more account programs while key capacity is still being added.\",\"claimIds\":[\"zaf-088\",\"zaf-090\",\"zaf-141\"]}],\"sendLine\":\"On the landing page: Help a growing marketing team keep account research, buying-group mapping, and campaign execution moving while critical marketing roles are still open.\",\"priority\":1},{\"h2\":\"A partner channel is starting from zero and needs coordinated account plays\",\"body\":[{\"text\":\"Zafran is standing up a partner and alliances channel from zero through a Director of Alliances role.\",\"claimIds\":[\"zaf-091\"]},{\"text\":\"The role covers Global Systems Integrators, cloud partners, and technology partners, creating a new set of accounts and stakeholders for marketing to coordinate.\",\"claimIds\":[\"zaf-091\"]}],\"sendLine\":\"In your email: As Zafran builds its partner channel across GSIs, cloud, and technology partners, how are you coordinating the account and stakeholder plays around that new ecosystem?\",\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmpSJXeXVgJ21VV74JT5_l49zuj28W7PumwyZgyJum5P7l4srBWbxxOjCVD0Pn0lM4xmXdqgCnFRDKRQSnNk4uHrfSwrp53HFAYty3AQLPG9L992IW-vcsjxkOEp5RwPMvuWyHzHRDDgFOoPO_NIAjlih6IrT7XY6Qi_bZlthFHDjcuNJ5rS-fyyWoV8XQkkPQJ7JLbPM7WxuVpRcMVi_Z8po4nnhqu1w9UEeBokepew5-dCLP-9sutA9Eegn_cqaLO8FoAIowP7zBERxw8gkS_WLNnLfcJ0tbsj6yPM666Z25vf4ToOmF9WrmK9mkrGJDTxLiPjVQC9oKIQ1A7bqOYEZ3YxkdrJizd1KzFUDuKnrTtuXB9S8H9xzr7gCwm3eTvP3J_H_t0CplGRgBvrHlUmdGe7nwT8gRZZWgrP75p6Q8VhngX2ConLvKjwTGk7O5ya84otx_laHTnNOVLpyLqIKLyU_a52NMT22p75_7S2iHjDL3XEY5UTIIEFKA7nI2MFMrkDo4kpqe7trxv3DzqwDcaSU5oKduTOtJcrYkyxKSoRYCBpLsTtKgBt7YSGafvPMqi7isGNpF_RromR-0mnPxIEPJHKXanMGSgKCLfIfu4x1BKmmAZGsbKN2GIxxxDRjqn_ZFmYjX7XTh5WjLIGeX6lkBCupHB5VbLjZV0ibDrHb-juUE1609oFCKVhw0JbxDZoyUitSlM9HMT0QUhAlKwbLDlZTYwIAZfA3fJC3v2znXWG7nBGkbLAbY_uaH_4YfvqOLwj_uJ41ezrT7XV4q2bpxYCdPVRvttjcO6tXf6Lov5k4p8YgKY1mA3OgjvNnBmuOdMuASC8qfI2vHk2gNJZg8_i3easa-YuRNNy0t0GGtLH0R2aaf9iQeEzWIti5jMToklWqzADSr8LlUq8_R7YALPnO_5W2G5D48hGiqS1gvHMg0X56WCqAq_G8ZDBu39Vch9K0jOFngN0r-I4eLtjLzFBCtHApkVUkj2lS_60ujppcZJpQ0oXrVtx-H23Qm_i3TtiaVBBbNtpARJruhuSDDYN4gNYr8qadrKu30xudLrxLNP1CiEjMtvJCtSh4bPj6_oQYEXjIZ1CIjCuWw_Sbb7WbaesG5qC3Q16qRsWXVCY4yqVOWAlkdjgAjHXpf_3cYNasAu2Lf6AiVg3ckj-OSgb4o7XPKdZt5o_GxngvB9PGcCLTH4hijdJtQCroLmSy8MhUdyr8KFC0MRAGj2cGKUH3jWIGTD075Hez-oYyVPnoFQYJHoZgBmp69NVLcej_3ImwkvBfnicDhWZ1TF4MQltph1b9EfnWEMbgn9igU_XUieRQ7ph6LLuwqfiXY9zM7cdyK6xMvu3HfroORkrkT0EmApitRBylB58_0ts3h3sWq6Yeac1zSydZai4pgxpCN7scCqB2eucCO0Qs0fRvbBxpyB_lucOV5WWCaJblwwo33tm4XdHMWqpaiMtn7zmN8GOlWdbR2CbZQWxpsmfCPTMbCOUF-B6jrC1tnR4vB6-m_lY1TGpfE2L-mmPx8m8Jkkd67VJRSzhdON6Mg9fOcQzU_IliK6__jXosfz8fxla5aKzkFC9h1mfhH_vUB95mAN-eSjnScyPc2xI1HEea-W6ZgYeaAsWxR119K46EYW0Ksnwtvv9JxZWyuQMz-uQUOKVCYu4hjHcbOExumIxJD3xvPVAy8A7VJjhDCdxrgavIX3ARBJRLr7ys4ZWiuja_85AvvS-M2LLsTMP7mYTF26tsnE1mHogL8fbgKU6cobT7_jxED_01hwad66Xv0MNqdeYrbN9ke_Z67f_wzx-L8VFwYGkjq1KCtOuuyye3MObzlm7OjY4KUBqGLAgU6Q0b9n4UIy2v-Cp-Mi1dJrwfhEduEbuNPESSKAp-al-5ST-0GXYXWdFqBOpeo0hvl_0b6q-x5HzL6DbgBVeM0xpRV1yazQ15uTHOUQUUCGFM_0363W247QfbhBxQPfozNCy6NdS82zWl3WY-0ebUqxSZIsmrQGl923RTAW2qToKZqRMPV-LsmhmmYHfEJp2TfxUE01dAxta5_rfcpesWoroveNczMtgjOsV4rpexkWwo7QmBFAtDAPStMhm8nzsB-AfEnFmNWk_DgMeVjq-wIWlNH6QGtB98IxV3i1HzmHajb6cqIvcxB3DjAeWpxrqn7Q5bMx_ygd-Mi-25QcSrAF_SY_lXlBUkU4zFu21yVrbh_egTSAcnqZanEhdqpNQ1qoLeJ7PmYD92eBmAG1c5UA9FeJbCj8RDenxOk-GnDyfBYSduSTNymSB01VdnRFJCf9EcKnMnqQ9I8NdyR8oaU7Fcr4bPsCNutG6TlK-4sQXMNX1-NhopWQANJ4h8WVwn0X50_4EOmSP227_c66S0QBH5ZkmejUueg8l3qXNyUDRJUsv2OW_Nnk9coOccsxHbKbGMzW2a_VpUtMDuEGOP3q8elaf6-WxK_o9pt1p4LhUFltUGHUDDgalluEcVf68u0csHv8tv13nz6PkAUlXRm18yZBOlbrb84nVBKQJcJuBxzwnDGpsB-zFjxHuCk9_SVjR7PWjlSr0i6a09ffgOFnhZqtPaDbCQ2SBH9P8V4WGDRbRF9T1ZNyAE1I5CjLf3s7RrhP604Vg1E2FR3Jc-R-gZbJovzYlG8-0Sv6nAxETjJ0LAR-jlesU1kJnNu5vNWP-7jau1INq6wZHh3GRmP_N4CuMUFnS_7a7tpdiDhk7V-tsDFaNa7fdE2zrq88iljLF7EaudXDD3uNVTkAS4qHW4sS0hza40Ob3QV6QgjbmMbDCMgWaPEsmN1Xolgw-pt1RWiVqheqHqHFgGkYam0zhiaJSLvceGiBu5KO4YstckNCvxZRoS3annbtXv1Rh0_PZ6LBcoURAl_PDcKqtKOQiTIiS1C8juZ72EsEIIIjoKh1w2XQs0rfdQ5KtryeoXVna4QAQjDbUZi1-QhrBstxRfGaj7YPFWhAKYi09kQLZ0g7VEhrZDRMO0hqtOOGFmYMyg3CX9dpjdRY_dV0DwRCHcd1qbaTU6eaZmwVwSFG78rpOXWhC2aVJ0A82UKDNB3K9E5FZ6Fdur7pTLRA6CxHXGaLhGY9RsP-MKQWJeHg1W-q4i9bTo1Gqa_K05ut2ZBlEX4yP4Asc-GYCW3eMtRseap6XhSWXLw841KaaUmcvWbFoUIx1i7x3PVVzzCneae5Ny399YDAdIDX5Zdc2R9vvdIacM8RPjkJ5RP0jL_-Gz3Cxg0bweOvzNfgvQG_YKcxLjZvXHTkGtX-a5HnsJREY2NBJg_U5BDdUXd6tqXJY_ukyBgxeWqdeiH5HPjmoZa1fldGC8FS49-_ItbpDuWCjy8moLxtNIgf_v8OT8eSi7JfIsLs6adV55J94_YdTdRy5Osy0ESlxRzAir5tPaVIZz5Z8eQHIZaCg6-q04KKvrWhTu06heI5ybBsmqRGTV4nhdg7fzfNWIN_oaQqnV5tXMVjgdVPsiFhUtefgPnlcO4ddCGGSNHNkY1OhncvAtqjFLS-ViIrq2hTMyxeVt7P382wMvil_3RfXOkXaF1iywlNvwhmvuB4V1bm_2ZpZ1B0JLZQ8jIrZU_nQmMDqFHkjYvkOcPZhYUGfEBwUELMxNAVjsjCc4RrQ03oSxAnQfMMOiu5Bja_4s65PVCJ02U0N7ejUrPOhUNzOYchecf1mm3ZatyMyfJiDxQQGCrTbfcBtEK_sdsjrknPWBoJjHBzOWlKJIiiq4MZ8C58I_uNsUonH8W3u9wV0RK0VmFyzJGJBaBH-XZXj3_bg00EJwN_yxzNyhM1mVevOXjPDvF0GvzEAwMXlaTTi9cLVFCcu-jHHZoEVd4woaknW8tCXaxvEccjIkBlnKO2qNo2oMKBAbHNp4Z2aZM_WvRrTswxmpDN8GeoNU34BtusJ35dnY7dR9IHntKZrArbwlSsO8iKNZPSrhQw0FlcMA2dijxkdmFKEB9Gho5SLHRUj6ImSvj0dx81h10ZfcuFNm5oUvTFr4TGK9ZlSW_SQD08xyfGqtYEMw-TsKrYPveva2XxCOjeKtEq4zzkzLlXp82IhHWJfHfubPIB068HFdUQl1wJq_T1JgG8Ujq_rjr0HgzQtWovJbn_778e5TyzItfsTdnuhkHeFi9fyqnfglzw_deasO3PirIVAzYYgUmzg-wfuC-LmToHrZ3Wh3eYqt_qm2giasncbF2fiXx461jXonqlshYRLx1YrLS_ZPeUHAXEUdNTjrCE0YUnBCWdAgdQ6vP_zkfYF0MRZ5VjVGf2wBXKvsTGkHPkEDXvdOp0bGXLz9UpPLNwSZHjdDDZ00FdLD43nTjV9BYJBnl-RpZYJQSqaCqpUGvnD93CDr4XR3Mj9w9BLmy45E5mVvbdfbE_aDiAxIlsoa2RnwDI3We3xgk3o2Ltlrq9h6KNgIh8zsOsF9A==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0fdc1978f02a9b48016a9a6a4e100487d0a38c5c25ac0be59e",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 15346,
+  "completion_tokens": 1136,
+  "total_tokens": 16482,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 15343,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00167066,
+   "upstream_inference_prompt_cost": 0.00030746,
+   "upstream_inference_completions_cost": 0.0013632
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 9.44,
+ "_attempt": 0
+}

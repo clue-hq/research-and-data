@@ -1,0 +1,639 @@
+[
+  {
+    "field_key": "account.asc_accreditation",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Accreditation status (e.g., AAAHC, state-licensed).",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Highlights regulatory compliance and quality standards."
+  },
+  {
+    "field_key": "account.asc_address",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "The address of an ASC.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Allows targeting of specific facility needs."
+  },
+  {
+    "field_key": "account.asc_legal_entity",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Legal entity name of an ASC.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Critical for legal and contracting context."
+  },
+  {
+    "field_key": "account.asc_name",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "The name of an Ambulatory Surgery Center (ASC) owned by the practice.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Identifies high-value procedural facilities separate from clinics."
+  },
+  {
+    "field_key": "account.asc_procedure_rooms",
+    "entity_type": "account",
+    "value_type": "integer",
+    "value_schema": "integer",
+    "description": "Number of procedure rooms in an ASC.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Indicates procedural capacity and scale."
+  },
+  {
+    "field_key": "account.board_certified_gastroenterologists_count",
+    "entity_type": "account",
+    "value_type": "integer",
+    "value_schema": "number",
+    "description": "Stated count of board-certified gastroenterologists.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Specific credentialing metric."
+  },
+  {
+    "field_key": "account.con_filing_date",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "date (YYYY-MM)",
+    "description": "Date of a Certificate of Need filing.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Indicates expansion and capital investment projects."
+  },
+  {
+    "field_key": "account.daily_patient_volume",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Average or peak daily patient volume.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Measures operational scale and throughput capacity."
+  },
+  {
+    "field_key": "account.ehr_go_live_year",
+    "entity_type": "account",
+    "value_type": "integer",
+    "value_schema": "integer",
+    "description": "The year the EHR system was implemented.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Indicates system lifecycle stage and potential migration pain."
+  },
+  {
+    "field_key": "account.ehr_system",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "The specific EHR system used by the practice.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Critical for understanding integration requirements and operational maturity."
+  },
+  {
+    "field_key": "account.ehr_vendor_current",
+    "entity_type": "account",
+    "value_type": "boolean",
+    "value_schema": "boolean",
+    "description": "Whether the vendor relationship is currently active.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Confirms if the system is legacy or active for sales targeting."
+  },
+  {
+    "field_key": "account.endoscopy_center_count",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "text",
+    "description": "Count and certification status of endoscopy centers.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Specific facility operational detail."
+  },
+  {
+    "field_key": "account.fax_number",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "phone_number",
+    "description": "General company fax number.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Contact information not currently in core schema."
+  },
+  {
+    "field_key": "account.form_anesthesia_patient_letter",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.form_appointment_request",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.form_authorization_disclose",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.form_endoscopy_financial_information",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.form_financial_policy",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.form_hipaa_privacy_policy",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.form_patient_information",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.form_patient_rights_responsibilities",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.form_release_records",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.headcount_trend",
+    "entity_type": "account",
+    "value_type": "number",
+    "value_schema": "float",
+    "description": "Year-over-year headcount growth rate.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Quantifies growth or contraction for sizing."
+  },
+  {
+    "field_key": "account.independence_statement_date",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "date (YYYY-MM-DD)",
+    "description": "Date of the most recent public independence statement.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Validates recency of ownership claims for prospecting."
+  },
+  {
+    "field_key": "account.location_address",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "The street address of a specific office location.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Enables precise targeting and logistics planning."
+  },
+  {
+    "field_key": "account.location_name",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "The name of a specific office location.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Required to enumerate multiple locations for a single account."
+  },
+  {
+    "field_key": "account.office_address_carnes_crossroads",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "postal_address",
+    "description": "Address of the Carnes Crossroads office.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Additional office location not covered by HQ."
+  },
+  {
+    "field_key": "account.office_address_lowcountry",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "postal_address",
+    "description": "Address of the Lowcountry Endoscopy Center.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Additional office location not covered by HQ."
+  },
+  {
+    "field_key": "account.office_address_summerville",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "postal_address",
+    "description": "Address of the Summerville office.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Additional office location not covered by HQ."
+  },
+  {
+    "field_key": "account.online_bill_pay",
+    "entity_type": "account",
+    "value_type": "boolean",
+    "value_schema": "boolean",
+    "description": "Whether online bill pay is offered.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Indicates digital maturity and revenue cycle capabilities."
+  },
+  {
+    "field_key": "account.open_access_policy",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Whether referrals are required for appointments.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Identifies patient acquisition model (direct vs referral)."
+  },
+  {
+    "field_key": "account.ownership_status",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Ownership structure (e.g., Independent, PE-backed).",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Drives segmentation and messaging strategy."
+  },
+  {
+    "field_key": "account.patient_portal_name",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "text",
+    "description": "Name of the patient portal service.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "IT/Digital touchpoint identification."
+  },
+  {
+    "field_key": "account.promotional_banner_text",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "text",
+    "description": "Text of the site-wide promotional banner.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Marketing initiative tracking."
+  },
+  {
+    "field_key": "account.referral_form_description",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Function of the referral form.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Understands how referrals are processed digitally vs manually."
+  },
+  {
+    "field_key": "account.scheduling_policy",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "text",
+    "description": "Statement regarding referral requirements and availability.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Operational detail relevant to access."
+  },
+  {
+    "field_key": "account.speech_recognition_system",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Speech recognition software in use for clinical documentation.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Identifies specific tech stack components and clinical workflow tools."
+  },
+  {
+    "field_key": "account.staff_emily_brown",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_gabby_rodriguez",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_heather_harrison",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_hilliary_goode",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_jeffrey_basile",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_john_corless",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_julie_dupree",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_lee_royall",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_marc_noble",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_renee_larsen",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_role_front_office_specialist",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Name of front office staff.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Identifies staff involved in patient intake and check-in."
+  },
+  {
+    "field_key": "account.staff_role_medical_records_clerk",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Name of staff member managing medical records.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Evidence of manual administrative workload."
+  },
+  {
+    "field_key": "account.staff_role_prior_auth_specialist",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Name of staff member handling prior authorizations.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Evidence of manual administrative burden in revenue cycle."
+  },
+  {
+    "field_key": "account.staff_role_recall_specialist",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Name of staff member managing patient recalls.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Indicates recall is a manual process rather than automated."
+  },
+  {
+    "field_key": "account.staff_role_referral_coordinator",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Name of staff member coordinating referrals.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Evidence of manual administrative burden in intake."
+  },
+  {
+    "field_key": "account.staff_role_team_scheduler",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "string",
+    "description": "Name of staff member handling scheduling.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Identifies operational bottlenecks in access."
+  },
+  {
+    "field_key": "account.staff_sandi_engler",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_sidney_smith",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_stephanie_andrews",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_theodore_gourdin",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_tom_carico",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_william_brener",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.staff_william_marsteller",
+    "entity_type": "account",
+    "value_type": "str",
+    "value_schema": {
+      "type": "string"
+    },
+    "description": "(definition not emitted by the structuring pass)",
+    "reuse_scope": "tenant_private",
+    "why_needed": "(definition not emitted by the structuring pass)"
+  },
+  {
+    "field_key": "account.stat_total_cancer_2020",
+    "entity_type": "account",
+    "value_type": "integer",
+    "value_schema": "number",
+    "description": "Total cancer cases found in 2020.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Clinical outcome metric."
+  },
+  {
+    "field_key": "account.stat_total_colonoscopies_2020",
+    "entity_type": "account",
+    "value_type": "integer",
+    "value_schema": "number",
+    "description": "Total colonoscopies performed in 2020.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Operational volume metric."
+  },
+  {
+    "field_key": "account.stat_total_precancerous_polyps_2020",
+    "entity_type": "account",
+    "value_type": "integer",
+    "value_schema": "number",
+    "description": "Total precancerous polyps found in 2020.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Clinical outcome metric."
+  },
+  {
+    "field_key": "account.stat_total_procedures_2020",
+    "entity_type": "account",
+    "value_type": "integer",
+    "value_schema": "number",
+    "description": "Total procedures performed in 2020.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Operational volume metric."
+  },
+  {
+    "field_key": "account.timing_signal_date",
+    "entity_type": "account",
+    "value_type": "string",
+    "value_schema": "date (YYYY-MM-DD)",
+    "description": "Date of a significant strategic or operational event.",
+    "reuse_scope": "tenant_private",
+    "why_needed": "Tracks momentum and change readiness."
+  }
+]

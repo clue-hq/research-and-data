@@ -140,6 +140,25 @@ def test_binding_a_fetched_logo_stamps_the_account_and_says_what_it_means(tmp_pa
     assert "{{account.logo}}" in payload["note"]
 
 
+def test_an_alternative_binds_like_a_cell(tmp_path: Path) -> None:
+    """`fetch_logo` registers its alternatives with the same provenance as its cells, so
+    one the agent judged the better fit for this account is bindable too."""
+    from lumen_api.agent_account_logos import is_fetched_logo
+
+    alternative = _ladder_record("asset_ing_a17e12a71fe00000")
+    alternative["label"] = "Goodman Campbell logo (alternative: icon)"
+    alternative["provenance"] = {"created_by": "brandfetch", "source_label": "brandfetch"}
+    assert is_fetched_logo(alternative)
+
+    binder = FakeBinder()
+    tools = _tools(tmp_path, binder=binder, assets={alternative["id"]: alternative})
+
+    payload = json.loads(tools.bind_account_logo("acc_goodman", alternative["id"]))
+
+    assert payload["status"] == "ok"
+    assert binder.accounts["acc_goodman"]["logo_asset_id"] == alternative["id"]
+
+
 def test_re_binding_the_same_logo_converges(tmp_path: Path) -> None:
     """Red case 8's second half: the same bind twice is the same account row, said honestly."""
     binder = FakeBinder()
@@ -312,3 +331,17 @@ def test_the_recipe_says_the_same_two_things() -> None:
     assert "PUBLISH THE DERIVED PAGE, NEVER THE TEMPLATE" in squashed
     assert "bind_account_logo" in squashed
     assert "empty-logo page — which is CORRECT" in squashed
+
+
+def test_vendor_fetched_records_pass_the_bind_gate_and_generated_ones_do_not():
+    from lumen_api.agent_account_logos import is_fetched_logo
+
+    vendor = {"provenance": {"created_by": "brandfetch"}}
+    ladder = {"provenance": {"created_by": "logo_ladder"}}
+    generated = {"provenance": {"created_by": "image_generation"}}
+    assert is_fetched_logo(vendor) and is_fetched_logo(ladder)
+    assert not is_fetched_logo(generated)
+    # the old name still answers (deprecated alias, same object)
+    from lumen_api.agent_account_logos import is_ladder_fetched
+
+    assert is_ladder_fetched is is_fetched_logo

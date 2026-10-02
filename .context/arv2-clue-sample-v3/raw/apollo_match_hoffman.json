@@ -1,0 +1,571 @@
+{
+  "person": {
+    "id": "67c29366248a79000116eb52",
+    "first_name": "Mark",
+    "last_name": "Hoffman",
+    "name": "Mark Hoffman",
+    "linkedin_url": "http://www.linkedin.com/in/mark-hoffman-582a5741",
+    "title": "Chief Revenue Officer",
+    "photo_url": "https://media.licdn.com/dms/image/v2/D4E03AQH7Fl9b5KNjUw/profile-displayphoto-scale_200_200/B4EZxr22YYIMAY-/0/1771336071800?e=2147483647&v=beta&t=yveZeG1e__briLIywfWVUa-fuLVfNmpl_3IeHhRzd9Y",
+    "twitter_url": null,
+    "github_url": null,
+    "facebook_url": null,
+    "extrapolated_email_confidence": null,
+    "headline": "Chief Revenue Officer (CRO)",
+    "organization_id": "6448986fd1863a00014df823",
+    "employment_history": [
+      {
+        "_id": "6a7fea250d08650001e4effe",
+        "created_at": null,
+        "current": true,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": null,
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "6448986fd1863a00014df823",
+        "organization_name": "Probook",
+        "raw_address": null,
+        "start_date": "2026-02-01",
+        "title": "Chief Revenue Officer",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4effe",
+        "key": "6a7fea250d08650001e4effe"
+      },
+      {
+        "_id": "6a7fea250d08650001e4efff",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2026-02-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "62f0bcc5a0bab200a3d5a772",
+        "organization_name": "Tennr",
+        "raw_address": null,
+        "start_date": "2024-12-01",
+        "title": "Chief Sales Officer (CSO)",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4efff",
+        "key": "6a7fea250d08650001e4efff"
+      },
+      {
+        "_id": "6a7fea250d08650001e4f000",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2024-12-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a122a169702d8aa1c92003",
+        "organization_name": "VTS",
+        "raw_address": null,
+        "start_date": "2021-08-01",
+        "title": "Senior Vice President of Sales",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4f000",
+        "key": "6a7fea250d08650001e4f000"
+      },
+      {
+        "_id": "6a7fea250d08650001e4f001",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2021-08-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a122a169702d8aa1c92003",
+        "organization_name": "VTS",
+        "raw_address": null,
+        "start_date": "2019-07-01",
+        "title": "Vice President of Sales",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4f001",
+        "key": "6a7fea250d08650001e4f001"
+      },
+      {
+        "_id": "6a7fea250d08650001e4f002",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2019-07-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a122a169702d8aa1c92003",
+        "organization_name": "VTS",
+        "raw_address": null,
+        "start_date": "2017-01-01",
+        "title": "Director of Sales",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4f002",
+        "key": "6a7fea250d08650001e4f002"
+      },
+      {
+        "_id": "6a7fea250d08650001e4f003",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2016-12-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "5f3faeab641da30001ab9cf6",
+        "organization_name": "Hightower Inc.",
+        "raw_address": null,
+        "start_date": "2016-06-01",
+        "title": "Director of Inside Sales",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4f003",
+        "key": "6a7fea250d08650001e4f003"
+      },
+      {
+        "_id": "6a7fea250d08650001e4f004",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2016-04-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a11bea69702da4251a6d00",
+        "organization_name": "ZocDoc",
+        "raw_address": null,
+        "start_date": "2014-05-01",
+        "title": "Inside Sales Manager",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4f004",
+        "key": "6a7fea250d08650001e4f004"
+      },
+      {
+        "_id": "6a7fea250d08650001e4f005",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2014-05-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a11bea69702da4251a6d00",
+        "organization_name": "ZocDoc",
+        "raw_address": null,
+        "start_date": "2014-02-01",
+        "title": "Senior Sales Executive",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4f005",
+        "key": "6a7fea250d08650001e4f005"
+      },
+      {
+        "_id": "6a7fea250d08650001e4f006",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2014-02-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a11bea69702da4251a6d00",
+        "organization_name": "ZocDoc",
+        "raw_address": null,
+        "start_date": "2013-01-01",
+        "title": "Inside Sales Executive",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4f006",
+        "key": "6a7fea250d08650001e4f006"
+      },
+      {
+        "_id": "6a7fea250d08650001e4f007",
+        "created_at": null,
+        "current": false,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": "2013-01-01",
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": false,
+        "organization_id": "54a11bea69702da4251a6d00",
+        "organization_name": "ZocDoc",
+        "raw_address": null,
+        "start_date": "2012-06-01",
+        "title": "Business Origination Associate",
+        "updated_at": null,
+        "id": "6a7fea250d08650001e4f007",
+        "key": "6a7fea250d08650001e4f007"
+      }
+    ],
+    "street_address": "",
+    "city": "New York",
+    "state": "New York",
+    "country": "United States",
+    "postal_code": null,
+    "formatted_address": "New York, NY, USA",
+    "time_zone": "America/New_York",
+    "email": "mark@probook.ai",
+    "email_status": "verified",
+    "organization": {
+      "id": "6448986fd1863a00014df823",
+      "name": "Probook",
+      "website_url": "http://www.probook.ai",
+      "angellist_url": null,
+      "linkedin_url": "http://www.linkedin.com/company/probook-ai",
+      "twitter_url": null,
+      "facebook_url": null,
+      "languages": [],
+      "alexa_ranking": null,
+      "phone": null,
+      "linkedin_uid": "93780122",
+      "founded_year": 2024,
+      "publicly_traded_symbol": null,
+      "publicly_traded_exchange": null,
+      "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/6a5d7f3913cb3f00016d28b3/picture",
+      "crunchbase_url": null,
+      "primary_domain": "probook.ai",
+      "sic_codes": [
+        "7389",
+        "7372"
+      ],
+      "naics_codes": [
+        "54133",
+        "51321"
+      ],
+      "industry": "information technology & services",
+      "estimated_num_employees": 52,
+      "keywords": [
+        "software development",
+        "dispatch automation",
+        "ai dispatching",
+        "construction & real estate",
+        "ai-driven dispatch decisions",
+        "workforce management",
+        "dynamic workload balancing",
+        "geographic route optimization",
+        "customer service",
+        "automated job assignment",
+        "job verification",
+        "revenue heatmap",
+        "service technician scheduling",
+        "sales increase",
+        "tech performance metrics",
+        "services",
+        "customer service enhancement",
+        "roi estimation",
+        "technician performance tracking",
+        "b2b",
+        "historical data analysis",
+        "short-term trend analysis",
+        "servicetitan integration",
+        "engineering services",
+        "real-time dispatch optimization",
+        "live updates",
+        "transportation & logistics",
+        "saas",
+        "information technology & services",
+        "computer software"
+      ],
+      "organization_revenue_printed": null,
+      "organization_revenue": 0.0,
+      "industries": [
+        "information technology & services",
+        "computer software"
+      ],
+      "secondary_industries": [
+        "computer software"
+      ],
+      "snippets_loaded": true,
+      "industry_tag_id": "5567cd4773696439b10b0000",
+      "industry_tag_hash": {
+        "information technology & services": "5567cd4773696439b10b0000",
+        "computer software": "5567cd4e7369643b70010000"
+      },
+      "retail_location_count": 0,
+      "raw_address": "new york, new york, united states, 10022",
+      "street_address": "",
+      "city": "New York",
+      "state": "New York",
+      "postal_code": "10022",
+      "country": "United States",
+      "owned_by_organization_id": null,
+      "short_description": "Probook is a New York-based vertical AI company that provides an AI Operating System tailored for home services. Founded in 2022, the company focuses on automating and unifying the front-office workflow for plumbing, HVAC, electrical, and other skilled-trades businesses. Probook utilizes historical shop data and AI to efficiently match technicians to jobs in real time, while managing customer intake, data cleaning, messaging, and outbound communications.\n\nThe platform's primary service is automated dispatch, which features automated board filling, lead capture, booking cleanup, and real-time customer updates through SMS and AI-driven voice agents. Probook also offers a comprehensive system that includes intake, data cleaning, chat, outbound communications, and route optimization, enabling operators to enhance their customer experience. The software is delivered as a Chrome extension that integrates seamlessly with existing CRM systems. Probook serves hundreds of major home service brands in the HVAC, plumbing, and electrical sectors, contributing to a $700 billion industry. The company has raised $40 million in funding from notable investors, including Andreessen Horowitz and Sequoia Capital.",
+      "suborganizations": [],
+      "num_suborganizations": 0,
+      "total_funding": 40000000,
+      "total_funding_printed": "40M",
+      "latest_funding_round_date": "2026-06-01T00:00:00.000+00:00",
+      "latest_funding_stage": "Series A",
+      "funding_events": [
+        {
+          "id": "6a3b3a85daf438000195a65c",
+          "date": "2026-06-01T00:00:00.000+00:00",
+          "news_url": "https://itnerd.blog/2026/06/23/probook-raises-40m-from-andreessen-horowitz-and-sequoia-to-scale-the-ai-operating-system-for-home-services/",
+          "type": "Series A",
+          "investors": "Andreessen Horowitz, Sequoia",
+          "amount": "40M",
+          "currency": "$"
+        }
+      ],
+      "technology_names": [
+        "AI",
+        "Amazon AWS",
+        "Amazon CloudFront",
+        "Cursor",
+        "Excel Impact",
+        "Frame",
+        "Gmail",
+        "Google Meet",
+        "Google Search Console",
+        "Google Search Console",
+        "Google Sheets",
+        "Google Tag Manager",
+        "Google Workspace",
+        "HSTS",
+        "LinkedIn Ads",
+        "LinkedIn Recruiter",
+        "Microsoft 365",
+        "Microsoft 365 Apps & Services",
+        "Microsoft Email Providers",
+        "Microsoft Exchange",
+        "Microsoft Exchange Online",
+        "Mobile Friendly",
+        "Next.js",
+        "Outlook",
+        "Priority Hints",
+        "React",
+        "Vercel",
+        "Viewport Meta",
+        "YouTube",
+        "webpack"
+      ],
+      "current_technologies": [
+        {
+          "uid": "ai",
+          "name": "AI",
+          "category": "Other"
+        },
+        {
+          "uid": "amazon_aws",
+          "name": "Amazon AWS",
+          "category": "Hosting"
+        },
+        {
+          "uid": "amazon_cloudfront",
+          "name": "Amazon CloudFront",
+          "category": "Content Delivery Networks"
+        },
+        {
+          "uid": "cursor",
+          "name": "Cursor",
+          "category": "Other"
+        },
+        {
+          "uid": "excel_impact",
+          "name": "Excel Impact",
+          "category": "Advertising Networks"
+        },
+        {
+          "uid": "frame",
+          "name": "Frame",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "gmail",
+          "name": "Gmail",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "google_meet",
+          "name": "Google Meet",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "google_search_console",
+          "name": "Google Search Console",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_search_console",
+          "name": "Google Search Console",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_sheets",
+          "name": "Google Sheets",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "google_tag_manager",
+          "name": "Google Tag Manager",
+          "category": "Tag Management"
+        },
+        {
+          "uid": "google workspace",
+          "name": "Google Workspace",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "hsts",
+          "name": "HSTS",
+          "category": "Security"
+        },
+        {
+          "uid": "linkedin_ads",
+          "name": "LinkedIn Ads",
+          "category": "Advertising Networks"
+        },
+        {
+          "uid": "linkedin_recruiter",
+          "name": "LinkedIn Recruiter",
+          "category": "Recruitment"
+        },
+        {
+          "uid": "microsoft_365",
+          "name": "Microsoft 365",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "microsoft_365_apps_services",
+          "name": "Microsoft 365 Apps & Services",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "microsoft_email_providers",
+          "name": "Microsoft Email Providers",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "microsoft_exchange",
+          "name": "Microsoft Exchange",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "microsoft_exchange_online",
+          "name": "Microsoft Exchange Online",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "mobile_friendly",
+          "name": "Mobile Friendly",
+          "category": "Other"
+        },
+        {
+          "uid": "nextjs",
+          "name": "Next.js",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "outlook",
+          "name": "Outlook",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "priority_hints",
+          "name": "Priority Hints",
+          "category": "Web Performance Monitoring"
+        },
+        {
+          "uid": "react",
+          "name": "React",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "vercel",
+          "name": "Vercel",
+          "category": "Hosting"
+        },
+        {
+          "uid": "viewport_meta",
+          "name": "Viewport Meta",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "youtube",
+          "name": "YouTube",
+          "category": "Online Video Platforms"
+        },
+        {
+          "uid": "webpack",
+          "name": "webpack",
+          "category": "CSS and JavaScript Libraries"
+        }
+      ],
+      "org_chart_root_people_ids": [
+        "5e777a53dc363c00011e2049"
+      ],
+      "org_chart_sector": "OrgChart::SectorHierarchy::Rules::IT",
+      "org_chart_removed": true,
+      "org_chart_show_department_filter": true,
+      "is_placeholder_organization": null,
+      "organization_headcount_six_month_growth": 0.7777777777777778,
+      "organization_headcount_twelve_month_growth": 2.428571428571428,
+      "organization_headcount_twenty_four_month_growth": 8.6
+    },
+    "departments": [
+      "c_suite",
+      "master_sales"
+    ],
+    "subdepartments": [
+      "sales_executive",
+      "revenue_operations"
+    ],
+    "seniority": "c_suite",
+    "functions": [
+      "sales",
+      "operations"
+    ],
+    "intent_strength": null,
+    "show_intent": false,
+    "email_domain_catchall": true,
+    "email_domain_catchall_verdict": "allow",
+    "revealed_for_current_team": true
+  },
+  "request_id": 300588070730407897,
+  "_http_status": 200,
+  "_elapsed_s": 0.4,
+  "_rate_headers": {
+    "x-minute-requests-left": "998",
+    "x-rate-limit-24-hour": "",
+    "x-rate-limit-hourly": "",
+    "x-rate-limit-minute": "1000"
+  },
+  "_request": {
+    "method": "POST",
+    "path": "/people/match",
+    "body": {
+      "linkedin_url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+      "name": "Mark Hoffman",
+      "domain": "probook.ai",
+      "reveal_personal_emails": false
+    }
+  }
+}

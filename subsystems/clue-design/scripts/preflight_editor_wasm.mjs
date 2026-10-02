@@ -13,13 +13,18 @@
 // check, commits that don't touch engine sources no longer force a rebuild.
 // (The full WASM-vs-helper check still lives in `scripts/dev-setup.sh prepare`.)
 //
-// Non-fatal by design: if the rebuild can't run (toolchain missing) we warn and
+// Non-fatal by design in local dev: if the rebuild can't run (toolchain missing) we warn and
 // let `next dev` start anyway — the in-app banner then explains the fix.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+// Deploy/CI mode (first deployment spec §9.5): never rebuild, never warn-and-continue — a stale
+// committed wasm FAILS, because shipping it means an uneditable canvas for every user. Set by the
+// frontend's Railway build, the CI engine-handshake job and the deploy-images workflow.
+const STRICT = process.env.WASM_PREFLIGHT_STRICT === "1";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const wasmDir = path.join(root, "apps/editor/public/wasm");
@@ -97,13 +102,23 @@ try {
   console.warn(
     `[wasm-preflight] could not hash engine sources (${error instanceof Error ? error.message : error}) — skipping staleness check`
   );
-  process.exit(0);
+  process.exit(STRICT ? 1 : 0);
 }
 
 const built = await builtCommit();
 if (built === expected) {
   console.log(`[wasm-preflight] editor engine up to date (${expected})`);
   process.exit(0);
+}
+
+if (STRICT) {
+  console.error(
+    `[wasm-preflight] STRICT: committed editor engine ${built ?? "missing"} != engine sources ${expected}.\n` +
+      "  The browser wasm was not rebuilt after an engine change. Fix, then commit the result:\n" +
+      "    bash subsystems/clue-design/scripts/build_wasm_core.sh\n" +
+      "    node subsystems/clue-design/scripts/verify_handshake.mjs"
+  );
+  process.exit(1);
 }
 
 console.log(

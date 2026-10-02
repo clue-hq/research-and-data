@@ -1,0 +1,215 @@
+{
+  "requestId": "32900a09a82d34f644487bbd01aa15db",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/zql872bqv1v",
+      "title": "Nick Fisher",
+      "url": "https://www.linkedin.com/in/nicholastfisher",
+      "publishedDate": "2026-08-22T06:55:01.000Z",
+      "text": "# Nick Fisher\n\nVP Marketing at Zafran Security\n\nNew York, New York, United States (US)\n\n500 connections \u2022 6,997 followers\n\n## About\n\nFull-stack B2B marketing leader / storyteller with experience building teams for early stage growth and post-IPO scale\n\nTotal Experience: 17 years and 11 months\n\n## Experience\n\n### VP of Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)\n\nApr 2024 - Present (2 years and 4 months) in New York, New York, United States\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nZafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management Platform that helps security teams buried in vulnerabilities and manual work to unify vulnerability findings and create a unified view of exposure across their existing tools. Zafran Security has 100-150 employees (+50% YoY). Headquartered in New York, New York, United States. Its workforce is distributed across United States, Israel, and Germany. Has $136M in total funding, with 4 prior funding rounds.\n\n### Vice President Product Marketing - [Sysdig](https://www.linkedin.com/company/sysdig)\n\nSep 2021 - Apr 2024 (2 years and 7 months) in San Francisco Bay Area\n\nLead product, tech, and alliance marketing across Sysdig\u2019s portfolio of cloud security and DevOps solutions, powered by Sage GenAI\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nSysdig is a Computer and Network Security company. Sysdig is a cloud security company",
+      "image": "https://media.licdn.com/dms/image/v2/C4D03AQH3CV6Ye-QKFA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1639519676211?e=2147483647&v=beta&t=PSHejEo9XoQ-xHqIm4gQcBJBOh2wYrMhInQf_IUJYsU",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/zql872bqv1v",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Nick Fisher",
+            "firstName": "Nick",
+            "lastName": "Fisher",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "VP of Marketing",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2024-04-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h5w450p0h1f",
+                  "name": "Zafran Security"
+                }
+              },
+              {
+                "title": "Vice President Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2021-09-01",
+                  "to": "2024-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qhhss4xbvs5",
+                  "name": "Sysdig"
+                }
+              },
+              {
+                "title": "Senior Director Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2018-02-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/w582fdblq93",
+                  "name": "Okta, Inc."
+                }
+              },
+              {
+                "title": "Director, Enterprise Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2014-09-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/l3w78g322nm",
+                  "name": "Lookout"
+                }
+              },
+              {
+                "title": "Senior Product Marketing Manager",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2013-08-01",
+                  "to": "2014-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/stblbl2zr5v",
+                  "name": "Huddle"
+                }
+              },
+              {
+                "title": "Product Manager MBA Intern",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2012-06-01",
+                  "to": "2012-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/8lq4tph6r48",
+                  "name": "Zynga"
+                }
+              },
+              {
+                "title": "Director - Product Marketing & Analytics, Capital Markets",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2006-07-01",
+                  "to": "2011-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h40s0z6zty3",
+                  "name": "Ipreo"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "MBA Exchange",
+                "dates": {
+                  "from": "2012",
+                  "to": "2012"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/q02jtbkgvrn",
+                  "name": "University of California, Berkeley, Haas School of Business"
+                }
+              },
+              {
+                "degree": "MBA",
+                "dates": {
+                  "from": "2011",
+                  "to": "2013"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/jmwwfr8yblt",
+                  "name": "Columbia Business School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "title": "Why I joined Zafran Security",
+      "url": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "publishedDate": "2024-04-25T15:20:36.000Z",
+      "text": "Why I joined Zafran Security\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nThe Zafran Risk & Mitigation Platform\n\nFor me, the decision to join a startup comes down to 3 basic criteria:\n\n1. Is this a market with a massive unsolved problem at the center?\n2. Is the product poised to solve it in a unique and valuable way?\n3. Do the people bring something special in creating a world-class company?\n\nZafran (means \"saffron\") has emerged from stealth to spice up the cybersecurity industry and I'm honored to be leading the marketing team. Here's why:\n\n---\n\n### Vuln management is a recurring nightmare, and it's only getting worse\n\n> \"I wake up every day, right here, and there's always 10,000 vulnerabilities\"\n\nThis was the sentiment I heard during my first week when combing through dozens of Gong calls with vuln management teams. A large bank described the process of identification to prioritization to remediation as entirely manual, requiring a massive effort from multiple teams.\n\nThese teams want to know: What is actionable? What is truly exploitable? How do I get my stakeholders to prioritize patching the vulns most likely to be exploited against the organization?\n\nMeanwhile, their pre-defined base severity scores don't account for exploit prevalence, compensating controls, mitigations available, and business context to reflect the potential impact onto the organization.\n\nThen the security ",
+      "image": "https://media.licdn.com/dms/image/v2/D5612AQHFrn7L8rbGUQ/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1713844053687?e=2147483647&v=beta&t=d_wnxGEysSu25m20VIE7-7ZeKgN-CzS51yI0r6HwQQ8",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.iheart.com/podcast/269-marketing-minds-with-aleri-258812056/episode/the-5-day-guest-pass-strategy-that-328769760/",
+      "title": "The 5-Day \"Guest Pass\" Strategy That Generates Millions in Revenue with Nick Fisher - Marketing Minds with Aleric Heck | iHeart",
+      "url": "https://www.iheart.com/podcast/269-marketing-minds-with-aleri-258812056/episode/the-5-day-guest-pass-strategy-that-328769760/",
+      "text": "The 5-Day \"Guest Pass\" Strategy That Generates Millions in Revenue with Nick Fisher - Marketing Minds with Aleric Heck | iHeart\n\n## All Episodes\n\n### The 5-Day \"Guest Pass\" Strategy That Generates Millions in Revenue with Nick Fisher\n\nApril 1, 2026 \u2022 49 mins\n\nDiscover the exact strategies Nick Fisher uses, Co-Founder of Agexa Intelligence & New Reach - collectively doing over $80M/yr and learn the 5-day \"Guest Pass\" strategy that turns free community members into high-ticket buyers.\n\n//_______________________________________________\n\n\u25ba Scale Info Brands to 7 & 8 Figures with Nick Fisher's Agexa Intelligence: http://go.agexa.ai/\n\n\u25ba Agexa Intelligence is where top 1% creators learn to build cult-like communities and scale to 8-figures without losing control, freedom, or their edge. Book A Call Here to see if you Qualify: http://agexa.ai/\n\n\u25ba Have a question or want to connect? Drop Nick Fisher an email at nick@agexa.com\n\n//______________________________________________\n\n\u25baIn this episode of Marketing Minds, Aleric Heck sits down with Nick Fisher, the founder of New Reach Education and Agexa. Nick is the hidden genius behind some of the most successful expert and coaching brands in the world, managing a portfolio doing over $80 Million a year (including Pace Morby\u2019s SubTo).\n\nNick reveals the exact strategies that separate the expert brands that plateau from the ones that scale to 8 and 9 figures. You'll learn why optimizing for 100% student success is the ultimate marketing tool, ",
+      "image": "https://i.iheart.com/v3/url/aHR0cHM6Ly9kM3Qzb3pmdG1kbWgzaS5jbG91ZGZyb250Lm5ldC9zdGFnaW5nL3BvZGNhc3RfdXBsb2FkZWRfbm9sb2dvLzQyNzk4MDY0LzQyNzk4MDY0LTE3Mzg3ODMzOTc2ODYtNjVjM2FkNDE5NTZkOS5qcGc?ops=contain(1200,630)"
+    },
+    {
+      "id": "https://www.bloomberg.com/profile/person/25052021",
+      "title": "Nick Fisher, Zafran Security Ltd: Profile and Biography - Bloomberg Markets",
+      "url": "https://www.bloomberg.com/profile/person/25052021",
+      "text": "Nick Fisher, Zafran Security Ltd: Profile and Biography - Bloomberg Markets Skip To Content\n\nQuick Links\n\nRecently Viewed Companies\n\n# Nick FisherVP:Marketing, Zafran Security Ltd\n\nNick Fisher, Zafran Security Ltd: Profile and Biography - Bloomberg Markets\n[Skip To Content](#skip-to-main-content)\nQuick Links\n* [Stocks](https://www.bloomberg.com/markets/stocks)\n* [Currencies](https://www.bloomberg.com/markets/currencies)\n* [Commodities](https://www.bloomberg.com/markets/commodities)\n* [Rates & Bonds](https://www.bloomberg.com/markets/rates-bonds)\n* [Sectors](https://www.bloomberg.com/markets/sectors)\n* [Watchlist](https://www.bloomberg.com/markets/watchlist)\nRecently Viewed Companies\n#\nNick Fisher\nVP:Marketing, Zafran Security Ltd",
+      "image": "https://www.bloomberg.com/images/markets-logo.png",
+      "favicon": "https://assets.bwbx.io/s3/bbgmkts/images/favicon-black.png"
+    },
+    {
+      "id": "https://theorg.com/org/zafran-security/org-chart/nick-fisher",
+      "title": "Nick Fisher - VP Of Marketing at Zafran Security | The Org",
+      "url": "https://theorg.com/org/zafran-security/org-chart/nick-fisher",
+      "text": "Zafran Security | The Org\n\n# Zafran Security\n\n0 followers\n\n\u200c\n\nZafran's new approach to Risk Mitigation mobilizes existing security controls to protect organizations during critical exploitation windows. The Risk & Mitigation platform determines vulnerability exploitability, correlating control configuration, runtime, internet exposure, and threat exploit anal... Read more\n\nIndustries\n\nCyber Security, Risk & Compliance\n\nHeadquarters\n\nNew York, New York, United States\n\nEmployees\n\n11-50\n\nLinks\n\nView on linkedIn View the website\n\nOrg chart\n\nTeams\n\nOffices\n\nPositions (125)\n\nUnverified\n\n---\n\n## Org chart\n\nSY\n\nSanaz Yashar\n\nCo-founder & CEO\n\n64\n\nSY\n\nSanaz Yashar\n\nCollapse\n\nBen Seri\n\nCo-founder & CTO\n\n18\n\nSnir Havdala\n\nCo-founder & CPO\n\n3\n\nNF\n\nNick Fisher\n\nVP Of Marketing\n\n3\n\nHadar Amedy\n\nDirector Of HR & Operations\n\n5\n\nRotem Peled-Dvir\n\nSvp, Finance\n\n1\n\nHadas Bergman\n\nVP Business Operations\n\n7\n\nTA\n\nTom Anthony\n\nSVP, Global Sales\n\n18\n\nRB\n\nRachel Barouch-Haik\n\nVP of HR\n\n0\n\nAviv Cohen\n\nExecutive Assistant and Office Admin\n\n0\n\n---\n\n## Teams\n\n### Sales Operations\n\n18 people \u00b7 0 jobsAR14\n\n### Software Development\n\n15 people \u00b7 0 jobsASDO11\n\n### Solutions Development\n\n6 people \u00b7 0 jobs2\n\n### Executive Leadership\n\n5 people \u00b7 0 jobsSY1\n\n### Product Management\n\n3 people \u00b7 0 jobsCGYZ\n\n### Business Development\n\n4 people \u00b7 0 jobsAM\n\nExpand (23)\n\n---\n\n## Offices\n\n- HQ12 people \u00b7 0 jobsAM8\n\n## Related companies\n\nIANS3 followers\n\nCrowdstrike135 followers\n\nSentinelOne52 followers\n\nArctic Wolf Network",
+      "image": "https://cdn.theorg.com/og/org?data=JTdCJTIybmFtZSUyMiUzQSUyMlphZnJhbiUyMFNlY3VyaXR5JTIyJTJDJTIyaW1hZ2VTcmMlMjIlM0ElMjJodHRwcyUzQSUyRiUyRmNkbi50aGVvcmcuY29tJTJGMGQ5ZDM5NWMtODJlMC00YmM2LTg1YWQtYjczOGM5OTk4NDdmX3NtYWxsLmpwZyUyMiUyQyUyMnBlb3BsZSUyMiUzQSU1QiU3QiUyMm5hbWUlMjIlM0ElMjJTYW5heiUyMFlhc2hhciUyMiUyQyUyMnRpdGxlJTIyJTNBJTIyQ28tZm91bmRlciUyMCUyNiUyMENFTyUyMiUyQyUyMmltYWdlU3JjJTIyJTNBbnVsbCUyQyUyMmNoaWxkQ291bnQlMjIlM0E2NCU3RCUyQyU3QiUyMm5hbWUlMjIlM0ElMjJCZW4lMjBTZXJpJTIyJTJDJTIydGl0bGUlMjIlM0ElMjJDby1mb3VuZGVyJTIwJTI2JTIwQ1RPJTIyJTJDJTIyaW1hZ2VTcmMlMjIlM0ElMjJodHRwcyUzQSUyRiUyRmNkbi50aGVvcmcuY29tJTJGYTU4MGQ4NzgtOTU0Yy00MzhkLWIyM2UtOGU3MDFmOTQ0ZDdkX3NtYWxsLmpwZyUyMiUyQyUyMmNoaWxkQ291bnQlMjIlM0ExOCU3RCUyQyU3QiUyMm5hbWUlMjIlM0ElMjJTbmlyJTIwSGF2ZGFsYSUyMiUyQyUyMnRpdGxlJTIyJTNBJTIyQ28tZm91bmRlciUyMCUyNiUyMENQTyUyMiUyQyUyMmltYWdlU3JjJTIyJTNBJTIyaHR0cHMlM0ElMkYlMkZjZG4udGhlb3JnLmNvbSUyRjZjNTgxYjU1LTQxNGUtNGRjMi1iZjAyLTg3NzI2Y2FmODlmM19zbWFsbC5qcGclMjIlMkMlMjJjaGlsZENvdW50JTIyJTNBMyU3RCUyQyU3QiUyMm5hbWUlMjIlM0ElMjJOaWNrJTIwRmlzaGVyJTIyJTJDJTIydGl0bGUlMjIlM0ElMjJWUCUyME9mJTIwTWFya2V0aW5nJTIyJTJDJTIyaW1hZ2VTcmMlMjIlM0FudWxsJTJDJTIyY2hpbGRDb3VudCUyMiUzQTMlN0QlNUQlN0Q=&slug=zafran-security",
+      "favicon": "https://theorg.com/_next/static/media/apple-touch-icon.64259cfd.png"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/nicholastfisher_zafran-at-rsa-2024-activity-7198350194415968256-ajzu",
+      "title": "Nick Fisher\u2019s Post",
+      "url": "https://www.linkedin.com/posts/nicholastfisher_zafran-at-rsa-2024-activity-7198350194415968256-ajzu",
+      "publishedDate": "2024-05-20T15:53:45.000Z",
+      "text": "Zafran at RSA 2024 | Nick Fisher\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Nick Fisher\u2019s Post\n\nhttps://www.linkedin.com/in/nicholastfisher\n\nNick Fisher\n\nVP Marketing at Zafran Security\n\n2y\n\n- Report this post\n\nCheck out my first video at Zafran, this was a fun one Can you spot me? \ud83d\udc40\n\nhttps://www.linkedin.com/company/zafran-security\n\nZafran Security\n\n13,394 followers\n\n2y\n\n\ud83c\udfac Zafran Productions \ud83c\udfac \"The reason I'm so excited to be here with the Zafran team is that I've rarely seen a real new science in cybersecurity.\" The superpower of Zafran lies in our incredible partners. Our customers are true partners and have shaped Zafran to solve real challenges for CISOs, VM teams, and security engineers. Our investors believed in our vision and helped us build a world-class team. Our technology and go-to-market partners have propelled our growth faster than we could have imagined. We're excited to share a short video capturing the special moments from this year\u2019s RSA, where our founders and partners strengthened bonds and created lasting memories. Until next time!#riskmitigation#RSAC2024\n\n##### Zafran at RSA 2024\n\n29 3 Comments\n\nLike Comment\n\nhttps://www.linkedin.com/in/kate-z-turchin\n\nKate Turchin\n\nCybersecurity Marketing & GTM Leader | Designing and Building Scalable Growth Systems\n\n2y\n\n- Report this comment\n\nGreat video Nick!\n\nLike\n\nReply 1 Reaction\n\nhttps://www.linkedin.com/in/jzac",
+      "image": "https://static.licdn.com/aero-v1/sc/h/c45fy346jw096z9pbphyyhdz7",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/nicholastfisher_have-we-entered-cybersecuritys-manhattan-activity-7447673632509771776-89iG",
+      "title": "Have we entered cybersecurity's \"Manhattan Project\" moment with Mythos? | Nick Fisher",
+      "url": "https://www.linkedin.com/posts/nicholastfisher_have-we-entered-cybersecuritys-manhattan-activity-7447673632509771776-89iG",
+      "publishedDate": "2026-04-08T00:00:00.000Z",
+      "author": "Nick Fisher",
+      "text": "# Have we entered cybersecurity's \"Manhattan Project\" moment with Mythos? | Nick Fisher \u00b7 LinkedIn \u00b7 2026-04-08\n\n**Nick Fisher**: VP of Marketing at Zafran Security for 2 years 4 months with 17 years 11 months of total professional experience. Previous roles include Vice President Product Marketing at Sysdig, Senior Director Product Marketing at Okta, Inc., and Director, Enterprise Product Marketing at Lookout. Based in New York, New York, United States [US].\n\n---\n\nHave we entered cybersecurity's \"Manhattan Project\" moment with Mythos?\n\nThis new power to \ud835\uddf3\ud835\uddf6\ud835\uddfb\ud835\uddf1 \ud835\uddee\ud835\uddfb\ud835\uddf1 \ud835\uddf3\ud835\uddf6\ud835\ude05 is also the power to \ud835\uddf3\ud835\uddf6\ud835\uddfb\ud835\uddf1 \ud835\uddee\ud835\uddfb\ud835\uddf1 \ud835\ude04\ud835\uddf2\ud835\uddee\ud835\uddfd\ud835\uddfc\ud835\uddfb\ud835\uddf6\ud835\ude07\ud835\uddf2.\n\nOur CTO's (cautiously optimistic) take: https://lnkd.in/eZunTbJT\n\n![Have we entered cybersecurity's \"Manhattan Project\" moment with Mythos? | Nick Fisher image](https://media.licdn.com/dms/image/v2/D4E22AQHK_kKqx5io0Q/feedshare-shrink_800/B4EZ1tztBTHYAg-/0/1775663763911?e=2147483647&v=beta&t=txjIdG7SqVoZ1CIsCJcud3L0azqwwSuGC3pgL9QJC6Y)\n\n## Engagement\n\n- Reactions: 18",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQHK_kKqx5io0Q/feedshare-shrink_800/B4EZ1tztBTHYAg-/0/1775663763911?e=2147483647&v=beta&t=txjIdG7SqVoZ1CIsCJcud3L0azqwwSuGC3pgL9QJC6Y"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/nicholastfisher_zafran-announces-strategic-investment-from-activity-7485685216057946113-KrlW",
+      "title": "First Amex Ventures, and now Splunk/Cisco. These strategic investments are great validation of where the exposure management market is headed post-Mythos, and why Zafran is positioned to lead it. | Nick Fisher",
+      "url": "https://www.linkedin.com/posts/nicholastfisher_zafran-announces-strategic-investment-from-activity-7485685216057946113-KrlW",
+      "publishedDate": "2026-07-22T00:00:00.000Z",
+      "author": "Nick Fisher",
+      "text": "# First Amex Ventures, and now Splunk/Cisco. These strategic investments are great validation of where the exposure management market is headed post-Mythos, and why Zafran is positioned to lead it. | Nick Fisher \u00b7 LinkedIn \u00b7 2026-07-22\n\n**Nick Fisher**: VP of Marketing at Zafran Security for 2 years 4 months with 17 years 11 months of total professional experience. Previous roles include Vice President Product Marketing at Sysdig, Senior Director Product Marketing at Okta, Inc., and Director, Enterprise Product Marketing at Lookout. Based in New York, New York, United States [US].\n\n---\n\nFirst Amex Ventures, and now Splunk/Cisco. These strategic investments are great validation of where the exposure management market is headed post-Mythos, and why Zafran is positioned to lead it.\n\n**Reshared from [Zafran Security](https://linkedin.com/company/zafran-security):**\n> Zafran Security is proud to announce a strategic investment from Cisco Investments.\n>\n> AI has changed how attacks are executed, letting adversaries chain low-severity weaknesses into sophisticated attack paths at machine speed. As the window between vulnerability disclosure and exploitation keeps shrinking, CISOs are being asked to find and reduce exploitable risk faster than ever, without disrupting the business.\n>\n> Enterprises have spent decades building strong security programs: EDR, firewalls, cloud platforms, identity systems, and vulnerability scanners all doing important work. What's been missing is a unifie"
+    }
+  ],
+  "searchTime": 1189,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.27,
+  "_request": {
+    "query": "\"Nick Fisher\" podcast interview guest episode Zafran Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

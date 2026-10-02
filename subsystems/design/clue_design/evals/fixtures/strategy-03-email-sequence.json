@@ -5,8 +5,10 @@
   "history": [],
   "message": "Draft the follow-up email sequence to go out after this lands.",
   "judgment": {
-    "action": "finish",
-    "reason": "out_of_scope"
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": true,
+    "current_artifact_accepted": false,
+    "reasoning": "This is not work on the current artifact; the strategy agent should receive it."
   },
   "expected": {
     "action": "finish",

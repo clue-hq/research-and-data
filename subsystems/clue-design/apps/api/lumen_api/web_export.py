@@ -8,10 +8,11 @@ entry points share one pipeline:
   extensioned image bytes (``assets/…``) + a statically compiled Tailwind
   ``site.css`` linked from the html + SEO metas + a ``manifest.json``.
 * ``build_publish_html`` — a single self-contained html for same-origin serving:
-  absolute ``/asset-store/{digest}`` asset + font urls (served by the digest
+  root-relative ``/asset-store/{digest}`` asset + font urls (served by the digest
   route with ``Access-Control-Allow-Origin: *``), the compiled css INLINED in a
-  ``<style>`` tag, SEO metas plus a canonical + og:url anchored at the public
-  base.
+  ``<style>`` tag, and SEO metas that name no host — the page is host-independent
+  so the same bytes serve from the system hostname and from any custom domain
+  (custom-domain publishing §6.1).
 
 The static Tailwind compile shells out to ``scripts/web_static_css.mjs`` (the
 editor app's own v4 toolchain) so an exported page styles identically to the
@@ -30,9 +31,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
-from urllib.parse import urlsplit
 
-from clue_design.storage import SOURCE_KEY_PUBLISH_ASSET
+from clue_design.publishes import PUBLISH_ASSET_MEDIA_TYPES, delivery_csp
+from clue_design.storage import SOURCE_KEY_ASSET, SOURCE_KEY_PUBLISH_ASSET
 
 from .asset_custody import read_asset_bytes
 from .custom_component_runtime import (
@@ -43,16 +44,24 @@ from .custom_component_runtime import (
 )
 from .database import NotFoundError
 from .design_store import CustodyState, DesignBlobStore
+from .font_containers import (
+    SFNT_MIME,
+    FontContainerError,
+    encode_woff2,
+    sniff_font_container,
+)
 from .fragments.abm_page import unresolved_account_markers
 from .fragments.render import (
-    build_fragment_render_package,
+    build_fragment_render_package_for_document,
     css_class_names,
     empty_fragment_render_package,
     fragment_class_collisions,
     fragment_css_sheet,
     fragment_render_map,
+    web_doc_all_fragment_ids,
     web_doc_fragment_ids,
 )
+from .public_address import PublicSiteAddress
 
 JsonObject = Dict[str, Any]
 
@@ -63,22 +72,88 @@ STATIC_CSS_SCRIPT = "scripts/web_static_css.mjs"
 PUBLISH_ASSET_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 # The delivery-asset kinds a publish package can mint, and the ONE media type each one is
-# served as (mirrors `_DeliveryAssetCatalog.add`'s call sites in custom_component_runtime).
-# Since D4 this table is the extension↔media-type contract the `{digest}.meta.json` sidecar
-# used to carry: `persist_publish_assets` refuses a record that disagrees with it, and
-# `resolve_publish_asset` refuses to serve a blob whose recorded media type is not the one the
+# served as (mirrors `_DeliveryAssetCatalog.add`'s call sites in custom_component_runtime), now
+# imported from `clue_design.publishes` — the page origin serves these same assets and may not
+# import `lumen_api`, so the extension↔media-type contract has ONE home (custom-domain
+# publishing §6.2). `persist_publish_assets` refuses a record that disagrees with it, and the
+# page origin's reader refuses to SERVE a blob whose recorded media type is not the one the
 # requested extension names.
-PUBLISH_ASSET_MEDIA_TYPES: Dict[str, str] = {
-    "js": "text/javascript; charset=utf-8",
-    "css": "text/css; charset=utf-8",
-    "html": "text/html; charset=utf-8",
-}
+#
 # Stored on a delivery asset the manifest does not describe: it is durable, but nothing can
 # name an extension for it, so no publish URL will ever serve it.
 UNSERVABLE_ASSET_MEDIA_TYPE = "application/octet-stream"
 
-# The one page every website-mode doc renders (mirrors the render endpoint).
+# The page id a legacy single-page WebDoc carries, and the id `_home_page` prefers when a
+# document has one. Since F5 a document is a LIST of pages and the primary page is the one whose
+# route is `/`, so this is no longer "the page a delivery build renders" — it is a compatibility
+# anchor for documents that predate routes.
 HOME_PAGE_ID = "home"
+
+#: One `href="…"` attribute, for the internal-link rewrite below.
+_HREF_ATTR = re.compile(r'href="([^"]*)"')
+
+
+def _rewrite_hrefs(html: str, mapping: Dict[str, str]) -> str:
+    """Replace `href="<key>"` with `href="<value>"` for EXACT key matches, and nothing else.
+
+    Exactness is the whole safety property. A cloned band's `/careers`, a `/asset-store/<digest>`
+    byte reference, an absolute `https://…` CTA and a `src=` attribute all pass through
+    untouched, because the only thing this can rewrite is a value the document itself declared
+    as one of its own routes.
+    """
+    if not mapping:
+        return html
+
+    def _sub(match: "re.Match[str]") -> str:
+        replacement = mapping.get(match.group(1))
+        return match.group(0) if replacement is None else f'href="{replacement}"'
+
+    return _HREF_ATTR.sub(_sub, html)
+
+
+def rewrite_site_links(html: str, routes: Sequence[str], site_path: str) -> str:
+    """Point this document's own internal links at the address the SITE is served from (F5).
+
+    A multi-page document's pages link to each other by ROUTE (`href="/pricing"`) — that is what
+    the author wrote and what the editor navigates. The served site does not live at the root of
+    an origin, though: it lives under ``/{slug}`` on the workspace's hostname, so a route left
+    alone would walk the visitor off the site entirely. This rebases every link whose value is
+    exactly one of ``routes``; route ``/`` becomes ``site_path`` itself, every other route becomes
+    ``site_path + route``.
+
+    Nothing else is touched — see :func:`_rewrite_hrefs`.
+    """
+    mapping = {
+        route: (site_path if route == "/" else f"{site_path}{route}")
+        for route in routes
+        if isinstance(route, str) and route
+    }
+    return _rewrite_hrefs(html, mapping)
+
+
+def _zip_page_path(route: str) -> str:
+    """Where a page's html lands inside the export zip: `/` → ``index.html``, `/pricing` →
+    ``pricing/index.html``. One folder per page, so a static host serves each route from its
+    directory index."""
+    trimmed = route.strip("/")
+    return "index.html" if not trimmed else f"{trimmed}/index.html"
+
+
+def rewrite_zip_links(html: str, routes: Sequence[str]) -> str:
+    """The export zip's own form of :func:`rewrite_site_links`.
+
+    The zip has no site path — it IS the site root — so a route rewrites to itself, in FOLDER
+    form (`/pricing` → `/pricing/`), which is what makes a static host serve
+    ``pricing/index.html`` for it. Route ``/`` stays ``/`` rather than becoming the empty string:
+    an empty href means "this document", so from ``/pricing/`` it would be a link to itself
+    instead of a link home.
+    """
+    mapping = {
+        route: ("/" if route.strip("/") == "" else f"/{route.strip('/')}/")
+        for route in routes
+        if isinstance(route, str) and route
+    }
+    return _rewrite_hrefs(html, mapping)
 
 # Clone-fidelity F4.3, ruling R25-4: the whole of the `noindex` publish option, as one line.
 # CP2's ABM account pages are reachable by their explicit URL and by nothing else (they are
@@ -199,7 +274,7 @@ def persist_publish_assets(
     (one row, one blob) rather than a collision check.
 
     An asset with no manifest record is still stored, under an opaque media type: nothing can
-    honestly claim its extension, so :func:`resolve_publish_asset` will refuse to serve it —
+    honestly claim its extension, so the page origin's asset reader will refuse to serve it —
     exactly what the missing sidecar used to do.
     """
 
@@ -235,31 +310,6 @@ def persist_publish_assets(
         )
 
 
-def resolve_publish_asset(
-    blobs: DesignBlobStore, digest: str, extension: str
-) -> Tuple[bytes, str]:
-    """Read and integrity-check one public immutable publish asset.
-
-    The URL's extension must agree with the media type recorded on the blob's ``artifact`` row
-    (the sidecar's job before D4), so ``/{digest}.css`` can never serve a JavaScript bundle.
-    """
-
-    if not PUBLISH_ASSET_PATTERN.fullmatch(digest):
-        raise WebExportError("invalid publish asset digest")
-    expected_media_type = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
-    if expected_media_type is None:
-        raise WebExportError("publish asset media type does not match its URL")
-    try:
-        media_type, data = blobs.read_blob(digest)
-    except (NotFoundError, ValueError) as error:
-        raise WebExportError("publish asset is missing") from error
-    if _sha256(data) != digest:
-        raise WebExportError("publish asset failed its integrity check")
-    if media_type != expected_media_type:
-        raise WebExportError("publish asset media type does not match its URL")
-    return data, media_type
-
-
 @dataclass
 class ExportBundle:
     """A ready-to-zip export: ``files`` maps zip-root-relative paths to bytes,
@@ -270,8 +320,24 @@ class ExportBundle:
 
 
 @dataclass
+class PublishedPage:
+    """One page of a published site: the route it serves at and the bytes served there."""
+
+    page_id: str
+    route: str
+    html: str
+    html_digest: str
+
+
+@dataclass
 class PublishPackage:
-    """One deterministic immutable publish payload and its delivery assets."""
+    """One deterministic immutable publish payload and its delivery assets.
+
+    ``pages`` is the whole site (F5), in document order. ``html``/``html_digest`` stay the
+    page served at ``/`` so that every pre-F5 caller — the publish row's denormalized html,
+    ``build_publish_html``, the batch — keeps meaning exactly what it meant when a document
+    had one page.
+    """
 
     html: str
     manifest: JsonObject
@@ -281,6 +347,7 @@ class PublishPackage:
     html_digest: str
     runtime_version: Optional[int]
     warnings: List[str] = field(default_factory=list)
+    pages: List[PublishedPage] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -364,6 +431,33 @@ class _FontGate(NamedTuple):
     warnings: List[str]
 
 
+def _web_face_bytes(
+    blobs: DesignBlobStore, digest: str, data: bytes
+) -> Tuple[bytes, str, str, Optional[str]]:
+    """``(bytes_to_ship, ext, digest_to_name, warning)`` for one face on a web page.
+
+    Option A (2026-09-02) keeps every stored font as sfnt; a page wants the compressed wrapper
+    back. The re-encode is byte-deterministic, so registering it content-addressed is idempotent
+    across publishes, and the hosted page's ``/asset-store/{digest}`` then names the WOFF2 blob
+    (that route serves any registered digest). Bytes that are not sfnt — a legacy face the
+    backfill has not reached, or a test's fake payload — pass through untouched; an encode
+    failure ships the sfnt with a warning rather than dropping the face.
+    """
+    if sniff_font_container(data) not in SFNT_MIME:
+        return data, _font_ext(data), digest, None
+    try:
+        woff2 = encode_woff2(data)
+    except FontContainerError as error:
+        return (
+            data,
+            _font_ext(data),
+            digest,
+            f"font face {digest[:12]} shipped as {_font_ext(data)}: WOFF2 encode failed ({error})",
+        )
+    blobs.register(woff2, media_type="font/woff2", source_key=SOURCE_KEY_ASSET)
+    return woff2, "woff2", hashlib.sha256(woff2).hexdigest(), None
+
+
 def _gather_fonts(
     brand_kit: Optional[JsonObject],
     repo: Any,
@@ -421,13 +515,16 @@ def _gather_fonts(
                 )
                 continue
             seen.add(digest)
+            data, ext, shipped_digest, note = _web_face_bytes(blobs, digest, data)
+            if note is not None:
+                warnings.append(note)
             faces.append(
                 _FontFace(
-                    digest=digest,
+                    digest=shipped_digest,
                     family=family,
                     weight=_valid_weight(face.get("weight")),
                     style=_valid_style(face.get("style")),
-                    ext=_font_ext(data),
+                    ext=ext,
                     data=data,
                 )
             )
@@ -461,6 +558,57 @@ def _home_page(web_doc: JsonObject) -> JsonObject:
         if isinstance(page, dict) and page.get("id") == HOME_PAGE_ID:
             return page
     return pages[0] if pages else {}
+
+
+def _page_by_id(web_doc: JsonObject, page_id: str) -> JsonObject:
+    for page in web_doc.get("pages") or []:
+        if isinstance(page, dict) and page.get("id") == page_id:
+            return page
+    return {}
+
+
+class _SitePage(NamedTuple):
+    """One page a delivery build renders: its engine id and the route it serves at."""
+
+    page_id: str
+    route: str
+
+
+def _site_pages(web_doc: JsonObject) -> List[_SitePage]:
+    """Every page a delivery build renders, in document order (F5).
+
+    The route is the page's own ``route`` field. A page that carries none is only tolerated in
+    the FIRST position, where "no route" can only have meant ``/`` — that is the shape every
+    pre-F5 document has, and reading it as ``/`` is what keeps a legacy publish byte-identical.
+    A later page with no route is skipped rather than given an invented one: a route is the
+    page's address, and guessing an address publishes a page at a URL nobody asked for.
+    """
+    pages: List[_SitePage] = []
+    for index, page in enumerate(web_doc.get("pages") or []):
+        if not isinstance(page, dict):
+            continue
+        page_id = page.get("id")
+        if not (isinstance(page_id, str) and page_id):
+            continue
+        route = page.get("route")
+        if not (isinstance(route, str) and route.startswith("/")):
+            if index != 0:
+                continue
+            route = "/"
+        pages.append(_SitePage(page_id=page_id, route=route))
+    if not pages:
+        # A document with no usable page still has to produce one render, exactly as it did
+        # before F5 — the engine answers for `home` and the delivery build serves it at `/`.
+        return [_SitePage(page_id=HOME_PAGE_ID, route="/")]
+    return pages
+
+
+def _primary_page(pages: Sequence[_SitePage]) -> _SitePage:
+    """The page a site's bare address serves: the one routed ``/``, else the first."""
+    for page in pages:
+        if page.route == "/":
+            return page
+    return pages[0]
 
 
 def _walk_nodes(page: JsonObject):
@@ -622,24 +770,28 @@ class _FragmentDelivery(NamedTuple):
 
 
 def _resolve_fragments(web_doc: JsonObject, blobs: DesignBlobStore) -> _FragmentDelivery:
-    """Resolve this page's fragment artifacts for a delivery build.
+    """Resolve this DOCUMENT's fragment artifacts for a delivery build.
 
     Fail-SOFT, exactly as the preview paths are: an id this workspace cannot resolve is named
     in ``missing`` (and in a warning that reaches the manifest) and the engine renders its
     placeholder. Refusing the export would make one dead pin cost the whole deliverable.
+
+    F5: resolved once for every page, not once for ``home``. A render is still of one page —
+    :func:`_page_fragment_view` narrows this package to the ids a given page actually pins —
+    but the custody sweep, the asset copy and the manifest all answer for the whole site, and
+    resolving each artifact once is what keeps them from disagreeing page to page.
     """
-    ids = web_doc_fragment_ids(web_doc, HOME_PAGE_ID)
+    ids = web_doc_all_fragment_ids(web_doc)
     if not ids:
         package = empty_fragment_render_package()
         return _FragmentDelivery(
             ids=[], package=package, render_map={}, css=None,
             asset_digests=[], missing_asset_digests=[], missing=[], warnings=[],
         )
-    package = build_fragment_render_package(
+    package = build_fragment_render_package_for_document(
         blobs.storage,
         workspace_id=blobs.workspace_id,
         web_doc=web_doc,
-        page_id=HOME_PAGE_ID,
     )
     missing = [str(value) for value in package.get("missing") or []]
     digests: List[str] = []
@@ -663,6 +815,37 @@ def _resolve_fragments(web_doc: JsonObject, blobs: DesignBlobStore) -> _Fragment
         missing_asset_digests=[],
         missing=missing,
         warnings=warnings,
+    )
+
+
+class _PageFragments(NamedTuple):
+    """The document-wide fragment package, narrowed to ONE page's pins (F5)."""
+
+    ids: List[str]
+    render_map: Dict[str, Any]
+    css: Optional[str]
+
+
+def _page_fragment_view(
+    fragments: _FragmentDelivery, web_doc: JsonObject, page_id: str
+) -> _PageFragments:
+    """What the engine is handed to render ``page_id``.
+
+    Resolution is keyed on ``(workspace, fragment id)`` and never consults the page, so the
+    document-wide package already holds every record this page needs — narrowing is a filter,
+    never a second fetch. Narrowing matters because the fragment CSS rides in the page's OWN
+    head: handing every page the whole site's sheets would ship a second page's cloned styles
+    into the first one's cascade.
+    """
+    if not fragments.ids:
+        return _PageFragments(ids=[], render_map={}, css=None)
+    ids = web_doc_fragment_ids(web_doc, page_id)
+    if not ids:
+        return _PageFragments(ids=[], render_map={}, css=None)
+    return _PageFragments(
+        ids=ids,
+        render_map=fragment_render_map(fragments.package, ids),
+        css=fragment_css_sheet(fragments.package, ids),
     )
 
 
@@ -710,19 +893,23 @@ def _sweep_fragment_asset_custody(
     )
 
 
-def _embed_fragment_assets(
-    html: str,
+def _copy_fragment_assets(
     files: Dict[str, bytes],
     fragments: _FragmentDelivery,
     blobs: DesignBlobStore,
-) -> Tuple[str, List[str]]:
-    """Copy every byte the page's cloned sections display into the zip, and point at the copies.
+) -> Tuple[Dict[str, str], List[str]]:
+    """Copy every byte the site's cloned sections display into the zip.
 
-    Returns ``(html, warnings)``. Missing bytes were already found and reported by
-    :func:`_sweep_fragment_asset_custody`, which both delivery paths run — so a digest it named
-    is skipped silently HERE rather than warned about twice, and the ``except`` below covers only
-    the narrow race where a blob disappears between the sweep and this read (same outcome either
-    way: no file, and the reference left naming the digest route).
+    Returns ``({digest: zip path}, warnings)``; the caller points each page's markup at those
+    paths (a subpage prefixes them with its own ``../`` hop). The copy is done ONCE for the
+    document, not once per page — the bytes are identical and the warnings would otherwise
+    repeat for every page that happens to pin the same dead artifact.
+
+    Missing bytes were already found and reported by :func:`_sweep_fragment_asset_custody`,
+    which both delivery paths run — so a digest it named is skipped silently HERE rather than
+    warned about twice, and the ``except`` below covers only the narrow race where a blob
+    disappears between the sweep and this read (same outcome either way: no file, and the
+    reference left naming the digest route).
 
     The media type comes from the artifact ROW rather than from a guess at the bytes — the
     digest route already serves these with that type — and an unrecognised one lands
@@ -730,6 +917,7 @@ def _embed_fragment_assets(
     lie a static file server then acts on.
     """
     warnings: List[str] = []
+    paths: Dict[str, str] = {}
     known_missing = set(fragments.missing_asset_digests)
     for digest in fragments.asset_digests:
         if digest in known_missing:
@@ -750,11 +938,27 @@ def _embed_fragment_assets(
             )
         path = f"assets/{digest}.{extension}" if extension else f"assets/{digest}"
         files[path] = data
-        html = html.replace(f"/asset-store/{digest}", path)
-    return html, warnings
+        paths[digest] = path
+    return paths, warnings
 
 
-def _fragment_cascade_warnings(fragments: _FragmentDelivery, site_css: str) -> List[str]:
+def _point_at_copied_fragment_assets(
+    html: str, paths: Dict[str, str], prefix: str
+) -> str:
+    """Repoint one page's `/asset-store/<digest>` references at the copies in the zip.
+
+    An artifact's markup and CSS name their rehosted bytes as an ABSOLUTE `/asset-store/<digest>`
+    path, which resolves against a filesystem root once the zip is unpacked. Both live in this
+    one string (the fragment CSS rides in the head), so one pass covers both.
+    """
+    for digest, path in paths.items():
+        html = html.replace(f"/asset-store/{digest}", f"{prefix}{path}")
+    return html
+
+
+def _fragment_cascade_warnings(
+    fragments: _FragmentDelivery, site_css: str, ids: Optional[Sequence[str]] = None
+) -> List[str]:
     """The cascade collision report, checked against the REAL compiled stylesheet.
 
     A preview can only compare a fragment's classes against the ones the document authors, and
@@ -762,11 +966,14 @@ def _fragment_cascade_warnings(fragments: _FragmentDelivery, site_css: str) -> L
     guess: ``site.css`` has been compiled by this point, so "a live utility" means literally
     "a class this sheet declares". Same accepted risk, same warning-not-refusal posture — the
     strongest available form of the check.
+
+    ``ids`` narrows the check to one page's pins (F5) — the compiled sheet is per page, so the
+    collision question is per page too. Omitted, it asks about the whole document.
     """
     live = css_class_names(site_css)
     warnings: List[str] = []
     for fragment_id, classes in fragment_class_collisions(
-        fragments.package, fragments.ids, live
+        fragments.package, list(fragments.ids if ids is None else ids), live
     ):
         joined = ", ".join(classes)
         warnings.append(
@@ -777,11 +984,16 @@ def _fragment_cascade_warnings(fragments: _FragmentDelivery, site_css: str) -> L
     return warnings
 
 
-def _seo_description(web_doc: JsonObject, fallback: str) -> str:
+def _seo_description(
+    web_doc: JsonObject, fallback: str, page_id: Optional[str] = None
+) -> str:
     """The first body Text node's text in document order, tags stripped and
     whitespace collapsed, truncated on a clean word boundary; the doc title
-    when there is no body copy."""
-    page = _home_page(web_doc)
+    when there is no body copy.
+
+    ``page_id`` picks the page to read (F5) — a description is a property of the PAGE, so a
+    pricing page must not be described by the home page's opening paragraph."""
+    page = _page_by_id(web_doc, page_id) if page_id else _home_page(web_doc)
     for node in _walk_nodes(page):
         if node.get("kind") == "text" and node.get("variant") == "body":
             text = _collapse(_rich_text_plain(node.get("content")))
@@ -954,7 +1166,13 @@ def _build_input_css(theme: _CompiledTheme) -> str:
     return css
 
 
-def _document_only_html(core: Any, web_doc: JsonObject, rendered: str, **render_kwargs: Any) -> str:
+def _document_only_html(
+    core: Any,
+    web_doc: JsonObject,
+    rendered: str,
+    page_id: str = HOME_PAGE_ID,
+    **render_kwargs: Any,
+) -> str:
     """The page WITHOUT its cloned sections — the Tailwind scanner's input (clone-fidelity W7).
 
     A cloned fragment carries the class names of somebody else's site. The Tailwind compiler
@@ -980,9 +1198,9 @@ def _document_only_html(core: Any, web_doc: JsonObject, rendered: str, **render_
     Skipping it is not an optimisation of the scan's input; it is the same input, arrived at
     without asking twice.
     """
-    if not web_doc_fragment_ids(web_doc, HOME_PAGE_ID):
+    if not web_doc_fragment_ids(web_doc, page_id):
         return rendered
-    second = core.web_render(web_doc, HOME_PAGE_ID, fragments={}, fragment_css="", **render_kwargs)
+    second = core.web_render(web_doc, page_id, fragments={}, fragment_css="", **render_kwargs)
     return (second.get("html") or "") or rendered
 
 
@@ -1164,9 +1382,10 @@ def _custom_component_package(
     deterministic_seed: str,
     embed_runtime_assets: bool,
     brand_kit: Optional[JsonObject],
+    page_id: str = HOME_PAGE_ID,
 ) -> Any:
     web_doc = document["scene"]
-    if not web_doc_uses_custom_components(web_doc, HOME_PAGE_ID):
+    if not web_doc_uses_custom_components(web_doc, page_id):
         return build_custom_component_delivery_package(
             repo,
             blobs,
@@ -1176,7 +1395,7 @@ def _custom_component_package(
                 else None
             ),
             web_doc=web_doc,
-            page_id=HOME_PAGE_ID,
+            page_id=page_id,
             theme=None,
             override_variables={},
             runtime_host_path=default_runtime_host_path(),
@@ -1195,7 +1414,7 @@ def _custom_component_package(
                 else None
             ),
             web_doc=web_doc,
-            page_id=HOME_PAGE_ID,
+            page_id=page_id,
             theme=theme_response.get("web_theme"),
             override_variables=_delivery_override_variables(repo, document),
             runtime_host_path=default_runtime_host_path(),
@@ -1207,6 +1426,64 @@ def _custom_component_package(
         raise WebExportError(f"{error.code}: {error}") from error
 
 
+def _merge_custom_component_packages(packages: Sequence[Any]) -> Any:
+    """One delivery package for a whole multi-page site (F5).
+
+    A custom-component package is built per PAGE, because that is the unit the runtime
+    assembles for — but the zip, the asset store and the manifest answer for the whole site, so
+    the per-page packages are merged into one before any of them see it.
+
+    The merge is by identity, never by concatenation: frames are keyed by node id, assets by
+    content digest, artifacts by artifact id, asset records by digest (their ``roles`` unioned,
+    since the same byte can be a bundle on one page and a dependency on another). A single-page
+    document short-circuits to its one package, so a legacy publish is byte-identical to what
+    it produced before this function existed.
+    """
+    if len(packages) == 1:
+        return packages[0]
+    from .custom_component_runtime import CustomComponentDeliveryPackage
+
+    merged = CustomComponentDeliveryPackage()
+    components: Dict[str, JsonObject] = {}
+    artifacts: Dict[str, JsonObject] = {}
+    asset_records: Dict[str, JsonObject] = {}
+    runtime_host: Optional[JsonObject] = None
+    has_runtime_host_key = False
+    contract_version: Any = None
+    for package in packages:
+        merged.frames.update(package.frames)
+        merged.assets.update(package.assets)
+        manifest = package.manifest or {}
+        contract_version = manifest.get("runtime_contract_version", contract_version)
+        if "runtime_host" in manifest:
+            has_runtime_host_key = True
+            if manifest.get("runtime_host") is not None:
+                runtime_host = manifest["runtime_host"]
+        for record in manifest.get("components") or []:
+            components.setdefault(str(record.get("node_id")), record)
+        for record in manifest.get("artifacts") or []:
+            artifacts.setdefault(str(record.get("artifact_id")), record)
+        for record in manifest.get("assets") or []:
+            digest = str(record.get("digest"))
+            existing = asset_records.get(digest)
+            if existing is None:
+                asset_records[digest] = dict(record)
+                asset_records[digest]["roles"] = sorted(record.get("roles") or [])
+                continue
+            existing["roles"] = sorted(
+                set(existing.get("roles") or []) | set(record.get("roles") or [])
+            )
+    merged.manifest = {
+        "schema_version": 1,
+        "runtime_contract_version": contract_version,
+        **({"runtime_host": runtime_host} if has_runtime_host_key else {}),
+        "components": [components[key] for key in sorted(components)],
+        "artifacts": [artifacts[key] for key in sorted(artifacts)],
+        "assets": [asset_records[key] for key in sorted(asset_records)],
+    }
+    return merged
+
+
 def _delivery_manifest(
     document: JsonObject,
     *,
@@ -1215,13 +1492,24 @@ def _delivery_manifest(
     fragments: "_FragmentDelivery",
     assets: Dict[str, bytes],
     warnings: List[str],
+    page_id: str = HOME_PAGE_ID,
+    pages: Optional[Sequence[JsonObject]] = None,
 ) -> JsonObject:
     return {
         "schema_version": 2,
         "kind": kind,
         "document_id": document["id"],
         "doc_version": document["current_version"],
-        "page_id": HOME_PAGE_ID,
+        # The page a bare site address serves. Kept for every pre-F5 reader; `pages` below is
+        # the whole site.
+        "page_id": page_id,
+        # F5: every page this build produced, in document order, as
+        # `{page_id, route, html_digest}`. On the EXPORT path that digest is the zip file's own
+        # bytes. On the PUBLISH path it is the page's bytes before the two metas that quote the
+        # manifest's own digest back into the head — a manifest cannot contain the digest of a
+        # document that contains the manifest's digest, and the served bytes are bound instead
+        # by `package_digest` (computed over the final page digests) and by the page rows.
+        "pages": [dict(page) for page in (pages or [])],
         "runtime": {
             "platform_version": 2,
             "custom_component_contract_version": custom_components.get(
@@ -1261,31 +1549,43 @@ def _font_manifest_entries(gate: _FontGate) -> JsonObject:
     }
 
 
-def _delivery_csp(public_base: Optional[str] = None, *, meta: bool = False) -> str:
+def _delivery_csp(*, meta: bool = False, static_bundle: bool = False) -> str:
     """The published page's CSP. ``meta=True`` is the ``<meta http-equiv>`` shape.
 
-    The one difference: ``frame-ancestors`` is ignored inside a meta CSP by spec, and the
-    browser says so on the console — which was the published page's ONE console error at the
-    CP1 walk, and it was ours (walk criterion 4, final-review X7). The serving header keeps the
-    directive; the meta tag stops claiming it.
+    The served policy has one home, ``clue_design.publishes.delivery_csp`` (custom-domain
+    publishing §6.2), shared with the page origin's header. Assets are same-origin by
+    construction, so there is no origin allow-list: ``'self'`` covers ``/p-assets`` and
+    ``/asset-store`` on whichever hostname served the page. The meta shape omits
+    ``frame-ancestors``, which a meta CSP ignores by spec (walk criterion 4, final-review X7).
+
+    ``static_bundle=True`` is the EXPORT ZIP's shape. A document opened from disk has an OPAQUE
+    origin in Chromium, which ``'self'`` does not match, so the zip's own ``site.css``,
+    ``assets/<digest>.<ext>`` and ``fonts/<digest>.woff2`` would be blocked by the page itself;
+    the ``file:`` scheme source is appended to ``script-src``/``style-src``/``img-src``/
+    ``font-src`` for exactly that. Everything genuinely remote stays refused:
+    ``default-src``/``connect-src``/``object-src``/``worker-src``/``base-uri``/``form-action``
+    are untouched, so the bundle can still reach nothing off its own disk.
     """
-    origin = ""
-    if public_base:
-        parsed = urlsplit(public_base)
-        if parsed.scheme in {"http", "https"} and parsed.netloc:
-            origin = f" {parsed.scheme}://{parsed.netloc}"
-    policy = (
-        "default-src 'none'; "
-        f"script-src 'unsafe-inline' data:{origin}; "
-        f"style-src 'unsafe-inline'{origin}; "
-        f"img-src data: blob:{origin}; "
-        f"font-src data:{origin}; "
-        "connect-src 'none'; object-src 'none'; worker-src 'none'; "
-        "frame-src 'self' data: blob:; base-uri 'none'; form-action 'none'"
-    )
-    if meta:
+    policy = delivery_csp(meta=meta)
+    if not static_bundle:
         return policy
-    return policy + "; frame-ancestors 'self'"
+    directives = []
+    for directive in policy.split("; "):
+        name = directive.split(" ", 1)[0]
+        if name in {"script-src", "style-src", "img-src", "font-src"}:
+            directive += " file:"
+        directives.append(directive)
+    return "; ".join(directives)
+
+
+def _relative_prefix(route: str) -> str:
+    """The `../` hop count that gets from a page's own folder back to the zip root.
+
+    ``/`` lives at the root (``""``); ``/pricing`` lives one folder down (``"../"``). Shared
+    bytes — assets, fonts, the component manifest — are written once at the root, so every page
+    but the first has to reach up to them.
+    """
+    return "../" * len([segment for segment in route.strip("/").split("/") if segment])
 
 
 def build_export_bundle(
@@ -1297,9 +1597,19 @@ def build_export_bundle(
     generated_at: str,
     node_bin: str = "node",
 ) -> ExportBundle:
-    """Build a self-contained static-site zip for ``document`` (a WebDoc)."""
+    """Build a self-contained static-site zip for ``document`` (a WebDoc).
+
+    F5: EVERY page of the document is written — ``/`` as ``index.html``, every other route as
+    ``<route>/index.html`` — so a static host serves the whole site from its directory indexes.
+    The shared bytes (assets, fonts, component artifacts) stay at the zip root and each page
+    reaches them through its own ``../`` prefix; the compiled stylesheet is per page, written
+    beside the page it styles. A single-page document produces exactly the zip it always did.
+    """
     web_doc = document["scene"]
     brand_kit = _resolve_brand_kit(web_doc, blobs)
+    site_pages = _site_pages(web_doc)
+    primary = _primary_page(site_pages)
+    routes = [page.route for page in site_pages]
 
     files: Dict[str, bytes] = {}
     warnings: List[str] = []
@@ -1307,19 +1617,25 @@ def build_export_bundle(
         f"export:{document['id']}:{document['current_version']}:"
         f"{_sha256(_canonical_json(web_doc))}"
     )
-    component_package = _custom_component_package(
-        core,
-        repo,
-        document,
-        blobs=blobs,
-        asset_url_for=(
-            lambda digest, extension: (
-                f"components/sha256/{digest}.{extension}"
+    component_package = _merge_custom_component_packages(
+        [
+            _custom_component_package(
+                core,
+                repo,
+                document,
+                blobs=blobs,
+                asset_url_for=(
+                    lambda digest, extension: (
+                        f"components/sha256/{digest}.{extension}"
+                    )
+                ),
+                deterministic_seed=deterministic_seed,
+                embed_runtime_assets=True,
+                brand_kit=brand_kit,
+                page_id=page.page_id,
             )
-        ),
-        deterministic_seed=deterministic_seed,
-        embed_runtime_assets=True,
-        brand_kit=brand_kit,
+            for page in site_pages
+        ]
     )
     component_asset_records = {
         record["digest"]: record
@@ -1339,14 +1655,11 @@ def build_export_bundle(
     font_gate = _gather_fonts(brand_kit, repo, blobs)
     faces = font_gate.faces
     warnings.extend(font_gate.warnings)
-    font_face_css = _font_face_css(
-        faces, lambda face: f"fonts/{face.digest[:12]}.{face.ext}"
-    )
     for face in faces:
         files[f"fonts/{face.digest[:12]}.{face.ext}"] = face.data
 
-    # 2. Delivery render against relative asset urls — cloned sections resolved out of durable
-    #    custody first, so the zip carries the real section rather than its placeholder.
+    # 2. Cloned sections resolved out of durable custody first, so the zip carries the real
+    #    section rather than its placeholder — once for the whole document.
     fragments = _sweep_fragment_asset_custody(
         _resolve_fragments(web_doc, blobs),
         blobs,
@@ -1355,34 +1668,13 @@ def build_export_bundle(
         ),
     )
     warnings.extend(fragments.warnings)
-    render_kwargs = dict(
-        mode="delivery",
-        asset_base_url="assets",
-        font_face_css=font_face_css,
-        brand_kit=brand_kit,
-        custom_component_runtimes=component_package.frames,
+    fragment_asset_paths, fragment_copy_warnings = _copy_fragment_assets(
+        files, fragments, blobs
     )
-    render = core.web_render(
-        web_doc,
-        HOME_PAGE_ID,
-        fragments=fragments.render_map,
-        fragment_css=fragments.css,
-        **render_kwargs,
-    )
-    html = render.get("html") or ""
+    warnings.extend(fragment_copy_warnings)
 
-    # R25-7, the export half of the split. Publishing an un-derived template is REFUSED (a
-    # visitor would read the markers); exporting one is WARNED, loudly, on the manifest a human
-    # is already opening. A zip is an inspection surface — refusing it would remove the only way
-    # to look at a template's package, and the person holding the file can see what it says.
-    for marker in unresolved_account_markers(html):
-        warnings.append(
-            f"the exported page still shows the account marker {marker}: this is a TEMPLATE, "
-            "not one account's page. Derive it for an account and export the derived page."
-        )
-
-    # 3. Assets: copy referenced image bytes, rewrite the html to the
-    #    extensioned path.
+    # 3. Assets: copy referenced image bytes once; each page rewrites its own references to the
+    #    extensioned path below.
     images = _resolve_images(web_doc)
     exported_images: List[_ImageAsset] = []
     for image in images:
@@ -1395,67 +1687,127 @@ def build_export_bundle(
             )
             continue
         files[f"assets/{image.digest}.{image.ext}"] = data
-        html = html.replace(
-            f"assets/{image.digest}", f"assets/{image.digest}.{image.ext}"
-        )
         exported_images.append(image)
 
-    # 3b. The bytes a cloned section displays. These are NOT document assets: an artifact's
-    #     markup and CSS name their rehosted bytes directly as `/asset-store/<digest>`, an
-    #     ABSOLUTE path that resolves against a filesystem root once the zip is unpacked. So
-    #     they are copied beside the document's own assets and every reference is rewritten to
-    #     the relative path — in the markup and in the inline fragment CSS at once, since both
-    #     live in this one string.
-    html, fragment_warnings = _embed_fragment_assets(html, files, fragments, blobs)
-    warnings.extend(fragment_warnings)
-
-    # 4. Static CSS: compile against the doc theme, link it from the html.
-    compiled_theme = _theme_tokens(core, web_doc, brand_kit)
-    site_css = _compile_static_css(
-        _document_only_html(core, web_doc, html, **render_kwargs), compiled_theme, node_bin
-    )
-    files["site.css"] = site_css.encode("utf-8")
-    # The cascade check, now that a REAL compiled sheet exists to check against.
-    warnings.extend(_fragment_cascade_warnings(fragments, site_css))
-
-    # 5. SEO metas + the stylesheet link, injected before </head>.
-    #    The og:image stays the first IMAGE NODE's asset: the walk above got wider (backgrounds,
-    #    fragment slots) so more bytes SHIP, but which picture represents the page is a
-    #    different question and its answer is unchanged.
+    # The og:image stays the first IMAGE NODE's asset: which picture represents the site is a
+    # document-level question, unchanged by the walk getting wider or the site getting pages.
     og_source = next(
         (image for image in exported_images if image.origin == "image"), None
     )
-    og_image = (
-        f"assets/{og_source.digest}.{og_source.ext}" if og_source is not None else None
-    )
-    head = _seo_snippet(
-        title=document["title"],
-        description=_seo_description(web_doc, document["title"]),
-        og_image=og_image,
-    )
-    head += '<link rel="stylesheet" href="site.css">\n'
-    # F4 wave item 7 (final-review NEW-1 — the noindex law's FIFTH surface): the export bundle
-    # never read the durable flag, so a stamped ABM page exported and self-hosted was
-    # indexable. The document's own `web_noindex` rides into the zip's head, and the manifest
-    # says so, exactly as publish does.
-    if document.get("web_noindex"):
-        head += ROBOTS_NOINDEX_META + "\n"
+    compiled_theme = _theme_tokens(core, web_doc, brand_kit)
+
+    # 4. One render, one compiled stylesheet and one html file per page.
+    page_files: Dict[str, bytes] = {}
+    manifest_pages: List[JsonObject] = []
+    page_html: Dict[str, str] = {}
+    unresolved_markers: List[str] = []
+    for page in site_pages:
+        prefix = _relative_prefix(page.route)
+        page_fragments = _page_fragment_view(fragments, web_doc, page.page_id)
+        render_kwargs = dict(
+            mode="delivery",
+            asset_base_url=f"{prefix}assets",
+            font_face_css=_font_face_css(
+                faces, lambda face: f"{prefix}fonts/{face.digest[:12]}.{face.ext}"
+            ),
+            brand_kit=brand_kit,
+            custom_component_runtimes=component_package.frames,
+        )
+        render = core.web_render(
+            web_doc,
+            page.page_id,
+            fragments=page_fragments.render_map,
+            fragment_css=page_fragments.css,
+            **render_kwargs,
+        )
+        html = render.get("html") or ""
+
+        # R25-7, the export half of the split. Publishing an un-derived template is REFUSED (a
+        # visitor would read the markers); exporting one is WARNED, loudly, on the manifest a
+        # human is already opening. A zip is an inspection surface — refusing it would remove
+        # the only way to look at a template's package, and the person holding the file can see
+        # what it says. Named once per marker, not once per page that shows it.
+        for marker in unresolved_account_markers(html):
+            if marker not in unresolved_markers:
+                unresolved_markers.append(marker)
+
+        for image in exported_images:
+            html = html.replace(
+                f"assets/{image.digest}", f"assets/{image.digest}.{image.ext}"
+            )
+        html = _point_at_copied_fragment_assets(html, fragment_asset_paths, prefix)
+
+        # Static CSS: compiled for THIS page and written beside it, so the link stays a plain
+        # relative `site.css` whatever folder the page lives in.
+        site_css = _compile_static_css(
+            _document_only_html(core, web_doc, html, page.page_id, **render_kwargs),
+            compiled_theme,
+            node_bin,
+        )
+        css_path = "site.css" if not page.route.strip("/") else (
+            f"{page.route.strip('/')}/site.css"
+        )
+        files[css_path] = site_css.encode("utf-8")
+        # The cascade check, now that a REAL compiled sheet exists to check against.
+        warnings.extend(
+            _fragment_cascade_warnings(fragments, site_css, page_fragments.ids)
+        )
+
+        # SEO metas + the stylesheet link, injected before </head>.
+        head = _seo_snippet(
+            title=document["title"],
+            description=_seo_description(web_doc, document["title"], page.page_id),
+            og_image=(
+                f"{prefix}assets/{og_source.digest}.{og_source.ext}"
+                if og_source is not None
+                else None
+            ),
+        )
+        head += '<link rel="stylesheet" href="site.css">\n'
+        # F4 wave item 7 (final-review NEW-1 — the noindex law's FIFTH surface): the export
+        # bundle never read the durable flag, so a stamped ABM page exported and self-hosted was
+        # indexable. The document's own `web_noindex` rides into the zip's head, on every page,
+        # and the manifest says so, exactly as publish does.
+        if document.get("web_noindex"):
+            head += ROBOTS_NOINDEX_META + "\n"
+        head += (
+            '<meta http-equiv="Content-Security-Policy" content="'
+            f'{_escape_attr(_delivery_csp(meta=True, static_bundle=True))}">\n'
+        )
+        head += (
+            '<link rel="lumen-component-manifest" href="'
+            f'{prefix}components/manifest.json">\n'
+        )
+        html = _inject_before_head_close(html, head)
+        # The site's own internal links point at the folder a static host serves each route
+        # from; everything else the page links to is left exactly as the author wrote it.
+        html = rewrite_zip_links(html, routes)
+        page_html[page.route] = html
+        page_files[_zip_page_path(page.route)] = html.encode("utf-8")
+        manifest_pages.append(
+            {
+                "page_id": page.page_id,
+                "route": page.route,
+                "html_digest": _sha256(html),
+            }
+        )
+
+    for marker in unresolved_markers:
         warnings.append(
-            "this document is stamped noindex (an ABM account page): the exported index.html "
+            f"the exported page still shows the account marker {marker}: this is a TEMPLATE, "
+            "not one account's page. Derive it for an account and export the derived page."
+        )
+    if document.get("web_noindex"):
+        warnings.append(
+            "this document is stamped noindex (an ABM account page): every exported page "
             "carries the robots meta, and wherever this zip is hosted the page will ask not "
             "to be indexed. Clearing the stamp is an explicit act on the document, not an "
             "edit to this file."
         )
-    head += (
-        '<meta http-equiv="Content-Security-Policy" content="'
-        f'{_escape_attr(_delivery_csp(meta=True))}">\n'
-    )
-    head += '<link rel="lumen-component-manifest" href="components/manifest.json">\n'
-    html = _inject_before_head_close(html, head)
 
-    # 6. manifest.json — the file list is known now (index/manifest added last).
-    file_names = sorted(list(files.keys()) + ["index.html", "manifest.json"])
-    runtime_version = _runtime_version(html)
+    # 5. manifest.json — the file list is known now (the pages and the manifest added last).
+    file_names = sorted(list(files.keys()) + list(page_files.keys()) + ["manifest.json"])
+    runtime_version = _runtime_version(page_html.get(primary.route, ""))
     delivery_manifest = _delivery_manifest(
         document,
         kind="export",
@@ -1463,6 +1815,8 @@ def build_export_bundle(
         fragments=fragments,
         assets=component_package.assets,
         warnings=warnings,
+        page_id=primary.page_id,
+        pages=manifest_pages,
     )
     manifest = {
         **delivery_manifest,
@@ -1477,7 +1831,7 @@ def build_export_bundle(
         "warnings": warnings,
     }
     files["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode("utf-8")
-    files["index.html"] = html.encode("utf-8")
+    files.update(page_files)
     return ExportBundle(files=files, warnings=warnings)
 
 
@@ -1488,10 +1842,13 @@ def build_publish_package(
     *,
     blobs: DesignBlobStore,
     slug: str,
-    public_base: str,
+    site_address: PublicSiteAddress,
     workspace_id: str,
+    default_description: Optional[str] = None,
+    default_social_preview_sha256: Optional[str] = None,
     node_bin: str = "node",
     noindex: bool = False,
+    embed_runtime_assets: bool = False,
 ) -> PublishPackage:
     """Build one immutable publish package for same-origin delivery.
 
@@ -1500,41 +1857,79 @@ def build_publish_package(
     pinned by digest. Runtime asset URLs are immutable and never resolve
     ``latest`` registry state.
 
-    Every publish URL this package mints (canonical, og:url, the manifest link,
-    the per-asset runtime URLs) is workspace-scoped under ``/w/{workspace_id}``:
-    publish slugs became tenant-local at Part II D1 (O6), so a bare ``/p/{slug}``
-    is ambiguous. This is the interim O6b scheme — Part-IV item 5 replaces it.
-    The ``/asset-store`` URLs stay unprefixed: that route is not part of the
-    public publish surface and is unchanged by O6b.
+    Every URL this package mints is ROOT-RELATIVE — the published HTML names no
+    host, so the same immutable bytes serve correctly from the workspace's system
+    hostname and from any custom domain pointed at it: the per-asset runtime URLs
+    (``/p-assets/{digest}.{ext}``), the ``/asset-store`` URLs, the manifest link
+    (``/{slug}/manifest.json``) and the rebased internal links (``/{slug}{route}``).
+    There is no canonical and no ``og:url`` (custom-domain publishing spec A6).
+    The one exception is ``og:image``: unfurlers require an
+    absolute URL, so it points at ``site_address.origin``, the always-live system
+    hostname (custom-domain publishing §6.1), which stays reachable even after a
+    custom domain is removed.
+
+    ``site_address`` is where the site lives — built from the hostname registry by
+    ``lumen_api.public_pages.site_address`` (reconciliation 2026-09-28). The manifest's
+    ``canonical_url`` records its absolute root.
+
+    ``default_description`` / ``default_social_preview_sha256`` are the WORKSPACE's page
+    defaults (custom-domain publishing §4.2). They fill in, they never override: the
+    description applies only when the page derives an empty one, and the social preview only
+    when the site carries no image node, so a page that says something for itself keeps saying
+    it after a workspace default is set.
+
+    ``embed_runtime_assets`` inlines the custom-component runtime assets as ``data:`` URLs
+    instead of referencing ``/p-assets/{digest}.{ext}``. Publishing leaves it off (the page
+    origin serves those assets); the PDF export turns it on, because a document rendered with
+    ``set_content`` has no origin for a root-relative ``/p-assets`` URL to resolve against.
 
     ``noindex`` (clone-fidelity F4.3, ruling R25-4) adds ONE line to the head:
     ``<meta name="robots" content="noindex">``. It is a per-page option and it
-    defaults off, so every publish that does not ask for it is byte-identical to
-    what this function produced before the option existed — which matters,
-    because a global flip would quietly de-index every client homepage we host.
+    defaults off. It applies to EVERY page of the site: a site is indexed or it is not, and a
+    campaign page that is unreachable from any navigation does not become reachable because it
+    is page three.
+
+    F5: a document is a SITE. Every page is rendered, styled and headed on its own — its own
+    description, its own compiled stylesheet — and the document's internal
+    links are rebased onto the address the site is served from, so a link the author wrote as
+    ``/pricing`` reaches the published pricing page instead of walking the visitor off the site.
+    ``html`` remains the page served at ``/``, so every pre-F5 consumer is unchanged.
     """
     web_doc = document["scene"]
     brand_kit = _resolve_brand_kit(web_doc, blobs)
+    site_pages = _site_pages(web_doc)
+    primary = _primary_page(site_pages)
+    routes = [page.route for page in site_pages]
     warnings: List[str] = []
-    base = public_base.rstrip("/")
-    public_prefix = f"{base}/w/{workspace_id}"
+    address = site_address
+    #: The always-live system origin: the ONE absolute URL a page carries is `og:image` on it.
+    origin = address.origin.rstrip("/")
+    #: The site's path from the visitor's own origin — what an internal link has to become,
+    #: and where the manifest back-reference hangs (`/{slug}/manifest.json`).
+    link_site_path = address.link_path
     deterministic_seed = (
         f"publish:{document['id']}:{document['current_version']}:"
         f"{_sha256(_canonical_json(web_doc))}"
     )
-    component_package = _custom_component_package(
-        core,
-        repo,
-        document,
-        blobs=blobs,
-        asset_url_for=(
-            lambda digest, extension: (
-                f"{public_prefix}/p-assets/{digest}.{extension}"
+    component_package = _merge_custom_component_packages(
+        [
+            _custom_component_package(
+                core,
+                repo,
+                document,
+                blobs=blobs,
+                # Root-relative: the page origin serves `/p-assets` on whichever hostname
+                # served the page, so the bytes name no host.
+                asset_url_for=(
+                    lambda digest, extension: f"/p-assets/{digest}.{extension}"
+                ),
+                deterministic_seed=deterministic_seed,
+                embed_runtime_assets=embed_runtime_assets,
+                brand_kit=brand_kit,
+                page_id=page.page_id,
             )
-        ),
-        deterministic_seed=deterministic_seed,
-        embed_runtime_assets=False,
-        brand_kit=brand_kit,
+            for page in site_pages
+        ]
     )
 
     # Fonts (license-gated) as absolute /asset-store urls; no files emitted. The gate's
@@ -1556,72 +1951,101 @@ def build_publish_package(
         consequence="the published page will serve a 404 where that image or font goes",
     )
     warnings.extend(fragments.warnings)
-    render_kwargs = dict(
-        mode="delivery",
-        asset_base_url="/asset-store",
-        font_face_css=font_face_css,
-        brand_kit=brand_kit,
-        custom_component_runtimes=component_package.frames,
-    )
-    render = core.web_render(
-        web_doc,
-        HOME_PAGE_ID,
-        fragments=fragments.render_map,
-        fragment_css=fragments.css,
-        **render_kwargs,
-    )
-    html = render.get("html") or ""
 
-    # FOUNDER RULING 2026-08-29 (verbatim law: no mechanical gates on the design path that the
-    # founder did not order): the R25-7 unresolved-marker REFUSAL is demoted to a LOUD WARNING.
-    # A publish always proceeds; the manifest says what the page still shows, and deriving per
-    # account remains the way to substitute the markers. The refusal shape (and the
-    # WebExportUnresolvedMarkers type) stays available if the founder ever orders it back.
-    markers = unresolved_account_markers(html)
-    if markers:
+    images = _resolve_images(web_doc)
+    # As on the export path: the site's picture is an image node's asset, not a background
+    # wash and not a cloned section's logo.
+    og_source = next((image for image in images if image.origin == "image"), None)
+    if og_source is not None:
+        og_image = f"{origin}/asset-store/{og_source.digest}"
+    elif default_social_preview_sha256:
+        og_image = f"{origin}/asset-store/{default_social_preview_sha256}"
+    else:
+        og_image = None
+    compiled_theme = _theme_tokens(core, web_doc, brand_kit)
+
+    staged: List[Tuple[_SitePage, str]] = []
+    unresolved_markers: List[str] = []
+    escape_routes: List[str] = []
+    for page in site_pages:
+        page_fragments = _page_fragment_view(fragments, web_doc, page.page_id)
+        render_kwargs = dict(
+            mode="delivery",
+            asset_base_url="/asset-store",
+            font_face_css=font_face_css,
+            brand_kit=brand_kit,
+            custom_component_runtimes=component_package.frames,
+        )
+        render = core.web_render(
+            web_doc,
+            page.page_id,
+            fragments=page_fragments.render_map,
+            fragment_css=page_fragments.css,
+            **render_kwargs,
+        )
+        html = render.get("html") or ""
+
+        # FOUNDER RULING 2026-08-29 (verbatim law: no mechanical gates on the design path that
+        # the founder did not order): the R25-7 unresolved-marker REFUSAL is demoted to a LOUD
+        # WARNING. A publish always proceeds; the manifest says what the page still shows, and
+        # deriving per account remains the way to substitute the markers.
+        for marker in unresolved_account_markers(html):
+            if marker not in unresolved_markers:
+                unresolved_markers.append(marker)
+
+        # Static CSS compiled and INLINED (no external stylesheet for a self-contained publish
+        # payload) — per page, because a page's stylesheet is compiled from the classes that
+        # page authors.
+        site_css = _compile_static_css(
+            _document_only_html(core, web_doc, html, page.page_id, **render_kwargs),
+            compiled_theme,
+            node_bin,
+        )
+        warnings.extend(
+            _fragment_cascade_warnings(fragments, site_css, page_fragments.ids)
+        )
+
+        head = _seo_snippet(
+            title=document["title"],
+            description=(
+                _seo_description(web_doc, document["title"], page.page_id)
+                or (default_description or "")
+            ),
+            og_image=og_image,
+            canonical=None,
+            og_url=None,
+        )
+        head += '<link rel="icon" href="/favicon.ico">\n'
+        if noindex:
+            head += ROBOTS_NOINDEX_META + "\n"
+            # F4 wave item 6 (the CP2 walk's F-1, the lite half): every off-page door on a
+            # noindex site, said on the manifest. Listed, never refused — see the audit's
+            # docstring for why. A link to one of this site's OWN routes is not a door out, so
+            # the audit runs before the internal links are rebased and its own filter (absolute
+            # destinations only) leaves them out.
+            for destination in _escape_route_audit(html):
+                if destination not in escape_routes:
+                    escape_routes.append(destination)
+        head += f'<style id="lumen-static-css">{site_css}</style>\n'
+        html = _inject_before_head_close(html, head)
+        # The site's own internal links now point at the address the site is served from.
+        html = rewrite_site_links(html, routes, link_site_path)
+        staged.append((page, html))
+
+    for marker in unresolved_markers:
         warnings.append(
-            f"this page still shows unsubstituted account markers ({', '.join(markers)}). "
+            f"this page still shows unsubstituted account markers ({marker}). "
             "Published as-is per standing founder ruling; derive it for an account when you "
             "want them personalized."
         )
+    if escape_routes:
+        warnings.append(
+            "escape-route audit (noindex account page): this site links off itself to "
+            + ", ".join(escape_routes)
+            + " — the rubric allows only the CTA and the footer's legal links; judge "
+            "each of these deliberately."
+        )
 
-    images = _resolve_images(web_doc)
-
-    # Static CSS compiled and INLINED (no external stylesheet for a single-file
-    # publish payload).
-    compiled_theme = _theme_tokens(core, web_doc, brand_kit)
-    site_css = _compile_static_css(
-        _document_only_html(core, web_doc, html, **render_kwargs), compiled_theme, node_bin
-    )
-    warnings.extend(_fragment_cascade_warnings(fragments, site_css))
-
-    # As on the export path: the page's picture is an image node's asset, not a background
-    # wash and not a cloned section's logo.
-    og_source = next((image for image in images if image.origin == "image"), None)
-    og_image = (
-        f"{base}/asset-store/{og_source.digest}" if og_source is not None else None
-    )
-    head = _seo_snippet(
-        title=document["title"],
-        description=_seo_description(web_doc, document["title"]),
-        og_image=og_image,
-        canonical=f"{public_prefix}/p/{slug}",
-        og_url=f"{public_prefix}/p/{slug}",
-    )
-    if noindex:
-        head += ROBOTS_NOINDEX_META + "\n"
-        # F4 wave item 6 (the CP2 walk's F-1, the lite half): every off-page door on a
-        # noindex page, said on the manifest. Listed, never refused — see the audit's
-        # docstring for why.
-        escape_routes = _escape_route_audit(html)
-        if escape_routes:
-            warnings.append(
-                "escape-route audit (noindex account page): this page links off itself to "
-                + ", ".join(escape_routes)
-                + " — the rubric allows only the CTA and the footer's legal links; judge "
-                "each of these deliberately."
-            )
-    head += f'<style id="lumen-static-css">{site_css}</style>\n'
     publish_manifest = {
         **_delivery_manifest(
             document,
@@ -1630,48 +2054,65 @@ def build_publish_package(
             fragments=fragments,
             assets=component_package.assets,
             warnings=warnings,
+            page_id=primary.page_id,
+            pages=[
+                {
+                    "page_id": page.page_id,
+                    "route": page.route,
+                    "html_digest": _sha256(html),
+                }
+                for page, html in staged
+            ],
         ),
         **_font_manifest_entries(font_gate),
         "slug": slug,
-        "canonical_url": f"{public_prefix}/p/{slug}",
+        "canonical_url": address.page_url("/"),
         # Present ONLY when the page asked for it, so an ordinary publish's manifest — and
         # therefore its `manifest_digest`, and therefore its `package_digest` — is byte-identical
         # to what it was before the option existed.
         **({"robots": "noindex"} if noindex else {}),
     }
     manifest_digest = _sha256(_canonical_json(publish_manifest))
-    head += (
+    # The manifest back-references, injected into every page once the manifest is final.
+    manifest_head = (
         '<meta http-equiv="Content-Security-Policy" content="'
-        f'{_escape_attr(_delivery_csp(base, meta=True))}">\n'
-    )
-    head += (
+        f'{_escape_attr(_delivery_csp(meta=True))}">\n'
         '<meta name="lumen-publish-manifest-digest" content="'
         f'{manifest_digest}">\n'
-    )
-    head += (
         '<link rel="lumen-publish-manifest" href="'
-        f'{_escape_attr(f"{public_prefix}/p/{slug}/manifest.json")}">\n'
+        f'{_escape_attr(f"{address.site_path}/manifest.json")}">\n'
     )
-    html = _inject_before_head_close(html, head)
-    html_digest = _sha256(html)
+    pages: List[PublishedPage] = []
+    for page, html in staged:
+        final_html = _inject_before_head_close(html, manifest_head)
+        pages.append(
+            PublishedPage(
+                page_id=page.page_id,
+                route=page.route,
+                html=final_html,
+                html_digest=_sha256(final_html),
+            )
+        )
+    served = next((page for page in pages if page.route == "/"), pages[0])
     package_digest = _sha256(
         _canonical_json(
             {
                 "manifest_digest": manifest_digest,
-                "html_digest": html_digest,
+                "page_html_digests": sorted(page.html_digest for page in pages),
                 "asset_digests": sorted(component_package.assets),
             }
         )
     )
     return PublishPackage(
-        html=html,
+        html=served.html,
         manifest=publish_manifest,
         assets=component_package.assets,
         package_digest=package_digest,
         manifest_digest=manifest_digest,
-        html_digest=html_digest,
-        runtime_version=_runtime_version(html),
+        html_digest=served.html_digest,
+        runtime_version=_runtime_version(served.html),
         warnings=warnings,
+        pages=pages,
     )
 
 
@@ -1682,8 +2123,10 @@ def build_publish_html(
     *,
     blobs: DesignBlobStore,
     slug: str,
-    public_base: str,
+    site_address: PublicSiteAddress,
     workspace_id: str,
+    default_description: Optional[str] = None,
+    default_social_preview_sha256: Optional[str] = None,
     node_bin: str = "node",
 ) -> Tuple[str, Optional[int], List[str]]:
     """Compatibility wrapper for callers that only need the publish HTML."""
@@ -1694,8 +2137,10 @@ def build_publish_html(
         document,
         blobs=blobs,
         slug=slug,
-        public_base=public_base,
+        site_address=site_address,
         workspace_id=workspace_id,
+        default_description=default_description,
+        default_social_preview_sha256=default_social_preview_sha256,
         node_bin=node_bin,
     )
     return package.html, package.runtime_version, package.warnings

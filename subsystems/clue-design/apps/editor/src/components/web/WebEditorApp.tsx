@@ -13,6 +13,7 @@ import {
   fetchWebPublishInfo,
   fetchWebRenderHtml,
   fetchWebTheme,
+  findWebNode,
   initialCustomComponentProps,
   listCustomComponents,
   listDialogComponents,
@@ -20,6 +21,7 @@ import {
   planCanvasNodeMove,
   planCanvasNodeResize,
   replaceAssetOp,
+  resolveActivePageId,
   saveWebTemplate,
   setNodePropsOp,
   setRichTextOp,
@@ -147,29 +149,10 @@ type TemplateToast =
   | { kind: "success"; documentId: string; title: string }
   | { kind: "error"; message: string };
 
-/** The default page a manual op targets when nothing is selected — the first
- * page, falling back to the conventional "home". */
-function defaultPageId(webDoc: WebDoc | null): string {
-  const first = webDoc?.pages?.[0]?.id;
-  return typeof first === "string" && first.length > 0 ? first : "home";
-}
-
-/** Locate a node (and its page) by id across the loaded WebDoc. */
-function findWebNode(
-  webDoc: WebDoc | null,
-  nodeId: string | null
-): { node: WebNode; pageId: string } | null {
-  if (!webDoc || !nodeId || !Array.isArray(webDoc.pages)) {
-    return null;
-  }
-  for (const page of webDoc.pages) {
-    const node = page.nodes?.[nodeId];
-    if (node) {
-      return { node, pageId: page.id };
-    }
-  }
-  return null;
-}
+/** The page a manual op targets when the document itself names none — an empty
+ * (freshly created) web document has no pages to resolve against, and "home" is
+ * the conventional first page every generator mints. */
+const FALLBACK_PAGE_ID = "home";
 
 /** Locate a page summary by id, falling back to the first page. */
 function findWebPage(webDoc: WebDoc | null, pageId: string): WebPageSummary | null {
@@ -334,6 +317,12 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   // The inspector's selected node id — persisted across the manual-edit reload
   // (node ids are stable) and re-validated against the fresh doc below.
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  // Which page of a multi-page site the shell is looking at. This is only what
+  // the USER asked for — `resolveActivePageId` below turns it into a page the
+  // loaded document actually still has, so a page retired by an agent turn or
+  // an undo silently falls back to the first one instead of stranding the
+  // preview on a 404.
+  const [requestedPageId, setRequestedPageId] = useState<string | null>(null);
   // The replace/insert-image drawer's open state (null = closed).
   const [assetDrawer, setAssetDrawer] = useState<AssetDrawerState | null>(null);
 
@@ -349,7 +338,10 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   const webDoc = document?.webDoc ?? null;
   const hasContent = webDocumentHasContent(webDoc);
   const baseVersion = document?.currentVersion ?? null;
-  const defaultPage = defaultPageId(webDoc);
+  const pages = webDoc?.pages ?? [];
+  const activePageId = resolveActivePageId(pages, requestedPageId);
+  // Op targeting needs a page id even for a document that names none.
+  const opPageId = activePageId || FALLBACK_PAGE_ID;
 
   const reload = useCallback(() => setReloadNonce((nonce) => nonce + 1), []);
   const manualEdits = useWebManualEdits({ documentId, baseVersion, onReload: reload });
@@ -358,13 +350,13 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   // range commands remain iframe-local until this boundary.
   const handleRichTextCommit = useCallback(
     (nodeId: string, content: RichTextDocument) => {
-      const located = findWebNode(webDoc, nodeId);
+      const located = findWebNode(webDoc, nodeId, activePageId);
       manualEdits.applyOps(
-        [setRichTextOp(located ? located.pageId : defaultPage, nodeId, content)],
+        [setRichTextOp(located ? located.pageId : opPageId, nodeId, content)],
         "rich_text_commit"
       );
     },
-    [webDoc, defaultPage, manualEdits]
+    [webDoc, activePageId, opPageId, manualEdits]
   );
 
   // Mirror an inbound bridge selection into the persisted inspector id: a node
@@ -382,7 +374,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   // planner, then persist the resulting MoveNode through the normal envelope.
   const handleMoveNode = useCallback(
     (nodeId: string, newParentNodeId: string, index: number) => {
-      const located = findWebNode(webDoc, nodeId);
+      const located = findWebNode(webDoc, nodeId, activePageId);
       const page = located ? findWebPage(webDoc, located.pageId) : null;
       if (!page) {
         return;
@@ -392,7 +384,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
         manualEdits.applyOps([plan.operation], plan.intent);
       }
     },
-    [webDoc, manualEdits]
+    [webDoc, activePageId, manualEdits]
   );
 
   // Resize handles report final CSS dimensions, never an inline-style
@@ -401,7 +393,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
   // agent all observe the same authored Tailwind classes.
   const handleResizeNode = useCallback(
     (nodeId: string, widthPx: number | null, heightPx: number | null) => {
-      const located = findWebNode(webDoc, nodeId);
+      const located = findWebNode(webDoc, nodeId, activePageId);
       const page = located ? findWebPage(webDoc, located.pageId) : null;
       if (!page) {
         return;
@@ -411,7 +403,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
         manualEdits.applyOps([plan.operation], plan.intent);
       }
     },
-    [webDoc, manualEdits]
+    [webDoc, activePageId, manualEdits]
   );
 
   const {
@@ -448,12 +440,25 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     clearSelection();
   }, [clearSelection]);
 
+  // Switching pages rebuilds the preview from a different page's nodes, so the
+  // selection cannot survive it: the selected node is not on the incoming page
+  // (or, worse, an id that happens to exist on both would silently re-point at
+  // a different element). Drop it in both the shell and the frame.
+  const handleSwitchPage = useCallback(
+    (pageId: string) => {
+      setRequestedPageId(pageId);
+      setActiveNodeId(null);
+      clearSelection();
+    },
+    [clearSelection]
+  );
+
   // After a reload, drop the inspector selection if the node no longer exists.
   useEffect(() => {
-    if (activeNodeId && !findWebNode(webDoc, activeNodeId)) {
+    if (activeNodeId && !findWebNode(webDoc, activeNodeId, activePageId)) {
       setActiveNodeId(null);
     }
-  }, [webDoc, activeNodeId]);
+  }, [webDoc, activeNodeId, activePageId]);
 
   // A render rebuild clears the iframe DOM, but canonical node ids are stable.
   // Restore the real selection in the fresh frame so the outline, move/resize
@@ -465,9 +470,9 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     }
   }, [activeNodeId, renderStatus, bridgeReady, selectNode]);
 
-  const located = findWebNode(webDoc, activeNodeId);
+  const located = findWebNode(webDoc, activeNodeId, activePageId);
   const inspectorNode = located?.node ?? null;
-  const inspectorPageId = located?.pageId ?? defaultPage;
+  const inspectorPageId = located?.pageId ?? opPageId;
   const inspectorPage = findWebPage(webDoc, inspectorPageId);
   const dialogs = React.useMemo(() => listDialogComponents(webDoc), [webDoc]);
   const richTextVariables = React.useMemo(
@@ -716,9 +721,15 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     resetSelection();
     setRenderStatus("loading");
     setRenderError(null);
-    fetchWebRenderHtml({ apiBaseUrl: editorApiBaseUrl() }, documentId, TAILWIND_RUNTIME_SRC, {
-      nonce
-    })
+    fetchWebRenderHtml(
+      { apiBaseUrl: editorApiBaseUrl() },
+      documentId,
+      TAILWIND_RUNTIME_SRC,
+      { nonce },
+      // Empty for a document with no pages — the fetch then sends no page_id at
+      // all, which is the endpoint's own first-page default.
+      activePageId
+    )
       .then((result) => {
         if (cancelled) return;
         setRenderHtml(result.html);
@@ -734,7 +745,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
     return () => {
       cancelled = true;
     };
-  }, [documentId, shouldRender, reloadNonce, resetSelection]);
+  }, [documentId, shouldRender, reloadNonce, activePageId, resetSelection]);
 
   // Fetch the resolved theme (inspector swatches) once there is content, and
   // refresh it alongside each reload. Theme failure is non-fatal — the
@@ -1210,6 +1221,21 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
             </button>
           </div>
         ) : null}
+        {state.kind === "ready" && pages.length > 1 ? (
+          <select
+            className="web-page-select"
+            aria-label="Page"
+            title="Page"
+            value={activePageId}
+            onChange={(event) => handleSwitchPage(event.target.value)}
+          >
+            {pages.map((page) => (
+              <option key={page.id} value={page.id}>
+                {page.name} · {page.route}
+              </option>
+            ))}
+          </select>
+        ) : null}
         {state.kind === "ready" ? (
           <div className="web-width-group" role="group" aria-label="Preview width">
             {WIDTH_CHIPS.map((chip) => (
@@ -1402,6 +1428,7 @@ export function WebEditorApp({ documentId }: { documentId: string }): React.Reac
                     nodeInfo && nodeInfo.nodeId === inspectorNode?.id ? nodeInfo : null
                   }
                   pageId={inspectorPageId}
+                  pages={pages}
                   page={inspectorPage}
                   theme={theme}
                   dialogs={dialogs}

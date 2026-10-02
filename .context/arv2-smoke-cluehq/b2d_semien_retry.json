@@ -1,0 +1,12 @@
+{
+  "search_returned": 1,
+  "totalElements": 1,
+  "match": {
+    "name": null,
+    "title": null,
+    "linkedin": "https://www.linkedin.com/in/alexander-semien",
+    "email": null,
+    "status": null,
+    "domain_type": null
+  }
+}

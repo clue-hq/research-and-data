@@ -25,19 +25,32 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from clue_api.agent_gate import money_text
 from clue_api.chat.message_bodies import HydratedBody
-from clue_projections import GateView, ThreadMessagePage, ThreadMessageSummary, ThreadView
+from clue_api.chat.turn_parts import TaskCounts, TaskState, task_part_from_run
+from clue_api.turn_action import TurnActionUnresolvable, parse_turn_action_ref
+from clue_projections import (
+    GateView,
+    ThreadMessagePage,
+    ThreadMessageSummary,
+    ThreadResearchTaskView,
+    ThreadView,
+)
+
+if TYPE_CHECKING:
+    from clue_api.arv2.discovery_store import DiscoveryRunRow
 
 __all__ = [
     "AgentProfileOptionWire",
     "ArchiveThreadResponse",
     "ComposerContextEntityWire",
     "ContextRefRequest",
+    "CreateBlankProjectRequest",
     "CreateThreadRequest",
     "HomeProjectRequest",
     "HomeComposerCapabilitiesWire",
@@ -53,14 +66,25 @@ __all__ = [
     "PrepareComposerContextRequest",
     "PreparedComposerContextResponse",
     "PreparedComposerContextWire",
+    "ResearchTaskFieldProgressWire",
+    "ResearchTaskListResponse",
+    "ResearchTaskWire",
+    "research_task_wire",
+    "ProjectActivityWire",
     "ProjectBootstrapResponse",
     "ProjectBootstrapWire",
+    "ProjectDirectoryItemResponse",
+    "ProjectDirectoryItemWire",
+    "ProjectDirectoryResponse",
     "ProjectShellResponse",
     "ProjectShellWire",
+    "SetProjectArchivedRequest",
     "SidebarProjectsResponse",
     "SubmitTurnRequest",
+    "UpdateProjectRequest",
     "gate_response_message",
     "gate_wire",
+    "ThreadDiscoveryWire",
     "ThreadListResponse",
     "ThreadMessageWire",
     "ThreadResponse",
@@ -70,6 +94,7 @@ __all__ = [
     "UpdateThreadRequest",
     "message_list_response",
     "message_wire",
+    "thread_discovery_wire",
     "thread_href",
     "thread_status",
     "thread_wire",
@@ -99,6 +124,43 @@ class CreateThreadRequest(_Request):
     """
 
     title: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class UpdateProjectRequest(_Request):
+    """At least one field; ``title`` alone is the sidebar rename, ``pinned`` alone is the pin
+    toggle."""
+
+    title: (
+        Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+        | None
+    ) = None
+    description: Annotated[str, StringConstraints(max_length=2000)] | None = None
+    pinned: bool | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> UpdateProjectRequest:
+        if self.title is None and self.description is None and self.pinned is None:
+            raise ValueError("at least one of title, description, pinned is required")
+        return self
+
+
+class CreateBlankProjectRequest(_Request):
+    brand_id: str = Field(min_length=1, max_length=255)
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    description: Annotated[str, StringConstraints(max_length=2000)] = ""
+
+
+class SetProjectArchivedRequest(_Request):
+    archived: bool
+
+
+class RenameProjectWire(_Wire):
+    id: str
+    title: str
+
+
+class RenameProjectResponse(_Wire):
+    data: RenameProjectWire
 
 
 class UpdateThreadRequest(_Request):
@@ -140,27 +202,54 @@ class GateResponseRequest(_Request):
     # coordinate: the server proves it is a member of the gate's immutable candidate snapshot and
     # then invokes the human-only confirmation tool with ambient workspace/project authority.
     selected_product_id: str | None = Field(default=None, min_length=1, max_length=200)
+    # Present only for a product-**set** selection gate (ARV2-PRODUCT-CATALOG-CONTRACT.md §6.3,
+    # ruling P1: a project targets a set). Same posture as the single choice above — the server
+    # proves every id is a member of the gate's immutable candidate snapshot and confirms the set
+    # itself with ambient workspace/project authority.
+    selected_product_ids: (
+        list[Annotated[str, StringConstraints(min_length=1, max_length=200)]] | None
+    ) = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def one_bounded_auxiliary_answer(self) -> GateResponseRequest:
-        if self.revision_request is not None and self.selected_product_id is not None:
-            raise ValueError("revision_request and selected_product_id are mutually exclusive")
+        supplied = [
+            name
+            for name, value in (
+                ("revision_request", self.revision_request),
+                ("selected_product_id", self.selected_product_id),
+                ("selected_product_ids", self.selected_product_ids),
+            )
+            if value is not None
+        ]
+        if len(supplied) > 1:
+            raise ValueError(
+                "revision_request, selected_product_id and selected_product_ids are mutually "
+                "exclusive"
+            )
         return self
 
 
 class ContextRefRequest(_Request):
     """An ordered, workspace-scoped domain-object reference.
 
-    ``design_document`` (P3.1) pins the open leg's document. ``design_node`` is
-    the ordered, per-message selection inside that exact document scene. ``design_asset``
-    identifies one ready image in the design asset library for reference conditioning.
+    ``design_document`` (P3.1) pins the open leg's document, or — with no nodes beside it — is a
+    plain mention of a microsite or ad from the Gallery. ``design_node`` is the ordered,
+    per-message selection inside that exact document scene. ``design_asset`` identifies one ready
+    image in the design asset library for reference conditioning. ``project_document`` is a
+    Gallery file (a row of ``brand_knowledge_document`` with a project), always version-pinned.
+
+    ``note`` is the marketer's own words about *this* ref — the annotation written onto one
+    element in the web editor ("1. Make this shorter"). It rides the ref rather than the message
+    so the instruction stays bound to the thing it is about; optional, because most refs are a
+    plain selection.
     """
 
     object_type: Literal[
-        "account", "contact", "design_document", "design_node", "design_asset"
+        "account", "contact", "design_document", "design_node", "design_asset", "project_document"
     ]
     object_id: str = Field(min_length=1, max_length=200)
     version: int | None = Field(default=None, gt=0)
+    note: str | None = Field(default=None, max_length=2_000)
 
 
 MAX_CONTEXT_REFS_PER_TURN = 100
@@ -179,6 +268,7 @@ class PrepareComposerContextRequest(_Request):
 class AttachmentRefRequest(_Request):
     """A durable upload receipt; browser-local URLs and paths have no field in this shape."""
 
+    upload_id: UUID
     artifact_key: str = Field(min_length=1, max_length=1000)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     media_type: str = Field(min_length=1, max_length=255)
@@ -228,12 +318,9 @@ class SubmitTurnRequest(_Request):
 
         if (self.message is None) == (self.gate_response is None):
             raise ValueError("supply exactly one of message or gate_response")
-        design_asset_refs = tuple(
-            ref for ref in self.context_refs if ref.object_type == "design_asset"
-        )
-        if self.message is not None and not self.message.strip() and not design_asset_refs:
+        if self.message is not None and not self.message.strip() and not self.context_refs:
             raise ValueError(
-                "message must contain something other than whitespace unless reference images "
+                "message must contain something other than whitespace unless context references "
                 "are supplied"
             )
         if self.gate_response is not None and (
@@ -273,7 +360,7 @@ def gate_response_message(response: GateResponseRequest) -> str:
     message under a used key.
     """
 
-    payload: dict[str, str | None] = {
+    payload: dict[str, str | list[str] | None] = {
         "kind": "gate_response",
         "gate_id": response.gate_id,
         "decision": response.decision,
@@ -290,6 +377,10 @@ def gate_response_message(response: GateResponseRequest) -> str:
     # product choice adds no new null member to their canonical transcript record.
     if response.selected_product_id is not None:
         payload["selected_product_id"] = response.selected_product_id
+    # Same rule for the set-valued answer: the member order is the order the human chose in, so it
+    # is captured as sent rather than sorted.
+    if response.selected_product_ids is not None:
+        payload["selected_product_ids"] = list(response.selected_product_ids)
     return json.dumps(
         payload,
         sort_keys=True,
@@ -373,6 +464,19 @@ class ThreadSpeakerWire(_Wire):
     design_leg_state: Literal["open_awaiting_user", "running"] | None = None
 
 
+class ThreadDiscoveryWire(_Wire):
+    """The account discovery holding this thread (spec 2026-09-30 §5, §7).
+
+    A thread whose discovery run is unreleased is busy: a message sent to it is held until the
+    run's wake turn finishes. ``stoppable`` is ``True`` while the run is still searching — the
+    composer's Stop then calls the discovery stop route — and ``False`` once it has ended and only
+    its wake turn is pending. The brief the agent wrote is internal and never rides this wire.
+    """
+
+    run_id: str
+    stoppable: bool
+
+
 class ThreadWire(_Wire):
     """One thread, in the sidebar conversation shape plus the fields the shell genuinely owns."""
 
@@ -387,6 +491,9 @@ class ThreadWire(_Wire):
     #: ``None`` on reads that did not derive it (the tool-reference projections after a
     #: create/rename); the listing always derives it. Absent knowledge is never a guess.
     speaker: ThreadSpeakerWire | None = None
+    #: The discovery holding this thread, or ``None`` when none does (and on reads that did not
+    #: derive it — the tool-reference projections after a create/rename).
+    discovery: ThreadDiscoveryWire | None = None
 
 
 class ThreadMessageWire(_Wire):
@@ -468,6 +575,9 @@ class ComposerContextEntityWire(_Wire):
     secondary_label: str
     image_url: str | None = None
     version: int | None = None
+    # A contact's account (id + name), so the picker can nest it and search can name it.
+    account_id: str | None = None
+    account_name: str | None = None
 
 
 class PreparedComposerContextWire(_Wire):
@@ -519,8 +629,14 @@ class ProjectBootstrapProjectWire(_Wire):
 
 
 class ProjectBootstrapThreadWire(_Wire):
+    """The thread the Home composer just opened.
+
+    ``title`` is ``None`` until the conversation namer titles it after the first completed turn
+    (spec 2026-09-18-conversation-naming-design §4.7); the client shows its New chat label.
+    """
+
     id: str
-    title: str
+    title: str | None
     href: str
     status: Literal["running"] = "running"
     pinned: bool = False
@@ -543,10 +659,14 @@ class ProjectBootstrapResponse(_Wire):
 class ProjectShellWire(_Wire):
     id: str
     title: str
+    description: str = ""
     brand_id: str
     product_id: str | None
     status: Literal["draft", "active", "paused", "archived"]
+    pinned: bool = False
     created_at: str
+    updated_at: str | None = None
+    archived_at: str | None = None
     context_entities: tuple[ComposerContextEntityWire, ...] = ()
     agent_profiles: tuple[AgentProfileOptionWire, ...] = ()
     default_agent_profile_id: str | None = None
@@ -585,6 +705,25 @@ class DesignArtifactResponse(_Wire):
     data: DesignArtifactWire
 
 
+class DesignArtifactAccountWire(_Wire):
+    """The account a listed artifact was made for — the artifacts page's own shape.
+
+    Spec 2026-09-19 §3.8: the document records the account, so the gallery feed carries it
+    rather than leaving the client to guess. The gallery card's designed component has no
+    account slot yet, so the field rides the wire and stays invisible until one is designed
+    (the dummy-frontend rule: no invented chrome). Absent when the document names no
+    account — a card then states nothing.
+    """
+
+    id: str
+    name: str
+    domain: str | None = None
+    account_entity_id: str | None = None
+    #: Brandfetch's Logo API mark for the account's domain (founder, 2026-09-20 — the
+    #: accounts screens' own rule), or ``None`` without a domain or a configured client id.
+    logo_path: str | None = None
+
+
 class DesignArtifactListItemWire(DesignArtifactWire):
     """One gallery row: the W1.3 item shape plus what a *listed* artifact needs.
 
@@ -593,6 +732,9 @@ class DesignArtifactListItemWire(DesignArtifactWire):
     thread it came from. ``origin_thread_id`` is the thread of the document's latest
     leg — a document worked on from two threads reports the most recent one, not all
     of them; the gallery uses it to link a card back to its conversation.
+
+    Since spec 2026-09-19 §3.2 a leg names a SET of documents, so one leg contributes one
+    item per artboard it opened, each reporting that leg's thread.
     """
 
     created_at: str
@@ -604,6 +746,7 @@ class DesignArtifactListItemWire(DesignArtifactWire):
     artifact_type: str | None = None
     width_px: int | None = None
     height_px: int | None = None
+    account: DesignArtifactAccountWire | None = None
 
 
 class DesignArtifactListResponse(_Wire):
@@ -623,6 +766,8 @@ class SidebarProjectWire(_Wire):
     id: str
     title: str
     href: str
+    pinned: bool
+    updated_at: str
     conversations: tuple[SidebarConversationWire, ...]
 
 
@@ -632,6 +777,41 @@ class SidebarPageMeta(_Wire):
 
 class SidebarProjectsResponse(_Wire):
     data: tuple[SidebarProjectWire, ...]
+    meta: SidebarPageMeta
+
+
+# --- the projects directory (spec 2026-09-19 §2.3) -----------------------------------------------
+
+
+class ProjectActivityWire(_Wire):
+    """What the directory card says about a project's conversations — counted, never guessed."""
+
+    chats: int
+    running: int
+    needs_input: int
+
+
+class ProjectDirectoryItemWire(_Wire):
+    id: str
+    title: str
+    description: str
+    href: str
+    status: Literal["active", "archived"]
+    pinned: bool
+    brand_id: str
+    product_id: str | None
+    created_at: str
+    updated_at: str
+    archived_at: str | None
+    activity: ProjectActivityWire
+
+
+class ProjectDirectoryItemResponse(_Wire):
+    data: ProjectDirectoryItemWire
+
+
+class ProjectDirectoryResponse(_Wire):
+    data: tuple[ProjectDirectoryItemWire, ...]
     meta: SidebarPageMeta
 
 
@@ -765,6 +945,98 @@ def gate_wire(view: GateView, *, budget_controls_enabled: bool = True) -> GateWi
     )
 
 
+class ResearchTaskFieldProgressWire(_Wire):
+    """Fields landed vs. fields honestly given up on, across a run's settled subjects."""
+
+    completed: int = Field(ge=0)
+    unresolved: int = Field(ge=0)
+
+
+class ResearchTaskWire(_Wire):
+    """One pollable research task — the stream's ``task`` part, plus what a poller needs.
+
+    Deliberately *not* a new shape. ``part_id``/``kind``/``state``/``title``/``run_ref``/``counts``
+    are produced by :func:`~clue_api.chat.turn_parts.task_part_from_run`, the same function the
+    turn-close emitter uses, so a polled task and a streamed one merge as the same card in the
+    transcript reducer rather than as two cards that happen to look alike.
+
+    Three members the stream frame has no use for: ``revision``, the job-event high-water mark the
+    reducer merges on; ``field_progress``, which is ``None`` until a job has published coverage
+    and for a contact run (Slice F's surface) — never a fabricated zero; and ``source_turn_id``,
+    the turn whose durable ``turn-action:`` receipt launched the run — a streamed part rides its
+    own turn's frames, but a polled one must say which message re-materializes its card after a
+    reload (C3's cold-load fix). ``None`` only for a launch receipt that is not a turn action.
+    """
+
+    part_id: str
+    kind: Literal["task"] = "task"
+    revision: int = Field(ge=1)
+    state: TaskState
+    title: str
+    run_ref: dict[str, Any]
+    counts: TaskCounts
+    exception_refs: tuple[dict[str, Any], ...] = ()
+    field_progress: ResearchTaskFieldProgressWire | None = None
+    source_turn_id: str | None = None
+
+
+class ResearchTaskListResponse(_Wire):
+    """``{"tasks": [...]}`` — an empty list for a thread that launched nothing, never a 404."""
+
+    tasks: tuple[ResearchTaskWire, ...]
+
+
+def research_task_wire(view: ThreadResearchTaskView, *, workspace_id: str) -> ResearchTaskWire:
+    """One polled task on the wire, built from the canonical task-part projection.
+
+    The canonical typed part is projected once and copied member-for-member onto the polled shape:
+    if ``TaskPart`` gains a member, this conversion is where the omission shows up, instead of the
+    polled card quietly drifting from the streamed one.
+    """
+
+    part = task_part_from_run(
+        run_id=UUID(view.task.research_run_id),
+        run_kind=view.task.run_kind,
+        state=view.task.run_state,
+        counts=TaskCounts(**view.task.counts.model_dump()),
+        workspace_id=workspace_id,
+    )
+    return ResearchTaskWire(
+        part_id=part.part_id,
+        kind="task",
+        # The projected part's own revision is the ``1`` default; the durable ledger's high-water
+        # mark replaces it here, which is the whole point of the poll.
+        revision=view.revision,
+        state=part.state,
+        title=part.title,
+        run_ref=part.run_ref,
+        counts=part.counts,
+        exception_refs=part.exception_refs,
+        field_progress=(
+            None
+            if view.field_progress is None
+            else ResearchTaskFieldProgressWire(
+                completed=view.field_progress.completed,
+                unresolved=view.field_progress.unresolved,
+            )
+        ),
+        source_turn_id=_source_turn_id(view.task.source_action_ref),
+    )
+
+
+def _source_turn_id(source_action_ref: str) -> str | None:
+    """The turn a launch receipt names, or ``None`` for a receipt that is not a turn action.
+
+    The canonical parser is the authority (:func:`clue_api.turn_action.parse_turn_action_ref`);
+    a ref it refuses yields an honest ``None`` rather than a hand-parsed guess.
+    """
+
+    try:
+        return str(parse_turn_action_ref(source_action_ref))
+    except TurnActionUnresolvable:
+        return None
+
+
 def thread_speaker_wire(design_leg: dict[str, Any] | None) -> ThreadSpeakerWire:
     """The speaker from one thread's open-leg row (or its absence)."""
 
@@ -786,6 +1058,7 @@ def thread_wire(
     open_gate_kinds: tuple[str, ...] = (),
     running: bool = False,
     speaker: ThreadSpeakerWire | None = None,
+    discovery: ThreadDiscoveryWire | None = None,
 ) -> ThreadWire:
     """One thread on the wire.
 
@@ -794,7 +1067,9 @@ def thread_wire(
     ``open_gate_kinds`` from :func:`~clue_projections.open_gate_kinds_for_threads` (D4),
     ``running`` from :func:`~clue_projections.threads_running` (D3), and ``speaker`` (P3.4) from
     :func:`~clue_api.design_leg_wiring.design_legs_for_threads` through
-    :func:`thread_speaker_wire` — ``None`` means "not derived", never "head-of-abm".
+    :func:`thread_speaker_wire` — ``None`` means "not derived", never "head-of-abm". ``discovery``
+    comes from :func:`~clue_api.arv2.discovery_store.active_discoveries_for_threads` through
+    :func:`thread_discovery_wire`.
     """
 
     return ThreadWire(
@@ -811,7 +1086,20 @@ def thread_wire(
         created_at=view.created_at.isoformat(),
         updated_at=view.updated_at.isoformat(),
         speaker=speaker,
+        discovery=discovery,
     )
+
+
+def thread_discovery_wire(run: DiscoveryRunRow | None) -> ThreadDiscoveryWire | None:
+    """The discovery a thread is held by, from its unreleased run — or ``None`` without one.
+
+    Stop means something only while the run is searching: once it has an end reason the run is
+    over and the thread waits only for the wake turn, which the turn's own Stop handles.
+    """
+
+    if run is None:
+        return None
+    return ThreadDiscoveryWire(run_id=str(run.run_id), stoppable=run.end_reason is None)
 
 
 def thread_wire_from_references(references: dict[str, Any]) -> ThreadWire:

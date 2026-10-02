@@ -16,6 +16,12 @@ is built with `checkpoint=False` and does NOT fire this seam, precisely so a che
 meaning "a round was ACCEPTED" rather than "somebody rendered". The trigger below is unchanged, and
 `tests/test_fast_loop.py` pins the two-instance split.
 
+AMENDED 2026-09-02 (task 4b, controller ruling): the trigger's predicate is `checkpoint_acceptance`,
+not the folded `reviewer` verdict. The canonical SVG export refuses to embed WOFF2 brand faces — 367
+of 517 stored faces, across 47 workspaces — so for those brands `reviewer.status` was error EVERY
+round while the critic PNG rendered clean, and no checkpoint ever committed. An export-format
+limitation is not a rejected round. `reviewer` itself is unchanged; only the predicate moved.
+
 The commit itself belongs to the caller (`lumen_api.main._LegSceneCommitter`, covered by
 `apps/api/tests/test_scene_turn_persist.py` section (i)). What is pinned here is the contract the
 runtime owes it: the FULL ledger every time, only when it grew, and never at the cost of the run.
@@ -25,10 +31,13 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from lumen_agent.tools import render as render_mod
-from lumen_agent.tools.substrate import LumenDesignTools
+from lumen_agent.tools.substrate import (
+    LumenDesignTools,
+    bundle_validation_errors,
+    checkpoint_acceptance,
+    reviewer_bundle_status,
+)
 
 from agent_fixtures import FakeCoreClient, runtime_config
 
@@ -164,44 +173,240 @@ def test_the_checkpoint_records_whether_preflight_was_clean(tmp_path, monkeypatc
     assert [meta["preflight_clean"] for _, meta in sink.calls] == [False, True]
 
 
+# --- round acceptance (task 4b, controller ruling 2026-09-02) -----------------
+#
+# The checkpoint predicate used to be `reviewer.status == "ok" and not
+# reviewer.validation_errors`. The live walk proved that never holds for a brand
+# whose fonts are WOFF2 (367 of 517 stored faces, 47 workspaces): the canonical
+# SVG export refuses to embed a font container whose fsType it cannot read, that
+# refusal folds into `reviewer`, and no checkpoint ever committed — while the
+# critic PNG rendered clean every round. An EXPORT-FORMAT limitation is not a
+# rejected round, so acceptance now keys on the raster.
+
+# Verbatim from the live run
+# .deepagent-workspace/run_5e3764bec5b5468f96385c49e360fafa/iterations/001/preview_bundle.json
+FONT_EMBED_REFUSAL = (
+    'SVG font embedding failed for page linkedin_square: font "Season Mix VF" cannot be '
+    "license-checked for embedding: unsupported font container (magic 0x774F4632; single "
+    "TTF/OTF required) — refusing to embed bytes whose fsType cannot be read"
+)
+
+
+def _canonical_ok() -> dict:
+    return {
+        "status": "ok",
+        "requested_format": "svg",
+        "diagnostics": [],
+        "artifacts": [
+            {"format": "svg", "path": "/tmp/preview.svg", "validation_errors": []}
+        ],
+        "validation_errors": [],
+    }
+
+
+def _canonical_woff2_refusal() -> dict:
+    """The canonical block of a real WOFF2-brand round: error, one refusal, no artifact."""
+    return {
+        "status": "error",
+        "requested_format": "svg",
+        "diagnostics": [],
+        "artifacts": [],
+        "validation_errors": [FONT_EMBED_REFUSAL],
+    }
+
+
+def _critic_ok() -> dict:
+    return {
+        "status": "ok",
+        "requested_format": "png",
+        "diagnostics": [],
+        "artifacts": [
+            {"format": "png", "path": "/tmp/preview.png", "validation_errors": []}
+        ],
+        "validation_errors": [],
+    }
+
+
+def test_a_canonical_svg_font_embedding_refusal_alone_still_accepts_the_round() -> None:
+    """(a) The WOFF2 shape: the raster is the acceptance proof, so the round is accepted."""
+    acceptance = checkpoint_acceptance(_canonical_woff2_refusal(), _critic_ok())
+
+    assert acceptance.accepted is True
+    assert acceptance.blocking_errors == []
+
+
+def test_any_other_canonical_error_blocks_and_is_named() -> None:
+    """(b) The narrowness of the carve-out: only the embedding refusal is excused."""
+    canonical = _canonical_woff2_refusal()
+    canonical["validation_errors"].append(
+        "SVG preview does not contain an <svg root near the start"
+    )
+
+    acceptance = checkpoint_acceptance(canonical, _critic_ok())
+
+    assert acceptance.accepted is False
+    assert acceptance.blocking_errors == [
+        "canonical: SVG preview does not contain an <svg root near the start"
+    ]
+
+
+def test_a_canonical_failure_that_names_nothing_blocks() -> None:
+    """A canonical status error with no error text cannot be classified as the refusal."""
+    canonical = {
+        "status": "error",
+        "requested_format": "svg",
+        "artifacts": [],
+        "validation_errors": [],
+    }
+
+    acceptance = checkpoint_acceptance(canonical, _critic_ok())
+
+    assert acceptance.accepted is False
+    assert acceptance.blocking_errors == ["canonical preview status is error"]
+
+
+def test_a_failing_critic_blocks_even_when_the_canonical_svg_is_clean() -> None:
+    """(c) The raster IS the proof — if it did not render, nothing was accepted."""
+    critic = {
+        "status": "error",
+        "requested_format": "png",
+        "artifacts": [
+            {
+                "format": "png",
+                "path": "/tmp/preview.png",
+                "validation_errors": ["PNG preview has an invalid PNG signature"],
+            }
+        ],
+        "validation_errors": [],
+    }
+
+    acceptance = checkpoint_acceptance(_canonical_ok(), critic)
+
+    assert acceptance.accepted is False
+    assert acceptance.blocking_errors == [
+        "critic preview status is error",
+        "critic png: PNG preview has an invalid PNG signature",
+    ]
+
+
+def test_both_summaries_clean_accepts() -> None:
+    """(d) The ordinary TTF/OTF-brand round, unchanged by this ruling."""
+    acceptance = checkpoint_acceptance(_canonical_ok(), _critic_ok())
+
+    assert acceptance.accepted is True
+    assert acceptance.blocking_errors == []
+
+
+def test_the_reviewer_verdict_the_agent_loop_reads_is_untouched() -> None:
+    """(f) Only the CHECKPOINT predicate moved.
+
+    `reviewer.status` / `reviewer.validation_errors` are the agent's own truth — the
+    orchestrator reads them to decide whether the round is presentable. A WOFF2 round still
+    reports error, with both errors verbatim, exactly as before.
+    """
+    canonical = _canonical_woff2_refusal()
+    critic = _critic_ok()
+
+    assert reviewer_bundle_status(canonical, critic) == "error"
+    assert bundle_validation_errors(canonical, critic) == [
+        "canonical preview status is error",
+        f"canonical: {FONT_EMBED_REFUSAL}",
+    ]
+    # ...and the round is accepted anyway.
+    assert checkpoint_acceptance(canonical, critic).accepted is True
+
+
 # --- the render_preview trigger ----------------------------------------------
 
 
-def _render_payload(status: str, validation_errors: list[str] | None = None) -> str:
+def _render_payload(canonical: dict, critic: dict) -> str:
+    """A bundle payload shaped exactly as `export_preview_bundle` builds one."""
+    validation_errors = bundle_validation_errors(canonical, critic)
     return json.dumps(
         {
+            "debug_only": False,
+            "debug_reason": None,
+            "canonical": canonical,
+            "critic": critic,
             "reviewer": {
-                "status": status,
-                "validation_errors": validation_errors or [],
-                "artifacts": [{"format": "png", "path": "/tmp/preview.png"}],
-            }
+                "status": reviewer_bundle_status(canonical, critic),
+                "requested_format": "png",
+                "artifacts": list(canonical.get("artifacts", []))
+                + list(critic.get("artifacts", [])),
+                "validation_errors": validation_errors,
+                "diagnostics": [],
+            },
         }
     )
 
 
-@pytest.mark.parametrize(
-    ("status", "validation_errors", "expected_calls"),
-    [
-        ("ok", [], 1),
-        ("error", [], 0),
-        ("ok", ["the raster is empty"], 0),
-    ],
-)
-def test_render_preview_checkpoints_only_a_render_that_actually_produced_pixels(
-    tmp_path, monkeypatch, status, validation_errors, expected_calls
-) -> None:
-    """The round-acceptance trigger. A refused or invalid render is not a finished round."""
-    sink = _Sink()
+def _drive_render(tmp_path, monkeypatch, sink, canonical: dict, critic: dict) -> str:
     tools = _tools(tmp_path, monkeypatch, sink)
     _log(tools, "add_page")
 
     png = tmp_path / "preview.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
     monkeypatch.setattr(
-        tools, "export_preview_bundle", lambda **_: _render_payload(status, validation_errors)
+        tools, "export_preview_bundle", lambda **_: _render_payload(canonical, critic)
     )
     monkeypatch.setattr(render_mod, "_latest_preview_png", lambda _tools: png)
 
+    return render_mod._render_preview_text(tools)
+
+
+def test_render_preview_checkpoints_the_woff2_round_exactly_once(
+    tmp_path, monkeypatch
+) -> None:
+    """(e) The live regression: a WOFF2 brand's round now commits.
+
+    And the summary the model reads is unchanged — still status=error, still both errors.
+    """
+    sink = _Sink()
+    text = _drive_render(
+        tmp_path, monkeypatch, sink, _canonical_woff2_refusal(), _critic_ok()
+    )
+
+    assert len(sink.calls) == 1
+    assert sink.calls[0][1]["reason"] == "render_preview"
+    assert text.splitlines()[0] == "render_preview: status=error"
+    assert f"  - canonical: {FONT_EMBED_REFUSAL}" in text
+
+
+def test_render_preview_does_not_checkpoint_when_the_critic_render_failed(
+    tmp_path, monkeypatch
+) -> None:
+    """(e, negative) A round whose raster did not validate is not a finished round."""
+    sink = _Sink()
+    critic = _critic_ok()
+    critic["status"] = "error"
+    critic["artifacts"][0]["validation_errors"] = ["artifact bytes are empty"]
+
+    _drive_render(tmp_path, monkeypatch, sink, _canonical_ok(), critic)
+
+    assert sink.calls == []
+
+
+def test_render_preview_checkpoints_a_wholly_clean_round(tmp_path, monkeypatch) -> None:
+    """The unchanged ordinary case."""
+    sink = _Sink()
+    _drive_render(tmp_path, monkeypatch, sink, _canonical_ok(), _critic_ok())
+
+    assert len(sink.calls) == 1
+
+
+def test_render_preview_without_a_png_never_checkpoints(tmp_path, monkeypatch) -> None:
+    """The gate still requires a PNG on disk — acceptance is not a substitute for pixels."""
+    sink = _Sink()
+    tools = _tools(tmp_path, monkeypatch, sink)
+    _log(tools, "add_page")
+
+    monkeypatch.setattr(
+        tools,
+        "export_preview_bundle",
+        lambda **_: _render_payload(_canonical_ok(), _critic_ok()),
+    )
+    monkeypatch.setattr(render_mod, "_latest_preview_png", lambda _tools: None)
+
     render_mod._render_preview_text(tools)
 
-    assert len(sink.calls) == expected_calls
+    assert sink.calls == []

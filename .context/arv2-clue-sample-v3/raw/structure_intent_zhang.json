@@ -1,0 +1,65 @@
+{
+  "id": "gen-1787808935-FINpKMeIAGSGDxAVJaMn",
+  "object": "chat.completion",
+  "created": 1787808935,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\"contact_claims\": [{\"entity\": \"lewis-zhang\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.\", \"evidence_span\": \"I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.\", \"source_url\": \"https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d\", \"confidence\": 0.95, \"priority\": 1, \"use_class\": \"professional-public\"}]}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqj8yogZDPEMC1C-OyiHCKfPMB9BvU9mgM4BY1AzueGo9WTrGLEDD7ENzKGDjvm-2NpJmhHjgPvC7sndKMtDmYhjmZNOsQa87BW7CZ1dvnTa2M4sth1R3Vu_eJSmApb6kmdOeQ4lEUEcpvLAIK2hefJCPk_RyVYEEiXRI8yHRPBu1A6A_vBOaY5PorPA7b1JAm52YjKfdb6xyVsRg831bsjGkL8v5h_OBgkhjaAljTxNMmV5cRmup5c81-llOHK3_qsZFrc3E3wcHXEJyjw1jOK-gzsRJyVb-xNoXsuBw4e8Qc1jymhdE5kxFy8x_SPpf5nORpxgOYHJ4EQmQEmhvFTyH8B3gF91eX8FWT4_FgSmwHXVEK18g3B-q1ZQ8SYfBBB1BAS0hh_esOPNz1gcLG5s7O8VZfkRk8X9ace4Dqk-2kmxtU29l3qs1kLXS8GCVbEzLya73-N_Udm5QDs2D3e6b9Sbl2b4Mu-XqgTdyElOd5yoevhKdfNUaJqos_xUOs2qdhz8gHDEaUOpShy4twuUGBTZwTPHGeqAxvosudAaYT-XQg-ph38FKSqnS49dBT7zo8PDvN6YiV4po-QCLT3hhpk5I1b1ZGa7Qzzg0ZVQhA8mG3xijxhIsD1UPXTaXK5ub7V87HDRkS4Bh1a0Nff_l9wFResyXVoTrMO58M2WwihFw29zeJbNBdx47JEbpvbbte5B5_CBXh2F2vG7gtSoiPc6SE5GoavjDw_E8VIINnvjAy_iMl_Dp0Yocb07OvVpAY6yK5mSZpSkcsBjU_STPBXW1f6M-kfehvxTnTDKplxf6TXxsmyum4vDHE52huewa81F_ii2Y88zSyza_tU7j9f0i8Njc9KXIUoaBHTKwWNy7YGiq-jW06uqng2TTcLyKGrFbjNLQHVQ6PVL5gv8XAly5rsaTJIgi7VjyOtBsnOfNY9xxIjRE1Ls-X_mMmyg0oORiIESs2H9wF0iGFuy2HxG27-UfNVl6YU3l0W_Ii-78l3mZMUq39BqOK397d8lhUb-IQCywu6A7NjqfJswhaNtArLsLQ18OKJN9F_hEUS5QVw1TXyegHCmmjfJnOiFWFqsl2xTsgGF8TtmewdspaScbSX8SUXU2gDQiean1QoO5c2fal-bapJcCll1LJ9dAMOnw9TOmw5pEm8cyMBh8g0WvLxTY-qj1SVwzrN2FEGa_cSeh945lhlBA2vlR2Bepm4Tdxn4f6hcwpceJLujOnNLvOcP1lFRzAvX9uT1aeZcGU7mSmzTF7z87MBj5qY2GwjrvgeQ63DZWd_HcEMtHswpuGsswa1BqyrExAkUlwxFN0HpQTiOcL_1lR6XD-DxMrOydQnEuM2RkeCcjoSMs_ADGTDGob5gDBlh9PdRoaGVCO_6sjapdqChQTH6Kay1yKDCuGkoRBxt_ySK-zEL6zew==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_08e3494c0b396a74016a8fcca865b887d0a2e83a5a60d9106a",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3704,
+    "completion_tokens": 183,
+    "total_tokens": 3887,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.001292,
+      "upstream_inference_prompt_cost": 0.000926,
+      "upstream_inference_completions_cost": 0.000366
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 3.0,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 15830,
+    "response_format": {
+      "type": "json_object"
+    }
+  }
+}

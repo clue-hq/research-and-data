@@ -10,7 +10,12 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_auth.errors import IdentityConflictError, InvitationUnavailableError
+from clue_auth.errors import (
+    IdentityConflictError,
+    InvitationAddressMismatch,
+    InvitationUnavailableError,
+    ProvisioningValidationError,
+)
 from clue_auth.models import AuthIdentity, PlatformUser, WorkspaceInvitation, WorkspaceMembership
 from clue_auth.store import (
     activate_invited_membership,
@@ -22,10 +27,21 @@ from clue_auth.store import (
     link_auth_identity,
     list_user_memberships,
     lock_invitation_by_digest,
+    lock_workspace_invitation,
     mark_invitation_accepted,
+    update_platform_user_email,
     update_platform_user_profile,
 )
-from clue_spine import Brand, Workspace, create_brand, create_workspace, get_brand, get_workspace
+from clue_core.normalize import canonical_workspace_name
+from clue_spine import (
+    DEFAULT_PAGES_SYSTEM_SUFFIX,
+    Brand,
+    Workspace,
+    create_brand,
+    create_workspace,
+    get_brand,
+    get_workspace,
+)
 
 
 class ProvisionedIdentity(BaseModel):
@@ -80,6 +96,16 @@ async def _resolve_or_create_user(
     return user, identity
 
 
+async def _lock_accepting_identity(
+    conn: AsyncConnection, provider_key: str, provider_subject: str
+) -> None:
+    # Lock identity before invitation rows in both entrypoints to avoid lock-order cycles.
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:identity, 0))"),
+        {"identity": f"{provider_key}:{provider_subject}"},
+    )
+
+
 async def accept_workspace_invitation(
     conn: AsyncConnection,
     *,
@@ -89,6 +115,8 @@ async def accept_workspace_invitation(
     provider_subject: str,
     display_name: str | None = None,
     now: datetime | None = None,
+    initial_first_name: str | None = None,
+    initial_last_name: str | None = None,
 ) -> ProvisionedIdentity:
     """Accept one invitation using a provider-verified delivery address.
 
@@ -96,11 +124,92 @@ async def accept_workspace_invitation(
     Retrying an already-accepted token is idempotent only for the same active mapped user.
     """
     at = now or datetime.now(UTC)
+    await _lock_accepting_identity(conn, provider_key, provider_subject)
     digest = hash_invitation_token(raw_token)
     invitation = await lock_invitation_by_digest(conn, digest)
     if invitation is None:
         raise InvitationUnavailableError("invitation does not exist")
 
+    return await _accept_locked_invitation(
+        conn,
+        invitation=invitation,
+        verified_address=verified_address,
+        provider_key=provider_key,
+        provider_subject=provider_subject,
+        display_name=display_name,
+        at=at,
+        initial_first_name=initial_first_name,
+        initial_last_name=initial_last_name,
+    )
+
+
+async def accept_pending_workspace_invitations(
+    conn: AsyncConnection,
+    *,
+    verified_address: str,
+    provider_key: str,
+    provider_subject: str,
+    now: datetime | None = None,
+    initial_first_name: str | None = None,
+    initial_last_name: str | None = None,
+) -> tuple[ProvisionedIdentity, ...]:
+    """Accept email-addressed invitations without reconstructing their bearer tokens."""
+    at = now or datetime.now(UTC)
+    await _lock_accepting_identity(conn, provider_key, provider_subject)
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT workspace_id, invitation_id FROM workspace_invitation "
+                    "WHERE lower(btrim(invited_address)) = :address AND status = 'pending' "
+                    "AND expires_at > :now ORDER BY created_at, invitation_id"
+                ),
+                {"address": verified_address.strip().casefold(), "now": at},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    accepted = []
+    for row in rows:
+        # A stale/removed membership must never regain access through a pending invite.
+        # A refusal in one workspace must not prevent joining unrelated workspaces.
+        try:
+            async with conn.begin_nested():
+                invitation = await lock_workspace_invitation(
+                    conn, workspace_id=row["workspace_id"], invitation_id=row["invitation_id"]
+                )
+                if invitation is not None:
+                    accepted.append(
+                        await _accept_locked_invitation(
+                            conn,
+                            invitation=invitation,
+                            verified_address=verified_address,
+                            provider_key=provider_key,
+                            provider_subject=provider_subject,
+                            display_name=None,
+                            at=at,
+                            initial_first_name=initial_first_name,
+                            initial_last_name=initial_last_name,
+                        )
+                    )
+        except InvitationUnavailableError:
+            continue
+    return tuple(accepted)
+
+
+async def _accept_locked_invitation(
+    conn: AsyncConnection,
+    *,
+    invitation: WorkspaceInvitation,
+    verified_address: str,
+    provider_key: str,
+    provider_subject: str,
+    display_name: str | None,
+    at: datetime,
+    initial_first_name: str | None,
+    initial_last_name: str | None,
+) -> ProvisionedIdentity:
     identity = await get_auth_identity(
         conn, provider_key=provider_key, provider_subject=provider_subject
     )
@@ -134,14 +243,25 @@ async def accept_workspace_invitation(
     invited = invitation.invited_address.strip().casefold().encode("utf-8")
     verified = verified_address.strip().casefold().encode("utf-8")
     if not hmac.compare_digest(invited, verified):
-        raise InvitationUnavailableError("verified address does not match invitation")
+        raise InvitationAddressMismatch("verified address does not match invitation")
 
+    created_user = identity is None
     user, identity = await _resolve_or_create_user(
         conn,
         provider_key=provider_key,
         provider_subject=provider_subject,
         display_name=display_name,
     )
+    if created_user and (initial_first_name or initial_last_name):
+        # Seed provider signup names only at identity creation, under the identity lock.
+        user = await update_platform_user_profile(
+            conn,
+            user.user_id,
+            first_name=initial_first_name,
+            last_name=initial_last_name,
+            display_name=display_name,
+            job_role=None,
+        )
     membership = await get_workspace_membership(
         conn, workspace_id=invitation.workspace_id, user_id=user.user_id
     )
@@ -167,6 +287,7 @@ async def accept_workspace_invitation(
     invitation = await mark_invitation_accepted(
         conn, invitation_id=invitation.invitation_id, user_id=user.user_id, now=at
     )
+    user = await update_platform_user_email(conn, user.user_id, verified_address)
     return ProvisionedIdentity(
         user=user,
         auth_identity=identity,
@@ -184,8 +305,14 @@ async def provision_workspace_owner(
     display_name: str | None = None,
     workspace_id: str | None = None,
     now: datetime | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
 ) -> ProvisionedWorkspaceOwner:
-    """Create the Clue workspace and owner membership under one caller-owned transaction."""
+    """Create the Clue workspace and owner membership under one caller-owned transaction.
+
+    ``pages_system_suffix`` is handed to :func:`clue_spine.create_workspace`, which allocates the
+    workspace's system hostname in the same transaction. Composition roots pass
+    ``settings.pages_system_suffix``; the default is the production suffix.
+    """
     at = now or datetime.now(UTC)
     user, identity = await _resolve_or_create_user(
         conn,
@@ -193,7 +320,12 @@ async def provision_workspace_owner(
         provider_subject=provider_subject,
         display_name=display_name,
     )
-    workspace = await create_workspace(conn, name=workspace_name, workspace_id=workspace_id)
+    workspace = await create_workspace(
+        conn,
+        name=workspace_name,
+        workspace_id=workspace_id,
+        pages_system_suffix=pages_system_suffix,
+    )
     membership = await create_workspace_membership(
         conn,
         workspace_id=workspace.workspace_id,
@@ -224,29 +356,25 @@ class ProvisionedSelfServeWorkspace(BaseModel):
     created: bool
 
 
-def _required(value: str, *, label: str) -> str:
-    cleaned = value.strip()
-    if not cleaned:
-        raise ValueError(f"{label} must be non-empty")
-    return cleaned
-
-
 async def provision_self_serve_workspace(
     conn: AsyncConnection,
     *,
     provider_key: str,
     provider_subject: str,
-    company_name: str,
+    company_name: str | None = None,
     first_name: str | None = None,
     last_name: str | None = None,
     job_role: str | None = None,
     company_website: str | None = None,
     now: datetime | None = None,
+    pages_system_suffix: str = DEFAULT_PAGES_SYSTEM_SUFFIX,
 ) -> ProvisionedSelfServeWorkspace:
     """The FI-4 D-2 operation: one replay-safe transaction from Clerk subject to owned workspace.
 
-    Links the external identity to a Clue user, creates the company workspace, creates its first
-    brand, makes the user the workspace owner, and saves the submitted profile. Idempotent on
+    Links the external identity to a Clue user, creates the company workspace (with its system
+    hostname under ``pages_system_suffix`` — composition roots pass
+    ``settings.pages_system_suffix``), creates its first brand, makes the user the workspace
+    owner, and saves the submitted profile. Idempotent on
     the ``self_serve_provisioning`` record keyed by the durable ``user_id`` (UNIQUE): a replay
     (browser retry, double-click, or a second linked identity of the same human) returns the
     workspace and brand recorded there — never a second workspace. A per-subject advisory
@@ -261,6 +389,12 @@ async def provision_self_serve_workspace(
     renamed here — the HTTP layer surfaces a divergent replayed name via
     ``company_name_ignored`` rather than pretending it was accepted.
 
+    The name itself is a typed company name when one was submitted, else the shared
+    ``canonical_workspace_name`` rule over ``company_website`` — a workspace is always named
+    something a human recognizes, and never its id. A submission carrying neither is refused
+    (``COMPANY_NAME_REQUIRED``) rather than provisioned nameless; the check runs before the
+    replay read, so a replay must submit the same minimum as a first call.
+
     Only a user who currently holds an ACTIVE membership (and has no provisioning record) is
     refused — self-serve provisioning is first-time setup, never a second-workspace factory.
     Invited/suspended/revoked memberships do not block: those are per-workspace states about
@@ -269,7 +403,13 @@ async def provision_self_serve_workspace(
     view's ``has_inactive_memberships``.
     """
     at = now or datetime.now(UTC)
-    name = _required(company_name, label="company_name")
+    typed = company_name.strip() if company_name and company_name.strip() else None
+    name = typed or canonical_workspace_name(company_website)
+    if name is None:
+        raise ProvisioningValidationError(
+            "COMPANY_NAME_REQUIRED",
+            "a company name or a website with a nameable domain is required",
+        )
     website = company_website.strip() if company_website and company_website.strip() else None
     await conn.execute(
         text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
@@ -300,7 +440,7 @@ async def provision_self_serve_workspace(
             "self-serve provisioning only performs first-time setup"
         )
     savepoint = await conn.begin_nested()
-    workspace = await create_workspace(conn, name=name)
+    workspace = await create_workspace(conn, name=name, pages_system_suffix=pages_system_suffix)
     brand = await create_brand(conn, workspace_id=workspace.workspace_id, name=name)
     membership = await create_workspace_membership(
         conn,

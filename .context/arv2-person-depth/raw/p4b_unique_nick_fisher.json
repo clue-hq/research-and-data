@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330095-crqA7aK4uqUd6BSCtD7H",
+  "object": "chat.completion",
+  "created": 1788330095,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"Nick Fisher is the author of a cocktail book tied to pop culture: he published 'Cocktail Chemistry: The Art and Science of Drinks from Iconic TV Shows and Movies' and marked its publication as a personal milestone tied to a long-running side project as a cocktail YouTuber.\",\n    \"evidence_quote\": \"today i'm celebrating a milestone that i set out to achieve when starting the channel over 6 years ago: publishing a book!\",\n    \"source_url\": \"https://www.linkedin.com/posts/nicholastfisher_if-weve-worked-together-you-may-have-discovered-activity-6932337822636937217-ptV7\",\n    \"why_generic_tools_miss_it\": \"Typical enrichment tools scrape job titles and employers but rarely surface niche creative side projects like publishing a cocktail book tied to a YouTube channel.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.publications\",\n      \"value\": \"Cocktail Chemistry: The Art and Science of Drinks from Iconic TV Shows and Movies\",\n      \"evidence_quote\": \"today i'm celebrating a milestone that i set out to achieve when starting the channel over 6 years ago: publishing a book!\",\n      \"source_url\": \"https://www.linkedin.com/posts/nicholastfisher_if-weve-worked-together-you-may-have-discovered-activity-6932337822636937217-ptV7\",\n      \"charter_category\": \"life_outside_work\",\n      \"priority\": \"P1\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"outreach_safe\": true\n    },\n    {\n      \"field_key\": \"contact.facet.hobby\",\n      \"value\": \"cocktail YouTuber (side hobby)\",\n      \"evidence_quote\": \"If we've worked together you may have discovered my little side hobby as a cocktail YouTuber\",\n      \"source_url\": \"https://www.linkedin.com/posts/nicholastfisher_if-weve-worked-together-you-may-have-discovered-activity-6932337822636937217-ptV7\",\n      \"charter_category\": \"life_outside_work\",\n      \"priority\": \"P2\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8Bw5oc5m965esIm8WC2i36rmUSxTMbO26UFEIctMpF5obtewJAs-QlJEVRAWNn0zJfFi8Qc2fYbQNVfsm2BAyTOghMLfqso7NHbGAhXIdLp2Le3iiYkTNkA7kV4NtkJxL35W_oBUwLrPOMzYav-DPQG7CGKrnRH_f4KkUTcqe15GlMbBgbOcsHoKM4FU1v4ceX7YolZynR38CIC8q5fUXxp9uHjFYJyx4fQn1IaUpoA4IQriBiTb90o52Bxy23hoJZbLqnca9ukwUZPuIFxwIpTbMrhhRUOrjQ2haVzTHSARTOqJmNe9Tp13LqTBOinqYJ_pY4TznjMtIf4l9JAMS3haBQ2AG9BUXVMZd0x8FYzl0OLk6t8lCqmwBTEolbN-LrNAm2Ya3Cr9ELMpmSYj1wmqW2QeO1UTI0MiambzP0_IGkndl-HHQ--gXCXFBkQmTDlA6wV7LFCnAniZ0ZfvDRXsmmHs1LtiCnwYjz7_hlBPlYKGDo4BwsjmZJfghCr-8OvYSJIg7LSVxY1W8P3oP_wTLVdNmITfrTjI3D-mn2-fJf_ZUS4aFBjOTQmC6GjHWsjLocGoIFBW-CF-cqoiqXBbKYZYwsS-YnIvatmva2MtqTNLIaicfRmcsrosrsJa0HeKrM9oBVL9EcPMp8TG6JIvmfPWWdLS2YlMbE6b73WTfQnGMPZGts7YhEGmGAYD5SNJ6cRK1sIIWYDDlflCr2R7A6Qf8g0DCRH8l9JHDL8BGJloTze4ipy98pMNUSjs5IlSfS14_OpPuR2IO34TyF5B9WG50p2f9m05isRCwXityIDiyQCE7Xi0uKXRigJ-erZJfOWVsG9sgWTJ8Nlo6yS26UZKfm5iYFuev1yBoXt9B7roZw9H9gR4aavaYeowXInZgDAfTaWBr5dIIdht5Yo1NdJfpaiHLcim-AgkTfgS2g3IlH4_T0Ds0cg1e-wnpl3wxgu56CRDFE07_H2eqBcdATxSFplBwHj93yg8w5ns1DJ54ynRdpRK6K0MV29596-e4q1UdNWY4vqy7Uh7e5orYiws2OKsk6rC83y6RM8Ty5txKcewpq1nhS1L2SGa2tMU02qpXjY0Eja_4yJ8q8FMSm5sSqCH7Dd_9cHgxOe2b4q9Grg4w_fcUqGuLno1Bsi8MAIFXiXMSvBka3hYkNZqSoCL-9F9QlAvOrKM1mxA5n0sOQFk6pnCuEKpj5HjPkWOAHXIadE8PMOUbXFpMiXu961GaegNw5iVvrU-DnZvyKpBXMINBj_cwn9yg7nu10ICN8bGY02QRvqfLqDFp6wPp723A0o7-S3s63uF0W79pI7bw-jvQKEe_lcj707h3njyrOyXjKmbEcl3nS5sY6hiakDNUbpZ0xXzqc_o2Qz9flaWiJd_IpXtDEKrNneZeKaKrnAiUgaLPHlpgD-iarz2Q==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_06f603c4a6f5be8b016a97c0701ba887d0921cba87d45fb09e",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2009,
+    "completion_tokens": 524,
+    "total_tokens": 2533,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00155025,
+      "upstream_inference_prompt_cost": 0.00050225,
+      "upstream_inference_completions_cost": 0.001048
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 4.45
+}

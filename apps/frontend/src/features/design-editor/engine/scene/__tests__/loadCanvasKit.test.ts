@@ -5,6 +5,7 @@ import { gzipSync } from "node:zlib";
 import { beforeEach, describe, expect, it } from "../../__tests__/vitest-shim";
 import type { CanvasKit, FontWeight } from "canvaskit-wasm";
 import {
+  boldChangesFace,
   loadCanvasKit,
   registerKitFontFaces,
   resetCanvasKitForTests,
@@ -224,5 +225,35 @@ describe.skipIf(!present)("CanvasKit loader (Wave 3 C0)", () => {
   it("keeps the canvaskit wasm within the C0 bundle budget (<3MB gzip)", () => {
     const gz = gzipSync(readFileSync(CK_WASM)).length;
     expect(gz).toBeLessThan(3 * 1024 * 1024);
+  });
+});
+
+/**
+ * Plan 1 item B (2026-09-04): the toolbar's Bold gate. `registerKitFontFaces`
+ * records a family's faces SYNCHRONOUSLY into the registry — no wasm, no
+ * provider — so this block runs whether or not the CanvasKit artifact is
+ * present, unlike the suite above.
+ */
+describe("boldChangesFace (Plan 1 item B)", () => {
+  beforeEach(() => {
+    resetCanvasKitForTests();
+  });
+
+  it("is false for a single-face family and true once a heavier face registers", () => {
+    const regular = fontArrayBuffer("Inter-Regular.ttf");
+    const bold = fontArrayBuffer("Inter-Bold.ttf");
+    registerKitFontFaces([{ key: "seasonMix@a", family: "seasonMix", bytes: regular }]);
+    expect(boldChangesFace("seasonMix")).toBe(false);
+    registerKitFontFaces([{ key: "seasonMix@b", family: "seasonMix", bytes: bold }]);
+    expect(boldChangesFace("seasonMix")).toBe(true);
+  });
+
+  it("an unregistered family answers for Inter, like hasItalicFace", () => {
+    expect(boldChangesFace("Nope")).toBe(false); // nothing registered at all
+    registerKitFontFaces([
+      { key: "Inter@r", family: "Inter", bytes: fontArrayBuffer("Inter-Regular.ttf") },
+      { key: "Inter@b", family: "Inter", bytes: fontArrayBuffer("Inter-Bold.ttf") }
+    ]);
+    expect(boldChangesFace("Nope")).toBe(true);
   });
 });

@@ -30,6 +30,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config import Secrets, Settings
@@ -43,6 +44,7 @@ from clue_storage import (
     SnapshotSink,
     StorageBackend,
     bind_snapshots,
+    purge_erased_artifacts,
     storage_from_settings,
     sweep_orphan_blobs,
 )
@@ -77,6 +79,19 @@ class DurableContactResearchPrivacyStopper:
         channel_field_keys: frozenset[str] | None = None,
         stop_external: bool = True,
     ) -> None:
+        from clue_api.arv2.research_operations import stop_contact_jobs
+
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+            {"key": f"contact-research:{workspace_id}:{contact_id}"},
+        )
+        await stop_contact_jobs(
+            conn,
+            workspace_id=workspace_id,
+            contact_id=contact_id,
+            stop_external=stop_external,
+            channel_fields=channel_field_keys,
+        )
         await stop_contact_research_operations(
             conn,
             workspace_id=workspace_id,
@@ -200,8 +215,9 @@ async def run_orphan_blob_sweep(
     grace: timedelta = DEFAULT_ORPHAN_SWEEP_GRACE,
     now: datetime | None = None,
 ) -> tuple[str, ...]:
-    """The scheduled maintenance op: delete abandoned orphan blobs (no ``artifact`` row, older than
-    ``grace``). Returns the deleted keys.
+    """Purge expired/erased artifacts, then abandoned orphan blobs older than ``grace``.
+
+    Returns the deleted orphan keys; erased-artifact purging keeps its existing durable receipts.
 
     A writer records the ``artifact`` row *before* putting the blob, so a transaction that rolls
     back and is never retried can leave a blob with no row — invisible to the DB, unreachable by
@@ -220,6 +236,7 @@ async def run_orphan_blob_sweep(
     hazard in the default — the sweep only ever *deletes* orphans, so the worst case of a wrong
     backend is a no-op, not a leak. Pass ``storage`` explicitly to sweep a specific backend."""
     backend = storage if storage is not None else build_storage_backend()
+    await purge_erased_artifacts(conn, backend)
     return await sweep_orphan_blobs(conn, backend, grace=grace, now=now)
 
 

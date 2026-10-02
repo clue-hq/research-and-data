@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from py_lumen_config import settings
 
@@ -15,6 +15,22 @@ class AgentRuntimeConfig:
     preview_format: str
     trace_dir: Path
     asset_store_root: Path | None = None
+    # Design session continuity (2026-09-18): when set, the substrate lands this turn inside the
+    # persistent session folder ``<trace_dir>/sessions/<session_id>/turns/<run_id>`` and the
+    # agent's workspace ``<trace_dir>/sessions/<session_id>/workspace`` survives across turns.
+    # None keeps the per-run folder ``<trace_dir>/<run_id>`` (editor preview, CLI, fixtures).
+    session_id: str | None = None
+    # Design session continuity (2026-09-18): a leg turn passes the PLATFORM's design run id here
+    # so a retried run reuses its own ``turns/<run_id>`` folder and stamps the same
+    # ``lumen_run_id`` on its human message — which is what lets `checkpoint.invoke_turn_graph`
+    # recognise the retry and resume the thread instead of re-prompting it. None mints a fresh
+    # runtime id per construction, exactly as before (editor preview, CLI, fixtures).
+    run_id: str | None = None
+    # Design note 2026-09-19: the platform's reads for a LEG turn — the target account's
+    # research through the governed tools, and the seller's pinned knowledge — injected by
+    # value as one object the design side calls from its worker thread. None (editor preview,
+    # CLI, fixtures, direct turns) means no such tools and no seller files.
+    platform_reads: Any | None = None
     # Agent LLM service. OpenRouter is the SOLE gateway for every LLM call — there
     # is no native-provider fallback. `agent_base_url` defaults to the OpenRouter API
     # and `model` must be an "openai:<openrouter-model-id>" value; `agent_api_key`
@@ -54,6 +70,14 @@ class AgentRuntimeConfig:
     # the reviewer's blocker on the requested target was "out of scope" by
     # construction. None/empty → no declared targets, behavior unchanged.
     turn_target_node_ids: list[str] | None = None
+    # R-A2: what the human WROTE about those targets, passed BY VALUE beside the ids
+    # (same rule again — the runtime never reads the API database). One mapping per
+    # submitted reference in submission order: {"target": node id, "path": the optional
+    # `:nth-child` chain naming an element inside a cloned band, "note": their words}.
+    # The order is part of the message — a marketer numbers their own annotations. The
+    # prompt block that renders these is the runtime's; the API renders the same facts
+    # into the brief's ANNOTATION lines. None/empty → a selection-only scoped turn.
+    turn_target_notes: list[dict] | None = None
     # RC (reference-conditioned design): the user-attached reference images for
     # THIS turn, resolved by the API from its asset library and passed BY VALUE
     # (same rule as brand_kit_assets: the runtime never reads the API database).
@@ -109,6 +133,8 @@ class AgentRuntimeConfig:
     # (disables load-balancing) so the append-only ReAct prefix stays cache-warm.
     # None → no `provider` field on the request (byte-identical to pre-L1).
     agent_provider_sort: str | None = "latency"
+    # Non-OpenAI agent models over chat-completions (see py_lumen_config for the ruling).
+    agent_chat_completions: bool = True
     # P3.2: fallback model id for the governed gateway (None → no fallback).
     agent_fallback_model: str | None = None
     # L3 (straggler watchdog): per-request timeout in SECONDS threaded into
@@ -140,6 +166,8 @@ class AgentRuntimeConfig:
     # The runtime only returns/places records from this manifest; None means the
     # library is unavailable for this turn, never that an asset may be invented.
     asset_library: dict | None = None
+    # API-owned lazy byte reader; accepts only an id from the frozen manifest.
+    asset_materializer: Any | None = None
     # P6.4: an account-bound durable custom-component capability supplied by
     # the API worker. The runtime receives methods, not database/store paths;
     # source is projected by value into the run's virtual filesystem while all
@@ -185,6 +213,14 @@ class AgentRuntimeConfig:
     # personalize every page with the target's real mark. None means this turn cannot bind; the
     # tool says so and refuses, and an empty account logo stays CORRECT.
     account_logo_binder: Any | None = None
+    # The durable target-logo family cache (founder decision #4, 2026-08-31):
+    # `lumen_api.agent_logo_family_cache.DurableLogoFamilyCache`, supplied by the
+    # API worker at turn composition like `account_logo_binder`. None -> fetch_logo
+    # simply runs the two rungs every call (correct, just slower/costlier).
+    logo_family_cache: Any | None = None
+    # The PUBLIC Brandfetch Logo-API client id, for the web lane's hotlink prompt
+    # guidance (decorative third-party logos). None/blank -> guidance omitted.
+    brandfetch_client_id: str | None = None
     # Brief-clarification headless/eval mode (LUMEN_AGENT_AUTO_DEFAULTS=1). When
     # true, the harness does NOT register `request_clarification` on the
     # orchestrator: it applies the skill's defaults and ledgers each assumption
@@ -197,6 +233,14 @@ class AgentRuntimeConfig:
     # byte-identical to the pre-fast-loop behaviour, which is the contract the
     # flag-off tests pin. Web turns never consult it (§3 non-goal).
     fast_loop: bool = False
+    # Scene-only knowledge rollout. Web harnesses always materialize legacy.
+    scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
+    # Caller-selected viewing condition for candidate acceptance. Empty disables
+    # numeric sizing policy; the model cannot select it through its direction.
+    scene_review_profile: str = ""
+    # Candidate-only one-agent scene experiment. The scene factory requires the
+    # candidate bundle and fast loop; website factories ignore this selector.
+    scene_solo: bool = False
     # R3 kill-switch: re-enable the `lumen-visual-reviewer` subagent on scene
     # turns WITHOUT leaving the fast loop. Read through
     # `scene_reviewer_enabled`, never directly — that property is the single
@@ -209,6 +253,10 @@ class AgentRuntimeConfig:
     # scenes. Default OFF, and the default is a decision (see py_lumen_config for why).
     web_fast_loop: bool = False
     web_reviewer: bool = False
+    # SOLO MODE (founder ruling 2026-09-04): one web deepagent — director, designer, and
+    # reviewer in a single loop. Quarantines BOTH web subagents (the D-F7 pattern, widened)
+    # and swaps in the merged solo prompt; the two flags above are moot while this is on.
+    web_solo: bool = False
     # R4 budgets, re-shaped by ruling D1 (2026-08-26). Only consulted under
     # `fast_loop`. Two pairs, two jobs:
     #   * `fast_loop_target_*` — GUIDANCE. Communicated to the orchestrator in
@@ -261,16 +309,22 @@ class AgentRuntimeConfig:
             agent_reasoning=settings.lumen_agent_reasoning,
             agent_max_tokens=settings.lumen_agent_max_tokens,
             agent_provider_sort=settings.lumen_agent_provider_sort,
+            agent_chat_completions=settings.lumen_agent_openrouter_chat_completions,
             agent_fallback_model=settings.lumen_agent_fallback_model,
             agent_llm_timeout_s=settings.lumen_agent_llm_timeout_s,
             agent_model_orchestrator=settings.lumen_agent_model_orchestrator,
             agent_model_author=settings.lumen_agent_model_author,
             agent_model_reviewer=settings.lumen_agent_model_reviewer,
+            brandfetch_client_id=(settings.brandfetch_client_id.strip() or None),
             auto_defaults=settings.lumen_agent_auto_defaults,
             fast_loop=settings.lumen_agent_fast_loop,
+            scene_skill_bundle=settings.lumen_agent_scene_skill_bundle,
+            scene_review_profile=settings.lumen_agent_scene_review_profile.strip(),
+            scene_solo=settings.lumen_agent_scene_solo,
             scene_reviewer=settings.lumen_agent_scene_reviewer,
             web_fast_loop=settings.lumen_agent_web_fast_loop,
             web_reviewer=settings.lumen_agent_web_reviewer,
+            web_solo=settings.lumen_agent_web_solo,
             fast_loop_target_llm_calls=settings.lumen_agent_fast_loop_target_llm_calls,
             fast_loop_target_wall_clock_s=settings.lumen_agent_fast_loop_target_wall_clock_s,
             fast_loop_max_llm_calls=settings.lumen_agent_fast_loop_max_llm_calls,
@@ -290,8 +344,9 @@ class AgentRuntimeConfig:
         it is simply absent from the scene orchestrator's subagent list, which
         is tool-absence enforcement exactly as `request_clarification` does it.
         `LUMEN_AGENT_SCENE_REVIEWER=1` puts it back.
+        Scene solo overrides that switch because no subagent is constructed.
         """
-        return (not self.fast_loop) or self.scene_reviewer
+        return not self.scene_solo and ((not self.fast_loop) or self.scene_reviewer)
 
     @property
     def web_reviewer_enabled(self) -> bool:
@@ -333,6 +388,14 @@ class AgentRuntimeConfig:
         `<workspace_root>/run_<id>`.
         """
         return self.trace_dir
+
+    def session_dir(self) -> Path | None:
+        """The persistent folder this document's design session owns, or None.
+
+        None means there is no session (editor preview, CLI, fixtures) and the
+        substrate keeps today's per-run folder.
+        """
+        return None if self.session_id is None else self.trace_dir / "sessions" / self.session_id
 
     @property
     def effective_asset_store_root(self) -> Path:

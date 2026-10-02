@@ -24,7 +24,8 @@ import {
   nodePageSpaceBox,
   parentInfoForNode,
 } from "../engine/scene/sceneQueries";
-import { oklchToHexCss } from "../engine/scene/tokenColors";
+import { oklchToHexCss, type KitTokenMaps } from "../engine/scene/tokenColors";
+import { resolvedTextFields, textTypographyResolves } from "../engine/scene/renderAdapter";
 import { sceneAssetPassthroughUrl } from "./scene-canvas-view";
 import { paletteHex, type ScenePalette } from "./scene-palette";
 
@@ -262,6 +263,8 @@ export interface SceneInspectorExtraState {
   title?: string;
   /** §1.2: the V-alignment toggles are disabled while the height mode is hug. */
   valignDisabled?: boolean;
+  /** Bound font values cannot be edited until this document's kit resolves. */
+  typographyUnavailable?: boolean;
 }
 
 /** §1.4/OQ-2's three display labels. ONE statement of the vocabulary, in the
@@ -587,7 +590,7 @@ interface PaintState {
    *
    * There used to be a `color` field stated only for a paint that IS a solid
    * hex, which left every swatch beside a gradient or a token showing the
-   * shared `DEFAULT_STATE` seed (`#00F59B`). Browser-proven: with a radial
+   * shared `DEFAULT_STATE` seed. Browser-proven: with a radial
    * gradient on the frame, picking "Solid" showed the select saying "Solid",
    * the swatch saying a colour from two edits earlier, and the artboard
    * rendering the gradient — three answers at once. A gradient's FIRST STOP is
@@ -752,6 +755,8 @@ function solvedManagedOffset(
 export function hydrateSceneInspectorState(
   node: Node,
   scene: Scene,
+  tokenMaps?: KitTokenMaps | null,
+  effectiveNode?: Node | null,
 ): SceneInspectorState {
   const state: SceneInspectorState = {};
 
@@ -809,7 +814,7 @@ export function hydrateSceneInspectorState(
   if (node.kind.kind === "text") {
     // Ruling A16: the text swatch states `swatch` too. A token-filled headline
     // (the harvest's own `$text.inverse`) used to show the shared
-    // `DEFAULT_STATE` seed `#00F59B` — telling the user the text is mint green
+    // `DEFAULT_STATE` seed — telling the user the text is the seed colour
     // while it is brand-token coloured, on a control that ACCEPTS a write
     // (§1.6's ratified detach), which is worse than the gradient case behind
     // §1.2's guard. Same fabrication as the Background swatch, two lines away.
@@ -862,9 +867,15 @@ export function hydrateSceneInspectorState(
   // §1.2 Typography (text only).
   if (node.kind.kind === "text") {
     const text = node.kind;
-    state.fontFamily = text.font_family;
-    state.fontSize = numberText(text.font_size);
-    const weight = vocabulary(FONT_WEIGHT_LABELS, String(text.font_weight));
+    // Rung A: the STORED content, verbatim. `text_transform` is a paint-time
+    // concern (the engine uppercases when it draws, not when it stores), so the
+    // row must state what a commit will replace, never what the canvas shows.
+    state.content = text.content;
+    state.typographyUnavailable = !textTypographyResolves(text, tokenMaps);
+    const styled = resolvedTextFields(text, tokenMaps ?? { typography: {}, numbers: {} });
+    state.fontFamily = styled.fontFamily;
+    state.fontSize = numberText(styled.fontSize);
+    const weight = vocabulary(FONT_WEIGHT_LABELS, String(styled.fontWeight));
     if (weight) state.fontWeight = weight;
     // §1.2 row 5: `TextAlign` passes straight through — the ad schema's fourth
     // toggle IS `justify` (§2 row 2), so nothing is dropped at this seam.
@@ -943,15 +954,19 @@ export function hydrateSceneInspectorState(
   const layout =
     node.layout ?? (node.kind.kind === "auto_layout" ? defaultLayoutProps() : null);
   if (layout) {
-    state.gap = numberText(layout.gap);
+    const effective = effectiveNode?.layout;
+    state.gap = layout.gap_token && effectiveNode !== undefined && !effective ? "" : numberText(effective?.gap ?? layout.gap);
     state.grow = numberText(layout.grow);
-    const [top, right, bottom, left] = layout.padding;
+    const [top, right, bottom, left] = effective?.padding ?? layout.padding;
     state.padding = {
       bottom: numberText(bottom),
       left: numberText(left),
       right: numberText(right),
       top: numberText(top),
     };
+    if (layout.padding_token && effectiveNode !== undefined && !effective) {
+      state.padding = { top: "", right: "", bottom: "", left: "" };
+    }
     // UNCONDITIONAL, unlike the valign row above — and for the same reason the
     // four rows above it are: these are BOUND rows on a section that renders
     // for every auto-layout node, while `align_x`/`align_y` are optional in the
@@ -989,11 +1004,13 @@ export function hydrateSceneSelectionState(
   scene: Scene,
   pageId: PageId | null,
   node: Node | null,
+  tokenMaps?: KitTokenMaps | null,
+  effectiveNode?: Node | null,
 ): SceneInspectorState | null {
   if (!node) {
     return pageId ? hydrateSceneCanvasState(scene, pageId) : null;
   }
-  const nodeState = hydrateSceneInspectorState(node, scene);
+  const nodeState = hydrateSceneInspectorState(node, scene, tokenMaps, effectiveNode);
   if (!pageId || node.id !== rootFrameId(scene, pageId)) {
     return nodeState;
   }
@@ -1054,7 +1071,7 @@ export function hydrateSceneCanvasState(
   const root = frameId ? scene.nodes[frameId] : null;
   const fill = paintState(root?.fills[0]?.paint);
   // Ruling A15.1: `swatch`, not `color` — a gradient-filled frame must show the
-  // colour the document HAS (its first stop), not the dummy's `#00F59B` seed.
+  // colour the document HAS (its first stop), not the dummy's seed.
   state.backgroundColor = fill.swatch;
   if (fill.token !== undefined) state.tokenBackgroundColor = fill.token;
   state.backgroundFill = fill.fill;

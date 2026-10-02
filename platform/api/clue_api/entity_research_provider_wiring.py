@@ -7,11 +7,14 @@ while composing: Exa/Sumble transports remain dormant until the responsible agen
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from math import ceil
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
+
+from pydantic import JsonValue
 
 from clue_agents.contracts import ModelPolicy
 from clue_api.committee_eligibility import (
@@ -44,9 +47,11 @@ from clue_api.exa_contact_materialization import (
 from clue_api.exa_deep_acquisition import (
     ExaDeepAcquisitionCoordinator,
     ExaDeepHttpAcquisitionTransport,
+    pack_exa_deep_field_bundles,
 )
 from clue_api.exa_deep_materialization import ExaDeepSnapshotResolverProvider
 from clue_api.exa_entity_research_tools import (
+    DEFAULT_ACCOUNT_RESEARCH_INTENT,
     ExaAccountSemanticResearchAction,
     ExaContactSemanticResearchAction,
     ExaEntityResearchProjectionBuilder,
@@ -76,10 +81,12 @@ from clue_core.entity_research import (
 )
 from clue_db import ConnFactory, transaction
 from clue_fleet import EntityResearchJobRow
+from clue_research.claimstore import FieldRegistryScope, get_effective_field
 from clue_research.directives import effective_account_research_directive
 from clue_research.durable import get_account_run
+from clue_research.identity import get_account
 from clue_research.resolvers.exa import SOURCE_KEY as EXA_SOURCE_KEY
-from clue_research.resolvers.exa import ExaDeepConfig
+from clue_research.resolvers.exa import ExaDeepConfig, ExaDeepFieldSpec
 from clue_research.resolvers.exa.deep_contract import EXA_OUTPUT_MAX_FIELDS
 from clue_research.resolvers.sumble import (
     JOBS_SOURCE_KEY,
@@ -108,8 +115,9 @@ class _UnavailableProviderAction(EntityResearchProviderAction):
         request: GovernedResearchToolRequest,
         *,
         before_dispatch: Any,
+        settle_terminal: Any,
     ) -> tuple[ProviderResearchProjectionDraft, ...]:
-        del request, before_dispatch
+        del request, before_dispatch, settle_terminal
         # A model choosing a provider the exact job never selected is a repairable request, not a
         # job-integrity failure: refuse it back to the agent without suspending the account.
         raise EntityResearchGovernedRejection("provider_not_selected", self._reason)
@@ -267,10 +275,19 @@ class ProductionAccountResearchProviderActions:
         )
         concurrency = self._settings.entity_research_provider_concurrency_limit
         floor = self._settings.entity_research_unpriced_reservation_cents
+        exa_config = _exa_config(self._settings)
+        # The atomic reservation must cover the plan the action will actually compile, so it is
+        # sized by the *same* packer. The old `ceil(fields / max-aliases)` estimate only knew the
+        # alias cap; object-valued rows split earlier on the nested-property cap, so a real
+        # comprehensive account compiled four bundles against a two-bundle reservation and the
+        # settlement guard suspended every job.
+        exa_bundles = await self._exa_bundle_count(job, exa_fields, config=exa_config)
+        # Zero bundles means the job selected no Exa field at all, so no Exa operation can ever be
+        # created: the slot below composes ``_UnavailableProviderAction``, which refuses before any
+        # reservation is consumed. It still takes the unpriced floor because a binding must carry a
+        # positive worst-case reservation.
         exa_reserve = await self._source_reservation(
-            EXA_SOURCE_KEY,
-            calls=max(1, ceil(len(exa_fields) / EXA_OUTPUT_MAX_FIELDS)),
-            floor=floor,
+            EXA_SOURCE_KEY, calls=max(1, exa_bundles), floor=floor
         )
         if exa_fields:
             if (
@@ -280,7 +297,6 @@ class ProductionAccountResearchProviderActions:
                 raise EntityResearchProductionCompositionError(
                     "selected Exa account fields require enabled acquisition and credentials"
                 )
-            exa_config = _exa_config(self._settings)
             exa_action: EntityResearchProviderAction = ExaAccountSemanticResearchAction(
                 workspace_id=job.workspace_id,
                 project_id=authorization.project_id,
@@ -311,9 +327,7 @@ class ProductionAccountResearchProviderActions:
                 freshness_policy_ref=context.directive.effort_policy.freshness_policy_ref,
                 freshness_seconds=86_400,
                 entity_research_job_id=job.job_id,
-                cost_cents_reserved_per_bundle=(
-                    exa_reserve / max(1, ceil(len(exa_fields) / EXA_OUTPUT_MAX_FIELDS))
-                ),
+                cost_cents_reserved_per_bundle=exa_reserve / exa_bundles,
                 config=exa_config,
             )
         else:
@@ -358,34 +372,46 @@ class ProductionAccountResearchProviderActions:
                 "the exact account job selected no Sumble structured field"
             )
 
-        if (
+        # Committee configuration is required only by a job that actually selected committee
+        # discovery. Account-only research (a confirmed directive with no committee source) used
+        # to be uncomposable whenever no-reveal Sumble committee acquisition was off; the tool now
+        # refuses the same way every other unselected provider does — governed, not fatal.
+        committee_requested = bool(authorization.selection.committee_source_keys)
+        committee_action: EntityResearchProviderAction
+        if not committee_requested:
+            committee_action = _UnavailableProviderAction(
+                "this run's confirmed directive selected no committee discovery"
+            )
+        elif (
             not self._settings.sumble_committee_acquisition_enabled
             or self._secrets.sumble_api_key is None
         ):
             raise EntityResearchProductionCompositionError(
-                "R6 account research requires enabled no-reveal Sumble committee acquisition"
+                "committee-selecting account research requires enabled no-reveal "
+                "Sumble committee acquisition"
             )
-        committee_action = SumbleCommitteeSemanticResearchAction(
-            inputs=_CommitteeInputs(
-                resolver=self._committee_inputs,
-                job=job,
-                account_run_id=account_run_id,
-                tier=context.tier,
-            ),
-            eligibility=self._committee_eligibility,
-            coordinator=SumbleCommitteeAcquisitionCoordinator(
-                transport=SumbleV9CommitteeClient(api_key=self._secrets.sumble_api_key),
+        else:
+            committee_action = SumbleCommitteeSemanticResearchAction(
+                inputs=_CommitteeInputs(
+                    resolver=self._committee_inputs,
+                    job=job,
+                    account_run_id=account_run_id,
+                    tier=context.tier,
+                ),
+                eligibility=self._committee_eligibility,
+                coordinator=SumbleCommitteeAcquisitionCoordinator(
+                    transport=SumbleV9CommitteeClient(api_key=self._secrets.sumble_api_key),
+                    storage=self._storage,
+                    cents_per_credit=self._settings.sumble_cents_per_credit,
+                    conn_factory=self._conn_factory,
+                    poll_after_seconds=self._settings.sumble_committee_poll_after_s,
+                    enforce_budget=self._settings.budget_controls_enabled,
+                ),
                 storage=self._storage,
-                cents_per_credit=self._settings.sumble_cents_per_credit,
                 conn_factory=self._conn_factory,
-                poll_after_seconds=self._settings.sumble_committee_poll_after_s,
-                enforce_budget=self._settings.budget_controls_enabled,
-            ),
-            storage=self._storage,
-            conn_factory=self._conn_factory,
-            gateway=self._gateway,
-            role_model=self._gateway_config.synthesis_model,
-        )
+                gateway=self._gateway,
+                role_model=self._gateway_config.synthesis_model,
+            )
         committee_reserve = max(
             floor,
             Decimal(context.directive.committee_plan.candidate_cap * 2)
@@ -411,6 +437,59 @@ class ProductionAccountResearchProviderActions:
                 concurrency=concurrency,
             ),
         }
+
+    async def _exa_bundle_count(
+        self,
+        job: EntityResearchJobRow,
+        exa_fields: Sequence[str],
+        *,
+        config: ExaDeepConfig,
+    ) -> int:
+        """How many Exa calls this job's admitted fields really compile into.
+
+        Reads the same packer the action will run, over the *whole* admitted Exa set. A tool call
+        may request a subset, and the greedy packer can only ever produce fewer bundles from
+        fewer fields, so this is the exact worst case the atomic reservation has to cover.
+        """
+
+        if not exa_fields:
+            return 0
+        authorization = job.authorization
+        async with self._conn_factory() as conn:
+            account = await get_account(conn, EntityId(authorization.subject_entity_id))
+            if account is None or account.workspace_id != job.workspace_id:
+                raise EntityResearchProductionCompositionError(
+                    "Exa account reservation cannot resolve its exact canonical account"
+                )
+            specs: list[ExaDeepFieldSpec] = []
+            for field_key in exa_fields:
+                effective = await get_effective_field(
+                    conn,
+                    scope=FieldRegistryScope.for_workspace(job.workspace_id),
+                    field_key=field_key,
+                )
+                if effective is None or effective.value_schema is None:
+                    raise EntityResearchProductionCompositionError(
+                        f"Exa field {field_key!r} lacks an effective value schema"
+                    )
+                specs.append(
+                    ExaDeepFieldSpec(
+                        field_key=effective.field_def.field_key,
+                        value_schema=cast(dict[str, JsonValue], effective.value_schema),
+                    )
+                )
+        questions = authorization.effective_research_questions
+        return len(
+            pack_exa_deep_field_bundles(
+                account,
+                specs,
+                # Mirrors ``ExaAccountSemanticResearchAction.execute`` exactly; a different
+                # planning sentence could compile a different request and desize the reservation.
+                research_intent="\n".join(questions) or DEFAULT_ACCOUNT_RESEARCH_INTENT,
+                additional_queries=questions,
+                config=config,
+            )
+        )
 
     async def _source_reservation(
         self,
@@ -579,6 +658,7 @@ class ProductionContactResearchChannelActions:
             entity_research_job_id=job.job_id,
             conn_factory=self._conn_factory,
             provider_concurrency_limit=(self._settings.entity_research_provider_concurrency_limit),
+            enforce_budget=self._settings.budget_controls_enabled,
         )
 
 

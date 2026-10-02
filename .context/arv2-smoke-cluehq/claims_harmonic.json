@@ -1,0 +1,1030 @@
+{
+  "account": "Harmonic Security, Inc.",
+  "domain": "harmonic.security",
+  "entity": "account:harmonic-security",
+  "workspace_id": "workspace:clue-smoke-2026-08-31",
+  "run": "arv2-smoke-cluehq",
+  "research_date": "2026-08-31",
+  "claim_counts": {
+    "total": 40,
+    "by_tier": {
+      "1": 18,
+      "2": 1,
+      "4": 21
+    },
+    "by_priority": {
+      "1": 6,
+      "2": 23,
+      "3": 11
+    },
+    "account_entity": 15,
+    "contact_entity": 25,
+    "distinct_contacts": 9
+  },
+  "committee_same_name_audit": {
+    "admitted": [
+      {
+        "name": "James Derbyshire",
+        "title": "VP Strategic Partnerships / Founding Executive",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/james-derbyshire-7989531",
+        "start": "2025-02-01"
+      },
+      {
+        "name": "Ana Corio",
+        "title": "Director of Demand Generation",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/anastasiacorio",
+        "start": "2024-09-01"
+      },
+      {
+        "name": "John Vatz",
+        "title": "Regional Sales Manager, Southwest",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/johnvatz",
+        "start": "2026-02-01"
+      },
+      {
+        "name": "Colin Lyon",
+        "title": "Regional Director",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/colin-lyon-87297b116",
+        "start": "2025-07-01"
+      },
+      {
+        "name": "Seb Gaziano",
+        "title": "Commercial Director, EMEA",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/seb-gaziano-5a257631",
+        "start": "2025-06-01"
+      },
+      {
+        "name": "Tom Gore",
+        "title": "Regional Sales Manager",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/tomgore1",
+        "start": "2025-12-01"
+      },
+      {
+        "name": "Ashley Freeman",
+        "title": "Senior Customer Success Manager",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/ashleyfreemanco",
+        "start": "2026-07-01"
+      },
+      {
+        "name": "Jessica Couto",
+        "title": "VP Channels & Alliances",
+        "current_company": "Harmonic Security",
+        "linkedin": "https://www.linkedin.com/in/jessica-couto-8a908a2",
+        "start": "2025-10-01"
+      }
+    ],
+    "rejected_same_name": [],
+    "roster_returned": 8,
+    "roster_total_available": 69
+  },
+  "claims": [
+    {
+      "entity": "contact:james-derbyshire",
+      "field_key": "contact.current_title",
+      "value_json": "VP Strategic Partnerships / Founding Executive",
+      "evidence_span": "profile.title = \"VP Strategic Partnerships / Founding Executive\" with position_groups[0].company.name = \"Harmonic Security\"",
+      "source_url": "https://www.linkedin.com/in/james-derbyshire-7989531",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:james-derbyshire",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "VP Strategic Partnerships / Founding Executive",
+          "start": "2025-02-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"VP Strategic Partnerships / Founding Executive\", date.start: \"2025-02-01\"}",
+      "source_url": "https://www.linkedin.com/in/james-derbyshire-7989531",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.current_title",
+      "value_json": "Director of Demand Generation",
+      "evidence_span": "profile.title = \"Director of Demand Generation\" with position_groups[0].company.name = \"Harmonic Security\"",
+      "source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "Director of Demand Generation",
+          "start": "2024-09-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"Director of Demand Generation\", date.start: \"2024-09-01\"}",
+      "source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:john-vatz",
+      "field_key": "contact.current_title",
+      "value_json": "Regional Sales Manager, Southwest",
+      "evidence_span": "profile.title = \"Regional Sales Manager, Southwest\" with position_groups[0].company.name = \"Harmonic Security\"",
+      "source_url": "https://www.linkedin.com/in/johnvatz",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:john-vatz",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "Regional Sales Manager, Southwest",
+          "start": "2026-02-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"Regional Sales Manager, Southwest\", date.start: \"2026-02-01\"}",
+      "source_url": "https://www.linkedin.com/in/johnvatz",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:colin-lyon",
+      "field_key": "contact.current_title",
+      "value_json": "Regional Director",
+      "evidence_span": "profile.title = \"Regional Director\" with position_groups[0].company.name = \"Harmonic Security\"",
+      "source_url": "https://www.linkedin.com/in/colin-lyon-87297b116",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:colin-lyon",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "Regional Director",
+          "start": "2025-07-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"Regional Director\", date.start: \"2025-07-01\"}",
+      "source_url": "https://www.linkedin.com/in/colin-lyon-87297b116",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:seb-gaziano",
+      "field_key": "contact.current_title",
+      "value_json": "Commercial Director, EMEA",
+      "evidence_span": "profile.title = \"Commercial Director, EMEA\" with position_groups[0].company.name = \"Harmonic Security\"",
+      "source_url": "https://www.linkedin.com/in/seb-gaziano-5a257631",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:seb-gaziano",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "Commercial Director, EMEA",
+          "start": "2025-06-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"Commercial Director, EMEA\", date.start: \"2025-06-01\"}",
+      "source_url": "https://www.linkedin.com/in/seb-gaziano-5a257631",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:tom-gore",
+      "field_key": "contact.current_title",
+      "value_json": "Regional Sales Manager",
+      "evidence_span": "profile.title = \"Regional Sales Manager\" with position_groups[0].company.name = \"Harmonic Security\"",
+      "source_url": "https://www.linkedin.com/in/tomgore1",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:tom-gore",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "Regional Sales Manager",
+          "start": "2025-12-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"Regional Sales Manager\", date.start: \"2025-12-01\"}",
+      "source_url": "https://www.linkedin.com/in/tomgore1",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ashley-freeman",
+      "field_key": "contact.current_title",
+      "value_json": "Senior Customer Success Manager",
+      "evidence_span": "profile.title = \"Senior Customer Success Manager\" with position_groups[0].company.name = \"Harmonic Security\"",
+      "source_url": "https://www.linkedin.com/in/ashleyfreemanco",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:ashley-freeman",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "Senior Customer Success Manager",
+          "start": "2026-07-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"Senior Customer Success Manager\", date.start: \"2026-07-01\"}",
+      "source_url": "https://www.linkedin.com/in/ashleyfreemanco",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:jessica-couto",
+      "field_key": "contact.current_title",
+      "value_json": "VP Channels & Alliances",
+      "evidence_span": "profile.title = \"VP Channels & Alliances\" with position_groups[0].company.name = \"Harmonic Security\"",
+      "source_url": "https://www.linkedin.com/in/jessica-couto-8a908a2",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:jessica-couto",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "VP Channels & Alliances",
+          "start": "2025-10-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Harmonic Security\", title: \"VP Channels & Alliances\", date.start: \"2025-10-01\"}",
+      "source_url": "https://www.linkedin.com/in/jessica-couto-8a908a2",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "core.work_email",
+      "value_json": {
+        "address": "ana@harmonic.security",
+        "status": "VALID",
+        "domain_type": "SMTP",
+        "verdict": "verified",
+        "checked_at": "2026-08-29T23:34:09.000652"
+      },
+      "evidence_span": "email.output[0] = {address: \"ana@harmonic.security\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\", found: true}",
+      "source_url": null,
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "contact:tyler-chonoles",
+      "field_key": "core.work_email",
+      "value_json": {
+        "address": "tyler@harmonic.security",
+        "status": "VALID",
+        "domain_type": "SMTP",
+        "verdict": "verified",
+        "checked_at": "2026-08-31T07:52:53.000205"
+      },
+      "evidence_span": "email.output[0] = {address: \"tyler@harmonic.security\", status: \"VALID\", domainType: \"SMTP\", mx.provider: \"g-suite\", found: true}",
+      "source_url": null,
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 3.0,
+      "evidence_span": "Ashby public posting API job_board/harmonic-security-inc: 3 live engineering/R&D reqs of 5 total (isListed=true)",
+      "source_url": "https://api.ashbyhq.com/posting-api/job-board/harmonic-security-inc",
+      "source_key": "ashby_public",
+      "source_tier": 2,
+      "extraction_method": "official_scrape",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 3
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "core.primary_domain",
+      "value_json": "harmonic.security",
+      "evidence_span": "Domains: harmonic.security; partner.harmonic.security.",
+      "source_url": "https://www.harmonic.security/company/careers",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "core.company_linkedin_url",
+      "value_json": "https://linkedin.com/company/harmonic-security",
+      "evidence_span": "LinkedIn: https://linkedin.com/company/harmonic-security.",
+      "source_url": "https://linkedin.com/company/harmonic-security",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "core.company_about",
+      "value_json": "Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders visibility and control to help companies innovate at pace.",
+      "evidence_span": "As every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.",
+      "source_url": "https://www.harmonic.security/company/careers",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "core.industry",
+      "value_json": "Technology",
+      "evidence_span": "Harmonic Security is a Technology, Information and Internet company.",
+      "source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "account.total_funding",
+      "value_json": {
+        "amount_usd": 26000000,
+        "estimate_kind": "reported"
+      },
+      "evidence_span": "more than $26 million since the company launched",
+      "source_url": "https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 1
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 17500000,
+        "round": "Series A"
+      },
+      "evidence_span": "Series A: $17.5M, announced 2 October 2024, led by Next47; Ten Eleven Ventures joined.",
+      "source_url": "https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 1
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "core.account_name",
+      "value_json": "Harmonic Security",
+      "evidence_span": "Harmonic Security | AI Governance & Control Platform",
+      "source_url": "https://www.harmonic.security",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.95,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "core.hq_location",
+      "value_json": {
+        "raw": "1390 Market Street, Suite 200, San Francisco, California 94102, US",
+        "city": "San Francisco",
+        "region": "California",
+        "country": "United States",
+        "country_code": "US"
+      },
+      "evidence_span": "HQ: \"1390 Market Street, Suite 200, San Francisco, California 94102, US\" (automated LinkedIn-derived profile record).",
+      "source_url": "https://linkedin.com/company/harmonic-security",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.6,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "core.employee_range",
+      "value_json": {
+        "label": "50-60",
+        "min": 50,
+        "max": 60
+      },
+      "evidence_span": "Harmonic Security has 50-60 employees",
+      "source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.7,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "account.strategic_moves",
+      "value_json": "Use Series A capital to accelerate go-to-market progress and product rollout; development and launch of MCP Gateway and Harmonic Protect as part of expanding AI governance and control capabilities.",
+      "evidence_span": "use the Series A to accelerate the rapid progress we have already achieved.",
+      "source_url": "https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 1
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "account.operational_pain",
+      "value_json": "Legacy data-protection tools produce noisy rules and meaningless false positives and are not fit for purpose for generative-AI adoption; need for real-time intent classification and reduced false positives.",
+      "evidence_span": "legacy data-protection tools are \u201cnot fit for purpose\u201d amid generative-AI adoption; classification/labeling and noisy rules create \u201ca huge burden of meaningless false positives.\u201d",
+      "source_url": "https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "core.primary_tech_stack",
+      "value_json": [
+        "MCP Gateway",
+        "browser extension",
+        "endpoint agent"
+      ],
+      "evidence_span": "Roll out through Intune, JAMF, Kandji, or Group Policy. The browser extension covers all browsers and MCP gateway run on Windows, macOS, and Linux.",
+      "source_url": "https://www.harmonic.security/company/careers",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 2
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 1,
+      "evidence_span": "JOB Solutions Architect | ... published=2026-07-14T13:03:30.157+00:00 | STILL LISTED TODAY (2026-08-31)=True",
+      "source_url": "https://jobs.ashbyhq.com/harmonic-security-inc/87fb4ade-26b7-4550-b331-9789df39d9b3",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.7,
+      "priority": 1
+    },
+    {
+      "entity": "account:harmonic-security",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 0,
+      "evidence_span": "JOB Business Development Representative - East | ... published=2026-08-04T22:39:24.369+00:00 | STILL LISTED TODAY (2026-08-31)=True",
+      "source_url": "https://jobs.ashbyhq.com/harmonic-security-inc/f568f331-f4ea-4328-a690-03772941f561",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.6,
+      "priority": 3
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.current_title",
+      "value_json": "Director of Demand Generation",
+      "evidence_span": "Director of Demand Generation - Harmonic Security (Current)",
+      "source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.current_location",
+      "value_json": {
+        "raw": "San Francisco, California, United States",
+        "country": "United States"
+      },
+      "evidence_span": "San Francisco, California, United States",
+      "source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Harmonic Security",
+          "role": "Director of Demand Generation",
+          "start": "Sep 2024",
+          "end": "Present"
+        },
+        {
+          "org": "Material Security",
+          "role": "Director of Demand Generation",
+          "start": "Jul 2021",
+          "end": "Sep 2024"
+        },
+        {
+          "org": "CrowdStrike",
+          "role": "Growth Marketing Strategist",
+          "start": "Jul 2020",
+          "end": "Jul 2021"
+        },
+        {
+          "org": "Digital Shadows (Acquired by Reliaquest)",
+          "role": "Senior Content Marketing & Digital Strategy Manager",
+          "start": "Dec 2015",
+          "end": "Jun 2020"
+        },
+        {
+          "org": "Cisco",
+          "role": "Security Marketing Project Specialist and Social Media Channel Manager",
+          "start": "Jun 2013",
+          "end": "Dec 2015"
+        },
+        {
+          "org": "Malwarebytes",
+          "role": "Marketing Intern",
+          "start": "Jun 2012",
+          "end": "Jun 2013"
+        },
+        {
+          "org": "First Allied Securities",
+          "role": "Event Planning Intern",
+          "start": "Aug 2011",
+          "end": "Aug 2011"
+        },
+        {
+          "org": "Choura Events",
+          "role": "Event Planning Intern",
+          "start": "Jul 2011",
+          "end": "Jul 2011"
+        },
+        {
+          "org": "Santa Clara University Activities Programming Board",
+          "role": "Promo Team Member",
+          "start": "Sep 2010",
+          "end": "Jun 2011"
+        },
+        {
+          "org": "Palos Verdes High School Associated Student Body",
+          "role": "Special Events Coordinator",
+          "start": "Sep 2009",
+          "end": "Jun 2010"
+        }
+      ],
+      "evidence_span": "Material Security \u2014 Director of Demand Generation, July 2021\u2013September 2024, San Francisco Bay Area.",
+      "source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Hiring post! \ud83d\udce3 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. https://lnkd.in/gH9DJVPY There'll be the classic stuff: account mapping, outreach, direct mail, events + some weird creative stuff nobody's tried yet \ud83e\udd13 Whatever gets Harmonic Security in front of the right folks. \ud83d\udc9a If that sounds more fun than another boring nurture campaign, let's chat.",
+      "evidence_span": "Hiring post! \ud83d\udce3 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. https://lnkd.in/gH9DJVPY There'll be the classic stuff: account mapping, outreach, direct mail, events + some weird creative stuff nobody's tried yet \ud83e\udd13 Whatever gets Harmonic Security in front of the right folks. \ud83d\udc9a If that sounds more fun than another boring nurture campaign, let's chat. p.s. anddddd you get to work with all these fun folks Michael Marriott Mariana Padilla Lexy Marchbank Tyler Chonoles Maya Smith Jackson Harrower+ many more!",
+      "source_url": "https://www.linkedin.com/posts/anastasiacorio_hiring-post-im-hiring-an-abm-account-activity-7490847280472879104-iDH9",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.95,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "One of my favorite parts of this role is exactly this. Taking something genuinely exciting that the team has built and figuring out how to get it in front of the right people. It's a lot of creativity, outside the box thinking, and TEAMWORK \ud83e\udd1d With that... we just launched AI Usage Explorer at Harmonic Security! Now you can finally understand what your organization is actually doing with AI. And make smarter decisions with that information. \ud83d\udc4f Fun time celebrating with this crew in SF \ud83c\udf89 Jackson Harrower Maya Smith Heidi Nickles (Newiger) Oliver Smith",
+      "evidence_span": "With that... we just launched AI Usage Explorer at Harmonic Security! Now you can finally understand what your organization is actually doing with AI. And make smarter decisions with that information.",
+      "source_url": "https://www.linkedin.com/posts/anastasiacorio_one-of-my-favorite-parts-of-this-role-is-activity-7465427324197572608-VrVm",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "informal_energetic",
+        "summary": "Concise, operational, energetic, uses emoji and playful humor; favors concrete lists and anti-hype language (e.g., 'zero fluff', 'weird creative stuff nobody's tried yet')."
+      },
+      "evidence_span": "She uses frequent emoji and visual emphasis: \u201c\ud83d\udce3,\u201d \u201c\ud83d\ude80,\u201d \u201c\ud83e\udd13,\u201d \u201c\ud83d\udc9a,\u201d \u201c\ud83e\udd1d,\u201d \u201c\ud83d\udc4f,\u201d \u201c\ud83c\udf89,\u201d \u201c\u2705,\u201d \u201c\ud83c\udfb8,\u201d and \u201c\u270c\ufe0f.\u201d",
+      "source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:ana-corio",
+      "field_key": "contact.persona",
+      "value_json": "champion",
+      "evidence_span": "Ana Corio (also publicly shown as Ana Alessandra Corio) \u2014 cited profile as of 2026-08-31 1. IDENTITY Full name: Ana Corio; the Harmonic welcome post identifies her as \u201cAna Alessandra (Corio),\u201d while her LinkedIn profile URL uses \u201canastasiacorio.\u201d",
+      "source_url": "https://www.linkedin.com/posts/harmonic-security_welcome-to-the-team-activity-7241817592636563456--L83",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.7,
+      "priority": 1,
+      "identity_binding": "strong"
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "account.named_customers",
+      "entity_type": "account",
+      "value_type": "list[str]",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "Named customer logos or references reported by the company or third parties (not in provided catalog).",
+      "reuse_scope": "account:harmonic-security",
+      "hypothesis": "An ABM platform needs named customers to demonstrate product-market fit and to prioritize look-alike accounts; knowing specific customers helps craft tailored outreach and use-case messaging.",
+      "example_value": [
+        "Advisor360"
+      ],
+      "example_evidence_span": "Named customer: Advisor360 is listed by CB Insights as a customer.",
+      "example_source_url": "https://www.cbinsights.com/company/harmonic-security",
+      "priority": 2
+    },
+    {
+      "field_key": "account.founders",
+      "entity_type": "account",
+      "value_type": "list[object]",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "name",
+            "role"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "description": "Founders and primary executive roles (not in provided catalog).",
+      "reuse_scope": "account:harmonic-security",
+      "hypothesis": "Founders/execs are key buying-committee influencers for strategic deals; ABM workflows can target or reference founders for credibility and executive-level outreach.",
+      "example_value": [
+        {
+          "name": "Alastair Paterson",
+          "role": "CEO & Co-Founder"
+        },
+        {
+          "name": "Bryan Woolgar-O'Neil",
+          "role": "CTO & Co-Founder"
+        }
+      ],
+      "example_evidence_span": "Alastair Paterson \u2014 CEO and co-founder.",
+      "example_source_url": "https://www.harmonic.security/about",
+      "priority": 2
+    },
+    {
+      "field_key": "core.account_name",
+      "entity_type": "account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "Canonical account name observation.",
+      "reuse_scope": "company",
+      "hypothesis": "Knowing the canonical account name helps map account-level signals (like open ABM headcount) to the right legal entity so an ABM vendor can prioritize outreach and avoid targeting the wrong organization.",
+      "example_value": "Harmonic Security",
+      "example_evidence_span": "Harmonic Security",
+      "example_source_url": "https://www.linkedin.com/in/anastasiacorio",
+      "priority": 2
+    },
+    {
+      "field_key": "contact.role_on_committee",
+      "entity_type": "contact",
+      "value_type": "object",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "champion",
+              "economic_buyer",
+              "technical_evaluator",
+              "blocker"
+            ]
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      },
+      "description": "Inferred buying-committee role + plausibility rationale.",
+      "reuse_scope": "deal",
+      "hypothesis": "Explicitly stating a contact's role on the buying committee (and why) helps sellers craft messaging and identify whether to pursue feature demos, ROI conversations, or internal influence strategies.",
+      "example_value": {
+        "role": "champion",
+        "rationale": "Hiring the ABM manager and owning demand generation indicates she will champion ABM tooling decisions and manage day-to-day evaluation."
+      },
+      "example_evidence_span": "I'm hiring an ABM (account based marketing) manager for our most strategic accounts.",
+      "example_source_url": "https://www.linkedin.com/posts/anastasiacorio_hiring-post-im-hiring-an-abm-account-activity-7490847280472879104-iDH9",
+      "priority": 1
+    }
+  ]
+}

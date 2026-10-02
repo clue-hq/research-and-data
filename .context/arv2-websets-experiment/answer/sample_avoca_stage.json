@@ -1,0 +1,40 @@
+{
+  "request": {
+    "query": "Company: Avoca (website https://avoca.ai).\nTest to verify: The company's most recent priced funding round is a Series A or Series A extension, announced within the last 24 months.\nHow it is tested: A dated announcement (press release, lead investor's post, or the company's own newsroom) that names the round and at least one investor. A seed-only, pre-seed, bootstrapped, public or PE-owned company, or one whose most recent round is Series B or later or a growth round, is outside the stated stage.\nDecide pass, fail or unclear for THIS company today, citing the freshest relevant source.",
+    "model": "exa",
+    "text": true,
+    "outputSchema": "(the schema in run_answer.py: verdict enum, reasoning, evidence_quote, evidence_url, evidence_date)"
+  },
+  "answer": {
+    "evidence_url": "https://www.avoca.ai/blog/avoca-raises-125m-series-b-1b-valuation",
+    "verdict": "fail",
+    "evidence_date": "2026-04-27",
+    "evidence_quote": "Today, we announced our Series B at a $1 billion valuation, bringing our total raise to more than $125 million across Seed, Series A, and Series B.",
+    "reasoning": "The company's most recent funding round is a Series B, which is outside the criteria of being a Series A or Series A extension."
+  },
+  "citations": [
+    {
+      "publishedDate": "2026-04-27",
+      "url": "https://www.avoca.ai/blog/avoca-raises-125m-series-b-1b-valuation",
+      "title": "Why We Are Building \u2014 Avoca | Avoca AI"
+    },
+    {
+      "publishedDate": "2026-04-27",
+      "url": "https://www.morningstar.com/news/pr-newswire/20260427ny43862/avoca-raises-125m-at-1b-valuation-to-power-americas-services-economy-with-ai",
+      "title": "Avoca Raises $125M+ at $1B Valuation to Power America's Services Economy With AI"
+    },
+    {
+      "publishedDate": "2026-04-27",
+      "url": "https://www.finsmes.com/2026/04/avoca-closes-series-b-funding-at-1-billion-valuation.html",
+      "title": "Avoca Closes Series B Funding at $1 Billion Valuation; Raises USD125M in Total"
+    },
+    {
+      "publishedDate": "2026-04-27",
+      "url": "https://fortune.com/2026/04/27/avoca-ai-agents-missed-calls-hvac-plumbing-roofing-kleiner-perkins-chen-shrivastava-braswell/",
+      "title": "How a chance encounter in Texas sparked a $1 billion Kleiner Perkins-backed AI s"
+    }
+  ],
+  "costDollars": {
+    "total": 0.005
+  }
+}

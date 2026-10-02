@@ -62,33 +62,53 @@ def generation_key(
     reference_asset_ids: Optional[List[str]] = None,
     reference_digests: Optional[List[str]] = None,
     source_digest: Optional[str] = None,
+    operation: Optional[str] = None,
+    reference_roles: Optional[List[str]] = None,
+    reference_framing: Optional[str] = None,
 ) -> str:
     """Stable hash of the generation request — the cache key. Anything that
     changes the produced image (prompt, brand conditioning, size, aspect, model,
-    references, and for EDITS the source image digest) participates; ordering
-    of notes/refs does not."""
+    references, and for EDITS the source image digest) participates. Reference
+    order binds each image to its role; only brand-note order is immaterial.
+    Optional semantics are absent from legacy keys unless explicitly supplied.
+    """
     payload = {
         "prompt": _normalize_text(prompt),
         "model": (model or "").strip(),
         "width": width,
         "height": height,
-        "brand_notes": sorted(_normalize_text(note) for note in (brand_notes or []) if (note or "").strip()),
+        "brand_notes": sorted(
+            _normalize_text(note) for note in (brand_notes or []) if (note or "").strip()
+        ),
         "aspect_ratio": aspect_ratio,
         "image_size": image_size,
-        "transparent_background": bool(transparent_background) if transparent_background is not None else None,
-        "reference_asset_ids": sorted(reference_asset_ids or []),
+        "transparent_background": (
+            bool(transparent_background) if transparent_background is not None else None
+        ),
+        "reference_asset_ids": list(reference_asset_ids or []),
     }
     # Only present when reference-conditioned, so plain-generation keys (and the
     # existing cache) are unchanged. Reference PIXEL digests are the content key —
     # ids alone can't tell two different attachments apart, and they align the
     # runtime and route paths on the same truth.
     if reference_digests:
-        payload["reference_digests"] = sorted(reference_digests)
+        payload["reference_digests"] = list(reference_digests)
+    if max(len(reference_asset_ids or []), len(reference_digests or [])) > 1:
+        # Old multi-reference entries sorted the inputs, so even a sorted ask
+        # could hit an image made with the opposite order. Their origin cannot
+        # be recovered from the old key; invalidate only that ambiguous class.
+        payload["reference_order_version"] = 1
     # Only present for EDITS, so plain-generation keys (and the existing cache)
     # are unchanged. Edits MUST key on the source pixels — editing asset A then
     # asset B with the same instruction would otherwise return A's result.
     if source_digest:
         payload["source_digest"] = source_digest
+    if operation is not None:
+        payload["operation"] = operation
+    if reference_roles is not None:
+        payload["reference_roles"] = list(reference_roles)
+    if reference_framing is not None:
+        payload["reference_framing"] = reference_framing
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 

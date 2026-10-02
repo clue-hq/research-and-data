@@ -36,10 +36,30 @@ import {
   type ChatTurnsRepository,
 } from "./chat-turns.repository";
 import {
+  createFixtureDiscoveryRunsRepository,
+  createHttpDiscoveryRunsRepository,
+  type DiscoveryRunsRepository,
+} from "./discovery-runs.repository";
+import {
+  createFixtureProjectDirectoryRepository,
+  createHttpProjectDirectoryRepository,
+  type ProjectDirectoryRepository,
+} from "./project-directory.repository";
+import {
   createFixtureProjectHomeRepository,
   createHttpProjectHomeRepository,
   type ProjectHomeRepository,
 } from "./project-home.repository";
+import {
+  createFixtureProjectInstructionsRepository,
+  createHttpProjectInstructionsRepository,
+  type ProjectInstructionsRepository,
+} from "./project-instructions.repository";
+import {
+  createFixtureProjectMemoryRepository,
+  createHttpProjectMemoryRepository,
+  type ProjectMemoryRepository,
+} from "./project-memory.repository";
 import {
   createHttpProjectWorkspaceRepository,
   fixtureProjectWorkspaceRepository,
@@ -62,12 +82,20 @@ export interface ChatRepositories {
   transport: ChatTransport;
   home: ProjectHomeRepository;
   projects: ProjectWorkspaceRepository;
+  /** The projects directory: the whole list, its creation, and its shelving. */
+  directory: ProjectDirectoryRepository;
+  /** One project's standing instructions document. */
+  instructions: ProjectInstructionsRepository;
+  /** One project's scope memory, written through the backend's one seam. */
+  memory: ProjectMemoryRepository;
   sidebar: SidebarProjectsRepository;
   threads: ChatThreadsRepository;
   messages: ChatMessagesRepository;
   turns: ChatTurnsRepository;
   gates: ChatGatesRepository;
   stream: ChatStreamRepository;
+  /** Stop for the account discovery a thread is holding busy. */
+  discoveries: DiscoveryRunsRepository;
   /**
    * The dev-lens turn-context inspector. Present on both transports, but the
    * HTTP adapter's own probe reports it unavailable against any deployment that
@@ -85,12 +113,16 @@ export function createChatRepositories(
       transport,
       home: createHttpProjectHomeRepository(transport),
       projects: createHttpProjectWorkspaceRepository(transport),
+      directory: createHttpProjectDirectoryRepository(transport),
+      instructions: createHttpProjectInstructionsRepository(),
+      memory: createHttpProjectMemoryRepository(),
       sidebar: createHttpSidebarProjectsRepository(transport),
       threads: createHttpChatThreadsRepository(transport),
       messages: createHttpChatMessagesRepository(transport),
       turns: createHttpChatTurnsRepository(transport),
       gates: createHttpChatGatesRepository(transport),
       stream: createHttpChatStreamRepository(transport),
+      discoveries: createHttpDiscoveryRunsRepository(transport),
       inspector: createHttpChatInspectorRepository(transport),
       composerContext: createHttpComposerContextRepository(transport),
     };
@@ -102,12 +134,16 @@ export function createChatRepositories(
     transport,
     home: createFixtureProjectHomeRepository(),
     projects: fixtureProjectWorkspaceRepository,
+    directory: createFixtureProjectDirectoryRepository(),
+    instructions: createFixtureProjectInstructionsRepository(),
+    memory: createFixtureProjectMemoryRepository(),
     sidebar: fixtureSidebarProjectsRepository,
     threads: createFixtureChatThreadsRepository(),
     messages: createFixtureChatMessagesRepository(),
     turns: createFixtureChatTurnsRepository(state),
     gates: createFixtureChatGatesRepository(state),
     stream: createFixtureChatStreamRepository(state),
+    discoveries: createFixtureDiscoveryRunsRepository(),
     inspector: createFixtureChatInspectorRepository(),
     composerContext: unavailableComposerContextRepository,
   };

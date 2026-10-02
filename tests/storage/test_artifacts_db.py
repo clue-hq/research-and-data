@@ -8,14 +8,16 @@ erased row), the claim FK + the structural-tenancy CHECKs, the DSAR refcount rea
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
+from clue_db import db_lifespan
 from clue_storage import (
     FsStorage,
     artifact_key,
@@ -26,11 +28,133 @@ from clue_storage import (
     mark_erased,
     purge_erased_artifacts,
     record_artifact,
+    retain_artifact,
     sweep_orphan_blobs,
 )
 from tests.storage.conftest import rollback_conn, run_async
 
 pytestmark = pytest.mark.usefixtures("require_storage_db")
+
+
+def test_concurrent_readers_retain_shared_evidence_without_lock_upgrade() -> None:
+    async def case():
+        async with db_lifespan() as engine:
+            ws = f"ws_{uuid.uuid4().hex}"
+            async with engine.begin() as conn:
+                record = await _record(conn, uuid.uuid4().bytes, ws)
+            key = record.storage_key
+            readers = asyncio.Barrier(3)
+
+            async def retain(index):
+                async with engine.begin() as conn:
+                    await conn.execute(text("SET LOCAL statement_timeout='5s'"))
+                    await conn.execute(
+                        text("SELECT storage_key FROM artifact WHERE storage_key=:key FOR SHARE"),
+                        {"key": key},
+                    )
+                    await readers.wait()
+                    await retain_artifact(
+                        conn,
+                        workspace_id=ws,
+                        storage_key=key,
+                        reference_kind="test_retention",
+                        reference_id=str(index),
+                    )
+
+            try:
+                await asyncio.gather(*(retain(i) for i in range(3)))
+                async with engine.begin() as conn:
+                    assert not await erase_if_unreferenced(conn, key)
+                    assert (
+                        await conn.execute(
+                            text("SELECT count(*) FROM artifact_reference WHERE storage_key=:key"),
+                            {"key": key},
+                        )
+                    ).scalar_one() == 3
+            finally:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("DELETE FROM artifact_reference WHERE storage_key=:key"), {"key": key}
+                    )
+                    await conn.execute(
+                        text("DELETE FROM artifact WHERE storage_key=:key"), {"key": key}
+                    )
+
+    run_async(case())
+
+
+def test_research_snapshots_can_rerecord_each_others_source_without_deadlock() -> None:
+    """r13: source SHARE locks must not conflict with re-recording unchanged live bytes.
+
+    Each writer holds the other snapshot as source evidence before persisting its own
+    existing content-addressed output. An unconditional upsert upgrades to an exclusive
+    row lock and creates a cycle, even with sorted source reads.
+    """
+
+    async def case():
+        async with db_lifespan() as engine:
+            ws = f"ws_{uuid.uuid4().hex}"
+            bodies = [uuid.uuid4().bytes, uuid.uuid4().bytes]
+            async with engine.begin() as conn:
+                records = [await _record(conn, body, ws) for body in bodies]
+            readers = asyncio.Barrier(2)
+
+            async def persist(index):
+                async with engine.begin() as conn:
+                    await conn.execute(text("SET LOCAL statement_timeout='5s'"))
+                    await conn.execute(
+                        text("SELECT storage_key FROM artifact WHERE storage_key=:key FOR SHARE"),
+                        {"key": records[1 - index].storage_key},
+                    )
+                    await asyncio.wait_for(readers.wait(), timeout=5)
+                    repeated = await _record(conn, bodies[index], ws)
+                    assert repeated == records[index]
+
+            try:
+                outcomes = await asyncio.gather(persist(0), persist(1), return_exceptions=True)
+                for outcome in outcomes:
+                    if isinstance(outcome, BaseException):
+                        raise outcome
+            finally:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("DELETE FROM artifact WHERE workspace_id=:ws"), {"ws": ws}
+                    )
+
+    run_async(case())
+
+
+def test_rerecording_live_bytes_still_locks_against_erasure() -> None:
+    async def case():
+        async with db_lifespan() as engine:
+            ws = f"ws_{uuid.uuid4().hex}"
+            data = uuid.uuid4().bytes
+            async with engine.begin() as conn:
+                original = await _record(conn, data, ws)
+            key = original.storage_key
+            try:
+                async with engine.begin() as reader:
+                    assert await _record(reader, data, ws) == original
+                    # An eraser cannot acquire its exclusive lock while live bytes are reused.
+                    with pytest.raises(DBAPIError) as blocked:
+                        async with engine.begin() as eraser:
+                            await eraser.execute(
+                                text(
+                                    "SELECT storage_key FROM artifact "
+                                    "WHERE storage_key=:key FOR UPDATE NOWAIT"
+                                ),
+                                {"key": key},
+                            )
+                    assert blocked.value.orig.sqlstate == "55P03"
+                async with engine.begin() as eraser:
+                    assert await erase_if_unreferenced(eraser, key)
+            finally:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("DELETE FROM artifact WHERE storage_key=:key"), {"key": key}
+                    )
+
+    run_async(case())
 
 
 async def _record(conn: AsyncConnection, data: bytes, workspace_id: str | None = "ws_t"):
@@ -84,6 +208,63 @@ def test_record_round_trip_and_dedup() -> None:
             fetched = await get_artifact(conn, first.storage_key)
             assert fetched is not None and fetched.size_bytes == len(b"the page bytes")
             assert fetched.erased_at is None
+
+    run_async(scenario())
+
+
+def test_concurrent_writers_of_identical_bytes_all_record_one_row() -> None:
+    """The live crash: two provider operations returning byte-identical responses.
+
+    ``ON CONFLICT (storage_key)`` arbitrates one index; the composite
+    ``artifact_execution_anchor (storage_key, workspace_id)`` is a second unique index that
+    speculative insertion does **not** arbitrate, so a writer racing a concurrently-committing
+    twin used to die with ``duplicate key value violates unique constraint
+    "artifact_execution_anchor"``. Live, two parallel ``enrich_account`` calls in one model wave
+    both resolved the same account's Sumble organization document, recorded the identical bytes on
+    their own connections, and the loser suspended its whole job.
+
+    Every writer must land on the one content-addressed row. Each round is a real commit race, so
+    this test is green-by-construction under the fix and red under the old single-arbiter write.
+    """
+
+    writers = 12
+    rounds = 4
+
+    async def race(engine: AsyncEngine) -> None:
+        data = uuid.uuid4().bytes
+        workspace_id = f"ws_{uuid.uuid4().hex}"
+        sha = content_address(data)
+        key = artifact_key(workspace_id, sha)
+        start = asyncio.Barrier(writers)
+
+        async def writer() -> str:
+            async with engine.connect() as conn:
+                await conn.begin()
+                await start.wait()
+                record = await record_artifact(
+                    conn,
+                    storage_key=key,
+                    workspace_id=workspace_id,
+                    content_sha256=sha,
+                    media_type="application/json",
+                    size_bytes=len(data),
+                    source_key="sumble_organizations",
+                    source_url="https://api.sumble.com/v9/organizations",
+                )
+                await conn.commit()
+                return record.artifact_id
+
+        recorded = await asyncio.gather(*(writer() for _ in range(writers)))
+        assert len(set(recorded)) == 1  # one row, whoever won the race
+        async with engine.begin() as conn:
+            row = await get_artifact(conn, key)
+            assert row is not None and row.artifact_id == recorded[0]
+            await conn.execute(text("DELETE FROM artifact WHERE storage_key = :k"), {"k": key})
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine:
+            for _ in range(rounds):
+                await race(engine)
 
     run_async(scenario())
 

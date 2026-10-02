@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { clueAppOrigin, isAuthenticationEnabled, lumenApiBaseUrl } from "@/auth/config";
 import { hasAllowedOrigin } from "@/auth/bff";
 import { authenticatedBackendContext } from "@/auth/authenticated-backend";
-import { WORKSPACE_COOKIE } from "@/features/session/model/session";
+import { workspaceCookieName } from "@/auth/local-workspace";
 import { handleDesignProxyRequest } from "./design-proxy-handler";
 
 /**
@@ -27,7 +27,7 @@ async function proxyRequest(request: Request, context: RouteContext) {
       const backendContext = await authenticatedBackendContext();
       if (backendContext.workspaceId !== backendContext.requestedWorkspaceId) {
         const cookieStore = await cookies();
-        cookieStore.set(WORKSPACE_COOKIE, backendContext.workspaceId, {
+        cookieStore.set(workspaceCookieName(), backendContext.workspaceId, {
           httpOnly: true,
           sameSite: "lax",
           secure: process.env.NODE_ENV === "production",

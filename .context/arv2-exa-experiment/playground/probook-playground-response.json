@@ -1,0 +1,883 @@
+{
+  "requestId": "901cfa70daa3d34f9e4ac7a9c64f5105",
+  "output": {
+    "content": {
+      "identity_and_scope": "Target is Probook (probook.ai), which describes itself as “the AI Operating System for home services” and says it is “backed by Sequoia and Andreessen Horowitz”; its company page names George Eliadis “Co-Founder & CEO,” Lewis Zhang “Co-Founder & CTO,” and Ben Cervantez (title not shown on the page). HQ/location evidence: the SDR posting says “Location Manhattan.” Excluded from this dossier: HP ProBook laptop/notebook products and unrelated bookkeeping/accounting ProBook brands; those are different entities and were discarded.",
+      "founding_and_timing": "Primary-source evidence located here establishes the company narrative and funding announcement, but does not state a legally precise incorporation/founding date. The company letter says “I started Probook,” while Fortune reports “Probook, his New York-based startup” and calls the round June 23, 2026. Therefore the 2024 founding/launch date remains an attributed third-party/database claim, not confirmed here by a primary source; George’s Nov. 2021 LinkedIn tenure does not by itself establish Probook’s incorporation date.",
+      "product_and_buyers": "Probook says it is “built around dispatch” and that it “expanded into the rest of the front office: intake, data scrubbing, customer messaging, and outbound.” The buyer/ICP is explicit in the SDR JD: “the top home service operators in America.” The use case is plumbing, HVAC, and electrical businesses: the JD says it is “transforming how plumbing, HVAC, and electrical businesses operate.” Likely buying stakeholders evidenced by the materials are enterprise operators, owners/GMs, dispatch and inside-sales teams; do not treat any narrower persona as independently verified.",
+      "traction_and_customers": "Company-claimed traction: “Probook now serves hundreds of locations nationwide.” The founder letter identifies TR Miller as “Probook’s first customer.” Named customer evidence in Probook materials includes Summers Plumbing, Heating & Cooling, Anthony Plumbing, Del-Air, Peterman Brothers, Cardinal/Redwood-related customer material, and TR Miller; the supplied list also names TurnPoint Services, Master Trades Group, Sila Services, and Redwood Services, but I did not locate a source excerpt in this search set explicitly naming every one of those entities, so those four should be treated as unverified in this dossier. Claimed outcomes include Summers “booked 2,873 jobs in their first month on Probook with zero human intervention,” Anthony ran “10% more revenue per job on a 40% leaner team,” and Del-Air “more than doubled productivity from 10 to 22 techs per dispatcher.” These are company claims, not independently audited results.",
+      "funding": "CONFIRMED by the company release and a16z: “$34 million Series A led by Andreessen Horowitz (a16z)” plus “a $6 million Seed round led by Sequoia Capital”; “Sequoia also participated in the Series A.” Total funding is stated as “$40 million.” Fortune independently reports the same structure: “a $34 million Series A led by Andreessen Horowitz and a $6 million seed led by Sequoia Capital.” Use of proceeds: “scale its go-to-market team against surging demand, and grow engineering and customer success.”",
+      "GTM_and_open_roles": "The Ashby SDR posting says the role reports to “the Director of Growth,” targets “the top home service operators in America,” requires “60+ dials a day,” and requires “Maintain clean, accurate records in Ashby for every prospect interaction.” The board search surfaced roles for Sales Development Representative, Enterprise Account Executive, Strategic Account Executive, Solutions Consultant, Senior Product Marketing Manager, and Events Marketing Specialist; the requested count of 13 open roles was not independently reconstructed from the board snapshot, so treat 13 as an as-of-September estimate supplied by the requester, not a verified count here. The Events posting says the hire will build the event playbook “from scratch” and coordinate with the Director of Growth. The ABM Manager requisition is not currently evidenced on the Ashby results found here; status as of Sept. 8, 2026 is UNRESOLVED—no source found proving filled, converted, or still open, and no source found naming its reporting manager.",
+      "marketing_and_ABM": "Kate Blumberg’s LinkedIn result identifies her as “Director of Growth - Probook (Current)” with “Jun 2026 - Present,” and her July 24 post is summarized as “I’m growing the marketing team at Probook.” The ABM Manager post/account-list detail described in the prompt is therefore attributed to Kate, but the exact post text and named reporting line were not available in the accessible source excerpt. Internally verified tooling: Ashby is explicitly named for CRM hygiene in the SDR JD. For Salesforce, HubSpot, Marketo, Outreach, Salesloft, Apollo, ZoomInfo, Clay, Gong, 6sense, Demandbase, Terminus, RollWorks, and Mutiny: NOT FOUND in the sources reviewed; this does not mean not installed.",
+      "leadership_and_reporting": "Mark Hoffman is the Probook executive, not another same-name person: his LinkedIn result states “Chief Revenue Officer - Probook (Current)” and “Feb 2026 - Present”; the same result shows “Chief Sales Officer (CSO) - Tennr” immediately before Probook and prior VTS sales roles. The SDR JD establishes that SDRs report to “the Director of Growth,” which identifies Kate Blumberg by her LinkedIn title, but no source found names anyone reporting directly to Mark Hoffman. The company page names George Eliadis “Co-Founder & CEO,” Lewis Zhang “Co-Founder & CTO,” and Ben Cervantez as a founder, while the funding release states “Probook founders Ben Cervantez, George Eliadis and Lewis Zhang.”",
+      "operational_pain_and_strategy": "George’s founder letter says he spent “two to three hours of my day driving between jobs” and could be on a ladder and “miss calls.” The company’s strategic thesis is that dispatch is the hardest central decision: a16z says, “You win by owning the hardest, most central decision in the business and building outward from it.” Proceeds explicitly target GTM scaling, plus engineering and customer success growth, consistent with a post-Series-A commercialization push.",
+      "culture_and_reputation": "Company recruiting language emphasizes high intensity and in-person Manhattan work: the Events JD says “NYC-based and excited about in-office collaboration” and “high-intensity environment”; the product-marketing JD says the role directly shapes “competitive outcomes.” Required negatives: layoffs, lawsuits, churn, down-rounds, Glassdoor/G2 negatives, and a ServiceTitan competitive conflict are UNRESOLVED—not confirmed or denied by the sources reviewed. No acquisition rumor or acquisition announcement was found; acquisition status is UNRESOLVED, not denied. No independent customer-review evidence was located. Claims such as “product is proven” in the SDR JD are company recruiting claims, not third-party validation.",
+      "competitor_context": "ServiceTitan-specific competitive conflict: NOT FOUND in the reviewed sources; status UNRESOLVED. The available a16z thesis frames Probook as owning dispatch and expanding outward, but does not name ServiceTitan or establish a direct dispute.",
+      "bottom_line": "Evidence supports a New York/Manhattan vertical-AI company founded by George Eliadis, Lewis Zhang, and Ben Cervantez, focused on AI-assisted home-services dispatch and front-office workflows, with company-claimed national customer traction and CONFIRMED $40M total funding ($34M a16z-led Series A plus $6M Sequoia-led seed). The clearest strategic signal is aggressive enterprise GTM buildout after the June 23, 2026 financing. The largest diligence gaps are internal revenue-stack tooling beyond Ashby, the ABM Manager’s disposition/reporting line, independently verified retention/churn, and substantiated negatives or ServiceTitan conflict."
+    },
+    "grounding": [
+      {
+        "field": "identity_and_scope",
+        "citations": [
+          {
+            "url": "https://www.probook.ai/company",
+            "title": "Probook · The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+            "title": "Sales Development Representative @ Probook"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "founding_and_timing",
+        "citations": [
+          {
+            "url": "https://www.probook.ai/letter",
+            "title": "Probook · The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://fortune.com/2026/06/23/exclusive-this-startup-wants-to-be-the-ai-brain-for-home-services-and-it-just-raised-40-million-from-sequoia-and-a16z/",
+            "title": "Exclusive: This founder went from pressure washing to Wharton—and just raised $40 million for AI | Fortune"
+          },
+          {
+            "url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+            "title": "Probook Raises $40M from Andreessen Horowitz and Sequoia to"
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "field": "product_and_buyers",
+        "citations": [
+          {
+            "url": "https://www.probook.ai/letter",
+            "title": "Probook · The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://a16z.com/announcement/investing-in-probook/",
+            "title": "Investing in Probook | Andreessen Horowitz"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+            "title": "Sales Development Representative @ Probook"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "traction_and_customers",
+        "citations": [
+          {
+            "url": "https://www.probook.ai/letter",
+            "title": "Probook · The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.probook.ai/customer-outcomes/peterman",
+            "title": "Peterman Brothers · Centralized dispatch for 200 technicians · Probook Customer Outcomes"
+          },
+          {
+            "url": "https://www.probook.ai/customer-outcomes/del-air",
+            "title": "Del-Air · Consolidated dispatch from 22 to 10 · Probook Customer Outcomes"
+          },
+          {
+            "url": "https://www.probook.ai/customer-outcomes/cardinal",
+            "title": "Cardinal · Lifted average ticket 20% · Probook Customer Outcomes"
+          },
+          {
+            "url": "https://www.probook.ai/customer-outcomes/anthony",
+            "title": "Anthony · Doubled dispatch capacity · Probook Customer Outcomes"
+          },
+          {
+            "url": "https://www.probook.ai/case-studies",
+            "title": "Probook"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "funding",
+        "citations": [
+          {
+            "url": "https://a16z.com/announcement/investing-in-probook/",
+            "title": "Investing in Probook | Andreessen Horowitz"
+          },
+          {
+            "url": "https://fortune.com/2026/06/23/exclusive-this-startup-wants-to-be-the-ai-brain-for-home-services-and-it-just-raised-40-million-from-sequoia-and-a16z/",
+            "title": "Exclusive: This founder went from pressure washing to Wharton—and just raised $40 million for AI | Fortune"
+          },
+          {
+            "url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+            "title": "Probook Raises $40M from Andreessen Horowitz and Sequoia to"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "GTM_and_open_roles",
+        "citations": [
+          {
+            "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+            "title": "Sales Development Representative @ Probook"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/a54815d3-1062-4d02-9d87-ebc6feb892e2",
+            "title": "Enterprise Account Executive at Probook"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/672b7090-68f9-4951-8af3-482e289d7af7",
+            "title": "Strategic Account Executive at Probook"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/b49b1bdc-3834-4b37-8216-6cc58c005991",
+            "title": "Senior Product Marketing Manager  @ Probook"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/c195de0a-605b-4bfa-840f-f6ff5f7e24f1",
+            "title": "Events Marketing Specialist  @ Probook"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "marketing_and_ABM",
+        "citations": [
+          {
+            "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+            "title": "Sales Development Representative @ Probook"
+          },
+          {
+            "url": "https://www.linkedin.com/in/kibrady12",
+            "title": "Kate Blumberg"
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "field": "leadership_and_reporting",
+        "citations": [
+          {
+            "url": "https://www.probook.ai/company",
+            "title": "Probook · The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+            "title": "Probook Raises $40M from Andreessen Horowitz and Sequoia to"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+            "title": "Sales Development Representative @ Probook"
+          },
+          {
+            "url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+            "title": "Mark Hoffman"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "operational_pain_and_strategy",
+        "citations": [
+          {
+            "url": "https://www.probook.ai/letter",
+            "title": "Probook · The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://a16z.com/announcement/investing-in-probook/",
+            "title": "Investing in Probook | Andreessen Horowitz"
+          },
+          {
+            "url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+            "title": "Probook Raises $40M from Andreessen Horowitz and Sequoia to"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "culture_and_reputation",
+        "citations": [
+          {
+            "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+            "title": "Sales Development Representative @ Probook"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/b49b1bdc-3834-4b37-8216-6cc58c005991",
+            "title": "Senior Product Marketing Manager  @ Probook"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/c195de0a-605b-4bfa-840f-f6ff5f7e24f1",
+            "title": "Events Marketing Specialist  @ Probook"
+          }
+        ],
+        "confidence": "medium"
+      },
+      {
+        "field": "competitor_context",
+        "citations": [
+          {
+            "url": "https://a16z.com/announcement/investing-in-probook/",
+            "title": "Investing in Probook | Andreessen Horowitz"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "bottom_line",
+        "citations": [
+          {
+            "url": "https://www.probook.ai/letter",
+            "title": "Probook · The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.probook.ai/company",
+            "title": "Probook · The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://a16z.com/announcement/investing-in-probook/",
+            "title": "Investing in Probook | Andreessen Horowitz"
+          },
+          {
+            "url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+            "title": "Probook Raises $40M from Andreessen Horowitz and Sequoia to"
+          },
+          {
+            "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+            "title": "Sales Development Representative @ Probook"
+          },
+          {
+            "url": "https://www.linkedin.com/in/kibrady12",
+            "title": "Kate Blumberg"
+          },
+          {
+            "url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+            "title": "Mark Hoffman"
+          }
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "results": [
+    {
+      "id": "https://www.probook.ai/company",
+      "title": "Probook · The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/company",
+      "highlights": [
+        "Probook · The AI Operating System for Home Services\n\n# Built by the Trades. For the Trades.\n\nBacked by Sequoia and Andreessen Horowitz, Probook is solving the hardest problems in home services with the most talent-dense team in New York.\n\nThe investors building the category with us.\n\n## More talent-dense than early Ramp.\n\nGeorge and Ben grew up in the trades and met through Penn’s M&T program. Lewis breezed through Berkeley EECS in two years with a 4.0. Probook marries real trades experience with world-class technical depth.\n\nOur engineering team includes multiple ICPC World Finalists and IMO Gold Medalists who chose this problem because it’s harder and more real than quant or big tech. Our GTM and CS teams came up at Procore, Zocdoc, and other vertical leaders.\n\nGeorge Eliadis\n\nCo-Founder & CEO\n\nLewis Zhang\n\nCo-Founder & CTO\n\nBen Cervantez\n\n## Software that operators don’t have to think about.\n\nI started Probook to solve a problem in my own business. I pressure washed houses in upstate New York for six years with my dad, covering six counties and spending two to three hours a day driving between calls. Engineering school turned that frustration into Probook.\n\nAfter a few pivots, I spent a summer at TR Miller and fell in love with home services. Most AI vendors flocked to home services because it looked attractive on a spreadsheet. We came at it differently…\n\nSales Development Representative New York Apply Enterprise Account Executive New York Apply Solutions Consultant New York Apply"
+      ],
+      "image": "https://www.probook.ai/v5/company/wall-team-1.jpg"
+    },
+    {
+      "id": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+      "title": "Sales Development Representative @ Probook",
+      "url": "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0",
+      "highlights": [
+        "Sales Development Representative @ Probook\n* [![Probook](https://app.ashbyhq.com/api/images/org-theme-logo/559b1d04-aa86-479b-bab3-67499a610826/23f68d8a-8511-4cad-944c-41a5d0395f7a/aaeea711-b8eb-479e-9b0d-9f868136fbfd.png)](https://www.probook.ai/)\n* [](https://jobs.ashbyhq.com/probook)\n*\n# Sales Development Representative\n## Location\nManhattan\n## Employment Type\nFull time\n## Location Type\nOn-site\n## Department\nGTM\n**ABOUT PROBOOK**\nProbook is the AI Operating System for the home services industry, transforming how plumbing, HVAC, and electrical businesses operate.\n \nOur impact is real. Dispatching the right technician to the right job can mean the difference between a $300 \"band-aid\" fix and a $20,000 system replacement. By automating previously high-touch workflows around-the-clock, Probook ensures a consistent customer experience without the need for 24/7 live staffing. We unify our customers' processes into a single, scalable platform, giving businesses one place to run their entire dispatch operation.\n**The Role**\nWe have a clearly defined target: the top home service operators in America. The list exists. The product is proven. What we need now is someone to go get them.\nYou will own the top of the funnel for our enterprise AE team. Your job is to open doors through cold calls, cold emails, and LinkedIn outreach, qualify interest, and hand off high-quality opportunities to the AEs to close. You report to the Director of Growth and operate as the engine that keeps the pipeline full.\n**Who You Are**\n* **Relentless:** You are comfortable making 60+ dials a day without being asked. You treat rejection as data, not discouragement. Your activity level is not negotiable with yourself.\n* **Operator-to-operator communicator:** You can talk to a plumbing business owner or an HVAC GM in their language. No jargon. No corporate SaaS pitch. You understand their world or learn it fast.\n* **Highly organized:** You run a clean CRM. You know your numbers cold. You never miss a follow-up.\n* **Hungry to learn:** You are early in your sales career and want to compress your development. You absorb coaching, apply it in the next call, and ask good questions.\n* **Builder mentality:** You thrive with no playbook. You figure out what works, document it, and do it at scale.\n**What you will own**\n* **Outbound pipeline:** Build and execute a high-volume outbound motion across cold calls, email sequences, and LinkedIn targeting the top home service operators in the US.\n* **Qualified opportunities:** Deliver a consistent volume of qualified meetings to the AE team each month. Your primary metric is meetings held, not just booked.\n* **Account research:** Understand each target account before reaching out. Tailor your approach to their specific business size, software stack, and operational context.\n* **CRM hygiene:** Maintain clean, accurate records in Ashby for every prospect interaction. Your data is the team’s data.\n* **Feedback loop:** Surface patterns from outbound conversations to the Director of Growth and AE team. You are closer to the market than anyone. Use it.\n**Requirements**\n* NYC Based: Excited to work in-office 5 days/week in our high-collaboration culture.\n* 1-2+ years of experience in a sales, SDR, or outbound-facing role\n* Prior cold calling experience\n* Exposure to B2B SaaS or vertical software a plus, not required\n* Exceptional verbal communication skills. You are direct, clear, and credible on the phone.\n* Strong written communication. Your emails are short, specific, and get replies.\n* High activity tolerance. You do not need external motivation to pick up the phone.\n* CRM discipline. You keep records clean without being told twice.\n**Why Join Probook?**\n* **The Tailwinds:** $700B industry with clear tailwinds: AI adoption, labor shortages, and generational transitions creating demand for operational modernization. We are defining the category, not fighting for share.\n* **The Traction:** $XXM ARR in 18 months. Product-market fit proven; now we're scaling\n* **Funding: **$40M raised from Sequoia and Andreessen Horowitz\n* **The Team:** >65 people; our founding team comes from the space and has spent thousands of days onsite with our customers. We live the space. We're also becoming one of the most talent-dense start-ups in NYC (MIT, Harvard, UPenn M&T, Waterloo, Citadel, Palantir).\n**Compensation & Benefits**\n* **Equity:** Meaningful early-stage equity\n* **Base Salary:** $75K\n* **Variable:** Up to $110K OTE\n* **Health:** Comprehensive medical, dental, and vision\n* **Perks:** $500 monthly Ramp card for commuting, meals, gym, etc. (plus $25 in nightly meal delivery credit) and really good office snacks\n* **Access:** Direct access to world-class investors and advisors\n[Apply for this Job](https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0/application)"
+      ],
+      "image": "https://app.ashbyhq.com/api/images/org-theme-logo/559b1d04-aa86-479b-bab3-67499a610826/23f68d8a-8511-4cad-944c-41a5d0395f7a/aaeea711-b8eb-479e-9b0d-9f868136fbfd.png"
+    },
+    {
+      "id": "https://www.probook.ai/letter",
+      "title": "Probook · The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/letter",
+      "highlights": [
+        "Probook · The AI Operating System for Home Services\n\n# A Letter to the Operator\n\nProbook raised $40M from Andreessen Horowitz and Sequoia Capital. Here's what we're building, and why.\n\nBy George Eliadis Co-Founder & CEO\n\nchapters\n\nI started Probook to solve a problem in my own business.\n\nI grew up pressure washing in upstate New York with my dad. Six summers in the truck. I spent two to three hours of my day driving between jobs. I’d be up on a ladder washing a house and miss calls because I couldn’t hear my phone ringing.\n\nI spent a summer inside TR Miller, a $40M HVAC, plumbing & electrical shop in Illinois that became Probook’s first customer. I cycled between call center, dispatch, and inside sales, taking calls, setting the board, following up on unsold estimates. I felt how raw workflows were, even at one of the best-run shops in the country.\n\nMost AI vendors flocked to home services because it looked attractive on a spreadsheet. We came to it because we grew up in it. Ben grew up helping his dad plumb in San Francisco. Lewis is the most technically gifted person I have ever worked with. We started building.\n\nIn the early days, the three of us traveled the country and onboarded every customer in person. We sat on the floor, configured the product alongside their front-line teams, and stayed until it worked. I’ve slept on customers’ couches. I’ve been to their weddings and their bachelor parties. We are peers to our customers, not their vendors. We still onboard every customer that way today.\n\n## What money can’t cheat\n\nWe understand this industry in a way that Silicon Valley never will. We stood in for dispatchers when a bad deployment broke our optimization engine at 6 AM on a Monday. We handled hundreds of live calls when our AI CSR went down. We wrote change management plans for shops where four previous AI implementations failed.\n\nWe’re well past those moments now, and I’m grateful for the pain some of our early adopters endured. No amount of money can cheat those years of learning.\n\n## What you’ve been through\n\nIf you run a home services business, the last three years have happened to you. You watched a wave of AI vendors show up at every conference, all making the same promise. You bought some of it. You piloted more of it. You ended up with five new tools, three new vendors, and a bill that grew faster than your revenue. Customer experience didn’t improve. Margins didn’t get better. Manual QA just kept piling up.\n\nThe problem isn’t AI. It’s that AI sat on top of a fragmented system. That’s what got us here.\n\nThe next decade will not be won by the best voice agent or the best outbound tool. It will be won by the platform that runs the customer experience end to end, where AI does the bulk of the work and your team manages the exceptions. Not five tools and three vendors. One platform that runs it all.\n\nThat platform is what we’re building.\n\n## Where Probook is today\n\nToday we announced $40M from Andreessen Horowitz and Sequoia Capital to keep building it. Probook is the AI Operating System for home services, built around dispatch.\n\nThese firms rarely co-sign the same company. When they do, it’s because they see a category winner. We’re grateful to David Haber, General Partner at Andreessen Horowitz, and Konstantine Buhler, Partner at Sequoia Capital, for their conviction.\n\nProbook now serves hundreds of locations nationwide, from independently owned shops to private equity-backed platforms. Summers Plumbing, Heating & Cooling, with 14 locations and 260 technicians across the Midwest, booked 2,873 jobs in their first month on Probook with zero human intervention. Kansas-based Anthony Plumbing, Heating, Cooling & Electric ran 10% more revenue per job on a 40% leaner team in eight months on Probook. Del-Air more than doubled productivity from 10 to 22 techs per dispatcher.\n\nOperators run on Probook to add points to their EBITDA and operate their customer experience as one connected system.\n\n## Come build it with us\n\nLewis got a perfect score on the AMC 12 and finished Berkeley EECS in two years with a 4.0. Our engineering team is more talent-dense than early Ramp, stacked with ICPC World Finalists and IMO Gold Medalists. Our GTM and CS teams came up at Procore, Zocdoc, and other vertical leaders.\n\nIf you want to do the best work of your career on a category-defining product, join us.\n\nThe trades built this country. We are building the platform that helps them run.\n\nGeorge Eliadis\n\nCo-Founder & CEO, Probook\n\nPS, we’re hiring across the company."
+      ],
+      "image": "https://www.probook.ai/v5/letter/byline-founders.jpg"
+    },
+    {
+      "id": "https://fortune.com/2026/06/23/exclusive-this-startup-wants-to-be-the-ai-brain-for-home-services-and-it-just-raised-40-million-from-sequoia-and-a16z/",
+      "title": "Exclusive: This founder went from pressure washing to Wharton—and just raised $40 million for AI | Fortune",
+      "url": "https://fortune.com/2026/06/23/exclusive-this-startup-wants-to-be-the-ai-brain-for-home-services-and-it-just-raised-40-million-from-sequoia-and-a16z/",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "author": "Lily Mae Lazarus",
+      "highlights": [
+        "Exclusive: This founder went from pressure washing to Wharton—and just raised $40 million for AI | Fortune\n\n# Exclusive: A founder who went from pressure washing to Wharton just raised $40 million to put AI to work for plumbers, electricians, and HVAC crews\n\nLily Mae Lazarus\n\nReporter, News\n\nJune 23, 2026, 7:43 AM ET\n\nGeorge Eliadis really knows his way around a pressure washer. \n\nThe 24 year-old spent six summers pressure washing houses in upstate New York with his dad. Now he has a Wharton degree, and just raised $40 million from two of the most competitive names in venture capital to fix blue-collar and home services problems at scale.\n\nProbook, his New York-based startup, raised a $34 million Series A led by Andreessen Horowitz and a $6 million seed led by Sequoia Capital, which also participated in the A, Fortune learned exclusively. The company is building what Eliadis calls an AI operating system for home service businesses—the HVAC shops, plumbing outfits, and electrical contractors that collectively power a $700 billion industry.\n\nThe pitch starts with a grievance. Over the last few years, home service operators were sold an explosion of AI tools—voice agents, chat widgets, follow-up bots. They ended up with five vendors and bills growing faster than the revenue those tools promised. According to Eliadis, none of these products were built for dispatch—the part of the business where an operator decides which of 40 technicians goes to which of 150 jobs, in what order, with what expected ticket size. \n\n“Dispatch is the brain of every home service business,” he told Fortune. “That’s where customer experience is made or broken.”\n\nSo Probook built the scheduling brain first, then layered on everything else—answering calls, cleaning up job data, sending customer updates—in one connected system. The early numbers are promising: an Indiana customer with 14 locations and 260 technicians booked 2,542 jobs in its first month without a single human touching the booking. A Florida operator cut its dispatchers from 22 to 10. A Kansas shop did the same and grew its average job revenue by 20%.\n\nProbook’s sweetest customer right now is the private equity-backed home services rollup—think investment firms that have been quietly buying up local HVAC and plumbing shops across the country, bundling them under one roof, and squeezing out efficiencies. That acquisition pace hit 88% growth year-over-year through mid-2025. And Probook sells directly to owners who are laser-focused on profit margins. \n\nThe harder question is what happens with ServiceTitan. The $6.3 billion publicly traded company is the dominant software platform for home service businesses—and it already has its own AI scheduling product. For now, Probook is listed as a ServiceTitan partner, meaning the two technically work together rather than against each other. Eliadis calls them complementary. A16z GP David Haber called it “a years-old structural moat,” in a written statement. Still, ServiceTitan has $960 million in revenue and its own engineers. \n\nEliadis was the company’s only salesperson until February of this year. He’s been to customers’ weddings. He’s slept on their couches. That founder obsession is exactly what Sequoia’s Konstantine Buhler cited when he backed the seed in early 2025 and doubled down on the A: “Most founders building for the trades have never worked in them. George has.”\n\nSee you tomorrow,\n\nLily Mae Lazarus X: @LilyMaeLazarus Email: lily.lazarus@fortune.com Submit a deal for the Term Sheet newsletter here (termsheet@fortune.com).\n\n### VENTURE DEALS\n\n- Nearfield Instruments, a Rotterdam, Netherlands-based advanced semiconductor 3D metrology and process control company, raised $380 million in Series D funding. Fidelity Management & Research Company led the round and was joined by Temasek, Walden Catalyst Ventures, Innovation Industries, M&G Investments, and others.\n\n- Probook, a New York City-based AI operating system for home service businesses, raised $40 million in funding, including $34 million in Series A funding led by Andreessen Horowitz and a $6 million in seed funding led by Sequoia Capital.\n\n- Attention, a New York City-based AI platform for revenue teams, raised $30 million in Series B funding. RTP Global led the round and was joined by Aglaé Ventures, Eniac, Alven, Linea Ventures, and angel investors.\n\n- Prosper AI, a New York City-based developer of AI voice agents designed for patient access and RCM, raised $30 million in Series A funding. a16z led the round and was joined by Base10. \n\n- Superlight, a Yateley, U.K.-based commercial electric vehicle manufacturer, raised $21 million in Series A funding. Engine Ventures and 2150 led the round. \n\n- Trustap, a Dublin, Ireland-based payments and transaction platform, raised $10 million in funding. Aperture Capital led the round and was joined by TX Ventures and other existing investors. \n\n- Kyrok, a Berlin, Germany-based AI operating system for supply chain teams at small and medium-sized pharmaceutical and chemical companies, raised €3.1 million ($3.5 million) in pre-seed funding. Speedinvest led the round. \n\n### PRIVATE EQUITY\n\n- Balbec Capital acquired Funding 365, a London, U.K.-based specialist property lender. Financial terms were not disclosed.\n\n- Greybull Stewardship acquired Genesys Industries, a Palmetto, Fla.-based manufacturer of OEM and aftermarket products. Financial terms were not disclosed.\n\n### IPOS\n\n- ITG, a Fort Lauderdale, Fla.-based contractor that builds, installs, and maintains broadband and fiber networks for telecom and utility providers, plans to raise up to $429 million in an offering of 19.5 million shares priced between $19 and $22 on the Nasdaq. The company posted $1.3 billion in sales for the year ended March 31. Oaktree Capital Management backs the company. \n\n- Sinda, a Guanajuato, Mexico-based silver mining company, plans to raise up to $235.8 million in an offering of 17.8 million shares priced between $11.25 and $13.25 on the New York Stock Exchange. Electrum and Ospraie back the company.\n\n- Neutron Holdings, the San Francisco-based operator of Lime scooters, plans to raise up to $182 million in an offering of 7 million shares priced between $24 and $26 on the Nasdaq. The company posted $928 million in revenue for the year ended March 31. Uber Technologies and a16z back the company.\n\n### PEOPLE\n\n- Littlejohn & Co., a Greenwich, Conn.-based private equity firm, promoted Charles Leung to Managing Director."
+      ],
+      "image": "https://fortune.com/img-assets/wp-content/uploads/2026/06/Probook-founders-Ben-Cervantez-George-Eliadis-and-Lewis-Zhang-2.jpg?resize=1200,600"
+    },
+    {
+      "id": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "title": "Probook Raises $40M from Andreessen Horowitz and Sequoia to",
+      "url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "publishedDate": "2026-06-23T14:45:00.000Z",
+      "author": "Probook",
+      "highlights": [
+        "Probook Raises $40M from Andreessen Horowitz and Sequoia to\n\n# Probook Raises $40M from Andreessen Horowitz and Sequoia to Scale the AI Operating System for Home Services\n\n## America's largest home service brands run on Probook, built around dispatch.\n\nJune 23, 2026 10:45 ET | Source: Probook Probook\n\n---\n\nNew York, NY, June 23, 2026 (GLOBE NEWSWIRE) -- Probook, the AI Operating System for home service businesses, today announced $40 million in funding. The investment comprises a $34 million Series A led by Andreessen Horowitz (a16z) and a $6 million Seed round led by Sequoia Capital. Sequoia also participated in the Series A.\n\nHome service operators spent the last three years buying AI. A voice agent. A chat widget. A follow-up tool. Each one owned a slice of the customer, and none of them talked to each other. Every vendor built for the top of the funnel, where leads come in — and ignored dispatch, the brain of every home service business, where customer experience is made or broken. Operators ended up with a stack of point solutions and a piecemeal customer experience.\n\nProbook founders Ben Cervantez, George Eliadis and Lewis Zhang.\n\nProbook built dispatch first. Intake, data cleaning, customer messaging, and outbound came next, only possible because everything shares one context layer. Every customer stays on one text thread, with one number, from the first touch through the front door. Every inbound lead is answered with perfect information. Every booking is cleaned before assignment. Humans manage exceptions. Techs sell more. Shops run more jobs. Operators add points to their EBITDA and, for the first time, run a connected customer experience.\n\n“I started Probook to solve a problem in my own business,” said George Eliadis, CEO and co-founder of Probook. \"I grew up pressure washing in upstate New York with my dad. Six summers in the truck. I spent two to three hours of my day driving between jobs. I'd be up on a ladder washing a house and miss calls because I couldn't hear my phone ringing.”\n\nEliadis later spent a summer inside TR Miller, a $40M HVAC, plumbing, and electrical shop in Illinois that became Probook's first customer. There, he saw the same problems at scale.\n\n\"Most AI vendors flocked to this space because it looked attractive on a spreadsheet,\" he continued. \"We came to it because we grew up in it. Dispatch is the hardest problem in home services. If you don't start there, you can't understand the business.\"\n\nProbook deploys with customers in person, configures the platform alongside their front-line teams, and stays on the hook for the outcomes it sells.\n\nProbook serves customers across hundreds of locations nationwide, from independently owned shops to private equity-backed platforms. Notable customers include TurnPoint Services, Master Trades Group, Del-Air, Peterman Brothers, and Sila Services.\n\n\"With Probook, we've centralized dispatch across 11 markets and 200 technicians without adding overhead. That scalability is critical to how we grow,\" said Chad Peterman, CEO of Peterman Brothers.\n\nSummers Plumbing, Heating & Cooling, with 14 locations and 260 technicians on the platform, booked 2,542 jobs in its first month on Probook with zero human intervention.\n\nDel-Air, an 8-location operation in Florida, runs Probook across the stack. \"We chose Probook over other AI vendors because they know dispatch. They're also part of our front-line CSR,\" noted Rick Rogers, CEO.\n\n“Dispatch is the nerve center of every home service business, and Probook built their entire platform around it.” said David Haber, General Partner at Andreesen Horowitz. “It's a years-old structural moat. America's largest home service brands run on Probook today. We're proud to have led their Series A.”\n\nKonstantine Buhler, Partner at Sequoia Capital, added: \"Most founders building for the trades have never worked in them. George has. Pair that with the team's outlier technical depth, and you see why we backed Probook at Seed and why we're doubling down now.\"\n\nProbook will use the capital to scale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.\n\nMedia images can be found here.\n\nAbout ProbookProbook is the AI Operating System for home services. Built around dispatch, Probook unifies intake, data scrubbing, customer messaging, and outbound. Operators add points to their EBITDA and run their customer experience as one connected system. Built by people from the trades and backed by a16z and Sequoia, hundreds of the largest home service brands in America run their customer experience on Probook. Learn more at probook.ai.\n\n---\n\n## Tags\n\n### Related Links\n\n---\n\n### Contact Data\n\n```\n\r\n            For further information please contact the Probook press office on media@probook.ai \r\n            \n```\n\nContact\n\nclose\n\n### Contact\n\nWith a Reader Account, it's easy to send email directly to the contact for this release. Sign up today for your free Reader Account! Already have an account? Log in here.\n\nGlobeNewswire"
+      ],
+      "image": "https://ml-eu.globenewswire.com/Resource/Download/04569f1a-bdc8-44b5-80be-94017c68b7c6",
+      "favicon": "https://www.globenewswire.com/Content/logo/favicon.ico"
+    },
+    {
+      "id": "https://a16z.com/announcement/investing-in-probook/",
+      "title": "Investing in Probook | Andreessen Horowitz",
+      "url": "https://a16z.com/announcement/investing-in-probook/",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "highlights": [
+        "Investing in Probook | Andreessen Horowitz\n\n# Investing in Probook\n\nAlex Rampell, David Haber, Olivia Moore, and Seema Amble Posted June 23, 2026 \n\nEvery business has one decision that everything else bends around. In home services, that decision is dispatch: which technician goes to which job, in what order, at what time. Get it right and revenue, technician utilization, and customer experience all move up together. Get it wrong and no amount of marketing or lead-gen can save the day. Dispatch is the brain of the business.\n\nSo it is striking that, for the last three years, almost everyone building AI for the trades skipped it. They rushed to the edges instead – voice agents, chat widgets, follow-up bots – clustered at the top of the funnel where leads come in. It is the most visible part of the business and the easiest place to bolt on a model. The result was a stack of disconnected point solutions, each owning a sliver of the customer, none of them talking to each other, and none of them touching the decision that actually determines whether an operator makes money.\n\nOur thesis is simple: in vertical AI, you do not win by adding another tool at the edge. You win by owning the hardest, most central decision in the business and building outward from it. Probook is doing exactly that in home services, and today we are thrilled to announce that a16z is leading Probook’s $34 million Series A, bringing the company’s total funding to $40 million after a seed round led by Sequoia.\n\nProbook built dispatch first, the part most vendors avoid because it is genuinely hard. Routing the closest available technician is easy; routing the right one is not. Technicians have different skills, conversion rates, and areas of expertise, and the gap between a good match and a bad one shows up directly in revenue. Only after owning that decision layer did Probook expand into the rest of the front office: intake, data scrubbing, customer messaging, and outbound.\n\nBecause everything shares one context layer, the whole system works as one. Every customer stays on a single text thread with a single number, from the first call to the technician at the front door. Every inbound lead is answered with full information. Every booking is cleaned before it is assigned. Humans handle the exceptions; the software handles the rest. This is not a copilot that hands work back to an already-overloaded front office. It does the work, and operators add points to their EBITDA as a result.\n\nProbook is hard to replicate because of where it came from. CEO George Eliadis grew up in the industry, pressure washing alongside his dad in upstate New York across six summers in the truck. He knows what it is to be up on a ladder washing a house and miss the call that would have booked the next job. Years later, he spent a summer inside TR Miller, a $40 million HVAC, plumbing, and electrical shop in Illinois that became Probook’s first customer, and saw the same problems play out at scale.\n\nGeorge and his co-founders, CTO Lewis Zhang and Ben Cervantez, have paired that hard-won domain empathy with outlier technical depth. It shows in how they build. Probook deploys with customers in person, configures the platform shoulder to shoulder with their front-line teams, and stays on the hook for the outcomes it sells. In a category full of software that is sold and forgotten, that posture has made Probook a rare vendor that operators actually trust to run their business.\n\nProbook already runs across hundreds of locations nationwide, from independently owned shops to private-equity-backed platforms, including TurnPoint Services, Master Trades Group, Del-Air, Peterman Brothers, and Sila Services. Summers Plumbing, Heating & Cooling, with 14 locations and 260 technicians on the platform, booked 2,542 jobs in its first month on Probook with zero human intervention. Del-Air more than doubled productivity from 10 to 22 techs per dispatcher.\n\nWe could not be more excited to partner with George, Lewis, Ben, and the entire Probook team. If you operate a home services business, see Probook for yourself at probook.ai, and if you want to help build it, they’re hiring.\n\nis a general partner at Andreessen Horowitz, where he leads the firm’s $1 billion Apps practice.\n\nis a general partner at Andreessen Horowitz, where he focuses on technology investments in B2B software and financial services."
+      ],
+      "image": "https://d1lamhf6l6yk6d.cloudfront.net/uploads/2026/06/Probook-Yoast-LI-A.png"
+    },
+    {
+      "id": "https://www.probook.ai/customer-outcomes/peterman",
+      "title": "Peterman Brothers · Centralized dispatch for 200 technicians · Probook Customer Outcomes",
+      "url": "https://www.probook.ai/customer-outcomes/peterman",
+      "highlights": [
+        "Peterman Brothers · Centralized dispatch for 200 technicians · Probook Customer Outcomes\n\nProbook raises $40M from Sequoia & Andreessen Horowitz· Read more →\n\n# How Peterman Brothers centralized dispatch for 200 technicians and increased average ticket 22%\n\n22%\n\nIncrease in HVAC average ticket (first 10 months, YOY)\n\n95%\n\nOf dispatching decisions made by Probook\n\n414\n\nInbound jobs booked per month with no human\n\n## Chad Peterman on partnering with Probook across call center and dispatch.\n\n> “With Probook, we’ve centralized dispatch across 11 markets and 200 technicians without adding overhead. That scalability is critical to how we grow.”\n\nChad Peterman · CEO, Peterman Brothers\n\n## Overview\n\nPeterman Brothers is an HVAC, plumbing, and electrical company headquartered in Indianapolis, with more than 200 technicians serving 11 locations across Indiana, Kentucky, and Ohio.\n\n## The challenge\n\nPeterman is always striving to make its internal operations team more efficient. With 200 technicians to manage, dispatchers spent their days bogged down with remedial work: updating customers on ETAs, confirming calls, and making sure tags were right. All of it pulled them away from what matters most—supporting the technicians in the field. Coordinating it across 11 locations only made it harder.\n\n## One department, run by Probook\n\nPeterman pulled dispatch into a single Indianapolis hub and put Probook in charge of it. Probook now runs the department, handling the bulk of its inbound calls and eliminating the remedial work that used to eat the team’s day. Dispatchers focus only on the issues that need a human, and about 95% of day-to-day decisions now run through Probook.\n\n> “95% of all dispatch decision-making in the business is done by Probook.”\n\nChad Peterman · CEO\n\n## Taking the calls that bogged down dispatch\n\nProbook now fields Peterman’s non-dispatch inbound calls—the questions that used to pull dispatchers off their work. Last month it handled 2,500 of them, and booked 414 jobs end to end with no human involved.\n\n## Bigger tickets, room to scale\n\nIn the 10 months since bringing on Probook, Peterman’s average ticket on its HVAC service line rose 22%, with similar gains across plumbing and electrical. And the model scales: a more efficient dispatch team means Peterman could roughly double its field technicians without adding a single dispatcher.\n\n## Why Probook: white-glove implementation\n\nProbook met Peterman on-site, spent several days learning the business and the nuances of how Peterman runs, then mapped and implemented its products across Peterman’s business units and complex business rules.\n\n## The results\n\n22% increase in average ticket on HVAC, with similar gains across plumbing and electrical (first 10 months)\n\n~95% of dispatch decision-making now handled by Probook\n\n2,500 non-dispatch inbound calls handled in one month, with 414 booked end to end with no human\n\nDispatch centralized to Indianapolis for ~200 technicians across 11 locations\n\nHeadroom to double technician count with the same dispatch team\n\n## Looking ahead\n\nWith one team running the department and non-lead inquiries handled automatically, Peterman can keep growing its technician base without growing the team behind it. As Chad Peterman puts it, Probook lets “companies of our size and scale do that as efficiently as possible.”\n\n## Want to run like Peterman?\n\n## More customeroutcomes.\n\n82% true booking rate. 20% increase in average ticket.\n\nDoubling tech-to-dispatch ratio, while adding a new department\n\n20% increase in average ticket. 16 dispatchers → 8."
+      ],
+      "image": "https://www.probook.ai/v5/customer-outcome-detail-1/peterman-logo.png",
+      "favicon": "https://www.probook.ai/favicon.ico?favicon.0q8dxn6zqy7ot.ico?dpl=dpl_CNjsY4sWP7U9Nc4gg2pRhRyRKTVP"
+    },
+    {
+      "id": "https://www.probook.ai/customer-outcomes/del-air",
+      "title": "Del-Air · Consolidated dispatch from 22 to 10 · Probook Customer Outcomes",
+      "url": "https://www.probook.ai/customer-outcomes/del-air",
+      "highlights": [
+        "Del-Air · Consolidated dispatch from 22 to 10 · Probook Customer Outcomes\n\n# How Del-Air consolidated dispatch and went AI-first on inbound calls\n\n22 → 10\n\nDispatchers, consolidated across 8 locations\n\n16,000\n\nCalls handled by AI monthly\n\n74%\n\nContainment rate\n\n## Rick Rogers on going with Probook.\n\n> “Probook was the only AI company we trusted to run our dispatch function. It let us consolidate across all eight locations, and we more than doubled our tech-to-dispatch ratio.”\n\nSteve Ramthun · VP of Sales, Del-Air\n\n## Background\n\nDel-Air is a full-service HVAC, electrical, and plumbing provider with eight locations and more than 220 service technicians across Florida. Founded in 1983, it has grown into one of the largest home services contractors in the state.\n\n## The challenge\n\nCoordinating 220-plus technicians across eight locations is a hard problem for any team. Del-Air’s dispatchers were perpetually stretched thin between finding opportunities on the board, talking to technicians in the field, and scrambling to keep customers up to date.\n\nAnd the company kept growing, organically and through acquisition, so call center and dispatch overhead kept climbing with no end in sight. Del-Air needed a better way to scale.\n\n## Consolidating eight locations into one\n\nDel-Air started with dispatch. Within the first three months on Probook, they centralized the entire function at their Lake Mary office, going from 22 dispatchers across eight locations to a central team of 10. That more than doubled their tech-to-dispatch ratio, and today about 90% of their call assignment happens automatically, without human intervention.\n\n> “The process used to require three people, from taking the call to placing the job to dispatching it. Now with Probook, our people focus on everything after the technician arrives.”\n\nTerrence Fraser · Manager, Performance & Compliance\n\n## A call center they could finally scale\n\nDel-Air also needed a CSR solution it could grow with. Its previous setup had grown prohibitively expensive as the business grew. After a thorough vendor evaluation, they chose Probook, in large part because of how deeply Probook understood dispatch, the foundation everything on the front end is built on.\n\n> “They provide best-in-class support. They understand not every business is the same. We’re very unique at Del-Air, and they took the time to come in, learn our business, and adapt their product to our strategy.”\n\nRick Rogers · CEO\n\n## AI on the front line\n\nToday Probook is the front line for Del-Air’s inbound calls. In May it handled 16,000 calls, containing 74% of them without human intervention. Every inbound call now touches AI first, and Del-Air is among the first contractors its size to go fully AI on inbound.\n\n## The results\n\nDispatch consolidated from 22 to 10, centralized across all eight locations (more than 2x tech-to-dispatch ratio)\n\n90% of dispatching now happens automatically\n\n16,000 inbound calls handled by AI monthly\n\n74% containment rate on AI-handled calls\n\n## Looking ahead\n\nBy consolidating dispatch and going AI-first on inbound, Del-Air built a model that scales with its growth instead of straining against it. As CEO Rick Rogers puts it, “anyone looking for an AI dispatch or AI CSR solution would do themselves well by having a conversation with Probook.”"
+      ],
+      "image": "https://www.probook.ai/v5/customer-outcome-detail-5/delair-logo.png"
+    },
+    {
+      "id": "https://www.probook.ai/customer-outcomes/cardinal",
+      "title": "Cardinal · Lifted average ticket 20% · Probook Customer Outcomes",
+      "url": "https://www.probook.ai/customer-outcomes/cardinal",
+      "highlights": [
+        "Cardinal · Lifted average ticket 20% · Probook Customer Outcomes\n\n# How Cardinal lifted average ticket 20%, and scaled through four tuck‑ins\n\n20%+\n\nIncrease in average ticket (first 6 months)\n\n13,000+\n\nNew customers across 4 tuck-ins\n\n$715K\n\nGenerated by AI CSR bookings in 4 months\n\n## Tim Pederson on partnering.\n\n> “At Cardinal, we’ve been able to successfully tuck in four companies, increase our customer base by over 13,000, and add 14 technicians to the team. And I’m sure that without Probook, we wouldn’t have been able to handle that.”\n\nTim Pederson · Director of Operations, Cardinal\n\n## Overview\n\nCardinal is a full-service residential HVAC, plumbing, and electrical company serving the Madison and Milwaukee areas of Wisconsin. Founded in 1984, it joined Redwood Services in 2025.\n\n## The challenge\n\nCardinal was growing quickly, and their dispatchers were drowning. Their process was manual and riddled with bias: dispatchers often fell back to assigning by location and relied on gut feel about which technician was “good” at a given call. Dispatch Manager Shawna Aaron spent entire days shuffling the board on emotion. If a technician pushed back on a call, she moved it.\n\n## A math problem, not a people problem\n\nProbook replaced the location-and-reputation guesswork with a real-time model that puts the right technician on the right job.\n\n> “Probook makes dispatching a math problem instead of a people problem. It takes the bias and emotion out of dispatching.”\n\nTim Pederson · Director of Operations\n\nMatching techs to the right calls had an almost immediate impact on the top line. In the first six months on Probook, Cardinal’s average ticket across trades rose over 20% year-over-year.\n\n## Scale they couldn’t have handled alone\n\nReliable, automated dispatch let Cardinal scale without scaling their team at the same pace. The company has since tucked in four acquisitions, added more than 13,000 customers, and brought on 14 technicians, and Tim Pederson says they couldn’t have handled that without Probook.\n\n## Dispatchers with time to do more\n\nWith Probook covering the board, Cardinal’s dispatchers picked up work they never had time for. They now debrief every technician at the end of every job to catch anything that was missed. Before Probook, they were too buried in the board to do any of it.\n\n> “If you told me that Probook was gone, I would walk right back out the back door, because that’s not something that I want to go back to.”\n\nShawna Aaron · Dispatch Manager\n\n## AI CSR for afterhours and overflow\n\nCardinal also added Probook’s AI CSR to answer the afterhours and overflow calls that used to go to voicemail. In its first four months, it booked over 850 jobs and generated more than $715,000 in revenue at an 82% true booking rate.\n\n## Why Probook: white-glove service\n\nCardinal evaluated several AI platforms before choosing Probook. What stood out, and what they credit as critical to these results, was the hands-on support and implementation. Tim Pederson calls the white-glove service “second to none in the industry,” and Dispatch Manager Shawna Aaron says Probook support gets back to them almost immediately.\n\n## The results\n\n20%+ YOY increase in average ticket in the first six months on Probook\n\n4 tuck-ins, 14 technicians and 13,000+ customers added, scaled without linear front-office headcount growth\n\nAI CSR booked 850+ jobs and generated $715K in its first four months at an 82% true booking rate, covering afterhours and overflow\n\nDispatching moved from emotion and bias to real-time and data-driven\n\n## Looking ahead\n\nWith dispatch running on data and the AI CSR handling overflow around the clock, leadership can keep tucking in companies and adding technicians without piling on headcount. As Tim Pederson puts it, Probook is “hands down one of the best business decisions we’ve made in the last five years.”"
+      ],
+      "image": "https://www.probook.ai/v5/customer-outcome-detail-4/cardinal-logo.png"
+    },
+    {
+      "id": "https://www.probook.ai/customer-outcomes/anthony",
+      "title": "Anthony · Doubled dispatch capacity · Probook Customer Outcomes",
+      "url": "https://www.probook.ai/customer-outcomes/anthony",
+      "highlights": [
+        "Anthony · Doubled dispatch capacity · Probook Customer Outcomes\n\n# How Anthony doubled dispatch capacity and turned its average ticket around\n\n16→ 8\n\nDispatchers, for ~170 technicians\n\n+20%\n\nYOY average ticket swing\n\n## Caleb Seyer on running dispatch with half the team.\n\n> “We run dispatch with half the team we used to, and our average ticket actually went up.”\n\nCaleb Seyer · VP of Operations, Anthony\n\n## Overview\n\nAnthony Plumbing, Heating, Cooling and Electric serves the Kansas City metro area. Founded in 1951 and now part of TurnPoint Services, the company has scaled quickly in recent years. Notably, an in-house apprenticeship program that turns people with no trade experience into technicians in a matter of months feeds every department.\n\nToday Anthony runs ~170 service technicians and salespeople, all managed by Probook.\n\n## The challenge\n\nBefore Probook, high turnover left Anthony with an inexperienced dispatch team that frequently sent techs to the wrong jobs. In the four months leading up to Probook, average ticket dropped almost 10% year-over-year.\n\nAnthony had 16 dispatchers, including three full-time researchers who hand-scrubbed more than 300 jobs every day to reconcile booking errors. The highest-value of those are aged-equipment jobs, 10-plus-year systems worth replacing, where a single mis-assigned call represents $9,200 of lost revenue. It wasn’t unusual for Dispatch Manager Jessie Parker to work 13-hour days placing calls herself.\n\n## A leaner dispatch team\n\nProbook stepped in and immediately took a load off the Anthony team’s plate. Between scrubbing, placing, and updating every call on the board, dispatch as Anthony knew it became more about managing exceptions and taking care of customers.\n\nAfter some natural attrition, Anthony ended up with a dispatch team of just 8, down from 16 when they started Probook, holding the line ever since. Under Probook, Anthony doubled their tech-to-dispatch ratio from ~11:1 to over 21:1.\n\n> “I don’t spend any time on the board now. When I’m not on, Probook is handling it, and I don’t have anything to worry about.”\n\nJessie Parker · Dispatch Manager\n\n## Better dispatching, higher tickets\n\nWithin the first 90 days of launching Probook, average ticket turned positive for the first time in 2025, growing 10% year-over-year, a 20% net improvement from where the year started. By using rigorous historical data to put the right technician on the right job consistently, Probook smoothed the learning curve Anthony’s predominantly green dispatch team faced.\n\n## Winning over the toughest skeptic\n\nAnthony was jaded by the experience of their previous dispatch automation solution, to say the least. Dispatch Manager Jessie Parker actively tried to poke holes in Probook, wary after her last experience. More than a year into the partnership, the Anthony team confidently says that Probook held up, flexible enough to adapt to the way they run. The Probook team came on-site and worked hand-in-hand with the team to turn Anthony’s hardest critic into Probook’s biggest advocate.\n\n> “Probook is our best trained dispatcher on the team as far as I’m concerned.”\n\nJessie Parker · Dispatch Manager\n\n## The results\n\nDispatch team cut from 16 to 8 while covering ~170 technicians (tech-to-dispatch ratio up ~100%)\n\nAverage ticket decline reversed: 10% YOY gain within 90 days, a 20% swing from a ~10% YOY decline\n\n## Looking ahead\n\nWith Probook diligencing every job, Anthony protects its highest-value opportunities, runs a leaner dispatch team, and invests more of its time developing technicians and helping customers."
+      ],
+      "image": "https://www.probook.ai/v5/customer-outcome-detail-2/anthony-logo.png"
+    },
+    {
+      "id": "https://www.probook.ai/case-studies",
+      "title": "Probook",
+      "url": "https://www.probook.ai/case-studies",
+      "highlights": [
+        "Probook\n\n# Case Studies\n\nHow Probook is helping industry-leading home service providers dispatch more efficiently\n\n### Auchinachie Sees 37% YOY Lift in Flip Rate\n\n“Our technicians have increased the amount they turn over leads to our sales department by 37%” — Chris Holleran, General Manager\n\n### TR Miller Increased June HVAC Sales By $190,000\n\n“Probook gave us a triple win: more revenue, happier dispatchers, and satisfied customers” — General Manager, Jim Sloan\n\n### Blake Brothers: “If You Take Probook Away, I Quit”\n\nAndrea said it best. Probook’s impact on Blake Brothers serves as a compelling case for others looking to standardize their dispatching operation.\n\n### Lion Home Service Increases Average Sale 18% YOY\n\n“Since integrating Probook into our operations, we’ve seen our average ticket value soar by an impressive 18%” — Alyssa Porta, Operations Director\n\n# Bigger Tickets. More Flips."
+      ],
+      "image": "https://www.probook.ai/probook.svg"
+    },
+    {
+      "id": "https://jobs.ashbyhq.com/probook/a54815d3-1062-4d02-9d87-ebc6feb892e2",
+      "title": "Enterprise Account Executive at Probook",
+      "url": "https://jobs.ashbyhq.com/probook/a54815d3-1062-4d02-9d87-ebc6feb892e2",
+      "publishedDate": "2026-06-03T00:00:00.000Z",
+      "highlights": [
+        "# Enterprise Account Executive at Probook\n\n- **Company:** Probook\n- **Location:** Manhattan\n- **Department:** GTM\n- **Employment type:** Full Time\n- **Published:** 2026-06-03\n\n# Description\n\n**ABOUT PROBOOK**\n\nProbook is the AI Operating System for the home services industry, transforming how plumbing, HVAC, and electrical businesses operate.\n\nOur impact is real. Dispatching the right technician to the right job can mean the difference between a $300 \"band-aid\" fix and a $20,000 system replacement. By automating previously high-touch workflows around-the-clock, Probook ensures a consistent customer experience without the need for 24/7 live staffing. We unify our customers' processes into a single, scalable platform, giving businesses one place to run their entire dispatch operation.\n\n**The Role**\n\nEnterprise Account Executives at Probook close deals by understanding the customer and the product and making both connect. You own the full sales cycle: discovery, evaluation, negotiation, and close. You are not a demo jockey. You are a problem solver who builds trust fast and earns the right to move fast with it.\n\nYou will have SDR support generating pipeline and marketing backing you in the field. In exchange, you are expected to manage your patch with precision, keep your process airtight, and hit your number. You will never sell what you would not buy. If you care about the craft of sales and want to sell a product customers actually love, this is the role.\n\n**Who You Are**\n\n- You own the full sales cycle without needing to be managed through it. You are self-directed and process-driven by instinct, not instruction.\n\n- You understand complex workflow technology and can translate that into business value for operators who are not technical.\n\n- You build trust quickly. Your EQ is a competitive advantage in sales situations, not an afterthought.\n\n- You have operated in early-stage environments before. You know how to close with limited resources and incomplete information.\n\n- You are a deal-team player, not a lone wolf. You work closely with SDRs, Sales Engineers, and leadership to advance opportunities.\n\n- You are high-energy, gritty, and entrepreneurial. You take initiative and do not wait for permission.\n\n**What You Will Own**\n\n- Account Planning: Know your patch better than anyone at the company. Map accounts that fit the ICP, identify key contacts, and develop and iterate your value hypothesis throughout each evaluation.\n\n- Pipeline Management: Use Probook's sales process to manage your pipeline with rigor. Understand the reality and risk of each deal based on stage exit criteria. When stuck, ask for help proactively.\n\n- Collaboration: Work closely with SDRs, Sales Engineers, Professional Services, and leadership to build, advance, and close opportunities. Deal team culture is central here.\n\n- Client Relationships: Own the relationship from initial engagement through close, renewal, and expansion. You are the constant.\n\n**Requirements**\n\n- NYC Based: Excited to work in-office 5 days/week in our high-collaboration culture.\n\n- 5+ years of software sales closing experience, with demonstrated success selling complex workflow technology solutions.\n\n- No less than 1 year of enterprise sales experience.\n\n- Demonstrated intellectual capacity to understand underlying technology and articulate how it fits a customer's specific business needs.\n\n- Demonstrated EQ and relationship-building skills: the ability to get to trust quickly.\n\n- Proven grit and entrepreneurial spirit in early-stage or resource-constrained environments.\n\n- Comfortable with up to 10 to 20% domestic travel.\n\n**Why Join Probook?**\n\n- **The Tailwinds:** $700B industry with clear tailwinds: AI adoption, labor shortages, and generational transitions creating demand for operational modernization. We are defining the category, not fighting for share.\n\n- **The Traction:** $XXM ARR in 18 months. Product-market fit proven; now we're scaling.\n\n- **Funding:** $40M raised from Sequoia and Andreessen Horowitz\n\n- **The Team:** >60 people, our founding team comes from the space and has spent thousands of days onsite with our customers. We live the space. We're also becoming one of the most talent-dense start-ups in NYC (MIT, Harvard, UPenn M&T, Waterloo, Citadel, Palantir, ICPC world finalists, IMO Gold Medalists).\n\n**Compensation & Benefits**\n\n- **Equity:** Meaningful equity.\n\n- **Salary:** $300K OTE (base + commission).\n\n- **Health:** Comprehensive medical, dental, and vision.\n\n- **Perks:** $500 Monthly stipend (food, gym, Uber, etc), plus $25 in nightly meal delivery credit and really good office snacks.\n\n- **Access:** Direct access to world-class investors and advisors."
+      ]
+    },
+    {
+      "id": "https://jobs.ashbyhq.com/probook/672b7090-68f9-4951-8af3-482e289d7af7",
+      "title": "Strategic Account Executive at Probook",
+      "url": "https://jobs.ashbyhq.com/probook/672b7090-68f9-4951-8af3-482e289d7af7",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "highlights": [
+        "# Strategic Account Executive at Probook\n\n- **Company:** Probook\n- **Location:** Manhattan\n- **Department:** GTM\n- **Employment type:** Full Time\n- **Published:** 2026-06-23\n\n# Description\n\n**ABOUT PROBOOK**\n\nProbook is the AI Operating System for the home services industry, transforming how plumbing, HVAC, and electrical businesses operate.\n\nOur impact is real. Dispatching the right technician to the right job can mean the difference between a $300 \"band-aid\" fix and a $20,000 system replacement. By automating previously high-touch workflows around-the-clock, Probook ensures a consistent customer experience without the need for 24/7 live staffing. We unify our customers' processes into a single, scalable platform, giving businesses one place to run their entire dispatch operation.\n\n**The Role**\n\nStrategic Account Executives at Probook close deals by understanding the customer and the product and making both connect. You own the full sales cycle: discovery, evaluation, negotiation, and close. You are not a demo jockey. You are a problem solver who builds trust fast and earns the right to move fast with it.\n\nYou will have SDR support generating pipeline and marketing backing you in the field. In exchange, you are expected to manage your patch with precision, keep your process airtight, and hit your number. You will never sell what you would not buy. If you care about the craft of sales and want to sell a product customers actually love, this is the role.\n\n**Who You Are**\n\n- You own the full sales cycle without needing to be managed through it. You are self-directed and process-driven by instinct, not instruction.\n\n- You understand complex workflow technology and can translate that into business value for operators who are not technical.\n\n- You build trust quickly. Your EQ is a competitive advantage in sales situations, not an afterthought.\n\n- You have operated in early-stage environments before. You know how to close with limited resources and incomplete information.\n\n- You are a deal-team player, not a lone wolf. You work closely with SDRs, Sales Engineers, and leadership to advance opportunities.\n\n- You are high-energy, gritty, and entrepreneurial. You take initiative and do not wait for permission.\n\n**What You Will Own**\n\n- Account Planning: Know your patch better than anyone at the company. Map accounts that fit the ICP, identify key contacts, and develop and iterate your value hypothesis throughout each evaluation.\n\n- Pipeline Management: Use Probook's sales process to manage your pipeline with rigor. Understand the reality and risk of each deal based on stage exit criteria. When stuck, ask for help proactively.\n\n- Collaboration: Work closely with SDRs, Sales Engineers, Professional Services, and leadership to build, advance, and close opportunities. Deal team culture is central here.\n\n- Client Relationships: Own the relationship from initial engagement through close, renewal, and expansion. You are the constant.\n\n**Requirements**\n\n- NYC Based: Excited to work in-office 5 days/week in our high-collaboration culture.\n\n- 10+ years of software sales closing experience, with demonstrated success selling complex workflow technology solutions.\n\n- No less than 5 years of enterprise sales experience.\n\n- Demonstrated intellectual capacity to understand underlying technology and articulate how it fits a customer's specific business needs.\n\n- Demonstrated EQ and relationship-building skills: the ability to get to trust quickly.\n\n- Proven grit and entrepreneurial spirit in early-stage or resource-constrained environments.\n\n- Comfortable with up to 10 to 20% domestic travel.\n\n**Why Join Probook?**\n\n- **The Tailwinds:** $700B industry with clear tailwinds: AI adoption, labor shortages, and generational transitions creating demand for operational modernization. We are defining the category, not fighting for share.\n\n- **Funding:** $40M raised from Sequoia and Andreessen Horowitz\n\n- **The Team:** >60 people, our founding team comes from the space and has spent thousands of days onsite with our customers. We live the space. We're also becoming one of the most talent-dense start-ups in NYC (MIT, Harvard, UPenn M&T, Waterloo, Citadel, Palantir, ICPC world finalists, IMO Gold Medalists).\n\n**Compensation & Benefits**\n\n- **Equity:** Meaningful equity.\n\n- **Salary:** $450K OTE (base + commission).\n\n- **Health:** Comprehensive medical, dental, and vision.\n\n- **Perks:** $500 Monthly stipend (food, gym, Uber, etc), plus $25 in nightly meal delivery credit and really good office snacks.\n\n- **Access:** Direct access to world-class investors and advisors."
+      ]
+    },
+    {
+      "id": "https://jobs.ashbyhq.com/probook/b49b1bdc-3834-4b37-8216-6cc58c005991",
+      "title": "Senior Product Marketing Manager  @ Probook",
+      "url": "https://jobs.ashbyhq.com/probook/b49b1bdc-3834-4b37-8216-6cc58c005991",
+      "highlights": [
+        "Senior Product Marketing Manager @ Probook\n\n## Location\n\nManhattan\n\n## Employment Type\n\nFull time\n\n## Location Type\n\nOn-site\n\n## Department\n\nGTM\n\nABOUT PROBOOK\n\nProbook is the AI Operating System for the home services industry, transforming how plumbing, HVAC, and electrical businesses operate. \n\nOur impact is real. Dispatching the right technician to the right job can mean the difference between a $300 \"band-aid\" fix and a $20,000 system replacement. By automating previously high-touch workflows around-the-clock, Probook ensures a consistent customer experience without the need for 24/7 live staffing. We unify our customers' processes into a single, scalable platform, giving businesses one place to run their entire dispatch operation. \n\nTHE ROLE\n\nYou'll be the strategic architect behind why customers choose Probook, building the positioning and narrative that scales from a first cold outbound email to a multi-year enterprise renewal. \n\nThis role is for marketers who want to see their work directly shape competitive outcomes. Positioning clarity is the leading predictor of win rate in complex, multi-stakeholder deals. Your narrative and enablement directly determine how Sales performs in the room. \n\nPositioning & Messaging\n\n- Own Probook's messaging architecture from company narrative to product, persona, and vertical levels.\n- Translate technical differentiation into clear, buyer-facing value that resonates with enterprise customers.\n- Ensure consistency across sales conversations, content, and market-facing communications.\n- Define ICPs, personas, and jobs-to-be-done that are actionable for Sales and Marketing.\n- Drive pricing and packaging. \n\nSales Enablement\n\n- Own the strategy and output for sales enablement, with a clear focus on improving win rates and deal velocity.\n- Build and maintain a focused, high-impact content set: core pitch, vertical narratives, competitive positioning, and objection handling.\n- Partner closely with Sales leadership to align on priorities and continuously improve what's used in the field.\n- Drive adoption through training, onboarding, and tight feedback loops. \n\nCompetitive Intelligence\n\n- Own Probook's competitive strategy, tracking positioning, product evolution, and win/loss dynamics.\n- Translate insights into clear, actionable guidance for Sales and updates to positioning.\n- Stay ahead of category shifts across home services software, AI-enabled operations, and dispatch technology. \n\nVertical & Segment GTM\n\n- Own go-to-market strategy for key segments: independent owners and PE-backed roll-ups.\n- Build complete vertical narratives including buyer, problem, solution, proof points, and differentiation.\n- Ensure vertical strategies are activated consistently across campaigns, content, and sales motions. \n\nProduct Launch & GTM Execution\n\n- Own GTM for product launches and major releases from positioning through market activation.\n- Partner with Engineering to ensure commercial readiness, including packaging, pricing input, and sales readiness.\n- Define success metrics and feed learnings back into future launches and product strategy. \n\nCraft & Experience\n\n- Background in vertical SaaS, ideally in a technical product environment.\n- Experience with enterprise sales motions and how positioning shifts as deal size grows.\n- A track record of partnering directly with founders and product leaders.\n- A strong design eye — you care about how positioning and enablement materials look and feel, not just what they say. \n\nOperator Mindset\n\n- You're energized by moving win rates and deal velocity, not just shipping campaigns.\n- You thrive in ambiguity and love translating complex product capability into simple, credible language.\n- High agency: you make the story happen rather than waiting for a brief. \n\nJudgment & Communication\n\n- Exceptional written and verbal communication.\n- Strong business acumen: comfortable discussing competitive dynamics, deal strategy, and category positioning.\n- You know when to lead independently, when to collaborate, and when to escalate. \n\nREQUIREMENTS\n\n- 8+ years in product marketing, ideally in B2B or vertical SaaS.\n- Experience partnering directly with founders or executive leadership on positioning and narrative.\n- NYC-based and excited about in-office collaboration in a high-intensity environment.\n- Willing to travel for customer and prospect onsite visits at least once a month.\n- Authorized to work in the United States. \n\nWHY JOIN PROBOOK?\n\nThe Tailwinds: $700B industry with clear tailwinds: AI adoption, labor shortages, and generational transitions creating demand for operational modernization. We are defining the category, not fighting for share. \n\nThe Traction: $XXM ARR in 18 months. Product-market fit proven; now we're scaling. \n\nFunding: $40M raised from Sequoia and Andreessen Horowitz. \n\nThe Team: 60+ people. Our founding team comes from the space and has spent thousands of days onsite with our customers. We live the space. We're also becoming one of the most talent-dense start-ups in NYC (MIT, Harvard, UPenn M&T, Waterloo, Citadel, Palantir, ICPC world finalists, IMO Gold Medalists). \n\nThe Opportunity: You'll have direct influence on how Probook wins competitively in the market, building positioning and enablement that becomes the backbone of every customer interaction as we scale into enterprise Compensation & Benefits\n\n- Equity: Meaningful early-stage equity.\n- Salary: $175,000 - $200,000 (OTE) \n- Health: Comprehensive medical, dental, and vision.\n- Perks: $500 monthly Ramp card for commuting, meals, gym, etc. (plus $25 in nightly meal delivery credit) and really good office snacks.\n- Access: Direct access to world-class investors and advisors."
+      ],
+      "image": "https://app.ashbyhq.com/api/images/org-theme-logo/559b1d04-aa86-479b-bab3-67499a610826/23f68d8a-8511-4cad-944c-41a5d0395f7a/aaeea711-b8eb-479e-9b0d-9f868136fbfd.png"
+    },
+    {
+      "id": "https://jobs.ashbyhq.com/probook/c195de0a-605b-4bfa-840f-f6ff5f7e24f1",
+      "title": "Events Marketing Specialist  @ Probook",
+      "url": "https://jobs.ashbyhq.com/probook/c195de0a-605b-4bfa-840f-f6ff5f7e24f1",
+      "highlights": [
+        "Events Marketing Specialist @ Probook\n\n## Location\n\nManhattan\n\n## Employment Type\n\nFull time\n\n## Location Type\n\nOn-site\n\n## Department\n\nGTM\n\nABOUT PROBOOK\n\nProbook is the AI Operating System for the home services industry, transforming how plumbing, HVAC, and electrical businesses operate.\n\nOur impact is real. Dispatching the right technician to the right job can mean the difference between a $300 \"band-aid\" fix and a $20,000 system replacement. By automating previously high-touch workflows around-the-clock, Probook ensures a consistent customer experience without the need for 24/7 live staffing. We unify our customers' processes into a single, scalable platform, giving businesses one place to run their entire dispatch operation. \n\nTHE ROLE\n\nYou'll be the operator behind every Probook event, turning trade shows, executive dinners, and customer gatherings into flawless, on-brand experiences. \n\nThis isn't a role for cookie-cutter marketers. We want someone who treats every event — a trade show booth, an executive dinner, a happy hour — like it's the best chance we'll get to show the market who we are: obsessed with creating genuinely delightful experiences, and doing things in B2B events that haven't been played out yet. Today, our biggest opportunity is proving out which event motions consistently drive pipeline and customer engagement, and you'll have the room to experiment and own that discovery. \n\nWHAT YOU'LL DO\n\n- Run the room: Manage trade show logistics, executive dinners, and customer events end-to-end, including on-site execution.\n- Own swag management: Manage swag selection, sourcing, and inventory so every giveaway feels considered, not like leftover conference-booth filler.\n- Manage vendors and the guest experience: Own vendor management, registration, and attendee experience for every program.\n- Coordinate the event program with the Director of Growth: Partner closely with the Director of Growth to plan the event calendar and prioritize which programs we invest in.\n- Manage each event to budget: Own the budget for every event you run, making the trade-offs that let us do more with less without cutting corners on the experience.\n- Measure and report on every event: Track and report on performance across every event type — trade shows, executive dinners, conferences, and customer gatherings — so we know which programs are actually driving pipeline and customer engagement.\n- Build the speaker pipeline: Manage speaker submissions and help build Probook's presence at industry events and conferences. \n\nCraft & Experience\n\n- Hands-on experience running B2B events, trade shows, or field programs.\n- Comfort managing multiple vendors and moving pieces at once.\n- An eye for the details that make an experience feel delightful, not default — you're not satisfied running the standard trade-show playbook.\n\nOperator Mindset\n\n- A bias toward execution — you'd rather ship an imperfect event and learn than wait for a perfect plan.\n- High agency: you chase down the loose end rather than waiting for someone to flag it.\n- You treat every event, big or small, like it's the best chance we'll get to show the market who we are.\n\nJudgment & Communication\n\n- Clear, organized communication with vendors, speakers, and internal stakeholders.\n- Comfort measuring and reporting on what worked, not just what happened.\n\nREQUIREMENTS\n\n- 2+ years in event marketing, field marketing, or a related operational role.\n- NYC-based and excited about in-office collaboration in a high-intensity environment.\n- Willing to travel for customer and prospect onsite visits at least once a month.\n- Authorized to work in the United States. \n\nWHY JOIN PROBOOK?\n\nThe Tailwinds: $700B industry with clear tailwinds: AI adoption, labor shortages, and generational transitions creating demand for operational modernization. We are defining the category, not fighting for share.\n\nThe Traction: $XXM ARR in 18 months. Product-market fit proven; now we're scaling.\n\nFunding: $40M raised from Sequoia and Andreessen Horowitz.\n\nThe Team: 60+ people. Our founding team comes from the space and has spent thousands of days onsite with our customers. We live the space. We're also becoming one of the most talent-dense start-ups in NYC (MIT, Harvard, UPenn M&T, Waterloo, Citadel, Palantir, ICPC world finalists, IMO Gold Medalists).\n\nThe Opportunity: You'll build Probook's event playbook from scratch — with full ownership over how we show up in the market, and the room to make every event feel unlike anything else in B2B. \n\nCOMPENSATION & BENEFITS\n\nEquity: Meaningful early-stage equity.\n\nSalary: $90,000 – $100,000 \n\nHealth: Comprehensive medical, dental, and vision.\n\nPerks: $500 monthly Ramp card for commuting, meals, gym, etc. (plus $25 in nightly meal delivery credit) and really good office snacks.\n\nAccess: Direct access to world-class investors and advisors."
+      ],
+      "image": "https://app.ashbyhq.com/api/images/org-theme-logo/559b1d04-aa86-479b-bab3-67499a610826/23f68d8a-8511-4cad-944c-41a5d0395f7a/aaeea711-b8eb-479e-9b0d-9f868136fbfd.png"
+    },
+    {
+      "id": "https://exa.ai/library/person/0vth071yw99",
+      "title": "Kate Blumberg",
+      "url": "https://www.linkedin.com/in/kibrady12",
+      "publishedDate": "2026-08-22T10:10:45.000Z",
+      "highlights": [
+        "Growth @ Probook\n...\nNew York, New York, United States (US)\n...\nGrowth @ Probook\n...\n### Director of Growth - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n...\nJun 2026 - Present (2 months) in New York, United States\n...\nDepartment: General Management • Level: Director\n...\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n...\n- [2026-07-24 · Kate Blumberg shared this] [I'm growing the marketing team at Probook — Series A ($40M in...](https://www.linkedin.com/posts/kibrady12_im-growing-the-marketing-team-at-probook-activity-7486455179974955009-JA7I): I'm growing the marketing team at Probook — Series A ($40M in funding). The GTM team at Probook is fast-paced and outcomes-oriented, and we work together in person in Manhattan. We're feeling the p...\n...\n- [2026-06-23 · Kate Blumberg posted this] [I’m excited to share that I’ve joined Probook to lead growth and...](https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z): I’m excited to share that I’ve joined Probook to lead growth and build out the marketing organization. Over the last few years, I’ve found myself increasingly drawn to people who share a particular..."
+      ],
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/0vth071yw99",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Kate Blumberg",
+            "firstName": "Kate",
+            "lastName": "Blumberg",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "Director of Growth",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2026-06-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Director of Demand Generation",
+                "location": null,
+                "dates": {
+                  "from": "2024-06-01",
+                  "to": "2026-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kvpdghjp2p6",
+                  "name": "BuildOps"
+                }
+              },
+              {
+                "title": "Head of Growth",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2023-01-01",
+                  "to": "2024-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6lhct7gd6pl",
+                  "name": "Middesk"
+                }
+              },
+              {
+                "title": "Director of Demand Generation",
+                "location": null,
+                "dates": {
+                  "from": "2022-01-01",
+                  "to": "2022-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/m6yrjjf2j88",
+                  "name": "SafeGraph"
+                }
+              },
+              {
+                "title": "Demand Generation",
+                "location": null,
+                "dates": {
+                  "from": "2020-01-01",
+                  "to": "2022-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/m6yrjjf2j88",
+                  "name": "SafeGraph"
+                }
+              },
+              {
+                "title": "Head of Demand Generation",
+                "location": "San Francisco, California",
+                "dates": {
+                  "from": "2018-07-01",
+                  "to": "2020-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/s5l75ssr5mm",
+                  "name": "Survata"
+                }
+              },
+              {
+                "title": "Sales Development Team Lead",
+                "location": "Palo Alto, California",
+                "dates": {
+                  "from": "2018-01-01",
+                  "to": "2018-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xtr9n0bpkj9",
+                  "name": "Branch"
+                }
+              },
+              {
+                "title": "ABM Manager",
+                "location": "Palo Alto, CA",
+                "dates": {
+                  "from": "2017-07-01",
+                  "to": "2018-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xtr9n0bpkj9",
+                  "name": "Branch"
+                }
+              },
+              {
+                "title": "Global Events Manager",
+                "location": null,
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2017-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xtr9n0bpkj9",
+                  "name": "Branch"
+                }
+              },
+              {
+                "title": "Marketing Coordinator",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2015-11-01",
+                  "to": "2017-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/xtr9n0bpkj9",
+                  "name": "Branch Metrics"
+                }
+              },
+              {
+                "title": "Event Coordinator",
+                "location": "Baltimore, Maryland",
+                "dates": {
+                  "from": "2014-03-01",
+                  "to": "2015-11-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Meeting Solutions Inc."
+                }
+              },
+              {
+                "title": "Marketing Intern",
+                "location": "Rockville, Maryland",
+                "dates": {
+                  "from": "2013-05-01",
+                  "to": "2013-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dsm9y0zyr3m",
+                  "name": "Federal Realty Investment Trust"
+                }
+              },
+              {
+                "title": "PR, Markerting and Events Intern",
+                "location": null,
+                "dates": {
+                  "from": "2012-09-01",
+                  "to": "2013-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1d7flgym456",
+                  "name": "BrandLinkDC"
+                }
+              },
+              {
+                "title": "Citizen Outreach Staff",
+                "location": null,
+                "dates": {
+                  "from": "2011-05-01",
+                  "to": "2011-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6lcyd9wgs15",
+                  "name": "Fund for the Public Interest"
+                }
+              },
+              {
+                "title": "Marketing Intern National Walk Now",
+                "location": null,
+                "dates": {
+                  "from": "2010-05-01",
+                  "to": "2010-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yg53y37mr4f",
+                  "name": "Autism Speaks"
+                }
+              },
+              {
+                "title": "Congressional Page",
+                "location": null,
+                "dates": {
+                  "from": "2007-06-01",
+                  "to": "2007-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1rtq208ctj1",
+                  "name": "U.S. House of Representatives"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts (B.A.) Religion/Religious Studies",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/886m1m4mx1h",
+                  "name": "The College of Wooster"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/qt8xcdkc327",
+      "title": "Mark Hoffman",
+      "url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+      "publishedDate": "2026-08-25T03:24:21.000Z",
+      "highlights": [
+        "Chief Revenue Officer (CRO)\n...\nNew York City Metropolitan Area (US)\n...\nChief Revenue Officer (CRO)\n...\n### Chief Revenue Officer - [Probook](https://www.linkedin.com/company/probook-ai) (Current)\n...\nFeb 2026 - Present (6 months) in New York City Metropolitan Area\n...\nDepartment: Sales • Level: C-Level\n...\nProbook is a Software Development company. Probook is a company that provides sales and marketing services. They offer hiring opportunities and have a nationwide customer success story. Probook has 30-40 employees (+1120% YoY), founded in 2024. Headquartered in New York, New York, United States.\n...\n- [2026-06-23 · Mark Hoffman shared this] [Today is a big day at Probook . We're announcing our $40M raise...](https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU): Today is a big day at Probook . We're announcing our $40M raise from Sequoia and Andreessen Horowitz. The opportunity to work with just one of these partners is a dream, but to be backed by both is...\n...\n-6b1b20\n...\n-excited-to-share-that\n...\nill-be-transitioning-activity-\n...\n494725602600554496-EKvV):\n...\n’m excited to share that I’ll be transitioning into the role of Director of Field Sales\n...\nover the next few\n...\nstep into this next chapter,\n...\nhave been reminded daily how\n...\n6-08-13 · Mark Hoffman\n...\niring for our next Partner Growth Director! This is the role that...](https://www.linkedin.com/posts/sam-wiener-b1b40a4a_partner-growth-director-activity-7493478409860186112-qd-y): Hiring for our next Partner Growth Director! This is the role that drives the entire business 📈 Apply or DM if interested. https://lnkd.in/gBQD-jGf"
+      ],
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQH7Fl9b5KNjUw/profile-displayphoto-scale_200_200/B4EZxr22YYIMAY-/0/1771336071800?e=2147483647&v=beta&t=yveZeG1e__briLIywfWVUa-fuLVfNmpl_3IeHhRzd9Y",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/qt8xcdkc327",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Mark Hoffman",
+            "firstName": "Mark",
+            "lastName": "Hoffman",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Chief Revenue Officer",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2026-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Chief Sales Officer (CSO)",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2024-12-01",
+                  "to": "2026-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ngpxw8vzzyd",
+                  "name": "Tennr"
+                }
+              },
+              {
+                "title": "Senior Vice President of Sales",
+                "location": "New York City Metropolitan Area",
+                "dates": {
+                  "from": "2021-08-01",
+                  "to": "2024-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Vice President of Sales",
+                "location": null,
+                "dates": {
+                  "from": "2019-07-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Director of Sales",
+                "location": "Greater New York City Area",
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2019-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x0m2twsgy57",
+                  "name": "VTS"
+                }
+              },
+              {
+                "title": "Director of Inside Sales",
+                "location": null,
+                "dates": {
+                  "from": "2016-06-01",
+                  "to": "2016-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wztvqrvj0h5",
+                  "name": "Hightower Inc."
+                }
+              },
+              {
+                "title": "Inside Sales Manager",
+                "location": null,
+                "dates": {
+                  "from": "2014-05-01",
+                  "to": "2016-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Senior Sales Executive",
+                "location": null,
+                "dates": {
+                  "from": "2014-02-01",
+                  "to": "2014-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Inside Sales Executive",
+                "location": "New York",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": "2014-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              },
+              {
+                "title": "Business Origination Associate",
+                "location": null,
+                "dates": {
+                  "from": "2012-06-01",
+                  "to": "2013-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/rnbpp857tnc",
+                  "name": "ZocDoc"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "BA Political Science",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/qsyjywp56l3",
+                  "name": "Binghamton University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.probook.ai/",
+      "title": "Probook · The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/",
+      "highlights": [
+        "Probook · The AI Operating System for Home Services\n\n# The AI operating system for home services\n\nDispatch makes or breaks the customer experience. Probook is the only AI built around it.\n\nCase Study Case Study Case Study Case Study\n\nAmerica’s largest home service brands run on Probook.\n\n8 LOCATIONS · 220 SERVICE TECHNICIANS\n\n15,000+ calls per month as front-line CSR.\n\nFrom 22 dispatchers to 10.\n\n170 TECHNICIANS · TURNPOINT SERVICES\n\n20% increase in average ticket.\n\nFrom 16 dispatchers to 8.\n\n4 TUCK-INS · REDWOOD SERVICES\n\n82% true booking rate.\n\n20% increase in average ticket.\n\nbacked by\n\nOne system. One customer experience.\n\nRecurring Services\n\nOn\n\n 8 AM 10 AM 12 PM 2 PM 4 PM 6 PM \n\nFill your board automatically\n\nOutbounding always working to fill your board and close unsold estimates.\n\n New job created \n\nJane Smith No Cool - 10+ Today, 12-4PM 974 Oak St. Tampa, FL High Priority\n\nCapture every lead\n\nVoice calls and web leads, handled with full context in one place.\n\nAC Maintenance\n\nUnder 10\n\nEst. revenue $3,200\n\nHVAC Service Over 10 Est. revenue $16,500\n\nClean every booking\n\nFull history checks before jobs hit the board.\n\nForecasted ETA 10:38 AM Forecasted revenue $2,325\n\nDispatch on autopilot\n\nThe right tech on every call, with 90% of customer chats automated.\n\n## Built by the Trades. For the Trades.\n\nMost AI vendors flocked to home services because it looked attractive on a spreadsheet.\n\nProbook didn’t. Our team came up in the trades. We deploy in person, configure alongside your team, and stay on the hook for the outcomes we sell.\n\n## Come build the category winner with us.\n\nOur engineering team is more talent-dense than early Ramp, stacked with ICPC World Finalists and IMO Gold Medalists. Our GTM and CS teams came up at Procore, Zocdoc, and other vertical leaders.\n\nIf you want to do the best work of your career on a category-defining product, join us."
+      ],
+      "image": "https://www.probook.ai/v5/hero-wrench.png",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Probook",
+            "foundedYear": 2024,
+            "description": "Dispatch makes or breaks the customer experience. Probook is the only AI built around it.\n\nProbook unifies intake, data cleaning, chat, outbound, and dispatch. Operators add points to their EBITDA and run their customer experience as one connected system. Built by people from the trades and backed by a16z and Sequoia, hundreds of the largest home service brands in America are on Probook. Learn more at probook.ai. ",
+            "workforce": {
+              "total": 36
+            },
+            "headquarters": {
+              "address": "New York, NY 10022, US",
+              "city": "New York",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": null,
+            "webTraffic": {
+              "visitsMonthly": 6208,
+              "countryRank": 845739,
+              "avgDurationSeconds": 64,
+              "history": [
+                {
+                  "value": 8273,
+                  "dateFrom": "2026-02",
+                  "dateTo": "2026-02"
+                },
+                {
+                  "value": 12156,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 12961,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10365,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10906,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 6208,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.probook.ai/customer-outcomes/schneller-knochelmann",
+      "title": "Schneller Knochelmann · Doubled tech-to-dispatch ratio · Probook Customer Outcomes",
+      "url": "https://www.probook.ai/customer-outcomes/schneller-knochelmann",
+      "highlights": [
+        "Schneller Knochelmann · Doubled tech-to-dispatch ratio · Probook Customer Outcomes\n\n# How Schneller Knochelmann doubled their tech-to-dispatch ratio while launching a new electrical department\n\n2x\n\nIncrease in tech-to-dispatch ratio\n\n+9.3%\n\nYOY increase in sales per job\n\n$163k\n\nIn open estimates recovered\n\n## Jeremy Lee on running their whole stack on Probook.\n\n> “Probook integrates our dispatching, our after-hours, our updates, our outbounding, all of it. We doubled our tech-to-dispatcher ratio while adding a whole new electrical department.”\n\nJeremy Lee · General Manager, Schneller Knochelmann\n\n## Background\n\nSchneller Knochelmann serves the Greater Cincinnati and northern Kentucky area. Founded in 1928, the company runs over 50 service technicians and remains 100% locally owned.\n\n## The challenge\n\nSchneller Knochelmann wanted to grow without having to grow its front office. Four dispatchers were setting the board by hand, keeping customers up to date, and making sure no opportunities fell through the cracks. Scaling had always meant hiring CSRs and dispatchers, but every new hire took months to ramp and chipped away at margins.\n\nThe team evaluated point solutions that addressed pieces of the front office, but no vendor offered a fully integrated stack. Schneller Knochelmann wanted one platform that ran dispatch, chat, after-hours, outbound, and follow-up on the same rails. Probook was the only partner that fit the bill.\n\n## Before Probook\n\n4 dispatchers\n\nLive answering service\n\nInconsistent appointment updates\n\nLimited, manual outbounding & follow up\n\n## One platform, every workflow\n\nProbook consolidated Schneller Knochelmann’s front office onto a single stack:\n\nDispatch builds the batting order, deep-scrubs every call, and constantly reshuffles the board to ensure techs are sent to the right jobs.\n\nCustomer Chat fully automates ETAs, confirmations, and replying to 90% of inbound chats through one local Northern Kentucky number.\n\nAI CSR answers after-hours and overflow calls with consistency.\n\nOutbounding keeps the board full and chases open estimates.\n\nSpeed-to-Lead responds to Google leads within seconds, improving Google ranking and compounding more leads downstream.\n\n## A launch built for change management\n\nProbook custom-built a new operating model with Schneller Knochelmann leadership\n\nRewrote job descriptions and trained dispatchers and CSRs prior to going live\n\nSat shoulder-to-shoulder with the team during an on-site launch week, implementing feedback in real time\n\nProviding ongoing support directly inside Schneller’s internal Discord channel, with response times in minutes\n\n## The results\n\n2x tech-to-dispatch ratio with the same call volume and number of techs in the field. The smaller dispatch team was freed to help launch the new electrical department.\n\n9.3% YOY increase in average ticket within the first 3 months on Probook\n\n$163K recovered from open estimates within the first 75 days on Probook\n\n17-second average response time to Google leads\n\nNew electrical department launched in early 2026, supported by an existing dispatcher whose scope expanded to cover electrical\n\n## Looking ahead\n\nAdding an electrical department without adding dispatchers or CSRs showed the Schneller Knochelmann team what’s possible when teams don’t have to scale linearly with the business. Leadership now spends less time managing day-to-day operational tasks and more time focused on growing the company. The team is operating with leverage they simply didn’t have before."
+      ],
+      "image": "https://www.probook.ai/v5/customer-outcome-detail-3/schneller-logo.png"
+    },
+    {
+      "id": "https://www.a16z.news/p/investing-in-probook",
+      "title": "Investing in Probook",
+      "url": "https://www.a16z.news/p/investing-in-probook",
+      "publishedDate": "2026-06-23T13:02:39.000Z",
+      "author": "Alex Rampell",
+      "highlights": [
+        "Investing in Probook\n\n### a16z leads Probook's Series A\n\nAlex Rampell, David Haber, Olivia Moore, and Seema Amble\n\nJun 23, 2026\n\nEvery business has one decision that everything else bends around. In home services, that decision is dispatch: which technician goes to which job, in what order, at what time. Get it right and revenue, technician utilization, and customer experience all move up together. Get it wrong and no amount of marketing or lead-gen can save the day. Dispatch is the brain of the business.\n\nSo it is striking that, for the last three years, almost everyone building AI for the trades skipped it. They rushed to the edges instead - voice agents, chat widgets, follow-up bots - clustered at the top of the funnel where leads come in. It is the most visible part of the business and the easiest place to bolt on a model. The result was a stack of disconnected point solutions, each owning a sliver of the customer, none of them talking to each other, and none of them touching the decision that actually determines whether an operator makes money.\n\nOur thesis is simple: in vertical AI, you do not win by adding another tool at the edge. You win by owning the hardest, most central decision in the business and building outward from it. Probook is doing exactly that in home services, and today we are thrilled to announce that a16z is leading Probook’s $34 million Series A, bringing the company’s total funding to $40 million after a seed round led by Sequoia.\n\nProbook built dispatch first, the part most vendors avoid because it is genuinely hard. Routing the closest available technician is easy; routing the right one is not. Technicians have different skills, conversion rates, and areas of expertise, and the gap between a good match and a bad one shows up directly in revenue. Only after owning that decision layer did Probook expand into the rest of the front office: intake, data scrubbing, customer messaging, and outbound.\n\nBecause everything shares one context layer, the whole system works as one. Every customer stays on a single text thread with a single number, from the first call to the technician at the front door. Every inbound lead is answered with full information. Every booking is cleaned before it is assigned. Humans handle the exceptions; the software handles the rest. This is not a copilot that hands work back to an already-overloaded front office. It does the work, and operators add points to their EBITDA as a result.\n\nProbook is hard to replicate because of where it came from. CEO George Eliadis grew up in the industry, pressure washing alongside his dad in upstate New York across six summers in the truck. He knows what it is to be up on a ladder washing a house and miss the call that would have booked the next job. Years later, he spent a summer inside TR Miller, a $40 million HVAC, plumbing, and electrical shop in Illinois that became Probook’s first customer, and saw the same problems play out at scale.\n\nGeorge and his co-founders, CTO Lewis Zhang and Ben Cervantez, have paired that hard-won domain empathy with outlier technical depth. It shows in how they build. Probook deploys with customers in person, configures the platform shoulder to shoulder with their front-line teams, and stays on the hook for the outcomes it sells. In a category full of software that is sold and forgotten, that posture has made Probook a rare vendor that operators actually trust to run their business.\n\nProbook already runs across hundreds of locations nationwide, from independently owned shops to private-equity-backed platforms, including TurnPoint Services, Master Trades Group, Del-Air, Peterman Brothers, and Sila Services. Summers Plumbing, Heating & Cooling, with 14 locations and 260 technicians on the platform, booked 2,542 jobs in its first month on Probook with zero human intervention. Del-Air more than doubled productivity from 10 to 22 techs per dispatcher.\n\nWe could not be more excited to partner with George, Lewis, Ben, and the entire Probook team. If you operate a home services business, see Probook for yourself at probook.ai, and if you want to help build it, they’re hiring."
+      ],
+      "image": "https://substackcdn.com/image/fetch/$s_!tgCO!,w_1200,h_675,c_fill,f_jpg,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F2cdd355b-2aa5-449d-b2fd-fdccbc692e58_2844x1600.png"
+    }
+  ],
+  "searchTime": 36203.3,
+  "costDollars": {
+    "total": 0.025
+  },
+  "resolvedSearchType": ""
+}

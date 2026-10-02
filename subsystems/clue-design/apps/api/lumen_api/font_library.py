@@ -23,12 +23,16 @@ provisioning script must keep working on bundled Inter alone.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from py_lumen_config import settings
 from py_lumen_obs import get_logger
+
+from clue_storage import StorageBackend
 
 JsonObject = Dict[str, Any]
 logger = get_logger("lumen_api.font_library")
@@ -87,6 +91,56 @@ def library_workspace_id() -> str:
     from .design_store import default_workspace_id
 
     return default_workspace_id()
+
+
+def shared_library_font_bytes(
+    asset_id: str, storage: StorageBackend
+) -> tuple[str, bytes] | None:
+    """Read only a manifest-listed, digest-verified face from the shared library.
+
+    Library faces are provisioned once per environment. The editor's tenant-scoped asset
+    route may use this fallback when its own registry has no record, but a font-looking id
+    never grants access to an arbitrary asset or another tenant's storage.
+    """
+    from .asset_custody import location_digest, read_asset_bytes
+    from .database import NotFoundError
+    from .design_store import DesignBlobStore, HybridRepository
+
+    parsed = manifest()
+    if parsed is None:
+        return None
+    digest = next(
+        (
+            face.get("digest")
+            for family in parsed["families"]
+            if isinstance(family, dict)
+            for face in family.get("faces") or []
+            if isinstance(face, dict) and face.get("asset_id") == asset_id
+        ),
+        None,
+    )
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        return None
+
+    workspace_id = library_workspace_id()
+    repo = HybridRepository(workspace_id, ensure_workspace=False)
+    try:
+        record = repo.require_asset_record(asset_id)["asset"]
+    except NotFoundError:
+        return None
+    media = record.get("media") or {}
+    if (
+        record.get("kind") != "font"
+        or media.get("mime_type") != "font/ttf"
+        or (media.get("digest") or {}).get("value") != digest
+        or location_digest(media.get("location")) != digest
+    ):
+        return None
+    blobs = DesignBlobStore(storage, workspace_id, ensure_workspace=False)
+    data = read_asset_bytes(blobs, digest)
+    if data is None or hashlib.sha256(data).hexdigest() != digest:
+        return None
+    return "font/ttf", data
 
 
 def library_font_spec() -> Optional[JsonObject]:

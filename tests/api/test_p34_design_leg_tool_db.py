@@ -25,7 +25,12 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.agent_turn_submission import insert_submission
+from clue_api.agent_turn_submission import (
+    get_submission,
+    insert_submission,
+    submissions_for_thread,
+    turn_id_for_submission,
+)
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.conversation_capture import persist_user_turn
 from clue_api.design_leg_tools import (
@@ -63,6 +68,7 @@ async def _seed_conversation(
     *,
     storage_root: Path,
     label: str,
+    with_submission: bool = True,
 ) -> dict[str, Any]:
     """One workspace, project, thread, and a durable presenting head-of-abm turn."""
 
@@ -95,19 +101,20 @@ async def _seed_conversation(
         turn_id=turn_id,
         message="Please design the launch artboard for this account.",
     )
-    await insert_submission(
-        conn,
-        turn_id=turn_id,
-        workspace_id=workspace_id,
-        project_id=project.project_id,
-        thread_id=thread_id,
-        submitted_by_user_id=USER_ID,
-        submitted_via_membership_id=f"wsm_p34_{workspace_id}",
-        onboarding_input_id=captured.onboarding_input_id,
-        message_artifact_key=captured.artifact_ref.artifact_key,
-        message_sha256=captured.artifact_ref.sha256,
-        idempotency_key=f"p34-{label}-presenting",
-    )
+    if with_submission:
+        await insert_submission(
+            conn,
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            project_id=project.project_id,
+            thread_id=thread_id,
+            submitted_by_user_id=USER_ID,
+            submitted_via_membership_id=f"wsm_p34_{workspace_id}",
+            onboarding_input_id=captured.onboarding_input_id,
+            message_artifact_key=captured.artifact_ref.artifact_key,
+            message_sha256=captured.artifact_ref.sha256,
+            idempotency_key=f"p34-{label}-presenting",
+        )
     manifest = await artifacts.persist_body(
         workspace_id=workspace_id,
         data=json.dumps({"resources": []}).encode(),
@@ -296,6 +303,29 @@ def test_open_design_leg_opens_the_leg_and_persists_the_bundle(
                 "clarification_rounds": 1,
             }
 
+            # Spec 2026-09-20 §2.3: opening the leg queued its FIRST design turn, derived
+            # from the user's own opening message — nobody has to say "go".
+            first_turn_id = turn_id_for_submission(
+                workspace_id=seeds["workspace_id"],
+                thread_id=seeds["thread_id"],
+                idempotency_key=f"design-leg-first-turn:{refs['leg_id']}:{seeds['turn_id']}",
+            )
+            first = await get_submission(
+                conn, workspace_id=seeds["workspace_id"], turn_id=first_turn_id
+            )
+            assert first is not None
+            assert first.derivation == "design_leg_first_turn"
+            assert first.derived_from_turn_id == seeds["turn_id"]
+            opening = await get_submission(
+                conn, workspace_id=seeds["workspace_id"], turn_id=seeds["turn_id"]
+            )
+            assert opening is not None
+            assert (first.message_artifact_key, first.message_sha256) == (
+                opening.message_artifact_key,
+                opening.message_sha256,
+            )
+            assert first.thread_id == seeds["thread_id"]
+
             # Replay: the same presenting turn opens the same leg, never a second one.
             replay = await invoke_tool(
                 registry,
@@ -320,6 +350,55 @@ def test_open_design_leg_opens_the_leg_and_persists_the_bundle(
                 )
             ).scalar_one()
             assert int(count) == 1
+            # The replayed open queued nothing new: one derived first turn per leg.
+            derived = [
+                row
+                for row in await submissions_for_thread(
+                    conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+                )
+                if row.derivation == "design_leg_first_turn"
+            ]
+            assert [row.turn_id for row in derived] == [first_turn_id]
+
+    run_async(scenario())
+
+
+def test_open_design_leg_from_a_turn_with_no_submission_queues_nothing(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """A machine-originated opening turn has no captured message, so there is nothing to
+    derive a first design turn FROM: the leg opens and waits for the user, exactly as before."""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_conversation(
+                conn, storage_root=tmp_path, label="nosub", with_submission=False
+            )
+            targets = await _seed_design_targets(conn, workspace_id=seeds["workspace_id"])
+            result = await invoke_tool(
+                _registry(seeds),
+                "open_design_leg",
+                {
+                    "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
+                    "brief": "A launch-day artboard for the Acme account.",
+                    "document_id": targets["document"]["id"],
+                },
+                _context(seeds),
+                idempotency_ttl_s=60,
+            )
+            assert result.references["created"] is True
+            leg = await design_legs.get_leg(
+                conn, workspace_id=seeds["workspace_id"], leg_id=result.references["leg_id"]
+            )
+            assert leg["state"] == "open_awaiting_user"
+            submissions = await submissions_for_thread(
+                conn, workspace_id=seeds["workspace_id"], thread_id=seeds["thread_id"]
+            )
+            assert [row for row in submissions if row.derivation is not None] == []
 
     run_async(scenario())
 
@@ -428,6 +507,7 @@ def test_open_design_leg_brand_pin_is_fail_closed(
                         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
                         "brief": "Design with the pinned kit.",
                         "doc_kind": "web",
+                        "artifacts": [{"title": "Design with the pinned kit"}],
                         "brand_kit_id": "kit_that_does_not_exist",
                         "brand_kit_version": 1,
                     },
@@ -443,6 +523,7 @@ def test_open_design_leg_brand_pin_is_fail_closed(
                         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
                         "brief": "Design with the pinned kit.",
                         "doc_kind": "web",
+                        "artifacts": [{"title": "Design with the pinned kit"}],
                         "brand_kit_id": "kit_p34",
                     },
                     _context(seeds),
@@ -479,6 +560,7 @@ def test_open_design_leg_refuses_a_second_open_leg_on_the_thread(
                         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
                         "brief": "Open a second leg.",
                         "doc_kind": "web",
+                        "artifacts": [{"title": "Open a second leg"}],
                     },
                     _context(seeds),
                     idempotency_ttl_s=60,
@@ -520,6 +602,7 @@ def test_open_design_leg_enforces_the_bundle_byte_cap(
                         "source_turn_ref": derive_turn_action_ref(seeds["turn_id"]),
                         "brief": "x" * 8_000,
                         "doc_kind": "web",
+                        "artifacts": [{"title": "An oversized delegation"}],
                         "claim_refs": oversized_refs,
                     },
                     _context(seeds),

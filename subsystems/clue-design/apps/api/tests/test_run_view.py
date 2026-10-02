@@ -778,3 +778,273 @@ def test_the_run_view_never_writes_to_the_database(tmp_path):
                 assert not found, f"{label}: write token {found.group(0)!r} in SQL: {literal!r}"
             found = statements.search(literal)
             assert not found, f"{label}: write statement {found.group(0)!r} in: {literal!r}"
+
+
+# Creative evaluation: removing any readiness observation, changing a delivery version,
+# or resetting submission time on retry must prevent a false four-minute success.
+def _evaluation_receipt(arm="candidate"):
+    return {
+        "schema_version": 1,
+        "case_id": f"conduit-awareness-{arm}",
+        "pair_id": "conduit-awareness",
+        "arm": arm,
+        "phase": "first_pass",
+        "run_ref": f"run_{arm}",
+        "request": "Create a square LinkedIn awareness ad for our product",
+        "context": {
+            "workspace_id": "ws_example", "product_id": "product_example",
+            "brand_kit_id": "kit_example", "brand_kit_version": 1,
+            "project_id": f"project_{arm}", "thread_id": f"thread_{arm}",
+            "document_id": f"doc_{arm}",
+        },
+        "timestamps": {
+            "submitted_at": "2026-09-13T12:00:00Z",
+            "worker_started_at": "2026-09-13T12:00:20Z",
+            "first_preview_at": "2026-09-13T12:01:00Z",
+            "agent_completed_at": "2026-09-13T12:03:10Z",
+            "saved_at": "2026-09-13T12:03:15Z",
+            "visible_ready_at": "2026-09-13T12:03:20Z",
+            "export_verified_at": "2026-09-13T12:03:30Z",
+            "observed_until_at": "2026-09-13T12:03:30Z",
+        },
+        "attempts": [
+            {"run_ref": f"run_{arm}", "kind": "initial"},
+            {"run_ref": f"run_{arm}_retry", "kind": "internal_retry"},
+        ],
+        "operator_corrections": 0,
+        "delivery": {
+            "document_id": f"doc_{arm}", "version": 3,
+            "scene_sha256": "a" * 64, "first_scene_ref": "evidence/scene.first.json",
+            "first_png_ref": "evidence/first.png",
+            **{name: {"document_id": f"doc_{arm}", "version": 3,
+                      "ref": f"evidence/{name}.json"}
+               for name in ("save_proof", "visible_ready_proof", "export_proof")},
+        },
+        "controls": {
+            "runtime_sha256": "b" * 64,
+            "model_config_sha256": "c" * 64,
+            "knowledge_bundle_sha256": ("d" if arm == "candidate" else "e") * 64,
+            "source_snapshot_sha256": "f" * 64,
+            "source_snapshot_ref": "evidence/eligible-sources.json",
+            "source_enforcement_ref": "evidence/retrieval-audit.json",
+            "cache_isolation_ref": "evidence/cache-config.json",
+            "generated_cache_namespace": f"cache_{arm}",
+            "cache_hits": 0, "empty_history": True,
+            "load_profile": "isolated", "worker_limit": 1, "provider_limit": 1,
+        },
+    }
+
+
+def test_old_preview_metrics_do_not_establish_finished_creative(tmp_path):
+    from lumen_api.run_view import RunView
+
+    body = _metrics_body(time_to_first_preview_ms=60_000, wall_time_ms=190_000)
+    view = RunView(manifest={"ref": "run_candidate", "metrics": body, "gaps": []},
+                   brief=None, scene=None, metrics=body)
+    _cli().materialize(view, tmp_path / "out")
+    manifest = json.loads((tmp_path / "out/manifest.json").read_text())
+    assert manifest["metrics"] == body
+    assert manifest["evaluation"]["finished_creative_ms"] is None
+    assert manifest["evaluation"]["status"] == "unavailable"
+    assert manifest["evaluation"]["within_target"] is None
+    readme = (tmp_path / "out/README.md").read_text()
+    assert "finished creative | unavailable" in readme
+    assert "historical first-preview gate" in readme
+
+
+def test_finished_creative_includes_queue_and_all_internal_retries():
+    result = _cli().evaluate_creative(_evaluation_receipt())
+    assert result["status"] == "observed"
+    assert result["queue_ms"] == 20_000
+    assert result["first_preview_ms"] == 60_000
+    assert result["agent_completion_ms"] == 190_000
+    assert result["save_ms"] == 195_000
+    assert result["visible_ready_ms"] == 200_000
+    assert result["finished_creative_ms"] == 210_000
+    assert result["attempts_total"] == 2
+    assert result["within_target"] is True
+    assert result["within_stretch"] is False
+    assert result["first_pass_eligible"] is True
+
+
+@pytest.mark.parametrize("field", ["submitted_at", "agent_completed_at", "saved_at",
+                                    "visible_ready_at", "export_verified_at"])
+def test_finished_creative_is_unavailable_without_every_required_timestamp(field):
+    receipt = _evaluation_receipt()
+    receipt["timestamps"].pop(field)
+    result = _cli().evaluate_creative(receipt)
+    assert result["finished_creative_ms"] is None
+    assert result["within_target"] is None
+    assert any(field in gap for gap in result["gaps"])
+
+
+@pytest.mark.parametrize("value", ["2026-09-13T12:03:30", "not a timestamp",
+                                   "2026-09-13T11:59:59Z", True])
+def test_bad_or_pre_submission_timestamp_cannot_count_as_finished(value):
+    receipt = _evaluation_receipt()
+    receipt["timestamps"]["export_verified_at"] = value
+    result = _cli().evaluate_creative(receipt)
+    assert result["finished_creative_ms"] is None
+    assert result["status"] == "invalid"
+    assert _cli().compare_evaluations(_evaluation_receipt("baseline"), receipt)["status"] == "ineligible"
+
+
+def test_finished_evidence_cannot_mix_versions_or_precede_save():
+    receipt = _evaluation_receipt()
+    receipt["delivery"]["export_proof"]["version"] = 2
+    result = _cli().evaluate_creative(receipt)
+    assert result["finished_creative_ms"] is None
+    assert any("export_proof" in gap for gap in result["gaps"])
+    receipt = _evaluation_receipt()
+    receipt["timestamps"]["visible_ready_at"] = "2026-09-13T12:03:00Z"
+    assert _cli().evaluate_creative(receipt)["status"] == "invalid"
+
+
+def test_missing_preview_does_not_erase_independently_observed_finish():
+    receipt = _evaluation_receipt()
+    receipt["timestamps"].pop("first_preview_at")
+    result = _cli().evaluate_creative(receipt)
+    assert result["first_preview_ms"] is None
+    assert result["finished_creative_ms"] == 210_000
+    assert any("first_preview_at" in gap for gap in result["gaps"])
+
+
+def test_late_delivery_and_timeout_are_retained_without_imputed_finish():
+    receipt = _evaluation_receipt()
+    receipt["timestamps"]["export_verified_at"] = "2026-09-13T12:04:20Z"
+    receipt["timestamps"]["observed_until_at"] = "2026-09-13T12:04:20Z"
+    result = _cli().evaluate_creative(receipt)
+    assert result["finished_creative_ms"] == 260_000
+    assert result["within_target"] is False
+    receipt["timestamps"].pop("export_verified_at")
+    receipt["timestamps"]["observed_until_at"] = "2026-09-13T12:10:00Z"
+    result = _cli().evaluate_creative(receipt)
+    assert result["status"] == "timed_out"
+    assert result["finished_creative_ms"] is None
+    assert result["within_target"] is None
+    assert result["include_in_denominator"] is True
+
+
+def test_operator_repair_is_never_promoted_to_first_pass():
+    receipt = _evaluation_receipt()
+    receipt["operator_corrections"] = 1
+    assert _cli().evaluate_creative(receipt)["status"] == "invalid"
+    receipt["phase"] = "assisted_repair"
+    receipt["parent_case_id"] = "conduit-awareness-first"
+    result = _cli().evaluate_creative(receipt)
+    assert result["finished_creative_ms"] == 210_000
+    assert result["first_pass_eligible"] is False
+
+
+@pytest.mark.parametrize("field,value", [
+    ("source_snapshot_sha256", "0" * 64), ("runtime_sha256", "0" * 64),
+    ("model_config_sha256", "0" * 64), ("load_profile", "queued"),
+    ("worker_limit", 4), ("provider_limit", 4),
+    ("generated_cache_namespace", "cache_baseline"),
+    ("source_enforcement_ref", ""), ("empty_history", False),
+])
+def test_pair_rejects_changed_inputs_or_unproven_isolation(field, value):
+    baseline, candidate = _evaluation_receipt("baseline"), _evaluation_receipt()
+    candidate["controls"][field] = value
+    result = _cli().compare_evaluations(baseline, candidate)
+    assert result["status"] == "ineligible"
+    assert any(field in gap for gap in result["gaps"])
+
+
+def test_consistent_pair_is_not_an_execution_isolation_claim():
+    result = _cli().compare_evaluations(_evaluation_receipt("baseline"), _evaluation_receipt())
+    assert result["status"] == "receipt_consistent"
+    assert result["execution_isolation_verified"] is False
+    assert result["gaps"] == []
+
+
+def test_pair_rejects_operator_repair_and_reused_chat():
+    baseline, candidate = _evaluation_receipt("baseline"), _evaluation_receipt()
+    candidate["context"]["thread_id"] = baseline["context"]["thread_id"]
+    candidate["phase"] = "assisted_repair"
+    result = _cli().compare_evaluations(baseline, candidate)
+    assert result["status"] == "ineligible"
+    assert any("thread_id" in gap for gap in result["gaps"])
+    assert any("first_pass" in gap for gap in result["gaps"])
+
+
+def test_materialized_evaluation_binds_the_receipt_to_actual_run_and_document(tmp_path):
+    from lumen_api.run_view import RunView
+
+    view = RunView(manifest={"ref": "run_other", "workspace_id": "ws_example",
+                            "document": {"id": "doc_candidate", "current_version": 3},
+                            "gaps": []}, brief=None, scene=None)
+    cli = _cli()
+    cli.materialize(view, tmp_path / "out", evaluation_receipt=_evaluation_receipt())
+    result = json.loads((tmp_path / "out/manifest.json").read_text())["evaluation"]
+    assert result["status"] == "invalid"
+    assert result["finished_creative_ms"] is None
+    assert any("run_ref" in gap for gap in result["gaps"])
+
+
+@pytest.mark.parametrize("field", ["context", "timestamps", "delivery", "controls"])
+def test_malformed_receipt_sections_are_invalid_not_tracebacks(field):
+    receipt = _evaluation_receipt()
+    receipt[field] = "malformed"
+    result = _cli().evaluate_creative(receipt)
+    assert result["status"] == "invalid"
+    assert result["finished_creative_ms"] is None
+    assert _cli().compare_evaluations(_evaluation_receipt("baseline"), receipt)["status"] == "ineligible"
+
+
+@pytest.mark.parametrize("attempts", [
+    None, [], "missing attempt records", {"run_ref": "run_candidate", "kind": "initial"},
+    [None], [{}], [{"kind": "initial"}],
+    [{"run_ref": "", "kind": "initial"}], [{"run_ref": "   ", "kind": "initial"}],
+    [{"run_ref": 7, "kind": "initial"}], [{"run_ref": ["run_candidate"], "kind": "initial"}],
+    [{"run_ref": "run_other", "kind": "initial"}],
+    [{"run_ref": "run_candidate"}], [{"run_ref": "run_candidate", "kind": None}],
+    [{"run_ref": "run_candidate", "kind": "unknown"}],
+    [{"run_ref": "run_candidate", "kind": "internal_retry"}],
+    [{"run_ref": "run_candidate", "kind": "initial"}, None],
+    [{"run_ref": "run_candidate", "kind": "initial"},
+     {"run_ref": "run_candidate_retry", "kind": "initial"}],
+    [{"run_ref": "run_candidate", "kind": "initial"},
+     {"run_ref": "run_candidate_retry", "kind": []}],
+])
+def test_pair_requires_attempt_receipts_so_retries_cannot_disappear(attempts):
+    receipt = _evaluation_receipt()
+    receipt["attempts"] = attempts
+    evaluation = _cli().evaluate_creative(receipt)
+    assert evaluation["status"] == "invalid"
+    assert evaluation["finished_creative_ms"] is None
+    assert evaluation["attempts_total"] is None
+    assert evaluation["first_pass_eligible"] is False
+    assert evaluation["include_in_denominator"] is True
+    result = _cli().compare_evaluations(_evaluation_receipt("baseline"), receipt)
+    assert result["status"] == "ineligible"
+    assert any("candidate.attempts" in gap for gap in result["gaps"])
+
+
+def test_missing_attempt_ledger_is_not_an_eligible_first_pass():
+    receipt = _evaluation_receipt("baseline")
+    receipt.pop("attempts")
+    assert _cli().evaluate_creative(receipt)["first_pass_eligible"] is False
+    result = _cli().compare_evaluations(receipt, _evaluation_receipt())
+    assert result["status"] == "ineligible"
+    assert any("baseline.attempts" in gap for gap in result["gaps"])
+
+
+def test_internal_repairs_keep_the_original_submission_and_run_binding():
+    receipt = _evaluation_receipt()
+    receipt["attempts"].append({"run_ref": "run_candidate_retry", "kind": "internal_repair"})
+    result = _cli().evaluate_creative(receipt)
+    assert result["status"] == "observed"
+    assert result["first_pass_eligible"] is True
+    assert result["attempts_total"] == 3
+    assert result["finished_creative_ms"] == 210_000
+    assert _cli().compare_evaluations(_evaluation_receipt("baseline"), receipt)["status"] == "receipt_consistent"
+
+
+def test_cli_rejects_bad_receipt_before_any_database_access(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLUE_DATABASE_URL", raising=False)
+    receipt = tmp_path / "receipt.json"
+    receipt.write_text("[]")
+    with pytest.raises(SystemExit) as error:
+        _cli().main(["run_example", "--evaluation-receipt", str(receipt)])
+    assert error.value.code == 2

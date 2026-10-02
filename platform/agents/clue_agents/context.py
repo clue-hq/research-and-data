@@ -1,18 +1,23 @@
 """Deterministic seven-layer opening context for one governed agent turn.
 
 Bodies in this module are ephemeral. The durable receipt contains only exact source pointers,
-hashes, counts, materialized relative paths and stable exclusion reasons. Context is assembled
-before the first model call; the model never decides what opening authority or data it receives.
+hashes, counts and materialized relative paths. Context is assembled before the first model call;
+the model never decides what opening authority or data it receives.
+
+Layer budgets are **reported, never enforced** (founder ruling 2026-09-14): assembly emits every
+candidate every source offers, records what each one cost, and logs the layers that exceed their
+policy number. Nothing here drops context or fails a turn to stay under a budget.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 from uuid import UUID, uuid5
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -25,9 +30,11 @@ from clue_agents.contracts import (
     ContextBundleManifest,
     ContextLayer,
     ContextLayerManifest,
+    ContinuationRef,
     DomainObjectRef,
 )
 from clue_agents.ports import (
+    INTERRUPTED_ASSISTANT_NOTICE,
     AgentArtifactReader,
     AssembledAgentContext,
     ContextMaterialization,
@@ -35,8 +42,12 @@ from clue_agents.ports import (
 )
 from clue_agents.registry import ResolvedAgentProfile
 from clue_core import AssemblyRequest, ContextAssembly, MemoryType, ScopeStack
+from clue_obs import get_logger
 
 __all__ = [
+    "IMAGE_TOKEN_ALLOWANCE",
+    "AttachmentDescriber",
+    "AttachmentDescription",
     "CompiledContextCard",
     "ContextAssemblyPolicy",
     "ContextAssemblyReceipt",
@@ -56,7 +67,30 @@ __all__ = [
     "WorkspaceProductLayerSource",
 ]
 
+log = get_logger("clue_agents.context")
+
 _ORDER = tuple(ContextLayer)
+#: A continued turn appends to a saved conversation that already opens with the system prompt, so
+#: its additions are the gap messages first, then this turn's cards, then the user's message.
+_CONTINUATION_ORDER = (
+    ContextLayer.L1_IDENTITY,
+    ContextLayer.L6_CONVERSATION,
+    ContextLayer.L2_WORKSPACE_PRODUCT,
+    ContextLayer.L3_PROJECT,
+    ContextLayer.L4_MEMORY,
+    ContextLayer.L5_FOCUS,
+    ContextLayer.L7_TURN,
+)
+
+#: What one image on a turn is *reported* to cost against its layer budget (spec 2026-09-18).
+#:
+#: An image rides the user message as a data-url part, so the utf-8 byte counter that measures
+#: every other candidate would either miss it entirely (the bytes are not in ``budget_text``) or,
+#: if it were handed the base64, wildly overstate it — providers bill an image by its tiles, not
+#: by its transport encoding. A flat per-image allowance keeps the reported number honest enough
+#: to reason about without pretending to know the provider's tiling. Budgets are reporting-only
+#: (founder ruling 2026-09-14), so this number can never cost a turn its context or fail it.
+IMAGE_TOKEN_ALLOWANCE = 1_000
 
 #: Layers whose budget retains the **newest** candidates rather than the first ones in canonical
 #: (``stable_key``) order — FI Lane D D0, charter §1.1.
@@ -67,6 +101,11 @@ _ORDER = tuple(ContextLayer)
 #: transcript that stops before the thing the user just said. Retention is therefore newest-first
 #: for L6; **emission stays chronological** for every layer, so the model still reads the retained
 #: window in order and each candidate's ``stable_key``/receipt ordinal is unchanged.
+#:
+#: Since the 2026-09-14 ruling nothing is dropped at all, so this direction currently selects
+#: nothing. It is kept because it is the already-settled answer for the only trim that could ever
+#: be justified — one sized to the provider's context window, a fact of the model rather than a
+#: policy of ours — and that trim, if it is ever wanted, belongs exactly here.
 _RETAIN_NEWEST_LAYERS: frozenset[ContextLayer] = frozenset({ContextLayer.L6_CONVERSATION})
 
 
@@ -80,7 +119,13 @@ class LayerBudget(ContextValue):
 
 
 class ContextAssemblyPolicy(ContextValue):
-    """Versioned hard budgets; all seven layers must be explicitly governed."""
+    """Versioned per-layer budgets; all seven layers must be explicitly governed.
+
+    ``max_tokens`` is a *reporting* line, not a ceiling — the assembler measures each layer against
+    it and logs the overruns, and never withholds context or fails a turn on it. The shape is kept
+    unchanged so every receipt, old and new, still carries the seven numbers it was assembled
+    against.
+    """
 
     version: str = Field(min_length=1)
     token_counter_version: str = Field(min_length=1)
@@ -97,7 +142,7 @@ class ContextAssemblyPolicy(ContextValue):
 
 
 class ContextCandidate(ContextValue):
-    """One atomic context item. Budgeting includes or excludes the whole item."""
+    """One atomic context item; it is counted, and emitted, whole."""
 
     stable_key: str = Field(min_length=1)
     ref: ArtifactRef | DomainObjectRef
@@ -106,6 +151,30 @@ class ContextCandidate(ContextValue):
     origin: Literal["trusted_context", "history", "current_user_instruction"] = "trusted_context"
     materialized_path: str | None = None
     required: bool = False
+    interrupted: bool = False
+    #: Images the model sees beside this candidate's text (spec 2026-09-18, ruling 1 and 2).
+    #: Pointers only, like every other ref here — the assembler reads the bytes once, at the one
+    #: moment the message is built, and they are never part of the candidate's durable receipt.
+    image_refs: tuple[ArtifactRef, ...] = ()
+
+    @model_validator(mode="after")
+    def interruption_is_history(self) -> ContextCandidate:
+        if self.interrupted and (self.role != "assistant" or self.origin != "history"):
+            raise ValueError("interruption provenance belongs to assistant history")
+        return self
+
+    @property
+    def budget_text(self) -> str:
+        # Keep the provenance and exact saved body together under the layer budget.
+        if self.interrupted:
+            return INTERRUPTED_ASSISTANT_NOTICE + "\n\n" + self.body
+        return self.body
+
+    @property
+    def image_token_allowance(self) -> int:
+        """The reported cost of this candidate's images; see :data:`IMAGE_TOKEN_ALLOWANCE`."""
+
+        return IMAGE_TOKEN_ALLOWANCE * len(self.image_refs)
 
 
 class ContextReceiptRef(ContextValue):
@@ -448,8 +517,9 @@ class FocusLayerSource:
 class HistoryLayerSource:
     layer = ContextLayer.L6_CONVERSATION
 
-    def __init__(self, artifacts: AgentArtifactReader) -> None:
+    def __init__(self, artifacts: AgentArtifactReader, *, images_max: int = 20) -> None:
         self._artifacts = artifacts
+        self._images_max = images_max
 
     async def load(
         self,
@@ -459,8 +529,27 @@ class HistoryLayerSource:
         history: Sequence[HistoryMessageRef],
     ) -> Sequence[ContextCandidate]:
         del profile
+        ordered = sorted(history, key=lambda value: value.sequence)
+        # Ruling 2 (2026-09-18): a picture the user already sent stays visible for the rest of the
+        # conversation, so the model can still be asked about it three turns later. Bytes are not
+        # free, so a thread carries at most ``images_max`` of them and the newest win the cap
+        # (``0`` = no cap). Walking newest-first is what makes "newest win" true.
+        budget = None if self._images_max == 0 else self._images_max
+        kept: dict[int, tuple[ArtifactRef, ...]] = {}
+        for item in reversed(ordered):
+            images = tuple(
+                ref for ref in item.attachment_refs if ref.media_type.lower().startswith("image/")
+            )
+            if item.role != "user" or not images:
+                continue
+            if budget is None:
+                kept[item.sequence] = images
+            elif budget > 0:
+                take = images[-budget:]
+                kept[item.sequence] = take
+                budget -= len(take)
         result: list[ContextCandidate] = []
-        for item in sorted(history, key=lambda value: value.sequence):
+        for item in ordered:
             if item.body_ref.workspace_id != request.constitution.workspace_id:
                 raise ValueError("history ref crosses the turn workspace boundary")
             body = (await self._artifacts.read(item.body_ref)).decode("utf-8")
@@ -471,6 +560,8 @@ class HistoryLayerSource:
                     body=body,
                     role=item.role,
                     origin="history",
+                    interrupted=item.interrupted and item.role == "assistant",
+                    image_refs=kept.get(item.sequence, ()),
                 )
             )
         return result
@@ -503,6 +594,34 @@ class CapturedTurnDescription(Protocol):
     async def describe(self, request: AgentTurnRequest) -> CapturedTurnIdentity | None: ...
 
 
+class AttachmentDescription(Protocol):
+    """What one attachment is called, where its file sits, and which family it belongs to.
+
+    ``family`` is ``"text"``, ``"image"`` or ``"document"`` — it decides only which tool the
+    sentence tells the agent to open the file with, never whether the file is there.
+    """
+
+    @property
+    def filename(self) -> str: ...
+
+    @property
+    def workspace_path(self) -> str | None: ...
+
+    @property
+    def family(self) -> str: ...
+
+
+class AttachmentDescriber(Protocol):
+    """Name each attachment by its filename, its workspace path, and its family.
+
+    Structural for the same reason :class:`CapturedTurnDescription` is: the durable rows an
+    attachment is named from live at the api composition root, and L7 only ever reads the three
+    values above. Keyed by ``artifact_key`` — the one identity a turn's attachment refs carry.
+    """
+
+    async def describe(self, request: AgentTurnRequest) -> Mapping[str, AttachmentDescription]: ...
+
+
 class TurnLayerSource:
     layer = ContextLayer.L7_TURN
 
@@ -511,9 +630,11 @@ class TurnLayerSource:
         artifacts: AgentArtifactReader,
         *,
         captured_turn: CapturedTurnDescription | None = None,
+        attachments: AttachmentDescriber | None = None,
     ) -> None:
         self._artifacts = artifacts
         self._captured_turn = captured_turn
+        self._attachments = attachments
 
     async def load(
         self,
@@ -526,17 +647,55 @@ class TurnLayerSource:
         body = (await self._artifacts.read(request.user_message_artifact_ref)).decode("utf-8")
         result: list[ContextCandidate] = []
         # Raw attachment bytes are never opening context. The agent gets only exact pointers and
-        # may later use an authorized tool to inspect an allowed attachment.
+        # may later use an authorized tool to inspect an allowed attachment. A describer turns
+        # those pointers into the words a human would use — the file's name, the one path the
+        # worker syncs it to, and the tool that opens that family — so the model can open what it
+        # needs instead of guessing from a hash. With no describer (or an attachment the describer
+        # does not know) the pointer line is unchanged: naming nothing is better than naming it
+        # wrong.
+        described: Mapping[str, AttachmentDescription] = (
+            await self._attachments.describe(request) if self._attachments is not None else {}
+        )
         for index, ref in enumerate(request.attachment_refs):
+            info = described.get(ref.artifact_key)
+            size = f"{ref.byte_count:,} bytes"
+            # A local of its own, never ``body``: that name already holds the words the human
+            # typed, and reusing it here would hand the model an attachment line as its own
+            # most-recent instruction.
+            description: str
+            if info is None:
+                description = (
+                    "Attachment reference only: "
+                    f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
+                    f"media_type={ref.media_type} byte_count={ref.byte_count}"
+                )
+            elif info.workspace_path is None:
+                # Fallback for a describer that names no path (the production one always does):
+                # claim only what is true without a synced file — the image is in the message.
+                description = (
+                    f'Attachment "{info.filename}" ({ref.media_type}, {size}) is attached to this '
+                    "message as an image."
+                )
+            else:
+                # One sentence per file: what it is, where its one copy sits, and how to open it.
+                # An image is named too — the model sees it here, but code reads it from the path.
+                if info.family == "text":
+                    opener = "open it with read_file."
+                elif info.family == "image":
+                    opener = "it is also shown to you as an image in this message."
+                else:
+                    # Every other family is bytes read_file would refuse; run_python reads any of
+                    # them, so it is also the honest answer for a family L7 does not recognise.
+                    opener = "open it with run_python."
+                description = (
+                    f'Attachment "{info.filename}" ({ref.media_type}, {size}) was attached to '
+                    f"this message. It is at {info.workspace_path}; {opener}"
+                )
             result.append(
                 ContextCandidate(
                     stable_key=f"200-{index:06d}-attachment:{ref.artifact_key}",
                     ref=ref,
-                    body=(
-                        "Attachment reference only: "
-                        f"artifact_key={ref.artifact_key} sha256={ref.sha256} "
-                        f"media_type={ref.media_type} byte_count={ref.byte_count}"
-                    ),
+                    body=description,
                     role="system",
                 )
             )
@@ -603,12 +762,41 @@ class TurnLayerSource:
                 origin="current_user_instruction",
                 materialized_path="inputs/user-message.txt",
                 required=True,
+                # An image cannot be read with ``read_file``; the only way a model sees one is
+                # beside the words it was sent with, so the turn's images ride this message.
+                # Everything else on the turn stays a pointer the agent opens deliberately.
+                image_refs=tuple(
+                    ref
+                    for ref in request.attachment_refs
+                    if ref.media_type.lower().startswith("image/")
+                ),
             )
         )
         return result
 
 
-def _message(candidate: ContextCandidate) -> BaseMessage:
+def _message(candidate: ContextCandidate, images: Mapping[str, bytes] | None = None) -> BaseMessage:
+    """Turn one candidate into the message the model reads.
+
+    ``images`` maps ``artifact_key`` to the bytes the assembler already read for this turn; a
+    candidate carrying :attr:`ContextCandidate.image_refs` becomes a multipart human message whose
+    first part is its text and whose remaining parts are the images as data urls (the shape the
+    Task-1 probe proved the Head-of-ABM model accepts). ``None`` means no images were read, which
+    is the only thing a text-only candidate ever needs.
+    """
+
+    if candidate.role == "user" and candidate.image_refs:
+        read = images or {}
+        parts: list[str | dict[Any, Any]] = [{"type": "text", "text": candidate.body}]
+        for ref in candidate.image_refs:
+            encoded = base64.b64encode(read[ref.artifact_key]).decode("ascii")
+            parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{ref.media_type};base64,{encoded}"},
+                }
+            )
+        return HumanMessage(content=parts)
     if candidate.role == "system":
         return SystemMessage(content=candidate.body)
     if candidate.role == "user":
@@ -639,6 +827,7 @@ class DeterministicAgentContextAssembler:
         receipts: ContextReceiptStore,
         token_counter: Utf8ByteTokenCounter | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        artifacts: AgentArtifactReader | None = None,
     ) -> None:
         source_map = {source.layer: source for source in sources}
         if len(source_map) != len(sources) or tuple(sorted(source_map, key=_ORDER.index)) != _ORDER:
@@ -650,6 +839,9 @@ class DeterministicAgentContextAssembler:
         if self._counter.version != policy.token_counter_version:
             raise ValueError("token counter version differs from context policy")
         self._clock = clock
+        # Only an image-carrying candidate needs bytes, so a composition with no image path may
+        # leave this ``None`` and stay valid; assembly fails loudly the moment one shows up.
+        self._artifacts = artifacts
 
     def _retain(
         self,
@@ -658,30 +850,28 @@ class DeterministicAgentContextAssembler:
         candidates: Sequence[ContextCandidate],
         budget: int,
     ) -> dict[str, int]:
-        """Decide which candidates fit ``budget``; return ``{stable_key: token_count}``.
+        """Count every candidate; return ``{stable_key: token_count}`` for all of them.
 
-        The greedy rule is unchanged — a candidate that does not fit is *skipped*, not a stop, so a
-        small later item still fits behind a large refused one — and so is the hard failure when a
-        ``required`` candidate cannot fit. The only thing this method adds is the **direction** in
-        which the budget is spent: canonical order for every layer, reverse (newest-first) for the
-        conversation layer, where dropping the newest messages would silently truncate the turn the
-        user just took (:data:`_RETAIN_NEWEST_LAYERS`).
+        This method used to *decide*: a candidate that did not fit ``budget`` was skipped, and a
+        ``required`` one that did not fit raised, so a profile 273 bytes too large took down every
+        turn on it. Founder ruling 2026-09-14: no layer budget may fail a turn or cost it context.
+        Nothing is skipped and nothing raises here — the budget survives as a number to report
+        against (the caller logs the layers that exceed theirs), never as a gate.
+
+        ``budget`` is therefore unread, and the newest-first order for
+        :data:`_RETAIN_NEWEST_LAYERS` no longer selects anything. Both are kept deliberately: the
+        direction is the answer already worked out for the day a *window*-sized trim lands — a fact
+        of the provider's context window rather than a policy of ours — and the day it does, this
+        is where it goes.
         """
 
+        del budget
         order = tuple(reversed(candidates)) if layer in _RETAIN_NEWEST_LAYERS else tuple(candidates)
-        retained: dict[str, int] = {}
-        used = 0
-        for candidate in order:
-            count = self._counter.count(candidate.body)
-            if used + count > budget:
-                if candidate.required:
-                    raise ValueError(
-                        f"required {layer.value} context exceeds its hard layer budget"
-                    )
-                continue
-            retained[candidate.stable_key] = count
-            used += count
-        return retained
+        return {
+            candidate.stable_key: self._counter.count(candidate.budget_text)
+            + candidate.image_token_allowance
+            for candidate in order
+        }
 
     async def assemble(
         self,
@@ -689,15 +879,25 @@ class DeterministicAgentContextAssembler:
         request: AgentTurnRequest,
         profile: AgentProfile,
         history: Sequence[HistoryMessageRef],
+        continuation: ContinuationRef | None = None,
     ) -> AssembledAgentContext:
+        """The turn's opening messages and their receipt.
+
+        With ``continuation``, ``history`` is the gap since the resumed turn, the system prompt is
+        not re-sent (the resumed state opens with it; its manifest still records it), and the
+        messages are ordered gap, cards, message — appended to the saved conversation.
+        """
         manifests: list[ContextLayerManifest] = []
         receipt_refs: list[ContextReceiptRef] = []
         messages: list[BaseMessage] = []
         materializations: list[ContextMaterialization] = []
         seen_paths: set[str] = set()
         current_instructions: list[ContextCandidate] = []
+        # Image bytes, keyed by ``artifact_key`` and read exactly once for the whole turn.
+        images: dict[str, bytes] = {}
 
-        for layer in _ORDER:
+        for layer in _ORDER if continuation is None else _CONTINUATION_ORDER:
+            emit = continuation is None or layer is not ContextLayer.L1_IDENTITY
             candidates = sorted(
                 await self._sources[layer].load(
                     request=request,
@@ -716,30 +916,31 @@ class DeterministicAgentContextAssembler:
                     and layer is not ContextLayer.L7_TURN
                 ):
                     raise ValueError("only l7_turn may emit the current user instruction")
+                for image_ref in candidate.image_refs:
+                    if image_ref.workspace_id != request.constitution.workspace_id:
+                        raise ValueError(f"{layer.value} emitted a cross-workspace context ref")
+            # Every image is read before a single message is built, and each one exactly once: the
+            # same attachment can be named by more than one candidate, and a turn must never pay
+            # twice for the same bytes. A candidate carrying images with no reader composed is a
+            # composition error, not a turn the model gets to see half of.
+            for candidate in candidates:
+                for image_ref in candidate.image_refs:
+                    if image_ref.artifact_key in images:
+                        continue
+                    if self._artifacts is None:
+                        raise ValueError("image candidates need an artifact reader")
+                    images[image_ref.artifact_key] = await self._artifacts.read(image_ref)
             budget = self._policy.budget_for(layer)
             retained = self._retain(layer=layer, candidates=candidates, budget=budget)
             used = 0
             included: list[ContextCandidate] = []
-            excluded: list[ContextCandidate] = []
             hashes: list[str] = []
             paths: list[str] = []
-            # Emission stays in canonical ``stable_key`` order for every layer — only *which*
-            # candidates survive the budget depends on the layer's retention direction.
+            # Emission is canonical ``stable_key`` order for every layer, and every candidate is
+            # emitted: budgets no longer decide membership, so there is nothing left to skip.
             for candidate in candidates:
-                count = retained.get(candidate.stable_key)
-                if count is None:
-                    excluded.append(candidate)
-                    receipt_refs.append(
-                        ContextReceiptRef(
-                            layer=layer,
-                            disposition="excluded",
-                            ordinal=len(excluded) - 1,
-                            ref=candidate.ref,
-                            exclusion_reason_code="layer_budget_exceeded",
-                        )
-                    )
-                    continue
-                digest = hashlib.sha256(candidate.body.encode("utf-8")).hexdigest()
+                count = retained[candidate.stable_key]
+                digest = hashlib.sha256(candidate.budget_text.encode("utf-8")).hexdigest()
                 if candidate.materialized_path is not None:
                     if candidate.materialized_path in seen_paths:
                         raise ValueError("context materialization paths must be bundle-unique")
@@ -757,7 +958,10 @@ class DeterministicAgentContextAssembler:
                 if candidate.origin == "current_user_instruction":
                     current_instructions.append(candidate)
                 hashes.append(digest)
-                messages.append(_message(candidate))
+                if emit:
+                    if candidate.interrupted:
+                        messages.append(SystemMessage(content=INTERRUPTED_ASSISTANT_NOTICE))
+                    messages.append(_message(candidate, images))
                 receipt_refs.append(
                     ContextReceiptRef(
                         layer=layer,
@@ -770,6 +974,16 @@ class DeterministicAgentContextAssembler:
                     )
                 )
                 used += count
+            if used > budget:
+                # The one thing an over-budget layer now does: say so. The turn carries all of it.
+                log.warning(
+                    "agent_turn.context_layer_over_budget",
+                    execution_id=str(request.constitution.execution_id),
+                    layer=layer.value,
+                    token_count=used,
+                    token_budget=budget,
+                    policy_version=self._policy.version,
+                )
             manifests.append(
                 ContextLayerManifest(
                     layer=layer,
@@ -777,21 +991,37 @@ class DeterministicAgentContextAssembler:
                     materialized_paths=tuple(paths),
                     content_sha256s=tuple(hashes),
                     token_count=used,
-                    excluded_refs=tuple(item.ref for item in excluded),
-                    exclusion_reason_codes=tuple("layer_budget_exceeded" for _ in excluded),
+                    excluded_refs=(),
+                    exclusion_reason_codes=(),
                 )
             )
 
+        # Receipts keep the canonical L1-L7 order whatever order the messages were built in.
+        manifests.sort(key=lambda item: _ORDER.index(item.layer))
+        receipt_refs.sort(key=lambda item: _ORDER.index(item.layer))
         if len(current_instructions) != 1:
             raise ValueError("opening context requires exactly one current user instruction")
         current_instruction = current_instructions[0]
         if current_instruction.ref != request.user_message_artifact_ref:
             raise ValueError("current user instruction differs from the turn message artifact")
-        if (
-            not messages
-            or not isinstance(messages[-1], HumanMessage)
-            or messages[-1].content != current_instruction.body
-        ):
+        if not messages:
+            raise ValueError("current user instruction must be the final opening-context message")
+        final = messages[-1]
+        # The instruction's words are the message's text, whether it is a plain string or the
+        # multipart shape an image-carrying turn takes; the check is over the words either way.
+        final_text = (
+            final.content
+            if isinstance(final.content, str)
+            else next(
+                (
+                    part["text"]
+                    for part in final.content
+                    if isinstance(part, dict) and part.get("type") == "text"
+                ),
+                None,
+            )
+        )
+        if not isinstance(final, HumanMessage) or final_text != current_instruction.body:
             raise ValueError("current user instruction must be the final opening-context message")
 
         aggregate_payload = {
@@ -801,6 +1031,8 @@ class DeterministicAgentContextAssembler:
             "token_counter_version": self._policy.token_counter_version,
             "layers": [item.model_dump(mode="json") for item in manifests],
         }
+        if continuation is not None:
+            aggregate_payload["continuation"] = continuation.model_dump(mode="json")
         aggregate = hashlib.sha256(
             json.dumps(
                 aggregate_payload,
@@ -830,4 +1062,5 @@ class DeterministicAgentContextAssembler:
             manifest=manifest,
             messages=tuple(messages),
             materializations=tuple(materializations),
+            continuation=continuation,
         )

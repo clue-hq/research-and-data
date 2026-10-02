@@ -1,0 +1,149 @@
+{
+  "requestId": "7bc8a72f9eaf0d6a7ec5f537032823c6",
+  "results": [
+    {
+      "id": "https://www.zafran.io/",
+      "title": "Zafran | AI-Native Threat Exposure Management Platform",
+      "url": "https://www.zafran.io/",
+      "author": "Zafran Security",
+      "text": "Zafran | AI-Native Threat Exposure Management Platform\n\n# Patches take weeks.\n\n# Exploits take hours.\n\n# Zafran takes minutes.\n\nZafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.\n\nGet a Demo\n\nZafran is for security teams buried in vulnerabilities and manual work.\n\n130\n\nnew CVEs published every day\n\n99%\n\nof critical vulns aren't exploitable\n\n1 in 3\n\nCVEs are weaponized on day of disclosure\n\nThe AI-Native Exposure Management Platform\n\nUnify Findings\n\nAssess Risk\n\nMitigate\n\nRemediate\n\nProactive Exposure Hunting\n\n### Unify Findings\n\nTurn fragmented scanner output into one actionable view.\n\n\u200dZafran brings vulnerability findings together across your existing tools, creating a unified view of exposure across the hybrid enterprise.\n\n- Unify findings across cloud, on-prem, and AppSec\n- Normalize and de-duplicate findings\n- Establish a single source of truth\n- Replace legacy scanner with Zafran continuous detection, no new agents\n\nLearn More\n\n### Assess Risk\n\nKnow what is actually exploitable.\n\n\u200dZafran applies your unique risk context to reveal which vulnerabilities are truly exploitable in your environment.\n\n- Runtime presence\n- Internet reachability\n- Exploitation in the wild\n- Asset criticality\n- Existing control mitigations\n\nLearn More\n\n### Mitigate\n\nReduce risk now, without waiting on patch cycles.\n\n\u200dZafran uses your existing security controls to show how to quickly reduce exploitability across your environment.\n\n- Map exposures to compensating controls\n- Deliver step-by-step mitigation guidance\n- Adjust control policies for maximum risk reduction\n- Shrink exposure windows before patching begins\n\nLearn More\n\n### Remediate\n\nTurn vulnerability insights into focused remediation action.\n\n\u200dRemOps uses generative AI to consolidate overlapping remediation tasks, create a clear get-well plan, and route work to the right owners through your existing ticketing platforms.\n\n- Consolidate overlapping CVEs into a single remediation action\n- Route tasks automatically to the right owner\n- Reduce ticket noise and manual triage\n- Track progress with shared visibility across Security and IT\n\nLearn More\n\n### Proactive Exposure Hunting\n\nAnswer \u201cAre we exposed?\u201d with precision.\n\n\u200dZafran helps security teams proactively hunt for exposures tied to new CVEs, zero-days, threat actors, and control gaps across the hybrid enterprise.\n\n- Hunt exposures tied to new CVEs and zero-days\n- See which affected assets are internet-exposed\n- Identify control gaps and cracks in existing defenses\n- Turn validated hunts into mitigation and remediation action\n\nLearn More\n\nExplore the platform page\n\nSee the Full Platform\n\n## Ranked #1 for Continuous Threat Exposure Management (CTEM)\n\n\u05f4Zafran is tackling vulnerabilities from a hacker's perspective. They add a true layer of risk mitigation through compensating controls. Most importantly, they help us understand if our controls are effectively implemented and how we can use them to improve our protection.\u05f4\n\n###### Ricardo Lafosse\n\nCISO, Kraft Heinz\n\n\u201cBy integrating with the security controls configurations we can identify what is working and what is not. Zafran enables us to evaluate our security tech stack, identify gaps, make informed decisions, and ultimately improve the ROI on our tools\u201d\n\n###### Dave Estlick\n\nCISO, Chipotle\n\n\u201cZafran enhanced our controls enabling us to position ourselves with exploit and zero-day countermeasures\u201d\n\n###### James Robinson\n\nCISO, Netskope\n\n\"With Zafran you can determine what level of risk you are willing to take as a company, what external threats you need to worry about, what portions of your business are susceptible to it, and show you how far your existing toolset can be used to mitigate that threat or make recommendations on what additional tools may be needed.\u201d\n\n###### Robert Schuetter\n\nCISO, Ashland\n\n\"In a world where you can not know when and where the next Threat exploitation will catch you, you need a Bubble Wrap. Zafran is our \u2018bubble wrap\u2019, it helps us protect our environment from the exploitation of vulns while keeping the business up and running. You can not patch it all at once!\"\n\n###### CISO\n\nFortune 25 Healthcare Enterprise\n\n00:00\n\n/\n\n00:00\n\n## A New Model For Exposure Management Using Agentic AI\n\nAutonomous AI agents for your entire vulnerability management lifecycle\n\nExplore the platform page\n\nAgentic Exposure Management\n\nThe Context Layer to Power Autonomous Actions\n\nExposure Graph Continuously Maps Exposures to Existing Security Controls\n\nLearn more about Zafran\n\nZafran Platform\n\n00:00\n\n/\n\n00:00\n\n## A New Model For Exposure Management Using Agentic AI\n\nAutonomous AI agents for your entire vulnerability management lifecycle\n\nExplore the platform page\n\nAgentic Exposure Management\n\nTop Stories\n\nExplore Resources\n\nWhitepaper\n\nZafran Team\n\n### A Practical Guide: Evolving from VM to CTEM\n\nZafran Team\n\nRead More\n\n2025-08-08\n\nUpcoming Webinar\n\nAuthor\n\n### AI won't replace your VM team. It'll replace the parts they hate.\n\nSeptember 10, 2026\n\nWatch Now\n\nRegister Now\n\nThis is some text inside of a div block.\n\nZafran Announces Strategic Investment from Amex Ventures\n\nNews\n\nZafran Team\n\n### Zafran Announces Strategic Investment from Amex Ventures\n\nZafran Team\n\nFebruary 24, 2026\n\nZafran Announces Strategic Investment from Amex Ventures\n\nRead More\n\nThis is the default text value\n\n0:00\n\nSee Zafran in Action\n\nPrioritize and fix what is truly exploitable using risk context from your existing security tools\n\nGet a Demo",
+      "image": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/683a2e0c6e76020e5ddb494b_zafran-og.png",
+      "favicon": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/6841885d7e6a1a4de805dab1__zafran-favicon.png",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/h5w450p0h1f",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Zafran Security",
+            "foundedYear": null,
+            "description": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe\u2019re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+            "workforce": {
+              "total": 141
+            },
+            "headquarters": {
+              "address": "New York, New York, US",
+              "city": "New York",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": null,
+              "fundingTotal": 136000000,
+              "fundingLatestRound": null
+            },
+            "webTraffic": {
+              "visitsMonthly": 39861,
+              "countryRank": 247714,
+              "avgDurationSeconds": 86,
+              "history": [
+                {
+                  "value": 26660,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 23469,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 25669,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 29741,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 29741,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 39861,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.zafran.io/platform",
+      "title": "Threat Exposure Management Platform | Zafran Security",
+      "url": "https://www.zafran.io/platform",
+      "author": "Zafran Security",
+      "text": "Threat Exposure Management Platform | Zafran Security\n\n# The Zafran Threat Exposure Management Platform\n\n## A New Operating Model for Vulnerability Management\n\nApply your context and security defenses to reveal and take action against the biggest risks facing your business\n\nWatch Video\n\nThe AI-Native Exposure Management Platform\n\nUnify Findings\n\nAssess Risk\n\nMitigate\n\nRemediate\n\nProactive Exposure Hunting\n\n### Unify Findings\n\nTurn fragmented scanner output into one actionable view.\n\n\u200dZafran brings vulnerability findings together across your existing tools, creating a unified view of exposure across the hybrid enterprise.\n\n- Unify findings across cloud, on-prem, and AppSec\n- Normalize and de-duplicate findings\n- Establish a single source of truth\n- Replace legacy scanner with Zafran continuous detection, no new agents\n\nLearn More\n\n### Assess Risk\n\nKnow what is actually exploitable.\n\n\u200dZafran applies your unique risk context to reveal which vulnerabilities are truly exploitable in your environment.\n\n- Runtime presence\n- Internet reachability\n- Exploitation in the wild\n- Asset criticality\n- Existing control mitigations\n\nLearn More\n\n### Mitigate\n\nReduce risk now, without waiting on patch cycles.\n\n\u200dZafran uses your existing security controls to show how to quickly reduce exploitability across your environment.\n\n- Map exposures to compensating controls\n- Deliver step-by-step mitigation guidance\n- Adjust control policies for maximum risk reduction\n- Shrink exposure windows before patching begins\n\nLearn More\n\n### Remediate\n\nTurn vulnerability insights into focused remediation action.\n\n\u200dRemOps uses generative AI to consolidate overlapping remediation tasks, create a clear get-well plan, and route work to the right owners through your existing ticketing platforms.\n\n- Consolidate overlapping CVEs into a single remediation action\n- Route tasks automatically to the right owner\n- Reduce ticket noise and manual triage\n- Track progress with shared visibility across Security and IT\n\nLearn More\n\n### Proactive Exposure Hunting\n\nAnswer \u201cAre we exposed?\u201d with precision.\n\n\u200dZafran helps security teams proactively hunt for exposures tied to new CVEs, zero-days, threat actors, and control gaps across the hybrid enterprise.\n\n- Hunt exposures tied to new CVEs and zero-days\n- See which affected assets are internet-exposed\n- Identify control gaps and cracks in existing defenses\n- Turn validated hunts into mitigation and remediation action\n\nLearn More\n\nExplore the platform page\n\nSee the Full Platform\n\nWhat Customers are Saying\n\n## Trusted by Fortune 500 and high-growth companies\n\n\u05f4Zafran is tackling vulnerabilities from a hacker's perspective. They add a true layer of risk mitigation through compensating controls. Most importantly, they help us understand if our controls are effectively implemented and how we can use them to improve our protection.\u05f4\n\n###### Ricardo Lafosse\n\nCISO, Kraft Heinz\n\n\u201cBy integrating with the security controls configurations we can identify what is working and what is not. Zafran enables us to evaluate our security tech stack, identify gaps, make informed decisions, and ultimately improve the ROI on our tools\u201d\n\n###### Dave Estlick\n\nCISO, Chipotle\n\n\u201cZafran enhanced our controls enabling us to position ourselves with exploit and zero-day countermeasures\u201d\n\n###### James Robinson\n\nCISO, Netskope\n\n\"With Zafran you can determine what level of risk you are willing to take as a company, what external threats you need to worry about, what portions of your business are susceptible to it, and show you how far your existing toolset can be used to mitigate that threat or make recommendations on what additional tools may be needed.\u201d\n\n###### Robert Schuetter\n\nCISO, Ashland\n\n\"In a world where you can not know when and where the next Threat exploitation will catch you, you need a Bubble Wrap. Zafran is our \u2018bubble wrap\u2019, it helps us protect our environment from the exploitation of vulns while keeping the business up and running. You can not patch it all at once!\"\n\n###### CISO\n\nFortune 25 Healthcare Enterprise\n\nThe Context Layer to Power Autonomous Actions\n\nExposure Graph Continuously Maps Exposures to Existing Security Controls\n\n## Use Cases\n\n### Exposure Assessment & Remediation\n\nFocus on vulnerabilities that are actually exploitables, fully contextualized with your compensating controls.\n\n- De-duplicate vulnerabilities from native and 3rd party scanners\n- Reduce 90% of noisy critical issues and achieve SLA relief\n- Quickly fix the 10% that matter, using high-impact, AI-optimized remediation action\n\nLearn More\n\n### Agentic RemediationTM\n\nAI-powered agents that investigate, assess, and fix enterprise vulnerabilities in a closed-loop system with human oversight.\n\n- Automatically research CVE conditions, validate exploitability, and eliminate false positives on live assets\n- Generate ready-to-use remediation scripts by simulating patch impact in real time across endpoints and servers\n- Keep humans in the loop with full command auditability and approval workflows at every step\n\nLearn More\n\n### Proactive Exposure Hunting\n\n#### Proactively find and mitigate exposure to high profile vulnerabilities, threat actors, and internet exposed assets\n\n- Reveal your exposure to high profile vulns and threat actors\n- Identify internet exposed assets across your hybrid environment\n- Deploy mitigations and fixes to proactively stop exploitation\n\nLearn More\n\n### RemOps\n\nZafran minimizes noise, clarifies the path forward, and facilitates better collaboration and results.\n\n- Eliminate redundant ticketing\n- Optimize get-well action plans\n- Route remediation tasks reliably\n- Oversee remediation status without slowing anyone down\n\nLearn More\n\n## Learn More About Zafran\n\nExplore Resources\n\nDatasheet\n\nZafran Team\n\n### Get the Threat Exposure Management Platform Datasheet\n\nZafran Team\n\nRead More\n\nThis is some text inside of a div block.\n\nVideo\n\nZafran Team\n\n### The New Operating Model for Threat & Vulnerability Management\n\nZafran Team\n\nWatch Now\n\nThis is some text inside of a div block.\n\nBlog\n\nSnir Havdala\n\n### Introducing Remediation Operations (\u201cRemOps\u201d)\n\nSnir Havdala\n\nApril 28, 2025\n\nRead More\n\nThis is the default text value\n\nSee Zafran in Action\n\nPrioritize and fix what is truly exploitable using risk context from your existing security tools\n\nGet a Demo\n\n0:00",
+      "image": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/683a2e0c6e76020e5ddb494b_zafran-og.png",
+      "favicon": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/6841885d7e6a1a4de805dab1__zafran-favicon.png"
+    },
+    {
+      "id": "https://www.zafran.io/about",
+      "title": "Zafran Security | About Zafran Security",
+      "url": "https://www.zafran.io/about",
+      "author": null,
+      "text": "Zafran Security | About Zafran Security\n\n# Our Story\n\nZafran was founded by experienced cybersecurity leaders who directly investigated breaches resulting from known vulnerabilities that were not remediated in time\n\nZafran asked hundreds of security leaders - and they all agreed: Patching everything, all the time is impossible; we need a new approachWe teamed up with leading investors, enlisted the best security experts, put together a dream team of R&D and enterprise security talent, and now, we're excited to deliver our innovative Threat Exposure Management Platform\n\n## Why We Started Zafran\n\n## Leadership\n\n### Sanaz Yashar\n\nCo-Founder & CEO\n\n### Ben Seri\n\nCo-Founder & CTO\n\n### Rotem Peled-Dvir\n\nSVP Finance\n\n### Tom Anthony\n\nSVP Sales\n\n### Nick Fisher\n\nVP Marketing\n\n### Hadas Bergman\n\nVP Business Operations\n\n### Racheli Barouch-Haik\n\nVP HR & Operations\n\n### Itay Nachum\n\nVP Product Management\n\n### Christopher Phillips\n\nVP Customer Success\n\n## Board of Directors\n\n### Doug Leone\n\nPartner at Sequoia Capital\n\n### Lior Simon\n\nGeneral Partner at Cyberstarts\n\n### Rama Sekhar\n\nPartner at Menlo Ventures\n\n## Backed By\n\nJoin Us\n\nWe\u2019re looking for amazing talent to join our growing global team at Zafran. Help us empower organizations to defuse threats.\n\nExplore Jobs\n\nSee Zafran in Action\n\nPrioritize and fix what is truly exploitable using risk context from your existing security tools\n\nGet a Demo\n\nGet a Demo\n\nRequired fields are marked with an asterisk *",
+      "image": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/683a2e0c6e76020e5ddb494b_zafran-og.png",
+      "favicon": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/6841885d7e6a1a4de805dab1__zafran-favicon.png"
+    },
+    {
+      "id": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management",
+      "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "publishedDate": "2025-12-02T03:55:54.000Z",
+      "author": "Zafran Security",
+      "text": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management\n\n/\n\n/\n\nZafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI\n\n# Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI\n\nLed by Menlo Ventures with participation from Sequoia Capital and Cyberstarts, Zafran is doubling its valuation since the last round to advance the mission of stopping vulnerability exploitation everywhere.\n\nAuthor:\n\nZafran Team\n\n,\n\nPublished on\n\nDecember 2, 2025\n\nBlog\n\n\u200dNew York, New York \u2013 December 2, 2025 \u2013 Zafran Security, the pioneer in AI-native Threat Exposure Management, today announced a $60 million Series C funding round led by Menlo Ventures, with participation from existing investors Sequoia Capital and Cyberstarts, in addition to PSP Growth, Vintage Investment Partners, and Knollwood Investment. By launching Agentic Exposure Management, Zafran is now poised to complete the entire end-to-end lifecycle across asset inventory, vulnerability detection, risk assessment, and autonomous remediation workflows.\n\nThis round brings the company\u2019s total funding to $130 million. The new capital will accelerate product innovation and global expansion as Zafran advances its mission to stop the exploitation of vulnerabilities, everywhere.\n\nSince their last funding round, Zafran has doubled its valuation and more than tripled its annual recurring revenue (ARR), driven by rapid adoption across sectors including healthcare, technology, financial services, and manufacturing. The company now serves multiple Fortune 500 enterprises, with customers using Zafran to automate the manual work of assessing what is truly exploitable and reducing remediation times from weeks to hours.\n\nThe emergence of AI-powered attacks has accelerated exploitation at an unprecedented scale. In Q1 2025, 30% of known exploited vulnerabilities (KEVs) were weaponised within a single day of public disclosure. As attackers automate exploitation using AI, security teams remain burdened by duplicate findings, manual patch cycles, and siloed tools.\n\n> \u201cWe must not allow attackers to claim the AI advantage,\u201d said Sanaz Yashar, CEO and Co-Founder of Zafran Security. \u201cThis investment propels our AI innovation forward, building a new model for exposure management through autonomous agents that empowers defenders to fight back.\u201d\n\nWith this announcement, Zafran has launched Agentic Exposure Management, an end-to-end solution powered by the company\u2019s AI-native Exposure Graph. Agentic Exposure Management brings scalable, autonomous agents that discover, enrich with risk context, and take action against the exposures most likely to lead to an incident. By connecting vulnerabilities with deep mapping to compensating controls, agents are able to assess the true exploitability of an exposure. Agents then turn these risk insights into evidence-driven action, autonomously discovering asset ownership, assessing patch impact, and deploying automated fixes and mitigations with human-in-the-loop guardrails.\n\n> \"Vulnerability management burns massive analyst hours on repetitive triage and manual patching, the kind of service-oriented work that AI agents excel at automating\u201d, said Rama Sekhar, Partner at Menlo Ventures. \u201cZafran's growth proves that enterprises recognise the difference between legacy tools with AI features bolted on and platforms rebuilt around autonomous AI from the ground up. This is what AI-native security looks like.\"\n\n> \u201cIn seconds, agentic AI can reveal what teams previously only suspected: the biggest risks to the business, why they matter, and which actions will truly move the needle,\u201d said Steve Lodin, Vice President of InfoSec at Sallie Mae. \u201cAs AI-powered exploits accelerate, having tools that deliver insights this quickly is essential to staying ahead of emerging threats.\u201d\n\nAbout Zafran SecurityZafran Security is the first AI-native end-to-end Threat Exposure Management platform to help security teams stop vulnerability exploitation everywhere. Zafran uses your existing security tools to prove that 99% of critical vulnerabilities are not exploitable, then quickly remediates and mitigates the 1% that are most likely to cause an incident. Backed by Menlo Ventures, Sequoia Capital, and Cyberstarts, Zafran is redefining how enterprises stay ahead of AI-driven threats.\n\n\u200d\n\n### Sources\n\nA Practical Guide: Evolving from VM to CTEM\n\nTraditional vulnerability management must change. So many are drowning in detections, and still lack insights. The time-to-exploit window sits at 5 days. Implementing a Continuous Threat Exposure Management (CTEM) program is the path forward. Moving from vulnerability management to CTEM doesn't have to be complicated. This guide outlines steps you can take to begin, continue, or refine your CTEM journey.\n\nDownload Now\n\nDiscover how Zafran Security can streamline your vulnerability management processes. Request a demo today and secure your organization\u2019s digital infrastructure.\n\nRequest Demo\n\nOn This Page\n\nShare this article:\n\nRelated Content\n\nExplore Resources\n\nBlog\n\nJules Gross\n\n### Agentic Asset Ownership: Automating for Faster Remediation\n\nJules Gross\n\nSeptember 1, 2026\n\nRead More\n\nSeptember 1, 2026\n\nBlog\n\nTomer Admon\n\n### The Attacker's Escape Room: Why Defenders Have Been Fighting the Wrong Game\n\nTomer Admon\n\nAugust 20, 2026\n\nRead More\n\nAugust 20, 2026\n\nBlog\n\nZafran Team\n\n### Inside OpenAI's Black Hat Talk: What the Hugging Face Incident Teaches Defenders About Attack Chains\n\nZafran Team\n\nAugust 10, 2026\n\nRead More\n\nAugust 10, 2026",
+      "image": "https://cdn.prod.website-files.com/680f77e95243e1c8f6ae6792/692de9d1563db37973f4a0ab_eric%20sultan__5520-Edit.webp",
+      "favicon": "https://cdn.prod.website-files.com/680f7748aeaac0c97e4b1a7b/6841885d7e6a1a4de805dab1__zafran-favicon.png"
+    }
+  ],
+  "statuses": [
+    {
+      "id": "https://www.zafran.io/",
+      "status": "success",
+      "source": "cached"
+    },
+    {
+      "id": "https://www.zafran.io/platform",
+      "status": "success",
+      "source": "cached"
+    },
+    {
+      "id": "https://www.zafran.io/about",
+      "status": "success",
+      "source": "cached"
+    },
+    {
+      "id": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+      "status": "success",
+      "source": "cached"
+    }
+  ],
+  "costDollars": {
+    "total": 0.004,
+    "contents": {
+      "text": 0.004
+    }
+  },
+  "searchTime": 16.698819999583066,
+  "_http_status": 200,
+  "_elapsed_s": 0.12,
+  "_request": {
+    "urls": [
+      "https://www.zafran.io/",
+      "https://www.zafran.io/platform",
+      "https://www.zafran.io/about",
+      "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai"
+    ],
+    "text": {
+      "maxCharacters": 12000
+    },
+    "livecrawl": "preferred"
+  }
+}

@@ -6,7 +6,12 @@ export interface ChatShellOpenArtifact {
   title: string;
 }
 
-export type ChatShellSurface = "artifact" | "chat" | "gallery";
+export type ChatShellSurface =
+  | "artifact"
+  | "chat"
+  | "gallery"
+  | "target-accounts"
+  | "plan";
 
 export const CHAT_SHELL_INSPECTOR_SELECTIONS = [
   "canvas",

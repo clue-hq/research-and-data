@@ -1,0 +1,4515 @@
+{
+  "content": [
+    {
+      "id": "03ca2ece-8baf-ca91-a50a-fe025b442cd0",
+      "identifier": "manujpaliwal",
+      "profile": {
+        "first_name": "Manuj",
+        "middle_name": null,
+        "last_name": "Paliwal",
+        "full_name": "Manuj Paliwal",
+        "headline": "Engineering Lead - UPTIQ",
+        "title": "Engineering Lead",
+        "picture": {
+          "source": "https://images.ai-ark.com/WINZllFdf4m5Aw90OoaIRV074C3Z2lLktxSyQYpavOw/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/03ca2ece-8baf-ca91-a50a-fe025b442cd0.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D5616AQE48tGEbhYtkQ/profile-displaybackgroundimage-shrink_350_1400/B56Z8wRM7.IMAc-/0/1783221244082?e=1786579200&v=beta&t=b-hOfFSKyJCqwZNALfu9OOXDxbcCpETjbkUIBsehAdw"
+        },
+        "birth_date": null,
+        "summary": "12 years building software systems, mostly in fintech. Grew an engineering team from 3 to 10, went through an acquisition (Cloud Lending \u2192 Q2), co-founded Mensari as CTO (Alliance DAO backed).Built lending platforms used by 50+ financial institutions across 4 continents. Now working on AI/ML systems. MS in Computer Science from Georgia Tech.Learned that most technical problems end up being people problems. Good teams ship good systems.Outside work, you'll find me golfing (poorly), running (slowly) or cooking (experimentally).Always happy to connect, whether it's about AI/ML, fintech or interesting projects."
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/manujpaliwal",
+        "twitter": null,
+        "github": "https://github.com/manuj10",
+        "facebook": null
+      },
+      "location": {
+        "default": "Bengaluru, Karnataka, India, Asia",
+        "short": "Bengaluru, Karnataka",
+        "country": "India",
+        "state": "Karnataka",
+        "city": "Bengaluru",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": [
+          {
+            "name": "English",
+            "proficiency": "NATIVE_OR_BILINGUAL"
+          },
+          {
+            "name": "Hindi",
+            "proficiency": "NATIVE_OR_BILINGUAL"
+          }
+        ]
+      },
+      "industry": "Computer Software",
+      "educations": [
+        {
+          "school": {
+            "id": "a9742001-e1cd-98a3-644d-037a4bfe6d8c",
+            "name": "Georgia Institute of Technology",
+            "logo": "https://images.ai-ark.com/0sY4rxtEmhWhkbnVrAGyab14YJ0AMCpcQYT2U3BvqGU/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/a9742001-e1cd-98a3-644d-037a4bfe6d8c.jpg",
+            "url": "https://www.linkedin.com/school/georgia-institute-of-technology"
+          },
+          "degree_name": "Master of Science - MS",
+          "field_of_study": "Computer Science",
+          "grade": null,
+          "date": {
+            "start": null,
+            "end": "2025-12-31"
+          }
+        },
+        {
+          "school": {
+            "id": "87b359a9-2fdf-4369-78b8-feee54db1513",
+            "name": "APJ Abdul Kalam Technological University",
+            "logo": "https://images.ai-ark.com/RAVzRXsZKCTUIxWxl0e1XcPGLOGwBf6A_9ZW42XaFZE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/87b359a9-2fdf-4369-78b8-feee54db1513.jpg",
+            "url": "https://www.linkedin.com/school/apjaktuofficial"
+          },
+          "degree_name": "B.Tech",
+          "field_of_study": "computer science and engineering",
+          "grade": null,
+          "date": null
+        }
+      ],
+      "projects": [
+        {
+          "title": "Learn Money: A web application to teach personal finance",
+          "description": "Personal finance is the area of education that is often not part of regular education coursework while it is crucial for making sound financial decisions. Knowledge of money instruments and their underlying working can help in making decisions in a more informed manner. The goal of the project was to develop a solution that helps college students get the basic information about various money instruments they might use in their current life and make sound decisions accordingly. The developed solution provides an interactive way to impart the knowledge through a web application as it simulates the real-life tasks and results of actions.",
+          "date": {
+            "start": "2021-05-01",
+            "end": "2021-08-31"
+          },
+          "contributors": [
+            {
+              "profile_id": "manujpaliwal",
+              "type": "StandardizedContributor",
+              "first_name": "Manuj",
+              "last_name": "Paliwal",
+              "sub_title": "Engineering Lead - UPTIQ",
+              "headline": "Engineering Lead - UPTIQ",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D5603AQFeevvvrjwi7A/profile-displayphoto-crop_800_800/B56Zp8H1nAJwAI-/0/1763019022133?e=1786579200&v=beta&t=KsGB0Qc5ZT--uWJUAGorfNk39OWUygaBOM-GHntlmaE"
+            }
+          ]
+        },
+        {
+          "title": "Chest X-Ray disease diagnosis",
+          "description": "Given the recent large availability of large, labeled datasets of disease diagnosis from chest radiographs, there have been various attempts at creating automated diagnosis systems. We have used one such large dataset(CheXpert - Stanford ML group ref:https://stanfordmlgroup.github.io/competitions/chexpert/ ) in this project to carry out automatic detection of diseases from chest x-rays. We have used Big Data tech- pyspark and transfer learning and deep convolution neural networks to achieve this.\n\nTechnologies Used: Apache Pyspark , Python\n\nWe also submitted project results to Chexpert competition(https://stanfordmlgroup.github.io/competitions/chexpert/) and got listed on Leaderboard.",
+          "date": {
+            "start": "2019-03-01",
+            "end": "2019-04-30"
+          },
+          "contributors": [
+            {
+              "profile_id": "manujpaliwal",
+              "type": "StandardizedContributor",
+              "first_name": "Manuj",
+              "last_name": "Paliwal",
+              "sub_title": "Engineering Lead - UPTIQ",
+              "headline": "Engineering Lead - UPTIQ",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D5603AQFeevvvrjwi7A/profile-displayphoto-crop_800_800/B56Zp8H1nAJwAI-/0/1763019022133?e=1786579200&v=beta&t=KsGB0Qc5ZT--uWJUAGorfNk39OWUygaBOM-GHntlmaE"
+            },
+            {
+              "profile_id": "habbes",
+              "type": "StandardizedContributor",
+              "first_name": "Cl\u00e9ment",
+              "last_name": "Habinshuti",
+              "sub_title": "Programmer | Entrepreneur | Musician",
+              "headline": "Programmer | Entrepreneur | Musician",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/C4D03AQEkmwqn3owHiQ/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1615066647815?e=1786579200&v=beta&t=brLki9LtdC9ONasCICBkhThz4LGUjQCu8hBHaq4NlHk"
+            },
+            {
+              "profile_id": "ganeshsrinivas",
+              "type": "StandardizedContributor",
+              "first_name": "Ganesh",
+              "last_name": "Srinivas",
+              "sub_title": "Software Engineer (data)",
+              "headline": "Software Engineer (data)",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/C5603AQHJKwh2utcIZQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1517693094018?e=1786579200&v=beta&t=aF4tjn4Tf7ue_qdI6abnSAp44SEx9RwBp66u9ekrTlU"
+            }
+          ]
+        },
+        {
+          "title": "Human computer interaction through Gestures",
+          "description": "The project aims at controlling VLC media player by using dynamic hand gestures as input.\n\nVarious functions of VlC linked with gestures are:play/pause,increase volume,decrease volume,stop,crop",
+          "date": {
+            "start": "2011-10-01",
+            "end": "2012-01-31"
+          },
+          "contributors": [
+            {
+              "profile_id": "manujpaliwal",
+              "type": "StandardizedContributor",
+              "first_name": "Manuj",
+              "last_name": "Paliwal",
+              "sub_title": "Engineering Lead - UPTIQ",
+              "headline": "Engineering Lead - UPTIQ",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D5603AQFeevvvrjwi7A/profile-displayphoto-crop_800_800/B56Zp8H1nAJwAI-/0/1763019022133?e=1786579200&v=beta&t=KsGB0Qc5ZT--uWJUAGorfNk39OWUygaBOM-GHntlmaE"
+            },
+            {
+              "profile_id": "dina-nath-karn-2491b227",
+              "type": "StandardizedContributor",
+              "first_name": "Dina Nath",
+              "last_name": "Karn",
+              "sub_title": "Manager at Bank of Maharashtra",
+              "headline": "Manager at Bank of Maharashtra",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D5603AQFCEKDCAuq7HA/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1715875707529?e=1786579200&v=beta&t=P7OL3jDlnOBlooxqNpT3FZFSWcaEwBpFQjD2BjFcN-w"
+            },
+            {
+              "profile_id": "soumikm",
+              "type": "StandardizedContributor",
+              "first_name": "Soumik",
+              "last_name": "Mondal, Ph.D.",
+              "sub_title": "Scientist \u2605 Research and Development (R&D) \u2605 Cybersecurity \u2605 Biometrics \u2605 Artificial Intelligence (AI)",
+              "headline": "Scientist \u2605 Research and Development (R&D) \u2605 Cybersecurity \u2605 Biometrics \u2605 Artificial Intelligence (AI)",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/C5603AQHJwhFYW999GA/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1593263153799?e=1786579200&v=beta&t=ABgiZZlbKMqJqL7dLTvLkDWfpvgbT0QPoYOlXxSL8Ro"
+            }
+          ]
+        }
+      ],
+      "publications": [
+        {
+          "name": "A Dynamic hand gesture recognition system for controlling VLC media player",
+          "publisher": "IEEE explore",
+          "url": "https://ieeexplore.ieee.org/document/6524715",
+          "date": null,
+          "authors": [
+            {
+              "profile_id": "manujpaliwal",
+              "type": "StandardizedContributor",
+              "first_name": "Manuj",
+              "last_name": "Paliwal",
+              "sub_title": "Engineering Lead - UPTIQ",
+              "headline": "Engineering Lead - UPTIQ",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D5603AQFeevvvrjwi7A/profile-displayphoto-crop_800_800/B56Zp8H1nAJwAI-/0/1763019022133?e=1786579200&v=beta&t=KsGB0Qc5ZT--uWJUAGorfNk39OWUygaBOM-GHntlmaE"
+            },
+            {
+              "profile_id": "soumikm",
+              "type": "StandardizedContributor",
+              "first_name": "Soumik",
+              "last_name": "Mondal, Ph.D.",
+              "sub_title": "Scientist \u2605 Research and Development (R&D) \u2605 Cybersecurity \u2605 Biometrics \u2605 Artificial Intelligence (AI)",
+              "headline": "Scientist \u2605 Research and Development (R&D) \u2605 Cybersecurity \u2605 Biometrics \u2605 Artificial Intelligence (AI)",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/C5603AQHJwhFYW999GA/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1593263153799?e=1786579200&v=beta&t=ABgiZZlbKMqJqL7dLTvLkDWfpvgbT0QPoYOlXxSL8Ro"
+            },
+            {
+              "profile_id": "gshar24",
+              "type": "StandardizedContributor",
+              "first_name": "Gaurav",
+              "last_name": "Sharma",
+              "sub_title": "Building AI-Native Data Platforms | PM @ Confluent | ex-Informatica | ex-Amex AI Labs",
+              "headline": "Building AI-Native Data Platforms | PM @ Confluent | ex-Informatica | ex-Amex AI Labs",
+              "profile_picture": null
+            },
+            {
+              "profile_id": "dina-nath-karn-2491b227",
+              "type": "StandardizedContributor",
+              "first_name": "Dina Nath",
+              "last_name": "Karn",
+              "sub_title": "Manager at Bank of Maharashtra",
+              "headline": "Manager at Bank of Maharashtra",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D5603AQFCEKDCAuq7HA/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1715875707529?e=1786579200&v=beta&t=P7OL3jDlnOBlooxqNpT3FZFSWcaEwBpFQjD2BjFcN-w"
+            }
+          ]
+        }
+      ],
+      "courses": [
+        {
+          "name": "Network security",
+          "number": "A+"
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+            "name": "UPTIQ",
+            "logo": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg",
+            "url": "https://www.linkedin.com/company/uptiqai",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2026-01-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "UPTIQ",
+              "description": null,
+              "title": "Engineering Lead",
+              "employment_type": "Full-time",
+              "location": null,
+              "date": {
+                "start": "2026-01-01",
+                "end": null
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "def8d132-2ec7-6258-16a4-7dc060cb3493",
+            "name": "App0",
+            "logo": "https://images.ai-ark.com/OHzz39ETx4b5y05rog9rbBsQJYL2u0EpRHmHxq7qsXc/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/def8d132-2ec7-6258-16a4-7dc060cb3493.jpg",
+            "url": "https://www.linkedin.com/company/app0",
+            "employees": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "date": {
+            "start": "2023-09-01",
+            "end": "2025-10-31"
+          },
+          "profile_positions": [
+            {
+              "company": "App0",
+              "description": "\u2022 Designed 3-layer cascading AI security guardrails (Pattern, Moderation, ML) achieving 93% prompt injection detection at 0ms perceived latency across 65+ attack patterns\n\u2022 Architected agentic tool calling framework with 59 LLM tools across 7 categories, supporting pre/post-processing pipelines used across all conversation flows\n\u2022 Built RAG Knowledge Base platform with multi-source connectors (S3, Google Sheets, Web, Local) and async retrieval pipeline serving production workloads\n\u2022 Designed extensible AI evaluation framework with plugin-based registry supporting 5 evaluator types, enabling systematic quality assessment across models\n\u2022 Built conversation analytics platform processing 10,000+ monthly conversations using BERT for semantic matching and topic modeling\n\u2022 Optimized batch processing achieving 90% faster deduplication through single-scan optimization; reduced database queries by 80% via in-memory caching",
+              "title": "Staff Software Engineer",
+              "employment_type": "Full-time",
+              "location": "Bengaluru, Karnataka, India",
+              "date": {
+                "start": "2023-09-01",
+                "end": "2025-10-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "593c2279-758e-bad4-4a6c-24e1bece7990",
+            "name": "Mensari",
+            "logo": "https://images.ai-ark.com/B5wJAhCE9el5L4ZEJC7jvAzhnAV3BOSeSoJOAcfMZAY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/593c2279-758e-bad4-4a6c-24e1bece7990.jpg",
+            "url": "https://www.linkedin.com/company/mensari",
+            "employees": {
+              "start": 2,
+              "end": 10
+            }
+          },
+          "date": {
+            "start": "2022-05-01",
+            "end": "2023-09-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Mensari",
+              "description": "\u2022 Built cloud-native accounting platform for Web3: multi-chain transaction aggregation, ML-powered classification, streaming payments\n\u2022 Architected double-entry system supporting fiat, crypto, and NFTs across Ethereum and Polygon with real-time portfolio tracking\n\u2022 Shipped to 15 beta customers; strategic wind-down due to market conditions",
+              "title": "Co-Founder | CTO",
+              "employment_type": "Full-time",
+              "location": null,
+              "date": {
+                "start": "2022-05-01",
+                "end": "2023-09-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "d4c1bf4d-e783-5948-9b77-b396566e93cc",
+            "name": "Q2",
+            "logo": "https://images.ai-ark.com/fO1yRp4XvWNRfMhusiucGVIxnmvkTtBq_3u9bb00DT8/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/d4c1bf4d-e783-5948-9b77-b396566e93cc.jpg",
+            "url": "https://www.linkedin.com/company/q2software",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2018-10-01",
+            "end": "2022-04-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Q2",
+              "description": null,
+              "title": "Software Development Manager",
+              "employment_type": "Full-time",
+              "location": "Bengaluru, Karnataka, India",
+              "date": {
+                "start": "2022-02-01",
+                "end": "2022-04-30"
+              }
+            },
+            {
+              "company": "Q2",
+              "description": "Cloud Lending Solutions was acquired by Q2 Software in October 2018. \n\u2022 Scaled engineering team from 3 to 8 members through successful Q2 acquisition, delivering highest revenue-generating product\n\u2022 Architected multi-tenant loan origination platform serving 50+ financial institutions across North America, UK, Africa, and ANZ\n\u2022 Built Rule Engine powering core platform: scorecard generation, document management, pricing, covenants, and task workflows\n\u2022 Developed Financial Spreading module for commercial loan analysis; led Salesforce Security Review for enterprise compliance\n\u2022 Implemented intelligent bank reconciliation reducing manual effort by 80% through automated matching algorithms\n\u2022 Mentored 3 engineers to senior roles; drove market expansion including Australia entry",
+              "title": "Lead Software Engineer",
+              "employment_type": null,
+              "location": "Bengaluru Area, India",
+              "date": {
+                "start": "2018-10-01",
+                "end": "2022-04-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": null,
+            "name": "Cloud Lending Solutions",
+            "logo": null,
+            "url": null
+          },
+          "date": {
+            "start": "2013-06-01",
+            "end": "2018-10-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Cloud Lending Solutions",
+              "description": "\u2022 Led technical team building loan origination platform for financial institutions\n\u2022 Developed core platform modules: rule engine, document management, and workflow systems\n\u2022 Contributed to platform architecture serving multiple customers across North America and UK\n\u2022 Mentored junior engineers and contributed to technical strategy",
+              "title": "Lead Member Of Technical Staff",
+              "employment_type": null,
+              "location": "Bangalore",
+              "date": {
+                "start": "2017-01-01",
+                "end": "2018-10-31"
+              }
+            },
+            {
+              "company": "Cloud Lending Solutions",
+              "description": "\u2022 Developed and maintained core modules of lending management system\n\u2022 Contributed to platform architecture and technical design\n\u2022 Worked on Important implementations in UK and Australia",
+              "title": "Senior Software Engineer",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2016-01-01",
+                "end": "2016-12-31"
+              }
+            },
+            {
+              "company": "Cloud Lending Solutions",
+              "description": null,
+              "title": "Software Engineer",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2013-11-01",
+                "end": "2015-12-31"
+              }
+            },
+            {
+              "company": "Cloud Lending Solutions",
+              "description": null,
+              "title": "Software Developer-Intern",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2013-06-01",
+                "end": "2013-10-31"
+              }
+            }
+          ]
+        }
+      ],
+      "skills": [
+        "PyTorch",
+        "Vector Databases",
+        "LangChain",
+        "Natural Language Processing (NLP)",
+        "MLOps",
+        "Retrieval-Augmented Generation (RAG)",
+        "Prompt Engineering",
+        "Large Language Models (LLM)",
+        "Web3",
+        "FastAPI",
+        "Amazon Web Services (AWS)",
+        "Platform Architecture",
+        "Artificial Intelligence (AI)",
+        "SQL",
+        "C",
+        "JavaScript",
+        "Programming",
+        "Data Structures",
+        "Big Data",
+        "Machine Learning",
+        "Network Security",
+        "Product Development",
+        "C++",
+        "Python",
+        "Java Enterprise Edition",
+        "Linux",
+        "Matlab",
+        "Salesforce.com",
+        "Python (Programming Language)",
+        "Salesforce.com Implementation",
+        "Salesforce.com Development"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": false,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 866,
+          "connections_count": 749
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2026-01-01",
+            "start": "2013-08-01",
+            "title": "2026-01-01"
+          }
+        }
+      },
+      "company": {
+        "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+        "summary": {
+          "name": "UPTIQ",
+          "legal_name": "Cion Digital, Inc.",
+          "description": "Founded by industry veterans, Uptiq is the \ud835\udc22\ud835\udc27\ud835\udc2d\ud835\udc1e\ud835\udc25\ud835\udc25\ud835\udc22\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d \ud835\udc28\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc25\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b \ud835\udc2d\ud835\udc21\ud835\udc1a\ud835\udc2d \ud835\udc2e\ud835\udc27\ud835\udc22\ud835\udc1f\ud835\udc22\ud835\udc1e\ud835\udc2c \ud835\udc20\ud835\udc2b\ud835\udc28\ud835\udc30\ud835\udc2d\ud835\udc21, \ud835\udc28\ud835\udc2b\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc27\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27, \ud835\udc1a\ud835\udc27\ud835\udc1d \ud835\udc1c\ud835\udc28\ud835\udc27\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc2e\ud835\udc28\ud835\udc2e\ud835\udc2c \ud835\udc2c\ud835\udc1e\ud835\udc2b\ud835\udc2f\ud835\udc22\ud835\udc1c\ud835\udc1e \ud835\udc2c\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c\u2014 orchestrating your systems, processes, and teams without replacing what already works.\n\nThis means no replacements, no disruption. Just intelligence layered over your existing systems, giving your people the power to do more with what they already have.\n\nUptiq is everything your financial institution needs to automate decisions, coordinate workflows, and act on intelligence - without replacing a single system you already trust.\n\n\ud835\udc10\ud835\udc0e\ud835\udc11\ud835\udc04: \ud835\udc13\ud835\udc21\ud835\udc1e \ud835\udc0e\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc0b\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b\nCoordinates financial work across systems the way an experienced financial professional would - with governance built in.\n\n\ud835\udc00\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d\ud835\udc2c: \ud835\udc03\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc2d\ud835\udc1a\ud835\udc25 \ud835\udc16\ud835\udc28\ud835\udc2b\ud835\udc24\ud835\udc1e\ud835\udc2b\ud835\udc2c\nAutonomous financial operators that execute complex workflows across systems - with precision, auditability, and human oversight.\n\n\ud835\udc12\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c: \ud835\udc0f\ud835\udc1a\ud835\udc1c\ud835\udc24\ud835\udc1a\ud835\udc20\ud835\udc1e\ud835\udc1d \ud835\udc12\ud835\udc28\ud835\udc25\ud835\udc2e\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27\ud835\udc2c\nPre-configured execution models that deliver measurable outcomes across lending, servicing, risk, and growth.\n\nUptiq is Built Around How Financial Work Actually Gets Done. Our Pre-built operating suites that unlock speed, scale, and governance - without replacing core systems.\n\nTrusted by over 150 financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks, Uptiq is the proven AI partner for highly regulated industries. With over $1 billion in transactions processed and more than $55M in equity funding, Uptiq isn\u2019t just shaping the future of AI in financial services \u2014 it\u2019s leading it.",
+          "overview": "Uptiq is a technology company that provides an AI-driven platform designed to support financial services firms with real-time analytics, risk assessment, and decision-making workflows. The company\u2019s platform uses machine learning to process and interpret large volumes of financial data, identify trends, and generate actionable insights that help teams evaluate credit risk, detect anomalies, and inform portfolio strategies. Its tools support integration with existing data systems and workflows, enabling users to automate data ingestion, modeling, and reporting across lending, investment, and compliance functions.\n\nUptiq also offers customizable dashboards and APIs that help financial analysts, risk officers, and product teams operationalize insights and align them with business objectives. The company works with banks, fintechs, and financial institutions to tailor AI models and analytic frameworks to specific use cases such as credit scoring, customer lifetime value prediction, and loss forecasting. Its platform emphasizes scalable data processing and transparent model outputs to support informed decision-making in financial operations.",
+          "seo": "UPTIQ enables financial advisors to connect their clients to a network of lenders who can fund any liquidity objective, including buying a new home or vacation property, starting a new business, funding working capital for an existing business, financing college tuition and more.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "software development",
+          "staff": {
+            "total": 156,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.uptiq.ai",
+          "domain": "uptiq.ai",
+          "domain_ltd": "uptiq.ai",
+          "linkedin": "https://www.linkedin.com/company/uptiqai",
+          "facebook": "https://www.facebook.com/UPTIQ",
+          "twitter": "https://x.com/uptiq_ai",
+          "crunchbase": "https://www.crunchbase.com/organization/cion-digital"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_B",
+            "total_amount": 69994999,
+            "last_amount": 25000000,
+            "num_investor": 16,
+            "num_funding_rounds": 5,
+            "rounds": [
+              {
+                "announced_at": "2026-02-12",
+                "raised_amount": 25000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "EPIC Ventures",
+                  "LiveOak Ventures",
+                  "645 Ventures",
+                  "Curql",
+                  "Tau Ventures",
+                  "Evolution VC",
+                  "First Capital",
+                  "Green Visor Capital",
+                  "Silverton Partners",
+                  "Broadridge"
+                ]
+              },
+              {
+                "announced_at": "2025-10-25",
+                "raised_amount": 12000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2025-08-06",
+                "type": "CORPORATE_ROUND"
+              },
+              {
+                "announced_at": "2024-10-23",
+                "raised_amount": 20994999,
+                "type": "SERIES_A"
+              },
+              {
+                "announced_at": "2022-01-04",
+                "raised_amount": 12000000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2026-02-12"
+          },
+          "acquisition": {
+            "total": 1,
+            "contents": [
+              {
+                "identifier": {
+                  "id": "upswot",
+                  "name": "upSWOT",
+                  "image": "fc9d67a92bd9468183f7f80a12629bfb"
+                },
+                "role": "acquiree",
+                "announced_at": "2024-12-02"
+              }
+            ]
+          },
+          "aberdeen": {
+            "it_spend": 1264232
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "state": "Texas",
+            "city": "Mckinney",
+            "street": "7300 TX-121",
+            "postal_code": "75070",
+            "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+            "position": {
+              "lng": -97.08263,
+              "lat": 32.7513
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Texas",
+              "city": "Mckinney",
+              "street": "7300 TX-121",
+              "postal_code": "75070",
+              "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+              "position": {
+                "lng": -97.08263,
+                "lat": 32.7513
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "common crawl",
+            "category": "widgets"
+          },
+          {
+            "name": "commoncrawl top 50m",
+            "category": "widgets"
+          },
+          {
+            "name": "hsts",
+            "category": "ssl"
+          },
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "cloudflare cdn",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare",
+            "category": "cdn"
+          },
+          {
+            "name": "organization schema",
+            "category": "framework"
+          },
+          {
+            "name": "cloudflare network error logging",
+            "category": "hosting"
+          },
+          {
+            "name": "person schema",
+            "category": "framework"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "AdRoll",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Amazon AWS",
+            "category": "Hosting"
+          },
+          {
+            "name": "Bing Ads",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Cloudflare DNS",
+            "category": "Domain Name Services"
+          },
+          {
+            "name": "DoubleClick",
+            "category": "Ad Servers"
+          },
+          {
+            "name": "DoubleClick Conversion",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Facebook Custom Audiences",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Facebook Login (Connect)",
+            "category": "Social Login"
+          },
+          {
+            "name": "Facebook Widget",
+            "category": "Widgets"
+          },
+          {
+            "name": "Gmail",
+            "category": "Email Providers"
+          },
+          {
+            "name": "Google Analytics",
+            "category": "Analytics and Tracking"
+          },
+          {
+            "name": "Google Apps",
+            "category": "Other"
+          },
+          {
+            "name": "Google Dynamic Remarketing",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Google Font API",
+            "category": "Fonts"
+          },
+          {
+            "name": "Google Tag Manager",
+            "category": "Tag Management"
+          },
+          {
+            "name": "Hubspot",
+            "category": "Marketing Automation"
+          },
+          {
+            "name": "Linkedin Marketing Solutions",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Mobile Friendly",
+            "category": "Other"
+          },
+          {
+            "name": "Remote",
+            "category": "Other"
+          },
+          {
+            "name": "Twitter Advertising",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Vimeo",
+            "category": "Online Video Platforms"
+          },
+          {
+            "name": "Webflow",
+            "category": "CMS"
+          }
+        ],
+        "industries": [
+          "software development",
+          "lending",
+          "artificial intelligence (ai)",
+          "financial services",
+          "fintech"
+        ],
+        "keywords": [
+          "ai agents for financial services",
+          "ai agents for banks",
+          "ai agents for credit unions",
+          "ai agents for non-bank lenders",
+          "ai agents for equipment finance companies",
+          "ai agents for wealth management firms",
+          "ai agents for private credit companies",
+          "ai agents for fintech",
+          "agentic ai platform for financial services"
+        ],
+        "hashtags": [
+          "wealthmanagement",
+          "ria",
+          "fintech"
+        ],
+        "languages": [
+          "english"
+        ],
+        "sic": [
+          "7371"
+        ],
+        "naics": [
+          "541511",
+          "522310",
+          "522320"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "engineering_technical"
+        ],
+        "sub_departments": [
+          "software_development"
+        ],
+        "functions": [
+          "engineering"
+        ],
+        "seniority": "senior"
+      },
+      "last_updated": "2026-08-22"
+    },
+    {
+      "id": "07da29a9-a1d9-d60a-5035-4ca4ca8a33d9",
+      "identifier": "joe-rost-02197819",
+      "profile": {
+        "first_name": "Joe",
+        "middle_name": null,
+        "last_name": "Rost",
+        "full_name": "Joe Rost",
+        "headline": "VP, Wealth Solutions | Unlocking New Revenue Streams Through Agentic AI & Lending",
+        "title": "VP, Wealth Solutions",
+        "picture": {
+          "source": "https://images.ai-ark.com/dVasiJ81hcBA4MuH0aSJDnO5qvOKsn-0TGgzvvY00PY/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/07da29a9-a1d9-d60a-5035-4ca4ca8a33d9.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D5616AQE0JXlJNCzmXg/profile-displaybackgroundimage-shrink_350_1400/B56Z6OeokGJsAU-/0/1780506855920?e=1786579200&v=beta&t=HG6v4v96jFSphqn97Qz1I8lWjcO2LYXR75SzgXjWdQ8"
+        },
+        "birth_date": "1600-03-10",
+        "summary": "As VP of Wealth Solutions at Uptiq, I work with wealth management firms, RIAs, banks, and financial institutions to drive growth through AI, lending, and modern wealth technology. Throughout my career at Salesforce, Oracle, InvestCloud, and Uptiq, I have partnered with executive teams to solve complex business challenges, modernize technology strategies, improve advisor and client experiences, and unlock new revenue opportunities.Today, my focus is helping financial firms leverage AI and automation to streamline operations, enhance client engagement, support advisor growth, and scale more efficiently. I am particularly interested in the future of wealth management, agentic AI, digital experiences, lending solutions, and strategic partnerships that create measurable business value. Always open to connecting with leaders across wealth management, fintech, and artificial intelligence."
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/joe-rost-02197819",
+        "twitter": null,
+        "github": null,
+        "facebook": null
+      },
+      "location": {
+        "default": "Los Angeles, California, United States, North America",
+        "short": "Los Angeles, California",
+        "country": "United States",
+        "state": "California",
+        "city": "Los Angeles",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": null
+      },
+      "industry": "Computer Software",
+      "educations": [
+        {
+          "school": {
+            "id": "caa46f51-9215-60f2-e64a-b2964baeef5d",
+            "name": "The Wharton School",
+            "logo": "https://images.ai-ark.com/Aac-hOJ0Mgi3R-aDzJh8-wcwdbj_GzTqF8e4Wc1m480/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/caa46f51-9215-60f2-e64a-b2964baeef5d.jpg",
+            "url": "https://www.linkedin.com/school/the-wharton-school"
+          },
+          "degree_name": "Bachelor",
+          "field_of_study": "Marketing",
+          "grade": null,
+          "date": null
+        },
+        {
+          "school": {
+            "id": "d7bfc3dd-b7df-a163-eed6-eaddd7d82b66",
+            "name": "University of Pennsylvania",
+            "logo": "https://images.ai-ark.com/996LAv8CqHcMqPD3C05mdllhLWjGHcRwI2oBNNhj0sM/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/d7bfc3dd-b7df-a163-eed6-eaddd7d82b66.jpg",
+            "url": "https://www.linkedin.com/school/university-of-pennsylvania"
+          },
+          "degree_name": "Bachelor of Science - BS",
+          "field_of_study": null,
+          "grade": null,
+          "date": null
+        }
+      ],
+      "awards": [
+        {
+          "title": "Salesforce for Salesforce Subject Matter Expert (SME)",
+          "description": "Salesforce for Salesforce (SF4SF) is a peer-to-peer community comprised of (top-performing) members across Distribution roles. The SF4SF Community will serve as the primary talent base to draw from when sourcing facilitators, mentors, or reviewers for learning initiatives within Distribution. The SF4SF Community will provide members a single give-back platform along with rewards, recognition, and career development opportunities.",
+          "issuer": "Salesforce Global Enablement",
+          "date": "2023-10-01"
+        },
+        {
+          "title": "Pioneer Award",
+          "description": "Exceeding expectations through 18 selling month",
+          "issuer": "Edward Jones",
+          "date": "2012-05-01"
+        },
+        {
+          "title": "Triple Crown Award",
+          "description": "Excellence in commissions, presentations and prospecting",
+          "issuer": "Edward Jones",
+          "date": "2010-09-01"
+        },
+        {
+          "title": "Top Gun Award",
+          "description": "Top Performing Rep in Quarter",
+          "issuer": "NorCal Group Inc",
+          "date": "2010-01-01"
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+            "name": "UPTIQ",
+            "logo": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg",
+            "url": "https://www.linkedin.com/company/uptiqai",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2026-06-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "UPTIQ",
+              "description": null,
+              "title": "VP, Wealth Solutions",
+              "employment_type": "Full-time",
+              "location": "Los Angeles, CA",
+              "date": {
+                "start": "2026-06-01",
+                "end": null
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "ac823cf6-4ed1-dfe6-5d41-5cfb2e212295",
+            "name": "InvestCloud, Inc.",
+            "logo": "https://images.ai-ark.com/vdgrp_5rL_DouQccRbZWBFu60Q6sC5B9gyGkAYgOyBk/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/ac823cf6-4ed1-dfe6-5d41-5cfb2e212295.jpg",
+            "url": "https://www.linkedin.com/company/investcloud",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2025-02-01",
+            "end": "2026-05-31"
+          },
+          "profile_positions": [
+            {
+              "company": "InvestCloud, Inc.",
+              "description": null,
+              "title": "Senior Account Executive, Digital Wealth",
+              "employment_type": "Full-time",
+              "location": "Los Angeles, CA",
+              "date": {
+                "start": "2025-02-01",
+                "end": "2026-05-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "c24ee942-1554-50df-b308-874cfb24da86",
+            "name": "Salesforce",
+            "logo": "https://images.ai-ark.com/ocBSGBNFEoU2KvxuDW29gflzgkuuUdY5cdbZmKpQAgw/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/c24ee942-1554-50df-b308-874cfb24da86.jpg",
+            "url": "https://www.linkedin.com/company/salesforce",
+            "employees": {
+              "start": 10001,
+              "end": null
+            }
+          },
+          "date": {
+            "start": "2021-01-01",
+            "end": "2024-12-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Salesforce",
+              "description": "Manage relationships with potential & existing customers. Present enterprise-level solutions to VP and C-level executives. Responsible for the entire lifecycle, including initial needs assessment, solution demonstration, and negotiation.\n\nCertified Salesforce for Salesforce Subject Matter Expert (SME)\n\nTechnical aptitude covers the entire Salesforce product suite: Sales Cloud, Service Cloud, Marketing Cloud, Slack, Pardot, Tableau, Heroku, Mulesoft, Einstien Bots & Artificial Intelligence. Collaborate with Consultants, Solution Engineers, Solutions Architects, Customer Success Experts, Business Development Teams, and Executive Sponsors.",
+              "title": "Account Executive, Financial Services - Wealth & Asset Management",
+              "employment_type": "Full-time",
+              "location": "Los Angeles, California, United States",
+              "date": {
+                "start": "2021-01-01",
+                "end": "2024-12-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "52bf1e5a-0b88-49f9-8e2d-6da5230383de",
+            "name": "Oracle",
+            "logo": "https://images.ai-ark.com/KeG6sWxgkdOUGPV9yLC37fYTIlFRdiAlYD2DlmFXHBE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/52bf1e5a-0b88-49f9-8e2d-6da5230383de.jpg",
+            "url": "https://www.linkedin.com/company/oracle",
+            "employees": {
+              "start": 10001,
+              "end": null
+            }
+          },
+          "date": {
+            "start": "2019-04-01",
+            "end": "2021-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Oracle",
+              "description": "Oracle Digital CX Mid-Market\n\nSales | Service | Configure-Price-Quote | eCommerce | Data Quality and Management | Customer Experience Suite\n\nMy team at Oracle provided consultative guidance for companies looking to transform their customer experience and/or upgrade to the cloud. We helped companies leverage technology through automation, analytics, mobility, and flexibility; which allows businesses to reduce inefficiencies across pillars and win in their space.",
+              "title": "Applications Account Executive - Customer Experience",
+              "employment_type": "Full-time",
+              "location": "Santa Monica",
+              "date": {
+                "start": "2020-01-01",
+                "end": "2021-01-31"
+              }
+            },
+            {
+              "company": "Oracle",
+              "description": "ERP | EPM | SCM - Enterprise\n\nCollaborated cross-functionally on the development of cloud roadmaps for client product integration. Leading a territory of 26 enterprise-level organizations and subsidiaries, consistently delivering consultative guidance through all stages of deal progression.",
+              "title": "Applications Account Manager -  EPM, ERP and SCM",
+              "employment_type": "Full-time",
+              "location": "Santa Monica",
+              "date": {
+                "start": "2019-04-01",
+                "end": "2020-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "f2749eb2-68d7-024e-85a2-7af6bd97f751",
+            "name": "Archangels of Justice Productions, LLC",
+            "logo": "https://images.ai-ark.com/mKZlvQZXQ5DbS27lLe4LmiOCQKTbSYBG-DKhEelttgc/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f2749eb2-68d7-024e-85a2-7af6bd97f751.jpg",
+            "url": "https://www.linkedin.com/company/archangels-of-justice-productions-llc",
+            "employees": {
+              "start": 2,
+              "end": 10
+            }
+          },
+          "date": {
+            "start": "2017-02-01",
+            "end": "2019-07-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Archangels of Justice Productions, LLC",
+              "description": null,
+              "title": "Producer, Podcast and Video",
+              "employment_type": null,
+              "location": "Los Angeles, CA",
+              "date": {
+                "start": "2017-05-01",
+                "end": "2019-07-31"
+              }
+            },
+            {
+              "company": "Archangels of Justice Productions, LLC",
+              "description": null,
+              "title": "Producer",
+              "employment_type": null,
+              "location": "Century City, CA",
+              "date": {
+                "start": "2017-02-01",
+                "end": "2017-05-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": null,
+            "name": "The Savanest Agency",
+            "logo": null,
+            "url": null
+          },
+          "date": {
+            "start": "2013-04-01",
+            "end": "2019-03-31"
+          },
+          "profile_positions": [
+            {
+              "company": "The Savanest Agency",
+              "description": null,
+              "title": "Founder/Owner",
+              "employment_type": null,
+              "location": "Beverly Hills, Ca",
+              "date": {
+                "start": "2013-04-01",
+                "end": "2019-03-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "8c0caf70-0079-e9b5-395d-79b8436c7c13",
+            "name": "Blue Star Jets",
+            "logo": "https://images.ai-ark.com/SuJJz2sLEma85-Zq22PnFpMWFZdImZg8EjTCCO9zfKI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/8c0caf70-0079-e9b5-395d-79b8436c7c13.jpg",
+            "url": "https://www.linkedin.com/company/nrjluxconsulting",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2014-01-01",
+            "end": "2015-12-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Blue Star Jets",
+              "description": null,
+              "title": "Account Executive",
+              "employment_type": null,
+              "location": "Beverly Hills",
+              "date": {
+                "start": "2014-01-01",
+                "end": "2015-12-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "fb79dcca-f033-43b5-3c37-d99286db0ec9",
+            "name": "Edward Jones",
+            "logo": "https://images.ai-ark.com/dQ6txEBSlkhzO7cWKgwzBJK6Q11OPMq1ju_0UHKIA98/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/fb79dcca-f033-43b5-3c37-d99286db0ec9.jpg",
+            "url": "https://www.linkedin.com/company/edward-jones",
+            "employees": {
+              "start": 10001,
+              "end": null
+            }
+          },
+          "date": {
+            "start": "2010-03-01",
+            "end": "2012-10-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Edward Jones",
+              "description": null,
+              "title": "Financial Advisor",
+              "employment_type": null,
+              "location": "Mission Viejo",
+              "date": {
+                "start": "2010-03-01",
+                "end": "2012-10-31"
+              }
+            }
+          ]
+        }
+      ],
+      "skills": [
+        "Operational Efficiency",
+        "Agentic AI Development",
+        "Agentic Workflows",
+        "Revenue & Profit Growth",
+        "Agentic Automation",
+        "Financial Services",
+        "Private Banking",
+        "Credit Unions",
+        "Artificial Intelligence (AI)",
+        "Private Wealth Management",
+        "Digital Strategy",
+        "IT Strategy",
+        "Cloud Applications",
+        "Software Sales",
+        "Strategic Account Development",
+        "Account Management",
+        "Sales",
+        "Marketing Strategy",
+        "Sales Presentations",
+        "Video Editing",
+        "Graphic Design",
+        "Marketing",
+        "Advertising",
+        "Social Media Marketing",
+        "Digital Media"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": true,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 1983,
+          "connections_count": 1918
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2026-06-01",
+            "start": "2010-08-30",
+            "title": "2026-06-01"
+          }
+        }
+      },
+      "company": {
+        "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+        "summary": {
+          "name": "UPTIQ",
+          "legal_name": "Cion Digital, Inc.",
+          "description": "Founded by industry veterans, Uptiq is the \ud835\udc22\ud835\udc27\ud835\udc2d\ud835\udc1e\ud835\udc25\ud835\udc25\ud835\udc22\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d \ud835\udc28\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc25\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b \ud835\udc2d\ud835\udc21\ud835\udc1a\ud835\udc2d \ud835\udc2e\ud835\udc27\ud835\udc22\ud835\udc1f\ud835\udc22\ud835\udc1e\ud835\udc2c \ud835\udc20\ud835\udc2b\ud835\udc28\ud835\udc30\ud835\udc2d\ud835\udc21, \ud835\udc28\ud835\udc2b\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc27\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27, \ud835\udc1a\ud835\udc27\ud835\udc1d \ud835\udc1c\ud835\udc28\ud835\udc27\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc2e\ud835\udc28\ud835\udc2e\ud835\udc2c \ud835\udc2c\ud835\udc1e\ud835\udc2b\ud835\udc2f\ud835\udc22\ud835\udc1c\ud835\udc1e \ud835\udc2c\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c\u2014 orchestrating your systems, processes, and teams without replacing what already works.\n\nThis means no replacements, no disruption. Just intelligence layered over your existing systems, giving your people the power to do more with what they already have.\n\nUptiq is everything your financial institution needs to automate decisions, coordinate workflows, and act on intelligence - without replacing a single system you already trust.\n\n\ud835\udc10\ud835\udc0e\ud835\udc11\ud835\udc04: \ud835\udc13\ud835\udc21\ud835\udc1e \ud835\udc0e\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc0b\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b\nCoordinates financial work across systems the way an experienced financial professional would - with governance built in.\n\n\ud835\udc00\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d\ud835\udc2c: \ud835\udc03\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc2d\ud835\udc1a\ud835\udc25 \ud835\udc16\ud835\udc28\ud835\udc2b\ud835\udc24\ud835\udc1e\ud835\udc2b\ud835\udc2c\nAutonomous financial operators that execute complex workflows across systems - with precision, auditability, and human oversight.\n\n\ud835\udc12\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c: \ud835\udc0f\ud835\udc1a\ud835\udc1c\ud835\udc24\ud835\udc1a\ud835\udc20\ud835\udc1e\ud835\udc1d \ud835\udc12\ud835\udc28\ud835\udc25\ud835\udc2e\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27\ud835\udc2c\nPre-configured execution models that deliver measurable outcomes across lending, servicing, risk, and growth.\n\nUptiq is Built Around How Financial Work Actually Gets Done. Our Pre-built operating suites that unlock speed, scale, and governance - without replacing core systems.\n\nTrusted by over 150 financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks, Uptiq is the proven AI partner for highly regulated industries. With over $1 billion in transactions processed and more than $55M in equity funding, Uptiq isn\u2019t just shaping the future of AI in financial services \u2014 it\u2019s leading it.",
+          "overview": "Uptiq is a technology company that provides an AI-driven platform designed to support financial services firms with real-time analytics, risk assessment, and decision-making workflows. The company\u2019s platform uses machine learning to process and interpret large volumes of financial data, identify trends, and generate actionable insights that help teams evaluate credit risk, detect anomalies, and inform portfolio strategies. Its tools support integration with existing data systems and workflows, enabling users to automate data ingestion, modeling, and reporting across lending, investment, and compliance functions.\n\nUptiq also offers customizable dashboards and APIs that help financial analysts, risk officers, and product teams operationalize insights and align them with business objectives. The company works with banks, fintechs, and financial institutions to tailor AI models and analytic frameworks to specific use cases such as credit scoring, customer lifetime value prediction, and loss forecasting. Its platform emphasizes scalable data processing and transparent model outputs to support informed decision-making in financial operations.",
+          "seo": "UPTIQ enables financial advisors to connect their clients to a network of lenders who can fund any liquidity objective, including buying a new home or vacation property, starting a new business, funding working capital for an existing business, financing college tuition and more.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "software development",
+          "staff": {
+            "total": 156,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.uptiq.ai",
+          "domain": "uptiq.ai",
+          "domain_ltd": "uptiq.ai",
+          "linkedin": "https://www.linkedin.com/company/uptiqai",
+          "facebook": "https://www.facebook.com/UPTIQ",
+          "twitter": "https://x.com/uptiq_ai",
+          "crunchbase": "https://www.crunchbase.com/organization/cion-digital"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_B",
+            "total_amount": 69994999,
+            "last_amount": 25000000,
+            "num_investor": 16,
+            "num_funding_rounds": 5,
+            "rounds": [
+              {
+                "announced_at": "2026-02-12",
+                "raised_amount": 25000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "EPIC Ventures",
+                  "LiveOak Ventures",
+                  "645 Ventures",
+                  "Curql",
+                  "Tau Ventures",
+                  "Evolution VC",
+                  "First Capital",
+                  "Green Visor Capital",
+                  "Silverton Partners",
+                  "Broadridge"
+                ]
+              },
+              {
+                "announced_at": "2025-10-25",
+                "raised_amount": 12000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2025-08-06",
+                "type": "CORPORATE_ROUND"
+              },
+              {
+                "announced_at": "2024-10-23",
+                "raised_amount": 20994999,
+                "type": "SERIES_A"
+              },
+              {
+                "announced_at": "2022-01-04",
+                "raised_amount": 12000000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2026-02-12"
+          },
+          "acquisition": {
+            "total": 1,
+            "contents": [
+              {
+                "identifier": {
+                  "id": "upswot",
+                  "name": "upSWOT",
+                  "image": "fc9d67a92bd9468183f7f80a12629bfb"
+                },
+                "role": "acquiree",
+                "announced_at": "2024-12-02"
+              }
+            ]
+          },
+          "aberdeen": {
+            "it_spend": 1264232
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "state": "Texas",
+            "city": "Mckinney",
+            "street": "7300 TX-121",
+            "postal_code": "75070",
+            "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+            "position": {
+              "lng": -97.08263,
+              "lat": 32.7513
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Texas",
+              "city": "Mckinney",
+              "street": "7300 TX-121",
+              "postal_code": "75070",
+              "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+              "position": {
+                "lng": -97.08263,
+                "lat": 32.7513
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "common crawl",
+            "category": "widgets"
+          },
+          {
+            "name": "commoncrawl top 50m",
+            "category": "widgets"
+          },
+          {
+            "name": "hsts",
+            "category": "ssl"
+          },
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "cloudflare cdn",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare",
+            "category": "cdn"
+          },
+          {
+            "name": "organization schema",
+            "category": "framework"
+          },
+          {
+            "name": "cloudflare network error logging",
+            "category": "hosting"
+          },
+          {
+            "name": "person schema",
+            "category": "framework"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "AdRoll",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Amazon AWS",
+            "category": "Hosting"
+          },
+          {
+            "name": "Bing Ads",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Cloudflare DNS",
+            "category": "Domain Name Services"
+          },
+          {
+            "name": "DoubleClick",
+            "category": "Ad Servers"
+          },
+          {
+            "name": "DoubleClick Conversion",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Facebook Custom Audiences",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Facebook Login (Connect)",
+            "category": "Social Login"
+          },
+          {
+            "name": "Facebook Widget",
+            "category": "Widgets"
+          },
+          {
+            "name": "Gmail",
+            "category": "Email Providers"
+          },
+          {
+            "name": "Google Analytics",
+            "category": "Analytics and Tracking"
+          },
+          {
+            "name": "Google Apps",
+            "category": "Other"
+          },
+          {
+            "name": "Google Dynamic Remarketing",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Google Font API",
+            "category": "Fonts"
+          },
+          {
+            "name": "Google Tag Manager",
+            "category": "Tag Management"
+          },
+          {
+            "name": "Hubspot",
+            "category": "Marketing Automation"
+          },
+          {
+            "name": "Linkedin Marketing Solutions",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Mobile Friendly",
+            "category": "Other"
+          },
+          {
+            "name": "Remote",
+            "category": "Other"
+          },
+          {
+            "name": "Twitter Advertising",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Vimeo",
+            "category": "Online Video Platforms"
+          },
+          {
+            "name": "Webflow",
+            "category": "CMS"
+          }
+        ],
+        "industries": [
+          "software development",
+          "lending",
+          "artificial intelligence (ai)",
+          "financial services",
+          "fintech"
+        ],
+        "keywords": [
+          "ai agents for financial services",
+          "ai agents for banks",
+          "ai agents for credit unions",
+          "ai agents for non-bank lenders",
+          "ai agents for equipment finance companies",
+          "ai agents for wealth management firms",
+          "ai agents for private credit companies",
+          "ai agents for fintech",
+          "agentic ai platform for financial services"
+        ],
+        "hashtags": [
+          "wealthmanagement",
+          "ria",
+          "fintech"
+        ],
+        "languages": [
+          "english"
+        ],
+        "sic": [
+          "7371"
+        ],
+        "naics": [
+          "541511",
+          "522310",
+          "522320"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "finance"
+        ],
+        "sub_departments": [
+          "asset_and_wealth_management"
+        ],
+        "functions": [
+          "finance"
+        ],
+        "seniority": "vp"
+      },
+      "last_updated": "2026-08-22"
+    },
+    {
+      "id": "0de69a34-1e82-919d-23de-de4298c83517",
+      "identifier": "uxayushi",
+      "profile": {
+        "first_name": "Ayushi",
+        "middle_name": null,
+        "last_name": "Yadav",
+        "full_name": "Ayushi Yadav",
+        "headline": "Product Designer @ UPTIQ | Creating Intuitive User Experiences",
+        "title": "Product Designer",
+        "picture": {
+          "source": "https://images.ai-ark.com/RY78_poXl5PN3Im6D3fUL602k2F7-JxElJB1HneAIIc/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/0de69a34-1e82-919d-23de-de4298c83517.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D5616AQHWfSek58p6Gw/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1728206428521?e=1786579200&v=beta&t=BucBUNDazwk0lhYC2wtOdGB1LYbumcQTgCHB4hcoljU"
+        },
+        "birth_date": null,
+        "summary": "I am a Product Designer with 5 years of experience designing fintech, enterprise, and AI-driven digital products, with expertise in UI/UX, interaction design, design systems, and end-to-end product thinking across web and mobile platforms. Skilled in translating complex workflows into intuitive user experiences through wireframes, high-fidelity UI, and prototyping. Experienced collaborating with product, engineering, and AI teams to create scalable, user-centric solutions focused on usability, workflow optimization, and business impact."
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/uxayushi",
+        "twitter": null,
+        "github": null,
+        "facebook": null
+      },
+      "location": {
+        "default": "Greater Delhi Area, India, Asia",
+        "short": "Greater Delhi Area",
+        "country": "India",
+        "state": null,
+        "city": "Greater Delhi Area",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": null
+      },
+      "industry": "Design",
+      "educations": [
+        {
+          "school": {
+            "id": "14a243fe-816b-001d-b53d-fec451bd8e6e",
+            "name": "H.R. College Of Commerce & Economics",
+            "logo": "https://images.ai-ark.com/NrO5lvTBzCR6iyKit-JucgCpipRU3Tu2dAJpVBUG7-8/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/14a243fe-816b-001d-b53d-fec451bd8e6e.jpg",
+            "url": "https://www.linkedin.com/school/h-r-college-of-commerce-economic"
+          },
+          "degree_name": "Bachelor of Arts - BA",
+          "field_of_study": "Mass Communication/Media Studies",
+          "grade": null,
+          "date": {
+            "start": "2020-01-01",
+            "end": "2023-12-31"
+          }
+        },
+        {
+          "school": {
+            "id": "b0452f7c-9d3f-7ead-fdbe-6311ebdd6283",
+            "name": "Internshala Trainings",
+            "logo": "https://images.ai-ark.com/wTcE6STn2jiH7yO0I8IOQMWpcRZGQ6cEFzPAKAsLFVY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/b0452f7c-9d3f-7ead-fdbe-6311ebdd6283.jpg",
+            "url": "https://www.linkedin.com/school/internshala-trainings"
+          },
+          "degree_name": "Certificate",
+          "field_of_study": "UI/UX Design Course",
+          "grade": null,
+          "date": {
+            "start": "2022-12-01",
+            "end": "2023-06-30"
+          }
+        },
+        {
+          "school": {
+            "id": "d6e6b92f-a9b4-886e-fc08-3fba3b7098c0",
+            "name": "Google pour les pros",
+            "logo": "https://images.ai-ark.com/Za36KFS2QLB29vmacWkkeROxeT3h8_iiD3sUSqTPy-4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/d6e6b92f-a9b4-886e-fc08-3fba3b7098c0.jpg",
+            "url": "https://www.linkedin.com/school/google-pour-les-pros"
+          },
+          "degree_name": "Certificate",
+          "field_of_study": "Google UX Design",
+          "grade": null,
+          "date": {
+            "start": "2022-03-01",
+            "end": "2022-05-31"
+          }
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+            "name": "UPTIQ",
+            "logo": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg",
+            "url": "https://www.linkedin.com/company/uptiqai",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2026-01-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "UPTIQ",
+              "description": "- Leading end-to-end design of the Loan Origination System (LOS), making one of fintech's most complex flows actually usable.\n- Designing loan application journeys on web, from first screen to approval.\n- Partnering with PMs and engineering to turn lending logic into clear, intuitive interfaces.\n- Maintaining and evolving the design system, keeping components consistent.\n- Building specs that don't fall apart once engineering gets to them.",
+              "title": "Product Designer",
+              "employment_type": "Full-time",
+              "location": "Texas, United States",
+              "date": {
+                "start": "2026-01-01",
+                "end": null
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "c885c3d5-cb9f-3eb7-300e-79346f24e917",
+            "name": "T72 Club",
+            "logo": "https://images.ai-ark.com/qzY_I4d2mVCvnAnI4K6oiPWZ8sHkUbOJgZZubxW7yec/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/c885c3d5-cb9f-3eb7-300e-79346f24e917.jpg",
+            "url": "https://www.linkedin.com/company/t72club",
+            "employees": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "date": {
+            "start": "2024-04-01",
+            "end": "2026-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "T72 Club",
+              "description": "- Owned UX design across multiple product verticals over nearly two years, wearing many hats and shipping a lot of work.\n- Designed the full product suite for CashX, a US payments app, covering the consumer mobile app, kiosk interface, and backoffice dashboard, three surfaces, one coherent system.\n- Navigated the design challenge of building for both a touchscreen kiosk in a physical space and a mobile app at home, same logic, completely different interaction constraints.\n- Collaborated closely with the engineering team to deliver wireframes, prototypes, and high-fidelity Figma specs that actually made it to production intact.",
+              "title": "Product Designer",
+              "employment_type": "Full-time",
+              "location": "California, United States",
+              "date": {
+                "start": "2024-04-01",
+                "end": "2026-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "3b327b9e-13fe-cb5d-45d6-d167c11e0b10",
+            "name": "TechTeract",
+            "logo": null,
+            "url": "https://www.linkedin.com/company/techteract",
+            "employees": {
+              "start": 0,
+              "end": 1
+            }
+          },
+          "date": {
+            "start": "2024-01-01",
+            "end": "2024-04-30"
+          },
+          "profile_positions": [
+            {
+              "company": "TechTeract",
+              "description": "- Came in as the founding designer for an AI tools company, which meant building the design foundation from scratch with no prior designer to blame things on.\n- Designed across three surfaces: a web app, internal tools, and a marketing website, keeping the experience coherent across all of them.\n- Worked directly with the CEO and engineering team to shape product direction early, when design decisions are cheap to make and expensive to ignore.\n- Translated complex AI product functionality into interfaces that felt approachable rather than intimidating.",
+              "title": "Founding Product Designer",
+              "employment_type": "Part-time",
+              "location": "Sweden",
+              "date": {
+                "start": "2024-01-01",
+                "end": "2024-04-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "3729d939-3241-e566-ff49-fd0e0cc16cba",
+            "name": "Draftss",
+            "logo": "https://images.ai-ark.com/O899tqSbNajdBCNxgT5seHiDB7SCHoGwEjQrTcTVSis/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/3729d939-3241-e566-ff49-fd0e0cc16cba.jpg",
+            "url": "https://www.linkedin.com/company/draftss",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2023-06-01",
+            "end": "2024-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Draftss",
+              "description": "- Worked as part of a design team delivering across a wide range of client projects, from SaaS products and mobile apps to landing pages and branding.\n- Collaborated with other designers on concurrent projects, keeping work consistent when multiple people are touching the same product.\n- Covered a wide design spectrum in one role: mobile interaction patterns, conversion-focused landing pages, and visual identity work.\n- Got very good at context-switching, picking up a new brief, understanding what the client actually needs versus what they asked for, and delivering fast.",
+              "title": "UI/UX Designer",
+              "employment_type": "Full-time",
+              "location": "Mumbai",
+              "date": {
+                "start": "2023-06-01",
+                "end": "2024-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": null,
+            "name": "Aniket Yadav",
+            "logo": null,
+            "url": null
+          },
+          "date": {
+            "start": "2023-01-01",
+            "end": "2023-02-28"
+          },
+          "profile_positions": [
+            {
+              "company": "Aniket Yadav",
+              "description": "- Designed and developed a clean, modern portfolio site for a full-stack developer.\n- Implemented smooth interactions and dynamic projects section for enhanced usability.",
+              "title": "User Interface Designer",
+              "employment_type": "Freelance",
+              "location": "New Delhi",
+              "date": {
+                "start": "2023-01-01",
+                "end": "2023-02-28"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "ba7faa61-b0f0-f637-248a-23c86e5fa441",
+            "name": "Flavour Fusion",
+            "logo": null,
+            "url": "https://www.linkedin.com/company/flavour-fusion"
+          },
+          "date": {
+            "start": "2021-09-01",
+            "end": "2022-12-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Flavour Fusion",
+              "description": "- Designed the mobile app end to end for a food delivery startup, from user research and flows to wireframes and high-fidelity UI.\n- Mapped out core user journeys including browsing, ordering, and checkout, making sure each step felt natural rather than like filling out a government form.\n- Worked closely with the CEO, using research findings and design deliverables to inform and align product decisions throughout.",
+              "title": "User Experience Designer",
+              "employment_type": "Freelance",
+              "location": "Delhi, India",
+              "date": {
+                "start": "2021-09-01",
+                "end": "2022-12-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "50398f88-4dad-a964-d942-29d9ebf2390c",
+            "name": "ADmyBRAND",
+            "logo": "https://images.ai-ark.com/L1XXfyo9MEsCqHgNlpAkJwgyldvd2HxHx6jK9iPjbQY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/50398f88-4dad-a964-d942-29d9ebf2390c.jpg",
+            "url": "https://www.linkedin.com/company/admybrand",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2022-03-01",
+            "end": "2022-04-30"
+          },
+          "profile_positions": [
+            {
+              "company": "ADmyBRAND",
+              "description": "- Started here at the very beginning of my design career, learning the fundamentals of branding and visual communication under a mentor.\n- Created social media graphics and branding assets, developing an eye for visual consistency and what makes a brand actually look like itself across touchpoints.\n- Got my first real taste of working to briefs, handling feedback, and understanding that good design and personal taste are not always the same thing.",
+              "title": "Graphic Design Intern",
+              "employment_type": "Internship",
+              "location": "New Delhi",
+              "date": {
+                "start": "2022-03-01",
+                "end": "2022-04-30"
+              }
+            }
+          ]
+        }
+      ],
+      "skills": [
+        "UX Research",
+        "Mobile Interface Design",
+        "User Experience (UX)",
+        "User Interface Prototyping",
+        "English",
+        "Problem Solving",
+        "Adobe Photoshop",
+        "Adobe Illustrator",
+        "Adobe InDesign",
+        "Adobe XD",
+        "Figma (Software)",
+        "Graphic Design",
+        "User Experience Design (UED)",
+        "User Interface Design",
+        "Empathic Design"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": true,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 3875,
+          "connections_count": 3825
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2026-01-01",
+            "start": "2021-12-02",
+            "title": "2024-04-01"
+          }
+        }
+      },
+      "company": {
+        "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+        "summary": {
+          "name": "UPTIQ",
+          "legal_name": "Cion Digital, Inc.",
+          "description": "Founded by industry veterans, Uptiq is the \ud835\udc22\ud835\udc27\ud835\udc2d\ud835\udc1e\ud835\udc25\ud835\udc25\ud835\udc22\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d \ud835\udc28\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc25\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b \ud835\udc2d\ud835\udc21\ud835\udc1a\ud835\udc2d \ud835\udc2e\ud835\udc27\ud835\udc22\ud835\udc1f\ud835\udc22\ud835\udc1e\ud835\udc2c \ud835\udc20\ud835\udc2b\ud835\udc28\ud835\udc30\ud835\udc2d\ud835\udc21, \ud835\udc28\ud835\udc2b\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc27\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27, \ud835\udc1a\ud835\udc27\ud835\udc1d \ud835\udc1c\ud835\udc28\ud835\udc27\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc2e\ud835\udc28\ud835\udc2e\ud835\udc2c \ud835\udc2c\ud835\udc1e\ud835\udc2b\ud835\udc2f\ud835\udc22\ud835\udc1c\ud835\udc1e \ud835\udc2c\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c\u2014 orchestrating your systems, processes, and teams without replacing what already works.\n\nThis means no replacements, no disruption. Just intelligence layered over your existing systems, giving your people the power to do more with what they already have.\n\nUptiq is everything your financial institution needs to automate decisions, coordinate workflows, and act on intelligence - without replacing a single system you already trust.\n\n\ud835\udc10\ud835\udc0e\ud835\udc11\ud835\udc04: \ud835\udc13\ud835\udc21\ud835\udc1e \ud835\udc0e\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc0b\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b\nCoordinates financial work across systems the way an experienced financial professional would - with governance built in.\n\n\ud835\udc00\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d\ud835\udc2c: \ud835\udc03\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc2d\ud835\udc1a\ud835\udc25 \ud835\udc16\ud835\udc28\ud835\udc2b\ud835\udc24\ud835\udc1e\ud835\udc2b\ud835\udc2c\nAutonomous financial operators that execute complex workflows across systems - with precision, auditability, and human oversight.\n\n\ud835\udc12\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c: \ud835\udc0f\ud835\udc1a\ud835\udc1c\ud835\udc24\ud835\udc1a\ud835\udc20\ud835\udc1e\ud835\udc1d \ud835\udc12\ud835\udc28\ud835\udc25\ud835\udc2e\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27\ud835\udc2c\nPre-configured execution models that deliver measurable outcomes across lending, servicing, risk, and growth.\n\nUptiq is Built Around How Financial Work Actually Gets Done. Our Pre-built operating suites that unlock speed, scale, and governance - without replacing core systems.\n\nTrusted by over 150 financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks, Uptiq is the proven AI partner for highly regulated industries. With over $1 billion in transactions processed and more than $55M in equity funding, Uptiq isn\u2019t just shaping the future of AI in financial services \u2014 it\u2019s leading it.",
+          "overview": "Uptiq is a technology company that provides an AI-driven platform designed to support financial services firms with real-time analytics, risk assessment, and decision-making workflows. The company\u2019s platform uses machine learning to process and interpret large volumes of financial data, identify trends, and generate actionable insights that help teams evaluate credit risk, detect anomalies, and inform portfolio strategies. Its tools support integration with existing data systems and workflows, enabling users to automate data ingestion, modeling, and reporting across lending, investment, and compliance functions.\n\nUptiq also offers customizable dashboards and APIs that help financial analysts, risk officers, and product teams operationalize insights and align them with business objectives. The company works with banks, fintechs, and financial institutions to tailor AI models and analytic frameworks to specific use cases such as credit scoring, customer lifetime value prediction, and loss forecasting. Its platform emphasizes scalable data processing and transparent model outputs to support informed decision-making in financial operations.",
+          "seo": "UPTIQ enables financial advisors to connect their clients to a network of lenders who can fund any liquidity objective, including buying a new home or vacation property, starting a new business, funding working capital for an existing business, financing college tuition and more.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "software development",
+          "staff": {
+            "total": 156,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.uptiq.ai",
+          "domain": "uptiq.ai",
+          "domain_ltd": "uptiq.ai",
+          "linkedin": "https://www.linkedin.com/company/uptiqai",
+          "facebook": "https://www.facebook.com/UPTIQ",
+          "twitter": "https://x.com/uptiq_ai",
+          "crunchbase": "https://www.crunchbase.com/organization/cion-digital"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_B",
+            "total_amount": 69994999,
+            "last_amount": 25000000,
+            "num_investor": 16,
+            "num_funding_rounds": 5,
+            "rounds": [
+              {
+                "announced_at": "2026-02-12",
+                "raised_amount": 25000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "EPIC Ventures",
+                  "LiveOak Ventures",
+                  "645 Ventures",
+                  "Curql",
+                  "Tau Ventures",
+                  "Evolution VC",
+                  "First Capital",
+                  "Green Visor Capital",
+                  "Silverton Partners",
+                  "Broadridge"
+                ]
+              },
+              {
+                "announced_at": "2025-10-25",
+                "raised_amount": 12000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2025-08-06",
+                "type": "CORPORATE_ROUND"
+              },
+              {
+                "announced_at": "2024-10-23",
+                "raised_amount": 20994999,
+                "type": "SERIES_A"
+              },
+              {
+                "announced_at": "2022-01-04",
+                "raised_amount": 12000000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2026-02-12"
+          },
+          "acquisition": {
+            "total": 1,
+            "contents": [
+              {
+                "identifier": {
+                  "id": "upswot",
+                  "name": "upSWOT",
+                  "image": "fc9d67a92bd9468183f7f80a12629bfb"
+                },
+                "role": "acquiree",
+                "announced_at": "2024-12-02"
+              }
+            ]
+          },
+          "aberdeen": {
+            "it_spend": 1264232
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "state": "Texas",
+            "city": "Mckinney",
+            "street": "7300 TX-121",
+            "postal_code": "75070",
+            "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+            "position": {
+              "lng": -97.08263,
+              "lat": 32.7513
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Texas",
+              "city": "Mckinney",
+              "street": "7300 TX-121",
+              "postal_code": "75070",
+              "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+              "position": {
+                "lng": -97.08263,
+                "lat": 32.7513
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "common crawl",
+            "category": "widgets"
+          },
+          {
+            "name": "commoncrawl top 50m",
+            "category": "widgets"
+          },
+          {
+            "name": "hsts",
+            "category": "ssl"
+          },
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "cloudflare cdn",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare",
+            "category": "cdn"
+          },
+          {
+            "name": "organization schema",
+            "category": "framework"
+          },
+          {
+            "name": "cloudflare network error logging",
+            "category": "hosting"
+          },
+          {
+            "name": "person schema",
+            "category": "framework"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "AdRoll",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Amazon AWS",
+            "category": "Hosting"
+          },
+          {
+            "name": "Bing Ads",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Cloudflare DNS",
+            "category": "Domain Name Services"
+          },
+          {
+            "name": "DoubleClick",
+            "category": "Ad Servers"
+          },
+          {
+            "name": "DoubleClick Conversion",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Facebook Custom Audiences",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Facebook Login (Connect)",
+            "category": "Social Login"
+          },
+          {
+            "name": "Facebook Widget",
+            "category": "Widgets"
+          },
+          {
+            "name": "Gmail",
+            "category": "Email Providers"
+          },
+          {
+            "name": "Google Analytics",
+            "category": "Analytics and Tracking"
+          },
+          {
+            "name": "Google Apps",
+            "category": "Other"
+          },
+          {
+            "name": "Google Dynamic Remarketing",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Google Font API",
+            "category": "Fonts"
+          },
+          {
+            "name": "Google Tag Manager",
+            "category": "Tag Management"
+          },
+          {
+            "name": "Hubspot",
+            "category": "Marketing Automation"
+          },
+          {
+            "name": "Linkedin Marketing Solutions",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Mobile Friendly",
+            "category": "Other"
+          },
+          {
+            "name": "Remote",
+            "category": "Other"
+          },
+          {
+            "name": "Twitter Advertising",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Vimeo",
+            "category": "Online Video Platforms"
+          },
+          {
+            "name": "Webflow",
+            "category": "CMS"
+          }
+        ],
+        "industries": [
+          "software development",
+          "lending",
+          "artificial intelligence (ai)",
+          "financial services",
+          "fintech"
+        ],
+        "keywords": [
+          "ai agents for financial services",
+          "ai agents for banks",
+          "ai agents for credit unions",
+          "ai agents for non-bank lenders",
+          "ai agents for equipment finance companies",
+          "ai agents for wealth management firms",
+          "ai agents for private credit companies",
+          "ai agents for fintech",
+          "agentic ai platform for financial services"
+        ],
+        "hashtags": [
+          "wealthmanagement",
+          "ria",
+          "fintech"
+        ],
+        "languages": [
+          "english"
+        ],
+        "sic": [
+          "7371"
+        ],
+        "naics": [
+          "541511",
+          "522310",
+          "522320"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "design"
+        ],
+        "sub_departments": [
+          "product_design"
+        ],
+        "functions": [
+          "arts_and_design"
+        ],
+        "seniority": "mid_level"
+      },
+      "last_updated": "2026-08-22"
+    },
+    {
+      "id": "235dc3fc-e3bb-3192-6212-4c0d827f4b6b",
+      "identifier": "kyle-kneubuhl-211b825b",
+      "profile": {
+        "first_name": "Kyle",
+        "middle_name": null,
+        "last_name": "Kneubuhl",
+        "full_name": "Kyle Kneubuhl",
+        "headline": "Managing Director | Expert in AI-Driven Financial Solutions | Transforming Credit Operations for Financial Institutions",
+        "title": "Managing Director- Credit Union and Banking Solutions",
+        "picture": {
+          "source": "https://images.ai-ark.com/CnKh_QZbuRTj3dW27w0R38aVfsLC-f0fNKvHJbB9yig/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/235dc3fc-e3bb-3192-6212-4c0d827f4b6b.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D5616AQFR0sPGdLyP1g/profile-displaybackgroundimage-shrink_350_1400/B56Zb59j6PHoAY-/0/1747950387260?e=1786579200&v=beta&t=dBBgUEZE_K7hDok_gDlVXeV8J2FGoYFmSBFMrYIfoMI"
+        },
+        "birth_date": null,
+        "summary": "Commercial Lending Relationship Manager for Western United States. Focused in middle market and large corporate companies on C&I lending, commercial mortgage, cash management services, equipment lending and leasing."
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/kyle-kneubuhl-211b825b",
+        "twitter": null,
+        "github": null,
+        "facebook": null
+      },
+      "location": {
+        "default": "Yorba Linda, California, United States, North America",
+        "short": "Yorba Linda, California",
+        "country": "United States",
+        "state": "California",
+        "city": "Yorba Linda",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": null
+      },
+      "industry": "Financial Services",
+      "educations": [
+        {
+          "school": {
+            "id": "63b4b569-2f63-8fb8-2239-963f28c3747c",
+            "name": "Santiago Canyon College",
+            "logo": "https://images.ai-ark.com/EQ58ggAMJLwoj939H3lugUSyTExXweGK-EM6DVOLew8/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/63b4b569-2f63-8fb8-2239-963f28c3747c.jpg",
+            "url": "https://www.linkedin.com/school/santiago-canyon-college"
+          },
+          "degree_name": null,
+          "field_of_study": null,
+          "grade": null,
+          "date": null
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+            "name": "UPTIQ",
+            "logo": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg",
+            "url": "https://www.linkedin.com/company/uptiqai",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2023-05-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "UPTIQ",
+              "description": null,
+              "title": "Managing Director- Credit Union and Banking Solutions",
+              "employment_type": "Full-time",
+              "location": null,
+              "date": {
+                "start": "2025-10-01",
+                "end": null
+              }
+            },
+            {
+              "company": "UPTIQ",
+              "description": null,
+              "title": "SVP, Enterprise & Bank Partnerships",
+              "employment_type": "Full-time",
+              "location": null,
+              "date": {
+                "start": "2024-10-01",
+                "end": null
+              }
+            },
+            {
+              "company": "UPTIQ",
+              "description": "Managing credit team with advisor/ client facing engagement to place capital requests through contracted lending network.",
+              "title": "Senior Vice President- Credit Operations Manager",
+              "employment_type": "Full-time",
+              "location": "Los Angeles Metropolitan Area",
+              "date": {
+                "start": "2023-05-01",
+                "end": "2025-05-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "fc9565fb-736d-d1ae-575c-f8ae25a0e79a",
+            "name": "Focus Financial Partners",
+            "logo": "https://images.ai-ark.com/Kep2ieFk0rcNmaHOT1aTf1h9rhYvvCs3Ej01gwI7fEs/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/fc9565fb-736d-d1ae-575c-f8ae25a0e79a.jpg",
+            "url": "https://www.linkedin.com/company/focus-financial-partners",
+            "employees": {
+              "start": 5001,
+              "end": 10000
+            }
+          },
+          "date": {
+            "start": "2023-03-01",
+            "end": "2024-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Focus Financial Partners",
+              "description": "Commercial Capital Advisory",
+              "title": "Senior Vice President",
+              "employment_type": "Full-time",
+              "location": "Los Angeles, California, United States",
+              "date": {
+                "start": "2023-03-01",
+                "end": "2024-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": null,
+            "name": "WNB Commercial",
+            "logo": null,
+            "url": null
+          },
+          "date": {
+            "start": "2016-10-01",
+            "end": "2024-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "WNB Commercial",
+              "description": null,
+              "title": "Senior Vice President Commercial Relationship Manager",
+              "employment_type": null,
+              "location": "Western United States",
+              "date": {
+                "start": "2016-10-01",
+                "end": "2024-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "2795ff63-e414-1d40-640d-956a3dd7086e",
+            "name": "Boston Private",
+            "logo": "https://images.ai-ark.com/ikLU-L27eyGipAPXBWOQIFctdeG38pCeqR58sM6DtTs/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/2795ff63-e414-1d40-640d-956a3dd7086e.jpg",
+            "url": "https://www.linkedin.com/company/boston-private",
+            "employees": {
+              "start": 501,
+              "end": 1000
+            }
+          },
+          "date": {
+            "start": "2016-05-01",
+            "end": "2017-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Boston Private",
+              "description": "Commercial Lending Relationship Manager for Southern California. Focused on C&I lending, commercial mortgage, cash management services, and equipment lending and  leasing.",
+              "title": "Vice President Commercial Relationship Manager",
+              "employment_type": null,
+              "location": "Southern California",
+              "date": {
+                "start": "2016-05-01",
+                "end": "2017-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "3f6ac1a9-2347-bbea-5b0c-b6c2047bf099",
+            "name": "Preferred Bank",
+            "logo": "https://images.ai-ark.com/2tnhfFahixPpGRwGCoYOfu-w_fWTVq8qxkp0XOQp5q0/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/3f6ac1a9-2347-bbea-5b0c-b6c2047bf099.jpg",
+            "url": "https://www.linkedin.com/company/preferred-bank",
+            "employees": {
+              "start": 201,
+              "end": 500
+            }
+          },
+          "date": {
+            "start": "2015-01-01",
+            "end": "2017-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Preferred Bank",
+              "description": null,
+              "title": "Vice President Relationship Manager",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2015-01-01",
+                "end": "2017-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "05e440f0-1b5f-bbd5-823c-200fc36a1159",
+            "name": "Popular Bank",
+            "logo": "https://images.ai-ark.com/82mw3-282WKy7y2UoXwhUiexP2RiRuLK9OR4uZ9qFOk/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05e440f0-1b5f-bbd5-823c-200fc36a1159.jpg",
+            "url": "https://www.linkedin.com/company/popularbank",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2011-01-01",
+            "end": "2014-12-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Popular Community Bank",
+              "description": "Overview- Develop and manage middle market portfolio. Portfolio includes C & I loans and lines, commercial real estate,construction SBA, equipment, deposits, cash and treasury management.",
+              "title": "Vice President / Commercial Relationship Manager",
+              "employment_type": null,
+              "location": "Southern California",
+              "date": {
+                "start": "2011-01-01",
+                "end": "2014-12-31"
+              }
+            },
+            {
+              "company": "Popular Community Bank",
+              "description": "Overview- Manage business development for 27 branches in Los Angeles, Orange and San Diego Counties. Piloted, developed and implemented Commercial Real estate portfolio in retail branched for North America.  Portfolio includes C & I loans and lines, commercial real estate, deposits, cash and treasury management for each individual branch and California portfolio. Create and manage training workshops, conference calls, action plans, pipeline briefings and customer portfolio management. Developed and integrated CRE loan platform to allow retail branches to process investment and multi-family properties. Serve as settling agent and expert witness on behalf of the bank in all court cases to retrieve defaulted loans.",
+              "title": "Business Banking Specialist",
+              "employment_type": null,
+              "location": "Southern California",
+              "date": {
+                "start": "2011-01-01",
+                "end": "2014-04-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": null,
+            "name": "Union Bank N.A",
+            "logo": null,
+            "url": null
+          },
+          "date": {
+            "start": "2009-01-01",
+            "end": "2011-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Union Bank N.A",
+              "description": "Overview- Acquired and managed high net worth customers spanning across Orange, San Diego and Los Angeles counties. Customer basin consisted of both consumer and large business customers totaling $215 million in deposits. Product management includes all loans and line products including commercial and residential real estate, cash management, treasury services and working with approved third party vendors. Received multiple sales awards and exceeded goals in both quarters by 195%. Managed and mentored 4 employees in the retail branch while also training and developing working relationships with branch mangers throughout the region.",
+              "title": "Priority Banking Officer/ Sales Leader South County",
+              "employment_type": null,
+              "location": "Newport Beach Ca",
+              "date": {
+                "start": "2009-01-01",
+                "end": "2011-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": null,
+            "name": "Wachovia Bank N.A. - Irvine, Ca (Multiple Headquarters)",
+            "logo": null,
+            "url": null
+          },
+          "date": {
+            "start": "2003-01-01",
+            "end": "2008-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Wachovia Bank N.A. - Irvine, Ca (Multiple Headquarters)",
+              "description": "Overview- Acquired and developed new consumer and business relationships in DeNovo offices while in an acquisition market. Have a very strong business banking background. Used different sales activities (telemarketing, canvassing, Centers of Influence, personal book of business, etc) to build working financial base for multiple flagship headquarter offices while keeping customer service score in high-ranking position. Met and exceeded goals in all different categories including deposit units, volume, loans, merchant services, cash management, small business development and commercial loans. Have also been utilized by training and regional Vice Presidents to develop and mentor new hirers and working financial specialist to help with orientation process and best practices within Wachovia on an ongoing basis. \n\u2022 President club Award \n\u2022 Multiple Shared Success Awards \n\u2022 Individual campaign Awards",
+              "title": "Wachovia Bank N.A. - Irvine, Ca (Multiple Headquarters)",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2003-01-01",
+                "end": "2008-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": null,
+            "name": "Wells Fargo Bank N.A",
+            "logo": null,
+            "url": null
+          },
+          "date": {
+            "start": "2001-01-01",
+            "end": "2003-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Wells Fargo Bank N.A",
+              "description": "Overview- Worked as a platform teller doing normal over the counter transactions, wires, holds tax payments and all other types of banking transactions. As a lead, took the daily role of managing the tellers\u2019 schedule, questions and vacation schedule. In addition, I had a large responsibility to audit book and ATM maintenance. As a P.B.1, I actively opened new accounts, mortgages, Lines of Credit, Retirement products and all types of banking products and services. In addition, I managed wealth management with our high dollars customers. Other activities included a direct role with our membership-banking program for external sales.",
+              "title": "Teller/ Lead Teller/ Personal Banker",
+              "employment_type": null,
+              "location": "Villa Park Ca",
+              "date": {
+                "start": "2001-01-01",
+                "end": "2003-01-31"
+              }
+            }
+          ]
+        }
+      ],
+      "skills": [
+        "Small Business Development",
+        "Finance",
+        "Account Management",
+        "Data Analysis",
+        "Analytical Skills",
+        "Financial Analysis",
+        "Business Analysis",
+        "Accounting",
+        "Premium Financing",
+        "Corporate Finance",
+        "Loan Syndications",
+        "Credit Risk Management",
+        "Private Banking",
+        "Underwriting",
+        "Real Estate",
+        "Business Development",
+        "Sales Management",
+        "Mortgage Lending",
+        "Commercial Real Estate",
+        "Asset-Based Lending"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": false,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 1660,
+          "connections_count": 1642
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2023-05-01",
+            "start": "2001-12-02",
+            "title": "2025-10-01"
+          }
+        }
+      },
+      "company": {
+        "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+        "summary": {
+          "name": "UPTIQ",
+          "legal_name": "Cion Digital, Inc.",
+          "description": "Founded by industry veterans, Uptiq is the \ud835\udc22\ud835\udc27\ud835\udc2d\ud835\udc1e\ud835\udc25\ud835\udc25\ud835\udc22\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d \ud835\udc28\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc25\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b \ud835\udc2d\ud835\udc21\ud835\udc1a\ud835\udc2d \ud835\udc2e\ud835\udc27\ud835\udc22\ud835\udc1f\ud835\udc22\ud835\udc1e\ud835\udc2c \ud835\udc20\ud835\udc2b\ud835\udc28\ud835\udc30\ud835\udc2d\ud835\udc21, \ud835\udc28\ud835\udc2b\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc27\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27, \ud835\udc1a\ud835\udc27\ud835\udc1d \ud835\udc1c\ud835\udc28\ud835\udc27\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc2e\ud835\udc28\ud835\udc2e\ud835\udc2c \ud835\udc2c\ud835\udc1e\ud835\udc2b\ud835\udc2f\ud835\udc22\ud835\udc1c\ud835\udc1e \ud835\udc2c\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c\u2014 orchestrating your systems, processes, and teams without replacing what already works.\n\nThis means no replacements, no disruption. Just intelligence layered over your existing systems, giving your people the power to do more with what they already have.\n\nUptiq is everything your financial institution needs to automate decisions, coordinate workflows, and act on intelligence - without replacing a single system you already trust.\n\n\ud835\udc10\ud835\udc0e\ud835\udc11\ud835\udc04: \ud835\udc13\ud835\udc21\ud835\udc1e \ud835\udc0e\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc0b\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b\nCoordinates financial work across systems the way an experienced financial professional would - with governance built in.\n\n\ud835\udc00\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d\ud835\udc2c: \ud835\udc03\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc2d\ud835\udc1a\ud835\udc25 \ud835\udc16\ud835\udc28\ud835\udc2b\ud835\udc24\ud835\udc1e\ud835\udc2b\ud835\udc2c\nAutonomous financial operators that execute complex workflows across systems - with precision, auditability, and human oversight.\n\n\ud835\udc12\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c: \ud835\udc0f\ud835\udc1a\ud835\udc1c\ud835\udc24\ud835\udc1a\ud835\udc20\ud835\udc1e\ud835\udc1d \ud835\udc12\ud835\udc28\ud835\udc25\ud835\udc2e\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27\ud835\udc2c\nPre-configured execution models that deliver measurable outcomes across lending, servicing, risk, and growth.\n\nUptiq is Built Around How Financial Work Actually Gets Done. Our Pre-built operating suites that unlock speed, scale, and governance - without replacing core systems.\n\nTrusted by over 150 financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks, Uptiq is the proven AI partner for highly regulated industries. With over $1 billion in transactions processed and more than $55M in equity funding, Uptiq isn\u2019t just shaping the future of AI in financial services \u2014 it\u2019s leading it.",
+          "overview": "Uptiq is a technology company that provides an AI-driven platform designed to support financial services firms with real-time analytics, risk assessment, and decision-making workflows. The company\u2019s platform uses machine learning to process and interpret large volumes of financial data, identify trends, and generate actionable insights that help teams evaluate credit risk, detect anomalies, and inform portfolio strategies. Its tools support integration with existing data systems and workflows, enabling users to automate data ingestion, modeling, and reporting across lending, investment, and compliance functions.\n\nUptiq also offers customizable dashboards and APIs that help financial analysts, risk officers, and product teams operationalize insights and align them with business objectives. The company works with banks, fintechs, and financial institutions to tailor AI models and analytic frameworks to specific use cases such as credit scoring, customer lifetime value prediction, and loss forecasting. Its platform emphasizes scalable data processing and transparent model outputs to support informed decision-making in financial operations.",
+          "seo": "UPTIQ enables financial advisors to connect their clients to a network of lenders who can fund any liquidity objective, including buying a new home or vacation property, starting a new business, funding working capital for an existing business, financing college tuition and more.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "software development",
+          "staff": {
+            "total": 156,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.uptiq.ai",
+          "domain": "uptiq.ai",
+          "domain_ltd": "uptiq.ai",
+          "linkedin": "https://www.linkedin.com/company/uptiqai",
+          "facebook": "https://www.facebook.com/UPTIQ",
+          "twitter": "https://x.com/uptiq_ai",
+          "crunchbase": "https://www.crunchbase.com/organization/cion-digital"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_B",
+            "total_amount": 69994999,
+            "last_amount": 25000000,
+            "num_investor": 16,
+            "num_funding_rounds": 5,
+            "rounds": [
+              {
+                "announced_at": "2026-02-12",
+                "raised_amount": 25000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "EPIC Ventures",
+                  "LiveOak Ventures",
+                  "645 Ventures",
+                  "Curql",
+                  "Tau Ventures",
+                  "Evolution VC",
+                  "First Capital",
+                  "Green Visor Capital",
+                  "Silverton Partners",
+                  "Broadridge"
+                ]
+              },
+              {
+                "announced_at": "2025-10-25",
+                "raised_amount": 12000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2025-08-06",
+                "type": "CORPORATE_ROUND"
+              },
+              {
+                "announced_at": "2024-10-23",
+                "raised_amount": 20994999,
+                "type": "SERIES_A"
+              },
+              {
+                "announced_at": "2022-01-04",
+                "raised_amount": 12000000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2026-02-12"
+          },
+          "acquisition": {
+            "total": 1,
+            "contents": [
+              {
+                "identifier": {
+                  "id": "upswot",
+                  "name": "upSWOT",
+                  "image": "fc9d67a92bd9468183f7f80a12629bfb"
+                },
+                "role": "acquiree",
+                "announced_at": "2024-12-02"
+              }
+            ]
+          },
+          "aberdeen": {
+            "it_spend": 1264232
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "state": "Texas",
+            "city": "Mckinney",
+            "street": "7300 TX-121",
+            "postal_code": "75070",
+            "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+            "position": {
+              "lng": -97.08263,
+              "lat": 32.7513
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Texas",
+              "city": "Mckinney",
+              "street": "7300 TX-121",
+              "postal_code": "75070",
+              "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+              "position": {
+                "lng": -97.08263,
+                "lat": 32.7513
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "common crawl",
+            "category": "widgets"
+          },
+          {
+            "name": "commoncrawl top 50m",
+            "category": "widgets"
+          },
+          {
+            "name": "hsts",
+            "category": "ssl"
+          },
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "cloudflare cdn",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare",
+            "category": "cdn"
+          },
+          {
+            "name": "organization schema",
+            "category": "framework"
+          },
+          {
+            "name": "cloudflare network error logging",
+            "category": "hosting"
+          },
+          {
+            "name": "person schema",
+            "category": "framework"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "AdRoll",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Amazon AWS",
+            "category": "Hosting"
+          },
+          {
+            "name": "Bing Ads",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Cloudflare DNS",
+            "category": "Domain Name Services"
+          },
+          {
+            "name": "DoubleClick",
+            "category": "Ad Servers"
+          },
+          {
+            "name": "DoubleClick Conversion",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Facebook Custom Audiences",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Facebook Login (Connect)",
+            "category": "Social Login"
+          },
+          {
+            "name": "Facebook Widget",
+            "category": "Widgets"
+          },
+          {
+            "name": "Gmail",
+            "category": "Email Providers"
+          },
+          {
+            "name": "Google Analytics",
+            "category": "Analytics and Tracking"
+          },
+          {
+            "name": "Google Apps",
+            "category": "Other"
+          },
+          {
+            "name": "Google Dynamic Remarketing",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Google Font API",
+            "category": "Fonts"
+          },
+          {
+            "name": "Google Tag Manager",
+            "category": "Tag Management"
+          },
+          {
+            "name": "Hubspot",
+            "category": "Marketing Automation"
+          },
+          {
+            "name": "Linkedin Marketing Solutions",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Mobile Friendly",
+            "category": "Other"
+          },
+          {
+            "name": "Remote",
+            "category": "Other"
+          },
+          {
+            "name": "Twitter Advertising",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Vimeo",
+            "category": "Online Video Platforms"
+          },
+          {
+            "name": "Webflow",
+            "category": "CMS"
+          }
+        ],
+        "industries": [
+          "software development",
+          "lending",
+          "artificial intelligence (ai)",
+          "financial services",
+          "fintech"
+        ],
+        "keywords": [
+          "ai agents for financial services",
+          "ai agents for banks",
+          "ai agents for credit unions",
+          "ai agents for non-bank lenders",
+          "ai agents for equipment finance companies",
+          "ai agents for wealth management firms",
+          "ai agents for private credit companies",
+          "ai agents for fintech",
+          "agentic ai platform for financial services"
+        ],
+        "hashtags": [
+          "wealthmanagement",
+          "ria",
+          "fintech"
+        ],
+        "languages": [
+          "english"
+        ],
+        "sic": [
+          "7371"
+        ],
+        "naics": [
+          "541511",
+          "522310",
+          "522320"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "finance"
+        ],
+        "sub_departments": [
+          "commercial_banking"
+        ],
+        "functions": [
+          "finance"
+        ],
+        "seniority": "c_suite"
+      },
+      "last_updated": "2026-08-22"
+    },
+    {
+      "id": "3e4fc30f-c791-84d7-da4f-42e361319714",
+      "identifier": "joshiatharva",
+      "profile": {
+        "first_name": "Atharva",
+        "middle_name": null,
+        "last_name": "Joshi",
+        "full_name": "Atharva Joshi",
+        "headline": "Senior Software Engineer at UPTIQ | COEP\u201922",
+        "title": "Senior Software Engineer",
+        "picture": {
+          "source": "https://images.ai-ark.com/1Wp17ynVZyCyU6kajFLCksJJecnq-qivt45fXzrQQ1k/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/3e4fc30f-c791-84d7-da4f-42e361319714.jpg"
+        },
+        "background": null,
+        "birth_date": null,
+        "summary": "I am a computer engineer with a bachelor's degree, currently working at UPTIQ to develop the UPTIQ AI Workbench - a powerful platform empowering fintechs to create AI agents tailored for custom and complex use cases.\n\nI have a strong foundation in web technologies, with a primary focus on the MERN stack. My expertise includes TypeScript, C++, and Python, and I am always eager to explore and build innovative solutions that push boundaries.\n\nIn my free time, I enjoy reading books, solving programming challenges, and diving into the fascinating world of algorithms to understand how they work and apply them creatively."
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/joshiatharva",
+        "twitter": null,
+        "github": null,
+        "facebook": null
+      },
+      "location": {
+        "default": "India, Asia",
+        "short": null,
+        "country": "India",
+        "state": null,
+        "city": null,
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": null
+      },
+      "industry": "Financial Services",
+      "educations": [
+        {
+          "school": {
+            "id": "06759feb-d0aa-6353-bc89-00e2e4f9244d",
+            "name": "COEP Technological University",
+            "logo": "https://images.ai-ark.com/JmzQGL3sk6VfeL9bbRpN7H305zfoRdeIGFdezr5SHn0/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/06759feb-d0aa-6353-bc89-00e2e4f9244d.jpg",
+            "url": "https://www.linkedin.com/school/coep-technological-university"
+          },
+          "degree_name": "Bachelor of Technology - BTech",
+          "field_of_study": "Computer Engineering",
+          "grade": "8.63/10",
+          "date": {
+            "start": "2018-01-01",
+            "end": "2022-12-31"
+          }
+        },
+        {
+          "school": {
+            "id": null,
+            "name": "S.B.E.S College of Science, Aurangabad",
+            "logo": null,
+            "url": null
+          },
+          "degree_name": "HSC",
+          "field_of_study": "Science",
+          "grade": "89.69%",
+          "date": {
+            "start": "2016-01-01",
+            "end": "2018-12-31"
+          }
+        },
+        {
+          "school": {
+            "id": null,
+            "name": "S.B. High School Aurangabad",
+            "logo": null,
+            "url": null
+          },
+          "degree_name": "SSC",
+          "field_of_study": "Secondary education",
+          "grade": "97.8%",
+          "date": {
+            "start": "2012-01-01",
+            "end": "2016-12-31"
+          }
+        }
+      ],
+      "awards": [
+        {
+          "title": "SPCE Hackaverse Winner",
+          "description": "Built an application for the analysis and sharing health information of patients across various hospital and provide good health opportunities to the patient\n\nLink: https://github.com/atharvajoshi27/Croton_bvbspce",
+          "issuer": "Sardar Patel College of Engineering (SPCE)",
+          "date": "2022-03-01"
+        }
+      ],
+      "certifications": [
+        {
+          "name": "Machine Learning",
+          "authority": "Coursera",
+          "url": "https://www.coursera.org/account/accomplishments/records/8RRGWRC3E5W4",
+          "license_number": "FQCDF4GGJ8TG",
+          "display_source": "coursera.org",
+          "company": {
+            "id": "df9819dd-500f-9c53-5ce0-0fe869f9f876",
+            "name": "Coursera",
+            "logo": "https://images.ai-ark.com/vQooLw6sRrUPraxr8gIJyr_Y0NGj2VD71YhE8WwhHoM/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/df9819dd-500f-9c53-5ce0-0fe869f9f876.jpg",
+            "url": "https://www.linkedin.com/company/coursera"
+          },
+          "date": {
+            "start": "2020-01-01",
+            "end": null
+          }
+        }
+      ],
+      "projects": [
+        {
+          "title": "Go Guide",
+          "description": "Built a web application to connect tourists with local guides using Django Web Framework\n\nIt includes functionalities for two different users; the guides can write blogs, update their location information and receive bookings, whereas tourists can read blogs, make bookings, view maps and location information and review guides.",
+          "date": {
+            "start": "2021-01-01",
+            "end": "2021-05-31"
+          },
+          "contributors": [
+            {
+              "profile_id": "joshiatharva",
+              "type": "StandardizedContributor",
+              "first_name": "Atharva",
+              "last_name": "Joshi",
+              "sub_title": "Senior Software Engineer at UPTIQ | COEP\u201922",
+              "headline": "Senior Software Engineer at UPTIQ | COEP\u201922",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D4D03AQGijoJ0ZUv4GA/profile-displayphoto-shrink_800_800/B4DZQwjYqaHwAc-/0/1735981373185?e=1786579200&v=beta&t=gtiIlqdpVnZ5R8xAI_ZovH7992ZUz0q0IU8qI-PqEhY"
+            },
+            {
+              "profile_id": "mohitbaviskar",
+              "type": "StandardizedContributor",
+              "first_name": "MOHIT",
+              "last_name": "BAVISKAR",
+              "sub_title": "Lead Software Engineer @ Persistent Systems | COEP `22",
+              "headline": "Lead Software Engineer @ Persistent Systems | COEP `22",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D4D03AQGoEZmP5kcobg/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1729745489526?e=1786579200&v=beta&t=t7Vmv5jrtu2prn0tTV6X-otrSQiTWpZQLmU8cV36aVE"
+            }
+          ]
+        },
+        {
+          "title": "ext2 in xv6",
+          "description": "xv6 is a modern re-implementation of Sixth Edition Unix in ANSI C for multiprocessor x86 and RISC-V systems\n\nImplemented the ext2 file system on xv6 operating system, including drivers and syscalls using C.",
+          "date": {
+            "start": "2021-01-01",
+            "end": "2021-05-31"
+          },
+          "contributors": [
+            {
+              "profile_id": "joshiatharva",
+              "type": "StandardizedContributor",
+              "first_name": "Atharva",
+              "last_name": "Joshi",
+              "sub_title": "Senior Software Engineer at UPTIQ | COEP\u201922",
+              "headline": "Senior Software Engineer at UPTIQ | COEP\u201922",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D4D03AQGijoJ0ZUv4GA/profile-displayphoto-shrink_800_800/B4DZQwjYqaHwAc-/0/1735981373185?e=1786579200&v=beta&t=gtiIlqdpVnZ5R8xAI_ZovH7992ZUz0q0IU8qI-PqEhY"
+            }
+          ]
+        },
+        {
+          "title": "HTTP-Server",
+          "description": "Implemented HTTP 1.1 protocol using socket programming and multi- threading in Python\n\nThe web server can serve GET, POST, PUT, HEAD and DELETE requests along with the features such as maintaining cookies and logging.",
+          "date": {
+            "start": "2020-10-01",
+            "end": "2020-12-31"
+          },
+          "contributors": [
+            {
+              "profile_id": "joshiatharva",
+              "type": "StandardizedContributor",
+              "first_name": "Atharva",
+              "last_name": "Joshi",
+              "sub_title": "Senior Software Engineer at UPTIQ | COEP\u201922",
+              "headline": "Senior Software Engineer at UPTIQ | COEP\u201922",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D4D03AQGijoJ0ZUv4GA/profile-displayphoto-shrink_800_800/B4DZQwjYqaHwAc-/0/1735981373185?e=1786579200&v=beta&t=gtiIlqdpVnZ5R8xAI_ZovH7992ZUz0q0IU8qI-PqEhY"
+            }
+          ]
+        },
+        {
+          "title": "diff",
+          "description": "diff is a data comparison tool that computes and displays the differences between the contents of files \n\nImplemented diff command based on Unix operating system using Doubly Linked List and Longest Common Subsequence on files",
+          "date": {
+            "start": "2019-11-01",
+            "end": "2019-12-31"
+          },
+          "contributors": [
+            {
+              "profile_id": "joshiatharva",
+              "type": "StandardizedContributor",
+              "first_name": "Atharva",
+              "last_name": "Joshi",
+              "sub_title": "Senior Software Engineer at UPTIQ | COEP\u201922",
+              "headline": "Senior Software Engineer at UPTIQ | COEP\u201922",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/D4D03AQGijoJ0ZUv4GA/profile-displayphoto-shrink_800_800/B4DZQwjYqaHwAc-/0/1735981373185?e=1786579200&v=beta&t=gtiIlqdpVnZ5R8xAI_ZovH7992ZUz0q0IU8qI-PqEhY"
+            }
+          ]
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+            "name": "UPTIQ",
+            "logo": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg",
+            "url": "https://www.linkedin.com/company/uptiqai",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2022-06-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "UPTIQ",
+              "description": null,
+              "title": "Senior Software Engineer",
+              "employment_type": "Full-time",
+              "location": "Pune, Maharashtra, India",
+              "date": {
+                "start": "2025-09-01",
+                "end": null
+              }
+            },
+            {
+              "company": "UPTIQ",
+              "description": null,
+              "title": "Software Development Engineer",
+              "employment_type": "Full-time",
+              "location": "Pune, Maharashtra, India",
+              "date": {
+                "start": "2022-06-01",
+                "end": "2025-09-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "59143e45-c0b9-b3f4-9a93-b59955973fac",
+            "name": "COEP's Data Science Artificial Intelligence Club",
+            "logo": "https://images.ai-ark.com/Dr8eSWcsA63KGzOjLJOJFJ__5N7ncFBB8rwb8wljMT4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/59143e45-c0b9-b3f4-9a93-b59955973fac.jpg",
+            "url": "https://www.linkedin.com/company/dsaicoep",
+            "employees": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "date": {
+            "start": "2020-03-01",
+            "end": "2022-05-31"
+          },
+          "profile_positions": [
+            {
+              "company": "COEP's Data Science Artificial Intelligence Club",
+              "description": null,
+              "title": "Team member",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2020-03-01",
+                "end": "2022-05-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "3a521abc-afdc-988d-a0d5-6aff173f5b12",
+            "name": "ASCI, COEP",
+            "logo": "https://images.ai-ark.com/VVwUCTot1EfkkbLE1rfT7Pcpztye0yv4nbC4FzmOOWs/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/3a521abc-afdc-988d-a0d5-6aff173f5b12.jpg",
+            "url": "https://www.linkedin.com/company/coepasci",
+            "employees": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "date": {
+            "start": "2019-10-01",
+            "end": "2022-05-31"
+          },
+          "profile_positions": [
+            {
+              "company": "ASCI, COEP",
+              "description": null,
+              "title": "Team member",
+              "employment_type": null,
+              "location": "Pune Area, India",
+              "date": {
+                "start": "2019-10-01",
+                "end": "2022-05-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "3e0b40d4-113c-e7d1-61be-14392664e61f",
+            "name": "COEP Hyperloop",
+            "logo": "https://images.ai-ark.com/bP3BrFJt1z0OurRo_Mr4t8bgw5TpSRlKSHquu1FGito/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/3e0b40d4-113c-e7d1-61be-14392664e61f.jpg",
+            "url": "https://www.linkedin.com/company/coep-hyperloop",
+            "employees": {
+              "start": 11,
+              "end": 50
+            }
+          },
+          "date": {
+            "start": "2019-04-01",
+            "end": "2022-05-31"
+          },
+          "profile_positions": [
+            {
+              "company": "COEP Hyperloop",
+              "description": null,
+              "title": "Team member of navigation subsystem",
+              "employment_type": null,
+              "location": "India",
+              "date": {
+                "start": "2019-04-01",
+                "end": "2022-05-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "63a85529-6fd6-47e8-ea32-497816386ad0",
+            "name": "eQ Technologic",
+            "logo": "https://images.ai-ark.com/3-XxbA2PogUiX8NnPZITXB8clEKid4BdyChwGAgu5a4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/63a85529-6fd6-47e8-ea32-497816386ad0.jpg",
+            "url": "https://www.linkedin.com/company/eq-technologic",
+            "employees": {
+              "start": 501,
+              "end": 1000
+            }
+          },
+          "date": {
+            "start": "2021-06-01",
+            "end": "2021-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "eQ Technologic",
+              "description": "Implemented concurrent logging using ZeroMQ pub/sub model in Python multiprocessing environment. Also, worked on text clustering based on semantic and syntactic similarity involving two different datasets. Implemented two working models based on the results of algorithms like K- means, Affinity Propagation, DBSCAN and HDBCAN",
+              "title": "Intern",
+              "employment_type": "Internship",
+              "location": "Pune, Maharashtra, India",
+              "date": {
+                "start": "2021-06-01",
+                "end": "2021-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "101c4d0e-1101-d054-e482-97da4a6930fd",
+            "name": "COEP Impressions",
+            "logo": "https://images.ai-ark.com/OzB2H7X1qMXA42_wZLmtMXoAa7cEd0EiZr8kFD0XeW0/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/101c4d0e-1101-d054-e482-97da4a6930fd.jpg",
+            "url": "https://www.linkedin.com/company/impressions-coep",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2019-09-01",
+            "end": "2019-10-31"
+          },
+          "profile_positions": [
+            {
+              "company": "COEP Impressions",
+              "description": "Production and Infrastructure Co-ordinator",
+              "title": "Co-ordinator",
+              "employment_type": null,
+              "location": null,
+              "date": {
+                "start": "2019-09-01",
+                "end": "2019-10-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "18ddf820-fd57-e78c-d485-d76fe2c30d3d",
+            "name": "CoEP Regatta",
+            "logo": "https://images.ai-ark.com/9rJfR52uynuLO6UZyWhQq2GAD0GP36YEFkhKH3FcgB0/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/18ddf820-fd57-e78c-d485-d76fe2c30d3d.jpg",
+            "url": "https://www.linkedin.com/company/coepregatta",
+            "employees": {
+              "start": 201,
+              "end": 500
+            }
+          },
+          "date": {
+            "start": "2019-01-01",
+            "end": "2019-05-31"
+          },
+          "profile_positions": [
+            {
+              "company": "CoEP Regatta",
+              "description": null,
+              "title": "Participant of Telematches",
+              "employment_type": null,
+              "location": "Pune, Maharashtra, India",
+              "date": {
+                "start": "2019-01-01",
+                "end": "2019-05-31"
+              }
+            }
+          ]
+        }
+      ],
+      "skills": [
+        "Model Context Protocol (MCP)",
+        "Large Language Models (LLM)",
+        "Generative AI",
+        "LangChain",
+        "Node.js",
+        "TypeScript",
+        "React.js",
+        "C++",
+        "MongoDB",
+        "Express.js",
+        "JSON-RPC",
+        "Socket.io",
+        "Docker",
+        "Google Cloud Platform (GCP)",
+        "Amazon Web Services (AWS)",
+        "REST APIs",
+        "Tailwind CSS",
+        "Physics",
+        "Mathematics",
+        "Electronics"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": false,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 2568,
+          "connections_count": 2553
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2022-06-01",
+            "start": "2019-01-01",
+            "title": "2025-09-01"
+          }
+        }
+      },
+      "company": {
+        "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+        "summary": {
+          "name": "UPTIQ",
+          "legal_name": "Cion Digital, Inc.",
+          "description": "Founded by industry veterans, Uptiq is the \ud835\udc22\ud835\udc27\ud835\udc2d\ud835\udc1e\ud835\udc25\ud835\udc25\ud835\udc22\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d \ud835\udc28\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc25\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b \ud835\udc2d\ud835\udc21\ud835\udc1a\ud835\udc2d \ud835\udc2e\ud835\udc27\ud835\udc22\ud835\udc1f\ud835\udc22\ud835\udc1e\ud835\udc2c \ud835\udc20\ud835\udc2b\ud835\udc28\ud835\udc30\ud835\udc2d\ud835\udc21, \ud835\udc28\ud835\udc2b\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc27\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27, \ud835\udc1a\ud835\udc27\ud835\udc1d \ud835\udc1c\ud835\udc28\ud835\udc27\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc2e\ud835\udc28\ud835\udc2e\ud835\udc2c \ud835\udc2c\ud835\udc1e\ud835\udc2b\ud835\udc2f\ud835\udc22\ud835\udc1c\ud835\udc1e \ud835\udc2c\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c\u2014 orchestrating your systems, processes, and teams without replacing what already works.\n\nThis means no replacements, no disruption. Just intelligence layered over your existing systems, giving your people the power to do more with what they already have.\n\nUptiq is everything your financial institution needs to automate decisions, coordinate workflows, and act on intelligence - without replacing a single system you already trust.\n\n\ud835\udc10\ud835\udc0e\ud835\udc11\ud835\udc04: \ud835\udc13\ud835\udc21\ud835\udc1e \ud835\udc0e\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc0b\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b\nCoordinates financial work across systems the way an experienced financial professional would - with governance built in.\n\n\ud835\udc00\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d\ud835\udc2c: \ud835\udc03\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc2d\ud835\udc1a\ud835\udc25 \ud835\udc16\ud835\udc28\ud835\udc2b\ud835\udc24\ud835\udc1e\ud835\udc2b\ud835\udc2c\nAutonomous financial operators that execute complex workflows across systems - with precision, auditability, and human oversight.\n\n\ud835\udc12\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c: \ud835\udc0f\ud835\udc1a\ud835\udc1c\ud835\udc24\ud835\udc1a\ud835\udc20\ud835\udc1e\ud835\udc1d \ud835\udc12\ud835\udc28\ud835\udc25\ud835\udc2e\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27\ud835\udc2c\nPre-configured execution models that deliver measurable outcomes across lending, servicing, risk, and growth.\n\nUptiq is Built Around How Financial Work Actually Gets Done. Our Pre-built operating suites that unlock speed, scale, and governance - without replacing core systems.\n\nTrusted by over 150 financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks, Uptiq is the proven AI partner for highly regulated industries. With over $1 billion in transactions processed and more than $55M in equity funding, Uptiq isn\u2019t just shaping the future of AI in financial services \u2014 it\u2019s leading it.",
+          "overview": "Uptiq is a technology company that provides an AI-driven platform designed to support financial services firms with real-time analytics, risk assessment, and decision-making workflows. The company\u2019s platform uses machine learning to process and interpret large volumes of financial data, identify trends, and generate actionable insights that help teams evaluate credit risk, detect anomalies, and inform portfolio strategies. Its tools support integration with existing data systems and workflows, enabling users to automate data ingestion, modeling, and reporting across lending, investment, and compliance functions.\n\nUptiq also offers customizable dashboards and APIs that help financial analysts, risk officers, and product teams operationalize insights and align them with business objectives. The company works with banks, fintechs, and financial institutions to tailor AI models and analytic frameworks to specific use cases such as credit scoring, customer lifetime value prediction, and loss forecasting. Its platform emphasizes scalable data processing and transparent model outputs to support informed decision-making in financial operations.",
+          "seo": "UPTIQ enables financial advisors to connect their clients to a network of lenders who can fund any liquidity objective, including buying a new home or vacation property, starting a new business, funding working capital for an existing business, financing college tuition and more.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "software development",
+          "staff": {
+            "total": 156,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.uptiq.ai",
+          "domain": "uptiq.ai",
+          "domain_ltd": "uptiq.ai",
+          "linkedin": "https://www.linkedin.com/company/uptiqai",
+          "facebook": "https://www.facebook.com/UPTIQ",
+          "twitter": "https://x.com/uptiq_ai",
+          "crunchbase": "https://www.crunchbase.com/organization/cion-digital"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_B",
+            "total_amount": 69994999,
+            "last_amount": 25000000,
+            "num_investor": 16,
+            "num_funding_rounds": 5,
+            "rounds": [
+              {
+                "announced_at": "2026-02-12",
+                "raised_amount": 25000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "EPIC Ventures",
+                  "LiveOak Ventures",
+                  "645 Ventures",
+                  "Curql",
+                  "Tau Ventures",
+                  "Evolution VC",
+                  "First Capital",
+                  "Green Visor Capital",
+                  "Silverton Partners",
+                  "Broadridge"
+                ]
+              },
+              {
+                "announced_at": "2025-10-25",
+                "raised_amount": 12000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2025-08-06",
+                "type": "CORPORATE_ROUND"
+              },
+              {
+                "announced_at": "2024-10-23",
+                "raised_amount": 20994999,
+                "type": "SERIES_A"
+              },
+              {
+                "announced_at": "2022-01-04",
+                "raised_amount": 12000000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2026-02-12"
+          },
+          "acquisition": {
+            "total": 1,
+            "contents": [
+              {
+                "identifier": {
+                  "id": "upswot",
+                  "name": "upSWOT",
+                  "image": "fc9d67a92bd9468183f7f80a12629bfb"
+                },
+                "role": "acquiree",
+                "announced_at": "2024-12-02"
+              }
+            ]
+          },
+          "aberdeen": {
+            "it_spend": 1264232
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "state": "Texas",
+            "city": "Mckinney",
+            "street": "7300 TX-121",
+            "postal_code": "75070",
+            "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+            "position": {
+              "lng": -97.08263,
+              "lat": 32.7513
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Texas",
+              "city": "Mckinney",
+              "street": "7300 TX-121",
+              "postal_code": "75070",
+              "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+              "position": {
+                "lng": -97.08263,
+                "lat": 32.7513
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "common crawl",
+            "category": "widgets"
+          },
+          {
+            "name": "commoncrawl top 50m",
+            "category": "widgets"
+          },
+          {
+            "name": "hsts",
+            "category": "ssl"
+          },
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "cloudflare cdn",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare",
+            "category": "cdn"
+          },
+          {
+            "name": "organization schema",
+            "category": "framework"
+          },
+          {
+            "name": "cloudflare network error logging",
+            "category": "hosting"
+          },
+          {
+            "name": "person schema",
+            "category": "framework"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "AdRoll",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Amazon AWS",
+            "category": "Hosting"
+          },
+          {
+            "name": "Bing Ads",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Cloudflare DNS",
+            "category": "Domain Name Services"
+          },
+          {
+            "name": "DoubleClick",
+            "category": "Ad Servers"
+          },
+          {
+            "name": "DoubleClick Conversion",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Facebook Custom Audiences",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Facebook Login (Connect)",
+            "category": "Social Login"
+          },
+          {
+            "name": "Facebook Widget",
+            "category": "Widgets"
+          },
+          {
+            "name": "Gmail",
+            "category": "Email Providers"
+          },
+          {
+            "name": "Google Analytics",
+            "category": "Analytics and Tracking"
+          },
+          {
+            "name": "Google Apps",
+            "category": "Other"
+          },
+          {
+            "name": "Google Dynamic Remarketing",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Google Font API",
+            "category": "Fonts"
+          },
+          {
+            "name": "Google Tag Manager",
+            "category": "Tag Management"
+          },
+          {
+            "name": "Hubspot",
+            "category": "Marketing Automation"
+          },
+          {
+            "name": "Linkedin Marketing Solutions",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Mobile Friendly",
+            "category": "Other"
+          },
+          {
+            "name": "Remote",
+            "category": "Other"
+          },
+          {
+            "name": "Twitter Advertising",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Vimeo",
+            "category": "Online Video Platforms"
+          },
+          {
+            "name": "Webflow",
+            "category": "CMS"
+          }
+        ],
+        "industries": [
+          "software development",
+          "lending",
+          "artificial intelligence (ai)",
+          "financial services",
+          "fintech"
+        ],
+        "keywords": [
+          "ai agents for financial services",
+          "ai agents for banks",
+          "ai agents for credit unions",
+          "ai agents for non-bank lenders",
+          "ai agents for equipment finance companies",
+          "ai agents for wealth management firms",
+          "ai agents for private credit companies",
+          "ai agents for fintech",
+          "agentic ai platform for financial services"
+        ],
+        "hashtags": [
+          "wealthmanagement",
+          "ria",
+          "fintech"
+        ],
+        "languages": [
+          "english"
+        ],
+        "sic": [
+          "7371"
+        ],
+        "naics": [
+          "541511",
+          "522310",
+          "522320"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "engineering_technical"
+        ],
+        "sub_departments": [
+          "software_development"
+        ],
+        "functions": [
+          "engineering"
+        ],
+        "seniority": "senior"
+      },
+      "last_updated": "2026-08-22"
+    },
+    {
+      "id": "3fbcd6e7-fce5-5341-8e79-115186b43c7c",
+      "identifier": "craig-mckeon",
+      "profile": {
+        "first_name": "Craig",
+        "middle_name": null,
+        "last_name": "McKeon",
+        "full_name": "Craig McKeon",
+        "headline": "AI Marketing Leader | Fintech + B2B AI | Driving GTM Strategy & Growth @ Uptiq",
+        "title": "VP, GTM Strategy",
+        "picture": {
+          "source": "https://images.ai-ark.com/YFvUZUG82czveqbvNhoUXI1XWU1fgbXc3uLxI7_J5KE/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/3fbcd6e7-fce5-5341-8e79-115186b43c7c.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D4E16AQF__CygjXHRHw/profile-displaybackgroundimage-shrink_350_1400/B4EZ677JraIcAU-/0/1781269306834?e=1786579200&v=beta&t=ik5eeCUsf96_DN2OZLuPGovW9KgLgVyhKYkqzKbHvlw"
+        },
+        "birth_date": "1600-05-03",
+        "summary": "With 15 years in Financial Services and FinTech B2B SaaS, I specialize in driving go-to-market strategy, cross-functional alignment, and revenue growth. My superpowers include translating technical capabilities into compelling narratives, orchestrating full-funnel marketing strategies, and championing product-led growth. I bring a passion for customer-centric innovation, deep cross-functional collaboration, and actionable storytelling.\ud83c\udfaf Core strengths: GTM strategy, AI/ML product positioning, market expansion, sales enablement,  growth marketing\ud83c\udfc5 Certified: Pragmatic Product Marketing, Product Management &amp; AI Expert"
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/craig-mckeon",
+        "twitter": "https://x.com/othercraig",
+        "github": null,
+        "facebook": null
+      },
+      "location": {
+        "default": "Boston, Massachusetts, United States, North America",
+        "short": "Boston, Massachusetts",
+        "country": "United States",
+        "state": "Massachusetts",
+        "city": "Boston",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": null
+      },
+      "industry": "Financial Services",
+      "educations": [
+        {
+          "school": {
+            "id": "403e8c72-eeb9-2bcb-550b-1e64c40579ca",
+            "name": "Champlain College",
+            "logo": "https://images.ai-ark.com/dX6KcbPG6Z4XL-wT891OVeyTLwmTgIL-1fgvMy7Zt3k/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/403e8c72-eeb9-2bcb-550b-1e64c40579ca.jpg",
+            "url": "https://www.linkedin.com/school/champlainedu"
+          },
+          "degree_name": "Bachelor of Science - BS",
+          "field_of_study": null,
+          "grade": null,
+          "date": {
+            "start": "2007-01-01",
+            "end": "2011-12-31"
+          }
+        }
+      ],
+      "certifications": [
+        {
+          "name": "Advanced AI Techniques for Product Marketing",
+          "authority": "Pragmatic Institute",
+          "url": "https://www.credly.com/badges/199dc2d0-c2b3-40c0-a702-188339559fc6/linked_in_profile",
+          "license_number": null,
+          "display_source": "credly.com",
+          "company": {
+            "id": "f02aaf62-bd14-5edc-a267-0897313ac7f5",
+            "name": "Pragmatic Institute",
+            "logo": "https://images.ai-ark.com/no6iymZzkpxmrFPwiN8x87_CB5_i-SlRAD4-j0AfP5k/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f02aaf62-bd14-5edc-a267-0897313ac7f5.jpg",
+            "url": "https://www.linkedin.com/company/pragmatic-marketing"
+          },
+          "date": {
+            "start": "2025-04-01",
+            "end": null
+          }
+        },
+        {
+          "name": "Pragmatic Certified AI Product Expert",
+          "authority": "Pragmatic Institute",
+          "url": "https://www.credly.com/badges/a1675cab-14a0-41ab-824f-aef2546bc547/linked_in_profile",
+          "license_number": null,
+          "display_source": "credly.com",
+          "company": {
+            "id": "f02aaf62-bd14-5edc-a267-0897313ac7f5",
+            "name": "Pragmatic Institute",
+            "logo": "https://images.ai-ark.com/no6iymZzkpxmrFPwiN8x87_CB5_i-SlRAD4-j0AfP5k/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f02aaf62-bd14-5edc-a267-0897313ac7f5.jpg",
+            "url": "https://www.linkedin.com/company/pragmatic-marketing"
+          },
+          "date": {
+            "start": "2025-04-01",
+            "end": null
+          }
+        },
+        {
+          "name": "AI Training for Product Professionals",
+          "authority": "Pragmatic Institute",
+          "url": "https://www.credly.com/badges/000c275a-00f5-4571-95c9-5f4e037f0dcf/linked_in_profile",
+          "license_number": null,
+          "display_source": "credly.com",
+          "company": {
+            "id": "f02aaf62-bd14-5edc-a267-0897313ac7f5",
+            "name": "Pragmatic Institute",
+            "logo": "https://images.ai-ark.com/no6iymZzkpxmrFPwiN8x87_CB5_i-SlRAD4-j0AfP5k/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f02aaf62-bd14-5edc-a267-0897313ac7f5.jpg",
+            "url": "https://www.linkedin.com/company/pragmatic-marketing"
+          },
+          "date": {
+            "start": "2025-01-01",
+            "end": null
+          }
+        },
+        {
+          "name": "Marketing Leadership Accelerator",
+          "authority": "Exit Five",
+          "url": "https://credsverse.com/credentials/c790b694-a614-4813-a45b-df1cfd0d5bb7",
+          "license_number": "c790b694-a614-4813-a45b-df1cfd0d5bb7",
+          "display_source": "credsverse.com",
+          "company": {
+            "id": "abd0b783-64da-6837-8a03-2d4b879eb28e",
+            "name": "Exit Five",
+            "logo": "https://images.ai-ark.com/38Ayc4HDPL8L3akxo5ZLybVA4JOpw8TlLFPSFFSRMoc/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/abd0b783-64da-6837-8a03-2d4b879eb28e.jpg",
+            "url": "https://www.linkedin.com/company/exitfive"
+          },
+          "date": {
+            "start": "2024-12-01",
+            "end": null
+          }
+        },
+        {
+          "name": "Pragmatic Certified Product Master",
+          "authority": "Pragmatic Institute",
+          "url": "https://www.credly.com/badges/65e729f2-31c2-45c9-8681-1e1797bf3bad/linked_in_profile",
+          "license_number": null,
+          "display_source": "credly.com",
+          "company": {
+            "id": "f02aaf62-bd14-5edc-a267-0897313ac7f5",
+            "name": "Pragmatic Institute",
+            "logo": "https://images.ai-ark.com/no6iymZzkpxmrFPwiN8x87_CB5_i-SlRAD4-j0AfP5k/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f02aaf62-bd14-5edc-a267-0897313ac7f5.jpg",
+            "url": "https://www.linkedin.com/company/pragmatic-marketing"
+          },
+          "date": {
+            "start": "2023-11-01",
+            "end": null
+          }
+        },
+        {
+          "name": "Pragmatic Certified Product Marketer",
+          "authority": "Pragmatic Institute",
+          "url": "https://www.credly.com/badges/cbb7c986-775e-419d-b507-b94252a1748a?source=linked_in_profile",
+          "license_number": null,
+          "display_source": "credly.com",
+          "company": {
+            "id": "f02aaf62-bd14-5edc-a267-0897313ac7f5",
+            "name": "Pragmatic Institute",
+            "logo": "https://images.ai-ark.com/no6iymZzkpxmrFPwiN8x87_CB5_i-SlRAD4-j0AfP5k/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f02aaf62-bd14-5edc-a267-0897313ac7f5.jpg",
+            "url": "https://www.linkedin.com/company/pragmatic-marketing"
+          },
+          "date": {
+            "start": "2022-02-01",
+            "end": null
+          }
+        },
+        {
+          "name": "Pragmatic Certified Product Manager",
+          "authority": "Pragmatic Institute",
+          "url": "https://www.credly.com/badges/12d9547b-3683-4789-bd21-3fd0ac660153?source=linked_in_profile",
+          "license_number": null,
+          "display_source": "credly.com",
+          "company": {
+            "id": "f02aaf62-bd14-5edc-a267-0897313ac7f5",
+            "name": "Pragmatic Institute",
+            "logo": "https://images.ai-ark.com/no6iymZzkpxmrFPwiN8x87_CB5_i-SlRAD4-j0AfP5k/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f02aaf62-bd14-5edc-a267-0897313ac7f5.jpg",
+            "url": "https://www.linkedin.com/company/pragmatic-marketing"
+          },
+          "date": {
+            "start": "2021-12-01",
+            "end": null
+          }
+        },
+        {
+          "name": "Advanced Product Marketing",
+          "authority": "LinkedIn",
+          "url": "https://www.linkedin.com/learning/certificates/a0176b7109380b8388816588a7a6b61db19ac671b4bd175af61a754b9e5eab83?trk=backfilled_certificate",
+          "license_number": null,
+          "display_source": "linkedin.com",
+          "company": {
+            "id": "60ecc6ff-f76b-b973-25ad-8528412a323b",
+            "name": "LinkedIn",
+            "logo": "https://images.ai-ark.com/icvyVa3BaD2Afb06VHJOakNGuBNuyYAEGiSerJI4RQU/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/60ecc6ff-f76b-b973-25ad-8528412a323b.jpg",
+            "url": "https://www.linkedin.com/company/linkedin"
+          },
+          "date": {
+            "start": "2021-10-01",
+            "end": null
+          }
+        },
+        {
+          "name": "Account-Based Experience (ABX) Certification",
+          "authority": "Demandbase",
+          "url": "https://verify.skilljar.com/c/9f5nh87gw2pw",
+          "license_number": "9f5nh87gw2pw",
+          "display_source": "skilljar.com",
+          "company": {
+            "id": "d3aa5aad-4688-53fb-4d32-ffdfba02a100",
+            "name": "Demandbase",
+            "logo": "https://images.ai-ark.com/NMMkZ6XaL1QREB9Kg_kUVNOK7f6vjr2FJkEyIr2JC7o/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/d3aa5aad-4688-53fb-4d32-ffdfba02a100.jpg",
+            "url": "https://www.linkedin.com/company/demandbase"
+          },
+          "date": null
+        },
+        {
+          "name": "Saleforce Certified Associate",
+          "authority": "Salesforce",
+          "url": "https://trailhead.salesforce.com/en/credentials/certification-detail-print/?searchString=esTm8AU/V59IDObdTJHCuLFuXmW9nchfyX1SDLChEpt1mXQOhvFzUV6Guky5TON0",
+          "license_number": "2953428",
+          "display_source": "salesforce.com",
+          "company": {
+            "id": "c24ee942-1554-50df-b308-874cfb24da86",
+            "name": "Salesforce",
+            "logo": "https://images.ai-ark.com/ocBSGBNFEoU2KvxuDW29gflzgkuuUdY5cdbZmKpQAgw/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/c24ee942-1554-50df-b308-874cfb24da86.jpg",
+            "url": "https://www.linkedin.com/company/salesforce"
+          },
+          "date": null
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+            "name": "UPTIQ",
+            "logo": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg",
+            "url": "https://www.linkedin.com/company/uptiqai",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2026-04-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "UPTIQ",
+              "description": null,
+              "title": "VP, GTM Strategy",
+              "employment_type": "Full-time",
+              "location": null,
+              "date": {
+                "start": "2026-04-01",
+                "end": null
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "5e1324fe-b879-8aae-c81e-04afb08610d4",
+            "name": "Ocrolus",
+            "logo": "https://images.ai-ark.com/ZJWBYHqwuows2KdUfeOswRPH68idcvWhd8-9Esa4eeM/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/5e1324fe-b879-8aae-c81e-04afb08610d4.jpg",
+            "url": "https://www.linkedin.com/company/ocrolus",
+            "employees": {
+              "start": 201,
+              "end": 500
+            }
+          },
+          "date": {
+            "start": "2023-05-01",
+            "end": "2026-04-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Ocrolus",
+              "description": "Lead product marketing for AI-driven lending solutions across mortgage, consumer, and small business verticals, shaping how the company defines, positions, and scales emerging categories within financial services.\n\n\u2022 Own end-to-end go-to-market strategy across multiple product lines, translating complex AI capabilities into clear, differentiated market narratives that drive adoption and revenue growth\n\u2022 Partner cross-functionally with Product, Revenue, and Executive leadership to align roadmap, positioning, and commercialization strategy across vertical solutions\n\u2022 Define category and messaging frameworks that elevate Ocrolus beyond point solutions toward a unified AI platform narrative\n\u2022 Drive launch strategy and execution for new products and capabilities, improving speed-to-market and sales readiness across enterprise and mid-market segments\n\u2022 Lead development of core messaging, sales enablement, and content strategy to support complex, consultative sales cycles in financial services",
+              "title": "Director of Product Marketing",
+              "employment_type": "Full-time",
+              "location": "New York, NY",
+              "date": {
+                "start": "2024-05-01",
+                "end": "2026-04-30"
+              }
+            },
+            {
+              "company": "Ocrolus",
+              "description": "Promoted to Director after leading product marketing for key lending workflows and establishing foundational GTM and positioning strategy across core product lines.",
+              "title": "Senior Product Marketing Manager",
+              "employment_type": "Full-time",
+              "location": "New York, NY",
+              "date": {
+                "start": "2023-05-01",
+                "end": "2024-04-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "ac043116-31c7-6761-c218-d71b464695b9",
+            "name": "nCino",
+            "logo": "https://images.ai-ark.com/Ukfd3tKOK5P5nG_0Azn_1A5YDkSG-Wc19x1Bu9p9hAI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/ac043116-31c7-6761-c218-d71b464695b9.jpg",
+            "url": "https://www.linkedin.com/company/ncino-inc-",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2020-06-01",
+            "end": "2023-05-31"
+          },
+          "profile_positions": [
+            {
+              "company": "nCino, Inc.",
+              "description": "Led global product marketing across consumer banking, small business, deposit account opening, and treasury solutions, driving positioning, go-to-market strategy, and commercialization across a multi-product portfolio.\n\n\u2022 Owned end-to-end go-to-market strategy across multiple banking solutions, aligning product, sales, and marketing to accelerate adoption and revenue growth\n\u2022 Defined positioning and messaging frameworks that unified disparate products into a cohesive banking platform narrative\nPartnered with executive leadership and product teams to influence roadmap, packaging, and market prioritization across global markets\n\u2022 Built and scaled sales enablement strategy to support enterprise sales cycles, improving field readiness and deal velocity\n\u2022 Acted as product marketing lead across multiple product lines, setting direction and standards for GTM execution",
+              "title": "Principal Product Marketing Manager, Lead",
+              "employment_type": "Full-time",
+              "location": "Wilmington, NC",
+              "date": {
+                "start": "2022-05-01",
+                "end": "2023-05-31"
+              }
+            },
+            {
+              "company": "nCino, Inc.",
+              "description": "Led product marketing for consumer banking and portfolio mortgage solutions, translating customer insights into differentiated positioning and enabling enterprise sales through targeted go-to-market programs.",
+              "title": "Senior Product Marketing Manager",
+              "employment_type": "Full-time",
+              "location": "Wilmington, North Carolina",
+              "date": {
+                "start": "2020-06-01",
+                "end": "2022-05-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "0837a26f-a06e-914c-6288-a210e65f5c62",
+            "name": "Fortimize",
+            "logo": "https://images.ai-ark.com/iPpaPM4h9JXA2EvLYFA5_9FTdggsUJ6fmdoCfQCqMBM/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/0837a26f-a06e-914c-6288-a210e65f5c62.jpg",
+            "url": "https://www.linkedin.com/company/fortimize",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2019-02-01",
+            "end": "2020-06-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Fortimize",
+              "description": "Led marketing for a financial services consulting partner, building and scaling the company\u2019s go-to-market engine across brand, demand generation, and partner ecosystem strategy.\n\n\u2022 Owned go-to-market strategy and demand generation across financial services verticals, driving pipeline growth through integrated marketing programs\n\u2022 Built and scaled partner marketing strategy with Salesforce and strategic alliances, strengthening ecosystem positioning and co-sell opportunities\n\u2022 Led full brand and digital transformation, including website replatform, messaging, and content strategy to support growth and lead conversion\n\u2022 Partnered closely with sales leadership to align marketing with pipeline goals, enable field teams, and improve conversion across the funnel\n\u2022 Established marketing performance measurement and reporting frameworks to track impact and optimize investment",
+              "title": "Director of Marketing",
+              "employment_type": "Full-time",
+              "location": "New York, New York",
+              "date": {
+                "start": "2019-02-01",
+                "end": "2020-06-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "e93f0b21-fc63-f8dd-7121-7c11b1d760d7",
+            "name": "Akumina",
+            "logo": "https://images.ai-ark.com/2CXu13frqdHRwXVqBCJrz1BkkkH2MtJ5AmNWO6V-7mw/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/e93f0b21-fc63-f8dd-7121-7c11b1d760d7.jpg",
+            "url": "https://www.linkedin.com/company/akumina",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2018-01-01",
+            "end": "2019-12-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Akumina",
+              "description": "Supported the buildout of a marketing-driven sales engine for a Microsoft and Avanade partner, aligning content strategy to pipeline growth.\n\n\u2022 Developed and executed a multi-channel content strategy across web, video, social, and personas to support demand generation\n\u2022 Partnered with growth and field marketing to align content with campaign strategy and pipeline goals",
+              "title": "Content Marketing Manager",
+              "employment_type": "Full-time",
+              "location": "Greater Boston",
+              "date": {
+                "start": "2018-01-01",
+                "end": "2019-12-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "165699b5-eaa1-b2fc-d85d-1be54a75b7bb",
+            "name": "Mphasis Silverline",
+            "logo": "https://images.ai-ark.com/m9jaArqB8p-ouCXRyrf-cBp7cE9WSS4oga6tQlugw0U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/165699b5-eaa1-b2fc-d85d-1be54a75b7bb.jpg",
+            "url": "https://www.linkedin.com/company/silverlinecrm",
+            "employees": {
+              "start": 201,
+              "end": 500
+            }
+          },
+          "date": {
+            "start": "2016-04-01",
+            "end": "2018-10-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Silverline",
+              "description": "Led content strategy for a Salesforce consulting partner, aligning marketing initiatives with sales and campaign objectives.\n\n\u2022 Owned content strategy and editorial planning to support integrated marketing campaigns and corporate initiatives\n\u2022 Managed full content lifecycle from concept through execution, including thought leadership, sales collateral, and digital assets\n\u2022 Supported brand growth through blog strategy, external partnerships, and analyst-aligned content initiatives",
+              "title": "Content Marketing Manager",
+              "employment_type": "Full-time",
+              "location": "New York, NY",
+              "date": {
+                "start": "2016-04-01",
+                "end": "2018-10-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "708c660f-905d-f331-4e9c-04fe8c12fcc5",
+            "name": "Bank of New Hampshire",
+            "logo": "https://images.ai-ark.com/q8jyIf17D58wEKgo5kvQxmGByWSUEUK4XxKuzYv1vUE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/708c660f-905d-f331-4e9c-04fe8c12fcc5.jpg",
+            "url": "https://www.linkedin.com/company/bank-of-new-hampshire",
+            "employees": {
+              "start": 201,
+              "end": 500
+            }
+          },
+          "date": {
+            "start": "2011-01-01",
+            "end": "2016-12-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Bank of New Hampshire",
+              "description": "Bridged marketing, operations, and technology to support growth across retail, commercial, and lending divisions.\n\n\u2022 Supported executive leadership with reporting, insights, and cross-functional marketing initiatives across business lines\n\u2022 Managed CRM and marketing systems (Salesforce, nCino), supporting adoption, training, and data integrity across 300+ users\n\u2022 Led website redesign and ongoing management of CMS platforms, improving digital presence and user experience\n\u2022 Maintained marketing data and reporting systems to support sales strategy and performance tracking",
+              "title": "Technology Marketing Manager",
+              "employment_type": "Full-time",
+              "location": "Greater Boston",
+              "date": {
+                "start": "2014-01-01",
+                "end": "2016-12-31"
+              }
+            },
+            {
+              "company": "Bank of New Hampshire",
+              "description": "Built foundational experience across digital marketing, campaign execution, brand design, and analytics within a financial services environment.",
+              "title": "Marketing Specialist",
+              "employment_type": "Full-time",
+              "location": "Greater Boston",
+              "date": {
+                "start": "2011-01-01",
+                "end": "2014-12-31"
+              }
+            }
+          ]
+        }
+      ],
+      "volunteer_experiences": [
+        {
+          "role": "Secretary, Board Officer",
+          "company": null,
+          "cause": "EDUCATION",
+          "description": "Fusion is dedicated to the development of the next generation of leaders by providing opportunities through civic engagement, education, and strategic relationship building. Fusion acts as the hub of the Lakes Region of New Hampshire where individuals come together to cultivate and contribute to building a dynamic and evolving community.",
+          "date": {
+            "start": "2011-11-01",
+            "end": "2018-03-01"
+          }
+        }
+      ],
+      "skills": [
+        "Corporate Marketing",
+        "Creative Problem Solving",
+        "Marketing Analytics",
+        "Customer Engagement",
+        "Data Analysis",
+        "Data Modeling",
+        "Data",
+        "Product Pricing",
+        "Customer Marketing",
+        "Product Development",
+        "Product Design",
+        "Artificial Intelligence (AI)",
+        "Machine Learning",
+        "Strategic Communications",
+        "Market Planning",
+        "Value Propositions",
+        "Cloud Computing",
+        "Program Management",
+        "Integrated Marketing",
+        "Product Launch",
+        "Competitive Analysis"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": true,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 3129,
+          "connections_count": 3021
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2026-04-01",
+            "start": "2011-01-01",
+            "title": "2026-04-01"
+          }
+        }
+      },
+      "company": {
+        "id": "1ebf12e2-a8bf-2db3-d919-af12ee7eb33c",
+        "summary": {
+          "name": "UPTIQ",
+          "legal_name": "Cion Digital, Inc.",
+          "description": "Founded by industry veterans, Uptiq is the \ud835\udc22\ud835\udc27\ud835\udc2d\ud835\udc1e\ud835\udc25\ud835\udc25\ud835\udc22\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d \ud835\udc28\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc25\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b \ud835\udc2d\ud835\udc21\ud835\udc1a\ud835\udc2d \ud835\udc2e\ud835\udc27\ud835\udc22\ud835\udc1f\ud835\udc22\ud835\udc1e\ud835\udc2c \ud835\udc20\ud835\udc2b\ud835\udc28\ud835\udc30\ud835\udc2d\ud835\udc21, \ud835\udc28\ud835\udc2b\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc27\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27, \ud835\udc1a\ud835\udc27\ud835\udc1d \ud835\udc1c\ud835\udc28\ud835\udc27\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc2e\ud835\udc28\ud835\udc2e\ud835\udc2c \ud835\udc2c\ud835\udc1e\ud835\udc2b\ud835\udc2f\ud835\udc22\ud835\udc1c\ud835\udc1e \ud835\udc2c\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c\u2014 orchestrating your systems, processes, and teams without replacing what already works.\n\nThis means no replacements, no disruption. Just intelligence layered over your existing systems, giving your people the power to do more with what they already have.\n\nUptiq is everything your financial institution needs to automate decisions, coordinate workflows, and act on intelligence - without replacing a single system you already trust.\n\n\ud835\udc10\ud835\udc0e\ud835\udc11\ud835\udc04: \ud835\udc13\ud835\udc21\ud835\udc1e \ud835\udc0e\ud835\udc29\ud835\udc1e\ud835\udc2b\ud835\udc1a\ud835\udc2d\ud835\udc22\ud835\udc27\ud835\udc20 \ud835\udc0b\ud835\udc1a\ud835\udc32\ud835\udc1e\ud835\udc2b\nCoordinates financial work across systems the way an experienced financial professional would - with governance built in.\n\n\ud835\udc00\ud835\udc20\ud835\udc1e\ud835\udc27\ud835\udc2d\ud835\udc2c: \ud835\udc03\ud835\udc22\ud835\udc20\ud835\udc22\ud835\udc2d\ud835\udc1a\ud835\udc25 \ud835\udc16\ud835\udc28\ud835\udc2b\ud835\udc24\ud835\udc1e\ud835\udc2b\ud835\udc2c\nAutonomous financial operators that execute complex workflows across systems - with precision, auditability, and human oversight.\n\n\ud835\udc12\ud835\udc2e\ud835\udc22\ud835\udc2d\ud835\udc1e\ud835\udc2c: \ud835\udc0f\ud835\udc1a\ud835\udc1c\ud835\udc24\ud835\udc1a\ud835\udc20\ud835\udc1e\ud835\udc1d \ud835\udc12\ud835\udc28\ud835\udc25\ud835\udc2e\ud835\udc2d\ud835\udc22\ud835\udc28\ud835\udc27\ud835\udc2c\nPre-configured execution models that deliver measurable outcomes across lending, servicing, risk, and growth.\n\nUptiq is Built Around How Financial Work Actually Gets Done. Our Pre-built operating suites that unlock speed, scale, and governance - without replacing core systems.\n\nTrusted by over 150 financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks, Uptiq is the proven AI partner for highly regulated industries. With over $1 billion in transactions processed and more than $55M in equity funding, Uptiq isn\u2019t just shaping the future of AI in financial services \u2014 it\u2019s leading it.",
+          "overview": "Uptiq is a technology company that provides an AI-driven platform designed to support financial services firms with real-time analytics, risk assessment, and decision-making workflows. The company\u2019s platform uses machine learning to process and interpret large volumes of financial data, identify trends, and generate actionable insights that help teams evaluate credit risk, detect anomalies, and inform portfolio strategies. Its tools support integration with existing data systems and workflows, enabling users to automate data ingestion, modeling, and reporting across lending, investment, and compliance functions.\n\nUptiq also offers customizable dashboards and APIs that help financial analysts, risk officers, and product teams operationalize insights and align them with business objectives. The company works with banks, fintechs, and financial institutions to tailor AI models and analytic frameworks to specific use cases such as credit scoring, customer lifetime value prediction, and loss forecasting. Its platform emphasizes scalable data processing and transparent model outputs to support informed decision-making in financial operations.",
+          "seo": "UPTIQ enables financial advisors to connect their clients to a network of lenders who can fund any liquidity objective, including buying a new home or vacation property, starting a new business, funding working capital for an existing business, financing college tuition and more.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "software development",
+          "staff": {
+            "total": 156,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/8Q3tYW4E9hUbDPie8_rSoJude1dJVjTLSKjyjkqer2U/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ebf12e2-a8bf-2db3-d919-af12ee7eb33c.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.uptiq.ai",
+          "domain": "uptiq.ai",
+          "domain_ltd": "uptiq.ai",
+          "linkedin": "https://www.linkedin.com/company/uptiqai",
+          "facebook": "https://www.facebook.com/UPTIQ",
+          "twitter": "https://x.com/uptiq_ai",
+          "crunchbase": "https://www.crunchbase.com/organization/cion-digital"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_B",
+            "total_amount": 69994999,
+            "last_amount": 25000000,
+            "num_investor": 16,
+            "num_funding_rounds": 5,
+            "rounds": [
+              {
+                "announced_at": "2026-02-12",
+                "raised_amount": 25000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "EPIC Ventures",
+                  "LiveOak Ventures",
+                  "645 Ventures",
+                  "Curql",
+                  "Tau Ventures",
+                  "Evolution VC",
+                  "First Capital",
+                  "Green Visor Capital",
+                  "Silverton Partners",
+                  "Broadridge"
+                ]
+              },
+              {
+                "announced_at": "2025-10-25",
+                "raised_amount": 12000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2025-08-06",
+                "type": "CORPORATE_ROUND"
+              },
+              {
+                "announced_at": "2024-10-23",
+                "raised_amount": 20994999,
+                "type": "SERIES_A"
+              },
+              {
+                "announced_at": "2022-01-04",
+                "raised_amount": 12000000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2026-02-12"
+          },
+          "acquisition": {
+            "total": 1,
+            "contents": [
+              {
+                "identifier": {
+                  "id": "upswot",
+                  "name": "upSWOT",
+                  "image": "fc9d67a92bd9468183f7f80a12629bfb"
+                },
+                "role": "acquiree",
+                "announced_at": "2024-12-02"
+              }
+            ]
+          },
+          "aberdeen": {
+            "it_spend": 1264232
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "state": "Texas",
+            "city": "Mckinney",
+            "street": "7300 TX-121",
+            "postal_code": "75070",
+            "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+            "position": {
+              "lng": -97.08263,
+              "lat": 32.7513
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "state": "Texas",
+              "city": "Mckinney",
+              "street": "7300 TX-121",
+              "postal_code": "75070",
+              "raw_address": "7300 TX-121, Mckinney, Texas, United States, North America",
+              "position": {
+                "lng": -97.08263,
+                "lat": 32.7513
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "common crawl",
+            "category": "widgets"
+          },
+          {
+            "name": "commoncrawl top 50m",
+            "category": "widgets"
+          },
+          {
+            "name": "hsts",
+            "category": "ssl"
+          },
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "cloudflare cdn",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare",
+            "category": "cdn"
+          },
+          {
+            "name": "organization schema",
+            "category": "framework"
+          },
+          {
+            "name": "cloudflare network error logging",
+            "category": "hosting"
+          },
+          {
+            "name": "person schema",
+            "category": "framework"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "AdRoll",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Amazon AWS",
+            "category": "Hosting"
+          },
+          {
+            "name": "Bing Ads",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Cloudflare DNS",
+            "category": "Domain Name Services"
+          },
+          {
+            "name": "DoubleClick",
+            "category": "Ad Servers"
+          },
+          {
+            "name": "DoubleClick Conversion",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Facebook Custom Audiences",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Facebook Login (Connect)",
+            "category": "Social Login"
+          },
+          {
+            "name": "Facebook Widget",
+            "category": "Widgets"
+          },
+          {
+            "name": "Gmail",
+            "category": "Email Providers"
+          },
+          {
+            "name": "Google Analytics",
+            "category": "Analytics and Tracking"
+          },
+          {
+            "name": "Google Apps",
+            "category": "Other"
+          },
+          {
+            "name": "Google Dynamic Remarketing",
+            "category": "Retargeting"
+          },
+          {
+            "name": "Google Font API",
+            "category": "Fonts"
+          },
+          {
+            "name": "Google Tag Manager",
+            "category": "Tag Management"
+          },
+          {
+            "name": "Hubspot",
+            "category": "Marketing Automation"
+          },
+          {
+            "name": "Linkedin Marketing Solutions",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Mobile Friendly",
+            "category": "Other"
+          },
+          {
+            "name": "Remote",
+            "category": "Other"
+          },
+          {
+            "name": "Twitter Advertising",
+            "category": "Advertising Networks"
+          },
+          {
+            "name": "Vimeo",
+            "category": "Online Video Platforms"
+          },
+          {
+            "name": "Webflow",
+            "category": "CMS"
+          }
+        ],
+        "industries": [
+          "software development",
+          "lending",
+          "artificial intelligence (ai)",
+          "financial services",
+          "fintech"
+        ],
+        "keywords": [
+          "ai agents for financial services",
+          "ai agents for banks",
+          "ai agents for credit unions",
+          "ai agents for non-bank lenders",
+          "ai agents for equipment finance companies",
+          "ai agents for wealth management firms",
+          "ai agents for private credit companies",
+          "ai agents for fintech",
+          "agentic ai platform for financial services"
+        ],
+        "hashtags": [
+          "wealthmanagement",
+          "ria",
+          "fintech"
+        ],
+        "languages": [
+          "english"
+        ],
+        "sic": [
+          "7371"
+        ],
+        "naics": [
+          "541511",
+          "522310",
+          "522320"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "marketing"
+        ],
+        "sub_departments": [
+          "product_marketing"
+        ],
+        "functions": [
+          "marketing"
+        ],
+        "seniority": "vp"
+      },
+      "last_updated": "2026-08-22"
+    }
+  ],
+  "size": 6,
+  "totalElements": 151,
+  "pageable": {
+    "pageNumber": 0,
+    "pageSize": 6,
+    "sort": {
+      "sorted": true,
+      "empty": false,
+      "unsorted": false
+    },
+    "offset": 0,
+    "paged": true,
+    "unpaged": false
+  },
+  "last": false,
+  "totalPages": 26,
+  "sort": {
+    "sorted": true,
+    "empty": false,
+    "unsorted": false
+  },
+  "numberOfElements": 6,
+  "trackId": "e06564be-93db-4f6d-9e6c-d7f0a15128b1",
+  "first": true,
+  "number": 0,
+  "empty": false,
+  "_http_status": 200,
+  "_elapsed_s": 0.94,
+  "_request": {
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "uptiq.ai"
+          ]
+        }
+      }
+    },
+    "page": 0,
+    "size": 6
+  }
+}

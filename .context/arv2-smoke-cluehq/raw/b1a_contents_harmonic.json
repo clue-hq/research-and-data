@@ -1,0 +1,133 @@
+{
+  "requestId": "9518842bb81ecf753ad6342fc4a7ea8c",
+  "results": [
+    {
+      "id": "https://www.harmonic.security",
+      "title": "Harmonic Security | AI Governance & Control Platform",
+      "url": "https://www.harmonic.security",
+      "author": null,
+      "text": "Harmonic Security | AI Governance & Control Platform\n\nThe Frequency newsletter just launched \u2192 AI Security Handbook: agents, MCP, more \u2192 The Frequency newsletter just launched \u2192\u00d7\n\n# UnderstandControlEnableUnderstand AI wherever your workforce runs it\n\nThe only platform that classifies every AI task, discovers why it is used, and then controls it in real time.\n\nBook a demo Explore the Platform\n\nSee how it works\n\nThe Harmonic Difference\n\n## Understanding, then control\n\nCollected at the source. Categorized by business use case. Acted on in real time, so security decisions follow the work instead of blocking it.\n\n01\n\nCollect\n\n02\n\nCategorize\n\n03\n\nControl\n\nChatGPT Work\u2192PDF14:02:36.118\n\nPrompt captured\n\n\u2715Sales Pipeline Data is Exposed\n\nSalesSales Associate\n\nBLOCKED\n\nWho we work with\n\nInteractive preview\n\n## Explore the Platform\n\nClick around a live preview of the Harmonic console \u2014 no signup, no sales call.\n\nexplore.harmonic.security \u00b7 Harmonic Platform preview\n\nPreview not loading? Open it in a new tab \u2192\n\nKey Resources\n\n## Catch up on GenAI Security\n\n### Gartner AI Usage Control Research Points Beyond Basic Discovery\n\n### Securing ChatGPT Work: A Practitioner's Guide\n\n### All Organizations Now Have Employees Using China-Based AI Tools\n\n## FAQs\n\nQuick answers about Harmonic Security\n\nIs this just DLP with an AI sticker on it?\n\nNo. Pattern-matching DLP cannot tell a draft email from a deal memo because prompts are unstructured and contextual. Static rules either flood teams with false positives or get ripped out entirely. We classify the meaning of the work, not the shape of the string. That is what lets us govern inline, where DLP can only monitor.\n\nHow is this different from Zscaler, Netskope, or any other SASE tool?\n\nSASE inspects network traffic to known AI domains. Useful, but it misses everything that does not cross the network: Claude Desktop, Cursor, local MCP servers, embedded AI inside Canva or Salesforce, free-tier accounts on personal devices. Most shadow AI exposure happens on personal devices that never touch the corporate network, which is also where SASE has no jurisdiction. We sit on the device and inside the AI surface itself. That is why we can govern where SASE can only observe, and why we cover the agent layer SASE never reaches.\n\nWhat about Microsoft Purview or other AI-aware DLP?\n\nPurview gives you visibility inside Microsoft, on Microsoft tools, with Microsoft pattern matching. Real AI usage is not Microsoft-only. We see the full stack across vendors, including the long tail and the agentic surfaces, and we govern with intent classification rather than regex.\n\nCan't we just whitelist the AI tools we've approved?\n\nYou can, and it's a reasonable starting point. The problem is that AI no longer lives only in the tools you evaluated. Google AI mode is built into Search. Salesforce Einstein runs inside your CRM. Copilot ships with every Microsoft 365 license. Canva, Grammarly, Notion, and most of your SaaS stack now have AI features that activate whether or not you toggled them on. Whitelisting governs the standalone tools you approved. It does not reach the AI embedded in the tools you already use every day.\n\nWhat actually happens when an employee shares something they shouldn't?\n\nDepends on what you want to happen. You can block in real time, warn the employee with context about why the action is risky, or log silently for security team review. Most customers start with warn-and-log during rollout, then move toward inline blocking for the highest-risk categories once they understand the patterns. The governance layer is yours to configure. We do not impose defaults that shut down legitimate work.\n\nWhat about AI agents that act autonomously, not just a human typing into a chat window?\n\nThis is the problem most security platforms cannot see yet. When an agent reads a file, calls an API, writes to a database, and emails a summary, all without a human in the loop, there is no browser request to inspect and no prompt to classify at the keyboard. We govern at the MCP layer and at the tool surface, which is where agentic workflows execute. Policy follows the action, not the person.\n\nHow do you avoid this becoming employee surveillance?\n\nHR, Finance, Ops, and Founders are excluded from reporting by design. Employee names can be masked in the portal. The dataset is sanitized and frozen. EU hosting is available on request. The design principle is that security teams need risk visibility, not a feed of individual employee behavior. We made the hard restraint choices in the product so you do not have to defend them in every internal review.\n\nHow fast is deployment?\n\nMinutes. Roll out through Intune, JAMF, Kandji, or Group Policy. The browser extension covers all browsers and MCP gateway run on Windows, macOS, and Linux. No proxy redesign, no certificate gymnastics, no long onboarding. On day one you get a full inventory of AI tools in use across your organization. By the end of the first week, most security teams have a clearer picture of AI data exposure than they have had in years.\n\nWhat surfaces do you actually cover?\n\nBrowsers (Chrome, Edge, Firefox, Safari, Arc, Brave, Vivaldi, Island, Genspark, Comet, Dia). Desktop AI (Claude Desktop, ChatGPT Desktop, Cursor, Windsurf). Agents and MCP (Claude Code, Cowork, custom MCP servers). Embedded AI (Canva, Grammarly, Google AI mode). Plus the long tail of 1,000+ web AI tools the catalogue updates every week.\n\nDoes this help with the EU AI Act, GDPR, or other regulations?\n\nYes, though compliance is a byproduct of good governance, not the other way around. The EU AI Act requires organizations to manage high-risk AI use and maintain logs of consequential AI-assisted decisions. GDPR creates exposure whenever personal data enters AI tools hosted outside the EEA. Our data classification and logging give you the audit trail, the data residency controls, and the ability to demonstrate that AI use in your organization operates within defined boundaries. Documentation mapping our controls to specific regulatory requirements is available on request.\n\nAs every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.\n\nProducts\n\nResources\n\nResource Library AI Security Handbook The Frequency Newsletter Brand Guide and Logos\n\nCompany\n\n\u00a9 2026 Harmonic Security\n\nTrust Center Privacy Policy Terms of Service\n\nCookie Settings",
+      "image": "https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/695c2875110af64a202e3913_harmonic-1200x630.png",
+      "favicon": "https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6938ea08b29d819485a29dd9_Harmonic-Favicon.png",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/9j6bkrfw0m4",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Harmonic Security",
+            "foundedYear": 2023,
+            "description": "AI is being run everywhere, by humans and agents. Harmonic Security governs all of it. The AI Governance and Control (AIGC) platform understands user / agent intent and data context in real time, giving security teams visibility and control across every tool and workflow so companies can move faster with AI while minimizing risk. \n\nRequest to join our AI Security Community at https://forms.gle/NuwfEQBqsC9wWqgz5",
+            "workforce": {
+              "total": 56
+            },
+            "headquarters": {
+              "address": "1390 Market Street, Suite 200, San Francisco, California 94102, US",
+              "city": "San Francisco",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": 1000000,
+              "fundingTotal": 24500000,
+              "fundingLatestRound": null
+            },
+            "webTraffic": {
+              "visitsMonthly": 25848,
+              "countryRank": 540157,
+              "avgDurationSeconds": 29,
+              "history": [
+                {
+                  "value": 16993,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 14082,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 17284,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 27998,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 27998,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 25848,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.harmonic.security/about",
+      "title": "Harmonic Security | About",
+      "url": "https://www.harmonic.security/about",
+      "author": null,
+      "text": "Harmonic Security | About\n\nOur story\n\n## We\u2018ve grown through partnership and innovation and a belief in long-term thinking.\n\n2023 \u2022 August\n\n#### Harmonic Founded\n\n2023 \u2022 October\n\n#### Raised Seed Funding\n\n2024 \u2022 April\n\n#### RSA Innovation Sandbox Finalists\n\n2024 \u2022 July\n\n#### Harmonic Protect Launches\n\n2024 \u2022 October\n\n#### Landed Series A\n\n2025 \u2022 October\n\n#### Launched MCP Gateway\n\n2026 \u2022 January\n\n#### Upscaled Brand Launched\n\nOur Mission\n\n### To pave the way for secure AI adoption in enterprises, ensuring innovation thrives without compromise. We stand committed to protecting data integrity, promoting responsible AI use, and fostering trust in tomorrow\u2019s technological advancements.\n\nStandards & Certifications\n\nPrivacy and Security\n\n# Privacy\n\nWe are a security and privacy-first organization. All customer data is protected in a dedicated tenant. We help you deliver your privacy obligations through EU Hosting by default, with US options available.\u200d\n\n# Security\n\nWe\u2019ve invested in leading DFIR, Monitoring and response capabilities that really work. Our Product Security program provides security guardrails and secure-by-default engineering practices.\u200d\n\n# Compliance\n\nStandards validate our approach to security and privacy. GDPR and US Privacy Compliance across the whole company help our customers to continue to deliver their privacy obligations.\u200d\n\n# Trust\n\nWe will not train on your data. We work to build trust with our customers through Technical Transparency.\u200d\n\nLaunch Harmonic Trust Center\n\nHarmonic's Board and Investors\n\n## Meet the Team\n\n### Alastair Paterson\n\nCEO & CO-FOUNDER, HARMONIC\n\n### Bryan Woolgar-O'Neil\n\nCTO & CO-FOUNDER, HARMONIC\n\n### Ren\u00e9 Bonvanie\n\nADVISOR TO STARTUPS & VCS AND CMO EMERITUS OF PALO ALTO NETWORKS\n\n### T.J. Rylander\n\nGENERAL PARTNER AT N47\n\n### Mark Sutton\n\nCISO, BAIN CAPITAL\n\n### Alex Doll\n\nFOUNDER AT TEN ELEVEN VENTURES\n\n### Grant Whiting\n\nPARTNER, IN-Q-TEL\n\n### Colton Dempsey\n\nN47\n\n\"While we did understand what people were using \u2014 because we had that visibility \u2014 we didn't know how they were using it, and the data leakage was definitely a big one. ... That's when we went looking for outside help. ... It's literally hours to seconds. If we deploy a tool and it's covered by Harmonic Security, we have insight right away.\"\n\nMike Janielis\n\nPrincipal Information Security Architect\n\nGenAI is the Wild West right now, but Harmonic gives me the insights I need to get in control. Harmonic Security uncovers blindspots, including unauthorized and risky AI applications my employees are using.\n\nHuy Ly\n\nDirector IT Infrastructure/Security, Monolithic Power Systems\n\n## Build Your AI Guardrails Now\n\nGain the visibility and control you need to guide AI use with confidence.\n\nAs every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.\n\nProducts\n\nResources\n\nResource Library AI Security Handbook The Frequency Newsletter Brand Guide and Logos\n\nCompany\n\n\u00a9 2026 Harmonic Security\n\nTrust Center Privacy Policy Terms of Service\n\nCookie Settings",
+      "image": "https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/695c2875110af64a202e3913_harmonic-1200x630.png",
+      "favicon": "https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6938ea08b29d819485a29dd9_Harmonic-Favicon.png"
+    },
+    {
+      "id": "https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+      "title": "Harmonic Security Raises $17.5 Million Series A to Accelerate Zero-Touch Data Protection to Market | Harmonic Security",
+      "url": "https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+      "publishedDate": "2025-04-16T00:58:56.000Z",
+      "author": null,
+      "text": "Harmonic Security Raises $17.5 Million Series A to Accelerate Zero-Touch Data Protection to Market | Harmonic Security\n\nOur Resources\n\n## Related Posts\n\n### Gartner AI Usage Control Research Points Beyond Basic Discovery\n\n### Securing ChatGPT Work: A Practitioner's Guide\n\n### All Organizations Now Have Employees Using China-Based AI Tools\n\n## Build Your AI Guardrails Now\n\nGain the visibility and control you need to guide AI use with confidence.\n\nAs every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.\n\nProducts\n\nResources\n\nResource Library AI Security Handbook The Frequency Newsletter Brand Guide and Logos\n\nCompany\n\n\u00a9 2026 Harmonic Security\n\nTrust Center Privacy Policy Terms of Service\n\nCookie Settings",
+      "image": "https://cdn.prod.website-files.com/693329d92abad4606e758518/69443d809c9c4282f2414a93_Artboard%20133%402x.avif",
+      "favicon": "https://cdn.prod.website-files.com/6932186a6c06d62bc4b12891/6938ea08b29d819485a29dd9_Harmonic-Favicon.png"
+    }
+  ],
+  "statuses": [
+    {
+      "id": "https://www.harmonic.security",
+      "status": "success",
+      "source": "cached"
+    },
+    {
+      "id": "https://www.harmonic.security/about",
+      "status": "success",
+      "source": "cached"
+    },
+    {
+      "id": "https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+      "status": "success",
+      "source": "cached"
+    }
+  ],
+  "costDollars": {
+    "total": 0.003,
+    "contents": {
+      "text": 0.003
+    }
+  },
+  "searchTime": 23.387093000113964,
+  "_http_status": 200,
+  "_elapsed_s": 0.1,
+  "_request": {
+    "urls": [
+      "https://www.harmonic.security",
+      "https://www.harmonic.security/about",
+      "https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market"
+    ],
+    "text": {
+      "maxCharacters": 9000
+    }
+  }
+}

@@ -1,0 +1,42 @@
+forward-logs-shared.ts:95 Download the React DevTools for a better development experience: https://react.dev/link/react-devtools
+forward-logs-shared.ts:95 [HMR] connected
+forward-logs-shared.ts:95 Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview
+(anonymous) @ forward-logs-shared.ts:95
+forward-logs-shared.ts:95 [Fast Refresh] rebuilding
+forward-logs-shared.ts:95 [Fast Refresh] done in 539ms
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/bf592220-f097-5f89-bea5-d176d772e47f/events?stream_token=4f393c22-5452-4291-a519-b3587c4315f2:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/119c552a-46b5-5d48-ae45-1f298abb1fa4/events?stream_token=54920051-465a-49f8-b305-26f2e0abd3c8:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+forward-logs-shared.ts:95 [HMR] connected
+precise-lamb-56.clerk.accounts.dev/v1/client/sessions/sess_3JMJFIZxDFYUY6LeI8pjaJylOhB/tokens?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0&__clerk_db_jwt=dvb_3I2v1exvc4ibHKmr76JNvnrOucs:1  Failed to load resource: net::ERR_NETWORK_CHANGED
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/bf592220-f097-5f89-bea5-d176d772e47f/events?stream_token=b4a2b749-3eef-48dd-9e99-70509a5ff1f7:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/119c552a-46b5-5d48-ae45-1f298abb1fa4/events?stream_token=263d6a7e-ccd8-45c5-bf31-4a77cd4ea919:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+forward-logs-shared.ts:95 [HMR] connected
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/bf592220-f097-5f89-bea5-d176d772e47f/events?stream_token=0604c6ce-b45a-4216-b3a0-eddf0f4f9515:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/119c552a-46b5-5d48-ae45-1f298abb1fa4/events?stream_token=dbf45648-278d-44c0-ad91-1b97c190bae8:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+forward-logs-shared.ts:95 [HMR] connected
+precise-lamb-56.clerk.accounts.dev/v1/client/sessions/sess_3JMJFIZxDFYUY6LeI8pjaJylOhB/tokens?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0&__clerk_db_jwt=dvb_3I2v1exvc4ibHKmr76JNvnrOucs:1  Failed to load resource: net::ERR_INTERNET_DISCONNECTED
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/119c552a-46b5-5d48-ae45-1f298abb1fa4/events?stream_token=138f2324-0cbb-44a9-8ff1-32811b473b11:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/bf592220-f097-5f89-bea5-d176d772e47f/events?stream_token=47c7bdf0-2485-4ad4-aae5-b2901ddf9ed7:1  Failed to load resource: net::ERR_NETWORK_IO_SUSPENDED
+forward-logs-shared.ts:95 [HMR] connected
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/bf592220-f097-5f89-bea5-d176d772e47f/stream_token:1  Failed to load resource: the server responded with a status of 401 (Unauthorized)
+:3020/api/clue/api/v1/projects/prj_82aef3f543395a72804afb9635d969a1/threads/thr_85ef547fbc815debb1002391d0632ce8/turns/119c552a-46b5-5d48-ae45-1f298abb1fa4/stream_token:1  Failed to load resource: the server responded with a status of 401 (Unauthorized)
+precise-lamb-56.clerk.accounts.dev/v1/client/sessions/sess_3JMJFIZxDFYUY6LeI8pjaJylOhB/tokens?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0&__clerk_db_jwt=dvb_3I2v1exvc4ibHKmr76JNvnrOucs:1  Failed to load resource: net::ERR_NETWORK_CHANGED
+precise-lamb-56.clerk.accounts.dev/v1/client/sessions/sess_3JMJFIZxDFYUY6LeI8pjaJylOhB/tokens?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0&__clerk_db_jwt=dvb_3I2v1exvc4ibHKmr76JNvnrOucs:1  Failed to load resource: net::ERR_NAME_NOT_RESOLVED
+precise-lamb-56.clerk.accounts.dev/v1/client/sessions/sess_3JMJFIZxDFYUY6LeI8pjaJylOhB/tokens?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0&__clerk_db_jwt=dvb_3I2v1exvc4ibHKmr76JNvnrOucs:1  Failed to load resource: net::ERR_CONNECTION_CLOSED
+precise-lamb-56.clerk.accounts.dev/v1/client/sessions/sess_3JMJFIZxDFYUY6LeI8pjaJylOhB/touch?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0&__clerk_db_jwt=dvb_3I2v1exvc4ibHKmr76JNvnrOucs:1  Failed to load resource: net::ERR_CONNECTION_CLOSED
+clerk.browser.js:18 Uncaught (in promise) Error: ClerkJS: Network error at "https://precise-lamb-56.clerk.accounts.dev/v1/client/sessions/sess_3JMJFIZxDFYUY6LeI8pjaJylOhB/touch?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0&__clerk_db_jwt=dvb_3I2v1exvc4ibHKmr76JNvnrOucs" - TypeError: Failed to fetch. Please try again.
+    at Object.o [as request] (clerk.browser.js:18:192549)
+    at async ic._baseFetch (clerk.browser.js:17:7978)
+    at async il.execute (clerk.browser.js:17:6812)
+    at async nk._touchPost (clerk.browser.js:18:82920)
+    at async nk.touch (clerk.browser.js:18:83136)
+    at async #e2 (clerk.browser.js:18:240875)
+precise-lamb-56.clerk.accounts.dev/v1/client/sessions/sess_3JMJFIZxDFYUY6LeI8pjaJylOhB/tokens?__clerk_api_version=2026-05-12&_clerk_js_version=6.31.0&__clerk_db_jwt=dvb_3I2v1exvc4ibHKmr76JNvnrOucs:1  Failed to load resource: net::ERR_NETWORK_CHANGED
+:3020/projects/prj_82aef3f543395a72804afb9635d969a1/chats/thr_85ef547fbc815debb1002391d0632ce8?document=audience%2Ficp-ortho-groups.md&surface=plan:1 WebSocket connection to 'ws://localhost:3020/_next/webpack-hmr?id=H1byJajMTC84HWo6qSJi8' failed: Page entered Back-Forward Cache.
+forward-logs-shared.ts:95 [HMR] connected
+:3020/projects/prj_82aef3f543395a72804afb9635d969a1/chats/thr_85ef547fbc815debb1002391d0632ce8?document=audience%2Ficp-ortho-groups.md&surface=plan:1 WebSocket connection to 'ws://localhost:3020/_next/webpack-hmr?id=H1byJajMTC84HWo6qSJi8' failed: Page entered Back-Forward Cache.
+forward-logs-shared.ts:95 [HMR] connected
+forward-logs-shared.ts:95 [Fast Refresh] rebuilding
+forward-logs-shared.ts:95 [Fast Refresh] done in 121ms
+forward-logs-shared.ts:95 [Fast Refresh] rebuilding
+forward-logs-shared.ts:95 [Fast Refresh] done in 3778ms

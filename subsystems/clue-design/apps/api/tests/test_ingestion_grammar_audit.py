@@ -595,14 +595,14 @@ def client(tmp_path: Path) -> TestClient:
     return make_client(create_app(tmp_path / "engine-cache"))
 
 
-def test_the_published_draft_kit_carries_the_grammar_audit(
+def test_the_published_approved_kit_carries_the_grammar_audit(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     job = _run_website_ingestion_through_the_route(
         client, monkeypatch, url="https://audit-rides.example", evidence=_measured_evidence()
     )
     detail = client.get(f"/brand-kits/{job['brand_kit_id']}").json()
-    assert detail["brand_kit"]["approval_status"] == "draft"
+    assert detail["brand_kit"]["approval_status"] == "approved"
     audit = detail["brand_kit_json"]["grammar_audit"]
     assert audit["schema_version"] == GRAMMAR_AUDIT_SCHEMA_VERSION
     assert audit["cadence"]["rules"]

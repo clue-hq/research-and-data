@@ -28,10 +28,12 @@ from .ad_assets import (
 from .assets import (
     DeleteAssetTool,
     RegisterAssetRecordTool,
+    RegisterAssetRecordV2Tool,
     RegisterCapturedAssetsTool,
     RegisterGeneratedAssetTool,
     RegisterQrAssetTool,
     SetAssetDescriptionTool,
+    SetAssetDescriptionV2Tool,
     SetAssetStatusTool,
 )
 from .base import DesignToolHost
@@ -52,13 +54,16 @@ from .documents import (
     PersistPreflightTool,
     RecordDiagnosticsTool,
     RedoDocumentTool,
+    RenameDocumentTool,
     ReplaceSceneTool,
     SetAgentInstructionsTool,
+    SetDocumentArchivedTool,
     SetLayoutManagedEditingTool,
     SetWebNoindexTool,
     UndoDocumentTool,
 )
 from .ingestion import (
+    EnrichAssetsTool,
     IngestAdAssetsTool,
     IngestAssetsTool,
     IngestPdfTool,
@@ -106,6 +111,9 @@ DESIGN_TOOL_TYPES = (
     SetAgentInstructionsTool,
     SetLayoutManagedEditingTool,
     SetWebNoindexTool,
+    # Artifacts page (2026-09-15): the library's two curation writes.
+    RenameDocumentTool,
+    SetDocumentArchivedTool,
     ReplaceSceneTool,
     ApplyOperationsTool,
     ApplyStructuredEditTool,
@@ -136,12 +144,14 @@ DESIGN_TOOL_TYPES = (
     IngestAssetsTool,
     # Round C domain 3 — the asset registry.
     RegisterAssetRecordTool,
+    RegisterAssetRecordV2Tool,
     RegisterQrAssetTool,
     RegisterGeneratedAssetTool,
     RegisterCapturedAssetsTool,
     SetAssetStatusTool,
     DeleteAssetTool,
     SetAssetDescriptionTool,
+    SetAssetDescriptionV2Tool,
     # Round C domain 4 — personalization and both batch families.
     UpsertBindingSetTool,
     DeleteBindingSetTool,
@@ -153,6 +163,7 @@ DESIGN_TOOL_TYPES = (
     # Brand Ad Assets v1 W2 — the ad-assets lane (flag-gated at its route, registered here
     # unconditionally so the platform's C6 authority audit stays a complete statement).
     IngestAdAssetsTool,
+    EnrichAssetsTool,
     RecordAdCreativesTool,
     PublishAdDnaCardTool,
     LinkAdPregeneratedAssetsTool,
@@ -160,9 +171,13 @@ DESIGN_TOOL_TYPES = (
 
 #: The registered names, in registration order. The platform's authority map and the design-side
 #: no-bypass guard both assert against this tuple, so the two can never silently diverge.
-DESIGN_TOOL_NAMES: tuple[str, ...] = tuple(item.name for item in DESIGN_TOOL_TYPES)
+DESIGN_TOOL_NAMES: tuple[str, ...] = tuple(dict.fromkeys(item.name for item in DESIGN_TOOL_TYPES))
 
 
 def build_design_tools(host: DesignToolHost | None = None) -> tuple[Tool, ...]:
     """Construct every design tool against ``host`` (``None`` ⇒ registered but refusing)."""
     return tuple(item(host) for item in DESIGN_TOOL_TYPES)
+
+
+def is_default_design_tool(tool: Tool) -> bool:
+    return tool.descriptor.version == next(item.version for item in reversed(DESIGN_TOOL_TYPES) if item.name == tool.descriptor.name)

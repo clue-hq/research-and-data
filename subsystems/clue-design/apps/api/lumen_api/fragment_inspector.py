@@ -5,8 +5,11 @@ other reader of the same rows, and the two are deliberately different shapes. Th
 choosing which band to put on a page and is told the least that lets it choose well. A human in
 the inspector is making the three decisions nothing else can make for them:
 
-* **edit the slot values** of a section that is already on the page (D-F3: slot VALUES only —
-  never the fragment's internals, which are somebody else's markup and are frozen);
+* **edit the slot values** of a section that is already on the page (D-F3 (Option A) + R-A6
+  amendment (2026-09-04): a clone moves as a whole and exposes slot values AND per-element text
+  overrides; nothing else inside it is editable — the fragment's internals are somebody else's
+  markup and stay frozen, and an override is a per-instance value on the document's fragment node
+  rather than an edit of that markup, so it is read from the document, not from this card);
 * **activate a hidden-on-source section** (D-F8): see that the site hides it, see the evidence
   that says so, get a picture of it, and decide;
 * **read the degraded → repaired lineage** (D-F6), and retire a repair that is no longer wanted

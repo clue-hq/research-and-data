@@ -65,6 +65,12 @@ export const BrandFontAssetSchema = z.object({
   family: z.string().min(1),
   /** `AssetSource` (assets.rs:129) — `system` is a platform family, anything else is the brand's own. */
   source: z.object({ kind: z.string() }).nullish(),
+  faces: z.array(z.object({
+    weight: z.number().int().min(1).max(1000),
+    style: z.enum(["normal", "italic"]),
+    asset_id: z.string().min(1).nullish(),
+    source_url: z.string().nullish(),
+  }).nullable().catch(null)).nullish(),
 });
 
 export const BrandLogoVariantSchema = z.object({
@@ -178,6 +184,35 @@ export const DesignAssetRecordSchema = z.object({
   created_at: z.string().nullish(),
 });
 
+/**
+ * One bare record from `GET /assets` (main.py:6993). The LIST route serves
+ * `public_asset_record` rows directly — not the `{asset, created_at}` envelope
+ * `GET /assets/{id}` returns — so it gets its own schema. Deliberately loose on
+ * `kind`/`status`/`source.kind`: the registry's vocabularies grow, and an
+ * unrecognized value must degrade one row, never the page.
+ */
+export const DesignAssetListRecordSchema = z.object({
+  id: z.string().min(1),
+  kind: z.string(),
+  label: z.string().nullish(),
+  status: z.string(),
+  source: z.object({ kind: z.string() }).passthrough(),
+  media: z
+    .object({
+      mime_type: z.string().nullish(),
+      byte_length: z.number().nullish(),
+      filename: z.string().nullish(),
+    })
+    .nullish(),
+  raster: z
+    .object({ pixel_width: z.number().nullish(), pixel_height: z.number().nullish() })
+    .nullish(),
+  vector: z
+    .object({ width: z.number().nullish(), height: z.number().nullish() })
+    .nullish(),
+  provenance: z.object({ created_at: z.string().nullish() }).nullish(),
+});
+
 export type BrandColorToken = z.infer<typeof BrandColorTokenSchema>;
 export type BrandFontAsset = z.infer<typeof BrandFontAssetSchema>;
 export type BrandImageAsset = z.infer<typeof BrandImageAssetSchema>;
@@ -186,4 +221,5 @@ export type BrandTypographyToken = z.infer<typeof BrandTypographyTokenSchema>;
 export type BrandKitDetail = z.infer<typeof BrandKitDetailSchema>;
 export type BrandKitJson = z.infer<typeof BrandKitJsonSchema>;
 export type BrandKitSummary = z.infer<typeof BrandKitSummarySchema>;
+export type DesignAssetListRecord = z.infer<typeof DesignAssetListRecordSchema>;
 export type DesignAssetRecord = z.infer<typeof DesignAssetRecordSchema>;

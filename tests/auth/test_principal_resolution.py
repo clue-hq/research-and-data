@@ -93,7 +93,13 @@ def test_resolver_and_authorizer_emit_only_internal_principal_values() -> None:
             assert mapping.provider_subject not in principal.model_dump_json()
             assert "local_fixture" not in principal.model_dump_json()
             assert session.user_id == user.user_id
-            assert session.memberships == (membership,)
+            # The session loader is the one membership read that joins the workspace row, so
+            # its memberships carry the display name the writer-side reads do not.
+            assert session.memberships[0].workspace_name == "Auth workspace"
+            assert membership.workspace_name is None
+            assert session.memberships == (
+                membership.model_copy(update={"workspace_name": "Auth workspace"}),
+            )
 
     run_async(scenario())
 
@@ -125,15 +131,20 @@ def test_unprovisioned_disabled_cross_workspace_and_permission_cases_are_distinc
             resolver = DatabaseIdentityResolver(conn_factory=conn_factory)
             authorizer = DatabaseAuthorizer(conn_factory=conn_factory)
 
-            with pytest.raises(IdentityNotProvisioned):
+            with pytest.raises(IdentityNotProvisioned) as unprovisioned:
                 await resolver.resolve(_session("absent-subject"))
+            # The refusal names who was refused, for the operator log (2026-09-11): the verified
+            # provider subject when identity never resolved, the Clue user once it had.
+            assert unprovisioned.value.subject == "absent-subject"
+            assert unprovisioned.value.user_id is None
             identity = await resolver.resolve(_session("viewer-subject"))
-            with pytest.raises(WorkspaceForbidden):
+            with pytest.raises(WorkspaceForbidden) as forbidden:
                 await authorizer.require(
                     identity,
                     workspace_id=other_workspace.workspace_id,
                     permission="project.read",
                 )
+            assert forbidden.value.user_id == identity.user_id
             with pytest.raises(PermissionDenied):
                 await authorizer.require(
                     identity,

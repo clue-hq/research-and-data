@@ -1,10 +1,16 @@
 import {
   AcceptedTurnResponseSchema,
   ChatTurnListResponseSchema,
+  EMPTY_QUEUE_CONTROL,
+  ResumeQueueResponseSchema,
+  StopTurnResponseSchema,
   turnRequestBody,
   type AcceptedTurn,
   type ChatTurnPage,
   type TurnSubmission,
+  type QueueControl,
+  type StopTurnReceipt,
+  type ResumeQueueReceipt,
 } from "../model/chat-turn";
 import { chatRequest, type ChatTransport } from "./chat-api";
 import type { FixtureChatState } from "./chat-fixture-state";
@@ -31,7 +37,8 @@ export interface ChatTurnsRepository {
     projectId: string;
     threadId: string;
     turnId: string;
-  }): Promise<{ alreadyRequested: boolean }>;
+  }): Promise<StopTurnReceipt>;
+  resume(input: { projectId: string; threadId: string; holdControlId: string }): Promise<ResumeQueueReceipt>;
   retry(input: {
     projectId: string;
     threadId: string;
@@ -66,12 +73,17 @@ export function createHttpChatTurnsRepository(
       );
     },
     async stop({ projectId, threadId, turnId }) {
-      const payload = (await chatRequest(
+      return StopTurnResponseSchema.parse(await chatRequest(
         transport,
         turnsPath(projectId, threadId, `/${encodeURIComponent(turnId)}/stop`),
         { method: "POST" },
-      )) as { data?: { already_requested?: boolean } } | null;
-      return { alreadyRequested: payload?.data?.already_requested === true };
+      ));
+    },
+    async resume({ projectId, threadId, holdControlId }) {
+      return ResumeQueueResponseSchema.parse(await chatRequest(
+        transport, turnsPath(projectId, threadId).replace(/\/turns$/, "/queue/resume"),
+        { method: "POST", body: { hold_control_id: holdControlId } },
+      ));
     },
     async retry({ projectId, threadId, turnId }) {
       return AcceptedTurnResponseSchema.parse(
@@ -100,11 +112,13 @@ export function createFixtureChatTurnsRepository(
     meta: {},
   }).turns.slice();
   const accepted = new Map<string, AcceptedTurn>();
+  let queueControl: QueueControl = EMPTY_QUEUE_CONTROL;
 
   return {
     async list() {
       return {
         turns: [...turns],
+        queueControl,
         threadRunning: turns.some(
           (turn) => turn.state === "queued" || turn.state === "running",
         ),
@@ -125,6 +139,9 @@ export function createFixtureChatTurnsRepository(
             : {}),
           ...(submission.response.selectedProductId
             ? { selectedProductId: submission.response.selectedProductId }
+            : {}),
+          ...(submission.response.selectedProductIds
+            ? { selectedProductIds: [...submission.response.selectedProductIds] }
             : {}),
         });
         state.scripts.set(
@@ -150,13 +167,29 @@ export function createFixtureChatTurnsRepository(
         lastEventId: null,
         generationAttempts: 0,
         submissionMessage: null,
+        derivation: null,
       });
       return record;
     },
     async stop({ turnId }) {
       const turn = turns.find((item) => item.turnId === turnId);
+      const existing = turn?.stopRequest;
+      const controlId = existing?.controlId ?? `local-stop-${turnId}`;
+      const requestedAt = existing?.requestedAt ?? new Date().toISOString();
       if (turn) turn.state = "cancelled";
-      return { alreadyRequested: false };
+      if (turn) turn.stopRequest = { controlId, requestedAt, pending: false };
+      if (!existing && turns.some((item) => item.state === "queued")) {
+        queueControl = { paused: true, holdControlId: controlId, pausedAt: requestedAt };
+      }
+      return { turnId, controlId, requestedAt, alreadyRequested: Boolean(existing) };
+    },
+    async resume({ holdControlId }) {
+      if (queueControl.holdControlId && queueControl.holdControlId !== holdControlId) {
+        throw new Error("The queue has a newer hold.");
+      }
+      const replayed = !queueControl.paused;
+      queueControl = EMPTY_QUEUE_CONTROL;
+      return { holdControlId, replayed, dispatchedTurnId: null, queueControl };
     },
     async retry({ projectId, threadId, turnId }) {
       const retryId = `${turnId}-retry`;
@@ -175,6 +208,7 @@ export function createFixtureChatTurnsRepository(
         lastEventId: null,
         generationAttempts: 0,
         submissionMessage: null,
+        derivation: null,
       });
       return record;
     },

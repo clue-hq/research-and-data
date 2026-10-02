@@ -25,7 +25,7 @@ import re
 from collections.abc import Mapping
 from typing import Final
 
-from pydantic import SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The shared database-DSN environment variable. Owned/documented here (M0.4); the db/ package
@@ -70,6 +70,9 @@ class Secrets(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",  # tolerate unrelated env vars (CI/shell noise)
+        # A blank line (``CLUE_AI_ARK_API_KEY=``) is "unset", never an empty credential: the
+        # env-parity rule keeps every documented key present in ``.env`` with secrets left blank.
+        env_ignore_empty=True,
         frozen=True,
     )
 
@@ -78,6 +81,10 @@ class Secrets(BaseSettings):
     # CLUE_DATABASE_URL — the one DSN var name documented in .env.example and read by db/ (M0.3).
     # (No explicit alias needed; that keeps the pydantic-mypy "dynamic alias" rule happy.)
     database_url: SecretStr | None = None
+
+    # Settings invitations and verified email backfill; JWT validation uses public JWKS.
+    # Env: CLUE_AUTH_CLERK_SECRET_KEY.
+    auth_clerk_secret_key: SecretStr | None = None
 
     # --- provider API keys (CLUE_<PROVIDER>_API_KEY) ---
     # One field per credentialed source manifest's auth_ref: ``extra="ignore"`` silently drops any
@@ -97,6 +104,40 @@ class Secrets(BaseSettings):
     parallel_api_key: SecretStr | None = None
     firecrawl_api_key: SecretStr | None = None
     crm_api_key: SecretStr | None = None
+    # Env: CLUE_AI_ARK_API_KEY. Read by the ARV2 AI Ark client (people/company enrichment); sent
+    # as the ``X-TOKEN`` header, which the ARV2 raw sink redacts before any record is written.
+    ai_ark_api_key: SecretStr | None = None
+    # Env: CLUE_GEMINI_API_KEY. Read by the ARV2 media client's **native** transcribe call only —
+    # the one ARV2 model call that bypasses OpenRouter (OpenRouter serves neither the transcribe
+    # model nor a file upload). Every other ARV2 model call uses ``openrouter_api_key`` below.
+    gemini_api_key: SecretStr | None = None
+    # Env: CLUE_PAGES_EDGE_SECRET. Shared with the Cloudflare Worker `pages-edge`; the page origin
+    # refuses page traffic that does not carry it in X-Clue-Edge-Auth (spec §5.2). Empty only in
+    # dev, together with CLUE_PAGES_TRUST_HOST_HEADER=true.
+    pages_edge_secret: SecretStr | None = None
+    # Env: CLUE_CLOUDFLARE_API_TOKEN. Zone-scoped token with only "SSL and Certificates: Edit"
+    # (spec §7.7); read by the custom-hostnames client and nothing else.
+    cloudflare_api_token: SecretStr | None = None
+    # Production recording ASR. DEEPGRAM_API_KEY remains a trial-compatible alias.
+    deepgram_api_key: SecretStr | None = Field(  # type: ignore[pydantic-alias]
+        default=None,
+        validation_alias=AliasChoices(
+            "CLUE_DEEPGRAM_API_KEY", "DEEPGRAM_API_KEY", "deepgram_api_key"
+        ),
+    )
+
+    # --- telemetry roots (lane 3 slice 2) ---
+    # Env: CLUE_SENTRY_DSN — the Sentry project DSN (it authorises event ingest, so a secret).
+    sentry_dsn: SecretStr | None = None
+    # Env: CLUE_OTEL_TRACES_HEADERS — "k=v,k2=v2" sent with every OTLP trace export (Langfuse's
+    # basic-auth header in slice 3); a secret because it carries the project keys.
+    otel_traces_headers: SecretStr | None = None
+
+    # --- Langfuse (lane 3 slice 3) ---
+    # Env: CLUE_LANGFUSE_PUBLIC_KEY / CLUE_LANGFUSE_SECRET_KEY — the project's key pair (the
+    # public key is also an identifier, but the pair authorises ingest, so both are secrets).
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
 
     # --- durable artifact storage (Phase B2 / REQ-07) ---
     # Credentials for the S3-compatible StorageBackend (AWS S3 / R2 / MinIO). Non-secret knobs

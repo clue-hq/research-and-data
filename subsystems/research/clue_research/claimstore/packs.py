@@ -131,6 +131,34 @@ def _seed(
     )
 
 
+#: The ``core.work_email`` verdict vocabulary (ARV2 D4-b decision 6). The first two come from the
+#: provider's own grading (``clue_api.arv2.ai_ark_client.EmailVerdict``): ``verified_smtp`` is a
+#: mailbox that answered, ``catch_all_valid`` a domain that accepts everything. ``invalid`` and
+#: ``unknown`` are the graded failures; ``unverified`` is the honest "nobody probed this address"
+#: an acquisition source with no deliverability check (Exa Websets, Sumble) writes.
+WORK_EMAIL_STATUSES: tuple[str, ...] = (
+    "verified_smtp",
+    "catch_all_valid",
+    "invalid",
+    "unknown",
+    "unverified",
+)
+
+#: An address flattened away from its verdict is a claim nobody can grade, so the two travel
+#: together. ``checked_at`` is the provider's own check timestamp, verbatim; it is **omitted**
+#: rather than written null when the provider gave none — the registry validator has no union type,
+#: and every reader asks with ``.get("checked_at")`` either way.
+WORK_EMAIL_VALUE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["address", "status"],
+    "properties": {
+        "address": {"type": "string"},
+        "status": {"type": "string", "enum": list(WORK_EMAIL_STATUSES)},
+        "checked_at": {"type": "string"},
+    },
+}
+
+
 # ~90-day default freshness; signal/personal fields refresh faster (substrate §6).
 CORE_PACK: tuple[SeedField, ...] = (
     _seed(
@@ -179,10 +207,28 @@ CORE_PACK: tuple[SeedField, ...] = (
         ),
     ),
     _seed(
+        "core.logo_url",
+        "str",
+        PassKind.SCORING,
+        # The account's MARK-type logo (a square symbol, never a wordmark or a social banner) as a
+        # stable image URL: LinkedIn's company mark when Exa Websets returns one (founder ruling
+        # 2026-09-11, which supersedes the D0 "no logo pipeline" posture). Brandfetch's Logo API
+        # is a display-time URL built from the domain and is never stored. The accounts list, the
+        # account detail and the contact profile serve a stored mark through the platform's own
+        # logo route, never as a raw third-party URL.
+        tier_plan=("exa_websets",),
+        freshness_ttl=timedelta(days=180),
+        value_schema={"type": "string"},
+        description="Mark-type company logo image URL (a square symbol: LinkedIn's company mark).",
+    ),
+    _seed(
         "core.industry",
         "str",
         PassKind.SCORING,
-        tier_plan=("sumble_organizations", "apollo", "exa"),
+        # ``exa_deep`` closes the §3.1 row-2 fallback: Sumble Organizations answers it first (tier
+        # 1), Exa Deep is the contract's second owner. Without the declaration the Exa account
+        # action refuses the field outright (it requires its own source key in the tier plan).
+        tier_plan=("sumble_organizations", "apollo", "exa", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={"type": "string"},
         description="Primary industry classification returned with account evidence.",
@@ -192,10 +238,13 @@ CORE_PACK: tuple[SeedField, ...] = (
         "core.company_about",
         "str",
         PassKind.SCORING,
-        tier_plan=("sumble_organizations", "exa_websets"),
+        # §3.1 row 3 owners: Exa Deep and Sumble Organizations. Tier discipline keeps the tier-1
+        # structured source first; ``exa_deep`` is the qualitative last resort it names.
+        tier_plan=("sumble_organizations", "exa_websets", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={"type": "string"},
-        description="Provider-sourced public company description/about text.",
+        description="What the company does, its offering and business model, grounded in "
+        "substantive research and company-page evidence, not copied enrichment-provider prose.",
         research_view_route=_account_route(
             "core.company_about", ResearchSectionKind.ABOUT, ordinal=16
         ),
@@ -246,7 +295,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         "core.annual_revenue",
         "object",
         PassKind.SCORING,
-        tier_plan=("apollo", "sumble_organizations", "exa"),
+        # §3.1 row 7: among the four permitted account sources only Exa Deep can answer revenue
+        # (the pinned Sumble organization attributes carry no revenue figure).
+        tier_plan=("apollo", "sumble_organizations", "exa", "exa_deep"),
         freshness_ttl=timedelta(days=365),
         value_schema={
             "type": "object",
@@ -311,16 +362,18 @@ CORE_PACK: tuple[SeedField, ...] = (
     ),
     _seed(
         "core.work_email",
-        "str",
+        "object",
         PassKind.DEEP,
         tier_plan=("exa_websets",),
         freshness_ttl=timedelta(days=30),
         gate="selected-contact-channel",
         reuse_scope=ReuseScope.TENANT_PRIVATE,
-        value_schema={"type": "string"},
+        value_schema=WORK_EMAIL_VALUE_SCHEMA,
         description=(
-            "Selected contact's observed work email. It is delivery data until independent "
-            "corroboration, reachability, use permission, and optional identity promotion pass."
+            "Selected contact's observed work email: the address with the provider's "
+            "deliverability verdict and the moment it was checked. It is delivery data until "
+            "independent corroboration, reachability, use permission, and optional identity "
+            "promotion pass."
         ),
     ),
     _seed(
@@ -353,7 +406,9 @@ CORE_PACK: tuple[SeedField, ...] = (
         "account.recent_funding",
         "object",
         PassKind.SCORING,
-        tier_plan=("apollo", "exa"),
+        # §3.1 row 12: grounded Exa Deep research is the permitted owner that can actually be
+        # dispatched today (the pinned Sumble v9 organization action cannot request funding).
+        tier_plan=("apollo", "exa", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={
             "type": "object",
@@ -369,7 +424,8 @@ CORE_PACK: tuple[SeedField, ...] = (
         "account.total_funding",
         "object",
         PassKind.SCORING,
-        tier_plan=("apollo", "exa_websets"),
+        # §3.1 row 11, same reasoning as ``account.recent_funding``.
+        tier_plan=("apollo", "exa_websets", "exa_deep"),
         freshness_ttl=timedelta(days=90),
         value_schema={
             "type": "object",

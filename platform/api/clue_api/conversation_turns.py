@@ -21,11 +21,15 @@ local session file; production reads durable project state), so each surface bui
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 from uuid import UUID, uuid5
 
 from clue_agents import (
+    AgentExecutionStatus,
     AgentFinalizeEnvelope,
     AgentRole,
     AgentTurnOutcome,
@@ -36,10 +40,15 @@ from clue_agents import (
     DelegationRequest,
     DelegationResult,
     DeterministicAgentContextAssembler,
+    HistoryMessageRef,
+    MountRequest,
     ResolvedAgentProfile,
+    WorkspaceSeedFile,
 )
+from clue_agents.contracts import ContinuationRef
 from clue_api.account_research_turn_wiring import DbCompiledContextCardReader
 from clue_api.agent_execution_wiring import (
+    C5AgentExecutionAdapter,
     DbAgentPlanJournal,
     FreshWakeChildRunner,
     postgres_agent_checkpointer,
@@ -48,18 +57,38 @@ from clue_api.agent_platform_wiring import (
     AgentPlatformComponents,
     build_agent_context_assembler,
 )
-from clue_api.agent_runtime_wiring import CompletionGuard
+from clue_api.agent_runtime_wiring import (
+    PROJECT_DOCUMENT_OBJECT_TYPE,
+    CompletionGuard,
+)
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.attachment_binding import DbAttachmentDescriber
 from clue_api.chat.turn_stream import TurnStreamEmitter
+from clue_api.conversation_continuation import (
+    continuation_config_for,
+    find_resume_point,
+    gap_history,
+)
+from clue_api.conversation_naming import (
+    ConversationNamer,
+    NamingOutcome,
+    NamingRequest,
+    TurnNamingLauncher,
+)
+from clue_api.conversation_naming import (
+    log as naming_log,
+)
 from clue_api.design_leg_wiring import load_head_of_abm_history
 from clue_api.head_of_abm_wiring import (
     HeadOfAbmStage0Runtime,
     build_head_of_abm_stage0_execution,
 )
+from clue_api.sandbox.workspaces import SandboxWorkspaces, sandbox_mounts_for_lease
 from clue_api.turn_binding import CapturedTurnBinder
 from clue_core import ContextAssembly, ExecutionId, MemoryType
 from clue_db import ConnFactory, transaction
 from clue_execution import CompatibilityLoader, RecipeExecutor
+from clue_obs import get_logger
 from clue_toolbelt import ToolInvoker, ToolRegistry
 
 __all__ = [
@@ -89,6 +118,19 @@ __all__ = [
 #: same rule. The trial surface withholds it too, so the shared ceiling again grants the trial
 #: nothing.
 CONVERSATION_RECIPE_KEY = "recipe0-stage0"
+# Revision 22 (ARV2 onboarding O6) is revision 19 plus the new-lane onboarding surface — the
+# set-valued product gate, the artifact-shaped ICP confirmation gate (``@2``) and the ARV2
+# launch/read pair — and it re-pins the directive draft at ``draft_account_research_directive@5``
+# (profile v43 pinned @5 while revision 19 admitted only @3, so plan validation refused the draft
+# since the R0 merge). The ICP gate is *re-pinned*, not added twice: one requirement set resolves
+# one version per (kind, key), so ``@1`` leaves revision 22. Revision 19 keeps ``@1`` and stays the
+# exact replay input for turns already pinned to it.
+# Revision 21 (Slice B browser-gate repair) is revision 20 with
+# ``draft_account_research_directive@5`` — @4's contract behind a satisfiable schema
+# (``directive.field_keys`` omittable) — in place of @4. Seeded replay-only: the active revision
+# stays 19.
+# Revision 20 (Slice B wave 2) is revision 16 with ``draft_account_research_directive@4`` — the
+# comprehensive-profile directive contract — in place of @3. Seeded replay-only.
 # Revision 19 (genad2) re-pins the delegation entry at ``open_design_leg@4`` — the same tool once
 # more, promoted so a document-less ``doc_kind='scene'`` open births a ZERO-PAGE document the
 # design agent then authors pages into (the format inputs are gone). Revision 18 stays the exact
@@ -105,12 +147,86 @@ CONVERSATION_RECIPE_KEY = "recipe0-stage0"
 # Revision 14 keeps the current-message Account launch path usable after discovery by admitting
 # the two read-only account-research tools already exposed by the promoted profile/skill. Revision
 # 13 remains the exact replay input for turns that were already pinned to it.
-CONVERSATION_RECIPE_VERSION = 19
+# Revision 23 (ARV2 Track R, R4) is revision 22 plus one exact address:
+# ``launch_arv2_discovery@1``, the verified account discovery `head-of-abm@v45` grants and
+# stage0-interview v22 §7b teaches. The slot pins exact addresses, so a granted tool the
+# promoted revision does not admit is refused by plan validation; v22 stays the exact replay
+# input for turns already pinned to it.
+# Revision 24 (ARV2 context and authoring) is revision 23 plus two exact addresses:
+# ``author_icp_document@1`` and ``request_persona_synthesis@1``, the ICP-authoring pair
+# `head-of-abm@v46` grants and stage0-interview v23 §5b/§5c teach. v23 stays the exact replay
+# input for turns already pinned to it.
+# Revision 25 (the project plan) is revision 24 plus one exact address:
+# ``write_project_document@1``, the plan tool `head-of-abm@v47` grants and stage0-interview v24
+# §6b teaches. v24 stays the exact replay input for turns already pinned to it.
+# Revision 26 (the ARV2 reads) is revision 25 plus three exact addresses:
+# ``read_project_accounts@1``, ``read_account_research@1`` and ``read_discovery_run@1``, the
+# effect-free reads `head-of-abm@v48` grants and stage0-interview v25 §7b/§7c teach. v25 stays the
+# exact replay input for turns already pinned to it. The reads' fix waves minted
+# `head-of-abm@v49` / stage0-interview v26 and then `head-of-abm@v50` / stage0-interview v27, but
+# NOT a revision 27: a recipe pins tool ADDRESSES, and no address moved — only the three tools'
+# schema digests, which the profile and the skill pin and this file does not. The thread-workspace
+# wave (`head-of-abm@v51` / stage0-interview v28) mints no revision either, for the same reason:
+# it moves the profile's workspace block and the skill's §1 text, not a tool address. Nor does the
+# workspace-libraries wave (`head-of-abm@v52` / stage0-interview v29 / prompt head-of-abm v9): it
+# grants the `brand/` and `project/` read-only mounts and renames the paths the skill and the
+# prompt tell the model to read, and again no tool address moves. Nor does the brand-index-path
+# fix (`head-of-abm@v53` / stage0-interview v30): it corrects one path the skill names.
+# Nor does the operating manual (`head-of-abm@v54` / stage0-interview v31 / prompt head-of-abm
+# v10): it pins fifteen `manual-*@v1` chapters, each granting no tool, and edits prompt and skill
+# prose. No tool address is added, dropped or moved.
+# Revision 27 (the versioned project root) is the first revision that REMOVES addresses:
+# ``author_icp_document@1``, ``request_persona_synthesis@1`` and ``write_project_document@1``
+# leave the interaction slot, because `head-of-abm@v55` no longer grants them — the three
+# documents they wrote are written as files under the versioned ``project/`` mount, taught by
+# `icp-authoring@v1`, `persona-authoring@v1` and `plan-authoring@v1` and pointed at from
+# stage0-interview v32 §5b/§5c/§6b. v26 stays the exact replay input for turns already pinned to
+# it, so a replayed turn still resolves all three.
+# Revision 28 (paged and spilled reads) re-pins two and adds two: ``read_account_research`` and
+# ``read_discovery_run`` move to their paged ``@2``, the contracts `head-of-abm@v56` grants, and
+# ``read_claims@1`` and ``read_artifact@1`` join, granted for the first time at that version. The
+# two ``@1``s leave the slot rather than stand beside their ``@2``s — one version per ``(kind,
+# key)`` resolves, so both at once is a ``conflicting_requirement`` — and v27 stays the exact
+# replay input for turns pinned to it.
+# Revision 29 (the code sandbox) admits one address and removes none: ``run_python@1``, granted
+# for the first time at `head-of-abm@v58`, so a turn can open a PDF, a deck or a spreadsheet the
+# human attached instead of guessing from its filename. v28 stays the exact replay input for
+# turns pinned to it.
+# Revision 30 (multi-artifact legs) re-pins one address: ``open_design_leg`` moves to ``@5``, the
+# contract `head-of-abm@v59` grants — the top-level ``title`` is gone and the input carries an
+# ``artifacts`` list, so one open births one document per item. ``@4`` leaves the slot rather than
+# stand beside ``@5``, for the reason revision 22 recorded: one version per ``(kind, key)``
+# resolves, so both at once is a ``conflicting_requirement``. ``run_python@1`` stays where
+# revision 29 put it. v29 stays the exact replay input for turns pinned to it.
+# Revision 32 (web search, 2026-09-22) admits one address and removes none: ``web_search@1``.
+# Revision 33 (agent-authored discovery, 2026-09-30) RE-PINS two addresses and adds none:
+# ``launch_arv2_discovery`` moves to ``@2`` (the brief the Head of ABM writes) and
+# ``read_discovery_run`` to ``@3`` (summary, end reason, exclusions), the contracts
+# `head-of-abm@v70` grants. The old versions leave rather than stand beside them (one version
+# per ``(kind, key)``); they stay registered, so v32 stays the exact replay input for turns
+# pinned to it.
+CONVERSATION_RECIPE_VERSION = 33
+
+#: What the human calls a document written *before* the free-flowing writer landed. A plan-3
+#: receipt carries no title on its refs — the field did not exist — and its three object types were
+#: the platform's word for what the document was. Replaying such a turn must still draw the card
+#: the human saw, so those three names survive here and nowhere else. A document written since
+#: carries its own title (:class:`~clue_agents.contracts.DomainObjectRef`), and nothing is looked
+#: up for it.
+_LEGACY_DOCUMENT_TITLES: Mapping[str, str] = MappingProxyType(
+    {
+        PROJECT_DOCUMENT_OBJECT_TYPE: "Plan",
+        "project_icp_document": "ICP",
+        "project_persona_document": "Personas",
+    }
+)
 
 #: Finalization ``domain_refs`` object types that render as a §3.4 ``plan`` part. Deliberately a
 #: closed set: an unknown object type is *not* projected, because a card whose contents the surface
 #: cannot describe is worse than no card. D4's directive/gate objects extend this.
-_PLAN_OBJECT_TYPES: frozenset[str] = frozenset({"research_directive", "agent_plan", "plan"})
+_PLAN_OBJECT_TYPES: frozenset[str] = frozenset(
+    {"research_directive", "agent_plan", "plan", *_LEGACY_DOCUMENT_TITLES}
+)
 
 
 class DelegationWithheld:
@@ -133,6 +249,9 @@ class DelegationWithheld:
     ) -> DelegationResult:
         del request, child_execution_id, resolved_profile
         raise RuntimeError("specialist_delegation_withheld_on_conversation_surface")
+
+
+log = get_logger("clue_api.conversation_turns")
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,9 +288,14 @@ class ConversationTurnEngine:
         runtime: HeadOfAbmStage0Runtime,
         captured_turns: CapturedTurnBinder,
         plans: DbAgentPlanJournal,
+        namer: ConversationNamer | None = None,
+        continuation_enabled: bool = False,
         conn_factory: ConnFactory = transaction,
     ) -> None:
         self.surface = surface
+        # Spec 2026-09-29 §3.1: a turn continues the thread's last completed turn's saved
+        # conversation instead of rebuilding it (the production conversation only).
+        self._continuation_enabled = continuation_enabled
         self.resolved = resolved
         self.components = components
         self._tools = tools
@@ -182,6 +306,9 @@ class ConversationTurnEngine:
         self._runtime = runtime
         self._captured_turns = captured_turns
         self._plans = plans
+        # Conversation naming (2026-09-18 §4.1): a service step beside the turn, never inside it.
+        # Without a namer the launcher is a no-op and every chat keeps its placeholder name.
+        self._naming = TurnNamingLauncher(namer=namer)
         self._conn_factory = conn_factory
 
     @property
@@ -258,6 +385,8 @@ class ConversationTurnEngine:
         submitted_by_user_id: str | None = None,
         submitted_via_membership_id: str | None = None,
         stream: TurnStreamEmitter | None = None,
+        input_seeds: tuple[WorkspaceSeedFile, ...] = (),
+        mounts: MountRequest | None = None,
     ) -> ConversationTurnResult:
         """Run one turn, honouring the committed-outcome replay short-circuit.
 
@@ -275,6 +404,17 @@ class ConversationTurnEngine:
         ``stream`` (FI Lane D D3, charter §3-P4) is the live projection of this turn onto the
         durable event outbox. It is optional and never authoritative: every emission is best-effort
         by construction, and a turn's committed outcome is identical whether anybody was watching.
+
+        ``input_seeds`` (ARV2 onboarding O6) are the surface's read-only workspace inputs for this
+        turn. The engine only forwards them: what they are, and how they were pinned, belongs to
+        the surface that composed them.
+
+        ``mounts`` (spec 2026-09-19 §3.4) is the exact :class:`~clue_agents.MountRequest` the
+        caller acquired ``lease`` with. It is what lets this method derive the turn's host
+        directories for the code sandbox — the tool is handed ids, never handles, so the paths
+        have to be registered here, under the turn's execution id, while the lease is held. A
+        caller that passes none registers nothing and ``run_python@1`` refuses by name, which is
+        the honest answer: a mount table nobody named is a guess.
         """
 
         constitution = request.constitution
@@ -309,34 +449,75 @@ class ConversationTurnEngine:
         if stream is not None:
             await stream.turn_started()
         if committed is None:
-            context = await self._contexts.assemble(
-                request=request,
-                profile=self.resolved.profile,
-                history=prior_history,
-            )
-            execution = build_head_of_abm_stage0_execution(
-                request=request,
-                profiles=self.components.profiles,
-                tools=self._tools,
-                tool_invoker=self._tool_invoker,
-                executor=self._executor,
-                compatibility=self._compatibility,
-                artifacts=self.components.artifacts,
-                plans=self._plans,
-                checkpointer_factory=postgres_agent_checkpointer,
-                budget_limit_millicents=budget_limit_millicents,
-                captured_turns=self._captured_turns,
-                surface=self.surface,
-                conn_factory=self._conn_factory,
-            )
-            outcome = await self._runtime.run(
-                request=request,
-                context=context,
-                lease=lease,
-                execution=execution,
-                completion_guard=completion_guard,
-                stream=stream,
-            )
+            # The code sandbox's one binding (spec 2026-09-19 §3.4). ``ToolContext`` carries
+            # the execution id and nothing else, so this is where ``run_python@1`` is told which
+            # host directories this turn owns — derived from the lease the spill sink below is
+            # bound to, and from the very mount table the model's own file tools see. With no
+            # registry (the sandbox is off) or no ``MountRequest`` (a surface that acquired its
+            # own lease and named nothing) this binds nothing, and the tool refuses by name
+            # rather than running against a guessed path.
+            sandbox = self.components.sandbox_workspaces
+            bound_sandbox: SandboxWorkspaces | None = None
+            if sandbox is not None and mounts is not None:
+                bound_sandbox = sandbox
+                sandbox.register(
+                    constitution.execution_id,
+                    sandbox_mounts_for_lease(
+                        lease,
+                        self.components.workspaces,
+                        brand=mounts.brand,
+                        project_library=mounts.project_library,
+                        project_library_name=mounts.project_library_name,
+                        attachments=mounts.attachments,
+                    ),
+                )
+            try:
+                execution = build_head_of_abm_stage0_execution(
+                    request=request,
+                    profiles=self.components.profiles,
+                    tools=self._tools,
+                    tool_invoker=self._tool_invoker,
+                    executor=self._executor,
+                    compatibility=self._compatibility,
+                    artifacts=self.components.artifacts,
+                    plans=self._plans,
+                    checkpointer_factory=postgres_agent_checkpointer,
+                    budget_limit_millicents=budget_limit_millicents,
+                    captured_turns=self._captured_turns,
+                    surface=self.surface,
+                    # The thread's own workspace is where a governed result too large for its
+                    # receipt lands: `reads/<operation>.json`, readable by the model, written by
+                    # nobody else.
+                    spill_sink=lease.backend,
+                    conn_factory=self._conn_factory,
+                )
+                # Continue or open fresh — decided before assembly, because a turn has exactly one
+                # opening-context receipt (spec 2026-09-29 §3.1).
+                history, continuation, continuation_config = await self._continuation_for(
+                    request=request, lease=lease, execution=execution, fresh_history=prior_history
+                )
+                context = await self._contexts.assemble(
+                    request=request,
+                    profile=self.resolved.profile,
+                    history=history,
+                    continuation=continuation,
+                )
+                outcome = await self._runtime.run(
+                    request=request,
+                    context=context,
+                    lease=lease,
+                    execution=execution,
+                    completion_guard=completion_guard,
+                    stream=stream,
+                    input_seeds=input_seeds,
+                    continuation_config=continuation_config,
+                )
+            finally:
+                # On every exit path — returned, raised, cancelled — and idempotent, because the
+                # binding must not outlive the lease it names: a later turn's script reaching a
+                # released tree is exactly what this registry exists to prevent.
+                if bound_sandbox is not None:
+                    bound_sandbox.release(constitution.execution_id)
         else:
             outcome = committed
         return await self._result_from_outcome(
@@ -346,7 +527,78 @@ class ConversationTurnEngine:
             thread_id=request.thread_id,
             stream=stream,
             replayed=committed is not None,
+            naming_scope=(request.constitution.project_id, request.user_message_artifact_ref),
         )
+
+    async def _continuation_for(
+        self,
+        *,
+        request: AgentTurnRequest,
+        lease: AgentWorkspaceLease,
+        execution: C5AgentExecutionAdapter,
+        fresh_history: tuple[HistoryMessageRef, ...],
+    ) -> tuple[tuple[HistoryMessageRef, ...], ContinuationRef | None, dict[str, Any] | None]:
+        """The history this turn opens with, and what it continues (if anything).
+
+        Continues the thread's latest completed Head-of-ABM turn under the same profile, prompt
+        and tool surface when its saved conversation is settled; otherwise the turn opens fresh
+        with the whole thread history, exactly as before.
+        """
+        if not self._continuation_enabled:
+            return fresh_history, None, None
+        constitution = request.constitution
+        async with self._conn_factory() as conn:
+            point = await find_resume_point(
+                conn,
+                workspace_id=constitution.workspace_id,
+                thread_id=request.thread_id,
+                current_turn_id=request.turn_id,
+                profile_name=constitution.profile_ref.name,
+                profile_version=constitution.profile_ref.version,
+                profile_sha256=constitution.profile_ref.sha256,
+                resource_manifest_sha256=constitution.resource_manifest_sha256,
+            )
+        if point is None:
+            return fresh_history, None, None
+        config = continuation_config_for(point)
+        # Missing, unsettled or unreadable all open fresh (spec §3.1). An unreadable one must not
+        # fail the turn: the resume point would not change, so every later turn would fail too.
+        try:
+            settled = await self._runtime.continuation_is_settled(
+                request=request, lease=lease, execution=execution, continuation_config=config
+            )
+            reason = "saved_conversation_not_settled"
+        except Exception:
+            log.warning(
+                "agent_turn.continuation_unreadable",
+                turn_id=str(request.turn_id),
+                resume_turn_id=str(point.turn_id),
+                exc_info=True,
+            )
+            settled = False
+            reason = "saved_conversation_unreadable"
+        if not settled:
+            log.warning(
+                "agent_turn.continuation_fallback",
+                turn_id=str(request.turn_id),
+                resume_turn_id=str(point.turn_id),
+                reason=reason,
+            )
+            return fresh_history, None, None
+        async with self._conn_factory() as conn:
+            gap = await gap_history(
+                conn,
+                workspace_id=constitution.workspace_id,
+                thread_id=request.thread_id,
+                after_sequence=point.last_message_sequence,
+                current_turn_id=request.turn_id,
+            )
+        continuation = ContinuationRef(
+            turn_id=point.turn_id,
+            execution_id=ExecutionId(point.execution_id),
+            gap_message_ids=tuple(item.message_id for item in gap),
+        )
+        return gap, continuation, config
 
     async def _result_from_outcome(
         self,
@@ -357,8 +609,14 @@ class ConversationTurnEngine:
         thread_id: str,
         stream: TurnStreamEmitter | None,
         replayed: bool,
+        naming_scope: tuple[str, ArtifactRef] | None = None,
     ) -> ConversationTurnResult:
-        """Resolve one durable outcome into its canonical message and optional projection."""
+        """Resolve one durable outcome into its canonical message and optional projection.
+
+        ``naming_scope`` is what conversation naming needs and this method does not otherwise
+        read: the turn's project and the artifact holding what the human wrote. Only ``execute``
+        passes it — a replayed turn was already named by the process that first completed it.
+        """
 
         assistant_message: str | None = None
         envelope: AgentFinalizeEnvelope | None = None
@@ -378,6 +636,40 @@ class ConversationTurnEngine:
                     role="assistant",
                     body_ref=envelope.user_message_artifact_ref,
                 )
+        naming_task = None
+        if (
+            naming_scope is not None
+            and not replayed
+            and assistant_message
+            and outcome.status
+            in (AgentExecutionStatus.COMPLETED, AgentExecutionStatus.AWAITING_INPUT)
+        ):
+            # §4.10: nothing on the naming path may raise into the turn — and this read is on
+            # the turn's own path, ahead of the launcher's own guard. A turn that already
+            # produced its reply must not fail because the message it was answering could not be
+            # re-read; it simply goes unnamed.
+            try:
+                project_id, user_message_ref = naming_scope
+                user_message = (await self.components.artifacts.read(user_message_ref)).decode()
+                naming_task = self._naming.start(
+                    NamingRequest(
+                        workspace_id=workspace_id,
+                        project_id=project_id,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        user_message=user_message,
+                        assistant_message=assistant_message,
+                    )
+                )
+            except Exception:  # noqa: BLE001 — a naming failure is a skip, never a turn error
+                naming_log.warning(
+                    "conversation_naming.skipped",
+                    reason="user_message_unreadable",
+                    turn_id=str(turn_id),
+                    thread_id=thread_id,
+                    exc_info=True,
+                )
+                naming_task = None
         if stream is not None:
             await self._project_turn_close(
                 stream=stream,
@@ -385,6 +677,7 @@ class ConversationTurnEngine:
                 envelope=envelope,
                 assistant_message=assistant_message,
                 replayed=replayed,
+                naming_task=naming_task,
             )
         return ConversationTurnResult(
             outcome=outcome,
@@ -400,6 +693,7 @@ class ConversationTurnEngine:
         envelope: AgentFinalizeEnvelope | None,
         assistant_message: str | None,
         replayed: bool,
+        naming_task: asyncio.Task[NamingOutcome] | None = None,
     ) -> None:
         """Project the finalization's durable refs, reconcile the text, then close the turn.
 
@@ -430,16 +724,36 @@ class ConversationTurnEngine:
             await stream.emit_gate_parts(refs=envelope.open_gate_refs)
             for ref in envelope.domain_refs:
                 if ref.object_type in _PLAN_OBJECT_TYPES:
+                    # A project document is titled by the document: the human reads "Q4 expansion
+                    # plan", the name it gave itself, and each version is a file revision they can
+                    # see in the editor, so it reads as "v3" rather than a bare ordinal. A plan-3
+                    # receipt has no title and falls back to the name that surface used; everything
+                    # else in the set keeps the old generic rendering.
+                    document_title = ref.title or _LEGACY_DOCUMENT_TITLES.get(ref.object_type)
                     await stream.emit_plan_part(
                         ref=ref,
-                        title=ref.object_type.replace("_", " "),
-                        revision_label=None if ref.version is None else str(ref.version),
+                        title=(
+                            document_title
+                            if document_title is not None
+                            else ref.object_type.replace("_", " ")
+                        ),
+                        revision_label=(
+                            f"v{ref.version}"
+                            if document_title is not None and ref.version is not None
+                            else (None if ref.version is None else str(ref.version))
+                        ),
                     )
         await stream.emit_launched_task_parts()
         if replayed:
             await stream.rehydrate(reason="turn_replayed")
         else:
             await stream.reconcile_text(assistant_message=assistant_message)
+        # §4.1: a fast namer lands before the terminal event (one refetch shows the names); a
+        # slow one keeps running detached. The terminal event never waits longer than the grace.
+        # (``wait_grace(None)`` is already a no-op; the guard keeps this projection callable
+        # unbound, as the D5 close-projection tests call it.)
+        if naming_task is not None:
+            await self._naming.wait_grace(naming_task)
         await stream.turn_finished(
             status=outcome.status.value,
             failure_code=outcome.failure_code,
@@ -459,6 +773,8 @@ def build_conversation_turn_engine(
     requested_memory_types: tuple[MemoryType, ...],
     context_policy: ContextAssemblyPolicy,
     child_runner: FreshWakeChildRunner | None = None,
+    namer: ConversationNamer | None = None,
+    continuation: bool = False,
     conn_factory: ConnFactory = transaction,
 ) -> ConversationTurnEngine:
     """Compose one conversation engine for one declared capability surface.
@@ -487,6 +803,12 @@ def build_conversation_turn_engine(
         requested_memory_types=requested_memory_types,
         policy=context_policy,
         captured_turns=captured_turns,
+        # L7 names this turn's attachments from the submission rows, so a file the human dropped
+        # into the conversation is a named file with a readable path rather than a bare hash.
+        attachment_describer=DbAttachmentDescriber(conn_factory=conn_factory),
+        # An image the user sent earlier stays in the conversation so it can still be asked about
+        # later; the operator's setting decides how many the thread carries (ruling 2).
+        history_images_max=components.history_images_max,
         conn_factory=conn_factory,
     )
     runtime = HeadOfAbmStage0Runtime(
@@ -496,8 +818,10 @@ def build_conversation_turn_engine(
         artifacts=components.artifacts,
         tools=tools,
         child_runner=child_runner if child_runner is not None else DelegationWithheld(),
-        max_runtime_s=resolved.profile.turn_timeout_s,
-        max_rounds=resolved.profile.max_model_rounds,
+        # Operator settings, not the profile's own numbers (founder ruling 2026-09-27).
+        max_runtime_s=components.head_of_abm_turn_timeout_s,
+        max_rounds=components.head_of_abm_max_model_rounds,
+        long_turn_alert_s=components.agent_long_turn_alert_s,
         surface=surface,
         conn_factory=conn_factory,
     )
@@ -513,5 +837,7 @@ def build_conversation_turn_engine(
         runtime=runtime,
         captured_turns=captured_turns,
         plans=DbAgentPlanJournal(conn_factory=conn_factory),
+        namer=namer,
+        continuation_enabled=continuation,
         conn_factory=conn_factory,
     )

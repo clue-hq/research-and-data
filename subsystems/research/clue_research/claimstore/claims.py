@@ -39,6 +39,7 @@ from clue_core import (
     RunId,
     VerificationStatus,
     can_be_promoted,
+    decode_jsonb,
     decode_jsonb_scalar,
     serialize_value_json,
 )
@@ -55,7 +56,7 @@ _INSERT_SQL = text(
         extraction_method, evidence_span, confidence, corroborations, observed_at,
         collected_at, cost_cents, run_id, research_mode, superseded_by, verification_status,
         identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id,
-        product_id
+        product_id, signal_priority, outreach_safe, write_markers
     ) VALUES (
         :id, :entity_id, CAST(:entity_type AS entity_type), :field_key,
         CAST(:value_json AS jsonb), :source_url, :source_key, :artifact_key,
@@ -67,7 +68,8 @@ _INSERT_SQL = text(
         CAST(:verification_status AS verification_status),
         CAST(:identity_binding AS identity_binding), CAST(:use_class AS use_class),
         CAST(:discovery_provenance AS jsonb), CAST(:claim_flavor AS claim_flavor),
-        CAST(:reuse_scope AS reuse_scope), :workspace_id, :product_id
+        CAST(:reuse_scope AS reuse_scope), :workspace_id, :product_id,
+        :signal_priority, :outreach_safe, CAST(:write_markers AS jsonb)
     )
     RETURNING id
     """
@@ -82,7 +84,7 @@ _SELECT_COLUMNS = (
     "extraction_method, evidence_span, confidence, corroborations, observed_at, collected_at, "
     "cost_cents, run_id, research_mode, superseded_by, verification_status, "
     "identity_binding, use_class, discovery_provenance, claim_flavor, reuse_scope, workspace_id, "
-    "product_id"
+    "product_id, signal_priority, outreach_safe, write_markers"
 )
 
 
@@ -105,6 +107,13 @@ def _retention_eligible_sql(*, claim_alias: str = "claim") -> str:
         "AND retention.retention_until <= :retention_at"
         ")"
     )
+
+
+def _quality_eligible_sql(*, claim_alias: str = "claim") -> str:
+    # Lazy import keeps the correction helper and read predicate behind the same substrate seam.
+    from clue_research.claimstore.quality import eligible_sql
+
+    return eligible_sql(claim_alias)
 
 
 def _insert_params(claim: Claim) -> dict[str, object]:
@@ -146,6 +155,11 @@ def _insert_params(claim: Claim) -> dict[str, object]:
         "reuse_scope": claim.reuse_scope.value,
         "workspace_id": claim.workspace_id,
         "product_id": claim.product_id,
+        "signal_priority": claim.signal_priority,
+        "outreach_safe": claim.outreach_safe,
+        "write_markers": (
+            None if claim.write_markers is None else serialize_value_json(claim.write_markers)
+        ),
     }
 
 
@@ -191,6 +205,9 @@ def _row_to_claim(row: dict[str, object]) -> Claim:
             "reuse_scope": row.get("reuse_scope", "public_footprint"),
             "workspace_id": row.get("workspace_id"),
             "product_id": row.get("product_id"),
+            "signal_priority": row.get("signal_priority", 3),
+            "outreach_safe": row.get("outreach_safe", True),
+            "write_markers": decode_jsonb(row.get("write_markers")),
         }
     )
 
@@ -231,7 +248,8 @@ async def insert_claim(
     if claim.verification_status is VerificationStatus.VERIFIED and not can_be_promoted(claim):
         raise ValueError(
             "cannot insert a 'verified' claim that is not promotable "
-            "(direct tier-4 without evidence_span, or weak-binding contact claim) — "
+            "(direct tier-4 without evidence_span, or weak-binding contact claim, "
+            "or a web/synthesis claim with no source_url) — "
             "substrate §1/§6"
         )
     result = await conn.execute(_INSERT_SQL, _insert_params(claim))
@@ -294,6 +312,42 @@ async def supersede_claims(
     return new_id
 
 
+async def supersede_with_existing(
+    conn: AsyncConnection,
+    old_id: ClaimId,
+    replacement_id: ClaimId,
+    *,
+    workspace_id: str,
+    entity_id: EntityId,
+) -> None:
+    """Link an existing validated replacement while preserving both observations.
+
+    This is the shared correction seam for callers that already wrote/reused an evidence-backed
+    replacement. Locks and exact subject/field checks prevent cross-entity or stale replacement.
+    """
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT id,field_key,superseded_by FROM claim WHERE id=ANY(:ids) "
+                    "AND workspace_id=:ws AND entity_id=:entity ORDER BY id FOR UPDATE"
+                ),
+                {"ids": sorted({old_id, replacement_id}), "ws": workspace_id, "entity": entity_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    if len(rows) != 2 or len({r["field_key"] for r in rows}) != 1:
+        raise ValueError("supersession requires distinct claims on the same subject and field")
+    if any(r["superseded_by"] is not None for r in rows):
+        raise ValueError("supersession requires two live claims")
+    await conn.execute(
+        text("UPDATE claim SET superseded_by=:new WHERE id=:old"),
+        {"new": replacement_id, "old": old_id},
+    )
+
+
 async def record_verification(
     conn: AsyncConnection,
     claim_id: ClaimId,
@@ -342,7 +396,8 @@ async def claims_for(
     """Raw claim history for an entity (audit / time-travel / provenance index).
 
     Returns the live claims by default (``superseded_by IS NULL``); pass
-    ``include_superseded=True`` for the full append-only history. This is the *raw* reader — the
+    ``include_superseded=True`` for the full append-only history, including invalid/unresolved
+    observations. Ordinary reads honor recorded quality decisions. The
     deterministic "current truth" merge is :func:`clue_research.claimstore.current_value` (M1.2),
     not here. ``scope`` is **required** (M2.5 — fail-closed): there is no fail-open default, so no
     read path can accidentally cross tenants. An operator/audit caller passes
@@ -356,6 +411,7 @@ async def claims_for(
         WHERE entity_id = :entity_id
           AND (CAST(:field_key AS text) IS NULL OR field_key = :field_key)
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND {scope_sql}
         ORDER BY collected_at DESC, id
         """
@@ -396,6 +452,7 @@ async def claims_for_entities(
         WHERE entity_id IN :entity_ids
           {field_clause}
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND (CAST(:include_superseded AS boolean) OR {retention_sql})
           AND {scope_sql}
         ORDER BY field_key, collected_at DESC, id
@@ -457,6 +514,7 @@ async def claims_by_ids(
         FROM claim
         WHERE id IN :ids
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND (CAST(:include_expired AS boolean) OR {retention_sql})
           AND {scope_sql}
         """
@@ -505,6 +563,7 @@ async def entities_with_field_claim(
         WHERE field_key = :field_key
           AND (CAST(:run_id AS uuid) IS NULL OR run_id = :run_id)
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND {scope_sql}
         ORDER BY entity_id
         """
@@ -553,6 +612,7 @@ async def claims_for_runs(
         FROM claim
         WHERE run_id IN :run_ids
           AND (CAST(:include_superseded AS boolean) OR superseded_by IS NULL)
+          AND (CAST(:include_superseded AS boolean) OR {_quality_eligible_sql()})
           AND {scope_sql}
         ORDER BY run_id, collected_at DESC, id
         """

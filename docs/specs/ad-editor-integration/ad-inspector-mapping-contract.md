@@ -156,6 +156,22 @@ Click-to-select via engine `hitTest` (selection outline) · **drag-to-move** ·
 text editing, marquee, Delete-key deletion, arrow-key nudge (§7). Undo/redo: wired
 (action-menu rows + ⌘Z/⇧⌘Z).
 
+> **SUPERSEDED IN PART, 2026-08-24 (founder direction) — double-click text editing IS
+> SHIPPED.** The rich-text plan
+> (`docs/superpowers/plans/2026-08-24-rich-text-editing.md`, rung B) lifts it out of the
+> not-in-v1 list above: a double-click on a text node opens a real caret session on the
+> canvas — the design subsystem's `TextEditOverlay` ported (a DOM `<textarea>` over the node,
+> style-matched, editing the stored content), with the node's painted glyphs suppressed for
+> the duration. A double-click on anything else drills the selection out to its top-level
+> container. **The contract:** commit on blur or ⌘/Ctrl+Enter as ONE `updateTextNode` batch —
+> one atomic edit, one undo frame — Escape cancels and writes nothing, and an unchanged draft
+> writes nothing either. **The gates are unchanged and still bind:** a LOCKED node opens no
+> session (§1.0/§4), Gate G-H refuses to OPEN one mid-turn (an already-open session is not
+> force-killed — D10 CAS is the net), and a node the reload took away closes its session and
+> discards the draft. Ruling C-9's freeze-on-grab deliberately does not fire for a text
+> session: a layout-managed node edits its content and the solver re-solves around it.
+> Everything else in this line — rotate handle, marquee, Delete-key, nudge — stays §7.
+
 ### §1.10 Zoom & viewport
 Dummy-style dropdown, options **10%–150% in 5% steps, scrollable**; **fit-on-open** (initial
 zoom fits the artboard and displays the nearest step).
@@ -228,6 +244,13 @@ italic/underline/strike, truncate) · Line/Vector/Instance schemas (2026-08-19 r
 item is picked up.)
 
 ## §7 — Future-work register (explicitly not v1)
+
+> **AMENDED 2026-08-24 (founder direction): "double-click text editing" LEAVES this register
+> — it is shipped.** See the §1.9 supersession note above and
+> `docs/superpowers/plans/2026-08-24-rich-text-editing.md` (rung B; rung C's range styling
+> rides the engine's `TextSpan` machinery and is the plan's own destination). Every other
+> item on the line below stays future work.
+
 Tool palette (insert tools) · rotate handle, double-click text editing, marquee, Delete-key,
 nudge · versions-flyout binding to real history · JPEG (client-side conversion or engine
 format) · multi-page/PageRail · Duplicate/Archive/Delete menu actions · text-extras surfacing ·

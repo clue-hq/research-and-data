@@ -27,6 +27,7 @@ from clue_research.adapters.exa_websets import EXA_WEBSETS_SOURCE_KEY
 from clue_research.compliance import DataSubjectRightsImpl, ErasureScope
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from clue_research.resolvers.sumble.people import PEOPLE_SOURCE_KEY
+from clue_research.stage0.fields import load_client_knowledge_pack
 from tests._workspace import seed_workspace
 from tests.db.conftest import run_async
 from tests.profiling.conftest import rollback_conn
@@ -110,6 +111,9 @@ class _ImmediateProvider:
 def test_durable_matching_results_are_unverified_governed_and_replay_safe() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
+            # The lookup seeds the source manifests, whose yields include the Client-KB fields
+            # this pack registers (loaded at onboarding in a live workspace).
+            await load_client_knowledge_pack(conn)
             await seed_workspace(conn, _WS)
             await seed_workspace(conn, _OTHER_WS)
             account_id = await insert_account_entity(
@@ -186,7 +190,14 @@ def test_durable_matching_results_are_unverified_governed_and_replay_safe() -> N
             ).all()
             assert len(claims) == 2
             assert {str(row[0]) for row in claims} == {EXA_WEBSETS_SOURCE_KEY, PEOPLE_SOURCE_KEY}
-            assert all(str(row[1]) == "dana@northstar.example" for row in claims)
+            # D4-b decision 6: the stored value is the address with the verdict that grades it.
+            # Neither acquisition source probes a mailbox, so both write ``unverified`` — the same
+            # thing ``verification_status`` says one column over, and the reason the chip offers a
+            # lookup rather than presenting these addresses as verified.
+            assert all(
+                row[1] == {"address": "dana@northstar.example", "status": "unverified"}
+                for row in claims
+            )
             governance_rows = [
                 (str(row[2]), str(row[3]), str(row[4]), str(row[5]), str(row[6])) for row in claims
             ]
@@ -260,6 +271,9 @@ def test_durable_matching_results_are_unverified_governed_and_replay_safe() -> N
 def test_channel_suppression_prevents_provider_dispatch() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:
+            # The lookup seeds the source manifests, whose yields include the Client-KB fields
+            # this pack registers (loaded at onboarding in a live workspace).
+            await load_client_knowledge_pack(conn)
             await seed_workspace(conn, _WS)
             account_id = await insert_account_entity(
                 conn,
@@ -311,5 +325,141 @@ def test_channel_suppression_prevents_provider_dispatch() -> None:
                     {"contact_id": contact_id},
                 )
             ).scalar_one() == 0
+
+    run_async(_run())
+
+
+class _FakeArk:
+    """Stands in for ``AiArkClient``: one export answer, or AI Ark refusing to sell."""
+
+    def __init__(self, record: dict[str, object] | None, *, halted: bool = False) -> None:
+        self.record = record
+        self.halted = halted
+        self.urls: list[str] = []
+
+    def export_email(self, linkedin_url: str) -> object:
+        from clue_api.arv2.ai_ark_client import email_export_from_record
+        from clue_api.arv2.errors import ProviderHalted
+
+        self.urls.append(linkedin_url)
+        if self.halted:
+            raise ProviderHalted("ai_ark", "insufficient_credit")
+        return email_export_from_record(self.record or {})
+
+
+async def _ark_lookup(conn: object, ark: _FakeArk) -> tuple[object, EmailLookupTarget]:
+    from pydantic import SecretStr
+
+    from clue_api.frontend_read.contact_email_lookup import AiArkEmailProvider
+
+    await load_client_knowledge_pack(conn)  # type: ignore[arg-type]
+    await seed_workspace(conn, _WS)  # type: ignore[arg-type]
+    account_id = await insert_account_entity(
+        conn,  # type: ignore[arg-type]
+        canonical_name="Northstar Health",
+        primary_domain="northstar.example",
+        status=AccountStatus.ACTIVE,
+        workspace_id=_WS,
+    )
+    contact_id = await insert_contact_entity(
+        conn,  # type: ignore[arg-type]
+        account_entity_id=account_id,
+        full_name="Dana Buyer",
+        linkedin_url="https://www.linkedin.com/in/dana-buyer",
+        status=AccountStatus.ACTIVE,
+    )
+    target = EmailLookupTarget(
+        workspace_id=_WS,
+        account_id=uuid.UUID(str(account_id)),
+        contact_id=uuid.UUID(str(contact_id)),
+        full_name="Dana Buyer",
+        linkedin_url="https://www.linkedin.com/in/dana-buyer",
+        account_name="Northstar Health",
+        primary_domain="northstar.example",
+    )
+    lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def _conn_factory():  # type: ignore[no-untyped-def]
+        async with lock:
+            yield conn
+
+    service = ContactEmailLookupService(
+        providers=(
+            AiArkEmailProvider(
+                api_key=SecretStr("test-key"),
+                min_gap_s=0,
+                conn_factory=_conn_factory,
+                client_factory=lambda caller: ark,
+            ),
+        ),
+        storage=_MemoryStorage(),
+        conn_factory=_conn_factory,
+    )
+    view = await service.start(target=target, requested_by="usr-founder")
+    return view, target
+
+
+def test_the_lookup_asks_ai_ark_and_keeps_its_mailbox_verdict() -> None:
+    """Founder ruling 2026-09-29: the Contacts-table lookup is AI Ark's single-person export,
+    the research agents' own email path, and the address keeps AI Ark's verdict."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            ark = _FakeArk(
+                {
+                    "email": {
+                        "output": [
+                            {
+                                "address": "dana@northstar.example",
+                                "status": "VALID",
+                                "domainType": "SMTP",
+                                "found": True,
+                                "date": "2026-09-29T00:00:00Z",
+                            }
+                        ]
+                    }
+                }
+            )
+            view, target = await _ark_lookup(conn, ark)
+            assert ark.urls == [target.linkedin_url]
+            assert view.state is EmailLookupState.AVAILABLE
+            assert [item.value for item in view.emails] == ["dana@northstar.example"]
+            assert [s.label for s in view.emails[0].sources] == ["AI Ark"]
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT source_key, value_json FROM claim "
+                        "WHERE source_operation_ref=:lookup_id"
+                    ),
+                    {"lookup_id": str(view.lookup_id)},
+                )
+            ).one()
+            assert str(row[0]) == "ai_ark_people"
+            assert row[1] == {
+                "address": "dana@northstar.example",
+                "status": "verified_smtp",
+                "checked_at": "2026-09-29T00:00:00Z",
+            }
+
+    run_async(_run())
+
+
+def test_an_ai_ark_answer_without_a_usable_address_is_not_found() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            view, _ = await _ark_lookup(conn, _FakeArk({"email": {"output": []}}))
+            assert view.state is EmailLookupState.NOT_FOUND
+            assert view.emails == ()
+
+    run_async(_run())
+
+
+def test_ai_ark_refusing_to_sell_is_unavailable_not_a_failure() -> None:
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            view, _ = await _ark_lookup(conn, _FakeArk(None, halted=True))
+            assert view.state is EmailLookupState.UNAVAILABLE
+            assert view.emails == ()
 
     run_async(_run())

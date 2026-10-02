@@ -6,6 +6,7 @@ import {
 import { hasAllowedOrigin } from "@/auth/bff";
 import { providerSessionToken } from "@/auth/server";
 import { handleProvisionRequest } from "./provision-handler";
+import { localProvisioningRefusal } from "@/auth/local-workspace";
 
 /**
  * FI-4 D-2 transport: the provisioning call cannot ride the generic `/api/clue` BFF because
@@ -15,6 +16,8 @@ import { handleProvisionRequest } from "./provision-handler";
  * without the membership gate, and forwards only to the one backend provisioning route.
  */
 export async function POST(request: Request): Promise<Response> {
+  const refusal = localProvisioningRefusal();
+  if (refusal) return refusal;
   const authenticationEnabled = isAuthenticationEnabled();
   const requestId = crypto.randomUUID();
   return handleProvisionRequest(request, {

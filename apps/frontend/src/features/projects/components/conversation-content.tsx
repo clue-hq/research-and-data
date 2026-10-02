@@ -2,11 +2,10 @@
 
 import { useMemo } from "react";
 import type { ProjectChatController } from "../hooks/use-project-chat-controller";
-import type { ProjectWorkspace } from "../model/project-workspace";
+import type { ProjectEntity } from "../model/project-workspace";
 import { useTranscriptAutoScroll } from "../hooks/use-transcript-auto-scroll";
-import { useTurnInspector } from "../hooks/use-turn-inspector";
+import { openClarification } from "../model/clarification";
 import { ChatTranscript } from "./chat-transcript";
-import { ChatTurnInspector } from "./chat-turn-inspector";
 import styles from "./project-flow.module.css";
 
 /**
@@ -32,36 +31,46 @@ import styles from "./project-flow.module.css";
  */
 export function ConversationContent({
   chat,
+  contextEntities,
   contextHandoffError,
-  projectId,
-  workspace,
+  onOpenPlan,
 }: {
   chat: ProjectChatController;
+  /** The composer's whole catalog, so a chip resolves whatever was mentioned. */
+  contextEntities: ProjectEntity[];
   contextHandoffError: string | null;
-  projectId: string;
-  workspace: ProjectWorkspace;
+  onOpenPlan?: (documentId: string) => void;
 }) {
-  // The dev-lens turn inspector. Its own controller, not part of `chat`: it
-  // reads nothing the conversation needs and the conversation needs nothing
-  // from it, so a debugging affordance never joins the state machine that
-  // drives real turns. `available` is false in every deployment that did not
-  // register the routes, which is every production deployment.
-  const turnInspector = useTurnInspector({ projectId, threadId: chat.activeThreadId });
   const activeUserMessageId = chat.transcript.reduce<string | null>(
     (latest, message) => (message.role === "user" ? message.id : latest),
     null,
   );
   const { transcriptScrollRef } = useTranscriptAutoScroll({
     activeMessageRevision: activeUserMessageId,
+    // C5 scrollback: reaching the top of the list loads the preceding durable
+    // page; the hook re-anchors the view when it prepends. No new UI — the
+    // dummy build shows nothing during a scrollback fetch, so nothing renders.
+    canLoadOlder: chat.hasOlderMessages,
+    onLoadOlder: () => void chat.loadOlderMessages(),
     revision: chat.transcript.reduce(
       (total, message) => total + message.parts.length + (message.body ? 1 : 0),
       chat.transcript.length,
     ),
   });
 
+  // The asking turn's questions are shown ONCE. While the interactive card is
+  // up above the composer, that turn's inline read-only record would be the
+  // same questions a second time; older asking turns keep theirs.
+  const openClarificationTurnId = useMemo(
+    () => openClarification(chat.transcript)?.turnId ?? null,
+    [chat.transcript],
+  );
+
   const partActions = useMemo(
     () => ({
       busy: chat.submitting,
+      onOpenPlan,
+      openClarificationTurnId,
       gateFor: chat.gateFor,
       onGateDecision: (
         card: Parameters<ProjectChatController["answerGate"]>[0],
@@ -73,7 +82,7 @@ export function ConversationContent({
         void chat.recoverGate(card);
       },
     }),
-    [chat],
+    [chat, onOpenPlan, openClarificationTurnId],
   );
 
   return (
@@ -102,28 +111,11 @@ export function ConversationContent({
         <ChatTranscript
           activeUserMessageId={activeUserMessageId}
           actions={partActions}
-          contextEntities={workspace.entities}
+          contextEntities={contextEntities}
           gateAnswerForTurn={chat.gateAnswerForTurn}
           messages={chat.transcript}
-          onInspectTurn={turnInspector.available ? turnInspector.open : undefined}
         />
       </div>
-      <ChatTurnInspector inspector={turnInspector} />
-
-      {chat.threadBusy ? (
-        <div className={styles.planApprovalActions}>
-          <span role="status">
-            {chat.runningTurn
-              ? "Working — new messages will queue behind this turn."
-              : "Queued — waiting for the current turn to start."}
-          </span>
-          {chat.runningTurn ? (
-            <button onClick={() => void chat.stopActiveTurn()} type="button">
-              Stop
-            </button>
-          ) : null}
-        </div>
-      ) : null}
     </>
   );
 }

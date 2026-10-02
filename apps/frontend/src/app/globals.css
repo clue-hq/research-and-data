@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource-variable/inter";
+@import "@fontsource/dm-mono/300.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 

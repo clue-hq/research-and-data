@@ -329,6 +329,21 @@ class DerivationDependencyResolver:
 
         ordered_ids = tuple(sorted(seen, key=str))
         visible = await claims_by_ids(conn, ordered_ids, scope=scope)
+        # These remain separate histories: a recorded quality decision, never a writer's marker,
+        # permits this profile's support. Ordinary reads already enforce its current assessment.
+        quality_supported = frozenset(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT claim_id FROM claim_quality_current WHERE claim_id=ANY(:ids) "
+                        "AND conclusion='supported'"
+                    ),
+                    {"ids": list(visible)},
+                )
+            )
+            .scalars()
+            .all()
+        )
         missing = tuple(claim_id for claim_id in ordered_ids if claim_id not in visible)
         scoped_audit = (
             await claims_by_ids(conn, missing, scope=scope, include_superseded=True)
@@ -400,6 +415,7 @@ class DerivationDependencyResolver:
             node_limited=frozenset(node_limited),
             ttl_by_field=ttl_by_field,
             conflicted=frozenset(conflicted),
+            quality_supported=quality_supported,
         )
 
     def _resolve(
@@ -469,7 +485,7 @@ class DerivationDependencyResolver:
             )
             memo[claim_id] = resolution
             return resolution
-        if claim.verification_status not in {
+        if claim.id not in graph.quality_supported and claim.verification_status not in {
             VerificationStatus.VERIFIED,
             VerificationStatus.FLAGGED,
         }:
@@ -647,6 +663,7 @@ class DerivationDependencyResolver:
 
 @dataclass(frozen=True)
 class _DependencyGraph:
+    quality_supported: frozenset[ClaimId]
     supports: dict[ClaimId, tuple[ResearchSupportRef, ...]]
     visible: dict[ClaimId, Claim]
     scoped_audit: frozenset[ClaimId]

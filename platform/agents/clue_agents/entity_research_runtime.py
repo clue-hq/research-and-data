@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any, Protocol, cast, runtime_checkable
@@ -33,7 +33,7 @@ from langchain_core.messages import (
 )
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel, JsonValue, ValidationError
 
 from clue_agents.entity_research_contracts import (
     EntityAgentJournalEventKind,
@@ -381,6 +381,51 @@ def _resolved_system_prompt(definition: EntityResearchAgentDefinition) -> str:
 
 _FINALIZE_TOOL_NAMES = ("finalize_account_research", "finalize_contact_research")
 
+#: How many times one execution refuses an empty model turn back to the model before it stops
+#: paying for repairs. Deliberately small: the stop policy's model-round and runtime budgets are
+#: the real ceiling, and a model that cannot produce a tool call or a proposal in three tries is
+#: not going to on the fourth.
+_MAX_EMPTY_TURN_REPAIRS = 3
+
+#: State-reading engine tools that buy nothing and change nothing. Mirrors the api layer's
+#: read-only set (``clue_api.account_entity_research._READ_ONLY_TOOL_NAMES``); duplicated here
+#: because the runtime may not import the api package (dependency direction).
+_STATE_READ_TOOL_NAMES = frozenset(
+    {
+        "read_account_research_state",
+        "inspect_account_evidence",
+        "read_research_result",
+        "read_evidence",
+        "read_contact_research_state",
+        "inspect_contact_evidence",
+    }
+)
+
+#: Consecutive identical read-only calls tolerated before the runtime refuses the next one back
+#: to the model. Reading the same unchanged state cannot make progress; observed live (job
+#: 5d9dfe7b): a model called ``read_account_research_state`` back-to-back until the graph
+#: recursion cap suspended the job. The refusal is recoverable — any *different* call resets it.
+_MAX_IDENTICAL_READS = 3
+
+
+def _read_loop_refusal(tool_name: str, repeats: int) -> EntityResearchGovernedToolRefusal:
+    return EntityResearchGovernedToolRefusal(
+        f"{tool_name} was already answered identically {repeats} times in a row and the state "
+        "has not changed; do not read it again — research an outstanding field/source pair, "
+        "assess coverage, or finalize honestly with the remaining gap",
+        code="identical_read_loop",
+    )
+
+
+def _empty_turn_refusal() -> EntityResearchGovernedToolRefusal:
+    """The one refusal text an empty model turn gets, in-turn and across a process resume."""
+
+    return EntityResearchGovernedToolRefusal(
+        "the turn produced neither a governed tool call nor the typed finalization proposal; "
+        "call a tool, or finalize honestly with the remaining gap",
+        code="empty_model_turn",
+    )
+
 
 def _tool_message_text(result: Any) -> str:
     content = getattr(result, "content", "")
@@ -443,6 +488,12 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         # ends the graph deterministically with it instead of waiting for the model to echo it —
         # a live contact run looped on post-finalization refusals until the recursion limit.
         self._engine_proposal: ResearchFinalizationProposal | None = None
+        # How many empty model turns this execution has already refused (see `aafter_model`).
+        # Process-local like `_finalization_proposed`: a cold resume re-reads the persisted
+        # messages and simply gets its own repair budget.
+        self._empty_turn_repairs = 0
+        self._last_read_signature: tuple[str, str] | None = None
+        self._identical_reads = 0
 
     def _call(self, raw: Mapping[str, Any]) -> EntityResearchToolCall:
         name = str(raw.get("name", ""))
@@ -514,13 +565,7 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         request: Any,
         current: EntityResearchToolCall,
     ) -> tuple[EntityResearchToolCall, ...]:
-        state = request.state
-        messages = (
-            state.get("messages", ())
-            if isinstance(state, Mapping)
-            else getattr(state, "messages", ())
-        )
-        for message in reversed(tuple(messages)):
+        for message in reversed(tuple(self._state_messages(request.state))):
             if not isinstance(message, AIMessage):
                 continue
             calls = tuple(
@@ -575,7 +620,14 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
         if len(calls) > self._context.stop_policy.max_parallel_tools:
             raise EntityResearchRuntimeError("model proposed more parallel tools than admitted")
         if calls:
-            await self._admit_batch(calls)
+            # A refused *round shape* (duplicated work in one wave, a dependent tool travelling
+            # with siblings, overlapping fields) is model output, not job integrity: nothing was
+            # admitted, reserved or dispatched. Raising here killed the graph and suspended the
+            # job. Let the response through instead — admission is deterministic over the wave, so
+            # each call re-runs it in ``awrap_tool_call`` and comes back to the model as its own
+            # error tool message, which is the repair path the refusal species promises.
+            with suppress(EntityResearchGovernedToolRefusal):
+                await self._admit_batch(calls)
         return response
 
     @staticmethod
@@ -648,8 +700,85 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             return None
         return {"jump_to": "end", "structured_response": self._engine_proposal}
 
+    @hook_config(can_jump_to=["model"])
+    async def aafter_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
+        """Refuse an empty model turn back to the model instead of ending with no proposal.
+
+        A turn that calls no governed tool and emits no typed proposal ends the graph with no
+        ``structured_response`` at all. Live, a run whose model spent its whole 16k output budget
+        on reasoning ended exactly that way, and the run then failed the job validating ``None``
+        as the finalization proposal. An empty turn is model output, not job integrity, so it is
+        refused in the ordinary governed species — the model gets a bounded number of attempts to
+        call a tool or finalize honestly. The refusal is durable without a new journal kind: it is
+        an ordinary message, so the next ``model_started`` event records it with the rest of the
+        history.
+        """
+
+        if self._finalization_proposed or self._structured_response(state) is not None:
+            return None
+        last = next(
+            (
+                message
+                for message in reversed(tuple(self._state_messages(state)))
+                if isinstance(message, AIMessage)
+            ),
+            None,
+        )
+        if last is None or last.tool_calls:
+            return None
+        if self._empty_turn_repairs >= _MAX_EMPTY_TURN_REPAIRS:
+            return None
+        self._empty_turn_repairs += 1
+        return {
+            "messages": [HumanMessage(content=_empty_turn_refusal().render())],
+            "jump_to": "model",
+        }
+
+    @staticmethod
+    def _state_messages(state: Any) -> Sequence[BaseMessage]:
+        if isinstance(state, Mapping):
+            return cast(Sequence[BaseMessage], state.get("messages", ()))
+        return cast(Sequence[BaseMessage], getattr(state, "messages", ()))
+
+    @staticmethod
+    def _structured_response(state: Any) -> object | None:
+        if isinstance(state, Mapping):
+            return state.get("structured_response")
+        return getattr(state, "structured_response", None)
+
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         call = self._call(cast(dict[str, Any], request.tool_call))
+        if call.tool_name in _STATE_READ_TOOL_NAMES:
+            signature = (
+                call.tool_name,
+                hashlib.sha256(json.dumps(call.arguments, sort_keys=True).encode()).hexdigest(),
+            )
+            if signature == self._last_read_signature:
+                self._identical_reads += 1
+            else:
+                self._last_read_signature = signature
+                self._identical_reads = 1
+            if self._identical_reads > _MAX_IDENTICAL_READS:
+                read_refusal = _read_loop_refusal(call.tool_name, self._identical_reads - 1)
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_FAILED,
+                        call=call,
+                        payload={
+                            **_error_payload(read_refusal),
+                            "disposition": "identical_read_loop_refused",
+                        },
+                    )
+                )
+                return ToolMessage(
+                    content=read_refusal.render(),
+                    status="error",
+                    tool_call_id=call.tool_call_id,
+                    name=call.tool_name,
+                )
+        else:
+            self._last_read_signature = None
+            self._identical_reads = 0
         if self._finalization_proposed:
             refusal = ToolMessage(
                 content=(
@@ -681,7 +810,29 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             )
         )
         try:
-            await self._admit_batch(self._persisted_tool_wave(request, call))
+            try:
+                await self._admit_batch(self._persisted_tool_wave(request, call))
+            except EntityResearchGovernedToolRefusal as refusal:
+                # The wave was refused on its shape, so no batch member exists to settle and no
+                # provider work was reserved or dispatched. Journal the refusal and hand it to the
+                # model as this call's result; ``self._batches.failed`` is deliberately not called
+                # (it would look for the member this refusal is the reason there is none of).
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_FAILED,
+                        call=call,
+                        payload={
+                            **_error_payload(refusal),
+                            "disposition": "round_admission_refused",
+                        },
+                    )
+                )
+                return ToolMessage(
+                    content=refusal.render(),
+                    status="error",
+                    tool_call_id=call.tool_call_id,
+                    name=call.tool_name,
+                )
             try:
                 await self._guard.authorize_tool(
                     context=self._context,
@@ -782,7 +933,10 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
             )
             raise batch_wait from wait
         except BaseException as error:
-            await self._batches.failed(context=self._context, call=call, error=error)
+            # Journal the real cause *first*. Settling the batch can itself fail (a wave that never
+            # reached admission has no member to settle), and when it did, its own error replaced
+            # the original and skipped this record entirely — a live job's true failure was
+            # unknowable afterwards. Settlement failure is recorded, never substituted.
             await self._journal.append(
                 self._event(
                     EntityAgentJournalEventKind.TOOL_FAILED,
@@ -790,6 +944,19 @@ class _EntityResearchRuntimeMiddleware(AgentMiddleware[Any, Any, Any]):
                     payload=_error_payload(error),
                 )
             )
+            try:
+                await self._batches.failed(context=self._context, call=call, error=error)
+            except Exception as settlement_error:
+                await self._journal.append(
+                    self._event(
+                        EntityAgentJournalEventKind.TOOL_FAILED,
+                        call=call,
+                        payload={
+                            **_error_payload(settlement_error),
+                            "disposition": "batch_settlement_failed",
+                        },
+                    )
+                )
             raise
         await self._journal.append(
             self._event(
@@ -893,13 +1060,23 @@ class EntityResearchAgentRuntime:
         lease_lost: asyncio.Event | None,
     ) -> dict[str, Any]:
         snapshot = await graph.aget_state(config)
-        if snapshot.values and not snapshot.next and "structured_response" in snapshot.values:
+        resumed = bool(snapshot.values)
+        if resumed and not snapshot.next and snapshot.values.get("structured_response") is not None:
             return cast(dict[str, Any], snapshot.values)
-        graph_input: dict[str, Any] | None = (
-            None
-            if snapshot.values
-            else {"messages": [HumanMessage(content=definition.task_instruction)]}
-        )
+        graph_input: dict[str, Any] | None
+        if not resumed:
+            graph_input = {"messages": [HumanMessage(content=definition.task_instruction)]}
+        elif not snapshot.next:
+            # The persisted graph is already at END with no proposal: the crashed drive's last
+            # model turn spent its whole output budget on reasoning and returned neither a tool
+            # call nor the typed response. Resuming such a thread with no input replays that dead
+            # end in microseconds — no node runs, so the middleware's empty-turn repair can never
+            # fire and every resume fails identically (live: two account jobs re-suspended on
+            # exactly this). Re-enter with the same governed refusal the in-turn repair uses, so a
+            # fresh process gives the model its bounded chance to call a tool or finalize honestly.
+            graph_input = {"messages": [HumanMessage(content=_empty_turn_refusal().render())]}
+        else:
+            graph_input = None
         invocation = asyncio.create_task(graph.ainvoke(graph_input, config=config))
         stop_task = (
             asyncio.create_task(stop_requested.wait()) if stop_requested is not None else None
@@ -1035,11 +1212,20 @@ class EntityResearchAgentRuntime:
                 )
                 return suspension
             raw_proposal = result.get("structured_response")
-            proposal = (
-                raw_proposal
-                if isinstance(raw_proposal, ResearchFinalizationProposal)
-                else ResearchFinalizationProposal.model_validate(raw_proposal)
-            )
+            if isinstance(raw_proposal, ResearchFinalizationProposal):
+                proposal = raw_proposal
+            else:
+                try:
+                    proposal = ResearchFinalizationProposal.model_validate(raw_proposal)
+                except ValidationError as invalid:
+                    # The graph ended without an admissible typed proposal — the middleware's
+                    # bounded empty-turn repairs are the recovery path, and reaching here means
+                    # they were exhausted. Fail in the runtime's own species with the shape that
+                    # was actually returned, not as a raw pydantic ValidationError.
+                    raise EntityResearchFinalizationRejected(
+                        "entity research ended without an admissible typed finalization proposal "
+                        f"(received {type(raw_proposal).__name__})"
+                    ) from invalid
             if (
                 proposal.subject_type is not context.authorization.subject_type
                 or proposal.target_entity_id != context.authorization.subject_entity_id

@@ -1,0 +1,14 @@
+name = "pages-edge"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+# Route: the zone-wide wildcard so the Worker runs for *.pages.cluehq.ai AND every Cloudflare for
+# SaaS custom hostname (which resolve through the fallback origin pages.cluehq.ai). It never runs
+# for DNS-only (grey-cloud) records such as app.cluehq.ai, and passes through any other proxied
+# record in the zone (see routing.js). Verify in S0 with one real custom hostname (spec §3 item 6).
+routes = [{ pattern = "*/*", zone_name = "cluehq.ai" }]
+
+[vars]
+SYSTEM_SUFFIX = "pages.cluehq.ai"
+ORIGIN_HOST = "page-origin.cluehq.ai"
+# EDGE_SECRET is a secret: `wrangler secret put EDGE_SECRET` — never in this file.

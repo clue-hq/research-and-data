@@ -275,6 +275,12 @@ def test_threads_sharing_one_timestamp_still_page_without_repeating_or_skipping(
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             project = await seed_project(conn, "ws-d0-ties", name="D0 ties")
+            owner = await seed_principal(
+                conn,
+                workspace_id=project.workspace_id,
+                user_id="usr_d0_ties",
+                membership_id="wsm_d0_ties",
+            )
             factory = conn_session_factory(conn)
             created = {
                 (
@@ -284,6 +290,8 @@ def test_threads_sharing_one_timestamp_still_page_without_repeating_or_skipping(
                         workspace_id=project.workspace_id,
                         project_id=project.project_id,
                         title=f"tied {index}",
+                        created_by_user_id=owner.user_id,
+                        created_via_membership_id=owner.membership_id,
                     )
                 ).id
                 for index in range(7)
@@ -318,6 +326,12 @@ def test_thread_listing_can_filter_archived_without_losing_the_row(
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
             project = await seed_project(conn, "ws-d0-archive", name="D0 archive")
+            owner = await seed_principal(
+                conn,
+                workspace_id=project.workspace_id,
+                user_id="usr_d0_archive",
+                membership_id="wsm_d0_archive",
+            )
             factory = conn_session_factory(conn)
             kept = await create_thread(
                 conn,
@@ -325,6 +339,8 @@ def test_thread_listing_can_filter_archived_without_losing_the_row(
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
                 title="active",
+                created_by_user_id=owner.user_id,
+                created_via_membership_id=owner.membership_id,
             )
             gone = await create_thread(
                 conn,
@@ -332,6 +348,8 @@ def test_thread_listing_can_filter_archived_without_losing_the_row(
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
                 title="archived",
+                created_by_user_id=owner.user_id,
+                created_via_membership_id=owner.membership_id,
             )
             await conn.execute(
                 text("UPDATE agent_thread SET status='archived' WHERE id=:id"),
@@ -352,6 +370,66 @@ def test_thread_listing_can_filter_archived_without_losing_the_row(
                 conn_factory=factory,
             )
             assert {item.thread_id for item in everything.items} == {kept.id, gone.id}
+
+    run_async(scenario())
+
+
+def test_machine_threads_never_appear_as_chats(require_thread_db: None) -> None:
+    """Research runs and onboarding synthesis create threads with no user; they are not chats.
+
+    Found live 2026-09-29: every research agent run surfaced in the sidebar as a "New chat".
+    """
+    del require_thread_db
+    from clue_projections.threads import project_sidebar_page
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, "ws-d0-machine", name="D0 machine threads")
+            # The rail lists only active marketing projects.
+            await conn.execute(
+                text("UPDATE project SET status = 'active' WHERE project_id = :id"),
+                {"id": project.project_id},
+            )
+            owner = await seed_principal(
+                conn,
+                workspace_id=project.workspace_id,
+                user_id="usr_d0_machine",
+                membership_id="wsm_d0_machine",
+            )
+            factory = conn_session_factory(conn)
+            chat = await create_thread(
+                conn,
+                thread_id=new_thread_id(),
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                title="my chat",
+                created_by_user_id=owner.user_id,
+                created_via_membership_id=owner.membership_id,
+            )
+            await create_thread(
+                conn,
+                thread_id=f"research-quality-{uuid4()}",
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+            )
+
+            listed = await threads_for_project(
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                conn_factory=factory,
+            )
+            assert [item.thread_id for item in listed.items] == [chat.id]
+
+            rail = await project_sidebar_page(
+                workspace_id=project.workspace_id, conn_factory=factory
+            )
+            rail_threads = [
+                thread.thread_id
+                for item in rail.items
+                if item.project_id == project.project_id
+                for thread in item.threads
+            ]
+            assert rail_threads == [chat.id]
 
     run_async(scenario())
 
@@ -659,6 +737,8 @@ def test_message_pages_carry_typed_refs_attributed_by_message_role(
 def test_message_pages_are_keyset_over_sequence_and_workspace_scoped(
     require_thread_db: None,
 ) -> None:
+    """Newest page first, before-cursor walking backward (Slice C C5's flipped read)."""
+
     del require_thread_db
 
     async def scenario() -> None:
@@ -694,7 +774,7 @@ def test_message_pages_are_keyset_over_sequence_and_workspace_scoped(
                 limit=2,
                 conn_factory=factory,
             )
-            assert [item.sequence for item in first.items] == [1, 2]
+            assert [item.sequence for item in first.items] == [4, 5]
 
             middle = await thread_messages(
                 workspace_id=project.workspace_id,
@@ -703,7 +783,7 @@ def test_message_pages_are_keyset_over_sequence_and_workspace_scoped(
                 cursor=first.next_cursor,
                 conn_factory=factory,
             )
-            assert [item.sequence for item in middle.items] == [3, 4]
+            assert [item.sequence for item in middle.items] == [2, 3]
 
             exact = await thread_messages(
                 workspace_id=project.workspace_id,
@@ -712,7 +792,7 @@ def test_message_pages_are_keyset_over_sequence_and_workspace_scoped(
                 cursor=middle.next_cursor,
                 conn_factory=factory,
             )
-            assert [item.sequence for item in exact.items] == [5]
+            assert [item.sequence for item in exact.items] == [1]
             assert exact.next_cursor is None
 
             assert (

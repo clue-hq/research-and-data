@@ -1,0 +1,252 @@
+{
+  "contact_claims": [
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "direct, operator-oriented, metric-heavy",
+        "summary": "Uses direct, self-critical, operator-first language and emphasizes measurable outcomes and operational metrics."
+      },
+      "evidence_span": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+      "confidence": 0.9,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:george-eliadis"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.stated_interests",
+      "value_json": [
+        "home services operations",
+        "dispatch automation",
+        "founder-led sales / GTM"
+      ],
+      "evidence_span": "I started Probook to solve a problem in my own business",
+      "source_url": "https://www.probook.ai/letter",
+      "confidence": 0.9,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:george-eliadis"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_award",
+      "value_json": "Named 2020 U.S. Presidential Scholar",
+      "evidence_span": "George Eliadis, Named 2020 U.S. Presidential Scholar",
+      "source_url": "https://mail.newburghschools.org/news.php?storynum=2184",
+      "confidence": 0.85,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:george-eliadis"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.public_appearances",
+      "value_json": [
+        {
+          "title": "Tech in the trades with George Eliadis of Probook",
+          "venue": "Reimagining Home Services podcast",
+          "url": "https://podfollow.com/reimagining-home-services/episode/baafd6e2d2e5eb72c7d793dd7c24b7a36f232153/view",
+          "date": "29 June 2026"
+        },
+        {
+          "title": "The Shortlist NY Founder Showcase at betaworks",
+          "venue": "Shortlist NY Founder Showcase",
+          "url": "https://www.linkedin.com/posts/george-eliadis_last-month-i-was-one-of-6-founders-who-presented-activity-7434250700706160642-KwRW",
+          "date": "2 March 2026"
+        }
+      ],
+      "evidence_span": "Published: 29 June 2026",
+      "source_url": "https://podfollow.com/reimagining-home-services/episode/baafd6e2d2e5eb72c7d793dd7c24b7a36f232153/view",
+      "confidence": 0.9,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:george-eliadis"
+    },
+    {
+      "entity": "contact:mark-hoffman",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "direct, energetic, team-oriented",
+        "summary": "Writes in an energetic, team-focused tone emphasizing building teams and solving hard problems."
+      },
+      "evidence_span": "The first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them.",
+      "source_url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+      "confidence": 0.9,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:mark-hoffman"
+    },
+    {
+      "entity": "contact:mark-hoffman",
+      "field_key": "contact.facet.stated_interests",
+      "value_json": [
+        "GTM team building",
+        "revenue organization scaling"
+      ],
+      "evidence_span": "The GTM team is inching up towards 20 now, with many more to go.",
+      "source_url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public",
+      "identity_binding": "contact:mark-hoffman"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "energetic, specific, revenue-oriented",
+        "summary": "Writes conversationally with an emphasis on revenue alignment, hiring, and martech pragmatism."
+      },
+      "evidence_span": "building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid",
+      "source_url": "https://www.linkedin.com/posts/kibrady12_after-two-incredible-years-at-buildops-i-activity-7459629371444703232-esk_",
+      "confidence": 0.9,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:kate-blumberg"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.stated_interests",
+      "value_json": [
+        "martech and ABM",
+        "demand generation",
+        "building revenue-linked marketing teams"
+      ],
+      "evidence_span": "Glad to see new tools like Riveter gaining traction and cutting through the noise",
+      "source_url": "https://www.linkedin.com/posts/kibrady12_the-martech-hype-cycle-is-relentless-and-activity-7488693969325846528-STdm",
+      "confidence": 0.9,
+      "priority": 2,
+      "use_class": "professional-public",
+      "identity_binding": "contact:kate-blumberg"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.recent_award",
+      "value_json": "NOT FOUND",
+      "evidence_span": "NOT FOUND",
+      "source_url": "https://www.linkedin.com/in/kibrady12",
+      "confidence": 0.0,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:kate-blumberg"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.public_appearances",
+      "value_json": [],
+      "evidence_span": "NOT FOUND",
+      "source_url": "https://www.linkedin.com/in/kibrady12",
+      "confidence": 0.0,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:kate-blumberg"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "relationship-led, alignment-focused",
+        "summary": "Public posts emphasize relationship-building, alignment of values/goals, and coaching sellers."
+      },
+      "evidence_span": "prospects buy from people they like, relate to, or aspire to emulate",
+      "source_url": "https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD",
+      "confidence": 0.9,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:aaron-churba"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.facet.stated_interests",
+      "value_json": [
+        "GTM organization building",
+        "sales coaching"
+      ],
+      "evidence_span": "helping more businesses discover Probook, building a world-class GTM organization",
+      "source_url": "https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public",
+      "identity_binding": "contact:aaron-churba"
+    },
+    {
+      "entity": "contact:lewis-zhang",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "concise, self-deprecating, results-focused",
+        "summary": "Short-form public posts emphasize small wins and technical focus, with modest tone."
+      },
+      "evidence_span": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.",
+      "source_url": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d",
+      "confidence": 0.9,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:lewis-zhang"
+    },
+    {
+      "entity": "contact:lewis-zhang",
+      "field_key": "contact.facet.stated_interests",
+      "value_json": [
+        "scalable data and ML systems",
+        "building reliable engineering workflows"
+      ],
+      "evidence_span": "contributing to open source project Scalabel.ai, a web annotation tool for autonomous driving datasets",
+      "source_url": "https://www.linkedin.com/in/lewisfzhang",
+      "confidence": 0.85,
+      "priority": 3,
+      "use_class": "professional-public",
+      "identity_binding": "contact:lewis-zhang"
+    }
+  ],
+  "account_claims": [
+    {
+      "entity": "account:probook",
+      "field_key": "account.operational_pain",
+      "value_json": "Fragmented vendor/tooling for voice, outbound and follow-up leading to operational overhead; raw home-services workflows (calls, setting the board, follow-up) that make dispatch the critical bottleneck.",
+      "evidence_span": "The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead.",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_today-were-announcing-40m-in-funding-from-activity-7475172924774293504-mVOB",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "account.resonance.buying_culture",
+      "value_json": {
+        "culture_label": "founder-led, operator-oriented, deployment-committed",
+        "summary": "Founder-led origin with hands-on customer discovery and in-person deployments; public commitment to scale GTM and deliver outcomes post-sale."
+      },
+      "evidence_span": "I spent a summer inside TR Miller... Until December, our 'sales team' was just me... We deploy in person, configure alongside your team, and stay on the hook for the outcomes we sell.",
+      "source_url": "https://www.probook.ai/letter",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "account.operational_pain",
+      "value_json": "Scaling delivery capacity is a bottleneck: need to grow engineering, customer success and GTM to meet surging demand.",
+      "evidence_span": "scale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.",
+      "source_url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "confidence": 0.95,
+      "priority": 1
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "account.gtm_hiring_posture",
+      "entity_type": "account",
+      "value_type": "str",
+      "value_schema": {
+        "type": "string"
+      },
+      "description": "A short, sourced statement describing the account's public hiring posture and GTM expansion intent after financing events (high-value for GTM sellers).",
+      "reuse_scope": "global",
+      "hypothesis": "Reports often state post-funding GTM expansion intent (hiring SDR/AE capacity) that has no exact home in the current catalog. A simple string field would capture that buying posture.",
+      "example_value": "Publicly committed to scale GTM headcount and expand engineering and customer success after 2026 Series A.",
+      "example_evidence_span": "scale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.",
+      "example_source_url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "priority": 1
+    }
+  ]
+}

@@ -1,0 +1,481 @@
+# The hand-written half of the operating manual.
+#
+# Everything else in the generated chapters is read off the code: a tool's address, effect class,
+# inputs, outputs, pins and journal fields come off its live descriptor, the field tables come off
+# a snapshot of `field_definition`, and the limits come off the profile and named constants. What
+# the code cannot state is the *next move*: a refusal names what is missing, and this file says in
+# one sentence what the agent should do about it.
+#
+# Rules for this file, because it is founder-reviewed prose and the build enforces the shape:
+#   - Every tool granted by the active `head-of-abm` profile (`PROFILE_VERSION` in
+#     `clue_agents/manual/build.py`) needs an entry. A missing entry fails the build by
+#     name, so a newly granted tool cannot ship with unexplained refusals. An entry the profile no
+#     longer grants is kept rather than deleted — the tools chapter renders the grant, so an
+#     ungranted entry disappears from the manual on its own while its history stays readable here.
+#   - Every refusal code a tool can return needs a line. The builder renders exactly the codes
+#     listed here, so an unlisted code is invisible to the agent that will receive it.
+#   - One sentence, imperative, addressed to the agent. Say what to do, not what went wrong; the
+#     refusal message already says what went wrong.
+#   - Never promise a repair that is not available. "Tell the human" is a complete next move.
+#   - `see_also` names chapters of the manual, written without the `manual-` prefix.
+#
+# Sources for the code lists: the per-tool refusal inventories in
+# docs/superpowers/research/2026-09-13-head-of-abm-manual/A-tools.md, each cited to file:line,
+# re-checked against the tool modules on 2026-09-14.
+
+author_icp_document:
+  afterwards: >-
+    A proposed ICP document exists at the key you named, at a new version, attributed to the human
+    whose turn this is. Nothing is confirmed: the human confirms it at the ICP gate, and only a
+    confirmed version can be pinned or researched against.
+  skill_section: stage0-interview v33 section 5b, "Write the ICP document".
+  see_also: [documents-decisions, gates-authority]
+  refusals:
+    icp_authoring_not_composed: Tell the human ICP authoring is not wired on this deployment; nothing you do can compose it.
+    authoring_turn_ref_malformed: Do not retry. The turn reference is injected by the platform, so this is a platform fault to report, not an argument to fix.
+    authoring_turn_not_found: Do not retry. Report that this turn cannot be resolved and let the human start a new one.
+    authoring_addressee_missing: Do not retry. Report that this turn records no human to credit the document to.
+    icp_key_invalid: Rewrite the key as lowercase kebab-case, at most sixty characters, and call again.
+    icp_front_matter_invalid: Fix exactly the front-matter field the message names, keeping the shape the brand's existing ICP files use, and call again.
+    icp_key_taken_by_brand: Choose a new key for the project variant and set derived_from_icp_key to the brand profile it adapts.
+    icp_key_taken_by_project: Choose a key no project has taken, then call again.
+    derived_from_not_found: Name a brand-level ICP document that exists, or drop derived_from_icp_key altogether.
+    icp_document_version_race: Re-read the ICP document at that path, fold in whatever the other writer published, and write again.
+
+draft_account_research_directive:
+  afterwards: >-
+    A draft research directive exists for the project run. It is a proposal only: it directs
+    nothing until a human confirms it at the directive gate, and the lane it feeds is the retired
+    one, so nothing in ARV2 reads it.
+  skill_section: Not taught by the current skill. This pair belongs to the retired research lane.
+  see_also: [siblings, gates-authority]
+  refusals:
+    memory_write_not_configured: Tell the human this deployment cannot record research direction; nothing you do can compose the seam.
+    research_directive_replay_conflict: Do not send different direction under the same operation; start a fresh call with the direction you actually want.
+    research_directive_invalid: Fix exactly the scope, product, lineage or field the message names, then draft again.
+
+get_research_view:
+  afterwards: >-
+    Nothing. It is a read, and on this deployment it is a read that cannot answer: it is disabled
+    by flag and keyed to a project run this lane never writes.
+  skill_section: Not taught by the current skill. Use the ARV2 reads instead.
+  see_also: [tools, accounts-research]
+  refusals:
+    research_view_workspace_not_admitted: Stop using this tool and read the account with read_account_research instead.
+    research_view_feature_disabled: Stop using this tool and read the account with read_account_research instead.
+    research_view_not_configured: Stop using this tool and read the account with read_account_research instead.
+    research_view_subject_not_found: Stop using this tool; the subject it wants does not exist on this lane. Read the account with read_account_research instead.
+
+inspect_statement_history:
+  afterwards: >-
+    Nothing changes. You hold a page of what the human has stated, with each statement's quote and
+    its corrections, and the cursor to continue from.
+  skill_section: Not taught by the current skill, though it is granted and it works.
+  see_also: [documents-decisions]
+  refusals:
+    statement_selector_ambiguous: Pass statement_id or route_key, never both, and call again.
+    cursor_invalid: Call again with no cursor to start from the first page; never build or edit a cursor by hand.
+    cursor_kind_unsupported: Use only a cursor this tool itself returned; a cursor from another tool addresses another list.
+    statement_evidence_not_configured: Tell the human the evidence reader is not wired here, and do not present the history as empty.
+    stage0_project_not_found: Name the project from your project card, and tell the human if that project is still refused.
+
+launch_arv2_account_research:
+  afterwards: >-
+    A research run is queued for exactly the accounts you named, pinned to the ICP version the
+    project pinned and the product set the human confirmed. A successful call means queued, never
+    finished and never that anything was found. The launched-task card appears in chat on its own.
+    Read the run with read_arv2_account_research_run, and the accounts with read_project_accounts.
+  skill_section: account-research-briefing v3, "Brief the account researcher" (.deepagent/skills/account-research-briefing/v3/SKILL.md); stage0-interview v38 section 7, "Launch account research".
+  see_also: [siblings, gates-authority, accounts-research]
+  refusals:
+    arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and say the research did not start.
+    launch_action_ref_missing: Do not retry from an earlier message. Ask the human, in this turn, to name the accounts they want researched.
+    lane_disabled: Tell the human the research lane is switched off on this deployment, and say the research did not start.
+    project_not_found: Take the project id from your project card and call again; do not guess one.
+    "account_not_found:<id>": Drop the account the code names, or ask the human to import or discover it first, then launch the rest.
+    "account_not_in_workspace:<id>": Drop the account the code names; it belongs to another workspace and cannot be researched here.
+    project_icp_not_pinned: Confirm an ICP at the ICP gate first, then launch on a later turn.
+    icp_artifact_not_project_pin: Name the ICP artifact the project actually pinned, or drop the argument and let the pin speak.
+    icp_artifact_not_found: Tell the human the pinned ICP document is missing from this workspace and must be confirmed again.
+    icp_artifact_not_confirmed: Confirm the ICP at the gate first; a proposal is not something research can run against.
+    icp_digest_mismatch: Tell the human the pinned ICP has changed since it was pinned, and that it must be confirmed again before research runs.
+    icp_front_matter_invalid: Tell the human which front-matter field the pinned ICP document is missing; it has to be authored and confirmed again.
+    product_selection_version_unknown: Name a product-set version the message lists as confirmed, or omit it and let the current confirmation speak.
+
+launch_arv2_discovery:
+  # The builder renders no pre-call key, so the spec's `before` pointer (spec 2026-09-30 §6.2) is
+  # the first sentence of `afterwards` instead.
+  afterwards: >-
+    If you have not read section 7b of the stage0-interview skill ("Discover accounts for this
+    project") in this conversation, read it before you call this tool. It says how to write the
+    query, the criteria and the gates.
+    A discovery run is queued with the brief you wrote. It checks every company against your
+    gates, adds the ones that pass to this project's accounts, and searches again with the same
+    brief for any shortfall, up to three more times. This conversation is busy until it ends;
+    you then get a turn that starts with its summary.
+  skill_section: stage0-interview v43 section 7b, "Discover accounts for this project".
+  see_also: [discovery, siblings, gates-authority]
+  refusals:
+    arv2_discovery_not_composed: Tell the human discovery is not wired on this deployment, and say no run started.
+    launch_action_ref_missing: Do not retry from an earlier message. Ask the human, in this turn, to confirm they want accounts discovered.
+    lane_disabled: Tell the human discovery is switched off on this deployment, and say no run started.
+    discovery_in_progress: A discovery is already running in another conversation of this project. Tell the human, and do not retry.
+    brief_invalid: Fix the field the message names and call again.
+    discovery_tool_retired: Do not retry this address; call the current launch_arv2_discovery with the brief you wrote.
+    target_count_invalid: Ask for at least one company and call again.
+    project_not_found: Take the project id from your project card and call again; do not guess one.
+    project_icp_not_pinned: Confirm an ICP at the ICP gate first; discovery searches against the version this project pinned and nothing else.
+    icp_artifact_not_found: Tell the human the pinned ICP document is missing from this workspace and must be confirmed again.
+    icp_artifact_not_confirmed: Confirm the ICP at the gate first; discovery does not search against a proposal.
+    icp_digest_mismatch: Tell the human the pinned ICP has changed since it was pinned, and that it must be confirmed again before discovery runs.
+    icp_front_matter_invalid: Tell the human which front-matter field the pinned ICP document is missing; it has to be authored and confirmed again.
+
+launch_arv2_person_research:
+  afterwards: >-
+    A research run is queued for exactly the contacts you named. It researches people who already
+    exist and never creates one; the persona you name is only the committee seat a person takes if
+    they hold none. Queued is not finished.
+  skill_section: stage0-interview v33 section 8, "Research named people".
+  see_also: [siblings, accounts-research, claims]
+  refusals:
+    arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and say the research did not start.
+    launch_action_ref_missing: Do not retry from an earlier message. Ask the human, in this turn, to name the people they want researched.
+    lane_disabled: Tell the human the research lane is switched off on this deployment, and say the research did not start.
+    no_contacts: Name at least one contact and call again.
+    project_not_found: Take the project id from your project card and call again; do not guess one.
+    "contact_not_found:<id>": Drop the contact the code names, or ask the human to add that person first, then launch the rest.
+    "contact_merged:<id>": Launch the surviving person the message names instead; claims written to a merged row are read by nothing.
+    contact_without_account: Drop that contact and tell the human their employer is not an account of this workspace; a person is researched at their employer.
+    project_icp_not_pinned: Confirm an ICP at the ICP gate first, then launch on a later turn.
+    icp_artifact_not_found: Tell the human the pinned ICP document is missing from this workspace and must be confirmed again.
+    icp_artifact_not_confirmed: Confirm the ICP at the gate first; a proposal is not something research can run against.
+    icp_digest_mismatch: Tell the human the pinned ICP has changed since it was pinned, and that it must be confirmed again before research runs.
+    icp_front_matter_invalid: Tell the human which front-matter field the pinned ICP document is missing; it has to be authored and confirmed again.
+    product_set_not_confirmed: Open the product-set gate and let the human confirm what this project sells, then launch on a later turn.
+
+open_design_leg:
+  afterwards: >-
+    A design leg is open on this thread and the design agent takes over the conversation. You do
+    not run again while it is open and you cannot close it; the human ends it by saying so. The
+    artifact it produces appears in the project's gallery.
+  skill_section: Not taught by the current skill.
+  see_also: [siblings, gates-authority]
+  refusals:
+    design_leg_runtime_not_configured: Tell the human design is not wired on this deployment; a leg opened here could never run.
+    design_leg_storage_not_configured: Tell the human this deployment has no artifact storage, so no design leg can open.
+    design_leg_turn_ref_malformed: Do not retry. The turn reference is injected by the platform, so this is a platform fault to report.
+    design_leg_turn_not_found: Do not retry. Report that this turn cannot be resolved and let the human start a new one.
+    design_leg_turn_execution_missing: Do not retry. Report that this turn has no execution row for the leg to attach to.
+    design_leg_replay_closed: Call again naming the closed leg in reopen_leg_id rather than opening a second one.
+    design_leg_already_open: Tell the human a design leg is already open on this thread and they can keep talking to Design.
+    design_document_not_found: Name a design document this workspace holds, or omit document_id and pass doc_kind to start a new one.
+    design_document_pin_stale: Re-read the document, take its current version, and delegate again.
+    design_document_pin_incomplete: Pass the document id alongside the expected version, or pass neither.
+    design_leg_doc_kind_required: Pass doc_kind 'web' for a new website or 'scene' for a new ad, or name an existing document_id.
+    brand_kit_pin_incomplete: Pass brand_kit_id and version together, or pass neither and let the platform choose.
+    brand_kit_pin_not_found: Name a brand kit version this workspace holds; there is deliberately no fallback to a default kit.
+    design_bundle_too_large: Trim the brief or the claim set and delegate again; the bundle carries references, not content.
+    design_leg_reopen_not_found: Name a design leg this workspace holds, or open a fresh one.
+    design_leg_reopen_wrong_thread: Only a leg of this conversation can be reopened; open a fresh one here instead.
+    design_leg_reopen_not_closed: Tell the human that leg is still open and they can simply keep talking to Design.
+
+open_directive_confirmation_gate:
+  afterwards: >-
+    A gate card is waiting for the human, carrying the directive and its cost estimate. Put the
+    returned gate id in open_gate_refs and end the turn awaiting_input, or the human never sees
+    it. Nothing is authorized until they answer.
+  skill_section: Not taught by the current skill. This pair belongs to the retired research lane.
+  see_also: [gates-authority, humans-screens]
+  refusals:
+    gate_subject_malformed: Pass canonical identifiers, with each account named once, and call again.
+    gate_turn_ref_malformed: Do not retry. The turn reference is injected by the platform, so this is a platform fault to report.
+    gate_turn_not_found: Do not retry. Report that this turn cannot be resolved and let the human start a new one.
+    gate_addressee_missing: Do not retry. Report that this turn records no human the gate could be addressed to.
+    gate_project_run_not_found: Name a project run of this conversation's project and call again.
+    account_discovery_not_started: Tell the human account discovery has to finish before profiling can be proposed.
+    account_discovery_in_progress: Tell the human discovery is still running, and wait for it rather than opening the gate again.
+    account_discovery_not_sealed: Tell the human discovery did not finish cleanly and has to be run again first.
+    account_discovery_seal_invalid: Tell the human discovery's result is incomplete and has to be run again first.
+    research_directive_not_found: Name a directive of this conversation's project, or draft one first.
+    research_directive_not_draft: Only a current draft can be presented; draft a new one rather than re-presenting a settled directive.
+    research_directive_invalid: Fix exactly the scope or field the message names in the draft, then present it again.
+
+open_icp_confirmation_gate:
+  afterwards: >-
+    A gate card is waiting for the human, carrying the ICP document itself. Put the returned gate
+    id in open_gate_refs and end the turn awaiting_input. Their approval mints a confirmed version
+    and pins it to this project; you cannot confirm it yourself.
+  skill_section: stage0-interview v33 section 5, "Confirm the profile".
+  see_also: [gates-authority, documents-decisions, humans-screens]
+  refusals:
+    gate_turn_ref_malformed: Do not retry. The turn reference is injected by the platform, so this is a platform fault to report.
+    gate_turn_not_found: Do not retry. Report that this turn cannot be resolved and let the human start a new one.
+    gate_addressee_missing: Do not retry. Report that this turn records no human the gate could be addressed to.
+    icp_document_not_found: Write the ICP document first with author_icp_document, then open the gate on that key in the same turn.
+    icp_document_not_servable: Open the gate on a proposed or confirmed ICP document; nothing else is something to say yes to.
+    icp_already_confirmed_for_project: Tell the human this project has already confirmed this exact document, and move on to what it unblocks.
+    icp_gate_already_presented_elsewhere: Tell the human this document is already waiting for an answer in another thread, and point them there.
+    icp_gate_already_answered: Tell the human this document already carries a human decision; author a new version if they want to change it.
+
+open_product_set_selection_gate:
+  afterwards: >-
+    A gate card is waiting for the human, listing the brand's own products. Put the returned gate
+    id in open_gate_refs and end the turn awaiting_input. Their choice becomes the project's
+    confirmed product set, which the launches require.
+  skill_section: stage0-interview v33 section 5, "Confirm the products".
+  see_also: [gates-authority, documents-decisions, humans-screens]
+  refusals:
+    product_set_turn_not_found: Do not retry. Report that this turn cannot be resolved and let the human start a new one.
+    product_set_addressee_missing: Do not retry. Report that this turn records no human the gate could be addressed to.
+    product_set_project_unavailable: Do not retry. Report that this turn's project cannot be resolved.
+    product_set_no_candidates: Tell the human this brand has no products on record yet, and that onboarding has to add them before a set can be confirmed.
+    icp_key_unknown: Name a key a current ICP document actually carries, or omit icp_key and present every product.
+
+propose_field:
+  afterwards: >-
+    A field proposal is recorded for review. It registers nothing on its own: until it is
+    promoted, no claim can be written against the key you proposed.
+  skill_section: Not taught by the current skill.
+  see_also: [fields, claims]
+  refusals:
+    proposal_scope_not_found: Check the brand, product, project and ICP you named against your project card; one of them is not real, and the refusal deliberately does not say which.
+    dynamic_client_kb_materializer_not_configured: Tell the human this deployment cannot promote a client field automatically, and leave the proposal unmade.
+
+propose_source:
+  afterwards: >-
+    A source proposal is recorded for review. Nothing fetches from it until a human promotes it
+    with a tier.
+  skill_section: Not taught by the current skill.
+  see_also: [claims, gates-authority]
+  refusals:
+    proposal_scope_not_found: Check the brand, product, project and ICP you named against your project card; one of them is not real, and the refusal deliberately does not say which.
+
+read_account_research:
+  afterwards: >-
+    Nothing changes. You hold what the store actually says about one account, which is what a
+    statement about that account must rest on. Never state a fact about an account from memory of
+    an earlier thread.
+  skill_section: stage0-interview v33 section 7c, "Read before you speak about accounts, claims and artifacts".
+  see_also: [claims, fields, accounts-research]
+  refusals:
+    arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
+    account_not_found: Take the account id from read_project_accounts and call again; a merged account is refused under its old id, so use the survivor.
+    overview_not_written: Read again with section 'claims', and say the overview has not been written yet rather than that the account is unresearched.
+    account_not_researched: Say plainly that nothing is known about this account yet, and offer to research it.
+    no_claims_under_prefix: Pick one of the families the refusal lists and read again; never invent a prefix.
+    offset_past_end: You have already read to the end. Stop paging and answer from what you have.
+    offset_not_paged: Drop offset; the overview is served whole.
+
+read_artifact:
+  afterwards: >-
+    Nothing changes. You hold one gallery artifact — what it is, what it is called, its status and
+    the thread it was made on — and, if you asked for content, the words on the page as far as the
+    cap allowed. When body_truncated is true, say so rather than describing a page you only saw the
+    beginning of.
+  skill_section: stage0-interview v33 section 7c, "Read before you speak about accounts, claims and artifacts".
+  see_also: [documents-decisions, workspace]
+  refusals:
+    artifact_not_found: Take the artifact id from the project's artifact index; an artifact of another project is refused the same way one that never existed is.
+    project_not_found: This turn carries no project, so there is no gallery to open. Say that rather than guessing at an artifact.
+
+read_arv2_account_research_run:
+  afterwards: >-
+    Nothing changes. You hold one research run's status and its per-account progress, which is how
+    you answer "how is the research going?" without launching anything.
+  skill_section: stage0-interview v33 section 7, "Launch account research", for reading the run back.
+  see_also: [siblings, accounts-research]
+  refusals:
+    arv2_account_research_not_composed: Tell the human the research lane is not wired on this deployment, and do not describe the run as finished or failed.
+    arv2_account_research_run_not_found: Use the run id the launch returned; a run of another workspace is refused the same way one that never existed is.
+
+read_claims:
+  afterwards: >-
+    Nothing changes. You hold the claims about one account or contact that matched your filters,
+    plus every family the subject actually has, so a query that matched nothing is answered with
+    what is there rather than with a bare no.
+  skill_section: stage0-interview v33 section 7c, "Read before you speak about accounts, claims and artifacts".
+  see_also: [claims, accounts-research]
+  refusals:
+    arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
+    entity_not_found: Take the account id from read_project_accounts, or a contact id from a claim you already read; a merged entity is refused under its old id, so use the survivor.
+    since_invalid: Write since as a plain ISO date such as '2026-09-01', or drop it and read without it.
+    offset_past_end: You have already read to the end. Stop paging and answer from what you have.
+
+read_discovery_run:
+  afterwards: >-
+    Nothing changes. You hold what the last discovery asked for, found, verified and showed. Say
+    that before proposing another run; do not launch one to answer a question this read already
+    answers.
+  skill_section: stage0-interview v43 sections 7b and 7c.
+  see_also: [discovery, accounts-research]
+  refusals:
+    arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
+    project_not_found: Take the project id from your project card and call again; do not guess one.
+    no_discovery_run: Say this project has not run discovery yet, and offer to run one.
+    discovery_run_not_found: Omit run_id to read this project's newest run; a run of another project is refused the same way one that never existed is.
+
+read_project_accounts:
+  afterwards: >-
+    Nothing changes. You hold the project's accounts with each one's research status, which is the
+    list status.md only summarises.
+  skill_section: stage0-interview v33 section 7c, "Read before you speak about accounts, claims and artifacts".
+  see_also: [accounts-research, discovery]
+  refusals:
+    arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
+    project_not_found: Take the project id from your project card and call again; do not guess one.
+
+record_interview_answer:
+  afterwards: >-
+    Each routed statement is recorded against the human's own words, with the quote bound to the
+    message it came from. Report what the receipt says was recorded, and never describe a refused
+    statement as captured.
+  skill_section: stage0-interview v33 section 6, "Record what they told you".
+  see_also: [documents-decisions, claims]
+  refusals:
+    onboarding_input_not_found: Do not retry. The captured input is injected by the platform, so this is a platform fault to report.
+    memory_not_configured: There is no memory route on this surface; route the preference as project state instead.
+    quote_not_found_verbatim: Copy the span from the human's message again, character for character, without retyping, tidying or re-punctuating it.
+    interview_quote_empty: Quote the human's actual words; a statement with no quote records nothing.
+    claim_value_not_entailed: Quote the sentence that actually states the fact, or correct the value to what the quote says, or route the statement as unmapped.
+    claim_value_judge_unavailable: Nothing was written. Try once more, or route the statement as unmapped rather than forcing the value through.
+    interview_entity_required: Name the contact the claim is about; only an account claim may omit the entity.
+    interview_entity_not_found: Use an entity id a read gave you; never author one.
+    interview_entity_merged: Record the statement against the surviving person the message names.
+
+request_persona_synthesis:
+  afterwards: >-
+    A personas-only onboarding run is queued for the pinned ICP. It returns queued, never a
+    document: the persona file lands under the profile's own scope on a later turn, so tell the
+    human to expect it rather than describing it now.
+  skill_section: stage0-interview v33 section 5c, "Ask for the personas".
+  see_also: [documents-decisions, siblings]
+  refusals:
+    persona_synthesis_not_composed: Tell the human persona synthesis is not wired on this deployment, and say nothing was queued.
+    persona_turn_ref_malformed: Do not retry. The turn reference is injected by the platform, so this is a platform fault to report.
+    persona_turn_not_found: Do not retry. Report that this turn cannot be resolved and let the human start a new one.
+    persona_addressee_missing: Do not retry. Report that this turn records no human to credit the request to.
+    icp_not_pinned_for_project: Name the ICP the refusal says this project pinned, or confirm one at the gate first.
+    persona_run_already_open: Tell the human those personas are already being written, and wait rather than asking twice.
+    persona_run_settled: That request already failed. Ask again on a new turn, not in this one.
+    brand_not_onboarded: Tell the human the brand has no completed onboarding run, so there is no company for personas to be written about.
+    enqueue_failed: Nothing is running. Ask again, and if it refuses twice tell the human the queue is not accepting work.
+
+run_python:
+  afterwards: >-
+    One script has run in the sandbox over this turn's workspace and is gone. What it printed is
+    in stdout, or in the file stdout_spilled_to names when it printed more than the inline budget;
+    what it left on disk is in files_written, and anything the workspace policy took back out is
+    in files_removed. Nothing outside your own workspace changed, and runs_remaining says how many
+    runs this turn has left. A file you have not opened is a file you have not read: do not
+    describe an attachment from its name. The script itself is capped at 65,536 characters, which
+    is a validation error rather than a refusal — split the work across runs instead of writing
+    one enormous script.
+  skill_section: code-execution v1 section 1, "When to run code, when not to".
+  see_also: [workspace, limits]
+  refusals:
+    sandbox_unavailable: Tell the human you cannot open the file on this deployment, and name the file; do not describe contents you never read. No run was spent.
+    workspace_unavailable: Do not retry. This call is outside a turn that owns a workspace, so report it and read what you can with the file tools.
+    run_budget_exhausted: Say what you have read so far and what is left, and do the rest in one script on the next turn.
+
+submit_ingestion:
+  afterwards: >-
+    An ingestion job is queued for the uploaded file. Queued is not read: the extracted content
+    arrives later, so do not describe what the document says on this turn.
+  skill_section: stage0-interview v33 section 6, for an upload the human has already made.
+  see_also: [documents-decisions, workspace]
+  refusals:
+    ingestion_artifact_not_found: Use the artifact key from the human's own upload; do not author one.
+    ingestion_artifact_erased: Ask the human to upload the file again before it can be ingested.
+    ingestion_not_configured: Tell the human ingestion is not wired on this deployment, and say the file was not read.
+    ingestion_context_invalid: Name the project for a project instruction, or the product for a product document, and call again.
+
+web_search:
+  afterwards: >-
+    Nothing changes on the platform. You hold the written answer and up to ten results with their
+    highlighted passages, and one search has been charged to the workspace. Read it as what a
+    search found today, not as a fact the platform verified: quote it as "a search found", never
+    as a claim, and never write it into a project document as if research had established it.
+    If the search did not settle the question, say so rather than searching again with the same
+    words.
+  skill_section: head-of-abm prompt v15, the paragraph "Look things up in this order".
+  see_also: [claims, accounts-research]
+  refusals:
+    exa_not_configured: Tell the human web search is not available on this deployment; do not answer the question from memory instead.
+    query_empty: Write the question you want searched, in plain words, then call again.
+
+write_project_document:
+  afterwards: >-
+    The project's plan is written at a new version and the Plan tab shows it. Include the returned
+    document id and version in domain_refs when you finalize, or the plan card never appears in
+    the chat.
+  skill_section: stage0-interview v33 section 6b, "Write the plan".
+  see_also: [documents-decisions, humans-screens]
+  refusals:
+    project_documents_not_composed: Tell the human project documents are not wired on this deployment, and say the plan was not written.
+    project_document_turn_ref_malformed: Do not retry. The turn reference is injected by the platform, so this is a platform fault to report.
+    project_document_turn_not_found: Do not retry. Report that this turn cannot be resolved and let the human start a new one.
+    project_document_addressee_missing: Do not retry. Report that this turn records no human to credit the plan to.
+    project_document_body_empty: Write the plan as markdown; whitespace is not a plan.
+    project_document_revision_conflict: The human edited the plan since you read it. Re-read the file, keep their edits, and write again.
+    project_document_version_race: Another writer took that version number. Re-read the plan and write again.
+
+# -------------------------------------------------------------------------------------------------
+# The error chapter: every string that is not one tool's refusal code.
+# -------------------------------------------------------------------------------------------------
+errors:
+  # AgentPlanIssue.code values. A plan rejection means the proposal never obtained authority, so
+  # nothing ran at all. None of these is repaired by calling the same tool again unchanged.
+  plan_rejected:
+    execution_scope: Do not retry. The proposal names another execution, which is a platform fault to report.
+    role_scope: Do not retry. The proposal names another role, which is a platform fault to report.
+    workspace_scope: Do not retry. The call reaches outside this workspace; name only objects your own reads returned.
+    node_ceiling: Ask for less in one call, or split the work across turns.
+    tool_not_allowed: That tool is not yours on this surface. Read your capability map and use one that is, or tell the human what you cannot do.
+    delegation_not_allowed: That role is not delegated here. Do the work yourself or tell the human it is out of reach.
+    path_grant: Ask only for paths inside your own readable prefixes.
+    delegation_ceiling: Delegate fewer specialists, or do the remaining work yourself.
+    delegation_depth: The chain is already as deep as it goes. Do the work at this level.
+    depth_ceiling: Flatten the plan; a chain this long is not something one turn should attempt.
+    fanout_ceiling: Start fewer steps at once and let the first batch finish.
+    pin_resolution_failed: Satisfy exactly the pin the message names, which usually means confirming something at a gate first.
+    c5_pin_kind_not_allowed: That call needs pins this interaction does not carry. Tell the human what is missing.
+    budget_ceiling: The estimate exceeds this turn's ceiling. Ask for a smaller set and tell the human why.
+    no_binding: Do not retry. The turn's captured input is unavailable, which is a platform fault to report.
+  # `error_type: message` is the shape of an operation_failed reason. The type is the exception's
+  # own class name; the codes inside a PreconditionFailed message are the tool's, and every one you
+  # can receive is listed with its tool above.
+  operation_failed:
+    PreconditionFailed: Read the codes in the message and satisfy exactly what they name; the next move for each is listed with its tool.
+    ValueError: An argument was malformed in a way the tool did not type. Fix the value the message names and call again.
+    RuntimeError: Something on this deployment is not wired. Tell the human plainly, and do not retry.
+    "this logical operation is durably blocked": Do not repeat the identical call. Satisfy the prerequisite the message names, then make a new call.
+  # One mapper turns every workspace exception into one of these prefixes.
+  file_tools:
+    "quota_exceeded:": Write less or read a narrower slice. The quota is fixed for the turn, so the identical write cannot succeed on a retry.
+    "conflict:": Re-read the file and redo the work against its current bytes; for an edit, copy the span exactly or make it unique, never reword it.
+    "permission_denied:": Stop. This is something you cannot do here. Do not try a variant path, and tell the human if it matters.
+    invalid_encoding: The file is not UTF-8 text and cannot be read as text; say so rather than guessing at its contents.
+  # finalize_turn is refused by its own shape contract, and the refusal does not end the turn until
+  # the separate finalize budget is spent.
+  finalize:
+    "status 'failed' must carry a stable snake_case failure_code": Add a lowercase failure_code that names why the turn failed, and finalize again.
+    "cannot carry a failure_code; only 'failed' may": Remove the failure_code, or change the status to failed if the turn really did fail.
+    "status 'completed' must carry a user_message": Write the message the human should read, and finalize again.
+    "must identify what it is waiting for": Add a next_actions item, an open_gate_refs entry, or a user_message that asks the human for what you need.
+    "completed specialist turn requires its non-empty role output file": Not reachable in this role, which has no required output file; if you ever read it, write that file and finalize again.
+  middleware:
+    "is structurally unavailable to this exact agent profile": Call only tools your capability map lists; that name is not one of them.
+    "Your previous response is not committed because it did not call finalize_turn": Call finalize_turn now and nothing else, preserving your previous answer word for word as user_message.
+
+configure_project_targeting:
+  afterwards: >-
+    The product set and exact ICP artifact are confirmed and pinned automatically. Continue the
+    user's task using the returned artifact key, digest and product selection version; do not
+    open an approval card. This call launches no research.
+  skill_section: stage0-interview v35 section 4, "Apply the products and ICP automatically".
+  see_also: [documents-decisions, gates-authority]
+  refusals:
+    targeting_turn_unavailable: Use the current durable conversation turn; never invent a reference.
+    targeting_project_unavailable: Explain that this project is unavailable in the current workspace.
+    icp_document_not_found: Read or write the intended ICP document and use its exact icp_key.
+    targeting_products_unavailable: Read the brand catalog and choose its active product ids.

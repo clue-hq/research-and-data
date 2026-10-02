@@ -1,0 +1,345 @@
+{
+  "requestId": "0007ea3afdc08cb5939a68dca0e9b59d",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://github.com/nmfisher/",
+      "title": "Nick Fisher",
+      "url": "https://github.com/nmfisher/",
+      "text": "# Nick Fisher\n\nHack the planet! \n\n- Login: nmfisher\n- Blog: hydroxide.dev\n- Public repos: 142\n- Public gists: 14\n- Followers: 69\n- Following: 71\n- Joined: 2014-04-09T12:58:43Z\n\n## Top Repositories\n\n- nmfisher/blender_livelinkface - Stream/load ARKit blendshapes from LiveLinkFace direct to Blender (20 stars)\n- nmfisher/flutter_keyframe_timeline - (13 stars)\n- nmfisher/flutter_tflite_tts_plugin - A Flutter plugin to wrap TensorflowTTS/TFLite libraries for on-device speech synthesis. (10 stars)\n- nmfisher/ffigen_js - Re-implementation of Dart ffigen package to support generating JS interop bindings for WebAssembly (8 stars)\n- nmfisher/nelder-mead-fsharp-fable - Nelder-Mead Optimization Demo with F# & Fable (8 stars)\n- nmfisher/figma_mcp - (7 stars)",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/8hw3n2zvcyk",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Nicholas Fisher",
+            "firstName": "Nicholas",
+            "lastName": "Fisher",
+            "location": "Portland, Oregon Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Senior Vice President",
+                "location": null,
+                "dates": {
+                  "from": "2026-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fgg81rjx4hk",
+                  "name": "CCS Fundraising"
+                }
+              },
+              {
+                "title": "Vice President",
+                "location": null,
+                "dates": {
+                  "from": "2023-09-01",
+                  "to": "2025-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fgg81rjx4hk",
+                  "name": "CCS Fundraising"
+                }
+              },
+              {
+                "title": "Assistant Vice President",
+                "location": "Portland, Oregon, United States",
+                "dates": {
+                  "from": "2021-09-01",
+                  "to": "2023-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fgg81rjx4hk",
+                  "name": "CCS Fundraising"
+                }
+              },
+              {
+                "title": "Senior Director",
+                "location": "San Francisco, California, United States",
+                "dates": {
+                  "from": "2020-09-01",
+                  "to": "2021-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fgg81rjx4hk",
+                  "name": "CCS Fundraising"
+                }
+              },
+              {
+                "title": "Executive Director",
+                "location": "San Francisco, California, United States",
+                "dates": {
+                  "from": "2019-09-01",
+                  "to": "2020-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fgg81rjx4hk",
+                  "name": "CCS Fundraising"
+                }
+              },
+              {
+                "title": "Associate Director",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2018-03-01",
+                  "to": "2019-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fgg81rjx4hk",
+                  "name": "CCS Fundraising"
+                }
+              },
+              {
+                "title": "Senior Advancement Manager",
+                "location": "San Francisco, CA",
+                "dates": {
+                  "from": "2017-05-01",
+                  "to": "2018-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/m0fz633g6pj",
+                  "name": "Greenbelt Alliance"
+                }
+              },
+              {
+                "title": "Development Manager",
+                "location": "Monterey, CA",
+                "dates": {
+                  "from": "2015-08-01",
+                  "to": "2017-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/223km324l94",
+                  "name": "Big Sur Land Trust"
+                }
+              },
+              {
+                "title": "Agriculture Extensionist",
+                "location": "Republic of Paraguay",
+                "dates": {
+                  "from": "2012-08-01",
+                  "to": "2014-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/71k5qtvk5nt",
+                  "name": "Peace Corps"
+                }
+              },
+              {
+                "title": "Health Supervisor",
+                "location": "Kamas, UT",
+                "dates": {
+                  "from": "2012-06-01",
+                  "to": "2012-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/t1zkfk5tclw",
+                  "name": "YMCA"
+                }
+              },
+              {
+                "title": "Health Supervisor",
+                "location": "Coggon, IA",
+                "dates": {
+                  "from": "2010-05-01",
+                  "to": "2010-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/t1zkfk5tclw",
+                  "name": "YMCA"
+                }
+              },
+              {
+                "title": "Sustainability Coordinator",
+                "location": "Decorah, IA",
+                "dates": {
+                  "from": "2015-01-01",
+                  "to": "2015-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1fns933vmlc",
+                  "name": "Luther College"
+                }
+              },
+              {
+                "title": "Sustainability Intern",
+                "location": "Decorah, IA",
+                "dates": {
+                  "from": "2011-01-01",
+                  "to": "2012-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1fns933vmlc",
+                  "name": "Luther College"
+                }
+              },
+              {
+                "title": "Sustainability Intern",
+                "location": "Decorah, IA",
+                "dates": {
+                  "from": "2011-03-01",
+                  "to": "2012-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/1fns933vmlc",
+                  "name": "Luther College"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master of Business Administration (M.B.A.) International Environmental Policy and Global Impact Management",
+                "dates": {
+                  "from": "2015",
+                  "to": "2017"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/m2bjqbmvmbv",
+                  "name": "Middlebury Institute of International Studies at Monterey"
+                }
+              },
+              {
+                "degree": "BA Biology",
+                "dates": {
+                  "from": "2008",
+                  "to": "2012"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/1fns933vmlc",
+                  "name": "Luther College"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://nick-fisher.com/about/",
+      "title": "Nick Fisher | About Me",
+      "url": "https://nick-fisher.com/about/",
+      "text": "Nick Fisher | About Me\n\n# About Me\n\n12/06/2025\n\nCurrently doing a lot of backend/AI agent work, speech-to-text, text-to-speech, 3D animation. Mostly working with Dart, C++, WebAssembly, Python/PyTorch, Typescript and Blender/bpy.\n\nMy projects:\n\n- Polyvox\n- Mixworld\n- Mixreel\n\nGet in touch via GitHub, BlueSky, Twitter, Mastodon or e-mail (nick.fisher@avinium.com).\n\n## Comments\n\nLoading comments..."
+    },
+    {
+      "id": "https://nick-fisher.com/",
+      "title": "Nick Fisher | Claude Code + Blender MCP",
+      "url": "https://nick-fisher.com/",
+      "text": "Nick Fisher | Claude Code + Blender MCP\n\n# Claude Code + Blender MCP\n\n12/05/2026\n\nBlender published an official MCP Add-on a few weeks ago, and I decided to migrate away from the unofficial add-on I'd been using over the past few months. Kudos to the author for the unofficial blender-mcp add-on; I never had any problems, I just feel the official add-on is likely to be better supported going forward.\n\nHere's a quick installation guide for Blender 5.1 + Claude Code:\n\nDrag & drop the add-on from https://www.blender.org/lab/mcp-server/ into the running Blender window twice (the first time only adds the Blender Lab repository, the second time actually isntalls the add-on)\n\nClone the`blender_mcp` repository:\n\n```\ncd $HOME\ngit clone https://projects.blender.org/lab/blender_mcp.git\n\n```\n\n1. Inside the project folder where you launch Claude Code:\n\n```\nclaude mcp add blender -- uv --directory $HOME/blender_mcp/mcp run blender-mcp\n\n```\n\nor use the`--scope user` if you want to make it available to all Claude Code sessions for all projects:\n\n```\nclaude mcp add --scope user blender -- uv --directory $HOME/blender_mcp/mcp run blender-mcp\n\n```\n\nIf, like me, you had a previous version installed, remove it first with`claude mcp remove blender` or`claude mcp remove --scope user blender`.\n\n## Comments\n\nLoading comments..."
+    },
+    {
+      "id": "https://hydroxide.dev/about/",
+      "title": "Nick Fisher | About Me",
+      "url": "https://hydroxide.dev/about/",
+      "text": "Nick Fisher | About Me\n\n# About Me\n\n12/06/2025\n\nI develop & publish various apps and software packages via Holotype Pte Ltd.\n\nCurrently doing a lot of backend/AI agent work, speech-to-text, text-to-speech, 3D animation.\n\nMostly working with Dart, C++, WebAssembly, Python/PyTorch, Typescript and Blender/bpy.\n\n## Comments\n\nLoading comments..."
+    },
+    {
+      "id": "https://hydroxide.dev/",
+      "title": "Nick Fisher | Claude Code + Blender MCP",
+      "url": "https://hydroxide.dev/",
+      "text": "Nick Fisher | Claude Code + Blender MCP\n\n# Claude Code + Blender MCP\n\n 12/05/2026 \n\nBlender published an official MCP Add-on a few weeks ago, and I decided to migrate away from the unofficial add-on I'd been using over the past few months. Kudos to the author for the unofficial blender-mcp add-on; I never had any problems, I just feel the official add-on is likely to be better supported going forward.\n\nHere's a quick installation guide for Blender 5.1 + Claude Code:\n\n1. Drag & drop the add-on from https://www.blender.org/lab/mcp-server/ into the running Blender window twice (the first time only adds the Blender Lab repository, the second time actually isntalls the add-on)\n2. Clone the `blender_mcp` repository:\n\n```\ncd $HOME\ngit clone https://projects.blender.org/lab/blender_mcp.git\n\n```\n\n3. Inside the project folder where you launch Claude Code:\n\n```\nclaude mcp add blender -- uv --directory $HOME/blender_mcp/mcp run blender-mcp\n\n```\n\nor use the `--scope user` if you want to make it available to all Claude Code sessions for all projects:\n\n```\nclaude mcp add --scope user blender -- uv --directory $HOME/blender_mcp/mcp run blender-mcp\n\n```\n\nIf, like me, you had a previous version installed, remove it first with `claude mcp remove blender` or `claude mcp remove --scope user blender`.\n\n## Comments\n\nBuilding a (Mini) 3D Flutter Game - Part 1\n\nStatic Blog Generator with Dart & Jaspr\n\n3D PBR with Flutter - Talk at Singapore Flutter Meetup\n\nDialog validation with F# code quotations an"
+    },
+    {
+      "id": "https://www.nfwebdev.co.uk/",
+      "title": "Freelance Web Developer, Web Design, Android App Development and Magento Development by Nick Fisher",
+      "url": "https://www.nfwebdev.co.uk/",
+      "text": "Freelance Web Developer, Web Design, Android App Development and Magento Development by Nick Fisher\n\n### Recent updates from my portfolio...\n\n#### Lincolnshire Consortium of Grammar Schools\n\n##### grammarschools.lincs.sch.uk\n\n\"The Lincolnshire Consortium of Grammar Schools was delighted to use the services of NF Web Development to design and implement a new website for the consortium. The work was completed promptly and with outcomes that were exactly ...\n\n#### A6 Hot Tubs\n\n##### a6hottubs.co.uk\n\nThis is an online shop built using WordPress and WooCommerce. They offer bespoke luxury Hot Tubs and Tiled Spas with easy maintenance options. There are many products available on the site grouped into categories and many products...\n\n#### Form Time Sorted\n\n##### formtimesorted.com\n\nForm Time Sorted was created by two teachers. It allows students to get a brief overview of the world news headlines, along with providing a word of the day and a fact of the day. It also provides schools with literacy, numeracy a...\n\n#### AED Rollers\n\n##### aedrollers.com\n\nAED Rollers have been designing and manufacturing conveyor rollers since 1996, when they were known as Adept Engineering & Design. Their website allows customers to order rollers and conveyors. Each roller has many options for the...\n\n#### Coda Music\n\n##### coda-music.com\n\nSince 1986 Coda Music have been selling, buying, importing, exporting, repairing and setting up guitars. I developed their new ecommerce website with Magento. It is ",
+      "image": "https://www.nfwebdev.co.uk/media/images/logo.png",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/4n5719c81y4",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "NF Web Development",
+            "foundedYear": null,
+            "description": "A user who has signed up to the site as a client can add a flight and then the operators can quote for that flight. The client can then choose which quote they wish to accept and pay for it in three parts provisional booking fee, deposit and total . Operators can also add 'Empty Legs' which clients can make offers for and pay in a similar way.",
+            "workforce": {
+              "total": 1
+            },
+            "headquarters": {
+              "address": "148 Windsor Bank, Boston, PE2 1 0HR, GB",
+              "city": "boston",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": null,
+            "webTraffic": {
+              "visitsMonthly": 2613,
+              "countryRank": 4184946,
+              "avgDurationSeconds": 0,
+              "history": [
+                {
+                  "value": 1711,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 825,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 825,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 2404,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 2404,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 2613,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://dev.to/nickfisherau",
+      "title": "Nick Fisher - DEV Community",
+      "url": "https://dev.to/nickfisherau",
+      "text": "Nick Fisher - DEV Community\n\n \n\n# Nick Fisher \n\nFull-stack ML engineer.\n\n Australia/Singapore Joined on Nov 9, 2018 http://www.nick-fisher.com \n\nWork\n\nSelf-employed\n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n \n\n More info about @nickfisherau \n\nSkills/Languages\n\nFluttter, Dart, C++, PyTorch\n\nCurrently hacking on\n\nhttps://polyvox.app - virtual language teachers https://imaginanki.com - generate flashcards with AI\n\n### Want to connect with Nick Fisher?",
+      "image": "https://dev-to-uploads.s3.amazonaws.com/uploads/articles/3otvb2z646ytpt1hl2rv.jpg"
+    },
+    {
+      "id": "https://www.nickolasfisher.com/",
+      "title": "Nick Fisher's tech blog",
+      "url": "https://www.nickolasfisher.com/",
+      "text": "Nick Fisher's tech blog\n\n### Home - Nick Fisher\n\nWelcome to Nick Fisher\u2019s Tech Blog! I sometimes write in here about software engineering. Most of the older topics are \u201chow to\u201d articles detailing how to solve specific tasks in distributed systems that need to scale.\n\nI still work as an engineer\u2013writing in here has slowed with a few young kids at home \ud83d\ude00",
+      "image": "https://www.nickolasfisher.com/img/nick-headshot.jpg",
+      "favicon": "https://www.nickolasfisher.com/img/nficon.png"
+    }
+  ],
+  "searchTime": 853.8,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 0.94,
+  "_request": {
+    "query": "\"Nick Fisher\" personal website portfolio github about me",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

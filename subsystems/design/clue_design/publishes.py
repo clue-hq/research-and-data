@@ -24,6 +24,13 @@ D1/D2 upgrades the contract mandates:
 * **Append-only history.** UPDATE *and* DELETE on ``design_web_publish_revision`` are rejected by
   trigger, so this module is INSERT-only on revisions (the SQLite code already was: unpublish
   flips ``design_web_publish.status``, it never touches history).
+* **F5: a published site is one HTML per ROUTE.** ``design_web_publish_revision_page`` holds a
+  package's pages (immutable with their parent) and ``design_web_publish_page`` holds the
+  *materialized* current site — re-derived wholesale from whichever package is being served, by
+  both :func:`upsert_web_publish` and :func:`rollback_web_publish`, inside their own transaction.
+  ``design_web_publish.html`` still carries the ``/`` page, so pre-F5 readers are untouched, and a
+  package registered without pages simply materializes none — the serving layer reads that empty
+  state as a legacy single-html publish rather than a broken one.
 
 The two atomic swaps keep their single-statement semantics exactly:
 :func:`upsert_web_publish` is ONE ``INSERT … ON CONFLICT DO UPDATE`` whose ``SET`` list reads the
@@ -38,6 +45,7 @@ exactly, with ISO-string timestamps.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from sqlalchemy import text
@@ -130,6 +138,14 @@ async def register_web_publish_revision(
     ``created_at`` comes from the column default rather than the caller's ``utc_now()`` string:
     the timestamp is server-authoritative here, it is not part of the content address, and both
     call sites passed exactly the value the default produces.
+
+    F5: ``revision`` may carry ``"pages"`` — ``[{"route", "page_id", "html", "html_digest"}]`` —
+    which lands in ``design_web_publish_revision_page`` under the same ``ON CONFLICT DO NOTHING``
+    idempotency as the parent (re-registering the same package is a no-op, and the rows are
+    immutable by trigger anyway, so a rewrite is not merely skipped, it is impossible). The key
+    is **optional**: pre-F5 callers pass no ``pages`` at all, and then the package simply has
+    none — its current pages materialize empty and the serving layer falls back to the legacy
+    single ``html`` at ``/``.
     """
     publish_id = f"webpub_{revision['package_digest']}"
     await conn.execute(
@@ -158,6 +174,27 @@ async def register_web_publish_revision(
             "runtime": revision.get("runtime_version"),
         },
     )
+    pages = revision.get("pages") or []
+    for page in pages:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO design_web_publish_revision_page (
+                  publish_id, workspace_id, route, page_id, html, html_digest
+                )
+                VALUES (:p, :w, :route, :page_id, :html, :html_digest)
+                ON CONFLICT DO NOTHING
+                """
+            ),
+            {
+                "p": publish_id,
+                "w": workspace_id,
+                "route": page["route"],
+                "page_id": page["page_id"],
+                "html": page["html"],
+                "html_digest": page["html_digest"],
+            },
+        )
     stored = await require_web_publish_revision(
         conn, workspace_id=workspace_id, publish_id=publish_id
     )
@@ -170,6 +207,99 @@ async def register_web_publish_revision(
         # same taxonomy error and the API turns it into a 409 rather than a database.error.
         raise DesignArtifactConflictError("web_publish_revision", publish_id)
     return stored
+
+
+# --- per-route pages (F5 multi-page publishing) -----------------------------------------------
+
+
+async def materialize_web_publish_pages(
+    conn: AsyncConnection, *, workspace_id: str, slug: str, publish_id: str | None
+) -> None:
+    """Re-derive ``design_web_publish_page`` from the revision that ``slug`` now serves.
+
+    Delete-then-insert, wholesale and inside the caller's transaction: the current site is
+    **exactly** the pages of ``publish_id``, never a union with what was there before. That is
+    what makes a route dropped from a new revision stop serving, and what lets rollback restore a
+    route by simply re-running this against the revision that swapped back in.
+
+    ``publish_id=None`` (a publish row that pins no package) clears the pages and inserts none —
+    the same honest empty state a package without pages produces, which the serving layer reads
+    as "legacy single-html publish".
+
+    The source read is workspace-scoped as well as id-scoped: ``publish_id`` is a content address
+    two tenants can legitimately share, so ``workspace_id`` is half of the revision pages' key,
+    not a redundant filter.
+    """
+    await conn.execute(
+        text("DELETE FROM design_web_publish_page WHERE workspace_id = :w AND slug = :s"),
+        {"w": workspace_id, "s": slug},
+    )
+    if publish_id is None:
+        return
+    await conn.execute(
+        text(
+            """
+            INSERT INTO design_web_publish_page (
+              workspace_id, slug, route, page_id, html, html_digest
+            )
+            SELECT :w, :s, route, page_id, html, html_digest
+              FROM design_web_publish_revision_page
+             WHERE publish_id = :p AND workspace_id = :w
+            """
+        ),
+        {"w": workspace_id, "s": slug, "p": publish_id},
+    )
+
+
+async def get_web_publish_page(
+    conn: AsyncConnection, *, workspace_id: str, slug: str, route: str
+) -> JsonObject | None:
+    """One served route's HTML, or ``None`` — the serving layer's per-route read.
+
+    ``None`` covers both "this site has no such route" and "this site has no pages at all"
+    (a pre-F5 publish); the caller distinguishes them by falling back to the publish row's own
+    ``html`` for ``/`` only.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT route, page_id, html, html_digest FROM design_web_publish_page"
+                " WHERE workspace_id = :w AND slug = :s AND route = :r"
+            ),
+            {"w": workspace_id, "s": slug, "r": route},
+        )
+    ).first()
+    if row is None:
+        return None
+    return {
+        "route": row.route,
+        "page_id": row.page_id,
+        "html": row.html,
+        "html_digest": row.html_digest,
+    }
+
+
+async def list_web_publish_pages(
+    conn: AsyncConnection, *, workspace_id: str, slug: str
+) -> list[JsonObject]:
+    """Every route a site currently serves, WITHOUT the html — the index read.
+
+    Deliberately html-free: this backs sitemaps, route listings and "what did we publish?"
+    surfaces, none of which want a whole site's markup in one response. Fetch a page's bytes with
+    :func:`get_web_publish_page`.
+    """
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT route, page_id, html_digest FROM design_web_publish_page"
+                " WHERE workspace_id = :w AND slug = :s ORDER BY route"
+            ),
+            {"w": workspace_id, "s": slug},
+        )
+    ).fetchall()
+    return [
+        {"route": row.route, "page_id": row.page_id, "html_digest": row.html_digest} for row in rows
+    ]
 
 
 # --- the live serving row --------------------------------------------------------------------
@@ -289,6 +419,11 @@ async def upsert_web_publish(
             "p": publish_id,
         },
     )
+    # F5: the served site is re-derived from the package that just became current, in this same
+    # transaction — so the swap of *pages* is as atomic as the swap of the row itself.
+    await materialize_web_publish_pages(
+        conn, workspace_id=workspace_id, slug=slug, publish_id=publish_id
+    )
     return await require_web_publish(conn, workspace_id=workspace_id, slug=slug)
 
 
@@ -309,6 +444,26 @@ async def set_web_publish_status(
     return await get_web_publish(conn, workspace_id=workspace_id, slug=slug)
 
 
+async def unpublish_other_slugs(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str, keep_slug: str
+) -> list[str]:
+    """Unpublish every OTHER live slug of ``document_id`` and return them, sorted.
+
+    A document lives at one address: republishing it under a new slug is a MOVE, so the address
+    it moved from stops serving (the page origin serves only ``active`` rows, so it 404s). The
+    same status ``unpublish`` assigns; history and the revisions are untouched.
+    """
+    rows = await conn.execute(
+        text(
+            "UPDATE design_web_publish SET status = 'unpublished', updated_at = now()"
+            " WHERE workspace_id = :w AND document_id = :d AND slug <> :keep"
+            " AND status = 'active' RETURNING slug"
+        ),
+        {"w": workspace_id, "d": document_id, "keep": keep_slug},
+    )
+    return sorted(str(row[0]) for row in rows)
+
+
 async def rollback_web_publish(
     conn: AsyncConnection, *, workspace_id: str, slug: str
 ) -> JsonObject | str:
@@ -318,6 +473,10 @@ async def rollback_web_publish(
     / ``'no_previous'`` (nothing to roll back to). A single UPDATE evaluates every SET expression
     against the ORIGINAL row, so reading and writing html/previous_html in one statement swaps
     them atomically — the ported guarantee, preserved verbatim.
+
+    F5: the served *pages* swap with it. The current pages are re-materialized from the revision
+    that just swapped in, in this same transaction, so a route the newer revision had dropped
+    comes back with the older revision's own html — never a stale row the newer publish left.
     """
     row = (
         await conn.execute(
@@ -332,9 +491,10 @@ async def rollback_web_publish(
         return "not_found"
     if row.previous_html is None:
         return "no_previous"
-    await conn.execute(
-        text(
-            """
+    swapped_in = (
+        await conn.execute(
+            text(
+                """
             UPDATE design_web_publish SET
               html = previous_html,
               doc_version = previous_doc_version,
@@ -345,8 +505,63 @@ async def rollback_web_publish(
               status = 'active',
               updated_at = now()
             WHERE workspace_id = :w AND slug = :s
+            RETURNING publish_id
             """
-        ),
-        {"w": workspace_id, "s": slug},
+            ),
+            {"w": workspace_id, "s": slug},
+        )
+    ).scalar()
+    # F5: the swapped-in revision's own pages become the served site again — taken from the
+    # UPDATE's RETURNING rather than re-read, so it is the id this statement actually wrote.
+    await materialize_web_publish_pages(
+        conn, workspace_id=workspace_id, slug=slug, publish_id=swapped_in
     )
     return await require_web_publish(conn, workspace_id=workspace_id, slug=slug)
+
+
+# --- delivery constants shared by the page origin and the design API's publish package -------
+# Custom-domain publishing (design 2026-09-17 §5.2, §6.2). One home so the served header and the
+# embedded meta can never drift: the origin sends DELIVERY_CSP_HEADER; build_publish_package
+# embeds DELIVERY_CSP_META (frame-ancestors is ignored inside a meta CSP by spec).
+
+DELIVERY_CSP_META = (
+    "default-src 'none'; script-src 'self' 'unsafe-inline' data:; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
+    "connect-src 'none'; object-src 'none'; worker-src 'none'; frame-src 'self' data: blob:; "
+    "base-uri 'none'; form-action 'none'"
+)
+DELIVERY_CSP_HEADER = DELIVERY_CSP_META + "; frame-ancestors 'self'"
+
+
+def delivery_csp(*, meta: bool = False) -> str:
+    return DELIVERY_CSP_META if meta else DELIVERY_CSP_HEADER
+
+
+PUBLISH_ASSET_EXTENSIONS: tuple[str, ...] = ("js", "css", "html")
+PUBLISH_ASSET_MEDIA_TYPES: dict[str, str] = {
+    "js": "text/javascript; charset=utf-8",
+    "css": "text/css; charset=utf-8",
+    "html": "text/html; charset=utf-8",
+}
+
+
+class PublishAssetMismatch(ValueError):
+    """The bytes behind a publish-asset URL do not match what the URL promises."""
+
+
+def check_publish_asset(*, data: bytes, media_type: str, digest: str, extension: str) -> str:
+    """Integrity-check one immutable publish asset; returns the media type to serve.
+
+    The URL's extension must agree with the media type recorded on the blob's ``artifact`` row, and
+    the bytes must hash to the digest in the URL — so ``/{digest}.css`` can never serve JavaScript.
+    Re-homed from ``lumen_api.web_export.resolve_publish_asset`` so the page origin (which may not
+    import ``lumen_api``) and the design API share one rule.
+    """
+    expected = PUBLISH_ASSET_MEDIA_TYPES.get(extension)
+    if expected is None:
+        raise PublishAssetMismatch("publish asset media type does not match its URL")
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise PublishAssetMismatch("publish asset failed its integrity check")
+    if media_type != expected:
+        raise PublishAssetMismatch("publish asset media type does not match its URL")
+    return expected

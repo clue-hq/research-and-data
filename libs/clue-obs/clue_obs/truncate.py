@@ -22,10 +22,14 @@ DEFAULT_LIMIT = 400
 _SKIP_KEYS = frozenset({"level", "timestamp", "logger", "logger_name"})
 
 
-def _truncate_str(value: str, limit: int) -> str:
+def truncate_str(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + f"… (+{len(value) - limit} chars)"
+
+
+#: Historic private name; kept so existing callers do not change.
+_truncate_str = truncate_str
 
 
 def _truncate(value: Any, limit: int) -> Any:

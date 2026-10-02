@@ -6,7 +6,7 @@ import minimalSceneFixture from "../../../../../crates/lumen-core/fixtures/minim
 import type { Operation, Scene } from "../contracts";
 import { updateNodeTransform, updateTextNode } from "../operations";
 import type { StructuredEdit } from "../structuredEdits";
-import { applySceneDelta, WasmEngine, type SceneDelta } from "../wasmEngine";
+import { applySceneDelta, WasmEngine, type SceneDelta, type WasmModule } from "../wasmEngine";
 import { loadWasmModuleFromDisk, wasmArtifactPresent } from "../../test/wasmModule";
 
 const baseScene = minimalSceneFixture as unknown as Scene;
@@ -177,4 +177,29 @@ describe.skipIf(!wasmArtifactPresent)("WasmEngine (real artifact)", () => {
     expect(undo.accepted).toBe(true);
     expect(undo.scene).toEqual(original);
   });
+});
+
+it("keeps each mutation's presentation paired and rejects stale measurements", () => {
+  const authored = cloneScene(baseScene);
+  const presented = cloneScene(baseScene);
+  presented.nodes.node_contact_name.name = "effective";
+  let revision = 1;
+  const metadata = () => ({ context_key: "ctx", input_revision: revision, status: "ready", diagnostics: [] });
+  const module = { engineVersion: () => "{}", LumenEngine: class {
+    sceneJson() { return JSON.stringify(authored); }
+    presentationJson() { return JSON.stringify({ ...metadata(), scene: presented }); }
+    setRenderContext() { return this.presentationJson(); }
+    applyOperations() { revision++; return JSON.stringify({ ok:true, delta:{}, presentation_delta: { nodes: {
+      node_contact_name: { ...presented.nodes.node_contact_name, name:"next" }
+    } }, derivation:metadata() }); }
+    setMeasurements() { throw new Error("stale measurement reached WASM"); }
+  }} as unknown as WasmModule;
+  const engine = new WasmEngine(module, authored);
+  const before = engine.presentationScene;
+  const stamp = engine.derivation.input_revision;
+  const result = engine.applyOperations([]);
+  expect(result.presentationScene?.nodes.node_contact_name.name).toBe("next");
+  expect(before.nodes.node_contact_name.name).toBe("effective");
+  expect(engine.scene.nodes.node_contact_name.name).not.toBe("next");
+  expect(() => engine.setMeasurements([], stamp)).toThrow("Stale presentation");
 });

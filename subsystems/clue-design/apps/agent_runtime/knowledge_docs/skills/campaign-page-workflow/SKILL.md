@@ -78,6 +78,12 @@ From here on the plan is the reference: update each section's status
 written amendment FIRST, then an act. If a plan.md already exists from
 an earlier pass, continue it — never write a competitor.
 
+Most campaigns are one page. When this one is a small SITE, the plan says so
+first: the pages it needs, each with a name and a route (`/`, `/pricing`,
+`/security/soc-2`), and what job each page does. Then one section plan per
+page, exactly as above. A page nobody can name a job for does not belong in
+the plan.
+
 ## Step 5 — Build the skeleton
 
 *Tools: `assemble_cloned_sections` (empty page — the paved verb);
@@ -90,6 +96,11 @@ atomic act, with slot rebinds riding the same call wherever the copy is
 already written. On an existing document, this step is the edit-website
 discipline instead: smallest sufficient verbs, pinned clones preserved
 by id, no whole-page reauthor over standing work.
+
+On a multi-page site the director creates every page the plan names
+(`add_page`) before the first author brief, then builds them ONE AT A TIME:
+`switch_page`, one author brief for that whole page, render, review, amend.
+An author brief covers one page — never two.
 
 ## Step 6 — Adapt the clones (the props step)
 
@@ -129,9 +140,9 @@ Only the bands the library genuinely lacks. The sequence is
 edit-website's: extract the page's design grammar (already written in
 your plan's audit — re-read it) → name ONE structural ancestor → make
 the surface-hierarchy judgment → match the content density → build in
-the right lane (raw is the default on a clone-bearing page; remix the
-ancestor's real CSS, never imagine) → pin into the gap between real
-bands. Every composed band is checked against the plan's grammar audit
+the right lane (in a workspace with released clones, raw is the default
+and the vocabulary lane is the last resort; remix the ancestor's real CSS,
+never imagine) → pin into the gap between real bands. Every composed band is checked against the plan's grammar audit
 before it counts as built.
 
 ## Step 8 — The copy pass
@@ -163,6 +174,11 @@ invented now:
 - Read the finished page top to bottom as the arriving visitor: at
   every scroll position — do I know what this is, why it's for me,
   what I get if I act?
+
+Every page of a multi-page site gets this review at all three widths — an
+unreviewed second page ships unreviewed. Walk the site's own links too:
+each `href="/…"` names a route the plan actually created, and the visitor
+can get back to the page carrying the CTA.
 
 Fixes loop back to steps 5–8; each loop-back is a written amendment,
 and sections move to `verified` as their tasks pass.

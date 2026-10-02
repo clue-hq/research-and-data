@@ -1,0 +1,97 @@
+{
+  "requestId": "a15176444f9a1a575ea9a7602893dc73",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/organization/p5c1zdbdxyc",
+      "title": "cogent",
+      "url": "https://linkedin.com/company/cogentsecurity",
+      "publishedDate": "2026-06-16T00:00:00.000Z",
+      "author": "Exa",
+      "text": "# Cogent (Cogent Security, Inc.)\n\nCogent is a Computer and Network Security company. Cogent employs 49 people, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n## About\n\nCogent is an applied AI lab building AI systems for enterprise cybersecurity teams. We focus on cybersecurity because it affects everyone\u2014the reliability of the services we use, the privacy of our data, and the safety of the organizations we depend on. Our mission is to prevent breaches using autonomous AI systems that continuously secure systems against AI-armed adversaries operating at machine speed. Founded by researchers and operators from Google DeepMind, Abnormal Security, and Coinbase. Backed by Greylock Partners.\n\n## Company Details\n- Industry: Computer and Network Security\n- Type: Privately Held\n- Headquarters: San Francisco, United States\n- Founded Year: 2024\n- Homepage: cogent.com\n- Status: active\n- Aliases: cogent, cogent security, cogent security, inc.\n- LinkedIn: linkedin.com/company/cogentsecurity\n- Linkedin Followers: 6,208 (Monthly: +12.0%)\n\n## Financials\n- Total Funding: USD 53,000,000\n  - Series A - 3 investors, led by Bain Capital Ventures\n  - Series A (2026-02-01): USD 42.0M - 3 investors\n  - Seed Round (2025-08-15): USD 11.0M - 2 investors, led by Greylock\n\n## Workforce\n- Employees: 49 (11-50 employees)\n  - Monthly Growth: +26.3%\n- Key Executive",
+      "image": "https://media.licdn.com/dms/image/v2/D4E0BAQHyOVPgG1vHxg/company-logo_200_200/B4EZyXdjUbGYAI-/0/1772067632795/cogentsecurity_logo?e=2147483647&v=beta&t=axmcz3x1C6FWnfsyfanqFD0INYhvktnTeu4ThkJlgfk",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/p5c1zdbdxyc",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Cogent",
+            "foundedYear": 2024,
+            "description": "Cogent is an applied AI lab building AI systems for enterprise cybersecurity teams. We focus on cybersecurity because it affects everyone\u2014the reliability of the services we use, the privacy of our data, and the safety of the organizations we depend on. Our mission is to prevent breaches using autonomous AI systems that continuously secure systems against AI-armed adversaries operating at machine speed. Founded by researchers and operators from Google DeepMind, Abnormal Security, and Coinbase. Backed by Greylock Partners.",
+            "workforce": {
+              "total": 49
+            },
+            "headquarters": {
+              "address": "San Francisco, California 94105, US",
+              "city": "San Francisco",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": null,
+              "fundingTotal": 53000000,
+              "fundingLatestRound": null
+            },
+            "webTraffic": null,
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "title": "",
+      "url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+      "text": "---\ntitle: \"Cogent Security Raises $42M Series A - Blog | Cogent\"\ndescription: Six months after launch, Cogent raises $42M led by Bain Capital Ventures to scale the first AI taskforce for vulnerability management.\npublished: \"Aug 27, 2026, 11:20 PM UTC\"\n---\n\n[Blog](../blog)\n\nCompany\n\n# Cogent Security Raises $42M Series A\n\nSix months after launch, Cogent raises $42M led by Bain Capital Ventures to scale the first AI taskforce for vulnerability management.\n\nFeb 18, 2026, 2 min read, Vineet Edupuganti, Co-Founder and CEO\n\nSix months ago, we launched Cogent with a simple thesis: the hardest part of vulnerability management isn't finding the problems. It's fixing them.\n\nToday, I'm excited to share that we've raised $42 million in Series A funding led by Bain Capital Ventures, with continued support from Greylock Partners and Definition. Founders and executives from OpenAI, Abnormal Security, and Datadog also invested personally. This brings our total funding to $53 million.\n\nI'm especially proud to welcome [Enrique Salem](https://www.linkedin.com/in/enriquesalem/) to our Board of Directors. Enrique helped build and scale some of the defining security companies of the last two decades, including Symantec, Rubrik, and Netskope. He knows what it takes to turn a fast-growing security company into a lasting one, and we're lucky to have him.\n\n## Why We're Here\n\nThe vulnerability management crisis has gotten worse since we launched. Over 48,000 new CVEs were published in the past year a"
+    },
+    {
+      "id": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+      "title": "Cogent Security Raises $42M Series A to Arm Security Teams With ...",
+      "url": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+      "publishedDate": "2026-02-18T00:00:00.000Z",
+      "author": "Cogent Security",
+      "text": "Cogent Security Raises $42M Series A to Arm Security Teams With Autonomous AI Agents Accessibility Statement Skip Navigation\n\nBacked by Bain Capital Ventures and Greylock, Cogent builds agentic systems to fight off escalating AI threats\n\nSAN FRANCISCO, Feb. 18, 2026 /PRNewswire/ -- Cogent Security today announced $42 million in Series A funding led by Bain Capital Ventures, with participation from existing investor Greylock Partners and Definition. Founders and executives from OpenAI, Abnormal Security, and Datadog invested personally. The financing brings Cogent's total funding to $53 million, just six months after the company's official launch.\n\nWhy Attackers Are Winning\n\nIn 2025, over 48,000 new software vulnerabilities known as CVEs were published. That's 162 percent higher than five years ago. Every enterprise software system has them, and new ones appear constantly as code changes and new threats emerge. Meanwhile, the time needed for hackers to figure out how to exploit new vulnerabilities has collapsed.\n\nAttackers and security teams now operate at completely different speeds. Hackers using AI begin probing enterprises for vulnerabilities minutes after they're first published. Fixing one on the defensive side still takes days or weeks. Security teams hunt down system owners through outdated directories and Slack threads. Developers field tickets without knowing which systems are affected or why this particular issue matters more than the hundreds of others in their que",
+      "image": "https://www.prnewswire.com/content/dam/prnewswire/homepage/LIGHT_PRNewswire_By-Cision_Stacked.svg",
+      "favicon": "https://www.prnewswire.com/content/dam/prnewswire/icons/2019-Q4-PRN-Icon-32-32.png"
+    },
+    {
+      "id": "https://www.securityweek.com/cogent-security-raises-42-million-for-ai-driven-vulnerability-management/",
+      "title": "Cogent Security Raises $42 Million for AI-Driven Vulnerability Management",
+      "url": "https://www.securityweek.com/cogent-security-raises-42-million-for-ai-driven-vulnerability-management/",
+      "publishedDate": "2026-02-18T00:00:00.000Z",
+      "author": "Eduard Kovacs",
+      "text": "Cogent Security Raises $42 Million for AI-Driven Vulnerability Management - SecurityWeek\n\n### SECURITYWEEK NETWORK:\n\n### ICS:\n\nConnect with us\n\nHi, what are you looking for?\n\nCogent Security on Wednesday announced raising $42 million in Series A funding to develop autonomous AI agents for vulnerability remediation.\n\nThe funding was led by Bain Capital Ventures, with participation from Greylock Partners, Definition, and executives from OpenAI, Abnormal Security, and Datadog.\n\nThis brings Cogent Security\u2019s total funding to $53 million and the proceeds will be used to accelerate product development.\n\nThe San Francisco-based company provides an agentic AI platform that addresses challenges in vulnerability management by automating investigation, prioritization, and remediation tasks.\n\nThe system connects and normalizes vulnerability data across environments, handling scanner noise and incorporating business context.\n\nIt prioritizes risks based on environmental factors beyond standard severity scores, surfaces emerging threats, and generates tailored remediation plans integrated into existing workflows.\n\nAdvertisement. Scroll to continue reading.\n\n\u201cSecurity teams are drowning in coordination work: chasing down system owners, writing tickets, proving fixes happened. We built AI agents that handle that work end-to-end, so security teams can finally keep pace with attackers,\u201d said Vineet Edupuganti, CEO and co-founder of Cogent.\n\nRelated: VulnCheck Raises $25 Million in Series B Fund",
+      "image": "https://www.securityweek.com/wp-content/uploads/2025/11/funding-investment-market-3.jpeg",
+      "favicon": "https://www.securityweek.com/wp-content/uploads/2023/01/cropped-SecurityWeek-Icon-32x32.jpeg"
+    },
+    {
+      "id": "https://fortune.com/2026/02/18/exclusive-bain-and-greylock-bet-42-million-that-ai-agents-can-finally-fix-cybersecuritys-messiest-bottleneck/",
+      "title": "Exclusive: Bain and Greylock bet $42 million that AI agents can fix cybersecurity\u2019s worst bottleneck | Fortune",
+      "url": "https://fortune.com/2026/02/18/exclusive-bain-and-greylock-bet-42-million-that-ai-agents-can-finally-fix-cybersecuritys-messiest-bottleneck/",
+      "publishedDate": "2026-02-18T00:00:00.000Z",
+      "author": "Lily Mae Lazarus",
+      "text": "Exclusive: Bain and Greylock bet $42 million that AI agents can fix cybersecurity\u2019s worst bottleneck | Fortune\nSearch\n[](http://fortune.com/)\n[Subscribe](https://fortune.com/subscribe/?itm_source=Site_0_HCL_NAV_CTA_0_2025_ZZ&redirect=/2026/02/18/exclusive-bain-and-greylock-bet-42-million-that-ai-agents-can-finally-fix-cybersecuritys-messiest-bottleneck/)[Subscribe](https://fortune.com/subscribe/?itm_source=Site_0_HCL_NAV_CTA_0_2025_ZZ&redirect=/2026/02/18/exclusive-bain-and-greylock-bet-42-million-that-ai-agents-can-finally-fix-cybersecuritys-messiest-bottleneck/)\n[Sign in](http://fortune.com/signin/?signin_redirect=/2026/02/18/exclusive-bain-and-greylock-bet-42-million-that-ai-agents-can-finally-fix-cybersecuritys-messiest-bottleneck/)\n*\n[Home](http://fortune.com/)\n*\n[Latest](http://fortune.com/section/latest/)\n*\n[Fortune 500](http://fortune.com/section/fortune-500/)\n*\n[Finance](http://fortune.com/section/finance/)\n*\n[Tech](http://fortune.com/section/tech/)\n*\n[Leadership](http://fortune.com/section/leadership/)\n*\n[Lifestyle](http://fortune.com/section/lifestyle/)\n*\n[Rankings](http://fortune.com/ranking/)\n*\n[Multimedia](http://fortune.com/multimedia/)\n# Trendingnow\n# 1\n[Jamie Dimon and his wife, Judith, donate $12 million to 12 HBCUs\u2014betting they're the 'springboard to success' for the next generation](https://fortune.com/2026/08/25/jamie-dimon-judy-12-million-donation-hbcus-billionaire-philanthropy/?itm_source=parsely-api)\n# 2\n[Dolly Parton\u2019s philanthropy inspiration was her",
+      "image": "https://fortune.com/img-assets/wp-content/uploads/2026/02/2025689-Cogent-16-e1771376386835.jpg?resize=1200,600"
+    }
+  ],
+  "searchTime": 1095.3,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.18,
+  "_request": {
+    "query": "Cogent Security AI autonomous cyber defense funding round investors headquarters",
+    "type": "auto",
+    "numResults": 5,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

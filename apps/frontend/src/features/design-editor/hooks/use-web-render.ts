@@ -45,11 +45,19 @@ export type WebRenderState =
  * `editing` is an effect dep, so toggling the mode refetches into the SAME
  * iframe under the reloadToken discipline: no keyed remount, no loading flash,
  * and the old render keeps showing until the new html lands.
+ *
+ * F5 addendum (2026-09-02): `pageId` picks WHICH page of a multi-page site
+ * this canvas renders. It is an effect dep alongside the reload nonce, so
+ * navigating to another page refetches into the SAME iframe under the exact
+ * discipline above — no keyed remount, no loading flash. Leaving it undefined
+ * keeps the endpoint's first-page default, which is what every single-page
+ * caller (and the shell before task 18 supplies a value) relies on.
  */
 export function useWebRender(
   documentId: string,
   reloadToken = 0,
   editing = false,
+  pageId?: string,
 ): {
   state: WebRenderState;
   /** The current render's bridge nonce — the ported selection listener
@@ -73,6 +81,7 @@ export function useWebRender(
       documentId,
       TAILWIND_RUNTIME_SRC,
       nonce ? { nonce } : undefined,
+      pageId,
     )
       .then(({ html: fetched }) => {
         if (cancelled) return;
@@ -90,7 +99,7 @@ export function useWebRender(
     return () => {
       cancelled = true;
     };
-  }, [documentId, editing, reloadToken]);
+  }, [documentId, editing, pageId, reloadToken]);
 
   return { nonceRef, state };
 }

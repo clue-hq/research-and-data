@@ -1,0 +1,317 @@
+{
+  "requestId": "4930b3678a5813443b31ebf03ee39f1f",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/fp5wwp32qmk",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameroncoles",
+      "publishedDate": "2026-07-08T00:00:00.000Z",
+      "text": "# Cameron Coles\n\nVP of Marketing\n\nSan Francisco Bay Area (US)\n\n500 connections \u2022 1,626 followers\n\n## About\n\nVP of Marketing\n\nTotal Experience: 14 years and 3 months\n\n## Experience\n\n### VP of Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)\n\nNov 2025 - Present (9 months) in San Francisco, CA\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nCogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n### VP of Marketing - [Cyberhaven](https://www.linkedin.com/company/cyberhaven)\n\nMay 2022 - Jun 2025 (3 years and 1 month)\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nCyberhaven is a Computer and Network Security company. Cyberhaven is a company that protects data from other tools can't see, from threats they can't detect, across technologies they can't control. Cyberhaven has 200-300 employees (+30% YoY) and has annual revenue in the $10M-$20M range, founded in 2016. Headquartered in Palo Alto, California, United States, with presence in Switzerland. Its workforce is distributed across 25 countries (including United States, India, Romania, Ukraine, and Switzerland). with 5 prior funding rounds.\n\n### Head of Product and Content Marketing - [Wiz](https://www.linkedin.com/company/wizsecurity)\n\nFeb 2021 - Dec 2021 (10 months)\n\nDepartment: Marketing \u2022 Level: Head\n\nWiz is a Computer and Network Security company. Wiz is a cloud security platform that provides prevention and response capabilities to enable security and development teams to build faster and more securely. Wiz has 1,000-2,000 employees (+7-8% YoY) ",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQG93jhdkXEmuA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1697095873400?e=2147483647&v=beta&t=vigENYNjkjZx85B8kGNAxt3L9UigDXHJng9YxfTFzlM",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/fp5wwp32qmk",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "San Francisco Bay Area",
+            "workHistory": [
+              {
+                "title": "VP of Marketing",
+                "location": "San Francisco, CA",
+                "dates": {
+                  "from": "2025-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/p5c1zdbdxyc",
+                  "name": "Cogent Security"
+                }
+              },
+              {
+                "title": "VP of Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2025-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kswlmhh79br",
+                  "name": "Cyberhaven"
+                }
+              },
+              {
+                "title": "Head of Product and Content Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2021-02-01",
+                  "to": "2021-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/62tkvvz4kdg",
+                  "name": "Wiz"
+                }
+              },
+              {
+                "title": "Director of Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2018-10-01",
+                  "to": "2021-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9g32tckkbqz",
+                  "name": "Proxy"
+                }
+              },
+              {
+                "title": "Director of Product Marketing",
+                "location": "Campbell, CA",
+                "dates": {
+                  "from": "2013-07-01",
+                  "to": "2018-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/z0dpgqksbpn",
+                  "name": "Skyhigh"
+                }
+              },
+              {
+                "title": "Product Marketing Manager",
+                "location": "Mountain View, CA",
+                "dates": {
+                  "from": "2011-07-01",
+                  "to": "2013-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7mvlmftls86",
+                  "name": "Symantec"
+                }
+              },
+              {
+                "title": "Product Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2010-07-01",
+                  "to": "2013-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wjcvmjtd17m",
+                  "name": "Clearwell Systems (Acquired by Symantec)"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "BSE Marketing",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/9tgwp2y71mh",
+                  "name": "The Wharton School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/nw4myqxy85p",
+      "title": "Alexander Semien",
+      "url": "https://www.linkedin.com/in/alexander-semien",
+      "publishedDate": "2026-08-04T00:00:00.000Z",
+      "text": "# Alexander Semien\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\nNew York, New York, United States (US)\n\n500 connections \u2022 2,770 followers\n\n## About\n\nHey \ud83d\udc4b I\u2019m Alex. I like the early stages; no playbook, just a vision and a lot to figure out. I\u2019m a marketer by title but a builder at heart. I've worked across product, strategy, and analytics to architect GTM motions that actually work. That usually means finding the story that resonates, turning it into programs that drive traction, and leveraging data to stay focused on what matters. Most of my experience is in cybersecurity, helping startups grow from $0 to over $100M in ARR. I\u2019ve done the work\u2014positioning, launches, demand, partnerships, analyst relations. But, my alpha is bringing clarity in the chaos, and creating momentum where there was none.\n\nTotal Experience: 10 years and 1 month\n\n## Experience\n\n### Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)\n\nAug 2025 - Present (1 year)\n\nDepartment: Marketing\n\nCogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n### VP, Product Marketing - [Sevco Security](https://www.linkedin.com/company/sevcosecurity)\n\nAug 2023 - Aug 2025 (2 years) in New York, New York, United States\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nSevco Security is a IT Services and IT Consulting company. Sevco provides solutions in asset intelligence, vulnerability management, exposure management, and cloud security posture manageme",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQHtneuJcyH0zw/profile-displayphoto-scale_200_200/B4EZ.BYoQIJEAc-/0/1784582147445?e=2147483647&v=beta&t=er1xkwURitjocOsoGenskCtILyW2bUqL3SwhX1Q5TRk",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/nw4myqxy85p",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Alexander Semien",
+            "firstName": "Alexander",
+            "lastName": "Semien",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/p5c1zdbdxyc",
+                  "name": "Cogent Security"
+                }
+              },
+              {
+                "title": "VP, Product Marketing",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2023-08-01",
+                  "to": "2025-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ngl5g2pj795",
+                  "name": "Sevco Security"
+                }
+              },
+              {
+                "title": "Director, Strategy & Analytics",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2020-08-01",
+                  "to": "2023-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wp1tjg4fdtv",
+                  "name": "Abnormal Security"
+                }
+              },
+              {
+                "title": "Manager, Finance & Operations",
+                "location": "San Francisco, California, United States",
+                "dates": {
+                  "from": "2019-11-01",
+                  "to": "2020-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nz8gl9w3hf5",
+                  "name": "Zyper (Acquired by Discord)"
+                }
+              },
+              {
+                "title": "Associate",
+                "location": "San Francisco, California, United States",
+                "dates": {
+                  "from": "2018-11-01",
+                  "to": "2019-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/w9qcxlghrmt",
+                  "name": "Forward"
+                }
+              },
+              {
+                "title": "Senior Analyst",
+                "location": null,
+                "dates": {
+                  "from": "2017-12-01",
+                  "to": "2018-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/78mr3snf7zv",
+                  "name": "Accenture"
+                }
+              },
+              {
+                "title": "Analyst",
+                "location": null,
+                "dates": {
+                  "from": "2016-07-01",
+                  "to": "2017-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/78mr3snf7zv",
+                  "name": "Accenture"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts (B.A.) Public Policy Analysis Psychology",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/s4zwkrq85l0",
+                  "name": "Duke University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.threatcon1.org/speakers/alexander-semien",
+      "title": "THREATCON1",
+      "url": "https://www.threatcon1.org/speakers/alexander-semien",
+      "text": "THREATCON1\n\nSkip to main content\n\n# Alexander Semien\n\nHead of Marketing, Cogent Security\n\nPresentation Title:\n\nWe Can\u2019t Wait for Patch Tuesdays: The Case for AI Blue Teaming\n\nAlexander Semien leads Marketing at Cogent Security - telling Cogent\u2019s story as it builds the first AI taskforce for vulnerability management. Previously, he led Product Strategy and Product Marketing at Sevco Security in the CAASM and exposure management space. Prior to that, he helped scale Abnormal Security from early stage to hypergrowth while running Strategy and Analytics. He began his career at Accenture, advising Fortune 500 companies on advanced automation, AI, and emerging technologies.\n\nCraig P. Abod is president and founder of Carahsoft Technology Corp. Now in its 21st year, Carahsoft has grown from $0 to $19.5 billion in bookings and employs more than 3,800 team members.\n\nWorking with a robust ecosystem of thousands of resellers, integrators, solutions providers and a deep portfolio of contracts, Carahsoft proactively markets, sells, and distributes IT to government markets in the U.S. & Canada, as well as education, healthcare, critical infrastructure, not-for-profit and commercial markets.\n\nIn recognition of these accomplishments, the company is consistently recognized as the top performing partner for its vendor partners and Abod has received the EY Entrepreneur of the Year Award for Greater Washington, The Federal 100 Award twice, the FCW Eagle Award, and is a ten-time winner of the Executive Mosaic Wash100 award.\n\nAs a top-ranked GSA Schedule, SEWP, ITES-SW2 and NASPO ValuePoint contract holder, the company, which now employs nearly 4000 team members, has established strategic, long-term relationships with the industry\u2019s leading software and hardware manufacturers including Okta, ",
+      "image": "https://cdn.prod.website-files.com/67eedef1cac62c9eeb248fc1/680b96faba0d95c751a3109c_threatcon1-logo.svg",
+      "favicon": "https://cdn.prod.website-files.com/67eedef1cac62c9eeb248fc1/68262be8b1569d0ef7087533_tc1-favicon.png"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF",
+      "title": "When I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF",
+      "publishedDate": "2026-04-24T00:00:00.000Z",
+      "author": "Alexander Semien",
+      "text": "When I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. We started building an in-house AI\u2026 | Alexander Semien | 13 comments\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Alexander Semien\u2019s Post\n\nhttps://www.linkedin.com/in/alexander-semien\n\nAlexander Semien\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n2mo\n\n- Report this post\n\nWhen I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more. Andrew Cuzzone, our GTM Engineer, builds the AI architecture. I set strategy and build the models. With AI, two people have the output of a team of ten. That said, the tech isn't the only thing that makes us different. We're also very intentional about our brand. We build community through hospitality, honest conversations, and human connection. And we look cool doing it with premium experiences, branded moments, and TikTok-ad-level swag. \ud83d\udc85 We want to test the limits of what's possible with a small team, great systems, and people who think differently about this space (because life is too short to do boring marketing). With all that said, I'm happy to announce that we're growing the growth team - very meta. The JD is in the comments below! If you think that you're a fit, find a way ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/c45fy346jw096z9pbphyyhdz7",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/cameroncoles_im-thrilled-to-announce-that-im-joining-activity-7396260224229081088-AXVZ",
+      "title": "I'm thrilled to announce that I'm joining Cogent Security as VP of Marketing! | Cameron Coles",
+      "url": "https://www.linkedin.com/posts/cameroncoles_im-thrilled-to-announce-that-im-joining-activity-7396260224229081088-AXVZ",
+      "publishedDate": "2025-11-17T00:00:00.000Z",
+      "author": "Cameron Coles",
+      "text": "# I'm thrilled to announce that I'm joining Cogent Security as VP of Marketing! | Cameron Coles \u00b7 LinkedIn \u00b7 2025-11-17\n\n**Cameron Coles**: VP of Marketing at Cogent Security for 9 months with 14 years 2 months of total professional experience. Previous roles include VP of Marketing at Cyberhaven, Head of Product and Content Marketing at Wiz, and Director of Product Marketing at Proxy. Based in San Francisco Bay Area [US].\n\n---\n\nI'm thrilled to announce that I'm joining [Cogent Security](https://linkedin.com/company/cogentsecurity) as VP of Marketing!\n\nAfter spending the last decade in cybersecurity, from helping define the CASB category at Skyhigh, to scaling Wiz in its breakout first year, to building go-to-market at Cyberhaven, I've seen firsthand how the right technology at the right time can transform an entire industry.\n\nVulnerability management is overdue for that transformation. Security teams are drowning in alerts and struggling to prioritize what actually matters. Cogent is changing that by bringing real intelligence to vulnerability management, helping teams focus on the risks that could actually impact their business and accelerating remediation.\n\nWhat drew me here? The product vision is ambitious, the team is world-class, and the opportunity to define a new category in such a critical space is exactly the kind of challenge I've been looking for.\n\nExcited to get to work and help establish Cogent as the leader in transforming how companies manage risk. Let's build something special!\n\n![I'm thrilled to announce that I'm joining Cogent Security as VP of Marketing! | Cameron Coles image](https://media.licdn.com/dms/image/v2/D4D22AQHXXTY6ACDmrQ/feedshare-shrink_800/B4DZqTLeZwKIAg-/0/1763405851859?e=2147483647&v=beta&t=j_WxWlngpNDiLCtZYr5xhS14IEVoUKATaH6dSLHqlEE)",
+      "image": "https://media.licdn.com/dms/image/v2/D4D22AQHXXTY6ACDmrQ/feedshare-shrink_800/B4DZqTLeZwKIAg-/0/1763405851859?e=2147483647&v=beta&t=j_WxWlngpNDiLCtZYr5xhS14IEVoUKATaH6dSLHqlEE"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b",
+      "title": "Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent",
+      "url": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b",
+      "publishedDate": "2026-05-13T00:00:00.000Z",
+      "author": "Cogent",
+      "text": "# Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent \u00b7 LinkedIn \u00b7 2026-05-13\n\n**Cogent**: Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n---\n\n[Cogent](https://linkedin.com/company/cogentsecurity)'s Head of Growth, [Alexander Semien](https://linkedin.com/in/alexander-semien), breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs.\n\nYesterday's announcement from [OpenAI](https://linkedin.com/company/openai) positioned Daybreak as a defensive partnership story with legacy cybersecurity companies. [Anthropic](https://linkedin.com/company/anthropicresearch)'s Mythos, however, landed as offensive proof of maturing models - with early access given exclusively to mega-enterprises.\n\nBoth rest on the same underlying capabilities, and both stop short of the actual hard part: turning findings into fixes, on the time scale modern adversaries operate on.\n\nCheck out the original post and comments for the link!\n\n![Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent image](https://media.licdn.com/dms/image/v2/D4E22AQFpqocLkmt_CA/feedshare-image-high-res/B4EZ4jFer5KgAU-/0/1778705099953?e=2147483647&v=beta&t=5oMEgNHpNKXgQl7cnqWIc0DXWqY2Te6SvEhFwBLlxwU)\n\n**Reshared from [Alexander Semien](https://linkedin.com/in/alexander-semien):**\n> Yesterday, [OpenAI](https://linkedin.com/company/openai) 's marketing team made a great play: they annouced Daybreak alongside some of the biggest names in cybersecurity",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFpqocLkmt_CA/feedshare-image-high-res/B4EZ4jFer5KgAU-/0/1778705099953?e=2147483647&v=beta&t=5oMEgNHpNKXgQl7cnqWIc0DXWqY2Te6SvEhFwBLlxwU"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk",
+      "title": "Chat, who should I hire for Growth @ Cogent? | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk",
+      "publishedDate": "2026-08-14T00:00:00.000Z",
+      "author": "Alexander Semien",
+      "text": "Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles \ud83e\udd73 1. Head of Demand\u2026 | Alexander Semien\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n1w\n\nEdited\n\nChat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles \ud83e\udd73 1. Head of Demand Generation Help Cogent win the market: turn attention into pipeline across field, channel, digital, content, outbound, and creative plays. 2. Sales Enablement Lead Make the sales team elite: curriculum, product education, assets, insights, and tool adoption. We\u2019re creative, operational, AI-first, and (clearly) having a lot of fun with it. -- CC: Aziz Kapadia Traci Byrne Ryan Marasco Justin Whitcomb Justin Jancaric Omer Haider Kimberli Nichols Brian Ruth Bala Prasad Choubey Garrett Oliver Rebecca Brock\n\nTranscript Transcript\n\n##### Transcript\n\nI will not go turn the lights off. Carry me home.\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n1w\n\nHead of Demand Generation - https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n1w\n\nSales Enablement Lead - https://jobs.ashbyhq.com/cogent-security/8981d25b-89d6-4119-b",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D5605AQFW2SM3Ow9XiA/thumbnail-with-play-button-overlay-high/B56aACFgLTGcC0-/0/1786741395297?e=2147483647&v=beta&t=VPnIH37pzB_VEt-VM52Hua87sFjEDTZPcddSeto_iZ8",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_ive-been-heads-down-and-slipping-on-my-social-activity-7487946922285084673-6yvs",
+      "title": "I\u2019ve been heads down and slipping on my social game. But, it\u2019s been a wild few weeks at Cogent, and I want to catch y'all up \ud83d\ude0a | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_ive-been-heads-down-and-slipping-on-my-social-activity-7487946922285084673-6yvs",
+      "publishedDate": "2026-07-28T00:00:00.000Z",
+      "author": "Alexander Semien",
+      "text": "I\u2019ve been heads down and slipping on my social game. But, it\u2019s been a wild few weeks at Cogent, and I want to catch y'all up \ud83d\ude0a Today: Named to the Forbes Next Billion-Dollar Startups\u2026 | Alexander Semien\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n1w\n\nEdited\n\nI\u2019ve been heads down and slipping on my social game. But, it\u2019s been a wild few weeks at Cogent, and I want to catch y'all up \ud83d\ude0a Today: Named to the Forbes Next Billion-Dollar Startups list. Yesterday: Launched VR-1, our fronteir cyber reasoning model, and hosted our first LinkedIn Live. Last week: Launched AVR, our end-to-end autonomous vulnerability response capability, proven in production with testimonials from Valvoline Inc. and University of the Pacific. Next week: Black Hat where we've graduated from the startup alley to a week-long schedule. I\u2019ll be back tomorrow with everything we have planned. High key, Cogent is moving faster than any startup I've been at! I'm super proud of this team, what we\u2019ve accomplished, and what we\u2019re building together.\n\nCommercial Director at VORTX Group | Expose Risk. Structure Capability. Direct Outcomes.\n\n1w\n\nCongratulations to the whole Cogent team, Alexander! \ud83d\udc4f That's an incredible run of milestones. One thing that stands out is how quickly cyber is moving from detection to autonomous reasoning and response. The challenge now is making sure leadership has the visibility and confidence to make the right decisions alongside these technologies. That's exactly what I'm exploring through a short piece of industry research into organisat",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D5605AQHZHef34r8j1w/thumbnail-with-play-button-overlay-high/B56Z.qIBdwGQC0-/0/1785265659561?e=2147483647&v=beta&t=a0YGpQTvstNxllgDwFotN7WJdRFmrBBiVSSSvmeO2HU",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    }
+  ],
+  "searchTime": 1612.8,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.76,
+  "_request": {
+    "query": "Cogent Security Cameron Coles VP of Marketing Alexander Semien Head of Growth cogent.com marketing team who owns marketing budget",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1800
+      }
+    }
+  }
+}

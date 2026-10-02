@@ -1,0 +1,884 @@
+{
+  "requestId": "f7da1b1d941ee803f3ce1920ef313d11",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/nbm1dw3lyp2",
+      "title": "Mandar Marathe",
+      "url": "https://www.linkedin.com/in/mandarmarathe",
+      "publishedDate": "2026-08-30T03:08:35.000Z",
+      "text": "# Mandar Marathe\n\nAI Marketer | Driving Growth for B2B SaaS & AI Brands via Claude Cowork / Code Agents & Skills, AEO & SEO, Content, Paid Media, ABM | VP Marketing at Uptiq.ai, Digital Marketing Faculty at IIT Bombay\n\nMumbai, Maharashtra, India (IN)\n\n500 connections \u2022 8,396 followers\n\n## About\n\nHi, I'm Mandar. I\u2019m an Inbound Marketing Generalist with 18+ years of experience\u2026\n\nTotal Experience: 21 years\n\n## Experience\n\n### Vice President Marketing - [UPTIQ](https://www.linkedin.com/company/uptiqai) (Current)\n\nJan 2025 - Present (1 year and 7 months) in Pune\n\nMarketing Team Lead\n- Responsible for Demand Generation & Sales Enablement\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nUPTIQ is a Technology, Information and Internet company. Uptiq is a Financial AI platform that brings intelligent agents, powerful orchestration, and purpose-built suites together to help teams grow, originate, and serve continuously. The platform provides solutions for banking, credit unions, wealth management, and equipment finance. UPTIQ has 150-200 employees (+130% YoY), founded in 2022. Headquartered in McKinney, Texas, United States, with an office in Austin. Its workforce is distributed across 7 countries (including India, United States, Ukraine, Spain, and Australia). Has $49M in total funding, with 4 prior funding rounds.\n\n### Promoter - [Elemnt Sports Science](https://www.linkedin.com/company/elemnt-sports-science) (Current)\n\nFeb 2022 - Present (4 years and 1 month) in Mumbai, Maha",
+      "image": "https://media.licdn.com/dms/image/v2/D4D03AQFhG9FCduT0DQ/profile-displayphoto-scale_200_200/B4DZq0SQhWGwAY-/0/1763961278586?e=2147483647&v=beta&t=WAoGs2EQjK7Bsu90dhxKRClZs24LXiGt-YiEGRNjUtU",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/nbm1dw3lyp2",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Mandar Marathe",
+            "firstName": "Mandar",
+            "lastName": "Marathe",
+            "location": "Mumbai, Maharashtra, India",
+            "workHistory": [
+              {
+                "title": "Vice President Marketing",
+                "location": "Pune",
+                "dates": {
+                  "from": "2025-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hlcr9cj0tnb",
+                  "name": "UPTIQ"
+                }
+              },
+              {
+                "title": "Promoter",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2022-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3s0kdqym172",
+                  "name": "Elemnt Sports Science"
+                }
+              },
+              {
+                "title": "Marketing Specialist",
+                "location": "Thane, Maharashtra, India",
+                "dates": {
+                  "from": "2025-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7bsj17xw82g",
+                  "name": "T72 Club"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tyfgqww4ld4",
+                  "name": "IIT Bombay - Shailesh J. Mehta School of Management"
+                }
+              },
+              {
+                "title": "Entrepreneur in Residence",
+                "location": "Aurangabad, Maharashtra, India",
+                "dates": {
+                  "from": "2024-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tgdv333429b",
+                  "name": "MAGIC Business Incubator SME Accelerator"
+                }
+              },
+              {
+                "title": "Co-Founder",
+                "location": "Mumbai, Maharashtra",
+                "dates": {
+                  "from": "2019-11-01",
+                  "to": "2022-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7482fq9zbtb",
+                  "name": "Koppr"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Sirmaur, Himachal Pradesh, India",
+                "dates": {
+                  "from": "2018-10-01",
+                  "to": "2021-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wg6sr3c6fnt",
+                  "name": "Indian Institute of Management, Sirmaur"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Chennai, Tamil Nadu, India",
+                "dates": {
+                  "from": "2018-03-01",
+                  "to": "2020-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yvmzml308t9",
+                  "name": "Great Lakes Institute of Management"
+                }
+              },
+              {
+                "title": "Managing Partner",
+                "location": "Mumbai Area, India",
+                "dates": {
+                  "from": "2013-10-01",
+                  "to": "2019-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zxn6lrf72yn",
+                  "name": "BriefKase Digital Communications"
+                }
+              },
+              {
+                "title": "Digital Marketing Consultant & Trainer - SEO, Meta Ads",
+                "location": "Mumbai Metropolitan Region",
+                "dates": {
+                  "from": "2016-05-01",
+                  "to": "2019-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qyndxzklxqb",
+                  "name": "Digital Vidya"
+                }
+              },
+              {
+                "title": "Sr. Director, Client Servicing",
+                "location": "Mumbai Area, India",
+                "dates": {
+                  "from": "2013-04-01",
+                  "to": "2013-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zkj93zsnrdw",
+                  "name": "Reprise Media"
+                }
+              },
+              {
+                "title": "Director, Client Servicing",
+                "location": null,
+                "dates": {
+                  "from": "2010-10-01",
+                  "to": "2013-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zkj93zsnrdw",
+                  "name": "Reprise Media"
+                }
+              },
+              {
+                "title": "Chief Marketing Officer",
+                "location": null,
+                "dates": {
+                  "from": "2009-10-01",
+                  "to": "2011-07-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "30 Dollar Finance"
+                }
+              },
+              {
+                "title": "Senior Analyst, Internet Solutions",
+                "location": "Boston, Massachusetts, United States",
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2010-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/s73wk86lt49",
+                  "name": "Digitas"
+                }
+              },
+              {
+                "title": "Business Consultant Cooperative Education",
+                "location": null,
+                "dates": {
+                  "from": "2007-08-01",
+                  "to": "2007-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9x9ddydt8hh",
+                  "name": "AT&T"
+                }
+              },
+              {
+                "title": "Manager, eCommerce & Business Management Internship",
+                "location": null,
+                "dates": {
+                  "from": "2007-05-01",
+                  "to": "2007-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/q4xrw5ytk81",
+                  "name": "Dell"
+                }
+              },
+              {
+                "title": "Software Engineer",
+                "location": null,
+                "dates": {
+                  "from": "2004-09-01",
+                  "to": "2006-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/98qk9txnqbg",
+                  "name": "Infosys Technologies Ltd"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "S.S.C",
+                "dates": {
+                  "from": "1987",
+                  "to": "1998"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "St. Augustines High School"
+                }
+              },
+              {
+                "degree": "Master of Business Administration - MBA, Marketing",
+                "dates": {
+                  "from": "2006",
+                  "to": "2007"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/zfdvcgf4dm5",
+                  "name": "Mays Business School - Texas A&M University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_taking-flight-with-udaan-thrilled-to-activity-7348545495729893376-EpLu",
+      "title": "Taking Flight with Udaan \ud83d\ude80 | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_taking-flight-with-udaan-thrilled-to-activity-7348545495729893376-EpLu",
+      "publishedDate": "2025-07-09T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# Taking Flight with Udaan \ud83d\ude80 | Mandar Marathe \u00b7 LinkedIn \u00b7 2025-07-09\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nTaking Flight with Udaan \ud83d\ude80\n\nThrilled to share that I\u2019ve officially taken flight with Udaan \u2014 my new Trust Group under the [ASCENT](https://linkedin.com/company/ascentfoundation) Foundation!\n\n[ASCENT](https://linkedin.com/company/ascentfoundation) has been a go-to community for growth-ready entrepreneurs across India, and being part of this curated peer-learning ecosystem of 1000+ founders is both humbling and energizing.\n\nUdaan isn't just a name \u2014 it's a mindset. One that\u2019s rooted in ambition, learning, trust, and growth. I\u2019m incredibly excited to embark on this journey with some amazing entrepreneurs who bring wisdom, curiosity, and authenticity to the table every month.\n\nBig cheers to new perspectives, deeper conversations, and shared growth ahead! \ud83d\udca5\n\nGrateful to be part of this tribe.\n\n\ud83d\udd17 Tagging my incredible co-travelers from Udaan in the comments \ud83d\udc47\n\n![Taking Flight with Udaan \ud83d\ude80 | Mandar Marathe image](https://media.licdn.com/dms/image/v2/D4D22AQGszdtDLX6tzA/feedshare-shrink_800/B4DZftHLUFG8Ak-/0/1752029774189?e=2",
+      "image": "https://media.licdn.com/dms/image/v2/D4D22AQGszdtDLX6tzA/feedshare-shrink_800/B4DZftHLUFG8Ak-/0/1752029774189?e=2147483647&v=beta&t=jaEP5KcUwYMOGeS_ytvQf6aPhqojf4pzat8tmmxHtrY"
+    },
+    {
+      "id": "https://exa.ai/library/person/m68sst7rt0b",
+      "title": "Mandar Marathe",
+      "url": "https://www.linkedin.com/in/mandarmarathe13",
+      "publishedDate": "2026-08-10T17:52:06.000Z",
+      "text": "# Mandar Marathe\n\n3X Founder | Ex-CMO at Nickelytics | Past Experience - Leadership Roles at Digital Agency, Private Equity, DTC, e-Commerce, FinTech ventures\n\nMumbai, Maharashtra, India (IN)\n\n305 connections \u2022 447 followers\n\n## About\n\n\u2713 Leading Marketing for Nickelytics - USA's premier mobility OOH company \u2713 Certified Digital Marketer - Google Ads, Google Analytics, Inbound Marketing (HubSpot), Amazon Ads, Meta Ads Blueprint certifications \u2713 Advising portfolio companies at T72.club on marketing strategy & growth \u2713 Published digital marketer on SEMRush.com, Clickz.asia\n\nTotal Experience: 17 years and 11 months\n\n## Experience\n\n### Chief Marketing Officer - [Nickelytics](https://www.linkedin.com/company/nickelytics) (Current)\n\nJun 2023 - Present (3 years and 2 months) in Tampa, Florida, United States\n\n\ud83d\ude80Setup the Marketing department at Nickelytics. \ud83c\udfafPrepared detailed strategic roadmap for Inbound Marketing including SEO, PPC, Paid & Organic Social Media Marketing \ud83d\udcc8Defined goals, processes & OKRs to accelerate growth \ud83c\udf10 Developed content strategy, implemented HubSpot CRM integration for nickelytics.com, go.nickelytics.com, truckads.com, robots.nickelytics.com and drivers.nickelytics.com \ud83d\udcf6Weekly, monthly and quarterly tracking of goals & KPI's via Google Data Studio for measuring growth & performance across Inbound marketing areas Show less\n\nDepartment: Marketing \u2022 Level: C-Level\n\nR-Ads by Robot.com is a Advertising Services company. Robot.com is a company that transforms rob",
+      "image": "https://media.licdn.com/dms/image/v2/D4D03AQFkc78MMFSlHg/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1710781038781?e=2147483647&v=beta&t=2tlLtnAC9OFC8D3E7bC7Ql_iWbpcKplZuDhQpte3S0s",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/m68sst7rt0b",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Mandar Marathe",
+            "firstName": "Mandar",
+            "lastName": "Marathe",
+            "location": "Mumbai, Maharashtra, India",
+            "workHistory": [
+              {
+                "title": "Chief Marketing Officer",
+                "location": "Tampa, Florida, United States",
+                "dates": {
+                  "from": "2023-06-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/x98b3bxf4l2",
+                  "name": "Nickelytics"
+                }
+              },
+              {
+                "title": "Vice President",
+                "location": "Dallas, Texas, United States",
+                "dates": {
+                  "from": "2023-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7bsj17xw82g",
+                  "name": "T72 Club"
+                }
+              },
+              {
+                "title": "Marketing Consultant",
+                "location": "New Jersey, United States",
+                "dates": {
+                  "from": "2019-12-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9zg1pz5s5nt",
+                  "name": "Neutrino Advisory"
+                }
+              },
+              {
+                "title": "Chief Executive Officer",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2019-11-01",
+                  "to": "2021-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7482fq9zbtb",
+                  "name": "Koppr"
+                }
+              },
+              {
+                "title": "Founder",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2014-01-01",
+                  "to": "2019-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zxn6lrf72yn",
+                  "name": "BriefKase Digital Communications"
+                }
+              },
+              {
+                "title": "Senior Director",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2010-10-01",
+                  "to": "2013-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zkj93zsnrdw",
+                  "name": "Reprise Digital"
+                }
+              },
+              {
+                "title": "Senior Analyst",
+                "location": "Boston, Massachusetts, United States",
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2010-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/s73wk86lt49",
+                  "name": "Digitas North America"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master of Business Administration - MBA, Marketing/Marketing Management, General, 3.5 / 4",
+                "dates": {
+                  "from": "2006",
+                  "to": "2007"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/zfdvcgf4dm5",
+                  "name": "Mays Business School - Texas A&M University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_startupindia-atalincubationcentre-nitiaayog-activity-7176174507160657921-8pt-",
+      "title": "Glad to be a part of Atal Incubation Centre-Rambhau Mhalgi Prabodhini in alignment with Atal Innovation Mission (AIM), NITI Aayog | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_startupindia-atalincubationcentre-nitiaayog-activity-7176174507160657921-8pt-",
+      "publishedDate": "2024-03-20T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# Glad to be a part of Atal Incubation Centre-Rambhau Mhalgi Prabodhini in alignment with Atal Innovation Mission (AIM), NITI Aayog | Mandar Marathe \u00b7 LinkedIn \u00b7 2024-03-20\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nGlad to be a part of [Atal Incubation Centre-Rambhau Mhalgi Prabodhini](https://linkedin.com/company/atal-incubation-centre-rambhau-mhalgi-prabodhini) in alignment with Atal Innovation Mission (AIM), [NITI Aayog](https://linkedin.com/company/nitiaayog)\n\n[Elemnt Sports Science](https://linkedin.com/company/elemnt-sports-science) is now recognised as a startup by DPIIT (Startup India program) and has received financial assistance as a part of The Startup India Seed Fund Scheme (SISFS).\n\nThis will help us fuel growth and bring new products to market much faster!\n\n#startupindia #atalincubationcentre #nitiaayog #atalinnovationmission\n\n[Manoj Sonavane](https://linkedin.com/in/manojsonavane) | [Ajay Dmello](https://linkedin.com/in/ajaydmello) | [Amol Sonavane](https://linkedin.com/in/amol-sonavane-4667257)\n\n![Glad to be a part of Atal Incubation Centre-Rambhau Mhalgi Prabodhini in alignment with Atal Innovation Mission (AIM), NIT",
+      "image": "https://media.licdn.com/dms/image/v2/D4D22AQEu7JtuVfNiAQ/feedshare-image-high-res/feedshare-image-high-res/0/1710933328533?e=2147483647&v=beta&t=ioCcmrImkVeLNwNuefeQSNwAHSU0x3q1WAL8_rdpRKo"
+    },
+    {
+      "id": "https://mandarmarathe.net/",
+      "title": "Mandar Marathe",
+      "url": "https://mandarmarathe.net/",
+      "text": "Mandar Marathe\n[Skip to content](#site-content)\nSearch Toggle\n[# Mandar Marathe\n](https://mandarmarathe.net/)\nMenu\nSearch for:Submit\nI am a 42-year old calorie-counting fitness enthusiast, cricket buff & entrepreneur Dad to 2 kids. I have set foot on 13 countries and 0 moons.\nI have been an entrepreneur for the past 10 years. Prior to being my own boss, I have had stints as a Software Engineer, a Digital Technology Manager & as a Client Servicing Director.\nI am also a faculty of Digital Marketing at IIT Bombay for the past 11 years.\n[About Me](https://mandarmarathe.net/about)\n[Blog](https://mandarmarathe.net/blog)\n[Newsletter](https://mandarmarathe.net/newsletter)",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/nbm1dw3lyp2",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Mandar Marathe",
+            "firstName": "Mandar",
+            "lastName": "Marathe",
+            "location": "Mumbai, Maharashtra, India",
+            "workHistory": [
+              {
+                "title": "Vice President Marketing",
+                "location": "Pune",
+                "dates": {
+                  "from": "2025-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hlcr9cj0tnb",
+                  "name": "UPTIQ"
+                }
+              },
+              {
+                "title": "Promoter",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2022-02-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3s0kdqym172",
+                  "name": "Elemnt Sports Science"
+                }
+              },
+              {
+                "title": "Marketing Specialist",
+                "location": "Thane, Maharashtra, India",
+                "dates": {
+                  "from": "2025-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7bsj17xw82g",
+                  "name": "T72 Club"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Mumbai, Maharashtra, India",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tyfgqww4ld4",
+                  "name": "IIT Bombay - Shailesh J. Mehta School of Management"
+                }
+              },
+              {
+                "title": "Entrepreneur in Residence",
+                "location": "Aurangabad, Maharashtra, India",
+                "dates": {
+                  "from": "2024-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/tgdv333429b",
+                  "name": "MAGIC Business Incubator SME Accelerator"
+                }
+              },
+              {
+                "title": "Co-Founder",
+                "location": "Mumbai, Maharashtra",
+                "dates": {
+                  "from": "2019-11-01",
+                  "to": "2022-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7482fq9zbtb",
+                  "name": "Koppr"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Sirmaur, Himachal Pradesh, India",
+                "dates": {
+                  "from": "2018-10-01",
+                  "to": "2021-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wg6sr3c6fnt",
+                  "name": "Indian Institute of Management, Sirmaur"
+                }
+              },
+              {
+                "title": "Visiting Faculty for Digital Marketing",
+                "location": "Chennai, Tamil Nadu, India",
+                "dates": {
+                  "from": "2018-03-01",
+                  "to": "2020-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yvmzml308t9",
+                  "name": "Great Lakes Institute of Management"
+                }
+              },
+              {
+                "title": "Managing Partner",
+                "location": "Mumbai Area, India",
+                "dates": {
+                  "from": "2013-10-01",
+                  "to": "2019-09-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zxn6lrf72yn",
+                  "name": "BriefKase Digital Communications"
+                }
+              },
+              {
+                "title": "Digital Marketing Consultant & Trainer - SEO, Meta Ads",
+                "location": "Mumbai Metropolitan Region",
+                "dates": {
+                  "from": "2016-05-01",
+                  "to": "2019-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/qyndxzklxqb",
+                  "name": "Digital Vidya"
+                }
+              },
+              {
+                "title": "Sr. Director, Client Servicing",
+                "location": "Mumbai Area, India",
+                "dates": {
+                  "from": "2013-04-01",
+                  "to": "2013-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zkj93zsnrdw",
+                  "name": "Reprise Media"
+                }
+              },
+              {
+                "title": "Director, Client Servicing",
+                "location": null,
+                "dates": {
+                  "from": "2010-10-01",
+                  "to": "2013-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zkj93zsnrdw",
+                  "name": "Reprise Media"
+                }
+              },
+              {
+                "title": "Chief Marketing Officer",
+                "location": null,
+                "dates": {
+                  "from": "2009-10-01",
+                  "to": "2011-07-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "30 Dollar Finance"
+                }
+              },
+              {
+                "title": "Senior Analyst, Internet Solutions",
+                "location": "Boston, Massachusetts, United States",
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2010-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/s73wk86lt49",
+                  "name": "Digitas"
+                }
+              },
+              {
+                "title": "Business Consultant Cooperative Education",
+                "location": null,
+                "dates": {
+                  "from": "2007-08-01",
+                  "to": "2007-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9x9ddydt8hh",
+                  "name": "AT&T"
+                }
+              },
+              {
+                "title": "Manager, eCommerce & Business Management Internship",
+                "location": null,
+                "dates": {
+                  "from": "2007-05-01",
+                  "to": "2007-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/q4xrw5ytk81",
+                  "name": "Dell"
+                }
+              },
+              {
+                "title": "Software Engineer",
+                "location": null,
+                "dates": {
+                  "from": "2004-09-01",
+                  "to": "2006-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/98qk9txnqbg",
+                  "name": "Infosys Technologies Ltd"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "S.S.C",
+                "dates": {
+                  "from": "1987",
+                  "to": "1998"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "St. Augustines High School"
+                }
+              },
+              {
+                "degree": "Master of Business Administration - MBA, Marketing",
+                "dates": {
+                  "from": "2006",
+                  "to": "2007"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/zfdvcgf4dm5",
+                  "name": "Mays Business School - Texas A&M University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/mandarmarathe_digitalmarketing-onlinemarketing-thankyou-activity-7037109611077791744-ukgC",
+      "title": "Year 11 at IIT Bombay - Shailesh J. Mehta School of Management for Online Marketing (MNG701 / SOM701). | Mandar Marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_digitalmarketing-onlinemarketing-thankyou-activity-7037109611077791744-ukgC",
+      "publishedDate": "2023-03-02T00:00:00.000Z",
+      "author": "Mandar Marathe",
+      "text": "# Year 11 at IIT Bombay - Shailesh J. Mehta School of Management for Online Marketing (MNG701 / SOM701). | Mandar Marathe \u00b7 LinkedIn \u00b7 2023-03-02\n\n**Mandar Marathe**: Vice President Marketing at UPTIQ for 1 year 7 months with 20 years 11 months of total professional experience. Previous roles include Co-Founder at Koppr, Visiting Faculty for Digital Marketing at Indian Institute of Management, Sirmaur, and Visiting Faculty for Digital Marketing at Great Lakes Institute of Management. Based in Mumbai, Maharashtra, India [IN].\n\n---\n\nYear 11 at IIT Bombay - Shailesh J. Mehta School of Management for Online Marketing (MNG701 / SOM701).\n\nTeaching digital marketing at IIT Bombay has been the common denominator across multiple roles I have undertaken for the past 11 years - from working as an Account Manager at a Digital Agency to starting up multiple businesses including a Digital agency, SaaS FinTech & D2C (and failing at some), IIT Bombay has been a constant.\n\nLove coming to campus every year and spending time with bright minds for 14 sessions!!\n\nI would have never cracked the CAT / JEE and got an admission into such a prestigious institute. Thank you [Arti Kalro](https://linkedin.com/in/artikalro) / [Dinesh Sharma](https://linkedin.com/in/dinesh-sharma-68868a3) / Bhargav Sir for giving me an opportunity to be a part of this institute for the past 11 years...\n\nP.S.\n1. I never miss having idli & samosa, chai at Kresit Bldg every time I visit\n2. The campus is so green that its lite",
+      "image": "https://media.licdn.com/dms/image/v2/C5622AQHUD8eeltcW2w/feedshare-shrink_800/feedshare-shrink_800/0/1677777673865?e=2147483647&v=beta&t=rbvyF0lgvEoBgVAp02VH-ME64fnDl6i4XFxBn2X5fUc"
+    },
+    {
+      "id": "https://mandarmarathe.net/about/",
+      "title": "About \u2013 Mandar Marathe",
+      "url": "https://mandarmarathe.net/about/",
+      "text": "About \u2013 Mandar Marathe\n[Skip to content](#site-content)\nSearch Toggle\n[Mandar Marathe](https://mandarmarathe.net/)\nMenu\nSearch for:Submit\n![Mandar Marathe](https://mandarmarathe.net/wp-content/uploads/2024/08/mandar-beach-300x300.jpg)\nHello\ud83d\udc4b\nI am Mandar Marathe.\nI turned 42 this year.\nWhen I was 39, I tore 2 ligaments in my left knee and had to undergo the knife. This year, I tore 3 ligaments on my right knee. Its not funny. I know. Since both my knees have popped, I consider myself retired from sport \u2013 Cricket is what I used to play actively till 2021.\nI love to travel and try to fit in atleast 3 vacations a year. One trip to a wildlife sanctuary is a given. Once every 2 years, me and my family take off to an International destination. Having visited 13 countries, Japan has been my favorite so far. In India, Ladakh is magical, serene and scenic beyond words.\n![](https://mandarmarathe.net/wp-content/uploads/2024/08/MandarMarathe.net_-1024x1024.jpg)![](https://mandarmarathe.net/wp-content/uploads/2024/08/MandarMarathe.net_-1024x1024.png)![](https://mandarmarathe.net/wp-content/uploads/2024/08/MandarMarathe.net-1-1024x1024.png)\nWhile in grade school, I taught myself to design & build websites in HTML. I remember to own a Pentium 386, 486, Pentium I, II and Pentium IV desktop. Ok, that makes me Internet OG.\nBack in the 20\u2019s, I took up my first job as a Software Engineer at Infosys, after graduating as Computer Science Engineer from VJTI, Mumbai [ Getting into this college is ki"
+    },
+    {
+      "id": "https://exa.ai/library/person/1c7g2yq24l3",
+      "title": "Mandar Marathe",
+      "url": "https://www.linkedin.com/in/marathemandar",
+      "publishedDate": "2026-08-10T15:16:29.000Z",
+      "text": "# Mandar Marathe\n\n\bArtist & Freelancer\n\nPune Division, Maharashtra, India (IN)\n\n500 connections \u2022 1,104 followers\n\n## About\n\nVisual Artist: I paint paintings, make sculptures, murals, conduct Art workshops and create online art courses\n\nTotal Experience: 31 years\n\n## Experience\n\n### Founder & Art Educator - Marathe Art Studio (Current)\n\nMay 2011 - Present (15 years and 3 months) in Online\n\nDepartment: Education \u2022 Level: Founder\n\n### Visual Communicator, Sketchnoter - www.thoughtgraphic.com (Current)\n\nNov 2015 - Present (10 years)\n\nThoughtgraphic.com is my website where I post my graphic work (sketch notes, visual notes, mind maps, other graphical work) that\u2019s typically based on topics such as thoughts, business concepts, technology, books and talks by thought leaders.\n\nDepartment: Design \u2022 Level: Specialist\n\n### Fine Artist, Sculptor - [www.mandarmarathefineart.com](https://www.linkedin.com/company/www.amhimarathe.com) (Current)\n\nAug 1995 - Present (30 years and 3 months) in Pune Area, India\n\nI am a visual artist. Till now I have had 11 shows of my paintings and my paintings are collections of companies and private individuals in 6 countries. 1. Website: https://www.mandarmarathefineart.com 2. YouTube Channel: http://www.youtube.com/user/mandarmma\u2026 3. Facebook fan page: https://www.facebook.com/mandarmarath\u2026 4. Pinterest page: https://www.pinterest.com/marathemandar/ 5. Twitter : @MandarMMarathe\n\nDepartment: Design \u2022 Level: Specialist\n\nwww.amhimarathe.com is a Arts & Crafts c",
+      "image": "https://media.licdn.com/dms/image/v2/C5603AQFVSRaXAMjMwQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1620203383668?e=2147483647&v=beta&t=xkGhBC5mMrgSmX0vK-0Eac1lH5FU4r96fTjkW6nWprU",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/1c7g2yq24l3",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Mandar Marathe",
+            "firstName": "Mandar",
+            "lastName": "Marathe",
+            "location": "Pune Division, Maharashtra, India",
+            "workHistory": [
+              {
+                "title": "Founder & Art Educator",
+                "location": "Online",
+                "dates": {
+                  "from": "2011-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "Marathe Art Studio"
+                }
+              },
+              {
+                "title": "Visual Communicator, Sketchnoter",
+                "location": null,
+                "dates": {
+                  "from": "2015-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "www.thoughtgraphic.com"
+                }
+              },
+              {
+                "title": "Fine Artist, Sculptor",
+                "location": "Pune Area, India",
+                "dates": {
+                  "from": "1995-08-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/zyjw3ghpwbm",
+                  "name": "www.mandarmarathefineart.com"
+                }
+              },
+              {
+                "title": "Visiting Faculty",
+                "location": "Pune",
+                "dates": {
+                  "from": "2011-07-01",
+                  "to": "2014-11-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Business schools"
+                }
+              },
+              {
+                "title": "Senior Project Manager",
+                "location": null,
+                "dates": {
+                  "from": "2011-01-01",
+                  "to": "2011-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/bvzj6xvl34l",
+                  "name": "e-Zest Solutions Pvt. Ltd."
+                }
+              },
+              {
+                "title": "Product Manager",
+                "location": null,
+                "dates": {
+                  "from": "2009-05-01",
+                  "to": "2010-12-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Billionhands / Playssium"
+                }
+              },
+              {
+                "title": "Project Manager",
+                "location": null,
+                "dates": {
+                  "from": "2008-11-01",
+                  "to": "2009-03-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Geometric Software"
+                }
+              },
+              {
+                "title": "Project Manager",
+                "location": null,
+                "dates": {
+                  "from": "2005-07-01",
+                  "to": "2008-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lkrdb8cwys5",
+                  "name": "L & T Infotech Ltd"
+                }
+              },
+              {
+                "title": "Project Leader",
+                "location": null,
+                "dates": {
+                  "from": "2003-03-01",
+                  "to": "2005-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/lkrdb8cwys5",
+                  "name": "L & T Infotech Ltd"
+                }
+              },
+              {
+                "title": "Consultant",
+                "location": "New York",
+                "dates": {
+                  "from": "2003-01-01",
+                  "to": "2004-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/l3xdfjtrwmm",
+                  "name": "Marsh"
+                }
+              },
+              {
+                "title": "Consultant",
+                "location": null,
+                "dates": {
+                  "from": "2001-02-01",
+                  "to": "2003-03-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Siemens Information Systems Ltd"
+                }
+              },
+              {
+                "title": "Senior Executive",
+                "location": null,
+                "dates": {
+                  "from": "1995-08-01",
+                  "to": "2001-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/b7vgn9l2hqn",
+                  "name": "Siemens Ltd, Medical Division"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "BE, Mechanical Engg",
+                "dates": {
+                  "from": "1991",
+                  "to": "1995"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/d98s501gmg2",
+                  "name": "Goa University"
+                }
+              },
+              {
+                "degree": "Diploma in Advanced Computing, Programming",
+                "dates": {
+                  "from": "2000",
+                  "to": "2001"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "C- DAC India"
+                }
+              },
+              {
+                "degree": "Bachelor of Engineering, Mechanical",
+                "dates": {
+                  "from": "1991",
+                  "to": "1995"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Goa Engineering College"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 1343.6,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.43,
+  "_request": {
+    "query": "\"Mandar Marathe\" volunteer board member advisor mentor nonprofit community",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

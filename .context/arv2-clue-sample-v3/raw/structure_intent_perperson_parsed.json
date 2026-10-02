@@ -1,0 +1,164 @@
+{
+  "contact_claims": [
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Until December, our 'sales team' was just me",
+      "evidence_span": "Until December, our 'sales team' was just me",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+      "confidence": 0.95,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "I've personally met pretty much every Probook customer, run every demo, and traveled across the US to visit almost every shop.",
+      "evidence_span": "I've personally met pretty much every Probook customer, run every demo, and traveled across the US to visit almost every shop.",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+      "confidence": 0.95,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner",
+      "evidence_span": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+      "confidence": 0.95,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead.",
+      "evidence_span": "The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead.",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_today-were-announcing-40m-in-funding-from-activity-7475172924774293504-mVOB",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:mark-hoffman",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "This team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C",
+      "evidence_span": "This team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C",
+      "source_url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_this-team-just-wow-things-are-just-starting-activity-7341107094747533312-cdTA",
+      "confidence": 0.98,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:mark-hoffman",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz",
+      "evidence_span": "Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz",
+      "source_url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+      "confidence": 0.99,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:mark-hoffman",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "The first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them. The GTM team is inching up towards 20 now, with many more to go.",
+      "evidence_span": "The first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them. The GTM team is inching up towards 20 now, with many more to go.",
+      "source_url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+      "confidence": 0.99,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization",
+      "evidence_span": "I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization",
+      "source_url": "https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z",
+      "confidence": 0.95,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "The martech hype cycle is relentless and Clay is everywhere right now. Glad to see new tools like Riveter gaining traction and cutting through the noise",
+      "evidence_span": "The martech hype cycle is relentless and Clay is everywhere right now. Glad to see new tools like Riveter gaining traction and cutting through the noise",
+      "source_url": "https://www.linkedin.com/posts/kibrady12_the-martech-hype-cycle-is-relentless-and-activity-7488693969325846528-STdm",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "After two incredible years at BuildOps, I\u2019m excited to share that I\u2019m looking for my next role",
+      "evidence_span": "After two incredible years at BuildOps, I\u2019m excited to share that I\u2019m looking for my next role",
+      "source_url": "https://www.linkedin.com/posts/kibrady12_after-two-incredible-years-at-buildops-i-activity-7459629371444703232-esk_",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "When I joined BuildOps, it was to join a high-performing, revenue-obsessed team where I could focus on one thing: building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid\u2026 creating systems, scaling teams, sharpening positioning, and helping turn momentum into revenue.",
+      "evidence_span": "When I joined BuildOps, it was to join a high-performing, revenue-obsessed team where I could focus on one thing: building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid\u2026 creating systems, scaling teams, sharpening positioning, and helping turn momentum into revenue.",
+      "source_url": "https://www.linkedin.com/posts/kibrady12_after-two-incredible-years-at-buildops-i-activity-7459629371444703232-esk_",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "I'm excited to share that I've joined Probook as Director of Sales & Development.",
+      "evidence_span": "I'm excited to share that I've joined Probook as Director of Sales & Development.",
+      "source_url": "https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT",
+      "confidence": 0.92,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Currently leading a team of 5 sellers and counting.",
+      "evidence_span": "Currently leading a team of 5 sellers and counting.",
+      "source_url": "https://www.linkedin.com/in/aaronloganchurba",
+      "confidence": 0.88,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "helping more businesses discover Probook, building a world-class GTM organization, and contributing to the next stage of growth.",
+      "evidence_span": "helping more businesses discover Probook, building a world-class GTM organization, and contributing to the next stage of growth.",
+      "source_url": "https://www.linkedin.com/in/aaronloganchurba",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "In my ~10 year journey in SaaS sales, one key lesson stands out: prospects buy from people they like, relate to, or aspire to emulate.",
+      "evidence_span": "In my ~10 year journey in SaaS sales, one key lesson stands out: prospects buy from people they like, relate to, or aspire to emulate.",
+      "source_url": "https://www.linkedin.com/posts/aaronloganchurba_saassales-salesleadership-relationshipbuilding-activity-7211858644965978113-UIvD",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:lewis-zhang",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.",
+      "evidence_span": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.",
+      "source_url": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d",
+      "confidence": 0.95,
+      "priority": 1,
+      "use_class": "professional-public"
+    }
+  ]
+}

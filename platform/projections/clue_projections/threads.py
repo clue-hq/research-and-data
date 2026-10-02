@@ -91,11 +91,18 @@ class ThreadPage(_View):
 
 
 class ProjectSidebarProjectView(_View):
-    """One workspace project and its batch-hydrated thread summaries."""
+    """One workspace project and its batch-hydrated thread summaries.
+
+    ``updated_at`` is the composite ``GREATEST(project.updated_at, MAX(active thread.updated_at))``
+    the project directory sorts by (spec 2026-09-19 §2.3) — the same expression, deliberately, so
+    the rail and the directory can never present the same workspace in two different orders.
+    """
 
     project_id: str
     title: str
+    pinned: bool
     created_at: AwareDatetime
+    updated_at: AwareDatetime
     threads: tuple[ThreadView, ...]
 
 
@@ -134,6 +141,9 @@ class ThreadTurnView(_View):
     #: The stream cursor a client should attach after, when frames for this turn still exist.
     last_event_id: int | None = None
     generation_attempts: int = 0
+    #: Spec 2026-09-20 §2.2: set when the server made this turn from the user's own bytes; the
+    #: client renders no user bubble for it.
+    derivation: str | None = None
 
 
 class ThreadMessageSummary(_View):
@@ -167,6 +177,9 @@ _PAGE_THREADS = text(
     FROM agent_thread
     WHERE workspace_id = :workspace_id
       AND project_id = :project_id
+      -- Only conversations a person started. Machine threads (research runs, onboarding
+      -- synthesis) are created with no user and are never a chat in any listing.
+      AND created_by_user_id IS NOT NULL
       AND (CAST(:status AS text) IS NULL OR status = :status)
       AND (
           CAST(:cursor_created_at AS timestamptz) IS NULL
@@ -241,22 +254,49 @@ async def threads_for_project(
 
 _PROJECT_SIDEBAR_PAGE = text(
     """
-    WITH selected_projects AS MATERIALIZED (
-        SELECT project_id, name, created_at
-        FROM project
-        WHERE workspace_id = :workspace_id
+    WITH activity AS (
+        -- An archived conversation is not activity, exactly as the directory read defines it
+        -- (clue_projections.projects._ITEM_SELECT); the two composites must agree row for row.
+        SELECT t.project_id,
+               MAX(t.updated_at) FILTER (WHERE t.status = 'active') AS last_thread_at
+        FROM agent_thread t
+        WHERE t.workspace_id = :workspace_id
+          AND t.created_by_user_id IS NOT NULL
+        GROUP BY t.project_id
+    ),
+    selected_projects AS MATERIALIZED (
+        SELECT p.project_id,
+               p.name,
+               p.created_at,
+               p.pinned,
+               GREATEST(p.updated_at, COALESCE(a.last_thread_at, p.updated_at)) AS updated_at
+        FROM project p
+        LEFT JOIN activity a ON a.project_id = p.project_id
+        WHERE p.workspace_id = :workspace_id
+          -- Archiving a project takes it out of the rail entirely (O6), and a system scope
+          -- anchor never enters it. Both filters belong here rather than in the client so the
+          -- page cursor never has to step over rows nobody may see.
+          AND p.status = 'active'
+          AND p.kind = 'marketing'
           AND (
-              CAST(:cursor_created_at AS timestamptz) IS NULL
-              OR (created_at, project_id)
-                 < (:cursor_created_at, CAST(:cursor_project_id AS text))
+              CAST(:cursor_pinned AS boolean) IS NULL
+              OR (
+                     p.pinned,
+                     GREATEST(p.updated_at, COALESCE(a.last_thread_at, p.updated_at)),
+                     p.project_id
+                 )
+                 < (CAST(:cursor_pinned AS boolean), CAST(:cursor_updated_at AS timestamptz),
+                    CAST(:cursor_project_id AS text))
           )
-        ORDER BY created_at DESC, project_id DESC
+        ORDER BY p.pinned DESC, updated_at DESC, p.project_id DESC
         LIMIT :row_limit
     )
     SELECT
         p.project_id,
         p.name AS project_title,
         p.created_at AS project_created_at,
+        p.pinned AS project_pinned,
+        p.updated_at AS project_updated_at,
         t.id AS thread_id,
         t.title AS thread_title,
         t.status AS thread_status,
@@ -267,8 +307,10 @@ _PROJECT_SIDEBAR_PAGE = text(
     LEFT JOIN agent_thread t
       ON t.workspace_id = :workspace_id
      AND t.project_id = p.project_id
+     AND t.created_by_user_id IS NOT NULL
     ORDER BY
-        p.created_at DESC,
+        p.pinned DESC,
+        p.updated_at DESC,
         p.project_id DESC,
         t.pinned DESC NULLS LAST,
         t.updated_at DESC NULLS LAST,
@@ -284,23 +326,36 @@ async def project_sidebar_page(
     cursor: str | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> ProjectSidebarPage:
-    """One project page with all its thread summaries in one SQL read.
+    """One page of the rail: the workspace's marketing projects, pinned first then most recently
+    active, each with all its thread summaries, in one SQL read.
+
+    The order is the project directory's order (spec 2026-09-19 §2.3) — same pin flag, same
+    composite ``updated_at``, same tiebreak — because the rail and the directory show the same
+    workspace and may never disagree about which project is on top.
 
     The project limit is applied inside the CTE, before the thread join, so a
     project with many conversations cannot crowd another project out of the
     page. Thread hydration is one batch query for the whole page; gate and busy
     status are separate whole-page batch reads at the HTTP composition layer.
+
+    The cursor carries the whole sort key — the pin flag, the composite ``updated_at`` and the
+    project id — so a project that is pinned (or whose newest conversation moves) between two page
+    reads still pages deterministically instead of repeating or skipping rows.
     """
 
     if not 1 <= limit <= MAX_PROJECT_SIDEBAR_PAGE_SIZE:
         raise ValueError(
             f"project sidebar page size must be between 1 and {MAX_PROJECT_SIDEBAR_PAGE_SIZE}"
         )
-    cursor_created_at: datetime | None = None
+    cursor_pinned: bool | None = None
+    cursor_updated_at: datetime | None = None
     cursor_project_id: str | None = None
     if cursor is not None:
-        position, cursor_project_id = decode_cursor(cursor, parts=2)
-        cursor_created_at = _parse_timestamp(position)
+        pinned_part, position, cursor_project_id = decode_cursor(cursor, parts=3)
+        if pinned_part not in ("0", "1"):
+            raise InvalidCursorError("sidebar cursor pinned flag must be 0 or 1")
+        cursor_pinned = pinned_part == "1"
+        cursor_updated_at = _parse_timestamp(position)
 
     async with conn_factory() as conn:
         rows = (
@@ -309,7 +364,8 @@ async def project_sidebar_page(
                     _PROJECT_SIDEBAR_PAGE,
                     {
                         "workspace_id": workspace_id,
-                        "cursor_created_at": cursor_created_at,
+                        "cursor_pinned": cursor_pinned,
+                        "cursor_updated_at": cursor_updated_at,
                         "cursor_project_id": cursor_project_id,
                         "row_limit": limit + 1,
                     },
@@ -347,13 +403,19 @@ async def project_sidebar_page(
         ProjectSidebarProjectView(
             project_id=project_id,
             title=str(project_rows[project_id]["project_title"]),
+            pinned=bool(project_rows[project_id]["project_pinned"]),
             created_at=cast(datetime, project_rows[project_id]["project_created_at"]),
+            updated_at=cast(datetime, project_rows[project_id]["project_updated_at"]),
             threads=tuple(threads[project_id]),
         )
         for project_id in selected_ids
     )
     next_cursor = (
-        encode_cursor(items[-1].created_at.isoformat(), items[-1].project_id)
+        encode_cursor(
+            "1" if items[-1].pinned else "0",
+            items[-1].updated_at.isoformat(),
+            items[-1].project_id,
+        )
         if has_more and items
         else None
     )
@@ -375,13 +437,19 @@ _TURN_UNION_SELECT = """
         s.submitted_by_user_id,
         s.message_artifact_key,
         s.message_sha256,
+        s.derivation,
         e.terminal_event,
         e.started,
         e.last_event_id,
         e.attempts,
         j.status AS journal_status,
+        c.control_id AS stop_control_id,
+        ack.acknowledged_at AS stop_acknowledged_at,
         f.status AS task_status
     FROM agent_turn_submission s
+    LEFT JOIN agent_turn_control_request c ON c.workspace_id=s.workspace_id
+      AND c.turn_id=s.turn_id AND c.kind='stop'
+    LEFT JOIN agent_turn_stop_ack ack ON ack.control_id=c.control_id
     LEFT JOIN LATERAL (
         SELECT
             max(event_id) AS last_event_id,
@@ -428,8 +496,15 @@ _THREADS_RUNNING = text(
     SELECT u.thread_id
     FROM ({_TURN_UNION_SELECT} AND s.thread_id = ANY(CAST(:thread_ids AS text[]))) u
     WHERE u.terminal_event IS NULL
+      AND u.stop_acknowledged_at IS NULL
       AND (u.task_status IS NULL OR u.task_status NOT IN ('done', 'failed'))
     GROUP BY u.thread_id
+    UNION
+    SELECT launched_thread_id
+    FROM arv2_discovery_run
+    WHERE workspace_id = :workspace_id
+      AND launched_thread_id = ANY(CAST(:thread_ids AS text[]))
+      AND released_at IS NULL
     """
 )
 
@@ -443,6 +518,10 @@ _TERMINAL_STATES: dict[str, str] = {
 
 
 def _turn_state(row: dict[str, object]) -> str:
+    if row.get("stop_acknowledged_at") is not None:
+        return "cancelled"
+    if row.get("stop_control_id") is not None:
+        return "running"
     terminal = row.get("terminal_event")
     if terminal is not None:
         return _TERMINAL_STATES.get(str(terminal), "completed")
@@ -473,6 +552,7 @@ def _thread_turn_view(row: dict[str, object]) -> ThreadTurnView:
         message_sha256=str(row["message_sha256"]),
         last_event_id=(None if row["last_event_id"] is None else int(str(row["last_event_id"]))),
         generation_attempts=int(str(row["attempts"] or 0)),
+        derivation=(None if row.get("derivation") is None else str(row["derivation"])),
     )
 
 
@@ -552,7 +632,8 @@ async def threads_running(
 
     One statement for a whole page of threads. "Queued" counts as running on purpose: from the
     user's side a turn they submitted thirty seconds ago that has not been claimed yet is the
-    conversation working, not the conversation idle.
+    conversation working, not the conversation idle. A thread whose discovery run is unreleased is
+    running too (spec 2026-09-30 §5): it holds every message until the run's wake turn finishes.
     """
 
     if not thread_ids:
@@ -583,14 +664,19 @@ def _parse_timestamp(position: str) -> datetime:
 
 # Keyset over the per-thread ``sequence``, which is already UNIQUE (workspace_id, thread_id,
 # sequence) and gap-free by construction — so it is a total order on its own and needs no tiebreak.
+#
+# Newest-first page *selection* (Slice C C5): the first page is the tail of the thread, and the
+# cursor is a *before*-key naming the preceding page — ``sequence < cursor`` walking backward.
+# Rows come back descending and are reversed in Python, so within any page the display order is
+# ascending, identical to the old read for a thread under one page.
 _PAGE_MESSAGES = text(
     """
     SELECT id, turn_id, sequence, role, body_artifact_key, body_sha256, created_at
     FROM agent_thread_message
     WHERE workspace_id = :workspace_id
       AND thread_id = :thread_id
-      AND (CAST(:cursor_sequence AS bigint) IS NULL OR sequence > CAST(:cursor_sequence AS bigint))
-    ORDER BY sequence
+      AND (CAST(:cursor_sequence AS bigint) IS NULL OR sequence < CAST(:cursor_sequence AS bigint))
+    ORDER BY sequence DESC
     LIMIT :row_limit
     """
 )
@@ -707,7 +793,14 @@ async def thread_messages(
     cursor: str | None = None,
     conn_factory: ConnFactory = transaction,
 ) -> ThreadMessagePage:
-    """One keyset page of a thread's durable messages, oldest first, with typed ``refs[]``.
+    """One keyset page of a thread's durable messages, **newest page first**, with typed ``refs[]``.
+
+    Slice C C5's read direction: with no cursor this serves the *latest* ``limit`` messages —
+    in ascending display order within the page — because the defect the flip fixes was a long
+    thread whose reload served the oldest 50 and lost the user's most recent prompts.
+    ``next_cursor`` is a *before*-cursor: passing it back serves the preceding (older) page, and
+    ``None`` means history is exhausted. A thread at or under one page is served whole, ascending,
+    with no cursor — byte-identical to the pre-flip read.
 
     Raises :class:`~clue_projections.pagination.InvalidCursorError` for a foreign cursor and
     ``ValueError`` for an out-of-range ``limit``.
@@ -739,7 +832,8 @@ async def thread_messages(
             .all()
         )
         has_more = len(rows) > limit
-        page = rows[:limit]
+        # Selected newest-first; reversed so the page reads in ascending display order.
+        page = list(reversed(rows[:limit]))
         refs = await _refs_by_turn(
             conn,
             workspace_id=workspace_id,
@@ -764,5 +858,6 @@ async def thread_messages(
         )
         for row in page
     )
-    next_cursor = encode_cursor(str(items[-1].sequence)) if has_more and items else None
+    # The before-cursor is the page's *oldest* row: older history continues below it.
+    next_cursor = encode_cursor(str(items[0].sequence)) if has_more and items else None
     return ThreadMessagePage(items=items, next_cursor=next_cursor)

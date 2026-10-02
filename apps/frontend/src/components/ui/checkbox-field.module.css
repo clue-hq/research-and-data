@@ -1,0 +1,49 @@
+.field {
+  align-items: flex-start;
+  color: var(--clue-content-neutral);
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  min-height: 32px;
+  min-width: 0;
+  padding: 6px 0;
+  font: var(--clue-ds-typography-text-sm-font-weight) var(--clue-ds-typography-text-sm-font-size)/var(--clue-ds-typography-text-sm-line-height) var(--clue-ds-typography-text-sm-font-family);
+}
+
+.input {
+  appearance: none;
+  background: var(--clue-background-neutral);
+  border: 1px solid var(--clue-ds-color-components-checkbox-border);
+  border-radius: var(--clue-ds-product-component-button-sm-radius);
+  cursor: inherit;
+  display: grid;
+  flex: 0 0 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  padding: 0;
+  place-content: center;
+  width: 16px;
+}
+
+.input:checked {
+  background: var(--clue-content-neutral);
+  border-color: var(--clue-content-neutral);
+}
+
+.input:checked::after {
+  border-bottom: 1.5px solid var(--clue-background-neutral);
+  border-left: 1.5px solid var(--clue-background-neutral);
+  content: "";
+  height: 4px;
+  transform: translateY(-1px) rotate(-45deg);
+  width: 8px;
+}
+
+.input:focus-visible {
+  box-shadow: var(--clue-ds-product-component-button-effect-focus-surface);
+  outline: none;
+}
+
+.field:hover .input:not(:disabled) { border-color: var(--clue-ds-color-components-checkbox-border-hover); }
+.field:has(.input:disabled) { cursor: default; opacity: 0.55; }
+.label { min-width: 0; overflow-wrap: normal; }

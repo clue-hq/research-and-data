@@ -1,0 +1,23 @@
+{
+  "name": "newartifact-05-lock-and-next",
+  "kind": "new_artifact",
+  "artifact": "design \"Premier Gastroenterology LinkedIn ad\" (scene ad), for account \"Premier Gastroenterology\"",
+  "tags": [
+    "account \"Apollo Clinics\""
+  ],
+  "brief": "A 1:1 LinkedIn ad for Premier Gastroenterology selling the GI front-door bundle.",
+  "history": [],
+  "message": "Lock this one in and do one for @Apollo Clinics.",
+  "judgment": {
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": true,
+    "current_artifact_accepted": true,
+    "reasoning": "The user accepted this ad and asked for another account's ad in the same breath."
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  },
+  "why": "Acceptance plus a next request: the hand-on wins so the user need not repeat the request; the acceptance rides the reasoning."
+}

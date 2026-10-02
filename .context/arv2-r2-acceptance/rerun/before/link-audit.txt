@@ -1,0 +1,10 @@
+                job_id                |  verdict  | count 
+--------------------------------------+-----------+-------
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | EXACT     |    38
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | NOT_FOUND |    26
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | PARTIAL   |     6
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | EXACT     |    39
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | NOT_FOUND |    27
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | PARTIAL   |    21
+(6 rows)
+

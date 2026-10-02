@@ -1,0 +1,389 @@
+{
+  "summary": {
+    "gemini_key_present_at_start": false,
+    "gemini_key_present_at_media_phase": false,
+    "gemini_key_recheck_note": ".env re-read immediately before Phase 2; file mtime unchanged (Aug 29). No CLUE_GEMINI_API_KEY.",
+    "items_total": 12,
+    "items_with_duration": 10,
+    "items_walled_never_fetched": 2,
+    "total_media_seconds": 18144,
+    "total_media_hours": 5.04,
+    "price_sheet": {
+      "audio_input_usd_per_1m_tokens": 0.3,
+      "audio_tokens_per_second": 32,
+      "text_output_usd_per_1m_tokens": 0.4,
+      "text_embedding_usd_per_1m_tokens": 0.2,
+      "raw_audio_embedding_usd_per_second": 0.00016,
+      "model_transcribe": "gemini-2.5-flash-lite",
+      "model_embed": "gemini-embedding-2"
+    },
+    "assumptions": {
+      "words_per_minute": 150,
+      "tokens_per_word": 1.35,
+      "timestamp_every_s": 15,
+      "tokens_per_timestamp": 5
+    },
+    "would_have_cost_usd": {
+      "transcribe_all": 0.2011,
+      "embed_all_transcripts_text": 0.0135,
+      "embed_raw_audio_short_clips_only": 0.0358,
+      "TOTAL_full_media_layer": 0.2504,
+      "per_hour_of_audio_transcribe": 0.0399,
+      "embed_raw_audio_if_applied_to_ALL_items": 2.903
+    },
+    "no_key_fallback_delivered": {
+      "youtube_public_timedtext": "DEAD \u2014 200/0 bytes/text-html on baseUrl, fmt=json3, fmt=srv3, fmt=vtt, fmt=ttml, classic lang=en, kind=asr, c=WEB",
+      "exa_indexed_youtube_page": "WORKS \u2014 carries the full ASR transcript text for 4/5 videos, but with NO timestamps",
+      "podcast_mp3": "enclosure URLs resolve, but nothing can read them without a transcription model",
+      "podcast_shownotes": "2-4 kB of marketing copy per episode; not voice"
+    }
+  },
+  "items": [
+    {
+      "id": "vin_siemens",
+      "person": "vineet_edupuganti",
+      "url": "https://www.youtube.com/watch?v=8x_RZ4yIRbw",
+      "kind": "youtube",
+      "title": "Vineet Edupuganti - 2016 Siemens Competition Individual Grand Prize Winner",
+      "channel_or_show": "siemensfoundation",
+      "mp3_enclosure": null,
+      "duration_s": 702,
+      "target_speaks": "YES - verified: the whole clip is his own Siemens Competition presentation",
+      "youtube_caption_track_listed": true,
+      "youtube_timedtext_fetch": "BLOCKED: http 200, 0 bytes, text/html on all 5 request forms",
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 11674,
+        "timestamps_in_text": 0,
+        "verdict": "full ASR transcript, NO timestamps"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 702,
+        "duration_hms": "0:11:42",
+        "audio_input_tokens": 22464,
+        "est_output_tokens_timestamped": 2603,
+        "cost_transcribe_usd": 0.00778,
+        "cost_embed_transcript_text_usd": 0.000521,
+        "cost_embed_raw_audio_usd": 0.11232,
+        "cost_transcribe_plus_text_embed_usd": 0.008301
+      },
+      "extra": null
+    },
+    {
+      "id": "vin_ep297",
+      "person": "vineet_edupuganti",
+      "url": "https://www.youtube.com/watch?v=_OHZyK0nugs",
+      "kind": "youtube",
+      "title": "Ep 297 AI, Cybersecurity & the Future of Business Vineet Edupuganti CEO @Cogent Security on",
+      "channel_or_show": "The Silicon Valley Podcast",
+      "mp3_enclosure": null,
+      "duration_s": 1886,
+      "target_speaks": "YES - verified: he is the interviewed guest throughout",
+      "youtube_caption_track_listed": true,
+      "youtube_timedtext_fetch": "BLOCKED: http 200, 0 bytes, text/html on all 5 request forms",
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 34417,
+        "timestamps_in_text": 0,
+        "verdict": "full ASR transcript, NO timestamps"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 1886,
+        "duration_hms": "0:31:26",
+        "audio_input_tokens": 60352,
+        "est_output_tokens_timestamped": 6993,
+        "cost_transcribe_usd": 0.020903,
+        "cost_embed_transcript_text_usd": 0.001399,
+        "cost_embed_raw_audio_usd": 0.30176,
+        "cost_transcribe_plus_text_embed_usd": 0.022301
+      },
+      "extra": null
+    },
+    {
+      "id": "vin_hackervalley",
+      "person": "vineet_edupuganti",
+      "url": "https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/",
+      "kind": "podcast",
+      "title": "The Rise of the Autonomous Blue Team with Vineet Edupuganti",
+      "channel_or_show": null,
+      "mp3_enclosure": "https://mcdn.podbean.com/mf/web/3zewen7za624jpfj/HVS25_EP391_Cogent_Audiobns0t.mp3",
+      "duration_s": 2244,
+      "target_speaks": "YES - episode title names him as the guest (mp3 unread, no key)",
+      "youtube_caption_track_listed": false,
+      "youtube_timedtext_fetch": null,
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 2753,
+        "timestamps_in_text": 0,
+        "verdict": "show-notes / page stub only"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 2244,
+        "duration_hms": "0:37:24",
+        "audio_input_tokens": 71808,
+        "est_output_tokens_timestamped": 8321,
+        "cost_transcribe_usd": 0.024871,
+        "cost_embed_transcript_text_usd": 0.001664,
+        "cost_embed_raw_audio_usd": 0.35904,
+        "cost_transcribe_plus_text_embed_usd": 0.026535
+      },
+      "extra": null
+    },
+    {
+      "id": "ala_gcsp265",
+      "person": "alastair_paterson",
+      "url": "https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act",
+      "kind": "podcast",
+      "title": "EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!",
+      "channel_or_show": null,
+      "mp3_enclosure": "https://traffic.libsyn.com/secure/cloudsecuritypodcast/EP265_not261_CloudSecPodcast.mp3?dest-id=2641814",
+      "duration_s": 1734,
+      "target_speaks": "YES - verified in transcript: \"Today, we're joined by Alistair Patterson, the CEO and co-founder of Harmonic Security\"",
+      "youtube_caption_track_listed": false,
+      "youtube_timedtext_fetch": null,
+      "fallback_delivered": {
+        "source": "exa_indexed_youtube_mirror",
+        "chars": 33282,
+        "timestamps_in_text": 0,
+        "verdict": "full ASR transcript, NO timestamps"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 1734,
+        "duration_hms": "0:28:54",
+        "audio_input_tokens": 55488,
+        "est_output_tokens_timestamped": 6430,
+        "cost_transcribe_usd": 0.019218,
+        "cost_embed_transcript_text_usd": 0.001286,
+        "cost_embed_raw_audio_usd": 0.27744,
+        "cost_transcribe_plus_text_embed_usd": 0.020504
+      },
+      "extra": {
+        "mirror_id": "ala_gcsp265_yt",
+        "mirror_url": "https://www.youtube.com/watch?v=qu51DBOkrNE",
+        "mirror_note": "the podcast's own YouTube mirror; Exa HAS its transcript"
+      }
+    },
+    {
+      "id": "ala_sysk",
+      "person": "alastair_paterson",
+      "url": "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security",
+      "kind": "podcast",
+      "title": "Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson",
+      "channel_or_show": null,
+      "mp3_enclosure": "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security-ceo-alastair-paterson.mp3",
+      "duration_s": 1791,
+      "target_speaks": "YES - episode title: \"...with Harmonic Security CEO Alastair Paterson\" (mp3 unread, no key)",
+      "youtube_caption_track_listed": false,
+      "youtube_timedtext_fetch": null,
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 1787,
+        "timestamps_in_text": 0,
+        "verdict": "show-notes / page stub only"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 1791,
+        "duration_hms": "0:29:51",
+        "audio_input_tokens": 57312,
+        "est_output_tokens_timestamped": 6641,
+        "cost_transcribe_usd": 0.01985,
+        "cost_embed_transcript_text_usd": 0.001328,
+        "cost_embed_raw_audio_usd": 0.28656,
+        "cost_transcribe_plus_text_embed_usd": 0.021178
+      },
+      "extra": null
+    },
+    {
+      "id": "san_boardroom",
+      "person": "sanaz_yashar",
+      "url": "https://podcasts.apple.com/us/podcast/ai-summit-sanaz-yashar-co-founder-and-ceo-at-zafran-security/id1749699539?i=1000728",
+      "kind": "podcast",
+      "title": "AI Summit: Sanaz Yashar, Co-Founder and CEO at Zafran Security",
+      "channel_or_show": null,
+      "mp3_enclosure": "https://anchor.fm/s/f695d6d8/podcast/play/106390290/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2025-7-9%2F405396769-44100-2-7287bb9271f44.mp3",
+      "duration_s": 2569,
+      "target_speaks": "YES - episode title names her as the guest (mp3 unread, no key)",
+      "youtube_caption_track_listed": false,
+      "youtube_timedtext_fetch": null,
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 15838,
+        "timestamps_in_text": 0,
+        "verdict": "full ASR transcript, NO timestamps"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 2569,
+        "duration_hms": "0:42:49",
+        "audio_input_tokens": 82208,
+        "est_output_tokens_timestamped": 9526,
+        "cost_transcribe_usd": 0.028473,
+        "cost_embed_transcript_text_usd": 0.001905,
+        "cost_embed_raw_audio_usd": 0.41104,
+        "cost_transcribe_plus_text_embed_usd": 0.030378
+      },
+      "extra": null
+    },
+    {
+      "id": "ana_coffee",
+      "person": "ana_corio",
+      "url": "https://www.youtube.com/watch?v=DBRuxk0YrQk",
+      "kind": "youtube",
+      "title": "Autocomply AI presents Coffee and Compliance with guests Harmonic Security",
+      "channel_or_show": "Autocomply AI",
+      "mp3_enclosure": null,
+      "duration_s": 3634,
+      "target_speaks": "NO - verified in transcript: the guests are \"Ed and James from Harmonic Security\"; Ana Corio never appears",
+      "youtube_caption_track_listed": true,
+      "youtube_timedtext_fetch": "BLOCKED: http 200, 0 bytes, text/html on all 5 request forms",
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 25000,
+        "timestamps_in_text": 0,
+        "verdict": "full ASR transcript, NO timestamps"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 3634,
+        "duration_hms": "1:00:34",
+        "audio_input_tokens": 116288,
+        "est_output_tokens_timestamped": 13476,
+        "cost_transcribe_usd": 0.040277,
+        "cost_embed_transcript_text_usd": 0.002695,
+        "cost_embed_raw_audio_usd": 0.58144,
+        "cost_transcribe_plus_text_embed_usd": 0.042972
+      },
+      "extra": null
+    },
+    {
+      "id": "sem_cogentyt",
+      "person": "alexander_semien",
+      "url": "https://www.youtube.com/watch?v=fbn5EJagBmQ",
+      "kind": "youtube",
+      "title": "How Cogent Security sandboxes AI agents that touch customer data | Max Agency #podcast",
+      "channel_or_show": "LangChain",
+      "mp3_enclosure": null,
+      "duration_s": 50,
+      "target_speaks": "NO - verified: the speaker is Geng Sng (Cogent co-founder/CTO), not Alexander Semien",
+      "youtube_caption_track_listed": true,
+      "youtube_timedtext_fetch": "BLOCKED: http 200, 0 bytes, text/html on all 5 request forms",
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 2165,
+        "timestamps_in_text": 0,
+        "verdict": "show-notes / page stub only"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 50,
+        "duration_hms": "0:00:50",
+        "audio_input_tokens": 1600,
+        "est_output_tokens_timestamped": 185,
+        "cost_transcribe_usd": 0.000554,
+        "cost_embed_transcript_text_usd": 3.7e-05,
+        "cost_embed_raw_audio_usd": 0.008,
+        "cost_transcribe_plus_text_embed_usd": 0.000591
+      },
+      "extra": null
+    },
+    {
+      "id": "man_uptiqyt",
+      "person": "mandar_marathe",
+      "url": "https://www.youtube.com/watch?v=GS8qgXDfpHM",
+      "kind": "youtube",
+      "title": "See Uptiq for Equipment Finance in Action",
+      "channel_or_show": "Uptiq",
+      "mp3_enclosure": null,
+      "duration_s": 174,
+      "target_speaks": "UNKNOWN - no transcript indexed; product voiceover, uncredited",
+      "youtube_caption_track_listed": true,
+      "youtube_timedtext_fetch": "BLOCKED: http 200, 0 bytes, text/html on all 5 request forms",
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 926,
+        "timestamps_in_text": 0,
+        "verdict": "show-notes / page stub only"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 174,
+        "duration_hms": "0:02:54",
+        "audio_input_tokens": 5568,
+        "est_output_tokens_timestamped": 645,
+        "cost_transcribe_usd": 0.001928,
+        "cost_embed_transcript_text_usd": 0.000129,
+        "cost_embed_raw_audio_usd": 0.02784,
+        "cost_transcribe_plus_text_embed_usd": 0.002057
+      },
+      "extra": null
+    },
+    {
+      "id": "man_cu20",
+      "person": "mandar_marathe",
+      "url": "https://www.buzzsprout.com/268738/episodes/13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors",
+      "kind": "podcast",
+      "title": "CU 2.0 Podcast Episode 273 UPTIQ&#39;s Lending Platform for Holistic Advisors - and Credit Unions Too",
+      "channel_or_show": null,
+      "mp3_enclosure": "https://www.buzzsprout.com/268738/episodes/13811630-cu-2-0-podcast-episode-273-uptiq-s-lending-platform-for-holistic-advisors-and-credit-unions-too.mp3",
+      "duration_s": 3360,
+      "target_speaks": "UNKNOWN - show notes name UPTIQ but no speaker; mp3 unread, no key",
+      "youtube_caption_track_listed": false,
+      "youtube_timedtext_fetch": null,
+      "fallback_delivered": {
+        "source": "exa_indexed_page",
+        "chars": 2096,
+        "timestamps_in_text": 0,
+        "verdict": "show-notes / page stub only"
+      },
+      "timestamps_in_text": 0,
+      "gemini_math": {
+        "duration_s": 3360,
+        "duration_hms": "0:56:00",
+        "audio_input_tokens": 107520,
+        "est_output_tokens_timestamped": 12460,
+        "cost_transcribe_usd": 0.03724,
+        "cost_embed_transcript_text_usd": 0.002492,
+        "cost_embed_raw_audio_usd": 0.5376,
+        "cost_transcribe_plus_text_embed_usd": 0.039732
+      },
+      "extra": null
+    },
+    {
+      "id": "walled_alexander_semien",
+      "person": "alexander_semien",
+      "url": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460449",
+      "kind": "linkedin_native_video",
+      "status": "unfetchable_walled",
+      "note": "Cogent's own post featuring Semien on camera. LinkedIn-native video is walled -> never fetched.",
+      "duration_s": null,
+      "gemini_math": null,
+      "fallback_delivered": {
+        "source": "walled",
+        "chars": 0,
+        "timestamps_in_text": 0,
+        "verdict": "never fetched (walled by design)"
+      }
+    },
+    {
+      "id": "walled_mandar_marathe",
+      "person": "mandar_marathe",
+      "url": "https://www.linkedin.com/posts/mandarmarathe_financial-expertise-meets-ai-inside-uptiq-activity-7452",
+      "kind": "linkedin_native_video",
+      "status": "unfetchable_walled",
+      "note": "'Watch the full video' UPTIQ post. LinkedIn-native video is walled -> never fetched.",
+      "duration_s": null,
+      "gemini_math": null,
+      "fallback_delivered": {
+        "source": "walled",
+        "chars": 0,
+        "timestamps_in_text": 0,
+        "verdict": "never fetched (walled by design)"
+      }
+    }
+  ]
+}

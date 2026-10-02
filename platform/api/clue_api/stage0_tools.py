@@ -13,7 +13,9 @@ from pydantic import Field, JsonValue
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents.manual import tool_manual_link
 from clue_api.auth_tool_context import require_human_authority
+from clue_api.conversation_capture import project_client_entity_id
 from clue_api.project_execution_router import ProjectExecutionRouter
 from clue_api.stage0_field_events import ReconFieldProgressEmitter
 from clue_api.tool_outputs import (
@@ -64,6 +66,7 @@ from clue_research.stage0 import (
     InterviewStatement,
     ReconLaneStatus,
     compile_product_context,
+    ensure_product_kb_baseline,
     evaluate_readiness,
     get_onboarding_input,
     get_readiness_decision,
@@ -993,6 +996,12 @@ class StartReconTool(_Stage0Tool):
 
 class RecordInterviewAnswerTool(_Stage0Tool):
     name = "record_interview_answer"
+    # The descriptor's own fallback sentence, stated here so the manual anchor can ride on it.
+    # What the tool actually does, route by route, is the chapter this points at.
+    model_description = (
+        "Invoke exact governed platform tool record_interview_answer@1. "
+        + tool_manual_link("record_interview_answer")
+    )
     input_model = RecordInterviewAnswerInput
     output_model = InterviewAnswerOutput
     replay = ReplaySafety(
@@ -1177,8 +1186,24 @@ class ConfirmProjectProductTool(_Stage0Tool):
                 project_id=inputs.project_id,
                 product_id=inputs.product_id,
             )
-        if project is None:
-            raise ValueError("project/product pair is absent, foreign, or already conflicts")
+            if project is None:
+                raise ValueError("project/product pair is absent, foreign, or already conflicts")
+            client_entity_id = await project_client_entity_id(
+                conn,
+                workspace_id=ctx.workspace_id,
+                project_id=project.project_id,
+            )
+            if client_entity_id is None:
+                raise ValueError(
+                    "project product confirmation requires an established workspace client"
+                )
+            await ensure_product_kb_baseline(
+                conn,
+                workspace_id=ctx.workspace_id,
+                client_entity_id=client_entity_id,
+                product_id=inputs.product_id,
+                operation_key=f"project-product-selection:{project.project_id}:{inputs.product_id}",
+            )
         return ToolResult(
             tool=self.name,
             version=self.version,

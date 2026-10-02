@@ -232,3 +232,9 @@ throughout, so the live walk is his.
   deliberately untouched (its own editor, its own review). Unowned.
 - The locked-container handle-drawing cosmetic above.
 - Everything in the base lane's residual list still stands.
+
+## 2026-09-20 addendum — the bake rules under C-9 (freeze-bake fill parity)
+A node leaving the Stack solve keeps EXACTLY the extents the solve gave it: a container's own
+`fill` bakes to `fixed` (the "fill still tracks its parent" exemption was wrong — see
+`_memory/2026-09-20-freeze-bake-fill-parity.md`), a text child's hug WIDTH bakes, its hug HEIGHT
+survives (K1), token dims survive. Free-mode `fill` resolves against the padded content box.

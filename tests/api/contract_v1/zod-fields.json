@@ -1,0 +1,147 @@
+{
+  "AccountContactDetailSchema": {
+    "optional": [
+      "avatarUrl",
+      "bestFirstChannelLabel",
+      "contactDisplay",
+      "customFields",
+      "educationLabel",
+      "emailClaimId",
+      "emailLabel",
+      "emailVerifiedAt",
+      "employmentStartedAt",
+      "linkedinCreator",
+      "linkedinFollowers",
+      "locationClaimId",
+      "locationLabel",
+      "membershipGaps",
+      "membershipState",
+      "outreachEligible",
+      "overviewParagraphs",
+      "profileAction",
+      "reports",
+      "researchEvidence",
+      "tenureLabel",
+      "xLabel",
+      "xUrl"
+    ],
+    "required": [
+      "accountId",
+      "accountLogoPath",
+      "accountName",
+      "emailStatus",
+      "evidence",
+      "id",
+      "influence",
+      "lastModifiedAt",
+      "linkedinLabel",
+      "linkedinUrl",
+      "name",
+      "persona",
+      "personaTone",
+      "recentSignalsLabel",
+      "socials",
+      "title"
+    ]
+  },
+  "AccountContactSummarySchema": {
+    "optional": [
+      "avatarUrl",
+      "emailLabel",
+      "membershipGaps",
+      "membershipState",
+      "outreachEligible",
+      "profileAction"
+    ],
+    "required": [
+      "emailStatus",
+      "id",
+      "influence",
+      "name",
+      "persona",
+      "personaTone",
+      "socials",
+      "title"
+    ]
+  },
+  "AccountDetailSchema": {
+    "optional": [
+      "businessParagraphs",
+      "buyingCommittee",
+      "createdBy",
+      "customFields",
+      "fitScoreLabel",
+      "foundedLabel",
+      "fundingLabel",
+      "headerMetadata",
+      "industryLabels",
+      "overviewDisplay",
+      "owner",
+      "researchEvidence",
+      "researchStatusLabel",
+      "socials",
+      "summaryParagraphs"
+    ],
+    "required": [
+      "activity",
+      "contacts",
+      "createdAt",
+      "fitCriteria",
+      "fitScore",
+      "headcountLabel",
+      "id",
+      "insights",
+      "lastModifiedAt",
+      "locationsLabel",
+      "logoPath",
+      "name",
+      "overallFit",
+      "previewTitle",
+      "researchStatus",
+      "revenueLabel",
+      "websiteLabel",
+      "websiteUrl"
+    ]
+  },
+  "AccountSchema": {
+    "optional": [
+      "createdAt",
+      "createdBy",
+      "customFields",
+      "industryLabels",
+      "lastModifiedAt",
+      "locationsLabel",
+      "owner",
+      "primaryProjectId",
+      "projects",
+      "researchIsRefreshing",
+      "researchStatusLabel",
+      "socials"
+    ],
+    "required": [
+      "employeeBand",
+      "fitScore",
+      "id",
+      "locationCount",
+      "logoPath",
+      "name",
+      "overallFit",
+      "researchStatus",
+      "revenueBand",
+      "websiteUrl"
+    ]
+  },
+  "AccountWorkspaceSchema": {
+    "optional": [
+      "insightSummary",
+      "insightsDisplay",
+      "researchEvidence"
+    ],
+    "required": [
+      "accountId",
+      "activity",
+      "artifacts",
+      "insights"
+    ]
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "total_entries": 2,
+  "people": [
+    {
+      "id": "66f6837df4af8c000147044c",
+      "first_name": "Steijn",
+      "last_name_obfuscated": "Pe***e",
+      "title": "CEO and Co-Founder",
+      "last_refreshed_at": "2026-08-16T17:46:06.782+00:00",
+      "has_email": true,
+      "has_city": true,
+      "has_state": true,
+      "has_country": true,
+      "has_direct_phone": "Yes",
+      "organization": {
+        "name": "Lassie",
+        "has_industry": true,
+        "has_phone": true,
+        "has_city": true,
+        "has_state": true,
+        "has_country": true,
+        "has_zip_code": false,
+        "has_revenue": false,
+        "has_employee_count": true
+      }
+    },
+    {
+      "id": "55d69c86f3e5bb37de006ac3",
+      "first_name": "Max",
+      "last_name_obfuscated": "Sh***e",
+      "title": "Founding GTM",
+      "last_refreshed_at": "2026-08-07T04:38:10.000+00:00",
+      "has_email": true,
+      "has_city": true,
+      "has_state": true,
+      "has_country": true,
+      "has_direct_phone": "Yes",
+      "organization": {
+        "name": "Lassie",
+        "has_industry": true,
+        "has_phone": true,
+        "has_city": true,
+        "has_state": true,
+        "has_country": true,
+        "has_zip_code": false,
+        "has_revenue": false,
+        "has_employee_count": true
+      }
+    }
+  ],
+  "_http_status": 200,
+  "_elapsed_s": 0.3,
+  "_rate_headers": {
+    "x-24-hour-requests-left": "49996",
+    "x-hourly-requests-left": "5996",
+    "x-minute-requests-left": "199",
+    "x-rate-limit-24-hour": "50000",
+    "x-rate-limit-hourly": "6000",
+    "x-rate-limit-minute": "200"
+  },
+  "_request": {
+    "method": "POST",
+    "path": "/mixed_people/api_search",
+    "body": {
+      "organization_ids": [
+        "63174e0badba1b00014e22fa"
+      ],
+      "person_seniorities": [
+        "owner",
+        "founder",
+        "c_suite",
+        "partner",
+        "vp",
+        "head",
+        "director",
+        "manager"
+      ],
+      "per_page": 50,
+      "page": 1
+    }
+  }
+}

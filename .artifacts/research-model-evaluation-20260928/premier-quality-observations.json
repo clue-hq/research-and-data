@@ -1,0 +1,155 @@
+[
+  {
+    "run_key": "premier-grok46-medium",
+    "entity": "account",
+    "dimension": "public_voice",
+    "assessment": "strength",
+    "finding_ids": "F043,F045,F046,F047",
+    "observation": "Historical Greene productivity quote and Todd analytics, reimbursement, recruiting statements preserved.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/account-initial/dossier.json"
+  },
+  {
+    "run_key": "premier-grok46-medium",
+    "entity": "account",
+    "dimension": "granularity",
+    "assessment": "weakness",
+    "finding_ids": "F025,F032,F043",
+    "observation": "Multiple independently useful prep/metrics/history points bundled; independent correction harder.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/account-initial/dossier.json"
+  },
+  {
+    "run_key": "premier-muse-medium",
+    "entity": "account",
+    "dimension": "public_voice",
+    "assessment": "acquired_but_omitted",
+    "finding_ids": "",
+    "observation": "Greene quotation present in retained research but absent authored account findings.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/selected-source-comparison.json"
+  },
+  {
+    "run_key": "premier-muse-medium",
+    "entity": "account",
+    "dimension": "claim_selection",
+    "assessment": "weakness",
+    "finding_ids": "F011,F018,F019",
+    "observation": "Research non-discovery stored as supported account facts.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json"
+  },
+  {
+    "run_key": "premier-muse-high",
+    "entity": "account",
+    "dimension": "public_voice",
+    "assessment": "acquired_but_omitted",
+    "finding_ids": "",
+    "observation": "MedEvolve executive operating voice acquired but omitted from dossier and narrative.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/evidence/muse-high-medevolve.md"
+  },
+  {
+    "run_key": "premier-muse-high",
+    "entity": "account",
+    "dimension": "discovery",
+    "assessment": "strength",
+    "finding_ids": "F030,F062",
+    "observation": "Scheduling/endoscopy/billing duties and qualified patient reminder/portal anecdote add useful operational detail.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json"
+  },
+  {
+    "run_key": "premier-muse-high",
+    "entity": "account",
+    "dimension": "provenance",
+    "assessment": "weakness",
+    "finding_ids": "",
+    "observation": "11/26 authored findings include Exa-report artifact rather than consistently direct originals; important outward citations missing.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-high/metrics.json"
+  },
+  {
+    "run_key": "premier-muse-high",
+    "entity": "account",
+    "dimension": "claim_selection",
+    "assessment": "weakness",
+    "finding_ids": "F031,F040,F071,F072",
+    "observation": "Research gaps as facts; seller coexistence argument enters factual text.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json"
+  },
+  {
+    "run_key": "premier-muse-high",
+    "entity": "Beth Smith",
+    "dimension": "person_depth",
+    "assessment": "mixed",
+    "finding_ids": "F010,F031,F040,F003,F042",
+    "observation": "Specific career scope retained, but duplicated summaries and company/other-person material included.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/ce2ce4f1-ab74-5f41-b739-6dd5a201088e/dossier.json"
+  },
+  {
+    "run_key": "premier-grok47-high",
+    "entity": "account",
+    "dimension": "public_voice",
+    "assessment": "strength",
+    "finding_ids": "F060-F064,F091",
+    "observation": "Direct-source executive voice and qualified manual-record abstraction preserved.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json"
+  },
+  {
+    "run_key": "premier-grok47-high",
+    "entity": "account",
+    "dimension": "conflict_reasoning",
+    "assessment": "weakness",
+    "finding_ids": "F013,F021",
+    "observation": "Some temporal/scope differences overflagged; development-cost conflict links unrelated staff/revenue finding.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json"
+  },
+  {
+    "run_key": "premier-grok47-high",
+    "entity": "account",
+    "dimension": "provider_boundary",
+    "assessment": "shared_input_leak",
+    "finding_ids": "F034",
+    "observation": "AI Ark summary.seo prose enters authored research; projected field exposed in both high-run inputs.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/COMPARISON.md"
+  },
+  {
+    "run_key": "premier-grok47-high",
+    "entity": "Todd Greer",
+    "dimension": "public_voice",
+    "assessment": "strength",
+    "finding_ids": "F018-F023",
+    "observation": "Six substantive historical MedEvolve passages retained with attribution.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/6bc03f41-fd75-5ce8-998d-6ec983efd86c/dossier.json"
+  },
+  {
+    "run_key": "premier-grok47-high",
+    "entity": "Todd Greer",
+    "dimension": "subject_ownership",
+    "assessment": "weakness",
+    "finding_ids": "F010,F030,F033-F036,F038",
+    "observation": "Company boilerplate, property/other-speaker facts and third-party retirement comment dilute person record.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/6bc03f41-fd75-5ce8-998d-6ec983efd86c/dossier.json"
+  },
+  {
+    "run_key": "premier-muse-xhigh",
+    "entity": "account",
+    "dimension": "public_voice",
+    "assessment": "improvement",
+    "finding_ids": "F020,F023",
+    "observation": "Recovers MedEvolve voice that Muse-high omitted, directly referenced.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json"
+  },
+  {
+    "run_key": "premier-muse-xhigh",
+    "entity": "account",
+    "dimension": "claim_selection",
+    "assessment": "weakness",
+    "finding_ids": "F008,F021,F026,F028,F029,F025,F022",
+    "observation": "Research gaps, committee inference and legal inference remain in supported factual entries.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json"
+  },
+  {
+    "run_key": "premier-muse-xhigh",
+    "entity": "Todd Greer",
+    "dimension": "evaluation_boundary",
+    "assessment": "not_evaluable",
+    "finding_ids": "",
+    "observation": "Storage interrupted after Exa response; no agent-authored person dossier/narrative exists.",
+    "evidence_path": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/XHIGH.md"
+  }
+]

@@ -1,0 +1,22 @@
+                 job                  |  provider  |       operation       | count |  usd   | credits | media_s 
+--------------------------------------+------------+-----------------------+-------+--------+---------+---------
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | ai_ark     | v1/companies          |     1 | 0.0000 |    0.10 |       0
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | ai_ark     | v1/people             |     6 | 0.0000 |    3.50 |       0
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | ashby      | posting-api/job-board |     1 | 0.0000 |    0.00 |       0
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | exa        | contents              |    62 | 0.0620 |    0.00 |       0
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | exa        | deep-reasoning        |     1 | 0.0250 |    0.00 |       0
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | exa        | search                |    15 | 0.1050 |    0.00 |       0
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | live_http  | careers-page          |     2 | 0.0000 |    0.00 |       0
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | openrouter | chat/completions      |     3 | 0.0288 |    0.00 |       0
+ 2c45b0d9-8f76-5a70-8aaf-ed1bcf3820f2 | youtube    | watch                 |     1 | 0.0000 |    0.00 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | ai_ark     | v1/companies          |     1 | 0.0000 |    0.10 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | ai_ark     | v1/people             |     7 | 0.0000 |    3.50 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | ashby      | posting-api/job-board |     1 | 0.0000 |    0.00 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | exa        | contents              |    63 | 0.0620 |    0.00 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | exa        | deep-reasoning        |     1 | 0.0250 |    0.00 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | exa        | search                |     7 | 0.0490 |    0.00 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | live_http  | careers-page          |     2 | 0.0000 |    0.00 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | openrouter | chat/completions      |     2 | 0.0157 |    0.00 |       0
+ f7dcc6b3-fb5f-5592-a102-8c813d1e8ce6 | rss        | feed                  |     1 | 0.0000 |    0.00 |       0
+(18 rows)
+

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
+from .creative_direction import DirectionReview
 
 JsonObject = Dict[str, Any]
 
@@ -99,6 +100,14 @@ class VisualCritique(BaseModel):
     @classmethod
     def _clamp_confidence(cls, value: float) -> float:
         return min(1.0, max(0.0, value))
+
+
+class SceneVisualCritique(VisualCritique):
+    """Candidate-only review extension; legacy/website serialization stays unchanged."""
+
+    # Rejected critiques can remain incomplete and useful for the next repair.
+    # The runtime requires complete, current coverage only for acceptance.
+    direction_review: DirectionReview | None = None
 
 
 class ClarificationQuestion(BaseModel):

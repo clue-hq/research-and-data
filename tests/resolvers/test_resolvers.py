@@ -360,8 +360,22 @@ def test_contact_binding_is_stamped_from_the_manifest_not_the_placeholder() -> N
     async def _run() -> None:
         async with rollback_conn() as conn:
             workspace_id = await seed_workspace(conn, "ws-test")
-            _bind("crm", [_rf("core.work_email", "jordan@acme.com", 0.9)], Decimal(0))
-            _bind("apollo", [_rf("core.work_email", "alex@acme.com", 0.9)], Decimal(3))
+            # ``core.work_email`` is the registry's ``{address, status}`` object since D4-b
+            # (decision 6); the subject here is the *binding* stamp, so the values just have to be
+            # the shape the field declares. The provider adapters that map this key (clay, apollo,
+            # zoominfo) still normalize a bare address string and are unwired in every production
+            # entrypoint — writing one now fails loudly at the registry instead of storing an
+            # ungradeable address, which is the fail-closed direction.
+            _bind(
+                "crm",
+                [_rf("core.work_email", {"address": "jordan@acme.com", "status": "unverified"})],
+                Decimal(0),
+            )
+            _bind(
+                "apollo",
+                [_rf("core.work_email", {"address": "alex@acme.com", "status": "unverified"})],
+                Decimal(3),
+            )
 
             strong_contact = _contact()
             await resolve_field(
@@ -370,7 +384,7 @@ def test_contact_binding_is_stamped_from_the_manifest_not_the_placeholder() -> N
                 _field(
                     ("crm",),
                     field_key="core.work_email",
-                    value_type="str",
+                    value_type="object",
                     reuse_scope=ReuseScope.TENANT_PRIVATE,
                 ),
                 mode=ResearchMode.CONTACT_PROFILING,
@@ -399,7 +413,7 @@ def test_contact_binding_is_stamped_from_the_manifest_not_the_placeholder() -> N
                 _field(
                     ("apollo",),
                     field_key="core.work_email",
-                    value_type="str",
+                    value_type="object",
                     reuse_scope=ReuseScope.TENANT_PRIVATE,
                 ),
                 mode=ResearchMode.CONTACT_PROFILING,

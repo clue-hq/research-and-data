@@ -1,0 +1,7 @@
+# Approved account/person role openings
+
+- Founder approved the previously shown role/objective/purpose starters for account and person research, explicitly limiting the change to the opening rather than rewriting the full prompts.
+- Added research revision 22 with the approved opening paragraphs. Account intro retains its operative source/evidence policy while removing the historical sentence about verification being deferred in this revision. Replaced its duplicated short assignment intro; person intro replaces the old four-line opening.
+- Verified byte-for-byte that account instructions from `Read the account-dossier skill before preparing Exa's assignment.` onward and person instructions from `Read /research/context.json, /research/person-brief/0.json and /research/capabilities/0.json.` onward are unchanged from r21. No skills, tool contracts, models, runtime behavior or narrative guidance changed. Profile skill pins and programmatically resolved placeholders remain unchanged.
+- New launches select r22; existing r21 and earlier resources remain immutable and available to pinned runs. Accompanying profile/recipe/manifest changes only promote the new prompt version and hashes.
+- Verification: 19 focused offline tests pass (skill placeholders/materialization, current dossier/ownership profiles and launch pins); Ruff and diff whitespace checks pass. No live provider calls, workers, database changes or pushes. Existing unrelated working-tree edits preserved, including the prior briefing skill hash mismatch noted in the placeholder task.

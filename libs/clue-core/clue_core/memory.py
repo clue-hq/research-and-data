@@ -190,6 +190,10 @@ class MemorySubmission(BaseModel):
     claim_refs: tuple[UUID, ...] = ()
     subject_entity_id: UUID | None = None
     creating_quote: str | None = None
+    #: The ``agent_thread`` the note came out of, when a conversation produced it — provenance
+    #: for the surfaces that show a memory next to the thread that said it. ``None`` for the
+    #: writers that have no thread (kickoff, imports, engine-side lifecycle).
+    source_thread_id: str | None = None
 
 
 class MemoryAccepted(BaseModel):
@@ -329,6 +333,47 @@ class MemoryBundle(BaseModel):
         return hashlib.sha256(self.canonical_bytes()).hexdigest()
 
 
+class MemorySelectionPin(BaseModel):
+    """Body-free durable reference to one selection, not permission to read it.
+
+    The caller supplies the trusted request again at resolution. The read seam compares both
+    against the authoritative journal and rechecks eligibility and the complete bundle hash.
+    No body, trigger, or other free-text memory label is persisted here. A changed selection
+    must be selected explicitly; resolving never reranks or silently substitutes entries.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: Literal[1] = 1
+    request: AssemblyRequest
+    journal_id: UUID
+    selected_ids: tuple[str, ...]
+    bundle_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class MemorySelectionStale(BaseModel):
+    """The requested identity or selected meaning no longer matches the journal."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: Literal["stale"] = "stale"
+    reason: Literal["request_mismatch", "journal_mismatch", "bundle_changed"]
+
+
+class MemorySelectionUnavailable(BaseModel):
+    """No memory content is returned; the failure itself contains no memory text."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: Literal["unavailable"] = "unavailable"
+    reason: Literal[
+        "no_requested_types",
+        "memory_disabled",
+        "journal_unavailable",
+        "selected_memory_unavailable",
+    ]
+
+
 @runtime_checkable
 class ContextAssembly(Protocol):
     """The one read path — inject-only in v1 (no search; Doc M §10/§17).
@@ -338,6 +383,24 @@ class ContextAssembly(Protocol):
     """
 
     async def assemble(self, request: AssemblyRequest) -> MemoryBundle | None: ...
+
+    async def select(
+        self, request: AssemblyRequest
+    ) -> MemorySelectionPin | MemorySelectionUnavailable:
+        """Journal one selection and return only a body-free pin (or a typed no-step result)."""
+        ...
+
+    async def resolve(
+        self, request: AssemblyRequest, pin: MemorySelectionPin
+    ) -> MemoryBundle | MemorySelectionStale | MemorySelectionUnavailable:
+        """Resolve exactly the pinned entries; recheck current eligibility and full meaning.
+
+        A successful bundle is ephemeral. Its journal id is the original selection's id; no
+        second journal or selection is created. Label changes (including confirmations) stale
+        the pin, while unrelated additions and bundle-budget changes do not. A switch-off,
+        removed journal, or unavailable selected record yields no bodies, even on retries.
+        """
+        ...
 
 
 # --- write-time reconciliation (the judged part of the write seam) -----------

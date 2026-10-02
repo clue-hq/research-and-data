@@ -1,0 +1,261 @@
+{
+  "zafran": {
+    "pages": [
+      {
+        "url": "https://www.zafran.io",
+        "exa_served": true,
+        "exa_chars": 5536,
+        "live_http": 200,
+        "live_chars": 5963,
+        "live_s": 0.1
+      },
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "exa_served": true,
+        "exa_chars": 5578,
+        "live_http": 200,
+        "live_chars": 6398,
+        "live_s": 0.21
+      },
+      {
+        "url": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+        "exa_served": true,
+        "exa_chars": 4989,
+        "live_http": 200,
+        "live_chars": 5817,
+        "live_s": 0.11
+      },
+      {
+        "url": "https://www.zafran.io/about-us",
+        "exa_served": false,
+        "exa_chars": 0,
+        "live_http": 404,
+        "live_chars": 0,
+        "live_s": 0.17
+      }
+    ],
+    "exa_elapsed_s": 0.65,
+    "exa_statuses": [
+      {
+        "id": "https://www.zafran.io",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.zafran.io/about-us",
+        "status": "error",
+        "error": {
+          "httpStatusCode": 404,
+          "tag": "CRAWL_NOT_FOUND"
+        }
+      }
+    ]
+  },
+  "cogent": {
+    "pages": [
+      {
+        "url": "https://www.cogent.com",
+        "exa_served": true,
+        "exa_chars": 4082,
+        "live_http": 200,
+        "live_chars": 8605,
+        "live_s": 0.36
+      },
+      {
+        "url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+        "exa_served": true,
+        "exa_chars": 6692,
+        "live_http": 200,
+        "live_chars": 8528,
+        "live_s": 0.3
+      },
+      {
+        "url": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+        "exa_served": true,
+        "exa_chars": 6905,
+        "live_http": 200,
+        "live_chars": 16316,
+        "live_s": 0.12
+      }
+    ],
+    "exa_elapsed_s": 0.11,
+    "exa_statuses": [
+      {
+        "id": "https://www.cogent.com",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html",
+        "status": "success",
+        "source": "cached"
+      }
+    ]
+  },
+  "harmonic": {
+    "pages": [
+      {
+        "url": "https://www.harmonic.security",
+        "exa_served": true,
+        "exa_chars": 6680,
+        "live_http": 200,
+        "live_chars": 7868,
+        "live_s": 0.1
+      },
+      {
+        "url": "https://www.harmonic.security/about",
+        "exa_served": true,
+        "exa_chars": 3308,
+        "live_http": 200,
+        "live_chars": 4070,
+        "live_s": 0.16
+      },
+      {
+        "url": "https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+        "exa_served": true,
+        "exa_chars": 1028,
+        "live_http": 200,
+        "live_chars": 5994,
+        "live_s": 0.08
+      }
+    ],
+    "exa_elapsed_s": 0.1,
+    "exa_statuses": [
+      {
+        "id": "https://www.harmonic.security",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.harmonic.security/about",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market",
+        "status": "success",
+        "source": "cached"
+      }
+    ]
+  },
+  "vendelux": {
+    "pages": [
+      {
+        "url": "https://www.vendelux.com",
+        "exa_served": true,
+        "exa_chars": 9000,
+        "live_http": 200,
+        "live_chars": 7955,
+        "live_s": 0.54
+      },
+      {
+        "url": "https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/",
+        "exa_served": true,
+        "exa_chars": 3200,
+        "live_http": 200,
+        "live_chars": 3466,
+        "live_s": 0.3
+      },
+      {
+        "url": "https://www.businessinsider.com/vendelux-just-raised-50-million-to-capitalize-live-b2b-events-2026-7",
+        "exa_served": true,
+        "exa_chars": 1000,
+        "live_http": 200,
+        "live_chars": 7898,
+        "live_s": 0.3
+      }
+    ],
+    "exa_elapsed_s": 0.11,
+    "exa_statuses": [
+      {
+        "id": "https://www.vendelux.com",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.businessinsider.com/vendelux-just-raised-50-million-to-capitalize-live-b2b-events-2026-7",
+        "status": "success",
+        "source": "cached"
+      }
+    ]
+  },
+  "uptiq": {
+    "pages": [
+      {
+        "url": "https://www.uptiq.ai",
+        "exa_served": true,
+        "exa_chars": 6370,
+        "live_http": 200,
+        "live_chars": 7441,
+        "live_s": 0.09
+      },
+      {
+        "url": "https://www.uptiq.ai/about-us",
+        "exa_served": true,
+        "exa_chars": 3922,
+        "live_http": 200,
+        "live_chars": 5926,
+        "live_s": 0.08
+      },
+      {
+        "url": "https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders",
+        "exa_served": true,
+        "exa_chars": 9000,
+        "live_http": 200,
+        "live_chars": 20689,
+        "live_s": 0.53
+      },
+      {
+        "url": "https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows",
+        "exa_served": true,
+        "exa_chars": 4311,
+        "live_http": 200,
+        "live_chars": 5258,
+        "live_s": 0.08
+      }
+    ],
+    "exa_elapsed_s": 0.19,
+    "exa_statuses": [
+      {
+        "id": "https://www.uptiq.ai",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.uptiq.ai/about-us",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders",
+        "status": "success",
+        "source": "cached"
+      },
+      {
+        "id": "https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows",
+        "status": "success",
+        "source": "cached"
+      }
+    ]
+  }
+}

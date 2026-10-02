@@ -71,6 +71,8 @@ from clue_toolbelt import (
     ToolOutput,
 )
 
+from pydantic import Field
+
 from .base import DesignTool
 
 __all__ = [
@@ -229,8 +231,22 @@ class RegisterAssetRecordTool(DesignTool):
 
     def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
         assert isinstance(inputs, RegisterAssetRecordInput)
-        stored = self.host.repository(ctx.workspace_id).create_asset_record(inputs.record)
+        if getattr(inputs, "enrichment", None) is not None:
+            from ..asset_enrichment import register_upload
+            stored = register_upload(ctx.workspace_id, inputs.record, inputs.enrichment)
+        else:
+            stored = self.host.repository(ctx.workspace_id).create_asset_record(inputs.record)
         return _asset_ref(stored)
+
+
+class RegisterAssetRecordV2Input(RegisterAssetRecordInput):
+    enrichment: JsonObject | None = None
+
+
+class RegisterAssetRecordV2Tool(RegisterAssetRecordTool):
+    version = "2"
+    input_model: ClassVar[type[ToolInput]] = RegisterAssetRecordV2Input
+
 
 
 class RegisterQrAssetTool(RegisterAssetRecordTool):
@@ -453,14 +469,20 @@ class DeleteAssetTool(DesignTool):
         return AssetDeletionRef(asset_id=inputs.asset_id, removed_digests=removed)
 
 
+from clue_design.asset_context import AssetContextPatch, AssetOverrides
+
+
 class SetAssetDescriptionInput(ToolInput):
     asset_id: str
-    #: ``None`` means "leave whatever is stored" — this is a PATCH, and the merge is one
-    #: statement in the DAL rather than a read-modify-write across two transactions.
     title: str | None = None
     description: str | None = None
     usage: str | None = None
     tags: list[str] | None = None
+
+
+class SetAssetDescriptionV2Input(SetAssetDescriptionInput, AssetContextPatch):
+    title: str | None = Field(default=None, max_length=120)
+    reset_fields: list[str] = []
 
 
 class SetAssetDescriptionTool(DesignTool):
@@ -495,13 +517,16 @@ class SetAssetDescriptionTool(DesignTool):
 
     def run(self, inputs: ToolInput, ctx: ToolContext) -> ToolOutput:
         assert isinstance(inputs, SetAssetDescriptionInput)
-        from lumen_ingestion.describe import DescriptionStore
-
-        DescriptionStore(workspace_id=ctx.workspace_id).merge_human(
-            inputs.asset_id,
-            title=inputs.title,
-            description=inputs.description,
-            usage=inputs.usage,
-            tags=inputs.tags,
-        )
+        from clue_design import descriptions
+        from ..design_store import DesignStoreBridge
+        values = inputs.model_dump(exclude={"asset_id", "reset_fields"}, exclude_none=True)
+        DesignStoreBridge(ctx.workspace_id)._run(lambda conn: descriptions.patch_overrides(
+            conn, workspace_id=ctx.workspace_id, asset_id=inputs.asset_id,
+            values=values, reset_fields=getattr(inputs, "reset_fields", []),
+        ))
         return AssetDescriptionRef(asset_id=inputs.asset_id, origin="human")
+
+
+class SetAssetDescriptionV2Tool(SetAssetDescriptionTool):
+    version = "2"
+    input_model: ClassVar[type[ToolInput]] = SetAssetDescriptionV2Input

@@ -366,3 +366,16 @@ describe("kitFonts (DOM leg — document.fonts registration)", () => {
     }
   });
 });
+
+it("does not register a font download that completes after its context became stale", async () => {
+  const before = vi.mocked(registerKitFontFaces).mock.calls.length;
+  const completions: Array<(response:Response)=>void> = [];
+  let current = true;
+  const result = loadKitFontFaces({ apiBaseUrl:"http://localhost:8002", isCurrent:()=>current,
+    fetchImpl: (()=>new Promise<Response>(resolve=>completions.push(resolve))) as typeof fetch }, KIT);
+  expect(completions.length).toBe(2);
+  current=false;
+  for(const resolve of completions) resolve(new Response(new Uint8Array([1,2,3])));
+  expect(await result).toBe(false);
+  expect(vi.mocked(registerKitFontFaces).mock.calls.length).toBe(before);
+});

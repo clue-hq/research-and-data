@@ -1,0 +1,65 @@
+{
+  "id": "gen-1787808913-AZISw1PiwpQeYMiUIg2J",
+  "object": "chat.completion",
+  "created": 1787808913,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\"contact_claims\": [{\"entity\": \"contact:mark-hoffman\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"This team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C\", \"evidence_span\": \"This team, just wow! Things are just starting to get exciting at Tennr. Excited to announce our $101M Series C\", \"source_url\": \"https://www.linkedin.com/posts/mark-hoffman-582a5741_this-team-just-wow-things-are-just-starting-activity-7341107094747533312-cdTA\", \"confidence\": 0.98, \"priority\": 1, \"use_class\": \"professional-public\"}, {\"entity\": \"contact:mark-hoffman\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz\", \"evidence_span\": \"Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz\", \"source_url\": \"https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU\", \"confidence\": 0.99, \"priority\": 1, \"use_class\": \"professional-public\"}, {\"entity\": \"contact:mark-hoffman\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"The first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them. The GTM team is inching up towards 20 now, with many more to go.\", \"evidence_span\": \"The first 4 months have been far less easy, which is exactly how it should be. Big problems every day, and some of the smartest, most thoughtful people I've ever worked with showing up to solve them. The GTM team is inching up towards 20 now, with many more to go.\", \"source_url\": \"https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU\", \"confidence\": 0.99, \"priority\": 1, \"use_class\": \"professional-public\"}]}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqj8ySvqrmQdxSA9KGNS36H7umVf-oNMcouojohqxw8rELgjhfWTZt8oWZdYWuiB4BBmLtHum6Sh5rhVkzRd17Z-fE9uxK-syXaJLioGz-VsfWILL_JOPFsgdOjgRwvrxepmn0GF7vxTKD3RD75bgNoaLsWNsopDEwbsMc7LrBbfP3NmVhcSA6r9U9Y9Xc3lJJ2kZi5ARvWeBMUBuxiIe60urLlTnNat_uULQFousIvMdd5ANMlaoz3tlHXL7MVMbov19CKbuTLJDukT62jmX3zMMrmS6QuVxmb6Ph9ZAziVmgHt9K9QNQaK6eMlX7xLlveY13ZR1kKFVnUEq75RexybkilFSVrfUslm06PORUB5tbzDv4d0WZF3dv4z4OzIZmBYvrkoibZiRbZVZnG5lFmKvKyezxSQ1ew8yOeBwPmVVRcPvbKIkjUnzYJrWsX0O3ZlMQStvXgyJanjsy0V1kek3KKa_a0poYUpJRspAZtT4t9dU8eb3e0PMT7qEXueYZxFIX4E2SdPUPJij902eaz6Sp1Wm1KjRjERprDgwRKzyMTGMmPejR31kzBOGNNYipEKtROZvN3TlUxV1PNhC8Ho8Gz35erqOHyDnBiS6qBupUyDJ2SekWqiF4Xngaa6bpkMibq6US-Mv91uPdyO9p5sblVvek5z_xC8foT26jn4M2bR5pZ5hHpFDTWs0KxwqRDtD1knZ50vI8W9yYtlxNehfaSxoTubrxLdexHQeG8wZzLrkXbVtPmt4NXtL9MxQ4JXrTk_vcehKLsuY230tybv3QnXhOMmgcMcIkAYTNmLjvqHPv4TLLpmc9ipYfAJImIGWig-HxZBw_Vb_yrX6ObGov7PypBG21p_Ll5gzLlmNrJlEVtXs8X9AtEt_J4fFzJKv6MknlxRBlKrVsqStP0a5n20i3wC78cMTSh140qOBv2ROgnJyWn7FdQRv8COT0WQA7-ZcozEdCKhpABVALkylaDHAnWob1dUE8jSm29rWyRYUrltoDWv2MdmRxUe-Oy1QzQtIKeGhFu8Q8fF7vPFnUR8Iv1cLempE8WfZ-D56ACuQU6jAn2Hzu-TwIipoKXLveeE7h5_HSDbhDRmWXNu8avHscucftLxdvCJGBgM9NP1hjp8P-Gn0-Y4MWe1FBtlGJuLVjrSZRoQdC1e-CyiieWXNCN4-ExxRUNqAJBGVN5wXPC6zylbZpueeLTulr90XXz9jlovLVxoCmAbzNW-faGsWPZ7WTI6P9P7EBRIkDPcZ9ePID6bguVKhFi-5VnXFFPPOogux3FJIcaCN33VeoMEi9s_3_7tJdVIlUr4JzfjJ43QYm0FwB0Djj_3zya0azIihJGBnqF06n8a61EmUJ5c6PhHM_El5BMPWGR0LaAGoSHefqbpWN1FEhgdwN-5yxBvI28sOo4cl5Q5dLEY_E_A==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_070fe928f23cdb9a016a8fcc92d31887d0afdf730e0c80afc3",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3657,
+    "completion_tokens": 566,
+    "total_tokens": 4223,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00204625,
+      "upstream_inference_prompt_cost": 0.00091425,
+      "upstream_inference_completions_cost": 0.001132
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 6.4,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 15131,
+    "response_format": {
+      "type": "json_object"
+    }
+  }
+}

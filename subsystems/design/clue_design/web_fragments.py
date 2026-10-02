@@ -222,6 +222,29 @@ async def insert_web_fragment(
             },
         )
         row = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
+    # Ingestion publishes automatically approved kits before minting their sections. Apply
+    # that exact version's release policy to late arrivals and replayed captures as well.
+    # Reuse the cascade so dormant, deprecated and individually reviewed repairs stay untouched.
+    if row["status"] == FRAGMENT_STATUS_DRAFT and row["derived_from"] is None:
+        kit_approved = (
+            await conn.execute(
+                text(
+                    "SELECT approval_status = 'approved' FROM design_brand_kit"
+                    " WHERE workspace_id = :w AND brand_kit_id = :k AND version = :v"
+                    " FOR SHARE"
+                ),
+                {"w": workspace_id, "k": row["source_kit_id"], "v": row["source_kit_version"]},
+            )
+        ).scalar_one_or_none()
+        if kit_approved:
+            await sync_kit_fragment_approval(
+                conn,
+                workspace_id=workspace_id,
+                brand_kit_id=row["source_kit_id"],
+                brand_kit_version=row["source_kit_version"],
+                approved=True,
+            )
+            row = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
     return row
 
 
@@ -319,9 +342,7 @@ async def get_web_fragment(
     conn: AsyncConnection, *, workspace_id: str, fragment_id: str
 ) -> JsonObject:
     """One fragment row, or the fail-closed refusal (absent OR another tenant's)."""
-    row = await find_web_fragment(
-        conn, workspace_id=workspace_id, fragment_id=fragment_id
-    )
+    row = await find_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
     if row is None:
         raise DesignNotFoundError("design_web_fragment", fragment_id)
     return row

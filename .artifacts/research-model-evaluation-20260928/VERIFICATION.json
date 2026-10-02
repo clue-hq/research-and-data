@@ -1,0 +1,14 @@
+{
+  "runs": 11,
+  "job_rows": 26,
+  "failure_observations": 34,
+  "sheets": 8,
+  "native_hyperlinks": 361,
+  "missing_local_links": 0,
+  "markdown_links_checked": 74,
+  "formula_errors": [],
+  "formula_count": 34,
+  "cost_total_usd": 73.2619105276,
+  "ai_ark_credits": 23.600000000000005,
+  "verification": "All sheets rendered and visually reviewed; cost components and cached totals reconciled; hyperlinks checked for serialized targets and local existence. Native Excel click-through not exercised."
+}

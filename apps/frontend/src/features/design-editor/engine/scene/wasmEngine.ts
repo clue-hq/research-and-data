@@ -1,3 +1,4 @@
+import type { RenderContext } from "./renderContext";
 import type {
   AssetId,
   AssetRecord,
@@ -38,6 +39,8 @@ import { defaultDesignFetch } from "../config";
 export interface WasmEngineInstance {
   loadScene(sceneJson: string): void;
   sceneJson(): string;
+  setRenderContext?(contextJson: string): string;
+  presentationJson?(): string;
   applyOperations(operationsJson: string): string;
   applyStructuredEdit(editJson: string): string;
   compileDslBlock(source: string): string;
@@ -50,10 +53,23 @@ export interface WasmEngineInstance {
   free?(): void;
 }
 
+/** Plan 4 item F: one CanvasKit line box, paragraph-relative and measured
+ * LEFT-aligned — the shape `SkiaTextMeasurer` reports, so the engine places it
+ * by `align`/`valign` itself. */
+export interface TextMeasurementLine {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  baseline: number;
+}
+
 /** Wave 3 C4: one editor-measured (SkParagraph) text metric. The engine keys
  * each by the measurement input it lays out with, so providing these makes
  * text `computed` Skia-faithful (measure-then-inject). */
 export interface TextMeasurement {
+  node_id?: string;
+  font_size_override?: number | null;
   content: string;
   font_family: string;
   font_size: number;
@@ -63,8 +79,8 @@ export interface TextMeasurement {
   wrap: "no_wrap" | "wrap";
   max_lines: number | null;
   direction: "ltr" | "rtl" | "auto";
-  max_width?: number;
-  max_height?: number;
+  max_width?: number | null;
+  max_height?: number | null;
   /** A6a: geometry-affecting typography fields. They enter the engine's
    * `measure_key`, so an override for a node using them must carry them or the
    * layout lookup misses. Optional so pre-A6a payloads deserialize unchanged. */
@@ -83,9 +99,16 @@ export interface TextMeasurement {
    * Omitted for spanless nodes (serde `#[serde(default)]` → empty), keeping
    * pre-A6b payloads byte-identical. */
   spans?: TextSpan[];
+  /** Plan 4 item F: the painted line boxes measured at this record's
+   * `max_width` (see `skiaLineMeasurements`). Optional so every pre-Plan-4
+   * record keeps its shape (the engine's `ProvidedMeasurement.lines` is
+   * `#[serde(default)]`). */
+  lines?: TextMeasurementLine[];
   width: number;
   height: number;
 }
+
+export type TextMeasurementInput = Omit<TextMeasurement, "width" | "height" | "lines">;
 
 /** Wave 3 C3a: point→node hit result in absolute page space (scene units).
  * `hit` is the topmost node (single-click target); `stack` is bottom-to-top
@@ -122,9 +145,18 @@ export interface SceneDelta {
   export_profiles?: ExportProfile[];
 }
 
+export interface Derivation {
+  context_key: string | null;
+  input_revision: number;
+  status: "ready" | "pending" | "unavailable" | "invalid";
+  diagnostics: Diagnostic[];
+}
+
 export interface EngineApplyOutcome {
   accepted: boolean;
   scene: Scene;
+  presentationScene?: Scene;
+  derivation?: Derivation;
   message?: string;
   code?: string;
   diagnostics: Diagnostic[];
@@ -213,6 +245,8 @@ export class WasmEngine implements OptimisticEnginePort {
   readonly version: EngineVersionInfo;
   private readonly instance: WasmEngineInstance;
   private snapshot: Scene;
+  private presentationSnapshot: Scene;
+  derivation: Derivation = { context_key: null, input_revision: 0, status: "ready", diagnostics: [] };
 
   constructor(module: WasmModule, initialScene: Scene) {
     this.instance = new module.LumenEngine(JSON.stringify(initialScene));
@@ -221,11 +255,43 @@ export class WasmEngine implements OptimisticEnginePort {
     // the raw input — otherwise the editor renders a scene whose computed
     // geometry disagrees with the engine's (the coordinate-model desync).
     this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    this.presentationSnapshot = this.snapshot;
+    this.readPresentation();
     this.version = JSON.parse(module.engineVersion()) as EngineVersionInfo;
   }
 
   get scene(): Scene {
     return this.snapshot;
+  }
+
+  /** Resolved read-only input for paint, measurement and effective inspector reads. */
+  get presentationScene(): Scene { return this.presentationSnapshot; }
+
+  private readPresentation(): void {
+    if (!this.instance.presentationJson) { this.presentationSnapshot = this.snapshot; return; }
+    const { scene, ...derivation } = JSON.parse(this.instance.presentationJson()) as Derivation & { scene: Scene };
+    this.presentationSnapshot = scene;
+    this.derivation = derivation;
+  }
+
+  setRenderContext(context: RenderContext | null): void {
+    if (!this.instance.setRenderContext) {
+      this.derivation = { context_key: null, input_revision: this.derivation.input_revision + 1,
+        status: "unavailable", diagnostics: [{ severity: "error", phase: "brand",
+          code: "EDITOR_RENDER_CONTEXT_UNSUPPORTED", message: "Browser engine must be rebuilt for canonical render context.",
+          subject: { kind: "document" }, hint: null }] };
+      return;
+    }
+    this.instance.setRenderContext(JSON.stringify(context));
+    this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    this.readPresentation();
+  }
+
+  private mergePresentation(result: { presentation_delta?: SceneDelta; derivation?: Derivation }): void {
+    if (result.derivation) {
+      this.presentationSnapshot = applySceneDelta(this.presentationSnapshot, result.presentation_delta ?? {});
+      this.derivation = result.derivation;
+    } else { this.presentationSnapshot = this.snapshot; }
   }
 
   reset(scene: Scene): void {
@@ -235,6 +301,7 @@ export class WasmEngine implements OptimisticEnginePort {
     // server's Skia computed directly — which would jump text on every
     // reconcile. Geometry stays coherent and jump-free across the session.
     this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    this.readPresentation();
   }
 
   /**
@@ -252,9 +319,17 @@ export class WasmEngine implements OptimisticEnginePort {
    * override (back to the heuristic). The relaid scene is adopted as the
    * render snapshot.
    */
-  setMeasurements(measurements: TextMeasurement[]): void {
-    this.instance.setMeasurements(JSON.stringify(measurements));
+  setMeasurements(measurements: TextMeasurement[], expectedRevision = this.derivation.input_revision): TextMeasurementInput[] {
+    if (expectedRevision !== this.derivation.input_revision) throw new Error("Stale presentation measurement rejected");
+    const ack = JSON.parse(this.instance.setMeasurements(JSON.stringify(measurements))) as {
+      ok: boolean;
+      missing?: TextMeasurementInput[];
+      error?: { message: string };
+    };
+    if (!ack.ok) throw new Error(ack.error?.message ?? "Text measurements were rejected");
     this.snapshot = JSON.parse(this.instance.sceneJson()) as Scene;
+    this.readPresentation();
+    return ack.missing ?? [];
   }
 
   /**
@@ -272,12 +347,16 @@ export class WasmEngine implements OptimisticEnginePort {
       diagnostics?: Diagnostic[];
       inverse_operations?: Operation[] | null;
       delta?: SceneDelta;
+      presentation_delta?: SceneDelta;
+      derivation?: Derivation;
       error?: { code: string; message: string };
     };
     if (!result.ok) {
       return {
         accepted: false,
         scene: this.snapshot,
+        presentationScene: this.presentationSnapshot,
+        derivation: this.derivation,
         message: result.error?.message ?? "operation batch rejected by the engine",
         code: result.error?.code,
         diagnostics: result.diagnostics ?? [],
@@ -286,9 +365,12 @@ export class WasmEngine implements OptimisticEnginePort {
       };
     }
     this.snapshot = applySceneDelta(this.snapshot, result.delta ?? {});
+    this.mergePresentation(result);
     return {
       accepted: true,
       scene: this.snapshot,
+      presentationScene: this.presentationSnapshot,
+      derivation: this.derivation,
       diagnostics: result.diagnostics ?? [],
       inverseOperations: result.inverse_operations ?? null,
       appliedOperations: result.applied_operations ?? 0
@@ -303,12 +385,16 @@ export class WasmEngine implements OptimisticEnginePort {
       operations?: Operation[];
       edit?: EngineEditMetadata;
       delta?: SceneDelta;
+      presentation_delta?: SceneDelta;
+      derivation?: Derivation;
       error?: { code: string; message: string };
     };
     if (!result.ok) {
       return {
         accepted: false,
         scene: this.snapshot,
+        presentationScene: this.presentationSnapshot,
+        derivation: this.derivation,
         message: result.error?.message ?? "structured edit rejected by the engine",
         code: result.error?.code,
         diagnostics: result.diagnostics ?? [],
@@ -319,9 +405,12 @@ export class WasmEngine implements OptimisticEnginePort {
       };
     }
     this.snapshot = applySceneDelta(this.snapshot, result.delta ?? {});
+    this.mergePresentation(result);
     return {
       accepted: true,
       scene: this.snapshot,
+      presentationScene: this.presentationSnapshot,
+      derivation: this.derivation,
       diagnostics: result.diagnostics ?? [],
       inverseOperations: result.edit?.inverse_operations ?? null,
       appliedOperations: result.applied_operations ?? 0,

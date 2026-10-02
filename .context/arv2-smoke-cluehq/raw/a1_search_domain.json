@@ -1,0 +1,28 @@
+{
+  "requestId": "c2ac83f45b17b546c693e4be6e256be7",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://cluehq.ai/",
+      "title": "Clue - Agentic ABM for modern GTM teams",
+      "url": "https://cluehq.ai/"
+    }
+  ],
+  "searchTime": 1054,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.12,
+  "_request": {
+    "query": "Clue agentic ABM platform",
+    "type": "auto",
+    "numResults": 10,
+    "includeDomains": [
+      "cluehq.ai"
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+2026-09-09 21:06:03 [info     ] storage.backend.configured     backend=fs fs_root=/Users/aryankeshri/conductor/workspaces/research-and-data/san-salvador/.artifacts
+2026-09-09 21:06:03 [info     ] arv2.person_research_launched  people=2 project_id=prj_arv2_answer_key replayed=False run_id=4900b571-9b74-5058-8280-eab079b5b5e8
+2026-09-09 21:06:03 [info     ] arv2.account_research_enqueued accepted=2 offered=2 run_id=4900b571-9b74-5058-8280-eab079b5b5e8
+{
+  "directive": "R3 acceptance",
+  "enqueued": 2,
+  "job_ids": [
+    "8be554e1-667a-57f0-8179-3f3e8ad21f0e",
+    "c54cccb7-94bc-584d-9e7b-828a9c525386"
+  ],
+  "people": {
+    "034de76e-06e7-48b2-8141-11aa664da79c": "Nick Fisher",
+    "e350cdd7-324c-43b3-bc4a-722d687ae58c": "Tom Anthony"
+  },
+  "project_run_id": "0a2f18b6-1509-514a-8003-16397100c06b",
+  "replayed": false,
+  "run_id": "4900b571-9b74-5058-8280-eab079b5b5e8"
+}

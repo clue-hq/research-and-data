@@ -30,8 +30,21 @@ import pytest
 from clue_storage import FsStorage
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from py_lumen_config import settings
 
 from lumen_api.design_store import DesignBlobStore
+
+
+# --- D9: no test in this suite may reach the Brandfetch vendor --------------------------------
+# The repo-root `.env` can carry a REAL Brandfetch key, and the command that runs this suite
+# sources it, so an un-patched `fetch_vendor_family` would spend live quota against a live API.
+# It reads `settings.brandfetch_api_key` at CALL time (lumen_ingestion/logo_vendor.py), so
+# blanking the field here makes it raise `VendorCredentialsMissing` for every test that has not
+# deliberately supplied a key. The vendor suite passes `api_key=` explicitly (or asserts on the
+# blank-key refusal), so it is untouched by this.
+@pytest.fixture(autouse=True)
+def _brandfetch_vendor_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "brandfetch_api_key", "")
 
 
 @pytest.fixture(autouse=True)
@@ -161,6 +174,52 @@ def make_client(app: FastAPI) -> TestClient:
     the queue would sit `queued` for the whole test. Adapting this one helper keeps every async-
     turn test unchanged; the autouse fixture above owns the matching exit.
     """
+    # Production ingestions now have separate execution capacity. Test hosts compose the
+    # same two handlers in distinct workers, retaining in-process capture/provider stubs.
+    # Real OS-process isolation and 4x10 concurrency are exercised by test_ingestion_pool_db.
+    import asyncio
+    from clue_fleet import LeasedWorkWorker
+    from lumen_api.fleet_handler import DesignTurnHost, build_design_job_handler
+    from lumen_api.ingestion_tasks import AssetAnalysisWorkHandler
+
+    original_lifespan = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def with_ingestion_workers(instance):
+        async with original_lifespan(instance):
+            if not settings.lumen_embedded_fleet_worker:
+                yield
+                return
+
+            def host():
+                return DesignTurnHost(
+                    storage=instance.state.storage,
+                    engine_cache_root=instance.state.engine_cache_root,
+                )
+            workers = [
+                LeasedWorkWorker(
+                    handlers=(build_design_job_handler(host_provider=host, ingestion_only=True),),
+                    concurrency=1, poll_interval=0.05,
+                ),
+                LeasedWorkWorker(
+                    handlers=(AssetAnalysisWorkHandler(
+                        storage=instance.state.storage,
+                        engine_cache_root=instance.state.engine_cache_root,
+                    ),),
+                    concurrency=10, poll_interval=0.05,
+                ),
+            ]
+            tasks = [asyncio.create_task(worker.run()) for worker in workers]
+            try:
+                yield
+            finally:
+                for worker in workers:
+                    worker.stop()
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+    app.router.lifespan_context = with_ingestion_workers
     client = TestClient(app, headers={"X-Workspace-Id": os.environ["LUMEN_DEV_WORKSPACE_ID"]})
     client.__enter__()
     _LIFESPAN_CLIENTS.append(client)
@@ -169,6 +228,57 @@ def make_client(app: FastAPI) -> TestClient:
 
 @pytest.fixture()
 def workspace_id(_isolated_design_workspace: str) -> str:
-    """This test's workspace — needed by the O6b public publish routes, whose tenant comes from
-    the PATH (``/w/{workspace_id}/p/{slug}``) because a public visitor sends no header."""
+    """This test's workspace — the tenant a publish row is written under and read back with."""
     return _isolated_design_workspace
+
+
+# --- Reading a publish the way the page origin does -------------------------------------------
+# Custom-domain publishing S1 DELETED the design API's interim O6b serving routes
+# (``/w/{ws}/p-assets/{name}``, ``/w/{ws}/p/{slug}/manifest.json``, ``/w/{ws}/p/{slug}``): the
+# page origin serves published pages now, and its own suite (``tests/page_origin/test_routes.py``)
+# owns the serving contract. The design suites still need to assert WHAT was published, so they
+# read the durable publish row directly instead of GETting a route that no longer exists.
+
+
+def published(workspace_id: str, slug: str) -> dict | None:
+    """The publish row as the page origin would read it (custom-domain publishing S1 deleted the
+    design API's interim `/w/{ws}/p/{slug}` serving routes; suites read the row instead)."""
+    from lumen_api.design_store import HybridRepository
+
+    return HybridRepository(workspace_id=workspace_id, ensure_workspace=False).get_web_publish(slug)
+
+
+def is_served(workspace_id: str, slug: str) -> bool:
+    row = published(workspace_id, slug)
+    return row is not None and row["status"] == "active"
+
+
+def published_html(workspace_id: str, slug: str) -> str:
+    row = published(workspace_id, slug)
+    assert row is not None and row["status"] == "active", f"no active publish at {slug!r}"
+    return str(row["html"])
+
+
+def published_manifest(workspace_id: str, slug: str) -> dict:
+    row = published(workspace_id, slug)
+    assert row is not None and row["status"] == "active", f"no active publish at {slug!r}"
+    manifest = row.get("manifest")
+    assert isinstance(manifest, dict)
+    return manifest
+
+
+def published_page(workspace_id: str, slug: str, route: str) -> dict | None:
+    """One served route of a multi-page site (F5), as the page origin would read it: the page
+    row the last publish materialized, or ``None`` when the site serves no such route."""
+    from lumen_api.design_store import HybridRepository
+
+    return HybridRepository(workspace_id=workspace_id, ensure_workspace=False).get_web_publish_page(
+        slug, route
+    )
+
+
+def published_page_html(workspace_id: str, slug: str, route: str) -> str:
+    assert is_served(workspace_id, slug), f"no active publish at {slug!r}"
+    page = published_page(workspace_id, slug, route)
+    assert page is not None, f"site {slug!r} serves no route {route!r}"
+    return str(page["html"])

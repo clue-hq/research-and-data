@@ -43,7 +43,7 @@ exclude = ["subsystems/clue-design"]
 line-length = 100
 target-version = "py312"
 src = ["subsystems", "platform", "tests", "libs"]
-extend-exclude = ["subsystems/clue-design"]
+extend-exclude = ["subsystems/clue-design", ".context", "docs/superpowers/drafts"]
 
 [tool.ruff.lint]
 # T20 (flake8-print): `print` is banned outside the sanctioned CLI/demo surfaces — structured
@@ -55,17 +55,22 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4", "T20"]
 "subsystems/research/clue_research/evals/**" = ["T20"]
 "subsystems/research/clue_research/verification/eval_cli.py" = ["T20"]
 "subsystems/design/clue_design/evals/__main__.py" = ["T20"]
+# The operating-manual builder: `make manual` / `make manual-check` tell an operator which
+# chapters were written or which are stale, on stdout, the way every other build target does.
+"platform/agents/clue_agents/manual/build.py" = ["T20"]
+"platform/agents/clue_agents/manual/fields_snapshot.py" = ["T20"]
+"platform/api/clue_api/manual_build.py" = ["T20"]
 "scripts/**" = ["T20"]
 "tests/**" = ["T20"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_api", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections"]
+known-first-party = ["clue_research", "clue_obs", "clue_core", "clue_spend", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_api", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_page_origin"]
 
 # --- mypy: static type checking (with the pydantic plugin) ------------------
 [tool.mypy]
 python_version = "3.12"
-files = ["subsystems/research/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core", "libs/clue-db/clue_db", "libs/clue-config/clue_config", "libs/clue-gateway/clue_gateway", "libs/clue-locks/clue_locks", "libs/clue-spine/clue_spine", "libs/clue-storage/clue_storage", "subsystems/memory/clue_memory", "subsystems/content/clue_content", "subsystems/design/clue_design", "platform/auth/clue_auth", "platform/toolbelt/clue_toolbelt", "platform/agents/clue_agents", "platform/execution/clue_execution", "platform/fleet/clue_fleet", "platform/projections/clue_projections", "platform/api/clue_api"]
-mypy_path = "subsystems/research:subsystems/memory:subsystems/content:subsystems/design:platform/auth:platform/toolbelt:platform/agents:platform/execution:platform/fleet:platform/projections:platform/api:libs/clue-obs:libs/clue-core:libs/clue-db:libs/clue-config:libs/clue-gateway:libs/clue-locks:libs/clue-spine:libs/clue-storage"
+files = ["subsystems/research/clue_research", "libs/clue-obs/clue_obs", "libs/clue-core/clue_core", "libs/clue-db/clue_db", "libs/clue-config/clue_config", "libs/clue-gateway/clue_gateway", "libs/clue-locks/clue_locks", "libs/clue-spine/clue_spine", "libs/clue-storage/clue_storage", "libs/clue-spend/clue_spend", "subsystems/memory/clue_memory", "subsystems/content/clue_content", "subsystems/design/clue_design", "platform/auth/clue_auth", "platform/toolbelt/clue_toolbelt", "platform/agents/clue_agents", "platform/execution/clue_execution", "platform/fleet/clue_fleet", "platform/projections/clue_projections", "platform/api/clue_api", "platform/page_origin/clue_page_origin"]
+mypy_path = "libs/clue-spend:subsystems/research:subsystems/memory:subsystems/content:subsystems/design:platform/auth:platform/toolbelt:platform/agents:platform/execution:platform/fleet:platform/projections:platform/api:libs/clue-obs:libs/clue-core:libs/clue-db:libs/clue-config:libs/clue-gateway:libs/clue-locks:libs/clue-spine:libs/clue-storage:platform/page_origin"
 explicit_package_bases = true
 namespace_packages = true
 strict = true
@@ -110,8 +115,11 @@ ignore_missing_imports = true
 # Same stance as the SDK boundaries above: the handler is duck-typed at the seam against the
 # `WorkHandler` protocol, whose kind is re-checked at construction, so nothing is silently
 # unchecked — the protocol conformance is enforced at runtime instead of statically.
+# `lumen_agent.*` joined it in lane 3 slice 5: the leg lane lazy-imports
+# `lumen_agent.usage_collector.TurnCallbacks` to hand the design side its per-turn Langfuse
+# handler — same tree, same missing marker, same duck-typed seam.
 [[tool.mypy.overrides]]
-module = ["lumen_api.*"]
+module = ["lumen_agent.*", "lumen_api.*"]
 follow_imports = "skip"
 ignore_missing_imports = true
 
@@ -119,12 +127,24 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# This is the configfile for the clue-design suites too (they run from
+# `subsystems/clue-design` but pytest walks up to this rootdir). `fastapi.testclient`
+# raises this at IMPORT, once per run, and the design suites' shared conftest imports it
+# — pre-existing third-party noise with no action for us until fastapi ships httpx2.
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient`:starlette.exceptions.StarletteDeprecationWarning:fastapi.testclient",
+    # SWIG registers its helper types when `pymupdf` is first imported (the design ladder's lazy
+    # `logo_ladder._rasterize` import), and Python 3.12 warns about each. Third-party, nothing to
+    # act on. The message field is a regex; no module qualifier because it is raised from
+    # `<frozen importlib._bootstrap>`, not from pymupdf itself.
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+]
 
 # --- import-linter: the executable form of the modular-boundary rules -------
 # These five contracts ARE the M0.1 deliverable: they make "any component is replaceable without
 # breaking its neighbours" a machine-checked fact. Run via `make contracts` (and in CI).
 [tool.importlinter]
-root_packages = ["clue_research", "clue_core", "clue_obs", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_api"]
+root_packages = ["clue_research", "clue_core", "clue_obs", "clue_spend", "clue_db", "clue_config", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_auth", "clue_memory", "clue_content", "clue_design", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections", "clue_api", "clue_page_origin"]
 include_external_packages = true  # required so provider-SDK (external) imports can be forbidden
 
 [[tool.importlinter.contracts]]
@@ -252,6 +272,7 @@ source_modules = [
     "clue_gateway",
     "clue_locks",
     "clue_spine",
+    "clue_spend",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
@@ -319,6 +340,7 @@ source_modules = [
     "clue_db",
     "clue_locks",
     "clue_spine",
+    "clue_spend",
     "clue_research.evals",
     "clue_research.claimstore",
     "clue_research.identity",
@@ -353,12 +375,64 @@ ignore_imports = [
     "clue_api.agent_model_wiring -> clue_gateway",
 ]
 
+# Lane 3 slice 3 — the Langfuse SDK lives only behind ``clue_obs.langfuse`` (the client and every
+# platform-side helper) and ``clue_api.langfuse_callbacks`` (the LangChain adapter, which needs
+# ``langchain_core`` and so cannot live in the base library). Everything else reaches Langfuse
+# through those two modules' no-op-when-off helpers.
+[[tool.importlinter.contracts]]
+name = "the Langfuse SDK lives only behind clue_obs.langfuse and clue_api.langfuse_callbacks"
+type = "forbidden"
+source_modules = [
+    "clue_research",
+    "clue_core",
+    "clue_config",
+    "clue_obs",
+    "clue_db",
+    "clue_gateway",
+    "clue_locks",
+    "clue_spine",
+    "clue_storage",
+    "clue_spend",
+    "clue_auth",
+    "clue_memory",
+    "clue_content",
+    "clue_design",
+    "clue_toolbelt",
+    "clue_agents",
+    "clue_execution",
+    "clue_fleet",
+    "clue_projections",
+    "clue_api",
+]
+forbidden_modules = ["langfuse"]
+# External imports are squashed to their top-level package by grimp
+# (``include_external_packages``), so the adapter's ``from langfuse.langchain import ...`` is
+# recorded — and must be exempted — as the edge to ``langfuse``.
+ignore_imports = [
+    "clue_obs.langfuse -> langfuse",
+    "clue_api.langfuse_callbacks -> langfuse",
+]
+
 # Rule 2b — libs are subsystem-agnostic: no lib may import the research subsystem (or api).
 [[tool.importlinter.contracts]]
 name = "libs never import the subsystem"
 type = "forbidden"
-source_modules = ["clue_core", "clue_config", "clue_obs", "clue_db", "clue_gateway", "clue_locks", "clue_spine", "clue_storage"]
+source_modules = ["clue_core", "clue_config", "clue_obs", "clue_db", "clue_gateway", "clue_locks", "clue_spine", "clue_storage", "clue_spend"]
 forbidden_modules = ["clue_research", "clue_api"]
+
+# Rule 2e (lane 3 slice 5) — the provider-caller seam is importable by ANY subsystem. It is the one
+# place a paid call is estimated, recorded raw and settled onto `provider_call_ledger`, so the
+# design subsystem imports it directly rather than growing a second implementation. That only works
+# while it stays a leaf: it may reach the shared base (core / obs / storage) and SQLAlchemy, and
+# nothing else. A `clue_api` import here would drag the whole composition root into the design app;
+# a `clue_research` or `clue_projections` import would make the seam a research dependency. The
+# design tree's own `lumen_*` packages are outside import-linter's roots, so the source-level guard
+# in `tests/spend/test_package_boundary.py` covers those two names.
+[[tool.importlinter.contracts]]
+name = "the spend seam imports no platform or subsystem internals"
+type = "forbidden"
+source_modules = ["clue_spend"]
+forbidden_modules = ["clue_api", "clue_research", "clue_projections", "clue_agents", "clue_toolbelt", "clue_execution", "clue_fleet", "clue_memory", "clue_content", "clue_design", "clue_gateway", "clue_locks", "clue_spine"]
 
 # Rule 2c — the object spine imports only core + db (mirrors clue-config's Rule 1b): row models +
 # plain CRUD, no config/gateway/locks/obs reach and never the subsystem.
@@ -391,6 +465,7 @@ source_modules = [
     "clue_gateway",
     "clue_locks",
     "clue_spine",
+    "clue_spend",
     "clue_storage.protocol",
     "clue_storage.fs",
     "clue_storage.factory",
@@ -573,6 +648,14 @@ forbidden_modules = [
     "clue_projections",
 ]
 
+# Custom-domain publishing S1 — the page origin reads the spine, the design DAL and storage; never a
+# capability plane, the research subsystem, or the two API apps.
+[[tool.importlinter.contracts]]
+name = "page origin imports only core + config + db + obs + spine + design + storage"
+type = "forbidden"
+source_modules = ["clue_page_origin"]
+forbidden_modules = ["clue_research", "clue_api", "clue_auth", "clue_gateway", "clue_locks", "clue_memory", "clue_content", "clue_toolbelt", "clue_agents", "clue_execution", "clue_fleet", "clue_projections"]
+
 # Rule 3c — the source registry's binding seam is one-directional. Resolvers register THEMSELVES
 # into the registry (resolvers -> sources via bind_resolver), so sources must NOT import resolvers —
 # that would invert the seam and let the registry learn a concrete provider exists. This is a
@@ -643,6 +726,7 @@ source_modules = [
     "clue_locks",
     "clue_spine",
     "clue_storage",
+    "clue_spend",
     "clue_research",
     "clue_memory",
     "clue_content",

@@ -14,7 +14,10 @@ The five defects and where each stands:
   hard layer budget`` and the session bricked with HTTP 422. Reference numbers from the failing run
   ``trial-63553478967758a6`` (spec §1): stage 32,178 B + readiness 15,889 B + budget 140 B =
   48,207 B; this fixture measured ~60,000 B at 26/24. Required L3 is now the bounded project card
-  plus the budget envelope, and the same project assembles.
+  plus the budget envelope, and the same project assembles. (Since the founder's ruling of
+  2026-09-14 no layer budget can raise at all — budgets are tracked, never enforced — so the
+  assertion below is no longer a guard against a live 422. It is kept as what it always measured:
+  that the bounded card is small, which is why it is worth having whether or not it is policed.)
 * **Readiness duplication — FIXED (1.1/1.3).** The stage artifact embedded
   ``current_truth.readiness_decisions`` and the readiness artifact serialized the identical list
   again. The card carries the latest authoritative decision per gate plus a ledger *length*.
@@ -492,7 +495,7 @@ def test_the_required_l3_bundle_now_fits_its_hard_budget_at_the_same_interview_l
         assert card_ref.media_type == STAGE0_PROJECT_CARD_MEDIA_TYPE
         assert card_ref.byte_count <= STAGE0_CARD_POLICY_V1.max_card_bytes
         assert required_bytes < budget, (
-            "expected the required L3 bundle to fit its budget "
+            "expected the required L3 bundle to fit the size its budget reports "
             f"(card={card_ref.byte_count} budget_envelope={budget_ref.byte_count} "
             f"total={required_bytes} limit={budget})"
         )

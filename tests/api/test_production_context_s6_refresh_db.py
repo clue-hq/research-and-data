@@ -26,7 +26,11 @@ from clue_research.stage0 import (
 )
 from clue_research.stage0.fields import CLIENT_PRODUCT_OVERVIEW, CLIENT_VALUE_PROP
 from clue_storage import FsStorage
-from tests.api.test_production_context_s3_db import _runner, _seed_post_recon
+from tests.api.test_production_context_s3_db import (
+    _pinned_documents,
+    _runner,
+    _seed_post_recon,
+)
 from tests.api.test_production_context_s31_scope_pin_db import _capture_submission
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
@@ -240,21 +244,24 @@ def test_interview_claims_publish_scope_correct_versions_for_only_the_next_turn(
             assert pin_next_b.client_kb_version == published.client_kb_version
             assert pin_next_b.product_kb_version is None
 
-            # The project statement is visible only in Project A's independently compiled state.
-            runner = _runner(artifacts=artifacts, conn_factory=factory)
-            bundle_a = await runner._compose_project_context(
-                submission=next_a,
-                scope=_ProjectScope.from_pin(pin_next_a),
+            # The project statement belongs to Project A alone. Asserted at its durable source:
+            # since ARV2 onboarding O6 (ruling D5) the production conversation no longer compiles
+            # a Stage-0 project-state card, so the isolation is read from the statement rows the
+            # compiler itself reads (the card's own per-project isolation is owned by
+            # ``tests/projections/test_production_context_db.py``).
+            statement_projects = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT project_id FROM volunteered_statement "
+                            "WHERE workspace_id=:workspace AND route_kind='project_state' "
+                            "AND route_key='project.goal'"
+                        ),
+                        {"workspace": seeded.workspace_id},
+                    )
+                ).scalars()
             )
-            bundle_b = await runner._compose_project_context(
-                submission=next_b,
-                scope=_ProjectScope.from_pin(pin_next_b),
-            )
-            stage_a = bundle_a.artifact("stage0_project_state")
-            stage_b = bundle_b.artifact("stage0_project_state")
-            assert stage_a is not None and stage_b is not None
-            assert b"healthcare launch" in await artifacts.read(stage_a.artifact_ref)
-            assert b"healthcare launch" not in await artifacts.read(stage_b.artifact_ref)
+            assert statement_projects == {seeded.project_a.project_id}
 
             replayed = await route_interview_answer(
                 conn,
@@ -477,8 +484,14 @@ def test_card_compilation_retries_converge_across_persistence_crash_boundaries(
                 ).scalar_one()
             )
 
+            documents = _pinned_documents(project_id=seeded.project_a.project_id)
+
             with pytest.raises(RuntimeError, match=error):
-                await runner._compose_project_context(submission=submission, scope=scope)
+                await runner._compose_project_context(
+                    submission=submission,
+                    scope=scope,
+                    documents=documents,
+                )
             after_crash = int(
                 (
                     await conn.execute(
@@ -489,15 +502,18 @@ def test_card_compilation_retries_converge_across_persistence_crash_boundaries(
             )
             assert after_crash == baseline + persisted_before_retry
 
-            first = await runner._compose_project_context(submission=submission, scope=scope)
-            second = await runner._compose_project_context(submission=submission, scope=scope)
+            first = await runner._compose_project_context(
+                submission=submission,
+                scope=scope,
+                documents=documents,
+            )
+            second = await runner._compose_project_context(
+                submission=submission,
+                scope=scope,
+                documents=documents,
+            )
             assert first == second
-            assert {item.name for item in first.artifacts} == {
-                "client_knowledge",
-                "stage0_project_state",
-                "product_profile",
-                "product_knowledge",
-            }
+            assert {item.name for item in first.artifacts} == {"brand_knowledge_index"}
             completed = int(
                 (
                     await conn.execute(
@@ -506,6 +522,8 @@ def test_card_compilation_retries_converge_across_persistence_crash_boundaries(
                     )
                 ).scalar_one()
             )
-            assert completed == baseline + 4
+            # The card is content-addressed, so the crashed attempt's copy (if any) and the two
+            # convergent retries are one durable row.
+            assert completed == baseline + 1
 
     run_async(scenario())

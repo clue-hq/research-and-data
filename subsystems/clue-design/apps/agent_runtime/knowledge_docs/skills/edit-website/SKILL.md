@@ -37,6 +37,22 @@ used as-is.
    structural damage (emptied/duplicated content), or nothing wrong (the
    brief is a new request, not a repair).
 
+## The page you are editing
+
+A site is one document with several pages, and every verb in the ladders below
+works on the ACTIVE page. `list_pages` names the site's pages, their routes, and
+which one is active — read it before you diagnose, so you edit the page the brief
+means.
+
+The page verbs are separate, and they are the director's: `add_page` (a new empty
+page at its own route), `switch_page` (move the editing focus), `remove_page`
+(drop a page and everything on it). No section verb can make a page; "add a
+pricing page" is `add_page` then an ordinary build, not a section bolted onto the
+home page.
+
+Links between the site's own pages are routes: `<a href="/pricing">`. Publishing
+turns the route into the live address.
+
 ## The composed-content ladder — smallest sufficient tool
 
 1. **`web_ops`** — one or a few surgical operations
@@ -209,8 +225,10 @@ colors. Follow this sequence:
    sanitize-once door every captured byte passes — and your ancestor from
    step 2 is not just inspiration, it is *source material*: view it and
    reuse its real CSS constants verbatim where they fit. Platform-native
-   (deep editability, derivation markers): the constrained vocabulary, where
-   theme tokens and geometry utilities carry the brand's measurements. In
+   (deep inspector editability, attribute-level derivation markers): the
+   constrained vocabulary, where theme tokens and geometry utilities carry
+   the brand's measurements — the LAST RESORT, chosen only when the raw lane
+   and a derived variant genuinely cannot serve, and said so in the plan. In
    both lanes, steps 1–4 (grammar, ancestor, surfaces, density) carry the
    judgment no mechanism can.
 6. **Apply the logo-off test at review.** Look at the rendered section
@@ -231,6 +249,8 @@ report when they do:
   changes every FUTURE derivation; already-derived pages are separate
   documents and stay frozen — tell the user which side of that line their
   request falls on, and never silently re-derive existing pages.
+- **Removing a page or changing its route** breaks every link that named the
+  old route. Fix those links in the same edit and say which pages you touched.
 - **Minting or releasing library content** (sections, shells, repairs) adds
   to what every later page in this workspace can reuse.
 

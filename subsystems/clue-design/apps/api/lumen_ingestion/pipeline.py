@@ -135,6 +135,7 @@ def _publish_ingested_kit(
     tools: Any,
     repo: HybridRepository,
     *,
+    core: Any,
     brand_kit: JsonObject,
     brand_summary: JsonObject,
     diagnostics: "list[JsonObject]",
@@ -164,10 +165,16 @@ def _publish_ingested_kit(
 
     A rare reaper residual remains deliberately visible: an existing-lineage job that dies after
     this publish but before terminalizing has no durable producing-job marker in the kit row, so
-    its re-offer can publish one extra DRAFT version. The page shows the latest and the approval
-    gate still holds; adding a new provenance field solely for this recovery case was explicitly
-    left out of Slice 4.
+    its re-offer can publish one extra version. Ingestion now auto-approves each version;
+    the page shows the latest. A durable producing-job receipt remains a separate follow-up.
     """
+    # Extraction is automatically accepted at publication (founder, 2026-09-21).
+    # Normalize and structurally validate first, then summarize the approved kit so
+    # product_ready and completeness diagnostics still describe the actual content.
+    brand_kit = {**brand_kit, "approval_status": "approved"}
+    summary_response = core.summarize_brand_kit(brand_kit, raise_on_error=False)
+    brand_summary = {**brand_summary, **summary_response["brand_summary"]}
+
     if not job_derived_id:
         brand_kit_id = str(brand_kit["id"])
         try:
@@ -458,6 +465,9 @@ def _default_apply_descriptions(
     resolve_thumbnail: Callable[[str], "tuple[bytes, str] | None"] | None = None,
     diagnostics: list | None = None,
     workspace_id: str | None = None,
+    asset_records: list[dict] | None = None,
+    job_id: str | None = None,
+    brand_kit_id: str | None = None,
 ) -> Any:
     """Lazily resolve Agent A's ``apply_descriptions`` and call it.
 
@@ -479,6 +489,7 @@ def _default_apply_descriptions(
         resolve_thumbnail=resolve_thumbnail,
         diagnostics=diagnostics,
         workspace_id=workspace_id,
+        asset_records=asset_records, job_id=job_id, brand_kit_id=brand_kit_id,
     )
 
 
@@ -613,6 +624,9 @@ def _maybe_describe(
     describer: Any | None = None,
     apply_descriptions: _ApplyDescriptionsCallable | None = None,
     diagnostics: list | None = None,
+    asset_records: list[dict] | None = None,
+    job_id: str | None = None,
+    brand_kit_id: str | None = None,
 ) -> Any:
     """Stamp AI descriptions onto ``evidence`` — a guaranteed no-op when
     describe.py is absent or errors.
@@ -629,7 +643,9 @@ def _maybe_describe(
     # through the three ``_ingest*`` signatures, and passed ONLY to the default (an injected
     # test stub still sees the unchanged protocol).
     workspace_id = getattr(repo, "workspace_id", None)
-    apply = apply_descriptions or partial(_default_apply_descriptions, workspace_id=workspace_id)
+    apply = apply_descriptions or partial(_default_apply_descriptions, workspace_id=workspace_id,
+                                                     asset_records=asset_records, job_id=job_id,
+                                                     brand_kit_id=brand_kit_id)
     describer = describer if describer is not None else resolve_describer()
     resolve_bytes = _make_resolve_bytes(repo, blobs)
     try:
@@ -925,7 +941,7 @@ def run_website_ingestion(
             brief_agent=brief_agent,
         )
 
-    run_ingestion_job(store, job_id, work)
+    run_ingestion_job(store, job_id, work, on_complete=_card_offer(workspace_id, tools))
 
 
 def _ingest(
@@ -1014,6 +1030,8 @@ def _ingest(
         describer=describer,
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
+        asset_records=getattr(core, "records", []), job_id=job_id,
+        brand_kit_id=job["request"].get("brand_kit_id") or f"brand_kit_ing_{job_id.split('_', 1)[-1]}",
     )
 
     reporter("Preparing your brand kit…", 0.85)
@@ -1036,7 +1054,7 @@ def _ingest(
     kit = result.brand_kit
 
     # Persist mirroring main.py's create_brand_kit flow, but for a draft
-    # ingestion kit (product_ready=False — the human reviews before publish).
+    # ingestion kit (product_ready=False — completeness is reported independently).
     validation = core.validate_brand_kit(kit, product_ready=False, raise_on_error=False)
     if not validation.get("ok"):
         codes = sorted(
@@ -1046,11 +1064,9 @@ def _ingest(
                 if d.get("severity") == "error"
             }
         )
-        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+        raise RuntimeError(f"ingested brand kit failed structural validation: {codes}")
     validated_kit = validation.get("brand_kit") or kit
-    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
-    summary = summary_response.get("brand_summary") or {}
-    summary["ingestion"] = result.ingestion_report
+    summary = {"ingestion": result.ingestion_report}
 
     # The brief rides the VALIDATED kit: the engine's BrandKit has no `brief`
     # field, so a payload carrying one through `validate_brand_kit` would come
@@ -1090,6 +1106,7 @@ def _ingest(
     record = _publish_ingested_kit(
         tools,
         repo,
+        core=core,
         brand_kit=validated_kit,
         brand_summary=summary,
         diagnostics=diagnostics,
@@ -1447,7 +1464,7 @@ def run_pdf_ingestion(
             apply_descriptions=apply_descriptions,
         )
 
-    run_ingestion_job(store, job_id, work)
+    run_ingestion_job(store, job_id, work, on_complete=_card_offer(workspace_id, tools))
 
 
 def _ingest_pdf(
@@ -1511,6 +1528,8 @@ def _ingest_pdf(
         describer=describer,
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
+        asset_records=getattr(core, "records", []), job_id=job_id,
+        brand_kit_id=job["request"].get("brand_kit_id") or f"brand_kit_ing_{job_id.split('_', 1)[-1]}",
     )
 
     reporter("Preparing your brand kit…", 0.85)
@@ -1541,11 +1560,9 @@ def _ingest_pdf(
                 if d.get("severity") == "error"
             }
         )
-        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+        raise RuntimeError(f"ingested brand kit failed structural validation: {codes}")
     validated_kit = validation.get("brand_kit") or kit
-    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
-    summary = summary_response.get("brand_summary") or {}
-    summary["ingestion"] = result.ingestion_report
+    summary = {"ingestion": result.ingestion_report}
 
     diagnostics = (
         result.diagnostics
@@ -1557,6 +1574,7 @@ def _ingest_pdf(
     record = _publish_ingested_kit(
         tools,
         repo,
+        core=core,
         brand_kit=validated_kit,
         brand_summary=summary,
         diagnostics=diagnostics,
@@ -1696,7 +1714,14 @@ def run_asset_ingestion(
             apply_descriptions=apply_descriptions,
         )
 
-    run_ingestion_job(store, job_id, work)
+    run_ingestion_job(store, job_id, work, on_complete=_card_offer(workspace_id, tools))
+
+
+def _card_offer(workspace_id: str, tools: Any) -> Callable[[], Any]:
+    """A kit ingestion that finishes second offers the ad-DNA card (``ad_library.auto_card``)."""
+    from .ad_library.auto_card import card_offer_hook
+
+    return card_offer_hook(workspace_id, tools=tools)
 
 
 def _ingest_assets(
@@ -1775,6 +1800,8 @@ def _ingest_assets(
         describer=describer,
         apply_descriptions=apply_descriptions,
         diagnostics=describe_diagnostics,
+        asset_records=getattr(core, "records", []), job_id=job_id,
+        brand_kit_id=job["request"].get("brand_kit_id") or f"brand_kit_ing_{job_id.split('_', 1)[-1]}",
     )
 
     reporter("Preparing your brand kit…", 0.85)
@@ -1805,11 +1832,9 @@ def _ingest_assets(
                 if d.get("severity") == "error"
             }
         )
-        raise RuntimeError(f"ingested brand kit failed draft validation: {codes}")
+        raise RuntimeError(f"ingested brand kit failed structural validation: {codes}")
     validated_kit = validation.get("brand_kit") or kit
-    summary_response = core.summarize_brand_kit(validated_kit, raise_on_error=False)
-    summary = summary_response.get("brand_summary") or {}
-    summary["ingestion"] = result.ingestion_report
+    summary = {"ingestion": result.ingestion_report}
 
     diagnostics = (
         result.diagnostics
@@ -1821,6 +1846,7 @@ def _ingest_assets(
     record = _publish_ingested_kit(
         tools,
         repo,
+        core=core,
         brand_kit=validated_kit,
         brand_summary=summary,
         diagnostics=diagnostics,

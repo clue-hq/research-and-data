@@ -1137,3 +1137,15 @@ def test_stream_tokens_are_subject_bound_not_run_bound() -> None:
                 )
 
     run_async(_run())
+
+
+def test_healthz_answers_without_auth_or_workspace() -> None:
+    """Liveness for Railway, the uptime monitors and the boot smoke test (first deployment §9.5)."""
+
+    async def _run() -> None:
+        async with rollback_conn(seed_pack=False) as conn, _client(_app(conn)) as client:
+            response = await client.get("/healthz")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+    run_async(_run())

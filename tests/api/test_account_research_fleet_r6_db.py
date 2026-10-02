@@ -141,6 +141,7 @@ async def _claim_begin_finalize(
         task_id=task.task_id,
         worker_id=worker_id,
         lease_generation=lease.generation,
+        task_attempt=1,
     )
     begin = await begin_entity_research_job(conn, job_id, fence=fence)
     assert begin.admitted
@@ -769,6 +770,7 @@ def test_worker_failure_becomes_honest_resumable_suspension() -> None:
                 task_id=task.task_id,
                 worker_id=worker_id,
                 lease_generation=lease.generation,
+                task_attempt=1,
             )
             begin = await begin_entity_research_job(conn, job_id, fence=fence)
             assert begin.admitted

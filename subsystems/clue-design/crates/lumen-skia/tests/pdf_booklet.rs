@@ -72,6 +72,7 @@ fn brochure_scene(page_count: usize) -> Scene {
                 width: 80.0,
                 height: 80.0,
             },
+            text_lines: Vec::new(),
         });
         node.fills = vec![solid_fill(&format!("paint_marker_{index}"), "#ffffff")];
         scene.nodes.insert(node.id.clone(), node);

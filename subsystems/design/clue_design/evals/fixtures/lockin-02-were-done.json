@@ -5,8 +5,10 @@
   "history": [],
   "message": "That's the one. We're done here, ship it.",
   "judgment": {
-    "action": "finish",
-    "reason": "locked"
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": true,
+    "reasoning": "The user accepted the current artifact as final."
   },
   "expected": {
     "action": "finish",

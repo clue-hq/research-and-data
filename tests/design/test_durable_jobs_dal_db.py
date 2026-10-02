@@ -26,6 +26,7 @@ All writes run in rolled-back transactions against the session-migrated DB.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any, get_args
 from uuid import UUID, uuid4
 
@@ -371,6 +372,96 @@ def test_an_unknown_work_id_raises_rather_than_reporting_a_refusal() -> None:
     run_async(scenario())
 
 
+# --- the derived open question (spec 2026-09-20) -------------------------------------------------
+
+
+@pytest.mark.usefixtures("require_design_db")
+def test_latest_terminal_run_for_document_reads_the_newest_terminal_envelope() -> None:
+    """ "This document has an open question" is DERIVED from its latest terminal run, never
+    stored — so the read must pick the newest terminal run by time (not by run id, and not the
+    ``running`` one that has not said anything yet), and must key on the frozen envelope's
+    ``document_id`` rather than the nullable column.
+
+    The older run deliberately carries the lexicographically GREATER run id, so the query's
+    ``run_id DESC`` tiebreak cannot produce the right answer by accident.
+    """
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                ws = await _seed_ws(conn, "openq")
+                document_id = f"doc_{uuid4().hex}"
+
+                async def seed(run_id: str, *, status: str, result: Any, at: datetime) -> None:
+                    await design_runs.create_run(
+                        conn,
+                        workspace_id=ws,
+                        run_id=run_id,
+                        document_id=None,
+                        kind=DesignRunKind.AGENT_TURN,
+                        payload={"document_id": document_id, "prompt": "Make the ad"},
+                    )
+                    await design_runs.set_run_result(
+                        conn, workspace_id=ws, run_id=run_id, status=status, result=result
+                    )
+                    # ``now()`` is transaction-fixed in Postgres, so every row in this test would
+                    # otherwise share one ``created_at``; the read's ORDER BY needs real recency.
+                    await conn.execute(
+                        text(
+                            "UPDATE design_agent_run SET created_at = :at"
+                            " WHERE run_id = :r AND workspace_id = :w"
+                        ),
+                        {"at": at, "r": run_id, "w": ws},
+                    )
+
+                await seed(
+                    "run_zzz_older",
+                    status="succeeded",
+                    result={"status": "proposed", "acceptance_scope": "design"},
+                    at=datetime(2026, 9, 19, 10, tzinfo=UTC),
+                )
+                await seed(
+                    "run_aaa_newer",
+                    status="succeeded",
+                    result={
+                        "status": "clarification_requested",
+                        "clarification": {"questions": [{"question": "Which proof point?"}]},
+                    },
+                    at=datetime(2026, 9, 19, 11, tzinfo=UTC),
+                )
+                await seed(
+                    "run_mmm_running",
+                    status="running",
+                    result=None,
+                    at=datetime(2026, 9, 19, 12, tzinfo=UTC),
+                )
+
+                latest = await design_runs.latest_terminal_run_for_document(
+                    conn, workspace_id=ws, document_id=document_id
+                )
+                assert latest is not None
+                assert latest["run_id"] == "run_aaa_newer"
+                assert latest["status"] == DesignRunStatus.SUCCEEDED
+                # Shaped exactly like ``get_run`` — the caller reads ``result`` the same way.
+                assert latest == await design_runs.get_run(
+                    conn, workspace_id=ws, run_id="run_aaa_newer"
+                )
+                assert (latest["result"] or {})["status"] == "clarification_requested"
+
+                # A document nobody has run is honestly silent, not an open question.
+                assert (
+                    await design_runs.latest_terminal_run_for_document(
+                        conn, workspace_id=ws, document_id=f"doc_{uuid4().hex}"
+                    )
+                    is None
+                )
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())
+
+
 # --- ingestion's fleet handle -------------------------------------------------------------------
 
 
@@ -521,6 +612,23 @@ def test_an_unknown_kind_and_an_unknown_field_are_both_refused() -> None:
         _ENVELOPES.validate_python({**good, "kind": "ingestion_turn"})
     with pytest.raises(ValidationError):
         _ENVELOPES.validate_python({**good, "targt_node_ids": ["hero"]})
+
+
+def test_the_turn_project_id_is_optional_and_round_trips() -> None:
+    """Lane 3 slice 5 (T3-1): the turn's project rides the envelope so the design side's spend
+    scope can stamp it onto every ledger row. Optional because the model is ``extra="forbid"`` —
+    an envelope frozen before the field existed must still replay verbatim."""
+    base: dict[str, Any] = {
+        "kind": "agent_turn",
+        "work_id": str(uuid4()),
+        "workspace_id": "ws_alpha",
+        "run_id": "run_x",
+        "checkpoint_thread_id": "run_x",
+    }
+    assert _ENVELOPES.validate_python(base).project_id is None
+    stamped = _ENVELOPES.validate_python({**base, "project_id": "project-7"})
+    assert stamped.project_id == "project-7"
+    assert _ENVELOPES.validate_python(stamped.model_dump(mode="json")) == stamped
 
 
 def test_an_envelope_is_frozen() -> None:

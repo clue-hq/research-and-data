@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
@@ -24,6 +26,7 @@ __all__ = [
     "AgentReplayUnavailable",
     "AgentTurnReceipt",
     "AgentTurnStatus",
+    "ModelCostSource",
     "PrivacyEraseResult",
     "ReplayArtifactRef",
 ]
@@ -76,6 +79,13 @@ class AgentTurnReceipt(TurnValue):
     current_status: AgentTurnStatus
 
 
+#: Which cost authority answered a model call, as the gateway stamped it: ``metered`` (the
+#: provider reported the charge), ``estimate`` (our price sheet), ``unpriced`` (no rate — a
+#: blank, never a zero). Spelled here rather than imported so this package gains no new edge; the
+#: gateway's ``CostSource`` is the same three words.
+ModelCostSource = Literal["metered", "estimate", "unpriced"]
+
+
 class AgentModelCallReceipt(TurnValue):
     model_call_id: UUID
     turn_id: UUID
@@ -90,6 +100,16 @@ class AgentModelCallReceipt(TurnValue):
     cache_creation_input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(ge=0)
     cost_millicredits: int = Field(ge=0)
+    # Lane 3 slice 1: the gateway-measured cost of THIS call, in USD, read off the answer's
+    # ``clue_cost_cents`` stamp. Beside ``cost_millicredits`` (still 0: the credits milestone's
+    # policy), never derived from it. None = unpriced or recorded before the column existed.
+    cost_usd: Decimal | None = Field(default=None, ge=0)
+    cost_source: ModelCostSource | None = None
+    # Lane 3 slice 3: the Langfuse generation this call became (D4) — stamped by the durable
+    # recorder from the run registry the LangChain handler fills at model-call start. None when
+    # Langfuse is off, and on every receipt replayed from a pre-migration row.
+    langfuse_trace_id: str | None = None
+    langfuse_observation_id: str | None = None
     latency_ms: float = Field(ge=0)
     error_code: str | None = None
     # P3.2: the agent-role attribution of THIS call — from the governed model's per-call

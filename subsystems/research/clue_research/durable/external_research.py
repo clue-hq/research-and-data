@@ -610,13 +610,56 @@ async def complete_external_research_success(
     result_artifacts: tuple[ExternalResearchResultArtifactInput, ...],
     receipt_artifact_key: str,
     now: datetime,
+    recover_spend_unknown: bool = False,
+    recovery_parser_version: str | None = None,
+    recovery_actor_ref: str | None = None,
 ) -> ExternalResearchSnapshotRef:
     operation = await get_external_research_operation(
         conn, workspace_id=workspace_id, operation_id=operation_id, for_update=True
     )
-    if operation.state is not ExternalResearchOperationState.DISPATCHING:
+    expected_state = (
+        ExternalResearchOperationState.SPEND_OUTCOME_UNKNOWN
+        if recover_spend_unknown
+        else ExternalResearchOperationState.DISPATCHING
+    )
+    if operation.state is not expected_state:
         raise ExternalResearchTransitionConflict(
             f"cannot settle external research from {operation.state.value}"
+        )
+    if recover_spend_unknown:
+        if not (recovery_parser_version or "").strip() or not (recovery_actor_ref or "").strip():
+            raise ValueError("spend-unknown recovery requires parser version and actor")
+        reconciled = (
+            await conn.execute(
+                text(
+                    "SELECT 1 FROM external_research_cost_reconciliation "
+                    "WHERE workspace_id=:workspace_id AND operation_id=:operation_id"
+                ),
+                {"workspace_id": workspace_id, "operation_id": operation_id},
+            )
+        ).scalar_one_or_none()
+        if reconciled is not None:
+            raise ExternalResearchTransitionConflict(
+                "a billing-reconciled spend-unknown response cannot become a ready snapshot"
+            )
+        await conn.execute(
+            text(
+                "INSERT INTO external_research_response_recovery ("
+                "recovery_id, operation_id, workspace_id, response_artifact_key, "
+                "provider_request_id, parser_version, actor_ref, recovered_at) VALUES ("
+                ":recovery_id, :operation_id, :workspace_id, :response_key, "
+                ":provider_request_id, :parser_version, :actor_ref, :now)"
+            ),
+            {
+                "recovery_id": uuid4(),
+                "operation_id": operation_id,
+                "workspace_id": workspace_id,
+                "response_key": response_artifact_key,
+                "provider_request_id": provider_request_id,
+                "parser_version": recovery_parser_version,
+                "actor_ref": recovery_actor_ref,
+                "now": now,
+            },
         )
     stopped = (
         await conn.execute(
@@ -642,21 +685,30 @@ async def complete_external_research_success(
         )
         raise ExternalResearchTransitionConflict("provider-reported cost exceeds reservation")
     snapshot_id = new_external_research_snapshot_id()
-    await conn.execute(
+    attempt = await conn.execute(
         text(
             "UPDATE external_research_attempt SET state='responded', "
             "response_artifact_key=:response_key, provider_request_id=:provider_request_id, "
-            "dispatch_lease_expires_at=NULL, completed_at=:now "
-            "WHERE operation_id=:operation_id AND ordinal=:ordinal AND state='dispatching'"
+            "failure_code=NULL, failure_detail=NULL, dispatch_lease_expires_at=NULL, "
+            "completed_at=CASE WHEN :recover THEN completed_at ELSE :now END "
+            "WHERE operation_id=:operation_id AND ordinal=:ordinal "
+            "AND state=CAST(:expected_state AS external_research_attempt_state) "
+            "AND (:recover = false OR response_artifact_key=:response_key)"
         ),
         {
             "operation_id": operation_id,
             "ordinal": attempt_ordinal,
             "response_key": response_artifact_key,
             "provider_request_id": provider_request_id,
+            "expected_state": expected_state.value,
+            "recover": recover_spend_unknown,
             "now": now,
         },
     )
+    if attempt.rowcount != 1:
+        raise ExternalResearchTransitionConflict(
+            "external research success attempt no longer matches its retained response"
+        )
     await conn.execute(
         text(
             """
@@ -744,8 +796,8 @@ async def complete_external_research_success(
         text(
             "UPDATE external_research_operation SET state='ready', "
             "spend_outcome='provider_reported', provider_request_id=:provider_request_id, "
-            "dispatch_lease_expires_at=NULL, fresh_until=:fresh_until, terminal_at=:now, "
-            "updated_at=:now WHERE id=:operation_id"
+            "dispatch_lease_expires_at=NULL, fresh_until=:fresh_until, failure_code=NULL, "
+            "failure_detail=NULL, terminal_at=:now, updated_at=:now WHERE id=:operation_id"
         ),
         {
             "operation_id": operation_id,

@@ -32,9 +32,9 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.chat.turn_events import list_turn_events
 from clue_api.design_leg_wiring import (
-    DESIGN_LEG_EXIT_SUMMARIES,
     DesignLegTurnRunner,
     build_design_leg_finisher,
+    exit_summary,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_design import legs as design_legs
@@ -62,9 +62,27 @@ class _ScriptedJudge:
         self.calls: list[dict[str, Any]] = []
 
     async def __call__(
-        self, *, brief: str, history: tuple[tuple[str, str], ...], message: str
+        self,
+        *,
+        brief: str,
+        history: tuple[tuple[str, str], ...],
+        message: str,
+        artifacts: tuple[str, ...] = (),
+        artifact: str | None = None,
+        tags: tuple[str, ...] = (),
     ) -> ExitJudgment | None:
-        self.calls.append({"brief": brief, "history": history, "message": message})
+        self.calls.append(
+            {
+                "brief": brief,
+                "history": history,
+                "message": message,
+                # v3 shows the leg's artifacts numbered; ``artifact`` is v2's one line, kept
+                # on the protocol for compatibility and unused by the runner.
+                "artifacts": artifacts,
+                "artifact": artifact,
+                "tags": tags,
+            }
+        )
         return self._judgment
 
 
@@ -187,7 +205,13 @@ def test_a_lock_in_verdict_closes_the_leg_and_finalizes_completed(
             first = await _submit_message(conn, seeds, label="lockin-1", message="Bolder.")
             await _run_turn(conn, seeds, registry, lane, first)
 
-            judge = _ScriptedJudge(ExitJudgment(action="finish", reason="locked"))
+            judge = _ScriptedJudge(
+                ExitJudgment(
+                    close_this_session=True,
+                    current_artifact_accepted=True,
+                    reasoning="The user accepted it.",
+                )
+            )
             closing = await _submit_message(
                 conn, seeds, label="lockin-2", message="Perfect - lock it in."
             )
@@ -208,7 +232,7 @@ def test_a_lock_in_verdict_closes_the_leg_and_finalizes_completed(
 
             # The bridge-time finalize shape: COMPLETED, no dispatch for the exiting turn.
             assert result.outcome.status is AgentExecutionStatus.COMPLETED
-            assert result.assistant_message == DESIGN_LEG_EXIT_SUMMARIES["locked"]
+            assert result.assistant_message == exit_summary("locked", "The user accepted it.")
             assert len(lane.envelopes) == 1  # only the first turn ever dispatched
 
             leg_after = await design_legs.get_leg(
@@ -268,7 +292,13 @@ def test_an_out_of_scope_verdict_redelivers_the_pending_question(
                 registry,
                 lane,
                 closing,
-                judge=_ScriptedJudge(ExitJudgment(action="finish", reason="out_of_scope")),
+                judge=_ScriptedJudge(
+                    ExitJudgment(
+                        close_this_session=True,
+                        hand_message_to_strategy_agent=True,
+                        reasoning="Not design work.",
+                    )
+                ),
                 finisher=_finisher(seeds, tmp_path),
             )
             assert result.outcome.status is AgentExecutionStatus.COMPLETED
@@ -303,9 +333,14 @@ def test_an_out_of_scope_verdict_redelivers_the_pending_question(
 @pytest.mark.parametrize(
     ("label", "judge"),
     [
-        ("continues", lambda: _ScriptedJudge(ExitJudgment(action="continue"))),
+        (
+            "continues",
+            lambda: _ScriptedJudge(
+                ExitJudgment(close_this_session=False, reasoning="Still iterating.")
+            ),
+        ),
         ("unparseable", lambda: _ScriptedJudge(None)),
-        ("reasonless", lambda: _ScriptedJudge(ExitJudgment(action="finish"))),
+        ("reasoning-less", lambda: _ScriptedJudge(None)),
         ("explodes", lambda: _JudgeThatExplodes()),
     ],
 )
@@ -386,7 +421,13 @@ def test_the_close_to_finalize_crash_window_converges_through_the_routing_fallba
                     registry,
                     lane,
                     closing,
-                    judge=_ScriptedJudge(ExitJudgment(action="finish", reason="locked")),
+                    judge=_ScriptedJudge(
+                        ExitJudgment(
+                            close_this_session=True,
+                            current_artifact_accepted=True,
+                            reasoning="The user accepted it.",
+                        )
+                    ),
                     finisher=dying_finisher,
                 )
             mid = await design_legs.get_leg(
@@ -406,7 +447,13 @@ def test_the_close_to_finalize_crash_window_converges_through_the_routing_fallba
                     seeds,
                     registry,
                     lane,
-                    judge=_ScriptedJudge(ExitJudgment(action="finish", reason="locked")),
+                    judge=_ScriptedJudge(
+                        ExitJudgment(
+                            close_this_session=True,
+                            current_artifact_accepted=True,
+                            reasoning="The user accepted it.",
+                        )
+                    ),
                     finisher=real_finisher,
                 ),
                 conn_factory=cf,
@@ -416,7 +463,7 @@ def test_the_close_to_finalize_crash_window_converges_through_the_routing_fallba
                 turn_id=closing.turn_id, workspace_id=seeds["workspace_id"]
             )
             assert result.outcome.status is AgentExecutionStatus.COMPLETED
-            assert result.assistant_message == DESIGN_LEG_EXIT_SUMMARIES["locked"]
+            assert result.assistant_message == exit_summary("locked", "The user accepted it.")
             # One close, ever: one journal row, one leg.closed frame, one leg summary.
             journal_count = (
                 await conn.execute(

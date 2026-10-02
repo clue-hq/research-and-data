@@ -63,6 +63,32 @@ test("opening the gallery switches surface and leaves edit mode", () => {
   assert.equal(state.activeArtifactId, "b");
 });
 
+test("opening target accounts switches surface, opens the rail, and leaves edit mode", () => {
+  const state = editorShellReducer(
+    stateWith({ editing: true, panelOpen: false, surface: "artifact" }),
+    { type: "open-target-accounts" },
+  );
+  assert.equal(state.surface, "target-accounts");
+  assert.equal(state.panelOpen, true);
+  assert.equal(state.editing, false);
+  // The open tabs survive the trip — the table is a surface, not a tab.
+  assert.deepEqual(state.openArtifacts, artifacts);
+  assert.equal(state.activeArtifactId, "b");
+});
+
+test("opening an artifact or the gallery leaves the target-accounts surface", () => {
+  const fromTable = stateWith({ surface: "target-accounts" });
+  assert.equal(
+    editorShellReducer(fromTable, { type: "open-gallery" }).surface,
+    "gallery",
+  );
+  assert.equal(
+    editorShellReducer(fromTable, { artifactId: "c", type: "activate-artifact" })
+      .surface,
+    "artifact",
+  );
+});
+
 test("opening an artifact appends once and activates it", () => {
   const next: ChatShellOpenArtifact = { id: "d", kind: "web", title: "New page" };
   const opened = editorShellReducer(
@@ -86,6 +112,38 @@ test("opening an artifact appends once and activates it", () => {
     ["a", "b", "c", "d"],
   );
   assert.equal(reopened.activeArtifactId, "a");
+});
+
+test("re-opening the tab already in front is a no-op — edit mode and the selection survive", () => {
+  // A feed refresh carrying the person's own write re-dispatches open-artifact
+  // for the active tab. Until 2026-09-20 that reset editing and the inspector
+  // selection on every change they made.
+  const before = stateWith({
+    activeArtifactId: "b",
+    editing: true,
+    inspectorSelection: "text",
+  });
+  const after = editorShellReducer(before, {
+    artifact: { id: "b", kind: "web", title: "Pricing page" },
+    type: "open-artifact",
+  });
+  assert.equal(after, before);
+
+  // Opening the same artifact from the GALLERY (not in front) still brings it
+  // forward with a fresh, non-editing canvas.
+  const fromGallery = editorShellReducer(
+    stateWith({ activeArtifactId: "b", editing: true, surface: "gallery" }),
+    { artifact: { id: "b", kind: "web", title: "Pricing page" }, type: "open-artifact" },
+  );
+  assert.equal(fromGallery.surface, "artifact");
+  assert.equal(fromGallery.editing, false);
+
+  // And with the rail closed, opening the active artifact opens the rail.
+  const fromClosed = editorShellReducer(
+    stateWith({ activeArtifactId: "b", panelOpen: false }),
+    { artifact: { id: "b", kind: "web", title: "Pricing page" }, type: "open-artifact" },
+  );
+  assert.equal(fromClosed.panelOpen, true);
 });
 
 test("closing the active tab activates the next tab", () => {
@@ -242,4 +300,16 @@ test("opening an artifact, activating a tab, or opening the gallery reopens a cl
     type: "open-gallery",
   });
   assert.equal(viaGallery.panelOpen, true);
+});
+
+test("Plan opens from an artifact without losing its tabs and can reopen after panel closure", () => {
+  const plan = editorShellReducer(stateWith({ editing: true, panelOpen: false }), { type: "open-plan" });
+  assert.equal(plan.surface, "plan");
+  assert.equal(plan.editing, false);
+  assert.equal(plan.panelOpen, true);
+  assert.deepEqual(plan.openArtifacts, artifacts);
+  const closed = editorShellReducer(plan, { type: "toggle-panel" });
+  assert.equal(closed.panelOpen, false);
+  assert.equal(editorShellReducer(closed, { type: "open-plan" }).surface, "plan");
+  assert.equal(editorShellReducer(plan, { type: "open-gallery" }).surface, "gallery");
 });

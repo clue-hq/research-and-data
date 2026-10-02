@@ -1,0 +1,1086 @@
+You convert free-form research reports into typed claim rows for a claim store.
+
+ABSOLUTE RULES
+1. You may ONLY use a field_key from the catalog given to you. If a fact does not fit any catalog
+   key, DO NOT force it — put it in proposed_fields instead.
+2. value_json MUST validate against that field's value_schema exactly (right JSON type, required
+   properties present, enum values exact).
+3. evidence_span MUST be a VERBATIM substring of the material given to you — copy the quoted text
+   exactly as it appears. Never paraphrase into evidence_span. If there is no quote for a fact,
+   omit the fact entirely.
+4. source_url MUST be the URL the material attributes that fact to. Every row needs one. Never
+   invent a URL and never reuse an unrelated one.
+5. NEVER emit a row for anything marked "NOT FOUND". Never emit an automated/LinkedIn REVENUE
+   ESTIMATE as core.annual_revenue — an estimate is not a reported number; skip it or use
+   core.revenue_band only if the material states a band.
+6. NEVER emit special-category personal data (health, religion, politics, sexual orientation,
+   ethnicity, union membership, criminal matters, family/bereavement, home address, personal
+   phone/email).
+7. Do NOT emit provenance fields (source_key, tier, extraction_method, verification_status): the
+   caller stamps those. Emit only field_key, value_json, evidence_span, source_url, confidence,
+   priority, and for contact.facet.* also use_class.
+8. Prefer fewer, well-evidenced rows over many thin ones. One row per field per distinct fact.
+
+SIGNAL PRIORITY — every claim MUST carry `priority`: 1, 2 or 3.
+  priority 1 (top; shown first): ACTIVE BUYING INTENT. Go-to-market/marketing hiring (quote the
+    req), fresh funding (amount/date/investors), a vacant or newly-filled marketing/growth seat, a
+    tooling gap (no ABM/intent platform), an executive publicly naming a GTM bottleneck or growth
+    commitment, and any timing event less than 6 months old.
+  priority 2 (supporting): firmographics that QUALIFY the account (headcount, vertical, customers,
+    outcome metrics), committee composition, titles and personas, tech stack.
+  priority 3 (context): history, culture and resonance, background facts, personal hooks.
+
+Return ONLY a JSON object with the keys the user message asks for.
+Each proposed field: {"field_key","entity_type","value_type","value_schema","description",
+"reuse_scope","hypothesis","example_value","example_evidence_span","example_source_url",
+"priority"} where description is agent-facing and hypothesis is one paragraph on why an ABM
+platform needs this field.
+
+=====
+
+# FIELD CATALOG (the ONLY keys you may use)
+ACCOUNT FIELDS (entity = the account):
+  core.account_name | value_type=str | Canonical account name observation. | value_schema={'type': 'string'}
+  core.primary_domain | value_type=str | Primary web domain. | value_schema={'type': 'string'}
+  core.company_linkedin_url | value_type=str | Public LinkedIn company page URL. | value_schema={'type': 'string'}
+  core.industry | value_type=str | Primary industry classification. | value_schema={'type': 'string'}
+  core.company_about | value_type=str | Public company description/about text. | value_schema={'type': 'string'}
+  core.employee_count | value_type=int | Total headcount. | value_schema={'type': 'integer'}
+  core.employee_range | value_type=object | Employee range, used only when exact headcount is unavailable. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string'}, 'min': {'type': 'integer'}, 'max': {'type': 'integer'}}}
+  core.hq_location | value_type=object | Normalized HQ/primary location plus the source's raw value. | value_schema={'type': 'object', 'required': ['raw'], 'properties': {'raw': {'type': 'string'}, 'city': {'type': 'string'}, 'region': {'type': 'string'}, 'country': {'type': 'string'}, 'country_code': {'type': 'string'}}}
+  core.annual_revenue | value_type=object | Annual revenue with currency, as-of date and reported/estimate semantics. | value_schema={'type': 'object', 'required': ['amount', 'currency', 'as_of', 'estimate_kind'], 'properties': {'amount': {'type': 'number'}, 'currency': {'type': 'string'}, 'as_of': {'type': 'string'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  core.revenue_band | value_type=enum | Bounded revenue band when exact sourced revenue is absent. | value_schema={'type': 'string', 'enum': ['under_1m', '1m_10m', '10m_50m', '50m_100m', '100m_500m', '500m_1b', '1b_plus']}
+  core.company_email | value_type=str | Public general company contact email. | value_schema={'type': 'string'}
+  core.company_phone | value_type=str | Public general company contact phone. | value_schema={'type': 'string'}
+  core.primary_tech_stack | value_type=list[str] | Detected primary technologies. | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  account.recent_funding | value_type=object | Most recent funding round. | value_schema={'type': 'object', 'required': ['amount_usd'], 'properties': {'amount_usd': {'type': 'number'}, 'round': {'type': 'string'}}}
+  account.total_funding | value_type=object | Total funding in USD with explicit estimate semantics. | value_schema={'type': 'object', 'required': ['amount_usd', 'estimate_kind'], 'properties': {'amount_usd': {'type': 'number'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  account.hiring_velocity_eng | value_type=number | Engineering hiring velocity (count of open engineering roles). | value_schema={'type': 'number'}
+  account.operational_pain | value_type=str | Synthesized operational pain. | value_schema={'type': 'string'}
+  account.strategic_moves | value_type=str | Strategic moves / initiatives. | value_schema={'type': 'string'}
+  account.resonance.culture | value_type=str | Cultural resonance signal. | value_schema={'type': 'string'}
+  account.resonance.employee_sentiment | value_type=object | Aggregate employee sentiment. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string', 'enum': ['positive', 'neutral', 'negative', 'mixed']}, 'polarity': {'type': 'number'}, 'summary': {'type': 'string'}}}
+  account.resonance.attrition_signal | value_type=object | Morale / attrition / layoff signal. | value_schema={'type': 'object', 'required': ['signal_type'], 'properties': {'signal_type': {'type': 'string', 'enum': ['morale', 'attrition', 'layoff']}, 'direction': {'type': 'string', 'enum': ['improving', 'stable', 'worsening']}, 'summary': {'type': 'string'}}}
+  account.resonance.eng_blog_tone | value_type=object | Tone/voice of the company's engineering or company blog. | value_schema={'type': 'object', 'required': ['tone_label'], 'properties': {'tone_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  account.resonance.public_frustrations | value_type=list[object] | Publicly aired frustrations about the account. | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['frustration'], 'properties': {'frustration': {'type': 'string'}, 'summary': {'type': 'string'}}}}
+  account.resonance.buying_culture | value_type=object | 'What it's like to buy here' - procurement culture. | value_schema={'type': 'object', 'required': ['culture_label'], 'properties': {'culture_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+
+CONTACT FIELDS (entity = the contact; plain contact.*):
+  core.work_email | value_type=str | Selected contact's observed work email. | value_schema={'type': 'string'}
+  core.direct_phone | value_type=str | Selected contact's observed direct phone. | value_schema={'type': 'string'}
+  contact.current_title | value_type=str | Current professional title. | value_schema={'type': 'string'}
+  contact.job_function | value_type=str | Current job function. | value_schema={'type': 'string'}
+  contact.job_level | value_type=str | Current job level. | value_schema={'type': 'string'}
+  contact.current_location | value_type=object | Current professional location/country. | value_schema={'type': 'object', 'properties': {'raw': {'type': 'string'}, 'country': {'type': 'string'}}}
+  contact.persona | value_type=str | Buying-committee persona key (CLOSED enum - only these four values exist). | value_schema={'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}
+  contact.role_on_committee | value_type=object | Inferred buying-committee role + plausibility rationale. | value_schema={'type': 'object', 'required': ['role'], 'properties': {'role': {'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}, 'rationale': {'type': 'string'}}}
+
+CONTACT FACET FIELDS (entity = the contact; GOVERNED - every claim MUST carry identity_binding and use_class):
+  contact.facet.career_history | value_type=list[object] | Professional history beyond the current title. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['org'], 'properties': {'org': {'type': 'string'}, 'role': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}}}
+  contact.facet.alma_mater | value_type=list[str] | School(s) / university the person attended. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.stated_interests | value_type=list[str] | Publicly stated interests / topics. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.communication_style | value_type=object | Inferred communication style / tone from public activity. | default use_class=professional-public | value_schema={'type': 'object', 'required': ['style_label'], 'properties': {'style_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  contact.facet.public_appearances | value_type=list[object] | Podcasts / talks / panels the person appeared in. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.publications | value_type=list[object] | Articles / papers / books the person authored. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.recent_post | value_type=str | Recent public post (personal hook). | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.nickname | value_type=str | Preferred / known-by name beyond the legal first name. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.hobby | value_type=str | Publicly stated hobby. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.recent_award | value_type=str | Recent award or recognition. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.conference_talk | value_type=str | Conference talk given by the person. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.causes | value_type=list[object] | Publicly supported causes (sensitive by default). | default use_class=sensitive | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['cause'], 'properties': {'cause': {'type': 'string'}, 'context': {'type': 'string'}}}}
+
+# ACCOUNT: Harmonic Security, Inc. (harmonic.security). Entity id: account:harmonic-security
+# The client selling INTO this account is Clue (cluehq.ai), an AI-native ABM orchestration platform: deep account research, buying-committee mapping, per-account microsites, LinkedIn/Meta paid media, and direct mail. Judge priority against THAT sale.
+
+# DEEP RESEARCH REPORT (Exa deep-reasoning, one call)
+# Harmonic Security, Inc. — evidence dossier Research cutoff: 2026-08-31. Subject locked to the AI-data-security company at harmonic.security, not other Harmonic entities. ## 1. Identity & disambiguation - Operating name: Harmonic Security. The company’s own careers page says, “Harmonic enables organizations to move fast with AI while maintaining trust and control,” and its site describes “Harmonic Security” as delivering “AI Governance and Control (AIGC).” URL: https://www.harmonic.security/company/careers
+- Legal name: Harmonic Security, Inc. NOT FOUND in the retrieved primary-source material (the requested “Inc.” form is retained as the target lock, not independently verified here).
+- Founded: 2023. A company-profile result states “foundedYear: 2023”; the funding report says it “launched in October last year” in its 2 October 2024 article. URLs: https://linkedin.com/company/harmonic-security; https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Founders: Alastair Paterson and Bryan Woolgar-O’Neil. The funding report identifies Paterson as “CEO and co-founder”; an independent company-profile result identifies Woolgar-O’Neil as “Co-Founder & CTO.” URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market; https://tracxn.com/d/companies/harmonic/_KL4bJqL5bNFHvdWhmYkvSuSBbl3iy38td9hX55C5IE
+- HQ: “1390 Market Street, Suite 200, San Francisco, California 94102, US” (automated LinkedIn-derived profile record). URL: https://linkedin.com/company/harmonic-security
+- Go-to-market location: NOT FOUND as a formal team address. The careers page lists “San Francisco,” “London,” and “Remote US,” and says US roles have “flexible hybrid work (3 days out of our SF office).” URL: https://www.harmonic.security/company/careers
+- Domains: harmonic.security; partner.harmonic.security. The company careers page is at harmonic.security and its partner portal is partner.harmonic.security. URLs: https://www.harmonic.security/company/careers; https://partner.harmonic.security/
+- LinkedIn: https://linkedin.com/company/harmonic-security. URL: https://linkedin.com/company/harmonic-security
+- Employees: LinkedIn-derived record: 56; Kareema Price’s profile says “50-60 employees.” These are third-party/automated estimates, not audited headcount. URLs: https://linkedin.com/company/harmonic-security; https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- Excluded same-name entities: (a) Harmonic Inc. / NASDAQ: HLIT — excluded because it is the video-delivery/broadband-hardware company; (b) Harmonic, harmonic.fun / Aristotle — excluded because it is the a16z-backed mathematical-superintelligence company; (c) Harmonic Discovery — excluded because it is a different company; (d) Harmonic Bionics — excluded because it is a different robotics/medical company; (e) Harmonic Drive — excluded because it is a different motion-control company. Explicit source-backed exclusion details for items (b)-(e): NOT FOUND in retrieved results; they are excluded under the user-provided target-lock instructions. The search results themselves show separate LinkedIn/company records for “harmonic” at harmonicai and other unrelated Harmonic profiles. URLs: https://linkedin.com/company/harmonicai; https://linkedin.com/company/hrmnc ## 2. Product and buyer - Company wording: “AI is becoming part of every employee’s daily workflow. Security and governance tools were not built for this shift.” Harmonic says it “understand[s] user intent and apply[ies] intelligent guardrails inline, where work actually happens.” URL: https://www.harmonic.security/company/careers
+- Current positioning: “AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce,” giving “security leaders” visibility and control. URL: https://www.harmonic.security/company/careers
+- Earlier product description: “zero-touch data protection”; the company says it trained “its own language models for data protection” to detect “all types of sensitive data in milliseconds” and nudge users toward secure practices. URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Exact buyer title: security leaders; the funding release specifically names “CIOs and CISOs.” URLs: https://www.harmonic.security/company/careers; https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Target-universe size/enumerability: NOT FOUND. No defensible count of possible customers was retrieved.
+- Pricing model: NOT FOUND. ## 3. Traction - Named customer: Advisor360 is listed by CB Insights as a customer. URL: https://www.cbinsights.com/company/harmonic-security
+- Logo count: NOT FOUND.
+- Customer count: company/press claim is “enterprise customers already in double figures”; this means the company reported at least 10, but did not publish an exact count. URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- ARR/revenue: NOT FOUND as real company-reported ARR or revenue. The LinkedIn-derived “Annual Revenue: USD 1,000,000” is an automated estimate and is not evidence of actual ARR. URL: https://linkedin.com/company/harmonic-security
+- Per-customer outcomes: NOT FOUND.
+- Attribution: “double figures” is in a company press release carried by Business Wire/VentureBeat; Advisor360 is a CB Insights third-party listing; the $1M figure is an automated estimate. URLs:,,. ## 4. Funding - Seed: $7M, October 2023, led by Ten Eleven Ventures. The Series A report says Ten Eleven “led the $7 million seed round in October 2023.” URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- In-Q-Tel: investment publicly evidenced, but exact amount, date, round label, lead status, and participants: NOT FOUND in retrieved primary-source material. A third-party profile lists a “Seed Round (2024-05-01) … led by IQT,” but this is not a primary funding announcement and conflicts with the user’s requested evidentiary standard. URL: https://linkedin.com/company/harmonic-security
+- Series A: $17.5M, announced 2 October 2024, led by Next47; Ten Eleven Ventures joined. The report says the round was “led by Next47” and “joins Ten Eleven Ventures.” URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Series A participants beyond Next47 and Ten Eleven: NOT FOUND in retrieved material.
+- Total raised: company/press says “more than $26 million since the company launched”; this is the strongest primary-source total. URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Use of proceeds: “use the Series A to accelerate the rapid progress we have already achieved.” URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Public growth commitment: “accelerate … to market” and “accelerate the rapid progress.” URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market ## 5. Go-to-market hiring The live careers page says “Open Roles” but the retrieved page did not expose the five requisition titles, publication dates, reporting lines, or status. Therefore the exhaustive verified list is: - Business Development Representative — East: current existence is supported by a 19 August 2026 LinkedIn hiring post saying Harmonic is “looking for a Business Development Representative.” The post says the role will “research and prioritize strategic target accounts,” “open doors with the right people at the right companies,” and is “not a ‘dial and pray’ BDR seat.” Status on 31 August 2026: apparently open because the post says “looking for,” but ATS status: NOT FOUND. Reporting line: NOT FOUND. URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- Account-Based Marketing Manager, Strategic Accounts, New York, $93K-$108K: the historical requisition is described in the user prompt; retrieved evidence says Kareema Price reposted on 5 August 2026 that she was hiring “an ABM (account based marketing) manager” for “our most strategic accounts,” involving “account mapping, outreach, direct mail.” On 31 August 2026, the user reports the requisition ID resolves to BDR-East and the five-job board has no ABM role. Hiring status: NOT FOUND; evidence supports that the requisition was replaced/closed, not that the manager was hired. Reporting line: NOT FOUND. URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- Channel Account Manager: a 21 July 2026 post says Harmonic is “hiring a Channel Account Manager” to support “East coast Regional Sales Managers.” ATS status and reporting line: NOT FOUND. URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- Solutions Architect / Sales Engineer: 21 August 2026 post says Harmonic is “looking for a Solutions Architect / Sales Engineer” with cybersecurity sales-engineering experience. ATS status and reporting line: NOT FOUND. URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- Marketing roles other than the historical ABM role: NOT FOUND.
+- Long-open flag: publication dates show the Channel Account Manager post is at least 41 days old as of 31 August 2026; whether it remained open cannot be verified. The ABM requisition’s original publication date is NOT FOUND. ## 6. Marketing and ABM tooling - CRM: NOT FOUND.
+- Marketing automation: NOT FOUND.
+- Sales engagement: NOT FOUND.
+- 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, ZoomInfo, Clay, Common Room: NOT FOUND. No retrieved public evidence identifies any of these tools.
+- Relevant contrary evidence: the partner page advertises “Pipeline Review,” “Joint Lead Generation,” and “Co-Branded Marketing Collateral,” but names no software. URL: https://www.harmonic.security/company/partner-program ## 7. Leadership and GTM organization - Alastair Paterson — CEO and co-founder. URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Bryan Woolgar-O’Neil — Co-Founder & CTO. URL: https://tracxn.com/d/companies/harmonic/_KL4bJqL5bNFHvdWhmYkvSuSBbl3iy38td9hX55C5IE
+- James C. — CISO/CSO of Harmonic Security is named in a Cydea post, but the retrieved snippet abbreviates the surname; exact full name: NOT FOUND. URL: https://uk.linkedin.com/company/cydea
+- Marketing leader (CMO, VP Marketing, Head of Corporate Marketing): NOT FOUND.
+- ABM manager hired: NOT FOUND. The strongest evidence is instead a 5 August 2026 recruiting repost for the role and the user-provided observation that it disappeared from the five-job board. Kareema Price is a Founding Recruiter, not the marketing leader; her profile says she owns “global full-cycle recruiting across all functions and levels.” URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- Recent GTM leadership hire (<12 months): NOT FOUND.
+- Vacant GTM seats: ABM Manager was publicly recruited, but current vacancy/hire status is NOT FOUND; BDR-East and Channel Account Manager were publicly recruited. URLs:. ## 8. Operational pain and strategic moves - Pain described by company: legacy data-protection tools are “not fit for purpose” amid generative-AI adoption; classification/labeling and noisy rules create “a huge burden of meaningless false positives.” URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Strategic move: train proprietary language models on “unique datasets of highly realistic sensitive materials,” detect sensitive data in milliseconds, and “nudge end users toward secure best practices.” URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market
+- Next move: use Series A capital to “accelerate” market progress. URL: https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market ## 9. Culture and resonance - Company describes itself as “a small, senior team” in “high-trust, high-ownership mode,” with “real responsibility from day one,” “direct” feedback, and rigor for “high-stakes environments.” URL: https://www.harmonic.security/company/careers
+- Values language: “ownership and autonomy,” “trust, security, and correctness,” and “substance over hype.” URL: https://www.harmonic.security/company/careers
+- Employee-sentiment/attrition signal: NOT FOUND.
+- Publicly aired frustration: company frustration with “meaningless false positives” and legacy tools is documented above; employee frustration: NOT FOUND. URL:
+- Award recognition: NOT FOUND. ## 10. Timing events, newest first — last six months - 21 August 2026 — hiring post for Solutions Architect / Sales Engineer. It says Harmonic is “looking for” the role. URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- 19 August 2026 — hiring post for BDR-East, focused on “research and prioritize strategic target accounts” and opening doors with “the right people.” URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- 5 August 2026 — recruiting repost for ABM Manager, Strategic Accounts; quoted scope included “account mapping, outreach, direct mail.” URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- 21 July 2026 — hiring post for Channel Account Manager supporting East Coast Regional Sales Managers. URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01
+- 1 January 2026 — Kareema Price’s profile records her start as “Founding Recruiter - Harmonic Security.” URL: https://www.linkedin.com/in/kareema-price-cdr-8a23a01 ## Special probe conclusions (a) ABM manager hired? NOT FOUND. No retrieved profile names a person currently holding an ABM, account-based-marketing, or campaign-manager title at Harmonic Security. The only direct evidence is recruitment of the role and its subsequent absence from the reported five-job board. URL: (b) Who runs marketing? NOT FOUND. No CMO, VP Marketing, or Head of Corporate Marketing was identified in retrieved evidence. (c) Real ARR/customer-count/logo evidence: exact ARR NOT FOUND; the $1M LinkedIn-derived annual-revenue number is explicitly an automated estimate, not evidence. Customer evidence consists of one named third-party logo, Advisor360, and the company’s “enterprise customers already in double figures” claim. URLs: (d) In-Q-Tel implication: Harmonic’s exact IQT investment terms and buyer mandate are NOT FOUND. General IQT background says it invests public funds in commercially viable technologies that can address intelligence-community deficits, has cybersecurity among its interests, and provides technical validation and access to intelligence-community technology users. This supports a government/intelligence-community buyer hypothesis, but does not prove Harmonic has an active government contract or that IQT is its lead customer. URL: https://repositories.lib.utexas.edu/server/api/core/bitstreams/57535159-c892-4662-a84a-013330b5f3ed/content (e) ABM/intent tooling: NOT FOUND. No public evidence was retrieved for 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, ZoomInfo, Clay, Common Room, CRM, marketing automation, or sales-engagement software.
+
+# THE COMPANY'S OWN PAGES + FUNDING ANNOUNCEMENTS (fetched verbatim)
+SOURCE https://www.harmonic.security [via Exa /contents]
+Harmonic Security | AI Governance & Control Platform
+
+The Frequency newsletter just launched → AI Security Handbook: agents, MCP, more → The Frequency newsletter just launched →×
+
+# UnderstandControlEnableUnderstand AI wherever your workforce runs it
+
+The only platform that classifies every AI task, discovers why it is used, and then controls it in real time.
+
+Book a demo Explore the Platform
+
+See how it works
+
+The Harmonic Difference
+
+## Understanding, then control
+
+Collected at the source. Categorized by business use case. Acted on in real time, so security decisions follow the work instead of blocking it.
+
+01
+
+Collect
+
+02
+
+Categorize
+
+03
+
+Control
+
+ChatGPT Work→PDF14:02:36.118
+
+Prompt captured
+
+✕Sales Pipeline Data is Exposed
+
+SalesSales Associate
+
+BLOCKED
+
+Who we work with
+
+Interactive preview
+
+## Explore the Platform
+
+Click around a live preview of the Harmonic console — no signup, no sales call.
+
+explore.harmonic.security · Harmonic Platform preview
+
+Preview not loading? Open it in a new tab →
+
+Key Resources
+
+## Catch up on GenAI Security
+
+### Gartner AI Usage Control Research Points Beyond Basic Discovery
+
+### Securing ChatGPT Work: A Practitioner's Guide
+
+### All Organizations Now Have Employees Using China-Based AI Tools
+
+## FAQs
+
+Quick answers about Harmonic Security
+
+Is this just DLP with an AI sticker on it?
+
+No. Pattern-matching DLP cannot tell a draft email from a deal memo because prompts are unstructured and contextual. Static rules either flood teams with false positives or get ripped out entirely. We classify the meaning of the work, not the shape of the string. That is what lets us govern inline, where DLP can only monitor.
+
+How is this different from Zscaler, Netskope, or any other SASE tool?
+
+SASE inspects network traffic to known AI domains. Useful, but it misses everything that does not cross the network: Claude Desktop, Cursor, local MCP servers, embedded AI inside Canva or Salesforce, free-tier accounts on personal devices. Most shadow AI exposure happens on personal devices that never touch the corporate network, which is also where SASE has no jurisdiction. We sit on the device and inside the AI surface itself. That is why we can govern where SASE can only observe, and why we cover the agent layer SASE never reaches.
+
+What about Microsoft Purview or other AI-aware DLP?
+
+Purview gives you visibility inside Microsoft, on Microsoft tools, with Microsoft pattern matching. Real AI usage is not Microsoft-only. We see the full stack across vendors, including the long tail and the agentic surfaces, and we govern with intent classification rather than regex.
+
+Can't we just whitelist the AI tools we've approved?
+
+You can, and it's a reasonable starting point. The problem is that AI no longer lives only in the tools you evaluated. Google AI mode is built into Search. Salesforce Einstein runs inside your CRM. Copilot ships with every Microsoft 365 license. Canva, Grammarly, Notion, and most of your SaaS stack now have AI features that activate whether or not you toggled them on. Whitelisting governs the standalone tools you approved. It does not reach the AI embedded in the tools you already use every day.
+
+What actually happens when an employee shares something they shouldn't?
+
+Depends on what you want to happen. You can block in real time, warn the employee with context about why the action is risky, or log silently for security team review. Most customers start with warn-and-log during rollout, then move toward inline blocking for the highest-risk categories once they understand the patterns. The governance layer is yours to configure. We do not impose defaults that shut down legitimate work.
+
+What about AI agents that act autonomously, not just a human typing into a chat window?
+
+This is the problem most security platforms cannot see yet. When an agent reads a file, calls an API, writes to a database, and emails a summary, all without a human in the loop, there is no browser request to inspect and no prompt to classify at the keyboard. We govern at the MCP layer and at the tool surface, which is where agentic workflows execute. Policy follows the action, not the person.
+
+How do you avoid this becoming employee surveillance?
+
+HR, Finance, Ops, and Founders are excluded from reporting by design. Employee names can be masked in the portal. The dataset is sanitized and frozen. EU hosting is available on request. The design principle is that security teams need risk visibility, not a feed of individual employee behavior. We made the hard restraint choices in the product so you do not have to defend them in every internal review.
+
+How fast is deployment?
+
+Minutes. Roll out through Intune, JAMF, Kandji, or Group Policy. The browser extension covers all browsers and MCP gateway run on Windows, macOS, and Linux. No proxy redesign, no certificate gymnastics, no long onboarding. On day one you get a full inventory of AI tools in use across your organization. By the end of the first week, most security teams have a clearer picture of AI data exposure than they have had in years.
+
+What surfaces do you actually cover?
+
+Browsers (Chrome, Edge, Firefox, Safari, Arc, Brave, Vivaldi, Island, Genspark, Comet, Dia). Desktop AI (Claude Desktop, ChatGPT Desktop, Cursor, Windsurf). Agents and MCP (Claude Code, Cowork, custom MCP servers). Embedded AI (Canva, Grammarly, Google AI mode). Plus the long tail of 1,000+ web AI tools the catalogue updates every week.
+
+Does this help with the EU AI Act, GDPR, or other regulations?
+
+Yes, though compliance is a byproduct of good governance, not the other way around. The EU AI Act requires organizations to manage high-risk AI use and maintain logs of consequential AI-assisted decisions. GDPR creates exposure whenever personal data enters AI tools hosted outside the EEA. Our data classification and logging give you the audit trail, the data residency controls, and the ability to demonstrate that AI use in your organization operates within defined boundaries. Documentation mapping our controls to specific regulatory requirements is available on request.
+
+As every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.
+
+Products
+
+Resources
+
+Resource Library AI Security Handbook The Frequency Newsletter Brand Guide and Logos
+
+Company
+
+© 2026 Harmonic Security
+
+Trust Center Privacy Policy Terms of Service
+
+Cookie Settings
+
+SOURCE https://www.harmonic.security/about [via Exa /contents]
+Harmonic Security | About
+
+Our story
+
+## We‘ve grown through partnership and innovation and a belief in long-term thinking.
+
+2023 • August
+
+#### Harmonic Founded
+
+2023 • October
+
+#### Raised Seed Funding
+
+2024 • April
+
+#### RSA Innovation Sandbox Finalists
+
+2024 • July
+
+#### Harmonic Protect Launches
+
+2024 • October
+
+#### Landed Series A
+
+2025 • October
+
+#### Launched MCP Gateway
+
+2026 • January
+
+#### Upscaled Brand Launched
+
+Our Mission
+
+### To pave the way for secure AI adoption in enterprises, ensuring innovation thrives without compromise. We stand committed to protecting data integrity, promoting responsible AI use, and fostering trust in tomorrow’s technological advancements.
+
+Standards & Certifications
+
+Privacy and Security
+
+# Privacy
+
+We are a security and privacy-first organization. All customer data is protected in a dedicated tenant. We help you deliver your privacy obligations through EU Hosting by default, with US options available.‍
+
+# Security
+
+We’ve invested in leading DFIR, Monitoring and response capabilities that really work. Our Product Security program provides security guardrails and secure-by-default engineering practices.‍
+
+# Compliance
+
+Standards validate our approach to security and privacy. GDPR and US Privacy Compliance across the whole company help our customers to continue to deliver their privacy obligations.‍
+
+# Trust
+
+We will not train on your data. We work to build trust with our customers through Technical Transparency.‍
+
+Launch Harmonic Trust Center
+
+Harmonic's Board and Investors
+
+## Meet the Team
+
+### Alastair Paterson
+
+CEO & CO-FOUNDER, HARMONIC
+
+### Bryan Woolgar-O'Neil
+
+CTO & CO-FOUNDER, HARMONIC
+
+### René Bonvanie
+
+ADVISOR TO STARTUPS & VCS AND CMO EMERITUS OF PALO ALTO NETWORKS
+
+### T.J. Rylander
+
+GENERAL PARTNER AT N47
+
+### Mark Sutton
+
+CISO, BAIN CAPITAL
+
+### Alex Doll
+
+FOUNDER AT TEN ELEVEN VENTURES
+
+### Grant Whiting
+
+PARTNER, IN-Q-TEL
+
+### Colton Dempsey
+
+N47
+
+"While we did understand what people were using — because we had that visibility — we didn't know how they were using it, and the data leakage was definitely a big one. ... That's when we went looking for outside help. ... It's literally hours to seconds. If we deploy a tool and it's covered by Harmonic Security, we have insight right away."
+
+Mike Janielis
+
+Principal Information Security Architect
+
+GenAI is the Wild West right now, but Harmonic gives me the insights I need to get in control. Harmonic Security uncovers blindspots, including unauthorized and risky AI applications my employees are using.
+
+Huy Ly
+
+Director IT Infrastructure/Security, Monolithic Power Systems
+
+## Build Your AI Guardrails Now
+
+Gain the visibility and control you need to guide AI use with confidence.
+
+As every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.
+
+Products
+
+Resources
+
+Resource Library AI Security Handbook The Frequency Newsletter Brand Guide and Logos
+
+Company
+
+© 2026 Harmonic Security
+
+Trust Center Privacy Policy Terms of Service
+
+Cookie Settings
+
+SOURCE https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market [via Exa /contents]
+Harmonic Security Raises $17.5 Million Series A to Accelerate Zero-Touch Data Protection to Market | Harmonic Security
+
+Our Resources
+
+## Related Posts
+
+### Gartner AI Usage Control Research Points Beyond Basic Discovery
+
+### Securing ChatGPT Work: A Practitioner's Guide
+
+### All Organizations Now Have Employees Using China-Based AI Tools
+
+## Build Your AI Guardrails Now
+
+Gain the visibility and control you need to guide AI use with confidence.
+
+As every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.
+
+Products
+
+Resources
+
+Resource Library AI Security Handbook The Frequency Newsletter Brand Guide and Logos
+
+Company
+
+© 2026 Harmonic Security
+
+Trust Center Privacy Policy Terms of Service
+
+Cookie Settings
+
+# THE COMPANY'S OWN LIVE GO-TO-MARKET JOB REQS (Ashby posting API, verbatim; every one below is STILL LISTED on 2026-08-31)
+JOB Solutions Architect | dept=Go to Market/Sales | loc=California - Remote | published=2026-07-14T13:03:30.157+00:00 | comp=$140K – $180K • Offers Equity • Offers Commission | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/harmonic-security-inc/87fb4ade-26b7-4550-b331-9789df39d9b3
+AI is being run everywhere, by humans and agents. Harmonic Security governs all of it. The AI Governance and Control (AIGC) platform understands user / agent intent and data context in real time, giving security teams visibility and control across every tool and workflow so companies can move faster with AI while minimizing risk.
+
+We operate in one of the fastest-moving spaces in tech: the emerging intersection of AI and cybersecurity. It's a market still being defined, and we're among the first to build natively for it - protecting sensitive data in real time, at the endpoint, with minimal friction for the teams using it. Enterprises get full visibility and control. Their people get to innovate without guardrails slowing them down.
+
+Named to the Rising in Cyber 2026 list, Harmonic is gaining serious recognition  and serious traction. We're led by deep cybersecurity expertise and backed by investors who know the space: N47, Ten Eleven Ventures, and In-Q-Tel.
+
+As AI adoption inside the enterprise accelerates, the ability to safely observe, control, and enforce policy in real time isn't a nice-to-have. It's mission-critical infrastructure. That's what we build.
+
+
+
+
+HOW WE WORK: AI-FIRST BY DESIGN
+
+Harmonic exists to help enterprises adopt AI safely and at scale. We hold ourselves to that same standard. Everyone here actively leverages AI tools to perform their best work — from deep research and writing to building robust processes and automating complex workflows. We expect every new hire to bring a genuine curiosity for AI and a commitment to using it to work smarter, faster, and with greater creativity.
+
+For some, this involves tinkering and remaining open to emerging tools; for others, it means architecting entirely new systems with AI at the core. We will be transparent about expectations for every role and provide the tools and support needed for you to thrive.
+
+
+
+
+ABOUT THE ROLE
+
+You'll report to the Head of Solutions Architecture and work closely with product, engineering, marketing, and partner teams - serving as the technical bridge between prospects evaluating our platform, customers deploying it, and the internal teams driving its evolution.
+
+Your days will be a mix of engaging prospects and existing customers through technical storytelling, building and executing proof of value (POV) plans, and ensuring real-world requirements are clearly translated into product feedback. You'll be expected to carry a high volume of concurrent engagements, stay highly organized, and make confident decisions about where to focus without waiting for direction.
+
+
+
+
+WHAT YOU'LL DO
+
+ - Own all pre-sale technical activities end-to-end from discovery through POV completion and close, collaborating closely with customers to demonstrate how Harmonic simplifies data protection for the GenAI era
+
+ - Work as part of the US/North America sales team to close new business opportunities and support existing customers throughout the lifetime of their contracts
+
+ - Act as the voice of the customer internally, clearly translating technical blockers and requirements into actionable product feedback
+
+ - Work closely with product and marketing to turn deep technical insights into compelling content and messaging
+
+ - Contribute to the SA team's technical assets library - demo environments, integration scripts, POV playbooks) so the whole team moves faster
+
+ - Stay on top of the competitive landscape to help shape our story and spotlight what makes Harmonic stand out
+
+
+
+
+WHAT YOU BRING
+
+ - A proven track record in a solutions engineering or presales engineering role in the enterprise security space
+
+ - Must reside on the West coast to work with our West coast customers
+
+ - Hands-on, day-to-day experience with AI productivity tools — both browser-based (ChatGPT, Gemini, Perplexity) and application-integrated (Claude, Claude Cowork, GitHub Copilot, Cursor) — and a practical understanding of how these tools handle sensitive data in enterprise environments
+
+ - Demonstrated ability to thrive in fast-moving environments. Highly organized, able to manage competing priorities and a high volume of concurrent engagements, context-switch quickly, and make sound judgment calls about where to focus without waiting for direction
+
+ - Hands-on experience deploying and managing software in enterprise environments, including working with MDM solutions such as Intune, JAMF, and Kandji
+
+ - Comfort operating in ambiguity. Confident using new tools and environments, and troubleshooting live issues under pressure
+
+ - Scripting experience (Python, shell, PowerShell, or similar)
+
+ - A proactive, hands-on mindset. You take ownership, solve problems independently, step up for new challenges, and support the people around you
+
+
+
+
+BONUS POINTS IF YOU HAVE
+
+ - Experience in customer-facing post-sales roles such as technical customer engineering or technical account management
+
+ - Familiarity with value-driven solution selling. Able to connect technical capabilities d
+
+JOB Business Development Representative - East | dept=Go to Market/Corporate Marketing | loc=New York, NY - Remote | published=2026-08-04T22:39:24.369+00:00 | comp=$93K – $110K • Offers Equity • Offers Bonus | STILL LISTED TODAY (2026-08-31)=True
+URL https://jobs.ashbyhq.com/harmonic-security-inc/f568f331-f4ea-4328-a690-03772941f561
+AI doesn't run in one place anymore. It runs in the browser tab, the desktop app, the agent your engineers kicked off, and the copilot embedded in the tools you already pay for. Harmonic Security governs all of it.
+
+Our AI Governance and Control (AIGC) platform sits on the device, inside the interaction, at the moment of action, reading what AI is actually doing (not just the traffic around it) and acting in under 200ms. Security teams get full visibility and control across every AI surface, including the agentic and MCP layer that traditional tools can't see. Their people get to innovate without guardrails slowing them down.
+
+We're gaining serious traction at the intersection of AI and cybersecurity, and backed by investors who know the space: N47, Ten Eleven Ventures, and In-Q-Tel. As AI adoption inside the enterprise accelerates, the ability to safely observe, control, and enforce policy in real time isn't a nice-to-have. It's mission-critical infrastructure. That's what we build.
+
+
+HOW WE WORK: AI-FIRST BY DESIGN
+
+Harmonic exists to help enterprises adopt AI safely and at scale. We hold ourselves to that same standard. Everyone here actively uses AI tools to do their best work, from research and writing to building automated workflows. We expect every new hire to bring genuine curiosity for AI and a commitment to working smarter and faster with it.
+
+For some, this means staying open to new tools. For others, it means architecting new systems with AI at the core. We're transparent about expectations for every role, and we give you the tools and support to thrive.
+
+
+ABOUT THE TEAM
+
+The GTM organization is on a mission to scale Harmonic, and marketing sits at the center of it. This role reports into the Director of Demand Generation and works hand in glove with our strategic sales team, the reps carrying our largest, most complex accounts.
+
+We're coming off wins against Fortune 10 companies, where we're now rolling out to millions of end users. That changes the game for how we market to the top of our list. These aren't accounts you win with a webinar invite and a nurture track. They take precision, creativity, and a marketer who treats a named list of accounts like their own book of business.
+
+
+ABOUT THE ROLE
+
+This role exists because our most strategic accounts deserve marketing built specifically for them, not a scaled-down version of what we run everywhere else.
+
+You'll own account-based marketing for a curated set of top-tier prospects, partnering directly with the strategic sales team to open doors, build momentum, and drive pipeline inside the accounts that matter most. You'll orchestrate multi-channel plays across email (Instantly), LinkedIn (HeyReach), direct mail, events, and whatever creative idea earns a response from a hard-to-reach buyer. Some days you'll be building a sequence with a rep. Other days you'll be planning a dinner, shipping a physical mailer, or designing a play no one at Harmonic has tried yet.
+
+What makes this different is the story you get to tell. Harmonic gives the world's largest enterprises deep usage intelligence into how their people actually use AI, so they can drive their AI programs forward while keeping the guardrails in place. That's a message strategic buyers want to hear, and your job is to get it in front of the right person, at the right account, in a way they can't ignore.
+
+This is a hands-on, build-it role. If you want to set strategy and hand it off, this isn't it. The list is small, the stakes are high, and we need someone hungry enough to do the unscalable things that actually move a strategic account.
+
+
+WHAT YOU'LL DO
+
+ - Own account-based marketing for a curated set of strategic, top-tier prospects, working as a true partner to the strategic sales reps who cover them
+
+ - Build and run multi-channel account plays across email (Instantly), LinkedIn (HeyReach), direct mail, events, and creative one-off tactics tailored to individual accounts
+
+ - Turn Harmonic's story, deep AI usage intelligence with the guardrails enterprises need, into messaging that lands with senior security and business buyers
+
+ - Partner with sales on account selection, contact mapping, and the plays most likely to open and advance each account
+
+ - Plan and execute events, dinners, and field activities that get strategic buyers in the room
+
+ - Design and ship direct mail and physical touchpoints that break through where digital can't
+
+ - Track engagement and pipeline impact at the account level, and double down on what works
+
+ - Bring new creative ideas to the table constantly, and test them fast
+
+
+WHAT YOU BRING
+
+ - 1-3 years of B2B sales experience, ideally in a startup or high-growth environment
+
+ - Must reside in NYC OR located on the East coast to support our UK team
+
+ - Hunger. You're proactive, resourceful, and you'd rather try five things this week than wait for the perfect plan
+
+ - Hands-on experience running outbound and multi-channel campaigns, and comfort in tools like Inst
+
+# TARGETED GAP-FILL SEARCH RESULTS
+SOURCE https://www.linkedin.com/posts/anastasiacorio_hiring-post-im-hiring-an-abm-account-activity-7490847280472879104-iDH9 [published 2026-08-10T07:46:57.774Z]
+Hiring post! 📣 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. https://lnkd.in/gH9DJVPY There'll be the classic stuff: account mapping, outreach, direct… | Ana Corio
+
+Agree & Join LinkedIn
+
+By clicking Continue to join or sign in, you agree to LinkedIn’s User Agreement, Privacy Policy, and Cookie Policy.
+
+# Ana Corio’s Post
+
+Making AI adoption safe | Growth and Demand Gen @ Harmonic Security
+
+2w
+
+Hiring post! 📣 I'm hiring an ABM (account based marketing) manager for our most strategic accounts. https://lnkd.in/gH9DJVPY There'll be the classic stuff: account mapping, outreach, direct mail, events + some weird creative stuff nobody's tried yet 🤓 Whatever gets Harmonic Security in front of the right folks. 💚 If that sounds more fun than another boring nurture campaign, let's chat. p.s. anddddd you get to work with all these fun folks Michael Marriott Mariana Padilla Lexy Marchbank Tyler Chonoles Maya Smith Jackson Harrower+ many more!
+
+Who would not want to work on that team.
+
+Reply 2 Reactions 3 Reactions
+
+Marketing Operations Leader | Corgi Mom
+
+2w
+
+Demand Gen folks, don't miss this one! Great role with an incredible team. ✨
+
+Reply 2 Reactions 3 Reactions
+
+Govern AI wherever your workforce runs it ✨
+
+2w
+
+Dream team ✨ Join meow 😻
+
+Reply 1 Reaction 2 Reactions
+
+Ecosystem Builder — exMeta, exOkta, exVMware
+
+2w
+
+Solid humans in this pic. Donde es
+
+SOURCE https://www.linkedin.com/in/anastasiacorio [published 2026-08-06T00:00:00.000Z]
+# Ana Corio
+
+Br0k3n_1337
+
+San Francisco, California, United States (US)
+
+500 connections • 2,429 followers
+
+## About
+
+Growth and demand gen marketing nerd in the B2B cybersecurity space, based in SF…
+
+Total Experience: 15 years and 8 months
+
+## Experience
+
+### Director of Demand Generation - [Harmonic Security](https://www.linkedin.com/company/harmonic-security) (Current)
+
+Sep 2024 - Present (1 year and 11 months)
+
+Kicking off demand generation and growth marketing at Harmonic: the easy button for enabling AI safely.
+
+Department: Marketing • Level: Director
+
+Harmonic Security is a Technology, Information and Internet company. Harmonic Security has 50-60 employees and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and United Kingdom. Has $24.5M in total funding, with 2 prior funding rounds.
+
+### Director of Demand Generation - [Material Security](https://www.linkedin.com/company/materialsecurity)
+
+Jul 2021 - Sep 2024 (3 years and 2 months) in San Francisco Bay Area
+
+First marketing hire focused on demand generation and growth. Built out intent and signal-based demand generation motions to drive top of funnel for the sales team.
+- Built out all early stage functions including content strategy & an inbound motion, paid advertising, analyst relations, search, eve
+
+SOURCE https://www.linkedin.com/posts/harmonic-security_welcome-to-the-team-activity-7241817592636563456--L83 [published 2025-08-31T07:46:57.774Z]
+Welcome to the team! | Harmonic Security
+
+Agree & Join LinkedIn
+
+By clicking Continue to join or sign in, you agree to LinkedIn’s User Agreement, Privacy Policy, and Cookie Policy.
+
+# Harmonic Security’s Post
+
+9,640 followers
+
+1y
+
+👋 Excited to welcome Ana Alessandra (Corio) and Duncan Hanson to the Harmonic team! Ana is our Director of Demand Generation and Duncan joins as our first-ever sales hire. Welcome on board, both!
+
+CEO and Co-Founder of Harmonic | Enabling Secure AI Use
+
+1y
+
+What a milestone week for Harmonic Security with these big hitters joining the team! Welcome Duncan Hanson and Ana Alessandra (Corio)- great times ahead
+
+Reply 5 Reactions 6 Reactions
+
+Cyber Security CFO
+
+1y
+
+Congratulations Duncan & Ana! Great people collecting more great people. It’s the recipe for good things ahead. Go Harmonic!!
+
+Reply 2 Reactions 3 Reactions
+
+Making AI adoption safe | Growth and Demand Gen @ Harmonic Security
+
+1y
+
+getting the gang back together! ❤️ 🚀
+
+Reply 2 Reactions 3 Reactions
+
+VP Product at Harmonic Security
+
+1y
+
+Welcome Ana Alessandra (Corio) and Duncan Hanson! Hyped to have you both on the team
+
+Reply 2 Reactions 3 Reactions
+
+To view or add a comment, sign in
+
+9,640 followers
+
+## Explore content categories
+
+Show more Show less
+
+SOURCE https://hiretik.com/jobs/90f0f269-95c5-4fb9-9938-0ef70eb28c1f [published None]
+Account-Based Marketing Manager, Strategic Accounts | Harmonic Security, Inc | Hiretik
+
+# Account-Based Marketing Manager, Strategic Accounts
+
+ Harmonic Security, Inc New York United States 
+
+USD 93k-108k
+
+## Job signals
+
+- Last checked
+- 10h ago
+- First seen
+- Aug 5, 2026
+- Open
+- 13d open
+
+ Posted 12d ago via ashby 
+
+## Job description
+
+AI doesn't run in one place anymore. It runs in the browser tab, the desktop app, the agent your engineers kicked off, and the copilot embedded in the tools you already pay for. Harmonic Security governs all of it.
+
+Our AI Governance and Control (AIGC) platform sits on the device, inside the interaction, at the moment of action, reading what AI is actually doing (not just the traffic around it) and acting in under 200ms. Security teams get full visibility and control across every AI surface, including the agentic and MCP layer that traditional tools can't see. Their people get to innovate without guardrails slowing them down.
+
+We're gaining serious traction at the intersection of AI and cybersecurity, and backed by investors who know the space: N47, Ten Eleven Ventures, and In-Q-Tel. As AI adoption inside the enterprise accelerates, the ability to safely observe, control, and enforce policy in real time isn't a nice-to-have. It's mission-critical infrastructure. That's what we build.
+
+## How We Work: AI-First by Design
+
+Harmonic exists to help
+
+SOURCE https://www.linkedin.com/posts/mayadaysmith_harmonic-security-is-hiring-come-work-with-activity-7493741448979329025-gXJ- [published 2026-08-17T07:46:57.774Z]
+# Harmonic Security is hiring! Come work with a fantastic team. | Maya Smith · LinkedIn · 2026-08-13
+
+**Maya Smith**: Brand Director at Harmonic Security for 11 months with 27 years 2 months of total professional experience. Previous roles include Senior Creative Director at Tenable, Creative Director at Tenable, and Senior Graphic Designer at Arm. Based in San Francisco Bay Area [US].
+
+---
+
+Harmonic Security is hiring! Come work with a fantastic team.
+
+![Harmonic Security is hiring! Come work with a fantastic team. | Maya Smith image](https://media.licdn.com/dms/image/v2/D5622AQHL-4VXbAV0xg/feedshare-shrink_800/B56Z_TV53WJ0Ac-/0/1785957163453?e=2147483647&v=beta&t=Pc6TrS9XYnBL4IXGvPbovxWh4Fym55G2vulePkUqvS4)
+
+**Reshared from [Ana Corio](https://linkedin.com/in/anastasiacorio):**
+> Hiring post! 📣 I'm hiring an ABM (account based marketing) manager for our most strategic accounts.
+>
+> https://lnkd.in/gH9DJVPY
+>
+> There'll be the classic stuff: account mapping, outreach, direct mail, events
+>
+> + some weird creative stuff nobody's tried yet 🤓
+>
+> Whatever gets Harmonic Security in front of the right folks. 💚
+>
+> If that sounds more fun than another boring nurture campaign, let's chat.
+>
+> p.s. anddddd you get to work with all these fun folks
+> Michael Marriott Mariana Padilla Lexy Marchbank Tyler Chonoles Maya Smith Jackson Harrower + many more!
+
+## Engagement
+
+- Reactions: 6
+
+SOURCE https://jobgether.com/offer/6a72ae54e9f5b78658697ade-account-based-marketing-manager-strategic-accounts [published None]
+Account-Based Marketing Manager, Strategic Accounts at Harmonic Security
+
+# Account-Based Marketing Manager, Strategic Accounts 
+
+ • 20 days ago 
+
+## Role overview
+
+### Qualifications
+
+- 1-5 years of B2B marketing experience, ideally account-based marketing, demand gen, or field marketing in a startup or high-growth environment
+- Hands-on experience running outbound and multi-channel campaigns
+- Sharp writing and messaging judgment
+- An AI-native mindset: you use AI tools to move faster and you're actively experimenting with what's next
+
+### Responsibilities
+
+- Own account-based marketing for a curated set of strategic, top-tier prospects
+- Build and run multi-channel account plays across email, LinkedIn, direct mail, events
+- Partner with sales on account selection, contact mapping
+- Track engagement and pipeline impact at the account level, and double down on what works
+
+### Key facts
+
+- Remote from: United States 
+- Full time
+- Mid-level (2-5 years)
+- Account Based Marketing 
+- English
+
+### Hard skills
+
+### Other skills
+
+- Creativity 
+- Communication 
+- Proactivity 
+- Resourcefulness 
+- Collaboration 
+
+## About the company
+
+ 
+
+Harmonic Security
+
+Helping companies to adopt Generative AI without risking the security and privacy of their data. Harmonic Security gives security teams the tools to protect sensitive data without the headaches of labeling and complex rules. Our pre-
+
+SOURCE https://jobright.ai/jobs/info/6a726c0ccb96192a3684e187 [published None]
+Account-Based Marketing Manager, Strategic Accounts @ Harmonic Security | Jobright.ai
+
+## Harmonic Security · 4 days ago
+
+# Account-Based Marketing Manager, Strategic Accounts
+
+New York, NY
+
+Full-time
+
+Hybrid
+
+Mid Level
+
+$93K/yr - $108K/yr
+
+1+ years exp
+
+Harmonic Security is a company focused on AI governance and cybersecurity. They are seeking an Account-Based Marketing Manager to own marketing strategies for strategic accounts, partnering closely with the sales team to drive engagement and pipeline through innovative multi-channel campaigns.
+
+## Responsibilities
+
+Own account-based marketing for a curated set of strategic, top-tier prospects, working as a true partner to the strategic sales reps who cover them
+
+Build and run multi-channel account plays across email (Instantly), LinkedIn (HeyReach), direct mail, events, and creative one-off tactics tailored to individual accounts
+
+Turn Harmonic's story, deep AI usage intelligence with the guardrails enterprises need, into messaging that lands with senior security and business buyers
+
+Partner with sales on account selection, contact mapping, and the plays most likely to open and advance each account
+
+Plan and execute events, dinners, and field activities that get strategic buyers in the room
+
+Design and ship direct mail and physical touchpoints that break through where digital can't
+
+Track engagement and pipeline impact at the a
+
+SOURCE https://www.linkedin.com/posts/anastasiacorio_linkedin-do-your-thing-im-hiring-activity-7427403844734799873-R1Ie [published 2026-02-11T00:00:00.000Z]
+LinkedIn, do your thing. 🔎 I'm hiring a Growth Marketing Manager (SF preferred) at Harmonic Security. Growth is broad, but this person's main role will be to own our paid search, paid social, and… | Ana Corio
+
+Agree & Join LinkedIn
+
+By clicking Continue to join or sign in, you agree to LinkedIn’s User Agreement, Privacy Policy, and Cookie Policy.
+
+# Ana Corio’s Post
+
+Making AI adoption safe | Growth and Demand Gen @ Harmonic Security
+
+6mo
+
+LinkedIn, do your thing. 🔎 I'm hiring a Growth Marketing Manager (SF preferred) at Harmonic Security. Growth is broad, but this person's main role will be to own our paid search, paid social, and SEO/AEO strategy. You'll be hands-on keyboard across Google, Reddit, LinkedIn, and more, and have full autonomy to test ideas and move fast. What makes a good fit: ⚡ You have an insane hunger for growth, experimentation, and learning 🤖 You embrace AI tools to work smarter, optimizing campaigns and workflows 🤑 You want to drive measurable pipeline and have direct impact 🏢 You have experience in B2B environments (cybersecurity ➕ ) 🍴 You love snacks (jk, but you'll have to deal with my love of food) Andddddd you'll get to work with some pretty FUN folks like Michael Marriott, Maya Smith, Mariana Padilla, Lexy Marchbank, and more! If you know someone that could be a fit, I'd love a
+
+# REPUTATION / NEGATIVES SEARCH RESULTS
+SOURCE https://www.decryptiondigest.com/blog/harmonic-security-vs-nightfall-ai-shadow-ai-dlp [published 2026-07-31T00:00:00.000Z]
+Harmonic Security vs. Nightfall AI: GenAI Data Leak Prevention Compared
+
+BUYER'S GUIDE | AI SECURITY
+
+Buyer's GuideJuly 31, 202613 min read
+
+# Harmonic Security vs. Nightfall AI: Which Stops GenAI Data Leaks?
+
+A head-to-head buyer's guide for security teams choosing a tool to stop confidential data leaving through ChatGPT, Copilot, Claude, and Gemini prompts
+
+Sources: Harmonic Security - DLP for GenAI| Harmonic Security - Harmonic Protect product page| Nightfall AI - Firewall for AI Copilots| Nightfall AI - Plans and Pricing| Nightfall AI - Authentication Options documentation| VentureBeat - Harmonic Security raises $17.5M Series A
+
+Eric BangFounder & Cybersecurity Evangelist
+
+43%
+
+of office professionals have entered work-related content into public AI tools like ChatGPT, Claude, or Gemini outside company systems (Ivanti/PRNewswire 2026 survey)
+
+67%
+
+of employees use AI tools at work, but only 18% of organizations have formal AI security policies (Salesforce 2026 Workforce AI Survey)
+
+39.7%
+
+of AI prompt inputs contained sensitive data in 2026, up from roughly 10% in 2023 (Cyberhaven longitudinal data)
+
+77%
+
+of enterprise AI users paste data into GenAI prompts, averaging about 14 pastes per day into non-corporate accounts (LayerX browser telemetry)
+
+---
+
+Sponsored
+
+Sponsored
+
+Proactive Security for the AI Era
+
+NodeZero continuously and autonomously pentests infrastructure, ide
+
+SOURCE https://aisecurityplatform.com/reviews/harmonic/ [published 2026-05-12T17:39:08.000Z]
+Harmonic Security Review: Score, Strengths, Gaps
+
+- Review — Harmonic Security
+
+# Harmonic Security Review
+
+## TL;DR
+
+Harmonic Security is the strongest visibility-first AI governance and security platform we have reviewed. The product surfaces AI tool usage across the org — Claude, ChatGPT, Gemini, Perplexity, consumer tools — and distinguishes between safe and risky use of those tools (explaining a function vs. pasting proprietary code is the canonical example). The MCP Gateway and browser-agnostic coverage put Harmonic ahead of competitors that limit themselves to a single browser or rely on a heavy endpoint agent. Customers find data exposures within the first week. For buyers whose first question is “what is actually happening in our org with AI,” Harmonic is at or near the top of the list.
+
+Score: 8.7 / 10.
+
+- Best overall on coverage breadth and visibility.
+- Lightweight end-user agent and MCP support make this a defensible pick for the next two to three years of the AI security market.
+
+## How This Review Was Conducted
+
+We have requested lab access from Harmonic Security.
+
+Until they confirm, this review is based on a live vendor demo, public documentation, and framework alignment review.
+
+- We will upgrade this review to Lab Tested when access is granted.
+
+## Score breakdown
+
+### Dimension
+
+Coverage breadth
+
+Detection accuracy
+
+Deployment friction
+
+Policy & control dep
+
+SOURCE https://dexteragent.ai/companies/harmonic-security-1771315038 [published None]
+Harmonic Security Profile 2026: Financials, AI Strategy & Glean, BigID, OneTrust Comparison
+
+# Harmonic Security Profile 2026: Revenue, Competitors & Strategy
+
+Last updated: February 16, 2026
+
+Download PDF for free
+
+## What is Harmonic Security's business focus and history?
+
+Harmonic Security is a funded company based in San Francisco, California (United States), founded in 2023 by Alastair Paterson and Bryan Woolgar-O'Neil. It operates in the Technology, Information and Internet industry, providing data protection solutions for AI adoption. Harmonic Security has raised $17.5 million in Series A funding led by N47. The company has 3 active competitors, including 1 funded and 0 that have exited. Its top competitors include companies like Glean, BigID, and OneTrust.
+
+### Harmonic Security Corporate Details & Core Services
+
+Harmonic Security provides a 'zero-touch' data protection platform that enables enterprises to adopt AI tools without risking data security and privacy. It addresses the issue of 'Shadow AI' by offering visibility into AI tools used across an organization, assessing associated risks, and allowing security teams to manage access and block sensitive content from being uploaded.
+
+### Harmonic Security Contact Information & Official Links
+
+| Website | https://www.harmonic.security/ |
+| --- | --- |
+| Social | LinkedIn Twitter |
+| Email id | info@harmonic.security |
+
+
+SOURCE https://www.deepinspect.ai/blog/harmonic-security-alternatives [published 2026-08-24T07:54:24.419Z]
+Harmonic Security Alternatives: Workforce AI Control and API Enforcement | DeepInspect
+
+August 24, 2026
+
+# Harmonic Security Alternatives: Workforce AI Control and API Enforcement
+
+Harmonic Security focuses on discovering, understanding, and controlling workforce AI use across the device and AI surface. Buyers comparing Harmonic Security alternatives should separate workforce and endpoint governance from policy enforcement on authenticated HTTP calls to LLM APIs. This article maps the categories and buyer fit without treating them as interchangeable.
+
+By Parminder Singh· Founder & CEO, DeepInspect Inc.
+
+A browser session differs from a desktop AI client. An internal service calling a model API creates another control point. Harmonic Security makes that distinction visible in its public material, describing discovery and control for workforce AI use across the places employees run AI. A platform team sending structured HTTP requests from an approved application needs a policy point on a different path.
+
+That is where Harmonic Security alternatives become confusing. Buyers see "AI control" and assume one product should govern every route. The useful comparison starts with the traffic and the identity, then works backward to the product category.
+
+## TL;DR
+
+- Harmonic Security focuses on workforce AI discovery and control across AI surfaces used by employees.
+- Endpoint and workfo
+
+SOURCE https://wald.ai/compare/harmonic-security-alternatives [published 2026-08-21T00:00:00.000Z]
+Best Harmonic Security Alternatives for AI Data Protection (2026)
+
+Listicles
+
+# Best Harmonic Security Alternatives for AI Data Protection (2026)
+
+Written byVinay GoelCEO & Co-founder
+
+Last updated
+
+August 21, 2026
+
+5
+
+Mins Read
+
+Table of Contents
+
+Still relying on traditional DLP for AI?
+
+There's a better way.
+
+Semantic Understanding
+
+Real Time Inline Action
+
+Dynamic Policy Engine
+
+Get A Free POC
+
+Trusted by 55+ regulated organizations
+
+Your team is already using ChatGPT, Claude, Gemini, and other AI tools. Every prompt saves them hours on end, but it also creates a new vulnerability for sensitive data to be shared where it shouldn't be.
+
+Traditional DLP was built to stop sensitive information from leaving through emails or file sharing. It wasn't built for employees pasting that same information into an AI prompt. And telling them to stop using the tools isn't a solution either. They'll simply find another way, leaving security teams with even less visibility.
+
+By the time you're comparing products, you've already accepted that AI needs its own security controls. Harmonic Security has earned its place as one of the leading AI security platforms, and it's easy to see why. It gives visibility into AI usage, uncovers Shadow AI, and applies governance controls where traditional DLP falls short. But if your priorities are different, your shortlist should be too.
+
+You may be lookin
+
+SOURCE https://guardion.ai/ai-security-index/alternatives/harmonic-security [published None]
+Top Harmonic Security Alternatives & Competitors (2026)
+
+# Top Harmonic Security Alternatives for 2026
+
+Harmonic Security focuses on data loss prevention. many teams evaluate alternatives for broader agent coverage, different deployment models, or pricing that fits their scale. Here are the top competitors to consider.
+
+## What is Harmonic Security?
+
+AI-native data protection platform that provides visibility and control over sensitive data in GenAI prompts and RAG contexts.
+
+### GuardionAI
+
+Agent runtime governance — EDR for AI agents. Guardion governs every agent command, tool call, and data access inline: a security gateway, runtime guardrails, DLP, and detection & incident response for AI agents.
+
+#### Why it's better than Harmonic Security
+
+Security Gateway
+
+Inline control point for every agent and MCP call — zero instrumentation, connect once.
+
+Runtime Guardrails
+
+Detect prompt injection, jailbreaks, and unsafe actions with 96.3 F1 accuracy.
+
+Data Loss Prevention
+
+Anonymize PII and protect secrets before they leave your org.
+
+Detection & Incident Response
+
+A centralized hub to investigate and respond to agent incidents, EDR-style.
+
+sub-130ms guardrails latency • 96.3 F1 on the Prompt Security Leaderboard with 0.02% false positives • 50M+ agent actions protected per month
+
+### Check Point (GenAI Protect)
+
+A suite including GenAI Protect, Application Protection, and Risk Sc
+
+SOURCE https://druce.ai/governance/wiki/vendors/harmonic-security [published None]
+Harmonic Security
+
+# Harmonic Security
+
+Primary category: ai-access-governance. Independent, venture-backed (~$26M).
+
+One-liner — A data-protection/“shadow AI” governance platform that watches how employees (and increasingly agents) use generative-AI tools and stops sensitive data from leaking into them, using purpose-trained language models instead of classic DLP rules.
+
+## What it does
+
+Harmonic gives enterprises visibility into which AI tools their staff are actually using (sanctioned and unsanctioned/“shadow AI”), then enforces controls on what data can be pasted, uploaded, or typed into them. Its pitch is “zero-touch data protection”: rather than the long data-classification-and-labelling projects and noisy regex/rule sets that legacy DLP requires, Harmonic ships pretrained, specialized language models that claim to detect sensitive data (PII, source code, financials, IP, etc.) i
+
+
+Emit ONLY account-entity claims for account:harmonic-security now.
+Return {"account_claims":[...], "proposed_fields":[...]}.

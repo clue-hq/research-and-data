@@ -323,3 +323,17 @@ describe("documentStore", () => {
     ).resolves.toBeNull();
   });
 });
+
+it("validates the fresh render context identity and preserves selected inline JSON", async () => {
+  const context = { context_key:"exact-inline", document_id:"doc_ctx", document_version:4,
+    scene_brand_ref:{id:"kit",version:3}, scene_medium:"digital", source:"document",
+    brand_kit:{id:"kit",version:3,tokens:{spacing:{alias:{value:{default:32}}}}},
+    mode:{values:{theme:"dark"}}, diagnostics:[] };
+  const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(200, {
+    id:"doc_ctx", current_version:4, scene:emptyScene, render_context:context,
+  }));
+  const loaded = await fetchDocument({apiBaseUrl:"http://localhost:8002",fetchImpl},"doc_ctx");
+  expect(loaded.renderContext).toEqual(context);
+  fetchImpl.mockResolvedValue(jsonResponse(200, {id:"doc_ctx", current_version:5, scene:emptyScene, render_context:context}));
+  await expect(fetchDocument({apiBaseUrl:"http://localhost:8002",fetchImpl},"doc_ctx")).rejects.toThrow("another document or version");
+});

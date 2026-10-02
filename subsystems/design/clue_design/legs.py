@@ -26,6 +26,8 @@ Fail-closed tenancy per the D2 error-taxonomy rule: every read/write keys
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
@@ -264,3 +266,63 @@ async def reopen_leg(conn: AsyncConnection, *, workspace_id: str, leg_id: str) -
         action="reopen",
         set_sql="state = 'open_awaiting_user', close_reason = NULL, closed_by_run_id = NULL",
     )
+
+
+@dataclass(frozen=True, slots=True)
+class LegDocumentSpec:
+    """One document of a leg: its birth position and the item's own words (spec §3.1)."""
+
+    document_id: str
+    position: int
+    note: str = ""
+
+
+async def add_leg_documents(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    leg_id: str,
+    documents: Sequence[LegDocumentSpec],
+) -> None:
+    """Record the leg's document set. Schema-refused on a duplicate position or document."""
+    for spec in documents:
+        await conn.execute(
+            text(
+                "INSERT INTO design_leg_document "
+                "(leg_id, workspace_id, document_id, position, note) "
+                "VALUES (:leg, :ws, :doc, :pos, :note)"
+            ),
+            {
+                "leg": leg_id,
+                "ws": workspace_id,
+                "doc": spec.document_id,
+                "pos": spec.position,
+                "note": spec.note,
+            },
+        )
+
+
+async def list_leg_documents(
+    conn: AsyncConnection, *, workspace_id: str, leg_id: str
+) -> list[JsonObject]:
+    """The leg's documents in position order, each with the document facts the runner, the
+    judge and the composer need. Fail-closed on workspace at both rows."""
+    rows = (
+        (
+            await conn.execute(
+                text(
+                    "SELECT ld.document_id, ld.position, ld.note, d.title, d.doc_kind, "
+                    "d.current_version, d.account_id "
+                    "FROM design_leg_document ld "
+                    "JOIN design_document d "
+                    "  ON d.id = ld.document_id AND d.workspace_id = ld.workspace_id "
+                    "WHERE ld.leg_id = :leg AND ld.workspace_id = :ws "
+                    "ORDER BY ld.position ASC"
+                ),
+                {"leg": leg_id, "ws": workspace_id},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(row) for row in rows]

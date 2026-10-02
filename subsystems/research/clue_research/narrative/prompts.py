@@ -91,6 +91,12 @@ ANGLE_TEMPLATES: dict[Persona, AngleTemplate] = {
         lens="Frame the argument around the OBJECTIONS this persona is likely to raise (security, "
         "compliance, switching cost) and how the client's capabilities de-risk them.",
     ),
+    Persona.USER: AngleTemplate(
+        angle_label="daily-operator",
+        lens="Frame the argument around the DAILY OPERATOR's experience: the workflow this person "
+        "runs every day, the hours and friction it removes, and how it fits the tools they "
+        "already use — concrete and hands-on, not strategic.",
+    ),
 }
 
 

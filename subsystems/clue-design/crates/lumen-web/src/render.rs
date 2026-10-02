@@ -905,7 +905,11 @@ fn render_node(
                 ));
             }
         },
-        WebNodeKind::Fragment { fragment_id, slots } => {
+        WebNodeKind::Fragment {
+            fragment_id,
+            slots,
+            text_overrides,
+        } => {
             // The wrapper is the ONLY markup this arm authors. Everything
             // inside it is the artifact's own sanitized HTML, emitted
             // verbatim: the fragment was made safe ONCE, at creation, and
@@ -985,16 +989,37 @@ fn render_node(
             }
             out.push('"');
             node_attr(out);
+            // Slice 2 / R-A1: the bridge has to tell a clone ROOT from an ordinary
+            // vocabulary node, because everything INSIDE this wrapper is the artifact's
+            // own markup and carries no node id — an element in there is addressed by
+            // structural path from this wrapper, not by an id of its own. Editor-only,
+            // under the same condition `node_attr` emits `data-node-id` under: a
+            // delivery snapshot carries no instrumentation at all.
+            if editor && !suppress_node_ids {
+                out.push_str(" data-fragment-root=\"true\"");
+            }
             out.push('>');
             // F1.4: the artifact's markup with this NODE's slot values applied.
             // With nothing bound the walk is the identity function, so an
             // unpersonalized fragment still renders byte-for-byte as stored.
-            out.push_str(&crate::fragment::substitute_fragment_slots(
+            let substituted = crate::fragment::substitute_fragment_slots(
                 &content.html,
                 slots,
                 &content.slot_kinds,
                 doc,
                 &options.asset_base_url,
+                &node.id,
+                diagnostics,
+            );
+            // R-A6: the marketer's own words, second and last. The slot pass is
+            // the agent's personalization; an override is a human overruling it
+            // on ONE element, so it runs after — and on that pass's OUTPUT,
+            // because the markup the editor measured the path against is the
+            // rendered markup, not the stored artifact. Both passes are
+            // identity functions when nothing is bound.
+            out.push_str(&crate::fragment::apply_fragment_text_overrides(
+                &substituted,
+                text_overrides,
                 &node.id,
                 diagnostics,
             ));
@@ -1592,6 +1617,7 @@ mod tests {
                 kind: WebNodeKind::Fragment {
                     fragment_id: fragment_id.to_owned(),
                     slots,
+                    text_overrides: Default::default(),
                 },
                 classes: "w-full py-12".to_owned(),
                 children: Vec::new(),
@@ -1606,6 +1632,21 @@ mod tests {
     /// proves the artifact is emitted verbatim when no slot is bound.
     fn fixture_with_fragment(fragment_id: &str) -> (WebDoc, WebTheme) {
         fixture_with_fragment_slots(fragment_id, BTreeMap::new())
+    }
+
+    /// The same page whose fragment node carries R-A6 text overrides — the one
+    /// interior edit a clone allows.
+    fn fixture_with_fragment_overrides(
+        fragment_id: &str,
+        text_overrides: BTreeMap<String, crate::doc::FragmentTextOverride>,
+    ) -> (WebDoc, WebTheme) {
+        let (mut doc, theme) = fixture_with_fragment(fragment_id);
+        let page = doc.pages.get_mut(0).expect("page");
+        let node = page.nodes.get_mut(&NodeId::from("frg_hero")).expect("frg");
+        if let WebNodeKind::Fragment { text_overrides: on_node, .. } = &mut node.kind {
+            *on_node = text_overrides;
+        }
+        (doc, theme)
     }
 
     const FRAGMENT_HTML: &str =
@@ -1688,6 +1729,79 @@ mod tests {
     }
 
     #[test]
+    fn fragment_text_overrides_render_after_the_slot_pass_and_the_document_is_untouched() {
+        // R-A6: the marketer's own words, applied at render on top of the
+        // artifact's frozen markup. The artifact is never rewritten and neither
+        // is the stored document — an override exists only in these bytes.
+        let fragment_id = "frag_0123456789abcdef";
+        let (doc, theme) = fixture_with_fragment_overrides(
+            fragment_id,
+            BTreeMap::from([(
+                ":nth-child(1) > :nth-child(1)".to_owned(),
+                crate::doc::FragmentTextOverride {
+                    text: "Care, on OUR terms".to_owned(),
+                    bold: true,
+                    italic: false,
+                    underline: false,
+                    size: Some(1),
+                },
+            )]),
+        );
+        let before = serde_json::to_string(&doc).expect("doc json");
+
+        let rendered = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Editor, fragment_id),
+        )
+        .expect("editor render");
+        assert!(
+            rendered.html.contains(
+                "<h1 data-lumen-slot=\"headline\" \
+                 data-lumen-override=\":nth-child(1) &gt; :nth-child(1)\" \
+                 data-lumen-size=\"1\" style=\"font-size:1.125em\">\
+                 <strong>Care, on OUR terms</strong></h1>"
+            ),
+            "{}",
+            rendered.html
+        );
+        // The artifact's own words for THAT element are gone from the render.
+        assert!(!rendered.html.contains("Care, on your terms"), "{}", rendered.html);
+        // …and the edit lands INSIDE the clone's wrapper, not beside it.
+        let wrapper_at = rendered
+            .html
+            .find("data-fragment-root=\"true\"")
+            .expect("wrapper");
+        let override_at = rendered
+            .html
+            .find("data-lumen-override")
+            .expect("override");
+        assert!(wrapper_at < override_at);
+        assert!(rendered.diagnostics.is_empty(), "{:#?}", rendered.diagnostics);
+        assert_eq!(
+            serde_json::to_string(&doc).expect("doc json"),
+            before,
+            "an override must never touch the stored document"
+        );
+
+        // Delivery renders the same edit (no instrumentation around it).
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Delivery, fragment_id),
+        )
+        .expect("delivery render");
+        assert!(
+            delivery.html.contains("<strong>Care, on OUR terms</strong>"),
+            "{}",
+            delivery.html
+        );
+        assert!(!delivery.html.contains("Care, on your terms"));
+    }
+
+    #[test]
     fn fragment_renders_its_artifact_html_in_flow_under_the_wrapper_class() {
         let fragment_id = "frag_0123456789abcdef";
         let (doc, theme) = fixture_with_fragment(fragment_id);
@@ -1704,7 +1818,7 @@ mod tests {
         assert!(
             editor.html.contains(
                 "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\" \
-                 data-node-id=\"frg_hero\">"
+                 data-node-id=\"frg_hero\" data-fragment-root=\"true\">"
             ),
             "{}",
             editor.html
@@ -1728,6 +1842,41 @@ mod tests {
         ));
         assert!(delivery.html.contains(FRAGMENT_HTML));
         assert!(!delivery.html.contains("data-node-id"));
+    }
+
+    #[test]
+    fn a_fragment_wrapper_is_marked_as_a_clone_root_for_the_editor_bridge_only() {
+        // Slice 2 / R-A1: everything inside a cloned band is the artifact's own markup
+        // and carries no node id, so the bridge addresses an element in there by
+        // structural path from the wrapper. It can only know to do that if the wrapper
+        // says it is a clone root — and it must say so ONLY where the rest of the
+        // editor instrumentation lives, never in a delivered page.
+        let fragment_id = "frag_0123456789abcdef";
+        let (doc, theme) = fixture_with_fragment(fragment_id);
+
+        let editor = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Editor, fragment_id),
+        )
+        .expect("editor render");
+        assert!(
+            editor
+                .html
+                .contains("data-node-id=\"frg_hero\" data-fragment-root=\"true\""),
+            "{}",
+            editor.html
+        );
+
+        let delivery = render_page(
+            &doc,
+            &PageId::from("home"),
+            &theme,
+            &fragment_options(RenderMode::Delivery, fragment_id),
+        )
+        .expect("delivery render");
+        assert!(!delivery.html.contains("data-fragment-root"));
     }
 
     #[test]
@@ -1847,6 +1996,7 @@ mod tests {
                 kind: WebNodeKind::Fragment {
                     fragment_id: fragment_id.to_owned(),
                     slots: Default::default(),
+                    text_overrides: Default::default(),
                 },
                 classes: String::new(),
                 children: Vec::new(),
@@ -1861,6 +2011,7 @@ mod tests {
                 kind: WebNodeKind::Fragment {
                     fragment_id: "frag_fedcba9876543210".to_owned(),
                     slots: Default::default(),
+                    text_overrides: Default::default(),
                 },
                 classes: String::new(),
                 children: Vec::new(),

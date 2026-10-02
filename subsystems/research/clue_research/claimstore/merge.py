@@ -61,6 +61,7 @@ from clue_core import (
 from clue_core.field import FieldKey
 from clue_research.claimstore.claims import (
     _SELECT_COLUMNS,
+    _quality_eligible_sql,
     _retention_eligible_sql,
     _row_to_claim,
 )
@@ -430,7 +431,7 @@ async def current_value(
                 WHERE entity_id = :entity_id
                   AND field_key = :field_key
                   AND superseded_by IS NULL
-                  AND {retention_sql}
+                  AND {retention_sql} AND {_quality_eligible_sql()}
                   AND {scope_sql}
                 ORDER BY collected_at DESC, id
                 """
@@ -478,7 +479,7 @@ async def current_values(
         f"""
         SELECT {_SELECT_COLUMNS} FROM claim
         WHERE entity_id IN :eids AND field_key IN :fkeys AND superseded_by IS NULL
-          AND {retention_sql}
+          AND {retention_sql} AND {_quality_eligible_sql()}
           AND {scope_sql}
         """
     ).bindparams(bindparam("eids", expanding=True), bindparam("fkeys", expanding=True))

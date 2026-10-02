@@ -1,0 +1,219 @@
+SUBJECT (identity already locked, do not re-derive):
+  name: Mandar Marathe
+  title: VP Marketing
+  company: UPTIQ, Inc. (uptiq.ai)
+  linkedin: https://www.linkedin.com/in/mandarmarathe
+
+CLOSED FIELD-KEY LIST — use ONLY these:
+  contact.facet.career_history
+  contact.facet.alma_mater
+  contact.facet.stated_interests
+  contact.facet.communication_style
+  contact.facet.public_appearances
+  contact.facet.publications
+  contact.facet.recent_post
+  contact.facet.nickname
+  contact.facet.hobby
+  contact.facet.recent_award
+  contact.facet.conference_talk
+  contact.facet.causes
+  contact.facet.hooks   [PROPOSED — new field]
+  contact.facet.openers   [PROPOSED — new field]
+  contact.facet.voice_quote   [PROPOSED — new field]
+
+CHARTER CATEGORIES for `charter_category`: background, life_outside_work, voice, professional_identity, unique_insight, opener
+
+Return STRICT JSON, no prose, shaped exactly:
+{
+  "claims": [
+    {"field_key": "<one of the closed list>",
+      "value": <string, or array of strings, or object — whatever suits the field>,
+      "evidence_quote": "<VERBATIM, copied exactly from the material below>",
+      "source_url": "<a URL that appears in the material>",
+      "source_timestamp": "<MM:SS or null>",
+      "source_type": "<linkedin_profile|linkedin_post|youtube_transcript|podcast_transcript|podcast_shownotes|press|company_site|university|blog|directory|other>",
+      "charter_category": "<one of the charter categories>",
+      "priority": "P1|P2|P3",
+      "use_class": "professional-public|personal-public-non-sensitive",
+      "identity_binding": "STRONG",
+      "outreach_safe": true,
+      "note": "<optional short caveat, or empty>"}
+  ],
+  "unique_insight": {"text": "<one paragraph, or 'NOT FOUND — thin public footprint'>",
+                      "evidence_quote": "<verbatim or empty>", "source_url": "<or empty>"},
+  "not_found": ["<charter category or sub-item that came back empty>", "..."],
+  "same_name_contamination": ["<url — why it was ruled out>", "..."]
+}
+
+=== MATERIAL 1: DEEP-RESEARCH DOSSIER (Exa deep-reasoning, personal charter) ===
+PERSONAL DOSSIER — Mandar Marathe (target locked to LinkedIn https://www.linkedin.com/in/mandarmarathe; UPTIQ, Inc./uptiq.ai; research date 2026-09-02) 1. Identity and current role
+Mandar Marathe’s LinkedIn profile identifies him as “VP Marketing at Uptiq.ai” and describes him as “AI Marketer | Driving Growth for B2B SaaS & AI Brands via Claude Cowork / Code Agents & Skills, AEO & SEO, Content, Paid Media, ABM.” Source: https://www.linkedin.com/in/mandarmarathe
+His current experience entry states “Vice President Marketing - UPTIQ (Current)” and “Jan 2025 - Present (1 year and 7 months) in Pune.” Source: https://www.linkedin.com/in/mandarmarathe
+The same entry says “Marketing Team Lead” and “Responsible for Demand Generation & Sales Enablement.” Source: https://www.linkedin.com/in/mandarmarathe
+His profile location is shown as “Mumbai, Maharashtra, India (IN),” while the UPTIQ role location is “Pune.” Source: https://www.linkedin.com/in/mandarmarathe 2. Current professional positioning and expertise
+His LinkedIn About text says, “Hi, I'm Mandar. I’m an Inbound Marketing Generalist with 18+ years of experience.” Source: https://www.linkedin.com/in/mandarmarathe
+A programme page describes him as “AI-First Marketing Strategist and Visiting Faculty, SJMSOM,” with “18+ years of experience across B2B, SaaS, and D2C brands” and says he is “Focused on integrating Gen AI and agentic workflows into marketing.” Source: https://www.mygreatlearning.com/iitb-cmo-ai
+His profile says his digital-marketing teaching covers “Inbound Marketing, SEO, Content Marketing, Blogging, Social Media Marketing, Paid Media Marketing, Email Marketing, Web Analytics and Conversion Optimization.” Source: https://www.linkedin.com/in/mandarmarathe 3. UPTIQ-related public topics and activity
+In a first-person LinkedIn post, he wrote: “On the go with Craig McKeon, we spoke about.. 💻 AI in Marketing and what has changed 🏦 Are Banks and Financial Services on the cusp of an AI Adoption revolution? 🍲 What AI can never change.” Source: https://www.linkedin.com/posts/mandarmarathe_aimarketing-activity-7480104338795802624-KPDb
+The same post says, “Its been great to work with you at UPTIQ- Looking forward to collaborative growth and more such conversations once you are back in Pune!” Source: https://www.linkedin.com/posts/mandarmarathe_aimarketing-activity-7480104338795802624-KPDb
+A post authored by him describes UPTIQ’s work as “Real AI, Real Expertise, Real Results” and says its “agentic AI solutions are being implemented for Banks & Credit Unions.” Source: https://www.linkedin.com/posts/mandarmarathe_how-ai-agents-are-transforming-commercial-activity-7439329248307281920-YvTq
+His LinkedIn profile describes UPTIQ as “a Financial AI platform that brings intelligent agents, powerful orchestration, and purpose-built suites together to help teams grow, originate, and serve continuously” and says it provides solutions “for banking, credit unions, wealth management, and equipment finance.” Source: https://www.linkedin.com/in/mandarmarathe 4. Education
+LinkedIn lists “Master of Business Administration - MBA, Marketing at Mays Business School - Texas A&M University” and “2006 - 2007 (1 year) in College Station, Texas, United States.” Source: https://www.linkedin.com/in/mandarmarathe
+A high-school name is present in the indexed profile data as “St. Augustines High School”; no further target-authored educational detail was found. Source: https://www.linkedin.com/in/mandarmarathe 5. Teaching and academic work
+His profile lists “Visiting Faculty for Digital Marketing - IIT Bombay - Shailesh J. Mehta School of Management (Current)” and “Jan 2013 - Present.” Source: https://www.linkedin.com/in/mandarmarathe
+He states, “I take a full 21-hour elective course on Digital Marketing for 2nd year MBA students at SJMSOM.” Source: https://www.linkedin.com/in/mandarmarathe
+His profile also lists “Visiting Faculty for Digital Marketing - Indian Institute of Management, Sirmaur,” with “Oct 2018 - Dec 2021,” and says, “I take a 30 hour course on Digital Marketing for MBA students at IIM Sirmaur.” Source: https://www.linkedin.com/in/mandarmarathe
+His own LinkedIn announcement says, “Elated to announce the launch of ‘Executive Leadership for CMOs in the Age of AI’ - India's first executive programme integrating marketing strategy, data-driven growth, and Artificial Intelligence.” It further says, “Delivered by IIT Bombay - Shailesh J. Mehta School of Management Bombay, I'll be taking sessions on integrating Generative AI and agentic workflows into modern marketing operations.” Source: https://www.linkedin.com/posts/mandarmarathe_iit-bombay-cmo-programme-in-marketing-leadership-activity-7477257565010317312-xXTv 6. Earlier professional experience
+His profile lists “Co-Founder - Koppr,” “Nov 2019 - Jan 2022 (2 years and 2 months) in Mumbai, Maharashtra,” and says, “As a Chief Executive Officer at Koppr, I was responsible for driving sales, marketing & business development.” Source: https://www.linkedin.com/in/mandarmarathe
+His profile lists “Managing Partner - BriefKase Digital Communications,” “Oct 2013 - Sep 2019,” and says, “We started Briefkase in 2013 - a specialized digital marketing agency for startups and SME's.” Source: https://www.linkedin.com/in/mandarmarathe
+The same entry describes his role as “Drive growth for our clients via Digital Marketing - SEO, Paid Search & Social, Content Marketing.” Source: https://www.linkedin.com/in/mandarmarathe
+His profile lists “Digital Marketing Consultant & Trainer - SEO, Meta Ads - Digital Vidya,” “May 2016 - Apr 2019,” and says, “Trained 500+ participants for Search Engine Optimization Corporate workshops.” Source: https://www.linkedin.com/in/mandarmarathe
+Earlier entries list “Chief Marketing Officer - 30 Dollar Finance,” “Senior Analyst, Internet Solutions - Digitas,” “Business Consultant Cooperative Education - AT&T,” “Manager, eCommerce & Business Management Internship - Dell,” and “Software Engineer - Infosys Technologies Ltd.” Source: https://www.linkedin.com/in/mandarmarathe 7. Publicly stated interests and outreach-relevant professional themes
+His public profile headline explicitly names “Claude Cowork / Code Agents & Skills, AEO & SEO, Content, Paid Media, ABM.” Source: https://www.linkedin.com/in/mandarmarathe
+His post says, “In just a few hours, I built a Google Ads Campaign Manager that comes along with a knowledge” (the indexed source excerpt ends there). Source: https://www.linkedin.com/posts/mandarmarathe_in-just-a-few-hours-i-built-a-google-ads-activity-7470810768146436096-gR7Q [user-provided confirmed source; full indexed quotation not available]
+His public posts include the themes “AI hasn’t just sped up content creation,” “Most B2B marketing teams don’t lack tools,” and “SEO is changing faster than most teams realize.” Sources: https://www.linkedin.com/posts/mandarmarathe_aiinmarketing-contentmarketing-marketingai-activity-7455473768929386496-nUGv ; https://www.linkedin.com/posts/mandarmarathe_ai-marketing-os-activity-7454741194175283200-dtyG ; https://www.linkedin.com/posts/mandarmarathe_seo-aeo-generativeai-activity-7466422342450212864-80Xw [user-provided confirmed sources; only titles/excerpts were supplied] 8. Other current or recent roles
+LinkedIn lists “Promoter - Elemnt Sports Science (Current)” with “Feb 2022 - Present.” Source: https://www.linkedin.com/in/mandarmarathe
+LinkedIn lists “Entrepreneur in Residence - MAGIC Business Incubator SME Accelerator (Current)” with “Jan 2024 - Present.” Source: https://www.linkedin.com/in/mandarmarathe
+LinkedIn lists “Marketing Specialist - T72 Club (Current).” Source: https://www.linkedin.com/in/mandarmarathe 9. NOT FOUND
+Exact age or date of birth: NOT FOUND.
+Personal email address: NOT FOUND.
+Personal telephone number: NOT FOUND.
+Home address: NOT FOUND.
+Specific Pune neighborhood: NOT FOUND.
+Languages: NOT FOUND.
+Self-described hobbies other than the professional subjects quoted above: NOT FOUND.
+Detailed UPTIQ responsibilities beyond “Marketing Team Lead” and “Responsible for Demand Generation & Sales Enablement”: NOT FOUND.
+Specific UPTIQ customer names or confidential business information: NOT FOUND.
+Detailed quantified marketing results attributable to him: NOT FOUND.
+Personal family information: NOT FOUND. 10. Same-name exclusion check
+The artist/mechanical-engineer profile is a different person: its headline says “Artist & Freelancer,” and its profile describes “Visual Artist: I paint paintings, make sculptures, murals, conduct Art workshops and create online art courses.” Source: https://in.linkedin.com/in/mandarmarathe
+A separate art site describes another Mandar Marathe as “a visual artist and a technologist” and “a full-time artist since May 2011.” Source: https://www.saatchiart.com/mandar
+Those sources were excluded from the target dossier. The target is the UPTIQ-linked professional identified by the UPTIQ role and “VP Marketing at Uptiq.ai” wording quoted above. Source: https://www.linkedin.com/in/mandarmarathe
+
+=== MATERIAL 2: LINKEDIN PROFILE (indexed copy) ===
+# Mandar Marathe
+
+AI Marketer | Driving Growth for B2B SaaS & AI Brands via Claude Cowork / Code Agents & Skills, AEO & SEO, Content, Paid Media, ABM | VP Marketing at Uptiq.ai, Digital Marketing Faculty at IIT Bombay
+
+Mumbai, Maharashtra, India (IN)
+
+500 connections • 8,396 followers
+
+## About
+
+Hi, I'm Mandar. I’m an Inbound Marketing Generalist with 18+ years of experience…
+
+Total Experience: 21 years
+
+## Experience
+
+### Vice President Marketing - [UPTIQ](https://www.linkedin.com/company/uptiqai) (Current)
+
+Jan 2025 - Present (1 year and 7 months) in Pune
+
+Marketing Team Lead
+- Responsible for Demand Generation & Sales Enablement
+
+Department: Marketing • Level: President/Vice President
+
+UPTIQ is a Technology, Information and Internet company. Uptiq is a Financial AI platform that brings intelligent agents, powerful orchestration, and purpose-built suites together to help teams grow, originate, and serve continuously. The platform provides solutions for banking, credit unions, wealth management, and equipment finance. UPTIQ has 150-200 employees (+130% YoY), founded in 2022. Headquartered in McKinney, Texas, United States, with an office in Austin. Its workforce is distributed across 7 countries (including India, United States, Ukraine, Spain, and Australia). Has $49M in total funding, with 4 prior funding rounds.
+
+### Promoter - [Elemnt Sports Science](https://www.linkedin.com/company/elemnt-sports-science) (Current)
+
+Feb 2022 - Present (4 years and 1 month) in Mumbai, Maharashtra, India
+
+Building India's first personal care brand for sports players & active individuals. We are a D2C + Retail brand catering to cricketers, swimmers, runners, fitness and outdoor enthusiasts. You can buy our products on Elemntlife.com, Amazon, Flipkart, Swggy Instamart, Decathlon, JioMart, Myntra, GOQii & more.. We have 1.5 Lac+ customers with 10k+ reviews & presence at 190+ sports shops across India.
+
+Department: Sales • Level: Specialist
+
+Elemnt Sports Science is a Retail Health and Personal Care Products company. Elemnt Sports Science is a sports skincare and cosmetics brand that caters to athletes and outdoor enthusiasts who want to perform at their peak without compromising the health of their skin. Elemnt Sports Science has 1-10 employees (7-8% YoY decline), founded in 2022. Headquartered in Mumbai, India, with presence in United States. Has $16.3K in total funding.
+
+### Marketing Specialist - [T72 Club](https://www.linkedin.com/company/t72club) (Current)
+
+Jan 2025 - Present (1 year and 2 months) in Thane, Maharashtra, India
+
+Department: Marketing • Level: Specialist
+
+T72 Club is a Venture Capital and Private Equity Principals company. t72 is an acquisition and operating company that leverages resources, capital, and network to support their portfolio and partner companies. They are a powerhouse of entrepreneurs and operators. T72 Club has 1-10 employees (-30% YoY) and has annual revenue in the $1M-$10M range, founded in 2023. Headquartered in Dallas, Texas, United States.
+
+### Visiting Faculty for Digital Marketing - [IIT Bombay - Shailesh J. Mehta School of Management](https://www.linkedin.com/school/sjmsomiitbombay) (Current)
+
+Jan 2013 - Present (13 years and 2 months) in Mumbai, Maharashtra, India
+
+I take a full 21-hour elective course on Digital Marketing for 2nd year MBA students at SJMSOM. The course covers all aspects of digital marketing
+- Inbound Marketing, SEO, Content Marketing, Blogging, Social Media Marketing, Paid Media Marketing, Email Marketing, Web Analytics and Conversion Optimization.
+
+Department: Education • Level: Specialist
+
+IIT Bombay - Shailesh J. Mehta School of Management is a higher education institution. IIT Bombay - Shailesh J. Mehta School of Management has 60-70 employees (5-6% YoY decline), founded in 1995. Headquartered in Mumbai, Maharashtra, India, with presence in United States. Its workforce is distributed across India, Australia, and Netherlands.
+
+### Entrepreneur in Residence - [MAGIC Business Incubator SME Accelerator](https://www.linkedin.com/company/magicincubation) (Current)
+
+Jan 2024 - Present (2 years and 2 months) in Aurangabad, Maharashtra, India
+
+Department: General Management • Level: Founder
+
+MAGIC Business Incubator SME Accelerator is a nonprofit organization. MAGIC Incubation is a sector-agnostic startup incubator and SME accelerator established in 2018, promoted by CMIA. MAGIC supports entrepreneurs in Tier 2 and Tier 3 cities through mentoring, infrastructure, funding programs, and a strong innovation ecosystem. MAGIC Business Incubator SME Accelerator has 20-30 employees (+20% YoY), founded in 2018. Headquartered in India. Its workforce is distributed across India and United Kingdom.
+
+### Co-Founder - [Koppr](https://www.linkedin.com/company/koppr)
+
+Nov 2019 - Jan 2022 (2 years and 2 months) in Mumbai, Maharashtra
+
+As a Chief Executive Officer at Koppr, I was responsible for driving sales, marketing & business development.
+
+Department: Consulting • Level: Founder
+
+Koppr is a Financial Services company. Koppr has 1-10 employees, founded in 2019. Headquartered in Thane, Maharashtra, India, with presence in United States.
+
+### Visiting Faculty for Digital Marketing - [Indian Institute of Management, Sirmaur](https://www.linkedin.com/school/indian-institute-of-management-sirmaur)
+
+Oct 2018 - Dec 2021 (3 years and 2 months) in Sirmaur, Himachal Pradesh, India
+
+I take a 30 hour course on Digital Marketing for MBA students at IIM Sirmaur. The course covers all aspects of digital marketing including Inbound Marketing, SEO, Content Marketing, Blogging, Social Media Marketing, Paid Media Marketing, Email Marketing, Web Analytics and Conversion Optimization.
+
+Department: Education • Level: Specialist
+
+Indian Institute of Management Sirmaur is an educational institution. Indian Institute of Management Sirmaur (IIM Sirmaur) is a Centrally Funded Institution of National Importance set up by the Government of India in 2015. IIM Sirmaur is one of the newer institutions of the IIM family in the country. Indian Institute of Management Sirmaur has 100-150 employees, founded in 2015. Headquartered in Sirmaur, Himachal Pradesh, India. Its workforce is distributed across India and United Kingdom.
+
+### Visiting Faculty for Digital Marketing - [Great Lakes Institute of Management](https://www.linkedin.com/school/great-lakes-institute-of-management)
+
+Mar 2018 - Mar 2020 (2 years) in Chennai, Tamil Nadu, India
+
+I took a 20 hour course on Digital Marketing for MBA students at Great Lakes Institute of Management, Chennai. The course covered all aspects of digital marketing including Inbound Marketing, SEO, Content Marketing, Blogging, Social Media Marketing, Paid Media Marketing, Email Marketing, Web Analytics and Conversion Optimization.
+
+Department: Education • Level: Specialist
+
+Great Lakes Institute of Management is a higher education institution. Great Lakes Institute of Management, Chennai is one of the leading MBA colleges in India, offering full-time MBA programs and Executive MBA, focusing on leadership and entrepreneurship. Great Lakes Institute of Management has 300-400 employees (+8-9% YoY), founded in 2004. Headquartered in Chennai, Tamil Nadu, India, with presence in United States. Its workforce is distributed across 8 countries (including India, United States, Nigeria, Australia, and Singapore). Research output of 2,000-3,000 works, primarily in Environmental Science, Medicine, and Business, Management and Accounting.
+
+### Managing Partner - [BriefKase Digital Communications](https://www.linkedin.com/company/briefkase)
+
+Oct 2013 - Sep 2019 (5 years and 11 months) in Mumbai Area, India
+
+We started Briefkase in 2013
+- a specialized digital marketing agency for startups and SME's. As a Managing Partner & Digital Marketing Consultant to our clients, my primary role at Briefkase is to 📈 Drive growth for our clients via Digital Marketing
+- SEO, Paid Search & Social, Content Marketing 🧑🤝🧑 Lead managers at Briefkase who’re handling paid search and social media campaigns, SEO strategy, web design & development, conversion optimization and analytics. ✔️Building brand Briefkase as a synonym to Digital Marketing Agency for Startups About Briefkase: You may ask – What’s in a name? Our clients give us a brief and we work smart enough to make it a case. That’s why we named our agency Briefkase. We want to do stellar work that helps our clients achieve strong, structured and sustainable growth – our client becomes a case study for others to look up to. Briefkase in its true sense is not a noun, it’s a verb.
+
+Department: General Management • Level: Partner
+
+BriefKase Digital Communications is a Technology, Information and Internet company. Digital Monk is a company that offers digital marketing courses and training institutes in Bangalore. They provide 100% placement assistance and top international certifications at affordable fees. BriefKase Digital Communications has 1-10 employees (-20% YoY), founded in 201
+
+=== MATERIAL 3: LONG-FORM MEDIA TRANSCRIPTS (where this person verifiably speaks) ===
+NONE — no long-form media in which this person verifiably speaks was located.
+
+=== MATERIAL 4: CONFIRMED SOURCE URLS FROM THE SWEEP ===
+- https://www.linkedin.com/in/mandarmarathe (Mandar Marathe)
+- https://www.linkedin.com/posts/mandarmarathe_aimarketing-activity-7480104338795802624-KPDb (On the go with Craig McKeon, we spoke about.. | Mandar Marathe)
+- https://www.linkedin.com/posts/mandarmarathe_weve-raised-25m-in-series-b-funding-to-activity-7427776660524965888-Rp6O (We’ve raised $25M in Series B funding to scale our mission of embedding AI agent)
+- https://www.linkedin.com/posts/mandarmarathe_in-just-a-few-hours-i-built-a-google-ads-activity-7470810768146436096-gR7Q (In just a few hours, I built a Google Ads Campaign Manager that comes along with)
+- https://www.linkedin.com/posts/mandarmarathe_uptiqai-workbench-developer-edition-activity-7295834535005433857-dqwu (Exciting News! We at UPTIQ are thrilled to announce the launch of Uptiq AI Workb)
+- https://www.linkedin.com/posts/mandarmarathe_taking-flight-with-udaan-thrilled-to-activity-7348545495729893376-EpLu (Taking Flight with Udaan 🚀 | Mandar Marathe)
+- https://www.linkedin.com/posts/mandarmarathe_startupindia-atalincubationcentre-nitiaayog-activity-7176174507160657921-8pt- (Glad to be a part of Atal Incubation Centre-Rambhau Mhalgi Prabodhini in alignme)
+- https://www.linkedin.com/posts/mandarmarathe_digitalmarketing-onlinemarketing-thankyou-activity-7037109611077791744-ukgC (Year 11 at IIT Bombay - Shailesh J. Mehta School of Management for Online Market)
+- https://www.linkedin.com/posts/mandarmarathe_financial-expertise-meets-ai-inside-uptiq-activity-7452951249588666368-P6Na (AI gets better when real knowledge is transferred from humans to systems - Watch)
+- https://www.linkedin.com/posts/mandarmarathe_iit-bombay-cmo-programme-in-marketing-leadership-activity-7477257565010317312-xXTv (Elated to announce the launch of "Executive Leadership for CMOs in the Age of AI)
+- https://www.linkedin.com/posts/mandarmarathe_while-i-was-building-koppr-with-snehal-fulzele-activity-7432100329866883072-aFZU (While I was building Koppr with Snehal Fulzele in 2018, AI had not arrived. Ther)
+- https://www.linkedin.com/posts/mandarmarathe_aiinmarketing-contentmarketing-marketingai-activity-7455473768929386496-nUGv (AI hasn’t just sped up content creation. | Mandar Marathe)
+- https://www.linkedin.com/posts/mandarmarathe_how-ai-agents-are-transforming-commercial-activity-7439329248307281920-YvTq (This is what Real AI, Real Expertise, Real Results looks like when UPTIQ's agent)
+- https://www.linkedin.com/posts/mandarmarathe_ai-marketing-os-activity-7454741194175283200-dtyG (Most B2B marketing teams don’t lack tools. | Mandar Marathe)
+- https://www.linkedin.com/posts/mandarmarathe_seo-aeo-generativeai-activity-7466422342450212864-80Xw (🚨 SEO is changing faster than most teams realize. | Mandar Marathe)
+- https://www.linkedin.com/posts/mandarmarathe_one-of-the-conversations-ive-been-enjoying-activity-7477932974282342400-7ED6 (One of the conversations I've been enjoying lately is with our design team aroun)

@@ -49,7 +49,8 @@ from clue_agents.contracts import (
     PlanDelegationStep,
     PlanToolStep,
 )
-from clue_agents.ports import ExecutionProgress, OperationFailure
+from clue_agents.execution import SPILL_THRESHOLD_BYTES, spill_stub
+from clue_agents.ports import ExecutionProgress, OperationFailure, SpillSink
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.auth_tool_context import tool_context_for_internal_service
 from clue_api.client_context_authority import (
@@ -71,7 +72,7 @@ from clue_api.turn_binding import (
     CapturedTurnUnavailable,
     trusted_turn_fields,
 )
-from clue_core import ExecutionId
+from clue_core import ExecutionId, OperationId
 from clue_db import ConnFactory, database_url, transaction
 from clue_execution import (
     BarrierNode,
@@ -430,12 +431,14 @@ class DbAgentPlanJournal:
                         proposal_artifact_key, proposal_sha256,
                         validated_artifact_key, validated_sha256,
                         resource_manifest_sha256, max_parallelism,
-                        estimated_cost_millicents, budget_limit_millicents, validated_at
+                        estimated_cost_millicents, budget_limit_millicents,
+                        budget_mode, validated_at
                     )
                     VALUES (
                         :id, :turn, :execution, :workspace, :role,
                         :proposal_key, :proposal_sha, :validated_key, :validated_sha,
-                        :manifest_sha, :parallelism, :estimated, :budget, :validated_at
+                        :manifest_sha, :parallelism, :estimated, :budget,
+                        :budget_mode, :validated_at
                     )
                     ON CONFLICT (id) DO NOTHING RETURNING id
                     """
@@ -454,6 +457,7 @@ class DbAgentPlanJournal:
                     "parallelism": plan.max_parallelism,
                     "estimated": plan.estimated_cost_millicents,
                     "budget": plan.budget_limit_millicents,
+                    "budget_mode": plan.budget_mode,
                     "validated_at": plan.validated_at,
                 },
             )
@@ -465,7 +469,8 @@ class DbAgentPlanJournal:
                                 "SELECT turn_id, execution_id, workspace_id, role, "
                                 "proposal_artifact_key, proposal_sha256, validated_artifact_key, "
                                 "validated_sha256, resource_manifest_sha256, max_parallelism, "
-                                "estimated_cost_millicents, budget_limit_millicents, validated_at "
+                                "estimated_cost_millicents, budget_limit_millicents, "
+                                "budget_mode, validated_at "
                                 "FROM agent_plan WHERE id=:id"
                             ),
                             {"id": plan.plan_id},
@@ -487,6 +492,7 @@ class DbAgentPlanJournal:
                     plan.max_parallelism,
                     plan.estimated_cost_millicents,
                     plan.budget_limit_millicents,
+                    plan.budget_mode,
                     plan.validated_at,
                 )
                 actual = (
@@ -502,6 +508,7 @@ class DbAgentPlanJournal:
                     int(row["max_parallelism"]),
                     int(row["estimated_cost_millicents"]),
                     int(row["budget_limit_millicents"]),
+                    row["budget_mode"],
                     row["validated_at"],
                 )
                 if actual != expected:
@@ -1255,6 +1262,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         pin_provider: StepPinProvider | None = None,
         delegation: DbAgentDelegationRuntime | None = None,
         captured_turn: CapturedTurnSource | None = None,
+        spill_sink: SpillSink | None = None,
         crash_hook: AgentExecutionCrashHook = _DEFAULT_CRASH_HOOK,
         conn_factory: ConnFactory = transaction,
     ) -> None:
@@ -1278,6 +1286,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         self._pin_provider = pin_provider
         self._delegation = delegation
         self._captured_turn = captured_turn
+        # Where an oversized tool result goes instead of into its receipt. A composition root that
+        # holds the turn's workspace lease passes the lease's backend; one that does not passes
+        # nothing, and an oversized result keeps today's behaviour — refused at the receipt bound.
+        self._spill_sink = spill_sink
         self._crash_hook = crash_hook
         self._conn_factory = conn_factory
         self._validated: dict[UUID, ValidatedPlan] = {}
@@ -1585,7 +1597,10 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 media_type="application/vnd.clue.agent-operation-parameters+json",
             )
         estimated = sum(costs.values())
-        if estimated > self._policy.budget_limit_millicents:
+        if (
+            self._policy.budget_mode == "enforced"
+            and estimated > self._policy.budget_limit_millicents
+        ):
             from clue_agents import AgentPlanIssue, AgentPlanReview
 
             raise AgentPlanRejected(
@@ -1640,6 +1655,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             "max_parallelism": min(self._policy.max_parallelism, self._policy.max_fanout),
             "estimated_cost_millicents": estimated,
             "budget_limit_millicents": self._policy.budget_limit_millicents,
+            "budget_mode": self._policy.budget_mode,
             "validated_at": validated_at.isoformat(),
         }
         validated_ref = await self._artifacts.persist_body(
@@ -1657,6 +1673,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             max_parallelism=min(self._policy.max_parallelism, self._policy.max_fanout),
             estimated_cost_millicents=estimated,
             budget_limit_millicents=self._policy.budget_limit_millicents,
+            budget_mode=self._policy.budget_mode,
             validated_at=validated_at,
         )
         await self._journal.record_validated(
@@ -1791,6 +1808,15 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 operation=operation,
                 step=step,
             )
+        for failed_key in step.retry_of:
+            await self._executor.validate_interaction_repair(
+                execution_id=plan.execution_id,
+                workspace_id=self._constitution.workspace_id,
+                slot_key=self._slot_key,
+                failed_node_key=failed_key,
+                replacement_node_key=operation.node_key,
+                tool_address=operation.address,
+            )
         parameter_bytes = await self._artifacts.read(operation.parameter_artifact_ref)
         inputs_value = json.loads(parameter_bytes)
         if not isinstance(inputs_value, dict):
@@ -1865,6 +1891,22 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             result=canonical_result,
             result_ref=result_ref,
         )
+        for failed_key in step.retry_of:
+            await self._executor.resolve_interaction_failure(
+                execution_id=plan.execution_id,
+                workspace_id=self._constitution.workspace_id,
+                slot_key=self._slot_key,
+                failed_node_key=failed_key,
+                replacement_node_key=operation.node_key,
+                tool_address=operation.address,
+            )
+            log.info(
+                "agent.tool_recovered",
+                execution_id=str(plan.execution_id),
+                failed_node_key=failed_key,
+                replacement_node_key=operation.node_key,
+                tool_address=operation.address,
+            )
         await self._crash_hook(
             "post_tool_complete",
             execution_id=plan.execution_id,
@@ -1878,8 +1920,47 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
             status=AgentExecutionStatus.COMPLETED,
             replayed=canonical_result.replayed,
             artifact_refs=(result_ref,),
-            reference_values=cast(dict[str, JsonValue], canonical_result.references),
+            reference_values=self._receipt_reference_values(
+                address=operation.address,
+                operation_id=operation.operation_id,
+                references=cast(dict[str, JsonValue], canonical_result.references),
+            ),
         )
+
+    def _receipt_reference_values(
+        self,
+        *,
+        address: str,
+        operation_id: OperationId,
+        references: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]:
+        """These references, or a pointer to them when they are too big to carry in a receipt.
+
+        The receipt's bound is a *refusal*, and it lands after the tool has already run and spent:
+        on 2026-09-13 a 72-claim account read became "the agent cannot read this account" that
+        way. So nothing is allowed to reach it. Past the spill threshold the same canonical bytes
+        are written into the thread's ``reads/`` folder and the receipt carries a stub naming the
+        file, which the model opens with ``read_file``.
+
+        Both ways a receipt is built call this and nothing else: the live one in ``_execute_tool``
+        and the rebuilt one in ``_hydrate_tool_reference_values``. They must not drift, because the
+        rebuilt receipt is the one the model is actually handed — ``execute`` drops the live
+        receipt, and ``GovernedAgentToolFactory`` reads the result of ``recover``. A threshold
+        applied in only one of the two is a threshold the model never sees.
+
+        The result the receipt no longer quotes is not lost: it is the ``result_ref`` artifact,
+        persisted and journaled before any of this. Only the inline copy shrinks.
+        """
+
+        if self._spill_sink is None:
+            return references
+        spilled = _canonical_bytes(references)
+        if len(spilled) <= SPILL_THRESHOLD_BYTES:
+            return references
+        # Idempotent by construction: the name is the operation's, and a re-spill of the same
+        # operation replaces its own file. Hydration re-running this is a rewrite, not a conflict.
+        path = self._spill_sink.write_spill(str(operation_id), spilled)
+        return spill_stub(address=address, path=path, references=references)
 
     async def _execute_delegation(
         self,
@@ -1932,6 +2013,7 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
                 {
                     "schema_version": "1",
                     "limit_millicents": budget_limit,
+                    "mode": self._policy.budget_mode,
                     "parent_execution_id": str(plan.execution_id),
                     "plan_id": str(plan.plan_id),
                     "node_key": operation.node_key,
@@ -1988,6 +2070,18 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         authority = getattr(self, "_finalization_authority", None)
         if authority is None:
             raise RuntimeError("finalization authority is not composed")
+        if envelope.status.value == "completed":
+            unresolved = await self._executor.unresolved_interaction_failures(
+                execution_id=self._constitution.execution_id,
+                workspace_id=self._constitution.workspace_id,
+                slot_key=self._slot_key,
+            )
+            if unresolved:
+                raise ValueError(
+                    "Unresolved failed tool attempts remain: "
+                    + ", ".join(unresolved)
+                    + ". Correct using retry_of, or finalize with an honest blocked status."
+                )
         return await authority.finalize(  # type: ignore[no-any-return]
             turn_id=self._turn_id,
             workspace_id=self._constitution.workspace_id,
@@ -2076,6 +2170,11 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         ``reference_values`` by itself. The governed model nevertheless needs those IDs, flags,
         counts, and next-round cursors to continue. Read the exact verified ToolResult artifact and
         restore only its already-schema-validated ``references`` mapping.
+
+        This is the receipt the model actually reads — ``execute`` drops the live one — so the
+        restoration runs through the same ``_receipt_reference_values`` rule the live path uses. An
+        oversized result therefore comes back here as the spill stub too, not as the payload the
+        threshold exists to keep out of the model's context.
         """
 
         if receipt.kind != "tool":
@@ -2089,9 +2188,23 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
         if f"{result.tool}@{result.version}" != receipt.address:
             raise ValueError("tool receipt artifact belongs to a different tool address")
         references = cast(dict[str, JsonValue], result.references)
-        if receipt.reference_values and receipt.reference_values != references:
+        projection = self._receipt_reference_values(
+            address=receipt.address,
+            operation_id=receipt.operation_id,
+            references=references,
+        )
+        # Compare like with like. A stored projection is honest if it is either form this adapter
+        # could legitimately have written: the references themselves, or the spill stub standing in
+        # for them. Insisting on the raw references alone would call a correctly spilled receipt a
+        # mismatch; insisting on the stub alone would do the same to one written before a sink
+        # existed. Anything that is neither did not come from this artifact.
+        if receipt.reference_values and receipt.reference_values not in (references, projection):
             raise ValueError("tool receipt reference projection differs from its artifact")
-        return receipt.model_copy(update={"reference_values": references})
+        # model_copy skips validators; otherwise an oversized recovered result survives
+        # until AgentTurnOutcome validation, failing a job after its writes committed.
+        return GovernedOperationReceipt.model_validate(
+            {**receipt.model_dump(mode="python"), "reference_values": projection}
+        )
 
 
 def _agent_issue(issue: GraphIssue) -> AgentPlanIssue:

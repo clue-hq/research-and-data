@@ -1,217 +1,121 @@
-import Link from "next/link";
-import type {
-  AccountDetail,
-  AccountProjectSection,
-} from "../model/account-detail";
-import { contactPersonaLabel } from "../model/account-contact";
-import { contactProfileLinkAccessibleName } from "../model/contact-accessibility";
-import {
-  formatFieldKeyLabel,
-  formatIsoDate,
-  formatScore,
-  formatToken,
-} from "../model/formatting";
+import Link from "./research-link";
+import motion from "./account-motion.module.css";
+import type { AccountDetail, AccountInsight } from "../model/account-detail";
 import readability from "./account-readability.module.css";
+import components from "./account-components.module.css";
 import {
-  AccountCoveragePanel,
   AccountDetailsList,
   AccountIdentity,
   AccountTextSection,
-  TokenBadge,
+  FitBadge,
 } from "./account-detail-primitives";
-import { Absent, FactValue, Provenance } from "./account-facts";
 import {
   AccountDetailsRail,
   AccountWorkspaceShell,
 } from "./account-workspace-shell";
 import { ContactAvatar } from "./contact-avatar";
+import { AccountResearchOverview } from "./account-research-overview";
+import { AccountActivityFeed } from "./account-activity-feed";
 
-function sectionTitle(section: AccountProjectSection) {
-  if (section.projectId === null) return "Not attributed to a project";
-  return section.name ?? "Unnamed project";
-}
-
-function sectionSubtitle(section: AccountProjectSection) {
-  if (section.projectId === null) {
-    return "Claims whose run maps to no project — manual ingestion and the documented lineage exemptions.";
-  }
-  const addedAt = formatIsoDate(section.addedAt);
-  if (section.addedVia && addedAt) {
-    return `Added ${formatToken(section.addedVia).toLocaleLowerCase()} · ${addedAt}`;
-  }
-  if (addedAt) return `Added ${addedAt}`;
-  // No membership row: this project produced research without targeting the
-  // account. Reported rather than hidden.
-  return "This project produced research without a membership record.";
-}
-
-/**
- * One project's slice of the research.
- *
- * Scores, value narratives (plural — one per persona) and insights are shown
- * inside the project that produced them: a score from one project is never
- * attributed to another, and the unattributed bucket is labelled as such
- * instead of being folded into a project.
- */
-function ProjectSection({ section }: { section: AccountProjectSection }) {
-  const empty =
-    !section.scores.length &&
-    !section.narratives.length &&
-    !section.insights.length;
-
+function FitCriteria({ account }: { account: AccountDetail }) {
   return (
-    <section className="mt-8">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <h3 className={readability.uiMedium}>{sectionTitle(section)}</h3>
-        <span
-          className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
-        >
-          {sectionSubtitle(section)}
+    <section>
+      <div className="flex h-6 items-center gap-2">
+        <span className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
+          Overall fit:
         </span>
+        <FitBadge compact fit={account.overallFit} />
       </div>
-
-      {empty ? (
-        <p
-          className={`${readability.uiRegular} mt-2 text-[var(--clue-content-subtle)]`}
-        >
-          Targeted, nothing produced yet.
-        </p>
-      ) : null}
-
-      {section.scores.length ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {section.scores.map((score) => (
-            <TokenBadge
-              compact
-              key={`${score.icpKey}-${score.icpVersion}-${score.scoredAt}`}
-            >
-              Fit {formatScore(score.fit) ?? "—"} · Intent{" "}
-              {formatScore(score.intent) ?? "—"}
-              {score.icpKey
-                ? ` · ICP ${score.icpKey} v${score.icpVersion ?? 1}`
-                : ""}
-            </TokenBadge>
-          ))}
-        </div>
-      ) : null}
-
-      {section.narratives.length ? (
-        <div className="mt-4 space-y-3">
-          {section.narratives.map((narrative, index) => (
-            <article
-              className="rounded-lg border-[0.5px] border-[var(--clue-border-neutral)] p-3"
-              key={`${narrative.fieldKey}-${index}`}
-            >
-              <h4
-                className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
-                title={narrative.fieldKey}
-              >
-                {formatFieldKeyLabel(narrative.fieldKey)}
-              </h4>
-              <div className={`${readability.uiRegular} mt-1.5`}>
-                <FactValue value={narrative.value} />
-              </div>
-              <div className={`${readability.fieldLabel} mt-2`}>
-                <Provenance
-                  observedAt={narrative.observedAt}
-                  provider={narrative.provider}
-                />
-              </div>
-            </article>
-          ))}
-        </div>
-      ) : null}
-
-      {section.insights.length ? (
-        <div className="mt-4 space-y-3">
-          {section.insights.map((insight, index) => (
-            <div
-              className={`${readability.uiRegular} flex flex-col gap-1`}
-              key={`${insight.fieldKey}-${index}`}
-            >
-              <span
-                className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
-                title={insight.fieldKey}
-              >
-                {formatFieldKeyLabel(insight.fieldKey)}
-              </span>
-              <FactValue value={insight.value} />
-              <span className={readability.fieldLabel}>
-                <Provenance
-                  observedAt={insight.observedAt}
-                  provider={insight.provider}
-                />
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <div className="mt-4 space-y-6">
+        {account.fitCriteria.map((criterion) => (
+          <div className={readability.bodyCopy} key={criterion.id}>
+            <h3 className="font-medium">{criterion.title}</h3>
+            <p className="mt-1 text-[var(--clue-content-subtle)]">
+              {criterion.evidence}
+            </p>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
 
-function ProjectSections({ account }: { account: AccountDetail }) {
+function InsightSourceIcon({ source }: { source: AccountInsight["source"] }) {
+  const path =
+    source === "linkedin"
+      ? "/logos/linkedin.svg"
+      : source === "x"
+        ? "/logos/x.svg"
+        : "/icons/detail/source.svg";
+
   return (
-    <section className="mt-9 pb-12">
-      <h2
-        className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}
-      >
-        Research by project
-      </h2>
-      {account.projectSections.length ? (
-        account.projectSections.map((section) => (
-          <ProjectSection
-            key={section.projectId ?? "unattributed"}
-            section={section}
-          />
-        ))
-      ) : (
-        <p
-          className={`${readability.uiRegular} mt-3 text-[var(--clue-content-subtle)]`}
+    <span className="flex size-4 shrink-0 items-center justify-center">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img alt="" className="max-h-4 max-w-4 object-contain" src={path} />
+    </span>
+  );
+}
+
+function Insights({ account }: { account: AccountDetail }) {
+  return (
+    <section className="pb-12">
+      <div className="flex h-5 items-center justify-between">
+        <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
+          Insights &amp; evidence
+        </h2>
+        <Link
+          className={readability.actionMedium}
+          href={`/accounts/${account.id}/insights`}
         >
-          No project has produced research on this account yet.
-        </p>
-      )}
+          See all
+        </Link>
+      </div>
+      <div className="mt-3">
+        {account.insights.map((insight) => (
+          <a
+            className={`${readability.uiRegular} flex h-8 items-center gap-2`}
+            href={insight.url}
+            key={insight.id}
+            rel="noreferrer"
+            target="_blank"
+          >
+            <InsightSourceIcon source={insight.source} />
+            <span className={`${readability.uiMedium} min-w-0 flex-1 truncate`}>
+              {insight.title}
+            </span>
+            <time className="w-36 shrink-0 text-right text-[var(--clue-content-subtle)]">
+              {insight.dateLabel}
+            </time>
+          </a>
+        ))}
+      </div>
     </section>
   );
 }
 
-/**
- * The buying committee.
- *
- * Empty is a legitimate answer today: the governed committee reads M8D
- * research references whose production writer is still quarantined, so the
- * endpoint returns an empty list rather than a 404.
- */
-function CommitteePanel({ account }: { account: AccountDetail }) {
+function ContactsPanel({ account }: { account: AccountDetail }) {
   return (
-    <section className="border-b-[0.5px] border-[var(--clue-border-neutral)] px-4 pb-3 pt-[23px]">
-      <h2 className={readability.sectionHeading}>Buying committee</h2>
+    <section className={components.detailRailSection}>
+      <h2 className={readability.sectionHeading}>Contacts</h2>
       <div className="mt-6 space-y-4">
-        {account.committee.length ? (
-          account.committee.map((member) => (
-            <Link
-              aria-label={contactProfileLinkAccessibleName(member.name)}
-              className="flex min-h-6 items-center gap-2 rounded-md hover:bg-[var(--clue-background-hover)]"
-              href={`/accounts/${account.id}/contacts/${member.contactId}`}
-              key={member.contactId}
-            >
-              <ContactAvatar decorative name={member.name} size={24} />
-              <span className={readability.uiRegular}>
-                {member.name ?? "Unnamed contact"}
-              </span>
-              <span
-                className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
-              >
-                {contactPersonaLabel(member.persona)}
-              </span>
-            </Link>
-          ))
-        ) : (
-          <p className={readability.uiRegular}>
-            <Absent label="No committee resolved yet" />
-          </p>
-        )}
+        {account.contacts.slice(0, 3).map((contact) => (
+          <Link
+            className="flex h-6 items-center gap-2 rounded-md hover:bg-[var(--clue-background-hover)]"
+            href={
+              contact.hasDetail
+                ? `/accounts/${account.id}/contacts/${contact.id}`
+                : `/accounts/${account.id}/contacts`
+            }
+            key={contact.id}
+          >
+            <ContactAvatar
+              name={contact.name}
+              size={24}
+              src={contact.avatarUrl}
+            />
+            <span className={readability.uiRegular}>{contact.name}</span>
+          </Link>
+        ))}
       </div>
       <Link
         className={`${readability.actionMedium} mt-4 inline-block`}
@@ -223,19 +127,26 @@ function CommitteePanel({ account }: { account: AccountDetail }) {
   );
 }
 
+function ActivityPanel({ account }: { account: AccountDetail }) {
+  return (
+    <section className={components.detailRailSection}>
+      <h2 className={readability.sectionHeading}>Activity</h2>
+      <AccountActivityFeed compact items={account.activity} label="Recent account activity" />
+    </section>
+  );
+}
+
 function DetailsPanel({ account }: { account: AccountDetail }) {
   return (
     <AccountDetailsRail>
-      <section className="border-b-[0.5px] border-[var(--clue-border-neutral)] px-4 pb-[10px] pt-[22px]">
+      <section className={components.detailRailSection}>
         <h2 className={readability.sectionHeading}>Account details</h2>
         <div className="mt-[22px]">
           <AccountDetailsList account={account} />
         </div>
       </section>
-      <CommitteePanel account={account} />
-      <section className="border-b-[0.5px] border-[var(--clue-border-neutral)] px-4 pb-4 pt-5">
-        <AccountCoveragePanel account={account} />
-      </section>
+      <ContactsPanel account={account} />
+      <ActivityPanel account={account} />
     </AccountDetailsRail>
   );
 }
@@ -247,19 +158,32 @@ export function AccountDetailScreen({
 }) {
   return (
     <AccountWorkspaceShell account={account} activeTab="overview">
-      <div className="flex h-full min-h-0 min-w-0">
-        <section className="clue-scrollbar-hidden min-w-0 flex-1 overflow-y-auto">
-          <article className="mx-auto w-full max-w-[720px] px-8 pt-12">
-            <AccountIdentity account={account} />
-            <div className="mt-9">
-              <AccountTextSection
-                emptyNote="No written account summary has been composed yet."
-                prose={account.summary}
-                restrictedNote="The account summary is unavailable for display."
-                title="Account summary"
-              />
-            </div>
-            <ProjectSections account={account} />
+      <div className={components.recordLayout}>
+        <section className={`${motion.pageEntry} clue-scrollbar-hidden ${components.recordScroll}`}>
+          <article className={components.detailArticle}>
+            {account.overviewDisplay ? (
+              <AccountResearchOverview account={account} />
+            ) : (
+              <>
+              <AccountIdentity account={account} />
+              <div className={components.detailBody}>
+                <div>
+                  <AccountTextSection
+                    paragraphs={account.summaryParagraphs}
+                    title="Account summary"
+                  />
+                </div>
+                <div>
+                  <AccountTextSection
+                    paragraphs={account.businessParagraphs}
+                    title="About their business"
+                  />
+                </div>
+                <FitCriteria account={account} />
+                <Insights account={account} />
+              </div>
+              </>
+            )}
           </article>
         </section>
         <DetailsPanel account={account} />

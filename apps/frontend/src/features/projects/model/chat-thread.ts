@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { projectChatHref } from "@/features/chat-shell/model/chat-shell-routes";
+import type { ThreadDesignLegWire } from "@/features/chat-shell/model/agent-run-lock";
 
 /**
  * The durable thread shell (REQ-21), as the as-built contract serves it.
@@ -79,6 +80,64 @@ export function mostUrgentThreadStatus(
     : right;
 }
 
+/**
+ * The speaker projection (`chat/schemas.py::ThreadSpeakerWire`, P3.4 / PD-part3
+ * §1-D1): who owns the thread right now, and — the part the editor lock needs —
+ * the DURABLE state of its design leg.
+ *
+ * Parsed by hand rather than inline in the wire schema, for one reason: it must
+ * be impossible for this optional, secondary field to take the whole thread list
+ * down. Anything unreadable resolves to `null`, which the lock reads as UNKNOWN
+ * (never as "there is no leg" — that is the dangerous direction; see
+ * `agent-run-lock.DesignLegFact`).
+ */
+const ThreadSpeakerWireSchema = z.object({
+  // Not consumed, but load-bearing: it is what makes a malformed or foreign
+  // object fail this parse instead of defaulting its way into a false answer.
+  role: z.string(),
+  design_leg_id: z.string().nullable().default(null),
+  // Deliberately a plain string, not the platform's `Literal` pair: a state
+  // this build has not been taught still proves a leg EXISTS, and refusing the
+  // whole speaker over it would report "no leg" for a thread that has one.
+  design_leg_state: z.string().nullable().default(null),
+});
+
+function toThreadDesignLeg(raw: unknown): ThreadDesignLegWire | null {
+  const parsed = ThreadSpeakerWireSchema.safeParse(raw);
+  if (!parsed.success) return null;
+  const state = parsed.data.design_leg_state;
+  return {
+    legId: parsed.data.design_leg_id,
+    state:
+      state === null
+        ? null
+        : state === "open_awaiting_user"
+          ? "open_awaiting_user"
+          : // Fail-safe: `running`, or anything this build cannot name. Both
+            // mean a leg is present and not parked on the user, which is the
+            // reading that holds the editor shut rather than opening it.
+            "running",
+  };
+}
+
+/**
+ * The discovery run a thread is holding (`chat/schemas.py::ThreadDiscoveryWire`).
+ *
+ * While it is present the thread is busy: the backend holds every message sent
+ * to it until the run's wake turn ends. It is served only by the thread LIST
+ * read; every other thread projection sends `null`.
+ */
+export const ThreadDiscoverySchema = z.object({
+  run_id: z.string(),
+  stoppable: z.boolean(),
+});
+
+export interface ThreadDiscovery {
+  runId: string;
+  /** `false` once the run has ended: Stop has nothing left to stop. */
+  stoppable: boolean;
+}
+
 const ThreadWireSchema = z.object({
   id: z.string().min(1),
   title: z.string().nullable().default(null),
@@ -88,6 +147,10 @@ const ThreadWireSchema = z.object({
   project_id: z.string().min(1),
   created_at: z.string(),
   updated_at: z.string(),
+  // `unknown` on purpose: the shape is validated in `toThreadDesignLeg`, where
+  // a failure degrades this one field instead of the read.
+  speaker: z.unknown().optional(),
+  discovery: ThreadDiscoverySchema.nullable().optional(),
 });
 
 export interface ChatThread {
@@ -100,6 +163,18 @@ export interface ChatThread {
   projectId: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The thread's design leg as the DURABLE read reports it, or `null` when this
+   * read did not derive one (the platform sends `speaker: null` on the
+   * tool-reference projections; absent knowledge is never a guess).
+   *
+   * This is the editor lock's cold-load answer: the turn-stream backlog replays
+   * only the last few turns, so a leg opened before that is invisible to the
+   * frames and this is the only thing that knows about it.
+   */
+  designLeg: ThreadDesignLegWire | null;
+  /** The discovery run holding this thread busy, or `null` when none is. */
+  discovery: ThreadDiscovery | null;
 }
 
 export type ProjectThreadRouteResolution =
@@ -142,6 +217,10 @@ function toThread(wire: z.infer<typeof ThreadWireSchema>): ChatThread {
     projectId: wire.project_id,
     createdAt: wire.created_at,
     updatedAt: wire.updated_at,
+    designLeg: toThreadDesignLeg(wire.speaker),
+    discovery: wire.discovery
+      ? { runId: wire.discovery.run_id, stoppable: wire.discovery.stoppable }
+      : null,
   };
 }
 

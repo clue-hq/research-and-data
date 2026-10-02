@@ -32,7 +32,7 @@ class FakeCoreClient:
         }
 
     def compile_dsl_into_scene(
-        self, scene, source: str, dsl_session=None, protected_node_ids=None
+        self, scene, source: str, dsl_session=None, protected_node_ids=None, brand_kit=None, mode=None
     ):
         # Slice 3 phase B: record the protected-id kwarg the runtime passes so
         # tests can assert the seed contract (None on fresh runs, the seed id
@@ -217,7 +217,7 @@ class FakeCoreClient:
             },
         }
 
-    def apply_structured_edit(self, scene, edit, scope=None):
+    def apply_structured_edit(self, scene, edit, scope=None, brand_kit=None, mode=None):
         if scope and scope.get("mode") == "strict":
             allowed_ids = {target.get("id") for target in scope.get("allowed", [])}
             target_id = (edit.get("target") or {}).get("id")
@@ -333,3 +333,28 @@ def runtime_config(tmp_path: Path, max_iterations: int = 3) -> AgentRuntimeConfi
         agent_base_url="https://openrouter.ai/api/v1",
         agent_api_key="sk-test",
     )
+
+
+def prepare_acceptance_evidence(tools, critique=None, *, preflight=True):
+    """Exercise the real evidence seams around the fake deterministic core.
+
+    Success fixtures need a current preflight, valid preview artifact and registered
+    typed review. Never manufacture the runtime's private receipt/stamp fields.
+    Existing scenes are preserved so hygiene and scoped-edit cases keep their subject.
+    """
+    if not tools.scene.get("pages"):
+        result = json.loads(tools.compile_dsl_block("page page_test size(1080,1080,px)"))
+        assert result["compile"]["status"] == "ok"
+    if preflight:
+        result = json.loads(tools.preflight_design())
+        assert result["preflight"]["status"] == "ok"
+    result = json.loads(tools.export_preview("svg"))
+    assert result["export"]["status"] == "ok"
+    review = critique if critique is not None else {
+        "accepted": True,
+        "summary": "Reviewed the current rendered fixture scene.",
+        "issues": [],
+    }
+    result = json.loads(tools.submit_visual_critique(json.dumps(review)))
+    assert result["status"] == "ok"
+    return review

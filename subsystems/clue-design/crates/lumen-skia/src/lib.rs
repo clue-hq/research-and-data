@@ -23,6 +23,7 @@ pub mod pdf_flatten;
 pub mod pdf_impose;
 pub mod pdf_vector;
 pub mod render;
+mod svg_dom;
 pub mod svg_raster;
 
 pub use embed::SkiaFontFaceResolver;

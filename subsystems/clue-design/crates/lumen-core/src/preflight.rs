@@ -222,7 +222,7 @@ fn has_errors(diagnostics: &[Diagnostic]) -> bool {
         .any(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
 }
 
-fn token_options_for_scene_medium(
+pub fn token_options_for_scene_medium(
     scene: &Scene,
     options: &TokenResolutionOptions,
 ) -> TokenResolutionOptions {

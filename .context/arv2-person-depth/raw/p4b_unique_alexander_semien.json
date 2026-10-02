@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330104-dcdgiW27mZ366r5dOJUv",
+  "object": "chat.completion",
+  "created": 1788330104,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"He says he built Cogent's entire growth function on a custom in-house AI operating system and that he personally 'set strategy and build the models.' This indicates he directly led both the strategic and hands-on model-development work for Cogent's growth stack\u2014a technical, product-adjacent contribution beyond a typical marketing remit.\",\n    \"evidence_quote\": \"We started building an in-house AI operating system from day one,\\\" and \\\"I set strategy and build the models.\",\n    \"source_url\": \"https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF\",\n    \"why_generic_tools_miss_it\": \"Standard enrichment tools surface job titles and employer names but not first-person claims of hands-on technical authorship (building an AI OS and model work) embedded in social posts.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.public_appearances\",\n      \"value\": \"We Can\u2019t Wait for Patch Tuesdays: The Case for AI Blue Teaming (presentation listed)\",\n      \"evidence_quote\": \"We Can\\u00039t Wait for Patch Tuesdays: The Case for AI Blue Teaming.\",\n      \"source_url\": \"https://www.threatcon1.org/speakers/alexander-semien\",\n      \"charter_category\": \"professional_identity\",\n      \"priority\": \"P2\",\n      \"use_class\": \"professional-public\",\n      \"outreach_safe\": true\n    },\n    {\n      \"field_key\": \"contact.facet.publications\",\n      \"value\": [\n        \"Applied AI for Vulnerability Management \\u00046#x2014; byline: Alexander Semien, Head of Growth (Oct 10, 2025)\",\n        \"AI CTEM: How Cogent Makes It Practical \\u00046#x2014; byline: Alexander Semien, Head of Growth (Oct 14, 2025)\",\n        \"Hardcoded Trust, Translated (May 14, 2026)\",\n        \"The Question Mythos and Daybreak Don\\u00039t Answer (May 13, 2026)\"\n      ],\n      \"evidence_quote\": \"Alexander Semien, Head of Growth.\",\n      \"source_url\": \"https://www.cogent.com/blog/applied-ai-for-vulnerability-management\",\n      \"charter_category\": \"professional_identity\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8B50JdGK7j2ZuBSt51SkpUhR6cl8Kim1bm_KlsXk1OobPmBOLFoHO1mBK3Qaa4WUiNENFUtBL2FkKj8RqqT1kzHc75JG29IZ9f1WKqKjtUjFCpn165bar1hWg-cZDFgtFSMLvry6S-gV_uKKlOyFdj6b3BQ5W-7ArTtlk185yjoVdQq7kP33c3La0vktYtVh85Q2iZlxn9YBKmLLe_se_OywcowGdygER5xApJjbhlulYB51ylRxpgr918m8iLeNkYEXk-KlxdT4HYTjwq8q3JqiZ5oEkHOvHqbgnrABuOU4zxLUMDXsmzm_SRKS8JbUM0Xd5ZdsZPWgULbN3QPMMySIjktzBk-MWHjYmhMxuelXZNWPO_JB3dJWkxwScLeiefLUa0Az5NFII_hZrWU24OdI46DXElJMpRWPjN5OttCD_wLS38Jv_SeiYY9tOZIZSi6u9ixyEDLww-qpq9FjDfrNBfkPWGgi8NwcPDiHs1B9Qt7NUPQKLMuzbgPHA59O8J7TmgeoSuELP0LOu0K8NhYnkJsYRC26Bx-YL9cc7XbaXB6gjFDLARYjgDzuLXEq5XjkpnkLivsn1oz2tzrAUEPc8rA6fQ_DZOQ9XHUZeCKAI9EH-W-fl8i7KEGu63R97MHKDwsU_n0wulx2zGNPUUzX7u87--Ommj4jMq9536C7et4NmnTnetaJ3R5upKMEfCnfv2ZkOw7SrIO1TDGkF4C-wlRchXGXG6z9RBTPB6zyB1_qMipWw_rFRQXVivfdn8D6lkAGAaLH8Q9fSEh9zHKwIntMzJbYaSRfQ8SsHP6KUrizCLk7G87sAHv_3oYGgorHZr3nelH5WCozcW8Eoslhpjkym-2OJ_pVJmWJ6Q_H0TXM0h-vpWiTEB6fg5Bq6LC5Gfh9qlAvwQJhdZuKxGKj-1r26JOxPwa3xDBMsQ84625BAENTI3N9oHp9LNuH8scbh-wJvD5--P1iTum67fwz4uv7fj9xOdyH7pB91k9K7l0UWI4F2c22xeT9h2cNSM4TKZLTD1OUEyAWlmYNeukHW57uTGnf6NWuNpzbLBKsM9L7cT8d4_u3bKesTDn8CCPP5qfOyPMQX7glu_h5rXNs0MIt4rqk2CZtGE4e3pRQVABEGA5M1-Q8dtGros2k99Wq30GGrjoZOc9v3aoSPuw5rytcjBgbqg7xCCh48FMrhlLgICvLwh8T3dkG2khhef1p_32j0DlHS4wgL3f7-vLP46zJsV9nnmGuecRmzxekr49zm-CZeWQRtTyrsja3tmvopSaus3bAxy-_UWkRmPJC3lwTTS3QTpZk1oWdBBZ_nE8Z8u4iPdKjmCA6CX_veS-056Xc96pQkNlvh7OwWu4bd_AuiHn1D1HkC_UnVC3FHqrz1Xp2qKYFC7QBRogAEOoywXwgiGaEB5FwQp_Yo3rdw==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_08381116091f7189016a97c079a3a887d0a178cc56a53bccd9",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3756,
+    "completion_tokens": 573,
+    "total_tokens": 4329,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.002085,
+      "upstream_inference_prompt_cost": 0.000939,
+      "upstream_inference_completions_cost": 0.001146
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 5.52
+}

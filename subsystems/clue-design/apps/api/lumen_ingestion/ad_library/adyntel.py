@@ -22,6 +22,7 @@ absence rather than trusting the reading.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from py_lumen_config import settings
@@ -175,25 +176,50 @@ class AdyntelProvider:
         """One HTTP round trip. ``httpx`` is imported here so the seam stays transport-free.
 
         No retry loop: a page costs a credit, so a failed page is reported rather than
-        silently paid for twice. The bounded harvest loop above decides what a failure means.
-        """
-        import httpx  # lazy: only the real network path needs it
+        silently paid for twice (``max_attempts=1`` — the caller must not retry this one).
+        The bounded harvest loop above decides what a failure means.
 
-        url = f"{self._base_url}/linkedin"
+        The round trip goes through the unit of work's ``ProviderCaller``, so the credit it
+        spends lands on ``provider_call_ledger`` as one reserved credit. Adyntel reports no cost
+        of its own, so the row is ``cost_source=free`` with ``credits=1`` (spec ruling 6.5).
+        """
+        import json as _json  # lazy: only the real network path needs it
+
+        from clue_spend import CallSpec, HttpRequest, SpendEstimate
+        from lumen_api import spend
+
+        request = HttpRequest(
+            method="POST",
+            url=f"{self._base_url}/linkedin",
+            headers={"Content-Type": "application/json"},
+            body=_json.dumps(body).encode("utf-8"),
+            timeout_s=self._timeout_s,
+        )
         try:
-            response = httpx.post(url, json=body, timeout=self._timeout_s)
+            response = spend.caller().call(
+                CallSpec(
+                    provider="adyntel",
+                    operation="design.ad_library.harvest",
+                    label="ad_library:linkedin page",
+                    request=request,
+                    estimate=SpendEstimate(credits=Decimal(1)),
+                    max_attempts=1,
+                    binary=False,
+                )
+            ).response
         except Exception as error:  # noqa: BLE001 - every transport failure is one typed code
             raise AdLibraryError(
                 "ad_library.transport_error",
                 f"{type(error).__name__}: {str(error)[:FAILURE_EXCERPT_MAX]}",
             ) from error
-        if response.status_code >= 400:
+        if response.status >= 400:
+            excerpt = response.body.decode("utf-8", "replace")[:FAILURE_EXCERPT_MAX]
             raise AdLibraryError(
                 "ad_library.http_error",
-                f"HTTP {response.status_code}: {response.text[:FAILURE_EXCERPT_MAX]}",
+                f"HTTP {response.status}: {excerpt}",
             )
         try:
-            payload = response.json()
+            payload = _json.loads(response.body)
         except Exception as error:  # noqa: BLE001
             raise AdLibraryError(
                 "ad_library.malformed_response",

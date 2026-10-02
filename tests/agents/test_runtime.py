@@ -33,6 +33,7 @@ from clue_agents import (
     SpecialistTaskEnvelope,
     ValidatedOperation,
     ValidatedPlan,
+    VersionedWriteOutcome,
     WorkspaceEntry,
     operation_id_for_plan_node,
 )
@@ -326,7 +327,12 @@ class _FinalizingExecution:
 
 
 class _EmptyOutputBackend:
-    async def snapshot_outputs(self) -> tuple[ArtifactRef, ...]:
+    """A turn that froze nothing and wrote no document — the empty case of both finalize reads."""
+
+    written_documents: tuple[VersionedWriteOutcome, ...] = ()
+
+    async def snapshot_outputs(self, *, empty_after: bool = False) -> tuple[ArtifactRef, ...]:
+        del empty_after
         return ()
 
 
@@ -442,7 +448,16 @@ def test_exact_tool_surface_requires_a_tool_call_until_governed_finalize() -> No
     )
     framework_tools = [
         {"name": name}
-        for name in ("edit_file", "glob", "grep", "ls", "read_file", "write_file", "write_todos")
+        for name in (
+            "compact_conversation",
+            "edit_file",
+            "glob",
+            "grep",
+            "ls",
+            "read_file",
+            "write_file",
+            "write_todos",
+        )
     ]
     governed_tools = factory.build()
     effective_names = {tool.name for tool in governed_tools}
@@ -524,7 +539,8 @@ def test_governed_surface_uses_tool_specific_model_guidance_without_moving_schem
     # M8D R10: the retired account-deep launch is exact-replay-only — no active role builds it —
     # while its registry descriptor (and therefore its historical schema pin) must not move.
     assert "launch_account_deep" not in built
-    assert "non-spending immutable" in built["draft_account_research_directive"].description
+    # head-of-abm v68 dropped the retired directive lane; no active role builds its draft tool.
+    assert "draft_account_research_directive" not in built
     assert toolbelt.descriptor("launch_account_deep").input_schema_sha256 == (
         "ccb1246db77aeac6810baab769838993cc132fec9217eaecf07da9cc207d650f"
     )
@@ -722,11 +738,14 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
                     content="",
                     tool_calls=[
                         {
-                            "name": "synthesize_icps",
-                            # PC-C8 §6a: ``client_entity_id`` is constitution authority now, so
-                            # the model sends nothing at all here and the seam fills it in.
+                            "name": "open_product_set_selection_gate",
+                            # PC-C8 §6a: every identifier this gate needs is constitution or
+                            # engine authority, so the model sends nothing at all and the seam
+                            # fills it in. ARV2 onboarding O6 replaced `synthesize_icps@3` here
+                            # when `head-of-abm@v44` dropped it; the property under test is the
+                            # wrapper, and this tool has the same all-trusted input shape.
                             "args": {},
-                            "id": "synthesize-stage0-c65",
+                            "id": "open-product-set-gate-c65",
                             "type": "tool_call",
                         }
                     ],
@@ -740,7 +759,7 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     )
     context = AssembledAgentContext(
         manifest=context_manifest(),
-        messages=(HumanMessage(content="Synthesize the ICP."),),
+        messages=(HumanMessage(content="Let us pick the products for this project."),),
     )
 
     outcome = run_async(
@@ -756,11 +775,21 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     assert outcome.failure_code == "missing_finalize"
     assert len(execution.validated_plans) == 1
     proposed = execution.validated_plans[0].steps[0]
-    assert proposed.tool.address == "synthesize_icps@3"  # type: ignore[union-attr]
-    assert proposed.arguments == {}  # type: ignore[union-attr]
+    assert proposed.tool.address == "open_product_set_selection_gate@1"  # type: ignore[union-attr]
+    # The one optional model-facing field the gate has, defaulted by the wrapper because the model
+    # sent nothing: everything else it needs is trusted authority the seam fills in.
+    assert proposed.arguments == {"icp_key": None}  # type: ignore[union-attr]
 
 
-def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp() -> None:
+def test_stage0_final_response_reports_the_gate_and_does_not_claim_a_confirmed_icp() -> None:
+    """ARV2 onboarding O6 retargeted this regression without changing what it protects.
+
+    The v20 subject was readiness terminology — label the policy version, never call an
+    unsynthesized ICP a spec. `head-of-abm@v44` has no readiness surface at all, so the same
+    discipline now lives on the gates: the agent may open one and describe it, but a gate receipt
+    is the only authority for a confirmation, and its own prose must not claim one.
+    """
+
     request, resolved = _request()
     stage0_skill = next(  # type: ignore[union-attr]
         skill.ref.address
@@ -768,14 +797,14 @@ def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp(
         if skill.ref.name == "stage0-interview"
     )
     body = resolved.open_skill(stage0_skill)  # type: ignore[union-attr]
-    assert "readiness-policy version" in body
-    assert "say that no ICP" in body
+    assert "A gate receipt is the only authority" in body
+    assert 'Ordinary prose such as "looks good" confirms nothing.' in body
 
     execution = _ReadinessResponseExecution()
     artifacts = _DelegationArtifacts()
     response = (
-        "The backend readiness check is ready under readiness-policy version 1. "
-        "No ICP exists yet; synthesis must persist a draft icp_spec before one can be reviewed."
+        "I opened the product-set gate with the three products this profile sells. "
+        "No product set is confirmed yet; it is awaiting your answer on the gate."
     )
     runtime = DeepAgentTurnRuntime(
         models=_Models(
@@ -784,9 +813,9 @@ def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp(
                     content="",
                     tool_calls=[
                         {
-                            "name": "evaluate_stage0_readiness",
-                            "args": {"gate": "icp_synthesis"},
-                            "id": "stage0-readiness-terminology",
+                            "name": "open_product_set_selection_gate",
+                            "args": {},
+                            "id": "stage0-gate-terminology",
                             "type": "tool_call",
                         }
                     ],
@@ -830,7 +859,7 @@ def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp(
             resolved_profile=resolved,  # type: ignore[arg-type]
             context=AssembledAgentContext(
                 manifest=context_manifest(),
-                messages=(HumanMessage(content="Are we ready to synthesize an ICP?"),),
+                messages=(HumanMessage(content="Which products is this project about?"),),
             ),
             backend=None,
             governed_tools=factory.build(),
@@ -841,9 +870,10 @@ def test_stage0_final_response_labels_policy_version_and_does_not_invent_an_icp(
     envelope = cast(Any, execution.envelope)
     persisted_response = artifacts.data[envelope.user_message_artifact_ref.artifact_key].decode()
     assert persisted_response == response
-    assert "readiness-policy version 1" in persisted_response
-    assert "synthesized spec version" not in persisted_response
-    assert "No ICP exists yet" in persisted_response
+    assert "awaiting your answer on the gate" in persisted_response
+    assert "now confirmed" not in persisted_response
+    assert "has been confirmed" not in persisted_response
+    assert "No product set is confirmed yet" in persisted_response
 
 
 def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake() -> None:
@@ -924,6 +954,64 @@ def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake
     )
     assert task.domain_refs[0].workspace_id == request.constitution.workspace_id
     assert task.required_output_path == "outputs/review-verdict.md"
+
+
+def test_research_delegation_virtual_views_are_recoverable_without_file_access() -> None:
+    import json
+    from dataclasses import replace
+
+    request, resolved = _request()
+    resolved = cast(Any, resolved)
+    resolved = replace(
+        resolved,
+        profile=resolved.profile.model_copy(
+            update={
+                "delegation_roles": (AgentRole.RESEARCH_CLAIMS,),
+            }
+        ),
+    )
+    execution = _DelegationExecution()
+    artifacts = _DelegationArtifacts()
+
+    class NoFiles:
+        async def stat_entry(self, path):
+            raise AssertionError("Virtual views must not reach the physical workspace")
+
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, SimpleNamespace(backend=NoFiles())),
+        artifacts=cast(Any, artifacts),
+    )
+
+    async def case():
+        tool = factory._delegation_tool()
+        args = {
+            "role": "research_claims",
+            "goal": "Process evidence",
+            "instructions": "Read originals",
+        }
+        refused = json.loads(
+            await tool.coroutine(
+                runtime=SimpleNamespace(tool_call_id="wrong-copy", state={}),
+                canonical_paths=["research/context.json", "evidence/index/0.json"],
+                **args,
+            )
+        )
+        assert refused["error"] == "plan_rejected"
+        assert "canonical_paths=[]" in refused["reasons"][0]
+        assert not execution.validated_plans
+        assert not artifacts.data
+        await tool.coroutine(
+            runtime=SimpleNamespace(tool_call_id="corrected-copy"), canonical_paths=[], **args
+        )
+        assert len(execution.validated_plans) == 1
+        step = execution.validated_plans[0].steps[0]
+        assert step.granted_paths == ()
+
+    run_async(case())
 
 
 def test_o3_research_delegation_carries_frozen_steering_and_directive_files_and_refs() -> None:

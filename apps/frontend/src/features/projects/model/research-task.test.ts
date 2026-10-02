@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ChatPartSnapshotSchema, type ChatPart, type ChatTaskPart } from "./chat-parts";
-import { aggregateResearchTasks, researchTaskModel } from "./research-task";
+import {
+  ChatPartSnapshotSchema,
+  type ChatPart,
+  type ChatTaskPart,
+} from "./chat-parts";
+import {
+  aggregateResearchTasks,
+  researchTaskModel,
+} from "./research-task";
 
 /** Task aggregation: one run is one visible task at one account or five hundred. */
 
@@ -79,6 +86,40 @@ test("step rows only appear for non-zero counts", () => {
   );
 });
 
+test("subjects routed to review are their own count and still render as partial", () => {
+  const part = taskPart(
+    { state: "partial" },
+    { total: 3, completed: 1, partial: 1, running: 0, needs_review: 1 },
+  );
+  // The count is split on the wire...
+  assert.equal(part.counts.needsReview, 1);
+  assert.equal(part.counts.partial, 1);
+  // ...and nothing the human reads moves: settled counts it, and it shares the Partial row.
+  const task = researchTaskModel(part);
+  assert.equal(task.summary, "3 of 3 accounts settled");
+  assert.deepEqual(
+    task.steps.map((step) => [step.id, step.count]),
+    [
+      ["completed", 1],
+      ["partial", 2],
+    ],
+  );
+});
+
+test("a counts payload without needsReview still parses, as zero", () => {
+  const parsed = ChatPartSnapshotSchema.parse({
+    part_id: "task:r-old",
+    kind: "task",
+    revision: 1,
+    state: "partial",
+    title: "account research",
+    run_ref: { object_type: "entity_research_run", object_id: "r-old" },
+    counts: { total: 1, queued: 0, running: 0, completed: 0, partial: 1, blocked: 0, failed: 0 },
+  }) as ChatTaskPart;
+  assert.equal(parsed.counts.needsReview, 0);
+  assert.equal(researchTaskModel(parsed).summary, "1 of 1 account settled");
+});
+
 test("two snapshots of one run collapse to the highest revision", () => {
   const parts: ChatPart[] = [
     taskPart({ revision: 1, state: "queued" }, { queued: 2, running: 0 }),
@@ -100,6 +141,8 @@ test("two different runs stay two tasks", () => {
   ];
   assert.equal(aggregateResearchTasks(parts).length, 2);
 });
+
+// --- the C3 poll merge ----------------------------------------------------
 
 test("exception refs are surfaced without breaking the single-task rule", () => {
   const task = researchTaskModel(

@@ -558,6 +558,10 @@ def ingestion_job_dto(job: JsonObject) -> JsonObject:
         "stage": job.get("stage"),
         "progress": job.get("progress"),
         "outcome": ingestion_job_outcome(job),
+        "asset_analysis": (job.get("evidence") or {}).get("description_progress")
+            or ((job.get("evidence") or {}).get("steps") or {}).get("enrich")
+            or ((job.get("error") or {}).get("progress"))
+            or ((job.get("evidence") or {}) if job.get("kind") == "asset_enrichment" else None),
         "resolution": ingestion_job_resolution(job),
         "website_url": ingestion_job_website_url(job),
         "brand_kit_id": job.get("brand_kit_id"),

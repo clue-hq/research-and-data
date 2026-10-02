@@ -1,0 +1,68 @@
+{
+  "id": "gen-1788163163-cm2vqXhvp1VY9kJFya4d",
+  "object": "chat.completion",
+  "created": 1788163163,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"contact_claims\": [\n    {\n      \"field_key\": \"contact.current_title\",\n      \"value_json\": \"Head of Growth Marketing\",\n      \"evidence_span\": \"### Head of Growth Marketing - Zafran Security (Current).\",\n      \"source_url\": \"https://www.linkedin.com/in/varinderkaur\",\n      \"confidence\": 0.95,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"contact.current_location\",\n      \"value_json\": {\n        \"raw\": \"location: Easton, Pennsylvania, United States\",\n        \"country\": \"United States\"\n      },\n      \"evidence_span\": \"location: Easton, Pennsylvania, United States\",\n      \"source_url\": \"https://www.linkedin.com/in/varinderkaur\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"contact.facet.recent_post\",\n      \"value_json\": \"Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\\nIf that's you, let's talk. Excellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.\\nhttps://lnkd.in/eWYbq_Mw\",\n      \"evidence_span\": \"Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\\nIf that's you, let's talk. Excellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.\\nhttps://lnkd.in/eWYbq_Mw\",\n      \"source_url\": \"https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X\",\n      \"confidence\": 0.98,\n      \"priority\": 1,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.facet.recent_post\",\n      \"value_json\": \"Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\\n#AgenticAI #ExposureManagement #VulnerabilityManagement #CTEM\",\n      \"evidence_span\": \"Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\\n#AgenticAI #ExposureManagement #VulnerabilityManagement #CTEM\",\n      \"source_url\": \"https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G\",\n      \"confidence\": 0.98,\n      \"priority\": 1,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.facet.communication_style\",\n      \"value_json\": {\n        \"style_label\": \"enthusiastic and recruiting-oriented\",\n        \"summary\": \"Tone evidenced by phrases and emoji such as \\\"Thrilled to share,\\\" \\\"Proud to be part of this journey!!!,\\\" \\\"\ud83d\ude80,\\\" and multi-paragraph recruiting copy like \\\"If that's you, let's talk.\\\"\"\n      },\n      \"evidence_span\": \"Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\",\n      \"source_url\": \"https://www.linkedin.com/in/varinderkaur\",\n      \"confidence\": 0.9,\n      \"priority\": 3,\n      \"use_class\": \"professional-public\"\n    },\n    {\n      \"field_key\": \"contact.facet.stated_interests\",\n      \"value_json\": [\n        \"building and scaling demand generation\",\n        \"account-based marketing (ABM)\",\n        \"digital marketing programs\",\n        \"AI and automation to optimize performance\"\n      ],\n      \"evidence_span\": \"Results-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs\",\n      \"source_url\": \"https://www.linkedin.com/in/varinderkaur\",\n      \"confidence\": 0.95,\n      \"priority\": 2,\n      \"use_class\": \"personal-public-non-sensitive\"\n    },\n    {\n      \"field_key\": \"contact.persona\",\n      \"value_json\": \"champion\",\n      \"evidence_span\": \"I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\",\n      \"source_url\": \"https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X\",\n      \"confidence\": 0.88,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"contact.facet.career_history\",\n      \"value_json\": [\n        {\n          \"org\": \"Zafran Security\",\n          \"role\": \"Head of Growth Marketing\",\n          \"start\": \"May 2025\",\n          \"end\": \"Present\"\n        },\n        {\n          \"org\": \"Secureworks\",\n          \"role\": \"Director, Demand Generation & Technology\",\n          \"start\": \"Jun 2022\",\n          \"end\": \"May 2025\"\n        },\n        {\n          \"org\": \"ReSource Pro\",\n          \"role\": \"Director Demand Generation\",\n          \"start\": \"Apr 2021\",\n          \"end\": \"Jun 2022\"\n        },\n        {\n          \"org\": \"Axiom\",\n          \"role\": \"Director Demand Generation and Technology\",\n          \"start\": \"2019-01-01\",\n          \"end\": \"2021-01-01\"\n        },\n        {\n          \"org\": \"Tangoe\",\n          \"role\": \"Director Digital Marketing\",\n          \"start\": \"2018-03-01\",\n          \"end\": \"2019-05-01\"\n        },\n        {\n          \"org\": \"Ivanti\",\n          \"role\": \"Various marketing manager roles\",\n          \"start\": \"2011\",\n          \"end\": \"2018\"\n        },\n        {\n          \"org\": \"Grazitti\",\n          \"role\": \"Online Marketing Manager\",\n          \"start\": \"2008\",\n          \"end\": \"2011\"\n        },\n        {\n          \"org\": \"Milestone Global Solutions\",\n          \"role\": \"SEO Analyst and Content Writer\",\n          \"start\": \"2006-01-01\",\n          \"end\": \"2008-01-01\"\n        }\n      ],\n      \"evidence_span\": \"### Director, Demand Generation & Technology - Secureworks\\nJun 2022 - May 2025 (2 years and 11 months).\",\n      \"source_url\": \"https://www.linkedin.com/in/varinderkaur\",\n      \"confidence\": 0.9,\n      \"priority\": 2,\n      \"use_class\": \"professional-public\"\n    }\n  ],\n  \"proposed_fields\": [\n    {\n      \"field_key\": \"account.recent_funding\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"object\",\n      \"value_schema\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"amount_usd\"\n        ],\n        \"properties\": {\n          \"amount_usd\": {\n            \"type\": \"number\"\n          },\n          \"round\": {\n            \"type\": \"string\"\n          }\n        }\n      },\n      \"description\": \"Most recent funding round for the account (amount and round).\",\n      \"reuse_scope\": \"single_account\",\n      \"hypothesis\": \"Knowing Zafran's recent $60M raise (amount and round) is critical for Clue's ABM play because it signals buying capacity and a near-term propensity to invest in GTM tooling like an AI-native ABM orchestration platform.\",\n      \"example_value\": {\n        \"amount_usd\": 60000000,\n        \"round\": \"Series B\"\n      },\n      \"example_evidence_span\": \"Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management\",\n      \"example_source_url\": \"https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G\",\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"contact.role_on_committee\",\n      \"entity_type\": \"contact\",\n      \"value_type\": \"object\",\n      \"value_schema\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"role\"\n        ],\n        \"properties\": {\n          \"role\": {\n            \"type\": \"string\",\n            \"enum\": [\n              \"champion\",\n              \"economic_buyer\",\n              \"technical_evaluator\",\n              \"blocker\"\n            ]\n          },\n          \"rationale\": {\n            \"type\": \"string\"\n          }\n        }\n      },\n      \"description\": \"Inferred buying-committee role with plausibility rationale.\",\n      \"reuse_scope\": \"single_contact\",\n      \"hypothesis\": \"Capturing Vari Kaur's likely role on the buying committee (champion) with rationale helps Clue prioritize outreach and tailor messaging to her remit of building ABM end-to-end and hiring an ABM manager.\",\n      \"example_value\": {\n        \"role\": \"champion\",\n        \"rationale\": \"Public hiring post and remit indicate she owns ABM strategy and hiring for ABM, implying she would champion purchasing decisions for ABM tooling.\"\n      },\n      \"example_evidence_span\": \"I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\",\n      \"example_source_url\": \"https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X\",\n      \"priority\": 1\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqlTRcSHc_GiY63rXtmzPG9NuSEX2iDzIOsVPSMvNrKar1733CIkAQqhR464aaTAPSKcHWo6KSX3tTjAnbtVL_jQw5lbVuUyepWdmaVpzoULbbRFNoMVWJ3lvn8ePLHymg5p5ssytv2VOQSToRp9E2aFsg4th2ADCGT_JCcA8UUOAOkuqGHbul-QLXK3xA-9TGwRi1pVo2DHv4pDaUyt7LfqtVEhxNKuP6Q7Aum_tFqFP_q78cBZfZdlO6bG9YhP9Lt-VD1LoPqt7Z--7y_78-ReqXMKp8l_U-dwKefpjeH9LFt7piE3f_PRTPd9GBV5FSG9ouqeICSrGqfZm8UK0qzZ_bnDK9z9gMBy8j0eBqNp5Gw8-rUjSVbkgi69DEGJqN01IuL-GJ9WmvT82cpbyxGm4wupDkII-avazS6M8c7HZxxMf2zMs8t5XsCakuFlOAi1X0OH0IhSMrjj2OXv9GZ2b7lNpUEBMBrp2ZTqkUtrVv72RWPT4rJRWAcRQykRmX0zJkCSK6ANYiq5X-soGNMVKoKww_zx5xz-I7HcXSAafUcQtcBIDSFTASvviPBpbcRPJ_o6WUcbzPGXzYvFWQZXc7UD6D8sud-0yvxNf_wBreSlVRllBhtYiOUbqwSktq9QxgWoKngQ_rXDTaqXltAMSWGn-Hjz5zov9G6kDm92md2twLfW6mKIieqkIW9qsaqCgBD5HKlzA2Tm-GUh_qEBymwKoSfa9jrfihN-ahtlx9fchIXDrslV1U1ugcY_HWAmIzM-QtjrnjPpQjVoHSiaiOaLDoAIao5Iz45PKnYmT-zj83OWFYYk777Bfy_3Ynca8UIJpu3MMFFgJh7CqDNlkfQzTbnd6GNijdfXIT-Zm_nm2jbiqUV_SAXtdR3yziDz8qc3OfxqdXUHaQ58BMrVSGm_gAKuxoWAw1evWxl16Ewr2r53OTcl18eqn-g7NJud6-lrMXuxqkFZcl5PSkH-8gdIYDLJqEJW0AUpuhZ-gR6nHYGeQOfvL1S-b2GYh08e0oWI4IGK5xO8RJc4wW8XJfF1sKtxTPM5LWB9QvjyqFYWFhtm-6X_SY9x_-nPh9S9tw2uMrAKybwN66N6M6OOSbwQuYke0VioeD0d9sO_3C40njKqH_dfUWMfZq12En885Sd7e8FI5_RhPkTpetdGqLD0wQMBL31Sm9JTjlNHJZHyvs1cPUmGtEs1pPx7XihWMUWjO6hrUdOeK3U5QPL3YsSEzFtr1RvuC1nK7DVzX2YPLTHhPb60Jmz57GkHzmbZnni1ifOXdzSSgBkCZMGOiVrjh_nd5BQrtjJZOWzmrJUqPI8kC711PyqwrTTZBQTgRyS96qfX8MkirEhLq93Fo2zpZnvU-MGu25OW3EyWuxJVeOWZF1lYuJ6xSmRvEBEGhO.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0d998ab9ad07ec57016a95345c749887d0a8fba713e5adfe01",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 6301,
+    "completion_tokens": 2304,
+    "total_tokens": 8605,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 2816,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00554965,
+      "upstream_inference_prompt_cost": 0.00094165,
+      "upstream_inference_completions_cost": 0.004608
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 21.71,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 25704,
+    "response_format": {
+      "type": "json_object"
+    },
+    "reasoning": {
+      "effort": "minimal"
+    }
+  }
+}

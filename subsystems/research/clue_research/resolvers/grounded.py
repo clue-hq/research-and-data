@@ -110,7 +110,8 @@ class SynthesizedField(BaseModel):
     """One grounded synthesis for a field value — the shape a :class:`SynthesisBackend` returns.
 
     Carries exactly what a grounded tier-4 source knows: the typed ``value``, the citing
-    ``source_url`` (a synthesis claim must cite a source — the claim-model invariant), the
+    ``source_url`` (construction admits a synthesis claim without one — ARV2 D1 moved the rule to
+    ``can_be_promoted``, which refuses it — so this shape requires it here instead), the
     **mandatory non-empty** ``evidence_span`` (the exact retrieved passage supporting the value — a
     span-less value cannot exist here, by type), the ``retrieved_text`` the span was drawn from (so
     the substrate can *prove* grounded-only — span ⊆ retrieved_text — and target-lock — does this

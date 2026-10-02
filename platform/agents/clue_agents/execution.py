@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict, deque
+from collections.abc import Mapping
 from enum import StrEnum
 from typing import Literal
 from uuid import UUID
@@ -28,6 +29,8 @@ from clue_agents.contracts import (
 from clue_core import ExecutionId, OperationId, operation_id_from_key
 
 __all__ = [
+    "RECEIPT_REFERENCE_VALUES_MAX_BYTES",
+    "SPILL_THRESHOLD_BYTES",
     "AgentExecutionStatus",
     "AgentPlanIssue",
     "AgentPlanPolicy",
@@ -38,7 +41,29 @@ __all__ = [
     "authority_sha256",
     "operation_id_for_plan_node",
     "review_agent_plan",
+    "spill_stub",
 ]
+
+#: The bound on one governed receipt's ``reference_values``, measured as canonical JSON bytes.
+#: Substantive output stays behind references, so a tool that would return a lot hands back
+#: ``artifact_refs``/``domain_refs`` and the model reads the file or the domain object instead.
+RECEIPT_REFERENCE_VALUES_MAX_BYTES = 16_384
+
+#: The point at which a governed result stops travelling inside its receipt and starts travelling
+#: as a file.  It sits below the receipt bound on purpose: the bound is a refusal, and a refusal
+#: arrives *after* the tool has already run and spent, so nothing may be allowed to reach it.  The
+#: same number is the read tools' own page ceiling, so a paged read that fills its page exactly
+#: still leaves the receipt's envelope room and a spilled read is the honestly-oversized one.
+SPILL_THRESHOLD_BYTES = 12 * 1024
+
+# A trusted composition root may authorize a larger per-run budget than a profile default. The
+# operator settings (``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``, ``CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS``)
+# carry the same upper bound, so a value this refuses is refused at start-up instead.
+MAX_RUNTIME_MODEL_ROUNDS = 500
+
+#: How much of a spilled result's prose the stub is allowed to keep.  Enough for the model to
+#: recognise what it asked for; far too little to be mistaken for the result itself.
+_SPILL_SUMMARY_MAX_CHARS = 300
 
 
 class _Value(BaseModel):
@@ -59,10 +84,11 @@ class AgentPlanPolicy(_Value):
     max_dependency_depth: int = Field(ge=1, le=64)
     max_fanout: int = Field(ge=1, le=32)
     max_parallelism: int = Field(ge=1, le=32)
-    max_rounds: int = Field(ge=1, le=128)
+    max_rounds: int = Field(ge=1, le=MAX_RUNTIME_MODEL_ROUNDS)
     max_delegations: int = Field(ge=0, le=32)
     max_delegation_depth: int = Field(ge=0, le=4)
     budget_limit_millicents: int = Field(ge=0)
+    budget_mode: Literal["enforced", "record_only"] = "enforced"
 
     @classmethod
     def from_profile(
@@ -70,6 +96,7 @@ class AgentPlanPolicy(_Value):
         profile: AgentProfile,
         *,
         budget_limit_millicents: int,
+        budget_mode: Literal["enforced", "record_only"] = "enforced",
         max_dependency_depth: int = 16,
         max_fanout: int = 8,
         max_parallelism: int = 8,
@@ -84,6 +111,7 @@ class AgentPlanPolicy(_Value):
             max_delegations=profile.max_delegations,
             max_delegation_depth=profile.max_delegation_depth,
             budget_limit_millicents=budget_limit_millicents,
+            budget_mode=budget_mode,
         )
 
 
@@ -146,7 +174,7 @@ class GovernedOperationReceipt(_Value):
             ensure_ascii=False,
             allow_nan=False,
         ).encode()
-        if len(encoded) > 16_384:
+        if len(encoded) > RECEIPT_REFERENCE_VALUES_MAX_BYTES:
             raise ValueError("bounded operation receipt exceeds 16 KiB")
         return self
 
@@ -179,6 +207,36 @@ def _canonical_bytes(value: object) -> bytes:
         ensure_ascii=False,
         allow_nan=False,
     ).encode()
+
+
+def spill_stub(
+    *,
+    address: str,
+    path: str,
+    references: Mapping[str, JsonValue],
+) -> dict[str, JsonValue]:
+    """What the receipt says in place of a result that went to a file instead.
+
+    Four things, and no fifth: where the bytes are, how many of the thing there were, a sliver of
+    prose so the model can tell at a glance that this is the read it asked for, and which tool
+    produced it.  The count is the length of the longest list the result carries — a read's
+    payload is its rows, and "48 claims are in this file" is the sentence the model needs to
+    decide whether to open it.  The summary prefers the result's own ``summary`` field when it
+    wrote one, because a tool describes itself better than a JSON prefix does.
+
+    The stub is deliberately tiny.  It is not a lossy version of the result; it is a pointer, and
+    the whole result is one ``read_file`` away.
+    """
+
+    counts = [len(value) for value in references.values() if isinstance(value, list)]
+    stated = references.get("summary")
+    summary = stated if isinstance(stated, str) else _canonical_bytes(dict(references)).decode()
+    return {
+        "spilled_to": path,
+        "count": max(counts) if counts else 1,
+        "summary": summary[:_SPILL_SUMMARY_MAX_CHARS],
+        "tool": address,
+    }
 
 
 def operation_id_for_plan_node(execution_id: ExecutionId, node_key: str) -> OperationId:

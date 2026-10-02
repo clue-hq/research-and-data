@@ -55,6 +55,7 @@ class Memory(BaseModel):
     last_confirmed_at: UtcDatetime | None = None
     cycles_since_confirmed: int = Field(default=0, ge=0)
     subject_entity_id: UUID | None = None
+    source_thread_id: str | None = None
     retention_class: str = "standard"
     created_at: UtcDatetime
     claim_refs: tuple[UUID, ...] = ()

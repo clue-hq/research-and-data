@@ -80,6 +80,21 @@ _PROVIDER_CAPABLE_TOOL_NAMES = frozenset(
 )
 
 
+def field_key_on_subject_axis(subject_type: ResearchSubjectType, field_key: str) -> bool:
+    """True when ``field_key`` belongs to ``subject_type``'s governed research axis.
+
+    An account subject owns the launch-field axis the launcher admits (contract §3.1 via
+    ``account_axis_field_keys``): ``account.*`` plus the ``core.*`` firmographic rows.  A contact
+    subject owns ``contact.*`` only.  The DB restates exactly this rule in the
+    ``entity_research_validate_tool_request`` / ``protect_entity_research_provider_operation``
+    trigger functions (migration ``9184f54adc26``) — the two must stay in lockstep.
+    """
+
+    if field_key.startswith(f"{subject_type.value}."):
+        return True
+    return subject_type is ResearchSubjectType.ACCOUNT and field_key.startswith("core.")
+
+
 class EntityResearchToolAuthorityError(RuntimeError):
     """A semantic request, provider operation, claim, or read crosses exact job authority."""
 
@@ -249,7 +264,8 @@ class ProviderOperationReservation(BaseModel):
         if len(self.field_keys) != len(set(self.field_keys)):
             raise ValueError("provider operation field keys must be unique")
         if any(
-            not field_key.startswith(f"{self.subject_type.value}.") for field_key in self.field_keys
+            not field_key_on_subject_axis(self.subject_type, field_key)
+            for field_key in self.field_keys
         ):
             raise ValueError("provider operation contains a cross-axis field")
         return self
@@ -267,6 +283,15 @@ class ProviderResultLineage(BaseModel):
     # value, so the owning provider reader must enumerate those refs for relational validation.
     # An empty tuple preserves the ordinary one-operation/one-snapshot contract.
     claim_source_snapshot_refs: tuple[NonEmptyStr, ...] = ()
+    # The source keys of those same component snapshots. A discovered contact's claims are born
+    # against whichever component actually supplied them, which is not always the source key the
+    # semantic tool named for the operation as a whole: Sumble's committee acquisition buys the
+    # Teams organization map and the People page in one operation, and a member the map returned
+    # carries only ``sumble_teams`` facts (founder ruling 2026-08-20 — the truth floor is
+    # provider-returned, whichever page returned it). The owning provider reader enumerates them
+    # from its own ledger, so this stays a bounded widening to that operation's paid components
+    # rather than an open door. An empty tuple keeps the strict one-source contract.
+    claim_source_keys: tuple[NonEmptyStr, ...] = ()
     raw_response_artifact_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
     retained_result_artifact_refs: tuple[NonEmptyStr, ...] = Field(min_length=1)
     normalized_result_artifact_ref: NonEmptyStr
@@ -339,6 +364,9 @@ class EntityResearchProviderAction(Protocol):
         before_dispatch: Callable[
             [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
         ],
+        settle_terminal: Callable[
+            [ProviderOperationReservation], Awaitable[ProviderOperationObservation]
+        ],
     ) -> Sequence[ProviderResearchProjectionDraft]: ...
 
 
@@ -395,6 +423,62 @@ def _prefixed_uuid(reference: str, prefix: str) -> UUID:
         return UUID(reference.removeprefix(prefix))
     except ValueError as exc:
         raise EntityResearchResultIntegrityError(f"reference {reference!r} is malformed") from exc
+
+
+def _foreign_read_rejection(
+    *,
+    subject_type: ResearchSubjectType,
+    noun: str,
+    argument: str,
+    reference: str,
+) -> EntityResearchGovernedRejection:
+    """Refuse a model-supplied reference that resolves outside this exact job — recoverably.
+
+    Live 2026-08-20 (job ``5b8898e3``): the account agent took three ``claim:<uuid>`` references
+    out of ``read_account_research_state``'s ``existing_claims`` block and re-typed them as
+    ``research-result:<uuid>``. The prefix was right, so :func:`_model_supplied_uuid` admitted
+    them; the row lookup then matched nothing and the raw authority species escaped the shared
+    read tool, failing the whole execution three calls at once.
+
+    A reference the model typed is model output, and an out-of-job reference is the same species
+    as an out-of-*type* one (``2d71e47f``): repairable. The job authority itself is unchanged —
+    the read is still refused, and no foreign row is served — but the refusal returns to the agent
+    naming its two legal moves so it can correct the call or finalize honestly with the gap.
+    """
+
+    state_tool = (
+        "read_account_research_state"
+        if subject_type is ResearchSubjectType.ACCOUNT
+        else "read_contact_research_state"
+    )
+    return EntityResearchGovernedRejection(
+        "engine_authority_rejection",
+        f"research {noun} is outside the exact job: {argument} {reference!r} names no {noun} this "
+        f"job produced. Read only the references this job's own results reported (the "
+        f"`result_refs` / evidence index of {state_tool}); a `claim:` or operation id is never a "
+        f"read reference. If you cannot find it there, proceed without it and finalize honestly "
+        f"with the gap.",
+    )
+
+
+def _model_supplied_uuid(reference: str, prefix: str, *, argument: str) -> UUID:
+    """Parse a reference the MODEL typed; a wrong type is its mistake, never job integrity.
+
+    ``_prefixed_uuid`` keeps the suspending integrity species for engine-produced references
+    (money or truth at stake). A reference arriving through a tool argument is model output —
+    observed live (run 1d39023a): an agent passed a ``sumble-account-operation:`` reference as a
+    follow-up's parent result and the whole job suspended. That is R10 species 1: refuse
+    recoverably, name the expected shape, and let the model correct its call.
+    """
+
+    try:
+        return _prefixed_uuid(reference, prefix)
+    except EntityResearchResultIntegrityError as exc:
+        raise EntityResearchGovernedRejection(
+            "reference_type_rejected",
+            f"{argument} must be a '{prefix}<uuid>' reference; received {reference!r}. Use the "
+            "exact reference the tool result reported, not an operation or other ledger id",
+        ) from exc
 
 
 def _artifact_key(reference: str) -> str:
@@ -462,22 +546,35 @@ def _json_contains_text(data: bytes, span: str) -> bool:
     return contains(decoded)
 
 
-def semantic_validation_error(error: ValidationError) -> str:
+def semantic_validation_error(
+    error: ValidationError, *, schema: type[BaseModel] | None = None
+) -> str:
     """Return bounded actionable feedback without echoing model-authored values.
 
     Public because every governed tool surface — provider tools here, the account/contact *engine*
     tools at the composition root — must degrade an argument-schema violation to one repairable
     message rather than an uncaught ``ValidationError`` that kills the run.
+
+    When ``schema`` declares a ``validation_correction(location)`` classmethod, each detail also
+    carries the exact repair for that argument. Naming the field is not enough on its own: live
+    run ``dc86340f`` refused seven of eight committee calls with ``{"location":
+    ["buying_unit_scope", "evidence_refs"], "message": "Field required"}`` and the agent — told
+    what was missing but never what belongs in it, what one looks like, or where to find one —
+    retried the same malformed shape until the account's runtime budget ran out. Corrections are
+    opt-in per schema by registration, so no tool name is special-cased here.
     """
 
-    details = [
-        {
+    correction_for = getattr(schema, "validation_correction", None)
+    details: list[dict[str, JsonValue]] = []
+    for item in error.errors(include_url=False, include_input=False):
+        detail: dict[str, JsonValue] = {
             "location": [str(part) for part in item["loc"]],
             "message": str(item["msg"]),
             "type": str(item["type"]),
         }
-        for item in error.errors(include_url=False, include_input=False)
-    ]
+        if correction_for is not None and (correction := correction_for(item["loc"])) is not None:
+            detail["correction"] = str(correction)
+        details.append(detail)
     return json.dumps(
         {
             "error": "semantic_tool_input_validation_failed",
@@ -513,6 +610,10 @@ class EntityResearchToolRequestStore:
         context = active.context
         authorization = context.authorization
         selection = authorization.selection
+        if authorization.subject_type is ResearchSubjectType.CONTACT and not semantic.questions:
+            raise EntityResearchToolAuthorityError(
+                "contact research requires confirmed directional questions"
+            )
         if not set(semantic.field_keys).issubset(authorization.effective_admitted_field_keys):
             raise EntityResearchToolAuthorityError("semantic tool widened selected fields")
         if not set(semantic.source_keys).issubset(authorization.effective_admitted_source_keys):
@@ -521,7 +622,26 @@ class EntityResearchToolRequestStore:
         if not is_follow_up and not set(semantic.questions).issubset(
             authorization.effective_research_questions
         ):
-            raise EntityResearchToolAuthorityError("semantic tool widened confirmed questions")
+            if authorization.subject_type is ResearchSubjectType.ACCOUNT:
+                # Model-authored question text is not authority — the confirmed directive is.
+                # Narrow to the confirmed set instead of refusing: a zero-question comprehensive
+                # directive confirms no questions at all, so a model that insists on adding intent
+                # text (observed live, job 5d9dfe7b) was refused on every composition, then
+                # refused assessment for the unattempted pair, and looped to the recursion cap.
+                # Narrowing never widens scope; an emptied set is the valid Slice-B zero-question
+                # shape (Exa substitutes its fixed target-lock sentence). Contacts stay strict:
+                # their directives must carry confirmed questions and an emptied set would
+                # silently break that contract.
+                confirmed = set(authorization.effective_research_questions)
+                semantic = semantic.model_copy(
+                    update={
+                        "questions": tuple(
+                            question for question in semantic.questions if question in confirmed
+                        )
+                    }
+                )
+            else:
+                raise EntityResearchToolAuthorityError("semantic tool widened confirmed questions")
         if active.call.tool_name not in context.tool_surface.tool_names:
             raise EntityResearchToolAuthorityError("semantic tool is outside the exact surface")
         if active.call.tool_name == "discover_buying_committee" and not set(
@@ -539,8 +659,14 @@ class EntityResearchToolRequestStore:
                 source for source in authority.source_keys if source in semantic.source_keys
             )
             if not sources:
-                raise EntityResearchToolAuthorityError(
-                    f"field {authority.field_key!r} has no authorized requested source"
+                # R10 species 1: a field outside the exact field/source authority is a model
+                # mistake, not a job-integrity failure. A comprehensive field may legitimately
+                # carry an *empty* authority (no requestable owner), and the agent's context says
+                # so — but a model that names it anyway must be able to drop it and continue
+                # rather than suspend the whole account.
+                raise EntityResearchGovernedRejection(
+                    "field_source_authority_mismatch",
+                    f"field {authority.field_key!r} has no authorized requested source",
                 )
             requested_authority.append(
                 FieldSourceAuthority(field_key=authority.field_key, source_keys=sources)
@@ -562,9 +688,10 @@ class EntityResearchToolRequestStore:
         prior_research_context: str | None = None
         async with self._conn_factory() as conn:
             if is_follow_up:
-                parent_result_id = _prefixed_uuid(
+                parent_result_id = _model_supplied_uuid(
                     cast(str, semantic.parent_observation_ref),
                     "research-result:",
+                    argument="parent_observation_ref",
                 )
                 parent = (
                     (
@@ -756,7 +883,6 @@ class EntityResearchToolRequestStore:
             for key in (
                 "agent_turn_id",
                 "agent_execution_id",
-                "tool_event_id",
                 "raw_tool_call_id",
                 "research_run_id",
                 "job_id",
@@ -786,6 +912,11 @@ class EntityResearchToolRequestStore:
             )
         }
         normalized = dict(observed)
+        # ``tool_event_id`` is the first journaled attempt that caused this immutable governed
+        # request, not part of the request's authority. A checkpoint retry in the same agent turn
+        # appends a new TOOL_STARTED event while retaining the same raw call id and semantic input;
+        # keep the original causal pointer and compare every actual authority field below.
+        normalized.pop("tool_event_id")
         for key in ("field_keys", "source_keys", "questions"):
             normalized[key] = list(normalized[key])
         normalized["field_source_authority"] = serialize_value_json(
@@ -1119,6 +1250,31 @@ class EntityResearchProviderCausationStore:
             operation=operation,
             disposition=operation.observation_disposition.value,
         )
+
+    async def settle_terminal(
+        self,
+        *,
+        request: GovernedResearchToolRequest,
+        operation: ProviderOperationReservation,
+    ) -> ProviderOperationObservation:
+        """Close one already-dispatched operation that will never produce a result.
+
+        Causation is journalled *before* dispatch, but the ledger only learned that dispatch
+        actually happened when a result was persisted. A bundle that came back terminally
+        unsettleable (an unparseable provider success, a validated provider refusal) therefore
+        stayed reserved-never-dispatched forever — live, four dispatched Exa bundles left an
+        account permanently unable to settle, because execution closure counts neither a
+        reservation nor an undispatched operation as an attempt. This stamps the operation's true
+        dispatch time and folds it at zero settled cost, which is its exact terminal disposition.
+        """
+
+        observation = await self.observe(request=request, operation=operation)
+        await fold_rejected_operation_settlement(
+            self._conn_factory,
+            request=request,
+            operation_ref=operation.operation_ref,
+        )
+        return observation
 
     async def _record(
         self,
@@ -1713,11 +1869,16 @@ class EntityResearchResultStore:
                 .mappings()
                 .one()
             )
-            if (
-                existing["research_run_id"] != request.research_run_id
-                or existing["job_id"] != request.job_id
-                or Decimal(existing["settled_cost_cents"]) != settled_cost_cents
-            ):
+            # The fold is the OPERATION's settlement; its run/job columns record who FILED it
+            # first (feeding that job's spend sums), not who may replay it. Operations are
+            # content-keyed and deliberately reused across jobs and research runs, so a replayer
+            # necessarily differs on both identity columns — comparing them made every cross-job
+            # replay of a settled operation an "integrity violation" (live: job 3cc0a4f2 died at
+            # 06:20:59 replaying 298f3dec's folded sumble_jobs operation; same disease as the
+            # fold-visibility fix in the pending/completeness readers, one layer deeper). The one
+            # comparison that IS integrity: the money fact. The same operation claiming a
+            # different settled cost on replay is a real truth violation and still suspends.
+            if Decimal(existing["settled_cost_cents"]) != settled_cost_cents:
                 raise EntityResearchResultIntegrityError(
                     "provider settlement replay differs from its immutable first fold"
                 )
@@ -1969,8 +2130,11 @@ class EntityResearchResultStore:
                         raise EntityResearchResultIntegrityError(
                             "result claim violates exact field/source authority"
                         )
-                    if subject_type is ResearchSubjectType.CONTACT and (
-                        str(row["source_key"]) != draft.operation.source_key
+                    if subject_type is ResearchSubjectType.CONTACT and str(
+                        row["source_key"]
+                    ) not in (
+                        draft.operation.source_key,
+                        *lineage.claim_source_keys,
                     ):
                         raise EntityResearchResultIntegrityError(
                             "discovered contact claim uses another causative source"
@@ -2292,7 +2456,7 @@ class EntityResearchResultStore:
         active: ActiveEntityResearchToolExecution,
         result_ref: str,
     ) -> PersistedResearchToolResult:
-        result_id = _prefixed_uuid(result_ref, "research-result:")
+        result_id = _model_supplied_uuid(result_ref, "research-result:", argument="result_ref")
         authorization = active.context.authorization
         async with self._conn_factory() as conn:
             row = (
@@ -2323,7 +2487,12 @@ class EntityResearchResultStore:
                 or row["parent_account_id"] != authorization.parent_account_id
                 or str(row["workspace_id"]) != str(authorization.workspace_id)
             ):
-                raise EntityResearchToolAuthorityError("research result is outside the exact job")
+                raise _foreign_read_rejection(
+                    subject_type=authorization.subject_type,
+                    noun="result",
+                    argument="result_ref",
+                    reference=result_ref,
+                )
             _, data = await read_verified_artifact(
                 conn,
                 self._storage,
@@ -2419,7 +2588,9 @@ class EntityResearchResultStore:
         active: ActiveEntityResearchToolExecution,
         request: ReadResearchEvidenceInput,
     ) -> ResearchEvidenceReadPage:
-        evidence_id = _prefixed_uuid(request.evidence_ref, "research-evidence:")
+        evidence_id = _model_supplied_uuid(
+            request.evidence_ref, "research-evidence:", argument="evidence_ref"
+        )
         authorization = active.context.authorization
         async with self._conn_factory() as conn:
             row = (
@@ -2462,20 +2633,37 @@ class EntityResearchResultStore:
                 or row["target_entity_id"] != authorization.subject_entity_id
                 or str(row["workspace_id"]) != str(authorization.workspace_id)
             ):
-                raise EntityResearchToolAuthorityError("research evidence is outside the exact job")
+                raise _foreign_read_rejection(
+                    subject_type=authorization.subject_type,
+                    noun="evidence",
+                    argument="evidence_ref",
+                    reference=request.evidence_ref,
+                )
             _, data = await read_verified_artifact(
                 conn,
                 self._storage,
                 storage_key=str(row["artifact_key"]),
                 workspace_id=str(row["workspace_id"]),
             )
+        # ``offset`` and ``max_bytes`` are model-typed paging arguments, so a window that does not
+        # land on the retained bytes is the model's mistake, not the artifact's: refuse it
+        # recoverably and name the repair. The suspending species below stays for bytes that are
+        # not what the ledger says they are.
         if request.offset > len(data):
-            raise EntityResearchResultIntegrityError("evidence offset exceeds retained content")
+            raise EntityResearchGovernedRejection(
+                "evidence_page_rejected",
+                f"evidence offset exceeds retained content: offset {request.offset} is past the "
+                f"{len(data)} retained bytes. Page from the previous read's `next_offset`, or "
+                "stop reading — a page beyond the end carries nothing.",
+            )
         try:
             data[: request.offset].decode("utf-8", errors="strict")
         except UnicodeDecodeError as exc:
-            raise EntityResearchResultIntegrityError(
-                "evidence offset must be a UTF-8 code-point boundary"
+            raise EntityResearchGovernedRejection(
+                "evidence_page_rejected",
+                f"evidence offset must be a UTF-8 code-point boundary: offset {request.offset} "
+                "splits a multi-byte character. Use the `next_offset` the previous read reported "
+                "rather than an offset of your own.",
             ) from exc
         end = min(len(data), request.offset + request.max_bytes)
         while end > request.offset:
@@ -2492,8 +2680,11 @@ class EntityResearchResultStore:
             if request.offset == len(data):
                 content = ""
             else:
-                raise EntityResearchResultIntegrityError(
-                    "evidence page size is too small for the next UTF-8 code point"
+                raise EntityResearchGovernedRejection(
+                    "evidence_page_rejected",
+                    f"evidence page size is too small for the next UTF-8 code point: max_bytes "
+                    f"{request.max_bytes} cannot hold the character at offset {request.offset}. "
+                    "Re-issue the read with a larger `max_bytes` (up to 65536).",
                 )
         return ResearchEvidenceReadPage(
             evidence_ref=request.evidence_ref,
@@ -2650,6 +2841,10 @@ class GovernedEntityResearchToolFactory:
                         "request_authority_violation", str(authority)
                     ).render()
                 ) from authority
+            except EntityResearchGovernedRejection as rejection:
+                # The request store may already refuse in the repairable species (a field whose
+                # authority is legitimately empty). Keep it repairable here too.
+                raise ToolException(rejection.render()) from rejection
 
             async def before_dispatch(
                 operation: ProviderOperationReservation,
@@ -2659,8 +2854,26 @@ class GovernedEntityResearchToolFactory:
                     operation=operation,
                 )
 
+            settled_field_keys: set[str] = set()
+
+            async def settle_terminal(
+                operation: ProviderOperationReservation,
+            ) -> ProviderOperationObservation:
+                observation = await self._causation.settle_terminal(
+                    request=request,
+                    operation=operation,
+                )
+                settled_field_keys.update(operation.field_keys)
+                return observation
+
             try:
-                drafts = tuple(await action.execute(request, before_dispatch=before_dispatch))
+                drafts = tuple(
+                    await action.execute(
+                        request,
+                        before_dispatch=before_dispatch,
+                        settle_terminal=settle_terminal,
+                    )
+                )
             except EntityResearchGovernedRejection as rejection:
                 # The refusal is complete and durable; surface it to the model as an error tool
                 # message (LangGraph keeps the loop alive) instead of suspending the whole job.
@@ -2673,6 +2886,19 @@ class GovernedEntityResearchToolFactory:
                     current_state_sha256=current_state,
                 ) from wait
             if not drafts:
+                if settled_field_keys:
+                    # Every bundle settled terminally without producing a result. The ledger is
+                    # complete (dispatch stamped, folds written) so execution closure can see the
+                    # exhausted sources; the agent picks another admitted source or finalizes the
+                    # gap honestly instead of suspending on a state it cannot repair.
+                    raise ToolException(
+                        EntityResearchGovernedRejection(
+                            "provider_terminally_unproductive",
+                            "every provider bundle settled terminally without a result for "
+                            f"{', '.join(sorted(settled_field_keys))}; the durable operation "
+                            "ledger retains the exact provider diagnostic",
+                        ).render()
+                    )
                 raise EntityResearchResultIntegrityError(
                     "provider action returned no complete result or external wait"
                 )
@@ -2688,9 +2914,13 @@ class GovernedEntityResearchToolFactory:
                 raise EntityResearchResultIntegrityError(
                     "only one committee result may confirm an empty enumeration"
                 )
+            # A terminally settled bundle carries no result, so its fields are partitioned by the
+            # durable settlement fold rather than by a draft. Everything else still has to
+            # partition exactly: a field may not be both answered and written off.
             if (
                 len(covered) != len(set(covered))
-                or set(covered) != set(request.field_keys)
+                or set(covered) & settled_field_keys
+                or set(covered) | settled_field_keys != set(request.field_keys)
                 or (not covered and not has_discovered)
             ):
                 raise EntityResearchResultIntegrityError(
@@ -2738,16 +2968,24 @@ class GovernedEntityResearchToolFactory:
                 "lineage only after durable persistence."
             ),
             args_schema=args_schema,
-            handle_validation_error=semantic_validation_error,
+            handle_validation_error=functools.partial(
+                semantic_validation_error, schema=args_schema
+            ),
             handle_tool_error=True,
         )
 
     def _read_result_tool(self) -> StructuredTool:
         async def invoke(result_ref: str) -> dict[str, JsonValue]:
-            result = await self._results.read_result(
-                active=current_entity_research_tool_execution(),
-                result_ref=result_ref,
-            )
+            try:
+                result = await self._results.read_result(
+                    active=current_entity_research_tool_execution(),
+                    result_ref=result_ref,
+                )
+            except EntityResearchGovernedRejection as rejection:
+                # A model-typed reference of the wrong shape is species 1; without this render
+                # the rejection escaped raw from the shared read tool and suspended the job
+                # (live: run 1d39023a, twice).
+                raise ToolException(rejection.render()) from rejection
             return cast(dict[str, JsonValue], result.model_dump(mode="json"))
 
         return StructuredTool.from_function(
@@ -2755,14 +2993,19 @@ class GovernedEntityResearchToolFactory:
             name="read_research_result",
             description="Losslessly read one complete persisted result in this exact job.",
             args_schema=ReadResearchResultInput,
+            handle_tool_error=True,
         )
 
     def _read_evidence_tool(self) -> StructuredTool:
         async def invoke(**values: object) -> dict[str, JsonValue]:
-            page = await self._results.read_evidence(
-                active=current_entity_research_tool_execution(),
-                request=ReadResearchEvidenceInput.model_validate(values),
-            )
+            try:
+                page = await self._results.read_evidence(
+                    active=current_entity_research_tool_execution(),
+                    request=ReadResearchEvidenceInput.model_validate(values),
+                )
+            except EntityResearchGovernedRejection as rejection:
+                # Same render as read_research_result: species 1, never a suspension.
+                raise ToolException(rejection.render()) from rejection
             return cast(dict[str, JsonValue], page.model_dump(mode="json"))
 
         return StructuredTool.from_function(
@@ -2770,6 +3013,7 @@ class GovernedEntityResearchToolFactory:
             name="read_evidence",
             description="Read a bounded lossless page from retained evidence in this exact job.",
             args_schema=ReadResearchEvidenceInput,
+            handle_tool_error=True,
         )
 
 

@@ -13,7 +13,21 @@ platform/agents/catalog/
 Runtime workspace copies under `.deepagent/` are immutable materializations, not source files.
 Never edit a runtime workspace to change agent behavior.
 
-## Current resource map
+## Research-field scope amendment — 2026-09-16
+
+The workspace-local agent-proposal change has a
+[detailed plan](../superpowers/plans/2026-09-16-workspace-agent-proposed-fields.md) and
+[prepared operating instructions](research-field-scope.md). Its release must update the actual
+Head-of-ABM manual, both ARV2 research bundles and platform-only snapshot generation. A repository
+prose edit alone does not reach the running agent.
+
+Current code selects Head of ABM **v58**, manual **v5**, and ARV2 account/person bundles **v1**.
+The table below describes the original C6 baseline, not the current selector inventory. Inspect
+`C6_ACTIVE_PROFILE_VERSIONS`, the selected profile and `arv2/account_research_catalog.py` before
+choosing new versions. The scope amendment is not active; publish replacement guidance alongside
+compatible backend/data changes.
+
+## Original C6 resource map (historical baseline)
 
 | Role | System prompt | Progressively disclosed skills | Active profile |
 |---|---|---|---|
@@ -49,6 +63,34 @@ from its profile.
 The loader rejects unknown fields, mutable aliases, duplicate addresses, symlinks, executable or
 hard-linked files, mismatched folder identities, invalid UTF-8, changed hashes, unavailable tools,
 human steering tools, replay-unsafe tools, and child authority wider than the parent grant.
+
+## Skill references in prompts and other skills
+
+Use `{{skills.claim_ready_account_dossier.path}}` wherever instructions need the path of
+the profile's `claim-ready-account-dossier` skill. The key is the skill name with hyphens
+replaced by underscores; the hyphenated spelling is also accepted. The renderer substitutes
+the absolute virtual path, for example `/.deepagent/skills/claim-ready-account-dossier/v2/SKILL.md`.
+This works in system-prompt bodies and in skills that refer to other skills. It does not
+evaluate expressions, expand arbitrary variables, or fetch files from the network.
+
+The effective profile selects the versions. Rendering uses exactly the same skill set as
+workspace materialization and disclosure, after tool/authority filtering. A missing, withheld,
+ambiguous or malformed skill reference fails during profile resolution, before model calls.
+Do not use a placeholder for a skill the profile does not grant. Other placeholders such as
+`{{account_name}}` remain untouched.
+
+Catalog files and saved resource snapshots retain the original template bytes and hashes.
+Model prompts, `open_skill` reads and read-only workspace files receive the rendered text.
+When substitution occurs, `.deepagent/rendered-resources.json` records each affected path's
+source and rendered SHA-256 plus renderer version `skill-paths-v1`. The existing manifest
+continues to identify the original resources. Cold-resume verification derives and checks the
+rendered bytes from the pinned snapshot, and repairs altered workspace copies.
+
+Promote a new skill by selecting its exact version/hash in a new approved profile and launch
+revision. Adding a newer folder alone has no effect. Existing runs retain their original pins;
+resources without placeholders retain byte-for-byte materialization. Revision 21 of quality
+account/person research uses this mechanism; older revisions and other agent profiles keep
+their existing instructions until explicitly migrated.
 
 ## How specialist delegation transfers context
 

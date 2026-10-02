@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504535-snN4BJ5Kk2WwdlBSDki2",
+ "object": "chat.completion",
+ "created": 1788504535,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"do_not_mention\",\"empty\":false,\"items\":[{\"h2\":\"Cisco investment, not acquisition — unsafe for outreach\",\"body\":[{\"text\":\"The claim says Zafran received a strategic investment from Cisco Investments and was not acquired.\",\"claimIds\":[\"zaf-135\"]},{\"text\":\"Because this claim is marked outreachSafe=false, do not use it in outreach.\",\"claimIds\":[\"zaf-135\"]}],\"priority\":2},{\"h2\":\"Competitive differentiation and cash-burn claims — unresolved\",\"body\":[{\"text\":\"Third-party press reported an unnamed executive’s claims about competitive differentiation and cash burn.\",\"claimIds\":[\"zaf-138\"]},{\"text\":\"Because this claim is marked outreachSafe=false and unresolved, do not use it in outreach.\",\"claimIds\":[\"zaf-138\"]}],\"priority\":2},{\"h2\":\"Amex Ventures investment amount — unsafe for outreach\",\"body\":[{\"text\":\"The claim says Amex Ventures made a strategic investment and that the amount was estimated at several million dollars.\",\"claimIds\":[\"zaf-139\"]},{\"text\":\"Because this claim is marked outreachSafe=false, do not use it in outreach.\",\"claimIds\":[\"zaf-139\"]}],\"priority\":2},{\"h2\":\"Snir Havdala’s departure to NVIDIA — unsafe for outreach\",\"body\":[{\"text\":\"The claim says co-founder and CPO Snir Havdala departed for NVIDIA, while Zafran described the transition as planned and coordinated.\",\"claimIds\":[\"zaf-142\"]},{\"text\":\"Because this claim is marked outreachSafe=false, do not use it in outreach.\",\"claimIds\":[\"zaf-142\"]}],\"contactRefs\":[{\"name\":\"Snir Havdala\"}],\"priority\":2},{\"h2\":\"Nick Fisher’s cocktail hobby details — unsafe for outreach\",\"body\":[{\"text\":\"The claim describes Nick Fisher hosting Cocktail Chemistry videos as a side hobby, filming in his kitchen, investing in liquor and equipment, and running Patreon for support.\",\"claimIds\":[\"zaf-160\"]},{\"text\":\"Because this claim is marked outreachSafe=false, do not use these personal details in outreach.\",\"claimIds\":[\"zaf-160\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":2},{\"h2\":\"Cisco acquisition rumor — REFUTED\",\"body\":[{\"text\":\"The claim identifies a Cisco acquisition claim about Zafran and marks its status as REFUTED.\",\"claimIds\":[\"zaf-169\"]},{\"text\":\"Because this claim is marked outreachSafe=false, do not use it in outreach.\",\"claimIds\":[\"zaf-169\"]}],\"priority\":1},{\"h2\":\"Third-party ARR and competitive-struggle claim — UNRESOLVED\",\"body\":[{\"text\":\"The claim identifies an unresolved third-party report about roughly $20 million in ARR, competitive struggles, and high cash burn.\",\"claimIds\":[\"zaf-170\"]},{\"text\":\"Because this claim is marked outreachSafe=false and unresolved, do not use it in outreach.\",\"claimIds\":[\"zaf-170\"]}],\"priority\":1},{\"h2\":\"Snir Havdala’s departure to NVIDIA — CONFIRMED\",\"body\":[{\"text\":\"The claim identifies the reported departure of founder and CPO Snir Havdala to NVIDIA and marks its status as CONFIRMED.\",\"claimIds\":[\"zaf-171\"]},{\"text\":\"Because this claim is marked outreachSafe=false, do not use it in outreach.\",\"claimIds\":[\"zaf-171\"]}],\"contactRefs\":[{\"name\":\"Snir Havdala\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmnchE3ktKFMtW3QF9k2l38azWNDCsqd98IBRanC4zCVROfSg69N9bFhq5T3lbhtUSazGJJtvFEc5m7BDJooJJLcjBxMVlSGB_Rm6_0MYuvIpfAXNaGFCDcgizgOver0tHeznYkN37lKBhHTC9eHx-dEqKemRPbdDovDf0GcO0tmgc7-nBPAjrQCXIk4erLjIruO4ej3_SaF7dBnf280d-CK_IXlWeW64tXWFttTTt2_G4v_QH9VH0876Ex8u4BvrNeznsvCmJHohaAEZWi1Ao6x9dip7zW8ssDZPZhLIigiDDusEhltLIKBiiSFWN_RNFJIwTECTMGymBAurVbmBg9zCrUJCAA4_o2l1z0uxdE4SO6J4Eb9sHgCMHbI5LD50CZBlL7xeMHBnxmzNZgEd6gbORaeY_yAH-WW7BWSF80nh5sr8I4hwG_uSTke1dKMoldc8MieUyGE2jHa8NQD0_4WAYYqDSSZQpDFkIbPbpE7XdSk6PcF1YCDZVBXp7jO3F2mCc77w-oJwXTz7ve1D10LsneKtHKk1ia_H23zByY8k4SQ0quE1BohNCv2mg41b-B0b3sAxHZL_i0p-ajKlK8Q93jwaBNR-zKkqdAwSgtmf_UwtVwFJiPy_wRhYB6WXzBD2ol5qO1goPP3YYd5V_svfDjxLF-oR1z8E01sGAipQk4bNX5y2IZlRS92GNhUoiIf79o0VE_hlQsSfm0YDnM3FcqPlc-90VyK2_7zoQVjNDlEXaWTvg2VYsBuFstX8Cv-ppX8nMqOeImCmBUjx3QAUiBmrKc4eBd4qw3-oU9kpZPnYT2iy3UlH68tmHwk6cqNfZ4Cng-yJnQFP_v7BO4FHuA1ytmRLryQD_kibMwkAfjFJd7Lr1TaSYzGoJFd4iJwcMzYFMJgypbFP0-U_F5UV7J0aWCdwCkUYmjDiRqlWkpqrkh6pLV0YLZQrbzk1lfTSIDnFrhTy_wGTPedrQ8V__8amHU0RKkK3Q3jqIOSw_OowQ_gaaDBqhKWcTldV2xPUEJgLZLkJWgex4xsst66GRed01cciL2jhGtStQas93qDGE4-oisnVAYMVlC6IkDIms-qCCCglqTrljqlJy9UhuiYicjexRZK8JVOiH5In24Dt7_WpIbAD_ELGRe_Z7iEx-PFSJKDMRo60SR35PrCc0-OTrpaTBuOEmCvz6no-Ki_BPF55Ayie52ZjKjnLAtL-Ky2Z2gTpQ8MsCTQZkDLf6BMET3OhgCCdWWTcB3zfNb3cPFBeT6Rr0Dbeg9pR8UQRE8rXCebPnJtYKOBHl-F5RFR4RtHUh05irM5S1wckZldnz31fWOvWE_Ds8TQUEd9QZzUkdctGBGT8UgZxiL-8F9Cx2IxGAMJERBS1hxyIFlCCHfCBEOS9DEyQltsbzPGySyuG2IZKPwbeFRgFAguiwIZO8A0agcnKfhWVprp5EV56vPc8elqVXVW2p2vNcUMBKqoGvMaSLV8ekIaQcOSZcm0YIc9I7TR5r7N9_N2bq2ayZisq30iMqANR9QQgzKPjntBu1cljq2b-DJlrft2l-O5MNKN0f8G5DILyq3zccdyVQgi45tg45LuvtIdxpf5ATQpu5n2tYJpGvYGIsxaDwGXOFcPlhFOE-_YV60Oaf0qyTVZIZ26XevcanGb8ETchuJFAt05yy6Qj2qQi2gHvJNfaSUw_0lYhTtJrv8jOwVhHgBczr1WxYwY3-2u4St02-HlsFT7d99JRdgMqc_jkbgW5WPJGszGocWxIXIRrKAzvOXnACYt3SN5yOsRMvDhvbSGu04GIHBlAY074JboqCa-P4m-VWE4tTnKcOhntx9FL2HL8AjqlzxRJcqsnlCuISHV1Ew4vsSRFB4whEROhD-la4XgKWb85wQYoS9fKH14e3Y1Bi8ZyyN8gcdsRXQtKsXUPOFODI3Gr4VBc4-bdFKJo7QlYjdQsg8bt-oILXQD2aG7Uw9ZwG0GHXYJwp1q6Scq4Amf_kCvlRe2pE9aUSmTLWGlIhTCwKRP_Twbh9A-pkL9sVnP0NAMKcgT6buBN5BV1YOjQbcxHQlos2-W7I26prezQfAYd1i566gKQ2yu13j_ePvsbKYlFQ5-l9F5b6PpEhmE5ePIRRqel6fZFP-q5ikte4WHi2NpE2zVf2hQd00VS2ID4__bIfd29hRPZjuJUsgeGbj9yohcb405TewGZyW34eVdkbK8ihxocDk9O5raxuJdq9zMidG0BeDvnrnd9L3plinapZiuXVTDzton5hlbrVhgqiNehHk8E2Tpa0esZjbH9YpZfYXalX6mLVJ7OpRuGviCp0mqnfdBufFCOk0Dtl0L2ETfbXrpwnqJK_p1MW6ZwSmo5asOeilZNVc7LOMpBvEBjP_38DhrimYZmn_DvxkFx5zsJ3Sp0ROPK7VVycETiHy4MY4ANc254iBFo7tWm58J-sjx2TKcSdK1DnVLLJ2hnMuGc_GJlo7rASdjY3_UgW8rlGzB6f-VWe0MYOwB1eLpyU2jkRtWzw1odjDhZ9s9DwQZ3uE8XNQE1H8xAUCPjL97gCPMA3rOMrWQHcjR4l2ZhNoxPVwLouMJUfh19liLUpFlSOXzxbDqQGI-qiXvl_5lKFx74l9ZWvQ7kk0fARo06UMHUaphJYiG3_aBWBejYqx5YD4aSAZUHKp7qOS56-qx6El0tqyV_9QqbPN8Ey88KM8RVITHLv2FDd4UYnYEsEM5KlcYfFdjUpvz-2pCfuXQ4bRoYYVPcrj7gD9835EAVJjySqQi2xG-vBbsgA00g2fgTqteQ4hf_yq8RF4i3M35bLclPFd0BAXspcqvD5YIpJeSOlG5CWeE9v-ZUY2HzKq0LdZd0kFy2x8-hiWav6lCw-3219IsD3UGzVFt_aN91LulBzAnvvSvk-dNuXD0b0Dwr4NglvVHmnbipwFPB1frsuferNL_CentK4Q7-SpFZTVV0FiU8iiUQrR0QjRDBUNOINtvG6HBMimjyhqTIJJFt-qLmONvw9bn4xYdLRlk1in0KXUrPVRr72CNPuIrgM9TWVfzPOZMx8d4HpKwlZ5XE_hBe03GIm8_EoiLQIoLahQd5nVI8ErgDrGNzKZnpLV-0gs7nTVgqdI_nPCnz9EYtYWivDuGSgd7MfBKL6D7Ub1ZfJyuoL8LLnls8iQM5Tnkni4KjTgKuWLdGEsif2wdpJZACGpH36W-g9sYbmLWzXE9IjK4zNcaEboQlF8NakBT6eQfYBO8pB6sANB573l6DUh4Ndy8v7uOK8_sB8OXjiqS9tGvKokp1J99r_UzXEAAqVyxwbMUBJchJEVqxZmVHUWXVjVYnhOZM-3GNTyAZim0N1Ww505bF5CnVTdlpDanfL4BcrJli9Vgg8q-Kn33Le7avfaU_KwBQak0IOE2oqXphBjCUXBRjiWqjX-1Rj7oEcjpDZTXMBf5Tks2qEeSRaHtV0bm75ScDwMVuLYKx7dBT2xxAJV_mHHiSoKHHdURjISO96m-NB4zz6zI6DMcpPgmwvKT9l7Es5NWdUmJFh4AaQmPPDa-GgLALfiELOv9bX-kDxAmN3kpd2Ipbr0gZ0QEUko2Y2BR9GscEIHm3XhWm5wC-o1FhDBHhMB2acxBkfW4KJ3oosO6hrUYndQzRwrN0QdgvrTyrdyETuZytlKckDTfBKkED5_Ur3JTO7lnlhEC0-wmZmjy9GmkugKANOmk9n_-dMG9hQ9CCRhmP2s7c6ROl22xFZzZa5zUqxhpdbbGdfw=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_03eabd128e0b2de2016a9a69d8affc87d08162d2f09dc5b534",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 15249,
+  "completion_tokens": 1151,
+  "total_tokens": 16400,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 15246,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.0051933,
+   "upstream_inference_prompt_cost": 0.0038121,
+   "upstream_inference_completions_cost": 0.0013812
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 417,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 12.05,
+ "_attempt": 0
+}

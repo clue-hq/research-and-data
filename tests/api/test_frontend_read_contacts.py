@@ -1,52 +1,55 @@
-"""FI-2 slice 1, Task 4 — the contacts union (`GET /frontend/v1/accounts/{id}/contacts[/{cid}]`).
+"""The contacts table and the contact page
+(`GET /frontend/v1/accounts/{id}/contacts[/{cid}]`), plus the contact evidence stream.
 
 Same harness as the accounts-list and account-detail suites: the real projections app driven
 in-process through ``httpx.ASGITransport`` on the test's rolled-back connection, so the endpoints
 read exactly the rows the test seeded and nothing commits.
 
-The fixture is the slice-0 canonical shape — **two projects over one workspace, one shared
-account** — with the committee shapes this endpoint's rules turn on:
-
-* a member referenced by **both** projects' account runs (must appear ONCE carrying both
-  ``projectIds``);
-* a member referenced by only one (one ``projectId``);
-* a member whose role/persona binding is **WEAK** (the governed reader drops them entirely — they
-  are not a 404-able contact either, because they are not on any committee);
-* a member holding a **display-denied** professional fact (a special-category title) and a
-  **weakly-bound** one (which the merge itself excludes) — the two honest absences, only one of
-  which is `restricted`;
-* facets across the three interesting classes: a display-eligible signal, a use-class-denied
-  signal, and a display-eligible facet that is **not** a signal family.
+Two fixtures. ``_build`` is the two-project workspace the emptiness and refusal rules are proven
+against — an account with no researched contacts at all, the workspace's own client binding, a
+foreign workspace, a contact that belongs to another account. ``_build_v1_contacts`` is the ARV2
+seed: a researched account whose contacts hold real claims, one of them with a written page and
+retained evidence, so the table's order, the rail's facts and the page's citations are proven
+against the shapes production really holds.
 
 Every read is workspace-scoped: this suite shares a database with suites that commit.
-
-**Live-data note (not a fixture accident).** ``ContactEligibilityResolver.resolve_account`` reads
-``account_run.references_index``, whose only production writer is behind the M8D R1 quarantine, so
-on real data every committee is empty until the R11 bridge lands. The empty-committee test below is
-therefore the *production* case today, and the populated ones are the post-R11 contract.
 """
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator, Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport
 from pydantic import JsonValue
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_api.arv2.account_research_store import RunRow, create_job, create_run, finish_job
+from clue_api.arv2.display.blocks import insert_block
+from clue_api.arv2.display.gather import SectionInput
+from clue_api.arv2.display.recipes import recipes_for
+from clue_api.arv2.display.render import display_claim
+from clue_api.arv2.display.runner import SectionDraft
 from clue_api.client_context_binding import bind_workspace_client
 from clue_api.frontend_read import FRONTEND_READ_PREFIX
+from clue_api.frontend_read.app import build_frontend_read_router
+from clue_api.frontend_read.contract_v1 import (
+    AccountContactDetailResponseV1,
+    AccountContactsResponseV1,
+)
+from clue_api.frontend_read.display_pages import DisplayPages
+from clue_api.frontend_read.v1_shared import tenure
 from clue_api.projections_app import create_projections_app
 from clue_config import load_settings
 from clue_core import (
     AccountStatus,
+    ClaimId,
     Confidence,
     EntityId,
     EntityType,
@@ -63,7 +66,13 @@ from clue_core import (
     new_project_run_id,
     new_run_id,
 )
-from clue_research.claimstore import insert_claim, load_core_pack
+from clue_fleet import FleetTaskKind
+from clue_research.claimstore import (
+    WorkspaceScope,
+    claims_by_ids,
+    insert_claim,
+    load_core_pack,
+)
 from clue_research.durable import (
     AccountRunStatus,
     ensure_project_run,
@@ -73,7 +82,6 @@ from clue_research.durable import (
 from clue_research.identity import (
     insert_account_entity,
     insert_contact_entity,
-    mark_merged,
     stamp_reuse,
 )
 from clue_research.membership import ensure_project_account
@@ -83,6 +91,19 @@ from clue_research.profiling.fields import load_deep_profiling_pack
 from clue_spine import Project
 from clue_storage import artifact_key, content_address, record_artifact
 from tests._workspace import seed_project, seed_workspace
+from tests.api.contract_v1.oracle import zod_validate
+
+# The v1 seed and its harness, shared rather than re-written: the contacts table, the contact page
+# and the account detail are three views of one account and must be proven against one seed. The
+# names are module-private in that suite only because nothing else had needed them.
+from tests.api.test_frontend_read_account_detail import (  # noqa: PLC2701
+    _WS as _V1_WS,
+)
+from tests.api.test_frontend_read_account_detail import (  # noqa: PLC2701
+    _build_v1,
+    _lenient_claim,
+    _V1Fixture,
+)
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
 
@@ -108,6 +129,16 @@ _SOLO_APPEARANCES: tuple[dict[str, str], ...] = (
     {"title": "panel at SaaStr"},
     {"title": "podcast on Ops Weekly"},
 )
+
+#: The five contact-page sections, in recipe order. Pinned here so a recipe reordering has to be a
+#: deliberate change to a contract the frontend renders in order, not a silent one.
+_CONTACT_SECTION_ORDER = [
+    "why-this-person",
+    "problem-right-now",
+    "openers",
+    "angles",
+    "do-not-mention",
+]
 
 
 # --- harness --------------------------------------------------------------------------------
@@ -144,10 +175,21 @@ def _app(
     enabled: bool = True,
     evidence_storage: _MemoryStorage | None = None,
 ):
+    """The real projections app with the flag on and the DB seam bound to the test's connection.
+
+    ``arv2_display_generate_on_read=False`` is not decoration: the composition root reads a real
+    ``Secrets()``, so on a developer machine with ``OPENROUTER_API_KEY`` set the D3 display seam
+    would build a live runner and this suite would *spend money* writing contact pages. Off, the
+    seam is a pure projection over the blocks the fixture stored.
+    """
     return create_projections_app(
         surface=None,  # type: ignore[arg-type]
         tool_invoker=None,  # type: ignore[arg-type]
-        settings=load_settings(_env_file=None, frontend_read_enabled=enabled),
+        settings=load_settings(
+            _env_file=None,
+            frontend_read_enabled=enabled,
+            arv2_display_generate_on_read=False,
+        ),
         conn_factory=conn_session_factory(conn),
         ingestion_storage=evidence_storage,
         manage_db_lifespan=False,
@@ -184,10 +226,6 @@ async def _profile(
 
 def _rows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {row["id"]: row for row in payload["data"]}
-
-
-def _facts(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {fact["fieldKey"]: fact for fact in payload["professionalFacts"]}
 
 
 # --- seeding --------------------------------------------------------------------------------
@@ -571,472 +609,7 @@ async def _build(conn: AsyncConnection) -> _Fixture:
     )
 
 
-# --- the union ------------------------------------------------------------------------------
-
-
-def test_a_member_of_two_committees_appears_once_carrying_both_project_ids() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _list(conn, fixture.acme)).json()
-
-            ids = [row["id"] for row in payload["data"]]
-            assert ids.count(str(fixture.shared)) == 1
-            rows = _rows(payload)
-            assert rows[str(fixture.shared)]["projectIds"] == [
-                fixture.project_a.project_id,
-                fixture.project_b.project_id,
-            ]
-            assert rows[str(fixture.solo)]["projectIds"] == [fixture.project_a.project_id]
-            # The WEAK-bound member is not a committee member at all.
-            assert str(fixture.unbound) not in rows
-            assert payload["meta"]["total"] == len(payload["data"]) == 3
-
-    run_async(scenario())
-
-
-def test_persona_and_role_use_the_backend_four_value_vocabulary() -> None:
-    """No display mapping: the wire carries ``Persona``'s own values."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            rows = _rows((await _list(conn, fixture.acme)).json())
-
-            allowed = {persona.value for persona in Persona}
-            assert allowed == {"champion", "economic_buyer", "technical_evaluator", "blocker"}
-            for row in rows.values():
-                assert row["persona"] in allowed
-                assert row["roleOnCommittee"]["value"] in allowed
-
-            assert rows[str(fixture.shared)]["persona"] == Persona.ECONOMIC_BUYER.value
-            assert rows[str(fixture.solo)]["persona"] == Persona.TECHNICAL_EVALUATOR.value
-            assert rows[str(fixture.masked)]["persona"] == Persona.BLOCKER.value
-            assert rows[str(fixture.solo)]["roleOnCommittee"]["confidence"] == pytest.approx(0.62)
-
-    run_async(scenario())
-
-
-def test_the_row_carries_the_governed_title_and_the_linkedin_identity() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            row = _rows((await _list(conn, fixture.acme)).json())[str(fixture.shared)]
-            assert row["name"] == "Dana Buyer"
-            assert row["title"] == "VP Finance"
-            assert row["titleRestricted"] is False
-            assert row["linkedinUrl"] == "https://linkedin.com/in/dana-buyer"
-
-    run_async(scenario())
-
-
-# --- governance -----------------------------------------------------------------------------
-
-
-def test_a_display_denied_title_is_absent_with_a_restricted_marker() -> None:
-    """The Band-2 translation of C7's ``RESTRICTED`` availability: the value never appears, and the
-    caller can tell "policy withheld this" from "we do not know this"."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            row = _rows((await _list(conn, fixture.acme)).json())[str(fixture.masked)]
-            assert row["title"] is None
-            assert row["titleRestricted"] is True
-
-            payload = (await _profile(conn, fixture.acme, fixture.masked)).json()
-            facts = _facts(payload)
-            assert facts[_TITLE]["restricted"] is True
-            assert facts[_TITLE]["value"] is None
-            # ...and nothing about the withheld claim leaks through the slot.
-            assert facts[_TITLE]["claimId"] is None
-            assert facts[_TITLE]["provider"] is None
-            assert facts[_TITLE]["observedAt"] is None
-            assert all(item["fieldKey"] != _TITLE for item in payload["evidence"])
-            assert "Chaplain" not in str(payload)
-
-    run_async(scenario())
-
-
-def test_a_weakly_bound_professional_fact_is_simply_absent_not_marked_restricted() -> None:
-    """A WEAK contact claim never becomes current truth (the merge refuses to promote it), so there
-    is no statement to withhold — the field is absent, and inventing a `restricted` marker for it
-    would misreport a gap as a policy decision. Neither path fabricates, neither crashes."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _profile(conn, fixture.acme, fixture.masked)).json()
-            assert _JOB_LEVEL not in _facts(payload)
-            assert "director" not in str(payload)
-
-    run_async(scenario())
-
-
-def test_signal_counts_count_display_eligible_signal_families_only() -> None:
-    """Three facets on one member: an eligible signal, a use-class-denied signal, and an eligible
-    facet outside the signal families. Exactly one is counted.
-
-    The wire key is ``typeCount``, not ``count``: the founder's 2026-08-08 unit ruling (FI-1 §9) is
-    that the chip reports how many signal **types** are present, and the field is named for the unit
-    it carries. The exact-dict comparison pins the key, so a silent rename back to ``count`` — or an
-    extra sibling key — fails here.
-    """
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            rows = _rows((await _list(conn, fixture.acme)).json())
-            assert rows[str(fixture.shared)]["signals"] == {"typeCount": 1}
-            # A member with no facets at all counts zero rather than omitting the slot.
-            assert rows[str(fixture.masked)]["signals"] == {"typeCount": 0}
-
-    run_async(scenario())
-
-
-def test_a_list_valued_signal_facet_counts_as_one_type_not_one_per_item() -> None:
-    """The ratified unit, proven rather than asserted in a comment.
-
-    ``solo`` holds exactly one display-eligible signal family whose value is a three-item list. A
-    per-item unit would report 3; ``typeCount`` reports **1** — one per signal *field* that holds a
-    display-eligible statement, which is the whole reason the key is not called ``count``.
-    """
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            assert len(_SOLO_APPEARANCES) > 1, "the fixture really is multi-item"
-            rows = _rows((await _list(conn, fixture.acme)).json())
-            assert rows[str(fixture.solo)]["signals"] == {"typeCount": 1}
-
-    run_async(scenario())
-
-
-def test_a_workspace_that_will_not_display_professional_facts_has_no_listable_committee() -> None:
-    """Fail-closed: role and persona are what make someone a committee member, so a policy that
-    will not display those claims cannot leave the *person* on the list with the role blanked —
-    there would be nothing honest to render them as."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            assert (await _list(conn, fixture.acme)).json()["data"], "populated before the policy"
-
-            await conn.execute(
-                text(
-                    "INSERT INTO workspace_policy (policy_id, workspace_id, posture, "
-                    "display_professional_public, version) "
-                    "VALUES (:pid, :ws, 'conservative_default', false, 9)"
-                ),
-                {"pid": f"p-{uuid.uuid4()}", "ws": _WS},
-            )
-            payload = (await _list(conn, fixture.acme)).json()
-            assert payload == {"data": [], "meta": {"total": 0}}
-            assert (await _profile(conn, fixture.acme, fixture.shared)).status_code == 404
-
-    run_async(scenario())
-
-
-def test_the_signal_field_keys_are_registered_facet_fields() -> None:
-    """The signal families are a *display* selection over registered facet fields; if one is ever
-    renamed in its pack this fails instead of silently counting zero forever."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            from clue_api.frontend_read.contacts import CONTACT_SIGNAL_FIELD_KEYS
-            from clue_research.claimstore import get_field
-
-            await _build(conn)
-            assert set(CONTACT_SIGNAL_FIELD_KEYS) == {_RECENT_POST, _PUBLIC_APPEARANCES}
-            for field_key in CONTACT_SIGNAL_FIELD_KEYS:
-                field = await get_field(conn, field_key)
-                assert field is not None, field_key
-                assert field.field_key.startswith("contact.facet.")
-
-    run_async(scenario())
-
-
-# --- the profile ----------------------------------------------------------------------------
-
-
-def test_the_profile_adds_account_identity_professional_facts_and_evidence() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _profile(conn, fixture.acme, fixture.shared)).json()
-
-            assert payload["id"] == str(fixture.shared)
-            assert payload["accountId"] == str(fixture.acme)
-            assert payload["accountName"] == "Acme Contacts"
-            assert payload["redirectedFrom"] is None
-            assert _facts(payload)[_TITLE]["value"] == "VP Finance"
-            assert _facts(payload)[_TITLE]["provider"] == "sumble"
-            assert payload["projectIds"] == [
-                fixture.project_a.project_id,
-                fixture.project_b.project_id,
-            ]
-
-            providers = {item["provider"] for item in payload["evidence"]}
-            assert providers == {"committee_inference", "linkedin_snapshot", "sumble"}
-            evidence_by_claim = {item["claimId"]: item for item in payload["evidence"]}
-            for fact in payload["professionalFacts"]:
-                if fact["restricted"]:
-                    assert fact["claimId"] is None
-                    continue
-                assert fact["claimId"] in evidence_by_claim
-                item = evidence_by_claim[fact["claimId"]]
-                assert item["fieldKey"] == fact["fieldKey"]
-                assert item["evidenceSpan"] == f"evidence for {fact['fieldKey']}"
-
-    run_async(scenario())
-
-
-def test_contact_overview_is_a_typed_current_claim_not_a_professional_fact() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            await _contact_overview_claim(
-                conn,
-                contact_id=fixture.shared,
-                run_id=new_run_id(),
-                paragraphs=(
-                    "Dana leads financial evaluation for Acme's buying committee.",
-                    "The current record identifies procurement as a relevant professional theme.",
-                ),
-                research_outcome="needs_review",
-            )
-
-            payload = (await _profile(conn, fixture.acme, fixture.shared)).json()
-            assert payload["overview"] == {
-                "state": "available",
-                "paragraphs": [
-                    "Dana leads financial evaluation for Acme's buying committee.",
-                    "The current record identifies procurement as a relevant professional theme.",
-                ],
-                "researchOutcome": "needs_review",
-            }
-            assert CONTACT_OVERVIEW not in _facts(payload)
-
-    run_async(scenario())
-
-
-def test_contact_overview_distinguishes_not_composed_from_restricted() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            assert (await _profile(conn, fixture.acme, fixture.shared)).json()["overview"] == {
-                "state": "not_composed",
-                "paragraphs": [],
-                "researchOutcome": None,
-            }
-
-            await _contact_overview_claim(
-                conn,
-                contact_id=fixture.shared,
-                run_id=new_run_id(),
-                paragraphs=("This rejected overview must never be served.",),
-                status=VerificationStatus.REJECTED,
-            )
-            overview = (await _profile(conn, fixture.acme, fixture.shared)).json()["overview"]
-            assert overview == {
-                "state": "restricted",
-                "paragraphs": [],
-                "researchOutcome": None,
-            }
-            assert "rejected overview" not in str(overview)
-
-    run_async(scenario())
-
-
-def test_evidence_carries_exact_safe_urls_claim_mapping_and_review_metadata() -> None:
-    """FI-2 Slice 5 supersedes G4: public links are exact and every record names its claim."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payload = (await _profile(conn, fixture.acme, fixture.shared)).json()
-            assert payload["evidence"]
-            for item in payload["evidence"]:
-                assert set(item) == {
-                    "claimId",
-                    "fieldKey",
-                    "sourceTitle",
-                    "provider",
-                    "sourceUrl",
-                    "evidenceSpan",
-                    "confidence",
-                    "freshness",
-                    "observedAt",
-                    "protectedArtifactAvailable",
-                }
-                assert item["sourceTitle"] == item["provider"]
-                assert item["sourceUrl"] == (
-                    f"https://evidence.example.test/contact/{item['fieldKey']}"
-                )
-                assert item["evidenceSpan"] == f"evidence for {item['fieldKey']}"
-                assert item["confidence"] == 1.0
-                assert item["freshness"] in {"fresh", "stale"}
-                assert item["observedAt"].startswith("2026-08-01")
-                assert item["protectedArtifactAvailable"] is (item["fieldKey"] == _TITLE)
-
-    run_async(scenario())
-
-
-def test_retained_contact_evidence_is_streamed_after_current_authorization_only() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            storage = _MemoryStorage({_TITLE_ARTIFACT_KEY: _TITLE_ARTIFACT_BODY})
-            profile = (
-                await _profile(
-                    conn,
-                    fixture.acme,
-                    fixture.shared,
-                    evidence_storage=storage,
-                )
-            ).json()
-            title_evidence = next(
-                item for item in profile["evidence"] if item["fieldKey"] == _TITLE
-            )
-            assert title_evidence["protectedArtifactAvailable"] is True
-            assert _TITLE_ARTIFACT_KEY not in str(profile)
-
-            path = (
-                f"{_BASE}/{fixture.acme}/contacts/{fixture.shared}/evidence/"
-                f"{title_evidence['claimId']}"
-            )
-            async with _client(_app(conn, evidence_storage=storage)) as client:
-                response = await client.get(path, headers={"X-Workspace-Id": _WS})
-                crossed = await client.get(path, headers={"X-Workspace-Id": _OTHER_WS})
-                unaddressable = await client.get(
-                    f"{_BASE}/{fixture.acme}/contacts/{uuid.uuid4()}/evidence/"
-                    f"{title_evidence['claimId']}",
-                    headers={"X-Workspace-Id": _WS},
-                )
-
-            assert response.status_code == 200
-            assert response.content == _TITLE_ARTIFACT_BODY
-            assert response.headers["cache-control"] == "private, no-store"
-            assert response.headers["content-security-policy"].startswith("sandbox")
-            assert response.headers["x-content-type-options"] == "nosniff"
-            assert "signed" not in str(response.headers).lower()
-            assert crossed.status_code == 404
-            assert crossed.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
-            assert unaddressable.status_code == 404
-
-            await conn.execute(
-                text("UPDATE artifact SET erased_at=now() WHERE storage_key=:key"),
-                {"key": _TITLE_ARTIFACT_KEY},
-            )
-            async with _client(_app(conn, evidence_storage=storage)) as client:
-                erased = await client.get(path, headers={"X-Workspace-Id": _WS})
-            assert erased.status_code == 404
-            assert erased.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
-
-    run_async(scenario())
-
-
-def test_retention_expired_contact_claim_exposes_neither_value_nor_evidence() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            before = (await _profile(conn, fixture.acme, fixture.shared)).json()
-            title_evidence = next(item for item in before["evidence"] if item["fieldKey"] == _TITLE)
-            await conn.execute(
-                text(
-                    """
-                    INSERT INTO lawful_basis_record (
-                        claim_id, lawful_basis, third_party_collected, regime, retention_until
-                    ) VALUES (
-                        :claim_id, 'legitimate_interest', true, 'gdpr', :expired_at
-                    )
-                    """
-                ),
-                {
-                    "claim_id": title_evidence["claimId"],
-                    "expired_at": datetime(2026, 7, 1, tzinfo=UTC),
-                },
-            )
-
-            after = (await _profile(conn, fixture.acme, fixture.shared)).json()
-            assert _TITLE not in _facts(after)
-            assert all(item["claimId"] != title_evidence["claimId"] for item in after["evidence"])
-
-            storage = _MemoryStorage({_TITLE_ARTIFACT_KEY: _TITLE_ARTIFACT_BODY})
-            path = (
-                f"{_BASE}/{fixture.acme}/contacts/{fixture.shared}/evidence/"
-                f"{title_evidence['claimId']}"
-            )
-            async with _client(_app(conn, evidence_storage=storage)) as client:
-                expired = await client.get(path, headers={"X-Workspace-Id": _WS})
-            assert expired.status_code == 404
-            assert expired.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
-
-    run_async(scenario())
-
-
-def test_no_email_avatar_or_non_linkedin_social_reaches_the_wire() -> None:
-    """FI-1 G1/G2/G3: no avatar, no non-LinkedIn socials, no email address (not even a capability
-    flag in this slice's shape)."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            payloads = [
-                (await _list(conn, fixture.acme)).json(),
-                (await _profile(conn, fixture.acme, fixture.shared)).json(),
-            ]
-            banned = {
-                "email",
-                "workEmail",
-                "emailStatus",
-                "avatar",
-                "avatarUrl",
-                "socials",
-                "twitterUrl",
-                "xUrl",
-                "phone",
-                "directPhone",
-            }
-
-            def walk(node: Any, path: str = "") -> None:
-                if isinstance(node, dict):
-                    for key, value in node.items():
-                        assert key not in banned, f"{path}.{key}"
-                        assert not key.endswith("Label"), f"display string at {path}.{key}"
-                        walk(value, f"{path}.{key}")
-                elif isinstance(node, list):
-                    for index, value in enumerate(node):
-                        walk(value, f"{path}[{index}]")
-
-            for payload in payloads:
-                walk(payload)
-                assert "@" not in str(payload)
-
-    run_async(scenario())
-
-
-def test_a_merged_loser_contact_redirects_to_its_survivor() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            loser = await insert_contact_entity(
-                conn,
-                account_entity_id=fixture.acme,
-                full_name="Dana B.",
-                status=AccountStatus.ACTIVE,
-            )
-            await mark_merged(conn, EntityType.CONTACT, loser_id=loser, survivor_id=fixture.shared)
-            response = await _profile(conn, fixture.acme, loser)
-            assert response.status_code == 200
-            payload = response.json()
-            assert payload["id"] == str(fixture.shared)
-            assert payload["redirectedFrom"] == str(loser)
-
-    run_async(scenario())
-
-
-# --- emptiness & 404s -----------------------------------------------------------------------
+# --- emptiness, refusal & the disciplines ------------------------------------------------------
 
 
 def test_an_account_with_no_committee_serves_an_empty_list_not_a_404() -> None:
@@ -1057,18 +630,6 @@ def test_an_account_with_no_committee_serves_an_empty_list_not_a_404() -> None:
             response = await _list(conn, bare)
             assert response.status_code == 200
             assert response.json() == {"data": [], "meta": {"total": 0}}
-
-    run_async(scenario())
-
-
-def test_a_membership_less_account_serves_an_empty_list() -> None:
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            await _build(conn)
-            seedling = await _account(conn, name="Seedling", domain=None)
-            response = await _list(conn, seedling)
-            assert response.status_code == 200
-            assert response.json()["data"] == []
 
     run_async(scenario())
 
@@ -1124,27 +685,6 @@ def test_an_unknown_contact_is_an_enveloped_404() -> None:
     run_async(scenario())
 
 
-def test_a_contact_on_no_committee_of_this_account_is_a_404() -> None:
-    """The URL is account-scoped, and the committee is the governed membership authority: a contact
-    row that exists under the account but is on no committee is not addressable here."""
-
-    async def scenario() -> None:
-        async with rollback_conn() as conn:
-            fixture = await _build(conn)
-            assert (await _profile(conn, fixture.acme, fixture.unbound)).status_code == 404
-            stranger = await insert_contact_entity(
-                conn,
-                account_entity_id=fixture.acme,
-                full_name="Never Researched",
-                status=AccountStatus.ACTIVE,
-            )
-            response = await _profile(conn, fixture.acme, stranger)
-            assert response.status_code == 404
-            assert response.json()["error"]["code"] == "CONTACT_NOT_FOUND"
-
-    run_async(scenario())
-
-
 def test_a_contact_of_another_account_is_a_404_under_this_account() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -1193,9 +733,6 @@ def test_the_routes_are_absent_when_the_flag_is_off() -> None:
     run_async(scenario())
 
 
-# --- the disciplines ------------------------------------------------------------------------
-
-
 def test_contacts_never_scope_a_claim_read_by_claim_workspace_id() -> None:
     """The slice-0 trap: a DB CHECK forces ``claim.workspace_id`` NULL on public claims, so that
     predicate silently *empties* a read instead of narrowing it."""
@@ -1208,31 +745,685 @@ def test_contacts_never_scope_a_claim_read_by_claim_workspace_id() -> None:
     assert "claim.workspace_id" not in body
 
 
-def test_the_committee_reader_is_the_governed_resolver_not_the_identity_helper() -> None:
-    """FI-1 §4.5 and Slice-3 addressability: every linked surface imports one committee reader."""
-
-    from pathlib import Path
-
-    import clue_api.frontend_read.account_detail as account_detail
-    import clue_api.frontend_read.committee as committee
-    import clue_api.frontend_read.contacts as module
-
-    contact_body = Path(module.__file__).read_text().split('"""', 2)[2]
-    detail_body = Path(account_detail.__file__).read_text().split('"""', 2)[2]
-    committee_body = Path(committee.__file__).read_text().split('"""', 2)[2]
-    assert "contact_ids_for_account" not in contact_body + detail_body + committee_body
-    assert "read_governed_committee" in contact_body
-    assert "read_governed_committee" in detail_body
-    assert "ContactEligibilityResolver" in committee_body
-    assert "latest_project_run_context" in committee_body
-    assert "FROM project_run" in committee_body
-    assert "FROM project_run" not in contact_body + detail_body
+# --- the table and the page (ARV2 E4/E5) -------------------------------------------------------
+#
+# The v1 half of this suite, and deliberately the **same seed** the account-detail and
+# account-workspace suites use: the contacts table and the contact page are the other two views of
+# one account, so proving them against a private fixture would let three screens be built from
+# three different pictures of the same company. ``_build_v1`` is imported from that suite and
+# extended with the ARV2 contact this contract is actually about — a fully-researched person
+# carrying every rail fact E5 renders — plus:
+#
+# * a person who holds one claim and nothing else — no persona, no committee role — so the table's
+#   placeholders and its persona-rank ordering are both proved against a real row rather than an
+#   invented one;
+# * a person with no claims at all (the honest 404);
+# * one stored ``contact/openers`` section, written by hand through D2's own ``insert_block`` so
+#   the read surface is proven to compose what is stored rather than to write anything.
 
 
-def test_the_display_gate_is_the_shared_c7_predicate() -> None:
-    """Governance is mirrored by *reuse*, not by a copy that is free to drift."""
+class _V1Contacts:
+    def __init__(
+        self,
+        *,
+        v1: _V1Fixture,
+        nick: EntityId,
+        priya: EntityId,
+        blank: EntityId,
+        email_claim_id: str,
+        location_claim_id: str,
+        signal_claim_ids: tuple[str, str],
+    ) -> None:
+        self.v1 = v1
+        self.zafran = v1.zafran
+        self.dana = v1.dana
+        self.ravi = v1.ravi
+        #: The fully-researched ARV2 contact E5 is about.
+        self.nick = nick
+        #: Under the account, holding one claim, and carrying no committee facts at all.
+        self.priya = priya
+        #: Under the account, no claims and no page.
+        self.blank = blank
+        self.email_claim_id = email_claim_id
+        self.location_claim_id = location_claim_id
+        #: What the stored ``openers`` section cites.
+        self.signal_claim_ids = signal_claim_ids
 
-    from clue_api.frontend_read import contacts
-    from clue_api.research_view_governance import display_allowed
 
-    assert contacts.display_allowed is display_allowed
+#: The current position the career history records — the tenure the header is computed from.
+_V1_POSITION_START = date(2024, 4, 1)
+
+
+async def _seed_openers_block(
+    conn: AsyncConnection, *, contact_id: EntityId, cited: Sequence[str]
+) -> None:
+    """One live ``contact/openers`` block for this person, with the send line the page renders."""
+    recipe = next(item for item in recipes_for("contact") if item.section_key == "openers")
+    claims = await claims_by_ids(
+        conn,
+        [ClaimId(uuid.UUID(claim_id)) for claim_id in cited],
+        scope=WorkspaceScope.for_workspace(_V1_WS),
+    )
+    section = SectionInput(
+        recipe=recipe,
+        claims=tuple(display_claim(claim, subject=None) for claim in claims.values()),
+        deduped={},
+    )
+    draft = SectionDraft(
+        section_key=recipe.section_key,
+        intro=[],
+        items=[
+            {
+                "id": "openers-1",
+                "h2": "He is hiring a demand-gen lead",
+                "body": [
+                    {"text": "He posted about the search last week.", "claimIds": list(cited)}
+                ],
+                "sendLine": {
+                    "channel": "linkedin",
+                    "text": "Saw you are hiring a demand-gen lead — how are you sequencing it?",
+                    "claimIds": [cited[0]],
+                },
+                "contactRefs": [],
+                "priority": 1,
+                "newSinceLastVisit": False,
+            }
+        ],
+        cited_claim_ids=list(cited),
+        checks={"unknown_aliases": [], "off_recipe": []},
+        aliases={f"c{index}": claim_id for index, claim_id in enumerate(cited, start=1)},
+        cost=None,
+        model="x-ai/grok-4.6",
+        raw_refs=(),
+    )
+    await insert_block(
+        conn,
+        workspace_id=_V1_WS,
+        subject_kind="contact",
+        subject_id=str(contact_id),
+        page="contact",
+        recipe=recipe,
+        draft=draft,
+        section=section,
+        now=datetime.now(UTC),
+    )
+
+
+async def _build_v1_contacts(conn: AsyncConnection) -> _V1Contacts:
+    """The shared v1 account, plus the three people the contacts contract is proven over."""
+    v1 = await _build_v1(conn)
+    await load_deep_profiling_pack(conn)
+
+    nick = await insert_contact_entity(
+        conn,
+        account_entity_id=v1.zafran,
+        full_name="Nick Fisher",
+        linkedin_url="https://www.linkedin.com/in/nicholastfisher",
+        status=AccountStatus.ACTIVE,
+    )
+    for field_key, value in (
+        (_TITLE, "VP of Marketing"),
+        (PERSONA, "economic_buyer"),
+        (
+            ROLE_ON_COMMITTEE,
+            {
+                "role": "economic_buyer",
+                "rationale": "Owns the demand-generation budget.",
+                "influence": "High",
+            },
+        ),
+        ("contact.facet.alma_mater", {"institution": "Columbia", "degree": "MBA"}),
+        (
+            "contact.facet.career_history",
+            [
+                {
+                    "company": "Zafran",
+                    "titles": ["VP of Marketing"],
+                    "date": {"start": _V1_POSITION_START.isoformat(), "end": None},
+                },
+                {
+                    "company": "Cato Networks",
+                    "titles": ["Director of Demand Gen"],
+                    "date": {"start": "2021-02-01", "end": "2024-03-31"},
+                },
+            ],
+        ),
+        ("contact.network_statistics", {"followers": 6808, "connections": 500}),
+        ("contact.member_badges", ["creator"]),
+        ("contact.facet.best_channel", "LinkedIn, then email"),
+    ):
+        await _lenient_claim(
+            conn,
+            entity_id=nick,
+            entity_type=EntityType.CONTACT,
+            field_key=field_key,
+            value=value,
+            research_mode=ResearchMode.CONTACT_PROFILING,
+            source_url="https://www.linkedin.com/in/nicholastfisher",
+            evidence_span="Nick Fisher, VP of Marketing at Zafran.",
+        )
+    email_claim_id = await _lenient_claim(
+        conn,
+        entity_id=nick,
+        entity_type=EntityType.CONTACT,
+        field_key="core.work_email",
+        value={"address": "nick@zafran.io", "status": "verified_smtp"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://zafran.io/team",
+    )
+    location_claim_id = await _lenient_claim(
+        conn,
+        entity_id=nick,
+        entity_type=EntityType.CONTACT,
+        field_key="contact.current_location",
+        value={"raw": "New York, New York", "country": "United States"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://www.linkedin.com/in/nicholastfisher",
+    )
+    # Two outreach-usable P1 signals and one the appropriateness gate refused: the header's count
+    # is the *usable* one, so an unsafe P1 must not be counted (and is not displayable either).
+    signal_ids: list[str] = []
+    for field_key, value, source_url, span in (
+        (
+            _RECENT_POST,
+            "Hiring a demand-gen lead — DM me.",
+            "https://www.linkedin.com/posts/nicholastfisher-hiring",
+            "Hiring a demand-gen lead — DM me.",
+        ),
+        (
+            "contact.facet.hooks",
+            ["Ran the Cato demand-gen team through its Series C"],
+            "https://www.linkedin.com/in/nicholastfisher",
+            "Ran the Cato demand-gen team through its Series C.",
+        ),
+    ):
+        signal_ids.append(
+            await _lenient_claim(
+                conn,
+                entity_id=nick,
+                entity_type=EntityType.CONTACT,
+                field_key=field_key,
+                value=value,
+                research_mode=ResearchMode.CONTACT_PROFILING,
+                source_url=source_url,
+                evidence_span=span,
+                signal_priority=1,
+                outreach_safe=True,
+            )
+        )
+    signals = (signal_ids[0], signal_ids[1])
+    await _lenient_claim(
+        conn,
+        entity_id=nick,
+        entity_type=EntityType.CONTACT,
+        field_key="contact.facet.excluded_lookalike",
+        value={"title": "a different Nick Fisher", "reason": "wrong company"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://www.linkedin.com/in/another-nick-fisher",
+        signal_priority=1,
+        outreach_safe=False,
+    )
+    # Ravi reports to Nick — the ``reports`` chips are committee members pointing *at* the subject.
+    await _lenient_claim(
+        conn,
+        entity_id=v1.ravi,
+        entity_type=EntityType.CONTACT,
+        field_key="contact.reports_to",
+        value={"contact_id": str(nick), "name": "Nick Fisher"},
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://zafran.io/team",
+    )
+
+    # Under the account, researched, and carrying no persona or committee role — the placeholder
+    # case. No LinkedIn URL either, which is the second thing this person proves.
+    priya = await insert_contact_entity(
+        conn,
+        account_entity_id=v1.zafran,
+        full_name="Priya Raman",
+        linkedin_url=None,
+        status=AccountStatus.ACTIVE,
+    )
+    await _lenient_claim(
+        conn,
+        entity_id=priya,
+        entity_type=EntityType.CONTACT,
+        field_key=_TITLE,
+        value="Head of RevOps",
+        research_mode=ResearchMode.CONTACT_PROFILING,
+        source_url="https://zafran.io/team",
+    )
+    # Under the account and never researched: no claims, no page, no contact detail.
+    blank = await insert_contact_entity(
+        conn,
+        account_entity_id=v1.zafran,
+        full_name="Blank Person",
+        linkedin_url=None,
+        status=AccountStatus.ACTIVE,
+    )
+
+    await _seed_openers_block(conn, contact_id=nick, cited=signals)
+    return _V1Contacts(
+        v1=v1,
+        nick=nick,
+        priya=priya,
+        blank=blank,
+        email_claim_id=email_claim_id,
+        location_claim_id=location_claim_id,
+        signal_claim_ids=signals,
+    )
+
+
+async def _list_v1(
+    conn: AsyncConnection, account_id: uuid.UUID | str, *, workspace_id: str = _V1_WS
+) -> httpx.Response:
+    return await _list(conn, account_id, workspace_id=workspace_id)
+
+
+async def _profile_v1(
+    conn: AsyncConnection,
+    account_id: uuid.UUID | str,
+    contact_id: uuid.UUID | str,
+    *,
+    workspace_id: str = _V1_WS,
+) -> httpx.Response:
+    return await _profile(conn, account_id, contact_id, workspace_id=workspace_id)
+
+
+def test_the_contacts_table_is_the_researched_committee_in_screen_order() -> None:
+    """E4: every field of the row, from the sources decisions 2/12/13 name — and the order the
+    screens show, which is the account detail's committee order, not insertion order.
+
+    The committee is ARV2's own answer (founder ruling 2026-09-09): the contacts under this
+    account that hold a live claim. So the person with no claims at all is absent, and the person
+    with one title claim and no committee facts is present — being unresearched, not being left
+    off somebody's list, is what keeps a name out of this table.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            response = await _list_v1(conn, fixture.zafran)
+            assert response.status_code == 200
+            body = response.json()
+
+            assert set(body) == {"data", "meta"}
+            AccountContactsResponseV1.model_validate(body)
+            assert body["meta"]["total"] == 4
+            # Persona rank first (economic_buyer, then champion, then the personaless member),
+            # then name — never insertion order. Blank Person holds no claims and is absent.
+            assert [row["name"] for row in body["data"]] == [
+                "Dana Katz",
+                "Nick Fisher",
+                "Ravi Mehta",
+                "Priya Raman",
+            ]
+            assert str(fixture.blank) not in {row["id"] for row in body["data"]}
+
+            nick = next(row for row in body["data"] if row["id"] == str(fixture.nick))
+            assert nick["title"] == "VP of Marketing"
+            # Display text on the wire (D4-b decision 5); the *tone* still keys on the vocabulary
+            # value behind it, which is why the two fields do not look like they agree.
+            assert nick["persona"] == "Economic buyer"
+            assert nick["personaTone"] == "olive"
+            # The committee claim carries its own influence, so the persona default is not used.
+            assert nick["influence"] == "High"
+            assert nick["emailStatus"] == "available"
+            assert nick["emailLabel"] == "nick@zafran.io"
+            assert nick["socials"] == ["linkedin"]
+            assert nick["profileAction"] == "page"
+            assert "avatarUrl" not in nick
+
+            for row in body["data"]:
+                zod_validate(row, "AccountContactSummarySchema")
+
+    run_async(scenario())
+
+
+def test_the_contact_page_serves_every_rail_fact_the_display_and_its_evidence() -> None:
+    """E5: the row, the rail's served labels, the generated page and the provenance behind it."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            response = await _profile_v1(conn, fixture.zafran, fixture.nick)
+            assert response.status_code == 200
+            body = response.json()
+
+            assert set(body) == {"data"}
+            AccountContactDetailResponseV1.model_validate(body)
+            data = body["data"]
+
+            # --- the row, repeated verbatim from the table
+            assert data["id"] == str(fixture.nick)
+            assert data["name"] == "Nick Fisher"
+            assert data["title"] == "VP of Marketing"
+            assert data["influence"] == "High"
+            assert data["profileAction"] == "page"
+
+            # --- the account this page hangs under
+            assert data["accountId"] == str(fixture.zafran)
+            assert data["accountName"] == "Zafran"
+            assert data["accountLogoPath"] is None
+
+            # --- the served rail labels (never derived in the browser)
+            assert data["recentSignalsLabel"] == "2 signals", "the unsafe P1 is not a usable signal"
+            assert data["linkedinLabel"] == "nicholastfisher"
+            assert data["linkedinUrl"] == "https://www.linkedin.com/in/nicholastfisher"
+            assert data["emailVerifiedAt"] is not None
+            assert data["emailClaimId"] == fixture.email_claim_id
+            assert data["locationLabel"] == "New York, New York"
+            assert data["locationClaimId"] == fixture.location_claim_id
+            assert data["bestFirstChannelLabel"] == "LinkedIn, then email"
+            assert data["educationLabel"] == "Columbia, MBA"
+            assert data["tenureLabel"] == tenure(_V1_POSITION_START, now=date.today())[0]
+            assert data["employmentStartedAt"] == _V1_POSITION_START.isoformat()
+            assert data["linkedinFollowers"] == 6808
+            assert data["linkedinCreator"] is True
+            assert "xLabel" not in data
+            assert "xUrl" not in data
+
+            # --- who reports to this person
+            assert [ref["contactId"] for ref in data["reports"]] == [str(fixture.ravi)]
+            assert data["reports"][0]["name"] == "Ravi Mehta"
+            assert data["reports"][0]["accountId"] == str(fixture.zafran)
+            # A ``ResearchContactReference`` carries display text like every other persona slot.
+            assert data["reports"][0]["persona"] == "Champion"
+
+            # --- the generated page: the whole recipe grammar, written section and all
+            assert data["contactDisplay"]["page"] == "contact"
+            sections = {section["key"]: section for section in data["contactDisplay"]["sections"]}
+            assert list(sections) == _CONTACT_SECTION_ORDER
+            assert sections["openers"]["empty"] is False
+            assert sections["openers"]["items"][0]["sendLine"]["channel"] == "linkedin"
+            assert [key for key, section in sections.items() if section["empty"] is True] == [
+                "why-this-person",
+                "problem-right-now",
+                "angles",
+                "do-not-mention",
+            ], "generation is off in this suite, so nothing else can have been written"
+
+            # --- the evidence behind every citation and both claim-id chips
+            evidence = {row["claimId"] for row in data["researchEvidence"]}
+            assert evidence == {
+                *fixture.signal_claim_ids,
+                fixture.email_claim_id,
+                fixture.location_claim_id,
+            }
+            assert all("fieldKey" not in row for row in data["researchEvidence"])
+
+            # --- the two legacy slots the display layer replaced
+            assert data["overviewParagraphs"] == []
+            assert data["evidence"] == []
+
+            assert data["lastModifiedAt"].endswith("Z")
+            zod_validate(data, "AccountContactDetailSchema")
+
+    run_async(scenario())
+
+
+def test_a_researched_contact_with_no_committee_facts_is_listed_and_has_a_page() -> None:
+    """The E5 addressability ruling: a contact **under this account** holding a live claim is on
+    the committee and has a page, even when the research recorded no persona and no role for them
+    — and a contact with no safe LinkedIn URL is served with the site root rather than a
+    fabricated profile link or a 404."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            listed = {row["id"] for row in (await _list_v1(conn, fixture.zafran)).json()["data"]}
+            assert str(fixture.priya) in listed
+
+            response = await _profile_v1(conn, fixture.zafran, fixture.priya)
+            assert response.status_code == 200
+            data = response.json()["data"]
+            assert data["name"] == "Priya Raman"
+            assert data["title"] == "Head of RevOps"
+            # No committee claim and no persona claim: the neutral member of the vocabulary,
+            # served as the word a marketer reads.
+            assert data["persona"] == "User"
+            assert data["influence"] == "Medium"
+            assert data["socials"] == []
+            assert data["linkedinUrl"] == "https://www.linkedin.com/"
+            assert data["linkedinLabel"] == "LinkedIn"
+            assert data["recentSignalsLabel"] == "No signals yet"
+            assert data["reports"] == []
+            AccountContactDetailResponseV1.model_validate({"data": data})
+            zod_validate(data, "AccountContactDetailSchema")
+
+    run_async(scenario())
+
+
+def test_a_contact_with_neither_claims_nor_a_page_is_an_enveloped_404() -> None:
+    """The other half of the ruling: being under the account is not on its own a page."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            response = await _profile_v1(conn, fixture.zafran, fixture.blank)
+
+            assert response.status_code == 404
+            error = response.json()["error"]
+            assert error["code"] == "CONTACT_NOT_FOUND"
+            assert error["requestId"] == response.headers["X-Request-Id"]
+
+    run_async(scenario())
+
+
+def test_the_evidence_route_authorises_a_claim_the_contact_page_cites() -> None:
+    """The evidence route authorises against what this person's own contact page cites.
+
+    It asks the display seam with ``generate=False``, so the check can never write a page or
+    schedule one — an authorising GET must be safe to retry.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            cited = fixture.signal_claim_ids[0]
+            storage = _MemoryStorage()
+
+            async with _client(_app(conn, evidence_storage=storage)) as client:
+                response = await client.get(
+                    f"{_BASE}/{fixture.zafran}/contacts/{fixture.nick}/evidence/{cited}",
+                    headers={"X-Workspace-Id": _V1_WS},
+                )
+            # Authorised (it is not the "no such evidence" refusal) but nothing is retained for
+            # this claim, so the stream itself is still the same honest 404.
+            assert response.status_code == 404
+            assert response.json()["error"]["code"] == "EVIDENCE_NOT_FOUND"
+
+            page = await DisplayPages(
+                settings=load_settings(_env_file=None, arv2_display_generate_on_read=False),
+                secrets=None,
+                conn_factory=conn_session_factory(conn),
+            ).page(
+                conn,
+                workspace_id=_V1_WS,
+                subject_kind="contact",
+                subject_id=str(fixture.nick),
+                page="contact",
+                generate=False,
+            )
+            assert cited in page.cited_claim_ids
+
+    run_async(scenario())
+
+
+# --- the provider's own shapes for the rail (D3 close-out finding from the Zafran walk) ---------
+
+
+def test_followers_and_creator_badge_read_the_providers_record_shapes() -> None:
+    """The answer key stores AI Ark's own records: followers nested under ``network`` and the
+    badges as one flag per badge, not the registry sketches (``{"followers": n}``, a list)."""
+    from types import SimpleNamespace
+
+    from clue_api.frontend_read.contacts import _creator_badge, _followers
+
+    def claim(value: object) -> Any:
+        return SimpleNamespace(value_json=value)
+
+    assert _followers(claim({"followers": 6808})) == 6808
+    assert (
+        _followers(claim({"network": {"followers_count": 6808, "connections_count": 4776}})) == 6808
+    )
+    assert _followers(claim({"network": {"followers_count": "6808"}})) is None
+    assert _followers(claim({"followers": -1})) is None
+    assert _followers(None) is None
+
+    assert _creator_badge(claim(["creator"])) is True
+    assert _creator_badge(claim({"creator": True, "premium": True, "hiring": False})) is True
+    assert _creator_badge(claim({"creator": False, "premium": True})) is False
+    assert _creator_badge(claim({"premium": True})) is None
+    assert _creator_badge(None) is None
+
+
+# --- the contacts tab is one of the three "on open" moments (plan 2026-09-21) -------------------
+
+
+class _RecordingQueue:
+    """The fleet's work queue, reduced to the one call the display seam makes."""
+
+    def __init__(self) -> None:
+        self.offers: list[dict[str, Any]] = []
+
+    async def enqueue(self, **kwargs: Any) -> bool:
+        self.offers.append(kwargs)
+        return True
+
+
+def _scheduling_app(conn: AsyncConnection, queue: _RecordingQueue):
+    """The read surface with a work queue behind it — a seam that schedules instead of writing.
+
+    ``secrets=None`` keeps it honest about money: with no runner it could not write a page even
+    if it wanted to, so the only thing this app can do about a missing page is offer its task.
+    """
+    app = FastAPI()
+    app.include_router(
+        build_frontend_read_router(
+            settings=load_settings(
+                _env_file=None,
+                frontend_read_enabled=True,
+                arv2_display_generate_on_read=True,
+            ),
+            conn_factory=conn_session_factory(conn),
+            secrets=None,
+            work_queue=queue,
+        )
+    )
+    return app
+
+
+async def _settled_person_job(
+    conn: AsyncConnection, *, project: Project, account_id: EntityId, contact_id: EntityId
+) -> uuid.UUID:
+    """One completed ``person`` job for this committee member — what makes their page offerable."""
+    project_run_id = new_project_run_id()
+    await ensure_project_run(
+        conn,
+        project_run_id=project_run_id,
+        project_id=project.project_id,
+        workspace_id=project.workspace_id,
+        icp_key="contacts-tab",
+        icp_version=1,
+    )
+    run_id = uuid.uuid4()
+    sha = "b" * 64
+    await create_run(
+        conn,
+        RunRow(
+            run_id=run_id,
+            workspace_id=project.workspace_id,
+            project_id=project.project_id,
+            brand_id=project.brand_id,
+            project_run_id=uuid.UUID(str(project_run_id)),
+            icp_artifact_key=f"{project.workspace_id}/{sha}",
+            icp_artifact_sha256=sha,
+            icp_key="contacts-tab",
+            icp_version=1,
+            product_selection_version=1,
+            effort="full",
+            committee_cap=3,
+            directive_text="",
+            profile_ref="arv2-account/v1",
+            profile_sha256=sha,
+            requested_by_user_id="u_owner",
+            request_sha256=sha,
+        ),
+    )
+    job_id = uuid.uuid4()
+    await create_job(
+        conn,
+        job_id=job_id,
+        run_id=run_id,
+        workspace_id=project.workspace_id,
+        account_entity_id=uuid.UUID(str(account_id)),
+        subject_type="person",
+        subject_entity_id=uuid.UUID(str(contact_id)),
+    )
+    await finish_job(
+        conn,
+        job_id=job_id,
+        status="completed",
+        finalization={"outcome": "completed"},
+        model_rounds=1,
+        tool_calls=1,
+        cost_usd=Decimal("0"),
+        credits=Decimal("0"),
+        media_seconds=0,
+    )
+    return job_id
+
+
+def test_reading_the_contacts_tab_offers_the_pages_of_settled_members_without_one() -> None:
+    """Opening the tab starts the members' pages on the fleet, and skips the ones already written.
+
+    Ravi's research has settled and he has no page — his is offered, stamped with the job whose
+    claims it will be written from. Nick's research has settled too, but the fixture already holds
+    a live ``contact/openers`` block for him, so re-offering his page would pay twice for words
+    that are already on the screen.
+    """
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            project = fixture.v1.base.project_a
+            ravi_job = await _settled_person_job(
+                conn, project=project, account_id=fixture.zafran, contact_id=fixture.ravi
+            )
+            await _settled_person_job(
+                conn, project=project, account_id=fixture.zafran, contact_id=fixture.nick
+            )
+
+            queue = _RecordingQueue()
+            async with _client(_scheduling_app(conn, queue)) as client:
+                response = await client.get(
+                    f"{_BASE}/{fixture.zafran}/contacts", headers={"X-Workspace-Id": _V1_WS}
+                )
+
+            assert response.status_code == 200
+            assert [offer["payload"]["subject_id"] for offer in queue.offers] == [str(fixture.ravi)]
+            offer = queue.offers[0]
+            assert offer["kind"] is FleetTaskKind.ARV2_DISPLAY_PAGE
+            assert offer["payload"]["page"] == "contact"
+            assert offer["payload"]["job_id"] == str(ravi_job)
+            assert offer["reopen_terminal"] is True
+
+    run_async(scenario())
+
+
+def test_reading_the_contacts_tab_without_a_queue_offers_nothing() -> None:
+    """The default deployment is unchanged: no queue, no offers, and no extra statements."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fixture = await _build_v1_contacts(conn)
+            await _settled_person_job(
+                conn,
+                project=fixture.v1.base.project_a,
+                account_id=fixture.zafran,
+                contact_id=fixture.ravi,
+            )
+            response = await _list(conn, fixture.zafran, workspace_id=_V1_WS)
+            assert response.status_code == 200
+
+    run_async(scenario())

@@ -1,0 +1,500 @@
+{
+  "requestId": "0e8205da124f15346078c8f9e17df926",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://github.com/camcol",
+      "title": "Cameron Coles",
+      "url": "https://github.com/camcol",
+      "text": "# Cameron Coles\n\n- Login: camcol\n- Public repos: 13\n- Public gists: 0\n- Followers: 0\n- Following: 0\n- Joined: 2023-07-27T02:13:32Z\n\n## Top Repositories\n\n- camcol/DevOpsQAP1 - (0 stars)\n- camcol/DSAFinalSprint - (0 stars)\n- camcol/FinalSprint - Final Sprint for semester 2. (0 stars)\n- camcol/finalsprintbackend - (0 stars)\n- camcol/FullStackQAP1 - (0 stars)\n- camcol/FullStackQAP2 - (0 stars)"
+    },
+    {
+      "id": "https://exa.ai/library/person/fp5wwp32qmk",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameroncoles",
+      "publishedDate": "2026-08-22T05:34:34.000Z",
+      "text": "# Cameron Coles\n\nVP of Marketing\n\nSan Francisco Bay Area (US)\n\n500 connections \u2022 1,626 followers\n\n## About\n\nVP of Marketing\n\nTotal Experience: 14 years and 3 months\n\n## Experience\n\n### VP of Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)\n\nNov 2025 - Present (9 months) in San Francisco, CA\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nCogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n### VP of Marketing - [Cyberhaven](https://www.linkedin.com/company/cyberhaven)\n\nMay 2022 - Jun 2025 (3 years and 1 month)\n\nDepartment: Marketing \u2022 Level: President/Vice President\n\nCyberhaven is a Computer and Network Security company. Cyberhaven is a company that protects data from other tools can't see, from threats they can't detect, across technologies they can't control. Cyberhaven has 200-300 employees (+30% YoY) and has annual revenue in the $10M-$20M range, founded in 2016. Headquartered in Palo Alto, California, United States, with presence in Switzerland. Its workforce is distributed across 25 countries (including United States, India, Romania, Ukraine, and Switzerland). with 5 prior funding rounds.\n\n### Head of Product and Content Marketing - [Wiz](https://www.linkedin.com/company/wizsecurity)\n\nFeb 2021 - Dec 2021 ",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQG93jhdkXEmuA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1697095873400?e=2147483647&v=beta&t=vigENYNjkjZx85B8kGNAxt3L9UigDXHJng9YxfTFzlM",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/fp5wwp32qmk",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "San Francisco Bay Area",
+            "workHistory": [
+              {
+                "title": "VP of Marketing",
+                "location": "San Francisco, CA",
+                "dates": {
+                  "from": "2025-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/p5c1zdbdxyc",
+                  "name": "Cogent Security"
+                }
+              },
+              {
+                "title": "VP of Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2025-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/kswlmhh79br",
+                  "name": "Cyberhaven"
+                }
+              },
+              {
+                "title": "Head of Product and Content Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2021-02-01",
+                  "to": "2021-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/62tkvvz4kdg",
+                  "name": "Wiz"
+                }
+              },
+              {
+                "title": "Director of Product Marketing",
+                "location": "San Francisco Bay Area",
+                "dates": {
+                  "from": "2018-10-01",
+                  "to": "2021-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9g32tckkbqz",
+                  "name": "Proxy"
+                }
+              },
+              {
+                "title": "Director of Product Marketing",
+                "location": "Campbell, CA",
+                "dates": {
+                  "from": "2013-07-01",
+                  "to": "2018-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/z0dpgqksbpn",
+                  "name": "Skyhigh"
+                }
+              },
+              {
+                "title": "Product Marketing Manager",
+                "location": "Mountain View, CA",
+                "dates": {
+                  "from": "2011-07-01",
+                  "to": "2013-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/7mvlmftls86",
+                  "name": "Symantec"
+                }
+              },
+              {
+                "title": "Product Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2010-07-01",
+                  "to": "2013-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wjcvmjtd17m",
+                  "name": "Clearwell Systems (Acquired by Symantec)"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "BSE Marketing",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/9tgwp2y71mh",
+                  "name": "The Wharton School"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/z051bpxkwrh",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameron-coles-software",
+      "publishedDate": "2026-07-28T00:12:56.000Z",
+      "text": "# Cameron Coles\n\nLead React Native Developer at Stewardship\n\nNewark-On-Trent, England, United Kingdom (GB)\n\n65 connections \u2022 65 followers\n\n## About\n\nSoftware Developer based in Nottinghamshire, UK. I specialise in web and mobile app\u2026\n\nTotal Experience: 6 years and 10 months\n\n## Experience\n\n### Lead React Native Developer - [Stewardship](https://www.linkedin.com/company/stewardship) (Current)\n\nNov 2025 - Present (8 months) in London Area, United Kingdom\n\nDepartment: Engineering and Technical\n\nStewardship is a nonprofit organization. Stewardship helps Christians be the best stewards of the resources God gives them. Stewardship has 70-80 employees and has annual revenue in the under $1M range, founded in 1906. Headquartered in London, United Kingdom. Its workforce is distributed across United Kingdom, Switzerland, United States, and South Africa.\n\n### [Aarsleff Ground Engineering Ltd](https://www.linkedin.com/company/aarsleff-ground-engineering-uk)\n\n#### Software Developer\n\nJun 2023 - Nov 2025 (2 years and 5 months)\n\nDepartment: Engineering and Technical \u2022 Level: Specialist\n\n#### IT & BI Assistant\n\nMay 2022 - May 2023 (1 year)\n\nDepartment: Engineering and Technical \u2022 Level: Specialist\n\nAarsleff Ground Engineering Ltd is a Civil Engineering company. Aarsleff Ground Engineering is a leading ground engineering and piling company that provides value-engineered, multi-disciplinary foundation solutions across the UK. Aarsleff Ground Engineering Ltd has 100-150 employees (+1-2% YoY) an",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQFBpJHdl3didA/profile-displayphoto-scale_200_200/B4EZwgbI29KcAY-/0/1770070511708?e=2147483647&v=beta&t=hj7BPNwr6ajCjBXmcwuO2XKTa1-DCYUcD4anXso0H70",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/z051bpxkwrh",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "Newark-On-Trent, England, United Kingdom",
+            "workHistory": [
+              {
+                "title": "Lead React Native Developer",
+                "location": "London Area, United Kingdom",
+                "dates": {
+                  "from": "2025-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/bhstw40tltb",
+                  "name": "Stewardship"
+                }
+              },
+              {
+                "title": "Software Developer",
+                "location": null,
+                "dates": {
+                  "from": "2023-06-01",
+                  "to": "2025-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/q955kkd5ww1",
+                  "name": "Aarsleff Ground Engineering Ltd"
+                }
+              },
+              {
+                "title": "IT & BI Assistant",
+                "location": null,
+                "dates": {
+                  "from": "2022-05-01",
+                  "to": "2023-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/q955kkd5ww1",
+                  "name": "Aarsleff Ground Engineering Ltd"
+                }
+              },
+              {
+                "title": "Information Technology Technician",
+                "location": null,
+                "dates": {
+                  "from": "2020-08-01",
+                  "to": "2022-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/glcscfhvkn7",
+                  "name": "Pinnacle International Freight Ltd"
+                }
+              },
+              {
+                "title": "IT Apprentice",
+                "location": null,
+                "dates": {
+                  "from": "2019-09-01",
+                  "to": "2020-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/glcscfhvkn7",
+                  "name": "Pinnacle International Freight Ltd"
+                }
+              }
+            ],
+            "educationHistory": [],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://central.edu/profiles/about/cameron-coles-22/",
+      "title": "A Scientist and a Scholar | Profiles | Central College",
+      "url": "https://central.edu/profiles/about/cameron-coles-22/",
+      "text": "A Scientist and a Scholar | Profiles | Central College\n\n# Profiles\n\n## A Scientist and a Scholar\n\n> \u201cGetting involved in research early at Central has opened so many doors for me that would be closed otherwise. Working with the faculty here has been essential. If you want a career in research, come here.\u201d\n> \n> \u2013 Cameron Coles \u201922 \n\nHometown: Farley, Iowa Major: Biology, Mathematics Minor: Computer Science Campus Activities/Organizations: Computer Science Club, Bridge Club Study Abroad: Wales, United Kingdom Scholarships: Presidential, Journey, Trustee Exceptional Accomplishments: 2021 Goldwater Scholar, Computer Science Award, Benjamin A. Gilman International Scholarship Award Career Goal: Obtain a Ph.D. in ecology to conduct research in mathematical ecology or evolutionary biology and teach at the university level. Graduate School: Cornell University, Ithaca, New York\n\nWhether it\u2019s through a microscope studying the molecular makeup of cells or exploring Central College\u2019s rigorous curriculum, Cameron Coles \u201922 sees the world through a different lens.\n\nColes has taken a wide variety of classes in science, the arts and humanities at Central. Coupled with unique, one-on-one research opportunities with faculty, his experiences set him apart from the average college student.\n\n\u201cI think being a liberal arts student has a lot of power. Central has given me the flexibility to focus on many different disciplines,\u201d says Coles. \u201cI\u2019ve been able to take a variety of classes that have helpe",
+      "image": "https://central.edu/profiles/wp-content/uploads/sites/5/2021/06/CameronColes_PROFILE.jpg"
+    },
+    {
+      "id": "https://exa.ai/library/person/d0yh5gcdthf",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameron-coles",
+      "publishedDate": "2026-08-12T23:55:33.000Z",
+      "text": "# Cameron Coles\n\nSupport Services Manager / Safety Officer\n\nEdmonton, Alberta, Canada (CA)\n\n67 connections \u2022 73 followers\n\n## About\n\nCharismatic, client-centred, and solutions-driven Technical Services Provider with extensive theoretical and practical experience successfully delivering on large scale and complex operational initiatives. In support of business operations, stakeholder and client relations and service and people management in the communications industry, I am adept at human resources management, administration, customer service, project and financial management, as well as scheduling and safety training. Inspirational leader of service operations with dynamic communication and presentation skills, coupled with a track record in managing relationships, inspiring colleagues, and motivating peers to perform to the best of their abilities. Ability to cultivate high-performing staff, and a capacity to effect operational change leading to improved business performance and reduction of cost. With a strong technical background in Telecommunications, Audio Visual and Information technology, I am leveraging my knowledge and experience into an evolving, career focused management position within the technology industry. cameronmcoles@gmail.com \u270f\ufe0f Team Building & Leadership \u270f\ufe0f Organizational Management \u270f\ufe0f Client Relationship Management \u270f\ufe0f Business Liaison & Communication \u270f\ufe0f Service Delivery Process Optimization \u270f\ufe0f Client Service & Conflict Resolution \u270f\ufe0f Network/Relationship ",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/d0yh5gcdthf",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "Edmonton, Alberta, Canada",
+            "workHistory": [
+              {
+                "title": "Safety Officer",
+                "location": "Sherwood Park",
+                "dates": {
+                  "from": "2021-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "GoTech Inc."
+                }
+              },
+              {
+                "title": "Support Services Manager",
+                "location": "Edmonton, Alberta, Canada",
+                "dates": {
+                  "from": "2021-05-01",
+                  "to": "2024-08-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "GoTech Inc."
+                }
+              },
+              {
+                "title": "Project Engineer",
+                "location": "Edmonton, Alberta, Canada",
+                "dates": {
+                  "from": "2020-04-01",
+                  "to": "2021-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9s1s4ftthpd",
+                  "name": "AVI-SPL"
+                }
+              },
+              {
+                "title": "Managed Services Technician Technical Advisor",
+                "location": "Edmonton, Canada Area",
+                "dates": {
+                  "from": "2014-01-01",
+                  "to": "2020-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/9s1s4ftthpd",
+                  "name": "AVI-SPL"
+                }
+              },
+              {
+                "title": "Lead Structured Cabling Technician",
+                "location": "Edmonton, Canada Area",
+                "dates": {
+                  "from": "2012-03-01",
+                  "to": "2014-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/v1zjlx8y86j",
+                  "name": "LJ Systems Inc."
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Digital Audio Engineering & Music Production, Audio Engineering & Music Production",
+                "dates": {
+                  "from": "2009",
+                  "to": "2011"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Pixel Blue College"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://people.equilar.com/bio/person/cameron-coles-cyberhaven/48543982",
+      "title": "Cameron Coles - Executive Bio, Work History, and Contacts - Equilar ExecAtlas",
+      "url": "https://people.equilar.com/bio/person/cameron-coles-cyberhaven/48543982",
+      "text": "Cameron Coles - Executive Bio, Work History, and Contacts - Equilar ExecAtlas\n\n# Win Deals Through Your Network\n\nTransform relationships with clients, colleagues, and partners into actionable insights.\n\n## Trusted by\n\n## Trusted by\n\n Featured Profile \n\n# Cameron Coles\n\nFormer Vice President Of Marketing at Cyberhaven\n\n### Cameron Coles's Executive Work History \n\n Past \n\n To view Cameron Coles's complete executive work history, sign up now \n\n### Cameron Coles's Biography \n\n Cameron Coles is VP of Marketing. Prior to joining, he led product marketing at Wiz where he helped scale the company's revenue from $3m to $30m in less than a year. He also led product marketing at Skyhigh Networks, growing the company from less than $1m to $80m and creating the CASB category in the process. Cameron has an undergraduate degree from The Wharton School of the University of Pennsylvania. \n\n### Cameron Coles's Connections (34) \n\nSimon Ratner Former CTO & Founder, Proxy\n\nShathiya Rengalwar Senior Director, Global Talent Acquisition, Cyberhaven\n\nJohn Morris Former Chief Financial Officer, Cyberhaven\n\nVolodymyr Kuznetsov PhD Chief Technology Officer and Director, Cyberhaven\n\nKirk Dunn Chief Executive Officer, Kurrent\n\nWill Saso Vice President of Sales, Americas, Sysdig\n\nKellen Duke Former Chief Operating Officer, SwiftConnect\n\nJames McCarthy Senior Vice President of Sales, Cyberhaven\n\nChris Bates\n\n Former Chief Information Security Officer, SentinelOne, Inc.\n\nManoj Gupta\n\n Former Senior Vice Pres",
+      "image": "https://www.execatlas.com/images/company-logos/execatlas-logo.svg"
+    },
+    {
+      "id": "https://www.cameron-cole.com/",
+      "title": "Home - Cameron-Cole",
+      "url": "https://www.cameron-cole.com/",
+      "author": "ADEC Innovations: Custom Software Web Development Team 2022",
+      "text": "Home - Cameron-Cole\n\n## Live Q&A: Preparing for SB 253 Assurance Requirements\n\nJoin Cameron-Cole's verification experts as they answer your questions about SB 253, share recent updates, and provide actionable guidance to help your organization prepare for the upcoming assurance requirements.\n\nWatch Now\n\n## Join Our Team\n\nAs an ADEC Innovation company, Cameron-Cole is focused on improving our world through advanced sustainable practices. We also seek to improve the lives of all with whom we work, whether clients, partners, or colleagues.\n\nBrowse current openings\n\n## Using Risk Management Technology to Construct a Brownfields Inventory\n\nCameron-Cole and Envirosite, both ADEC Innovations, are bringing their extensive brownfield experience and proprietary Property Risk Map (PRM) software to the City of Barstow to develop a brownfield inventory and identify sites for further assessment.\n\nLearn more\n\n## Connect with Cameron-Cole\n\nStay up-to-date with the latest company news and industry insights, project highlights, and more.\n\nFollow Us on LinkedIn\n\n## Company Certifications\n\nBrowse Cameron-Cole's extensive list of certifications that reflect our dedication to providing the highest level of knowledge and experience necessary to help our clients find sustainable solutions and reach their goals.\n\nLearn more\n\nI am a(n)\n\n-\n\nthat needs to\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\n-\n\nGo\n\n# Cameron-Cole an ADEC Innovations company\n\n## Key Projects\n\nSee all\n\nLyft's GHG Inventory Ach",
+      "image": "https://www.cameron-cole.com/assets/img/social-media/2022-04-07_10-42-55.jpg",
+      "favicon": "https://www.cameron-cole.com/assets/img/adec-favicon-32x32.png",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/d6f2dy2sf19",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Cameron-Cole",
+            "foundedYear": 2001,
+            "description": "Cameron-Cole is a environmental and engineering consulting firm with locations across the U.S. It maintains a multi-disciplinary staff that includes experienced scientists, engineers, geologists, hydrogeologists, chemists, statisticians, policy analysts, and information technology specialists.\n\nAt Cameron-Cole we make our careers by addressing the most difficult environmental challenges. This is the way that we have chosen to show our value - relishing in the the development and application of systematic solutions for technical problems that require data, an understanding of fundamentals, and insight, but recognizing that to be useful our solutions must be done under limitations of time and budget. If this sounds like the reason you spent all those hours studying STEM subjects, come and join us. If this sounds like a team of specialists you want working on your side, give us a call and put us to work.\n\nRecently, we've been addressing the unfolding challenge of Per- and Poly-fluoroalkyl Substances (PFAS). This is why we work.",
+            "workforce": {
+              "total": 29
+            },
+            "headquarters": {
+              "address": "9090 s Ridgeline Blvd, Suite 150, Highlands Ranch, Colorado 80129, US",
+              "city": "Highlands Ranch",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": 24665454,
+              "fundingTotal": null,
+              "fundingLatestRound": null
+            },
+            "webTraffic": {
+              "visitsMonthly": 3390,
+              "countryRank": 1709389,
+              "avgDurationSeconds": 7,
+              "history": [
+                {
+                  "value": 3649,
+                  "dateFrom": "2026-02",
+                  "dateTo": "2026-02"
+                },
+                {
+                  "value": 2971,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 2111,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 2745,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 2605,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 3390,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/z4tv1d0p1vb",
+      "title": "Cameron Coles",
+      "url": "https://www.linkedin.com/in/cameronrcoles",
+      "publishedDate": "2026-08-03T23:36:05.000Z",
+      "text": "# Cameron Coles\n\nGraphic Intern at Apex Global Brands\n\nLos Angeles, California, United States (US)\n\n18 connections \u2022 20 followers\n\n## About\n\nCreative professional who excels at organization, taking direction, and loves to learn. Utilizes a natural ability to listen to ensure that expectations and deadlines are met. Has a passion for storytelling and a go-getter attitude.\n\nTotal Experience: 9 years and 8 months\n\n## Experience\n\n### Graphic Intern - [Apex Global Brands](https://www.linkedin.com/company/apexglobalbrands) (Current)\n\nMar 2019 - Present (7 years and 5 months) in Los Angeles, California, United States\n\n- Report to the VP Design\n- Responsible for developing art/graphic concepts for international clients\n- Adhere to artistic direction and produce visual design art for use on apparel, fitted exactly to meet the customers\u2019 needs\n- Created two original designs that were selected for mass clothing distribution to generate revenue for the company\n\nDepartment: Design \u2022 Level: Intern\n\nApex Global Brands (APEX) is a Apparel & Fashion company. Apex Global Brands has 1-10 employees (6-7% YoY decline) and has annual revenue in the $20M-$30M range, founded in 1973. Headquartered in Los Angeles, California, United States, with an office in Sherman Oaks. Has a market cap in the $10M-$20M range. IPO 2019.\n\n### Property Manager - Fradam Property Management\n\nOct 2016 - Sep 2018 (1 year and 11 months) in Los Angeles, California, United States\n\n- Collect and deposit monthly rent\n- Market",
+      "image": "https://media.licdn.com/dms/image/v2/C4D03AQF6hk0DvTNEsA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1621216513182?e=2147483647&v=beta&t=iC3yrb_uluzfxY3cdruO042QURaQUO5-jTCv-tbHtVs",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/z4tv1d0p1vb",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Cameron Coles",
+            "firstName": "Cameron",
+            "lastName": "Coles",
+            "location": "Los Angeles, California, United States",
+            "workHistory": [
+              {
+                "title": "Graphic Intern",
+                "location": "Los Angeles, California, United States",
+                "dates": {
+                  "from": "2019-03-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/f80mkstw2nm",
+                  "name": "Apex Global Brands"
+                }
+              },
+              {
+                "title": "Property Manager",
+                "location": "Los Angeles, California, United States",
+                "dates": {
+                  "from": "2016-10-01",
+                  "to": "2018-09-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Fradam Property Management"
+                }
+              },
+              {
+                "title": "Research and Distribution Intern",
+                "location": "Los Angeles, California, United States",
+                "dates": {
+                  "from": "2015-06-01",
+                  "to": "2015-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/gvbfqhzk28x",
+                  "name": "DEEDA"
+                }
+              },
+              {
+                "title": "Creative Activist Program Intern",
+                "location": "Malibu, California, United States",
+                "dates": {
+                  "from": "2014-06-01",
+                  "to": "2014-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/54075ksny2z",
+                  "name": "Creative Visions Foundation"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts - BA, Arts, Media, and Entertainment",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/rfy1q0c233j",
+                  "name": "University of Arizona"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 1149.1,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.47,
+  "_request": {
+    "query": "\"Cameron Coles\" personal website portfolio github about me",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

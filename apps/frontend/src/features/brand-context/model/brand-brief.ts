@@ -177,9 +177,8 @@ interface Section {
 /**
  * The structured brief as the knowledge panel's markdown.
  *
- * Only the panel's own grammar is used — `#`/`##` headings, `- ` list items,
- * paragraphs, and `**bold**` inline (`parseKnowledgeMarkdown` renders exactly
- * these). Anything richer would render as literal punctuation.
+ * Produces Markdown content; the Knowledge panel delegates rendering to
+ * react-markdown with remark-gfm.
  *
  * An empty section is OMITTED, not stubbed: the brief's own law is that absence
  * is a correct answer, and a "Component recipes: none" row would be the first

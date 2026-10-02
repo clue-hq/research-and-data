@@ -1157,6 +1157,26 @@ fn default_mode_values() -> BTreeMap<String, String> {
     ])
 }
 
+/// Validate requested context without changing canonical mode precedence or token fallback.
+pub fn validate_requested_brand_mode(kit: &BrandKit, mode: &BrandMode) -> Vec<Diagnostic> {
+    let implicit_axes = default_mode_axes();
+    mode.values.iter().filter_map(|(axis, value)| {
+        // Canonical preflight supplies the normalized scene medium even for
+        // legacy kits that omit this axis. Only its built-in values are implicit;
+        // an explicitly declared axis and every other requested axis stay strict.
+        let supported = kit.modes.axes.get(axis).or_else(|| {
+            if axis == "medium" { implicit_axes.get(axis) } else { None }
+        }).is_some_and(|values| values.contains(value));
+        if supported {
+            None
+        } else {
+            Some(Diagnostic::error(Phase::Brand, "EDITOR_RENDER_MODE_UNSUPPORTED",
+                format!("Brand Kit {}@{} does not declare mode {axis}.{value}", kit.id, kit.version),
+                Some(DiagnosticSubject::Document)))
+        }
+    }).collect()
+}
+
 fn effective_mode(brand_kit: &BrandKit, requested: BrandMode) -> BrandMode {
     let mut values = brand_kit.modes.defaults.clone();
     for (axis, value) in requested.values {
@@ -1670,6 +1690,8 @@ pub fn validate_brand_kit_product_ready(brand_kit: &BrandKit) -> Vec<Diagnostic>
     diagnostics
 }
 
+const UNBOUND_SPACING_HINT: &str = "Check existing spacing tokens in the active mode before binding: a binding changes resolved geometry, and a padding token sets every edge to one value. Intentional literals may remain under advisory governance. Under strict governance, use an equivalent existing token or review the intended geometry change; do not substitute an unrelated token.";
+
 pub fn validate_scene_brand_governance(
     scene: &Scene,
     brand_kit: &BrandKit,
@@ -1846,15 +1868,12 @@ pub fn validate_scene_brand_governance(
                         severity_is_error,
                         "LUMB0806",
                         format!(
-                            "node {} layout gap uses a raw value outside the Brand Kit",
+                            "node {} layout gap has no Brand Kit spacing binding",
                             node.id
                         ),
                         subject.clone(),
                     )
-                    .with_hint(format!(
-                        "Use g(${}) or another Brand Kit spacing token.",
-                        suggested_token(&brand_kit.tokens.spacing, "space.stack.default", "space.")
-                    )),
+                    .with_hint(UNBOUND_SPACING_HINT),
                 );
             }
             if layout.padding_token.is_none() && layout.padding.iter().any(|value| *value != 0.0) {
@@ -1863,15 +1882,12 @@ pub fn validate_scene_brand_governance(
                         severity_is_error,
                         "LUMB0806",
                         format!(
-                            "node {} layout padding uses raw values outside the Brand Kit",
+                            "node {} layout padding has no Brand Kit spacing binding",
                             node.id
                         ),
                         subject.clone(),
                     )
-                    .with_hint(format!(
-                        "Use pad(${}) or another Brand Kit spacing token.",
-                        suggested_token(&brand_kit.tokens.spacing, "space.card.padding", "space.")
-                    )),
+                    .with_hint(UNBOUND_SPACING_HINT),
                 );
             }
         }
@@ -1882,15 +1898,14 @@ pub fn validate_scene_brand_governance(
                         severity_is_error,
                         "LUMB0805",
                         format!(
-                            "node {} text style is raw typography outside the Brand Kit",
+                            "node {} text has no Brand Kit typography role binding",
                             node.id
                         ),
                         subject.clone(),
                     )
-                    .with_hint(format!(
-                        "Use style(${}) or another Brand Kit typography role.",
-                        suggested_token(&brand_kit.tokens.typography, "type.body", "type.")
-                    )),
+                    .with_hint(
+                        "A missing binding does not establish an invalid visual treatment. Before binding, check that the active-mode role preserves the intended family, weight, size, leading, tracking and color; a size token alone does not make a whole role equivalent. Intentional literals may remain under advisory governance. Under strict governance, use an equivalent existing role or review the intended typography change; do not substitute an unrelated role.",
+                    ),
                 );
             }
             validate_text_contrast_for_governance(
@@ -2454,6 +2469,40 @@ pub fn resolve_scene_tokens(
         operations,
         diagnostics: resolver.diagnostics,
     }
+}
+
+/// Resolve only a targeted text's source typography for a checked edit. This
+/// reuses the renderer's resolver without baking unrelated scene nodes.
+pub(crate) fn resolve_text_for_edit(
+    scene: &Scene,
+    node_id: &NodeId,
+    text: &TextNode,
+    brand_kit: &BrandKit,
+    options: &TokenResolutionOptions,
+) -> Result<TextNode, Vec<Diagnostic>> {
+    let options = crate::preflight::token_options_for_scene_medium(scene, options);
+    let mut resolver = TokenResolver::new(brand_kit, options);
+    if scene.meta.brand_kit.is_some() {
+        resolver.validate_scene_brand_ref(scene);
+    }
+    resolver.diagnostics.extend(validate_brand_kit(brand_kit));
+    if has_error(&resolver.diagnostics) {
+        return Err(resolver.diagnostics);
+    }
+    let mut node = Node::new(node_id.clone(), NodeKind::Text(text.clone()));
+    resolver.resolve_node(&mut node);
+    let NodeKind::Text(resolved) = node.kind else {
+        unreachable!()
+    };
+    if has_error(&resolver.diagnostics)
+        || resolved.style_token.is_some()
+        || resolved.font_size_token.is_some()
+        || resolved.line_height_token.is_some()
+        || resolved.letter_spacing_token.is_some()
+    {
+        return Err(resolver.diagnostics);
+    }
+    Ok(resolved)
 }
 
 pub fn compile_styles_brand_kit(

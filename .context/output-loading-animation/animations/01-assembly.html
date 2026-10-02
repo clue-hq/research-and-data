@@ -1,0 +1,62 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Option 1 — Assembly · Clue output loading</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+/* Option 1 — ASSEMBLY. The three pieces of the Clue mark drift in from three
+   directions, lock together, breathe, ease apart, and re-assemble. Loops until
+   the artifact lands. Behind it the card carries a slow "light on paper" drift. */
+.veil{background:#fff}
+.veil::before{content:"";position:absolute;inset:-40%;background:
+  radial-gradient(40% 40% at 30% 35%, rgba(188,196,179,.55), transparent 70%),
+  radial-gradient(35% 35% at 70% 65%, rgba(248,245,220,.9), transparent 70%),
+  radial-gradient(30% 30% at 60% 25%, rgba(234,243,245,.7), transparent 70%);
+  animation:drift 14s ease-in-out infinite alternate;filter:blur(30px)}
+@keyframes drift{from{transform:translate(-4%,-3%) rotate(0deg)}to{transform:translate(4%,3%) rotate(8deg)}}
+.stage{position:relative;display:flex;flex-direction:column;align-items:center}
+.mark{width:96px;color:var(--olive-800);overflow:visible}
+.mark path{transform-box:fill-box;transform-origin:center;animation:6s cubic-bezier(.6,0,.2,1) infinite}
+.mark .p1{animation-name:p1}.mark .p2{animation-name:p2}.mark .p3{animation-name:p3}
+/* timeline (of 6s): 0–22% assemble · 22–58% breathe · 58–78% ease apart · 78–100% hold apart & fade-return */
+@keyframes p1{0%{transform:translate(-90px,-40px) rotate(-14deg);opacity:0}22%{transform:none;opacity:1}40%{transform:translate(-2px,-2px)}58%{transform:none}78%{transform:translate(-26px,-10px) rotate(-6deg);opacity:1}92%{transform:translate(-26px,-10px) rotate(-6deg);opacity:0}100%{transform:translate(-90px,-40px) rotate(-14deg);opacity:0}}
+@keyframes p2{0%{transform:translate(70px,-70px) rotate(12deg);opacity:0}22%{transform:none;opacity:1}40%{transform:translate(2px,-3px)}58%{transform:none}78%{transform:translate(18px,-18px) rotate(5deg);opacity:1}92%{transform:translate(18px,-18px) rotate(5deg);opacity:0}100%{transform:translate(70px,-70px) rotate(12deg);opacity:0}}
+@keyframes p3{0%{transform:translate(60px,80px) rotate(-10deg);opacity:0}22%{transform:none;opacity:1}40%{transform:translate(2px,3px)}58%{transform:none}78%{transform:translate(16px,22px) rotate(4deg);opacity:1}92%{transform:translate(16px,22px) rotate(4deg);opacity:0}100%{transform:translate(60px,80px) rotate(-10deg);opacity:0}}
+.mark .p2{animation-delay:.12s}.mark .p3{animation-delay:.24s}
+.status{margin-top:26px}
+.sub{margin-top:6px;font-size:12px;color:var(--muted)}
+</style></head><body>
+<div class="app">
+ <aside class="chat">
+  <header><span>Untitled</span><span class="dots">···</span></header>
+  <div class="thread">
+   <div class="msg user">Make a LinkedIn ad for Zafran's revenue team from the account research.</div>
+   <div class="msg agent">On it. Using the Zafran claims and the confirmed product positioning.<span class="pill"><i></i>Drafting revenue ad</span></div>
+  </div>
+  <div class="composer"><div class="row"><span>+</span><span>@</span><span class="spacer"></span><span>GPT 5.5 ⌄</span><span class="send"></span></div></div>
+ </aside>
+ <main class="output">
+  <div class="tabs"><span>▦ Gallery</span><span>target accounts</span><span class="active">revenue ad</span></div>
+  <div class="toolbar"><span>revenue ad</span><span class="dots">···</span><span class="spacer"></span><span class="zoom">23% ⌄</span><button>Edit</button><button class="dark">Export</button></div>
+  <div class="canvas"><div class="card">
+   <div class="artifact">
+    <div class="who"><div class="av"><svg viewBox="249 264 659 629"><path fill="#F8F5DC" d="M647.703 391.49C647.703 354.354 646.825 326.848 636.444 292.53C627.871 264 573.591 264 573.591 264C400.007 264 251.937 404.756 249.045 576.91C247.547 666.906 283.751 748.501 342.99 807.252C361.789 825.896 382.964 842.287 405.946 855.81C414.571 860.881 425.469 860.112 433.061 853.658C564.449 742.15 647.703 576.449 647.703 391.49Z"/><path fill="#F8F5DC" d="M907.999 486.146V286.947C907.999 274.295 897.67 264 884.862 264H691.911C676.727 264 665.829 278.188 669.445 292.838C695.32 396.509 775.681 478.873 878.716 508.274C893.383 512.474 907.948 501.308 907.948 486.146H907.999Z"/><path fill="#F8F5DC" d="M907.999 869.64V579.882C907.999 565.642 895.088 554.886 880.936 557.293C703.376 587.002 562.536 711.725 509.289 862.162C504.021 877.016 515.28 892.587 531.135 892.587H884.862C897.618 892.587 907.999 882.343 907.999 869.691V869.64Z"/></svg></div><div><b>Clue</b><small>Promoted</small></div></div>
+    <div class="copy">Zafran's revenue team is covering 40 target accounts with three SDRs. Here's what changes when the platform already knows each account.</div>
+    <div class="hero">Stop guessing which accounts are ready. Start knowing.</div>
+    <div class="cta"><b>See the accounts that are ready to buy</b><span>Learn more</span></div>
+   </div>
+   <div class="veil"><div class="stage">
+    <svg class="mark" viewBox="249 264 659 629">
+     <path class="p1" d="M647.703 391.49C647.703 354.354 646.825 326.848 636.444 292.53C627.871 264 573.591 264 573.591 264C400.007 264 251.937 404.756 249.045 576.91C247.547 666.906 283.751 748.501 342.99 807.252C361.789 825.896 382.964 842.287 405.946 855.81C414.571 860.881 425.469 860.112 433.061 853.658C564.449 742.15 647.703 576.449 647.703 391.49Z"/>
+     <path class="p2" d="M907.999 486.146V286.947C907.999 274.295 897.67 264 884.862 264H691.911C676.727 264 665.829 278.188 669.445 292.838C695.32 396.509 775.681 478.873 878.716 508.274C893.383 512.474 907.948 501.308 907.948 486.146H907.999Z"/>
+     <path class="p3" d="M907.999 869.64V579.882C907.999 565.642 895.088 554.886 880.936 557.293C703.376 587.002 562.536 711.725 509.289 862.162C504.021 877.016 515.28 892.587 531.135 892.587H884.862C897.618 892.587 907.999 882.343 907.999 869.691V869.64Z"/>
+    </svg>
+    <div class="status">Drafting your LinkedIn ad</div>
+    <div class="sub">Usually under a minute</div>
+   </div></div>
+  </div></div>
+ </main>
+</div>
+<div class="controls"><span class="label">Option 1 · Assembly</span><button id="replay">Replay</button><button id="finish">Finish generation</button></div>
+<script>
+const veil=document.querySelector('.veil');const html=veil.innerHTML;
+document.getElementById('finish').onclick=()=>document.body.classList.add('done');
+document.getElementById('replay').onclick=()=>{document.body.classList.remove('done');veil.innerHTML=html;};
+</script></body></html>

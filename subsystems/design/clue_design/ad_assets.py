@@ -111,8 +111,9 @@ async def record_ad_creatives(
     """
     written: list[str] = []
     for creative in creatives:
+        creative_id = str(creative["creative_id"])
         params = {
-            "creative_id": str(creative["creative_id"]),
+            "creative_id": creative_id,
             "w": workspace_id,
             "harvest_job_id": str(creative["harvest_job_id"]),
             "provider": str(creative["provider"]),
@@ -146,7 +147,7 @@ async def record_ad_creatives(
             ),
             params,
         )
-        written.append(params["creative_id"])
+        written.append(creative_id)
     return written
 
 
@@ -275,9 +276,7 @@ async def create_ad_dna_card_version(
             "sources": dump_json(list(source_creative_ids)),
         },
     )
-    return await get_ad_dna_card(
-        conn, workspace_id=workspace_id, card_id=card_id, version=version
-    )
+    return await get_ad_dna_card(conn, workspace_id=workspace_id, card_id=card_id, version=version)
 
 
 async def ad_dna_card_for_harvest_job(
@@ -371,9 +370,7 @@ async def link_pregenerated_assets(
     partly succeeded re-states the same links rather than failing on them, which is what makes
     a resumed job safe. The card version is verified first, so a link can never dangle.
     """
-    await get_ad_dna_card(
-        conn, workspace_id=workspace_id, card_id=card_id, version=card_version
-    )
+    await get_ad_dna_card(conn, workspace_id=workspace_id, card_id=card_id, version=card_version)
     linked: list[str] = []
     for link in links:
         await conn.execute(
@@ -519,7 +516,11 @@ async def frozen_ad_lane(conn: AsyncConnection, *, workspace_id: str) -> JsonObj
         return None
     card_row = await latest_ad_dna_card(conn, workspace_id=workspace_id)
     pregenerated: list[JsonObject] = []
-    if isinstance(card_row, dict) and card_row.get("card_id") and card_row.get("version") is not None:
+    if (
+        isinstance(card_row, dict)
+        and card_row.get("card_id")
+        and card_row.get("version") is not None
+    ):
         pregenerated = reduce_pregenerated(
             await list_pregenerated_assets(
                 conn,

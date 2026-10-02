@@ -44,6 +44,9 @@ ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY} \
     NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=${NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL}
 
 WORKDIR /workspace/apps/frontend
+# A stale committed editor wasm must fail this build, not ship an uneditable canvas
+# (first deployment spec §9.5). copy-design-vendor.mjs runs the preflight during prebuild.
+ENV WASM_PREFLIGHT_STRICT=1
 RUN npm run design-system:build && npm run build
 
 

@@ -1,0 +1,1794 @@
+{
+  "claims": [
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.account_name",
+      "is_proposed_field": false,
+      "value_": "Charleston GI Specialists",
+      "evidence_span": "Charleston GI Specialists",
+      "source_url": "https://charlestongi.com/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.primary_domain",
+      "is_proposed_field": false,
+      "value_": "charlestongi.com",
+      "evidence_span": "charlestongi.com",
+      "source_url": "https://charlestongi.com/",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.company_about",
+      "is_proposed_field": false,
+      "value_": "As the largest independent gastroenterology practice in the Lowcountry",
+      "evidence_span": "As the largest independent gastroenterology practice in the Lowcountry",
+      "source_url": "https://charlestongi.com/",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.industry",
+      "is_proposed_field": false,
+      "value_": "hospital & health care",
+      "evidence_span": "hospital & health care",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.employee_count",
+      "is_proposed_field": false,
+      "value_": 76,
+      "evidence_span": "76",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.annual_revenue",
+      "is_proposed_field": false,
+      "value_": {
+        "amount_usd": 34900000,
+        "currency": "USD"
+      },
+      "evidence_span": "34.9M",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.hq_location",
+      "is_proposed_field": false,
+      "value_": {
+        "raw": "1962 Charlie Hall Blvd, Charleston, South Carolina 29414, US",
+        "city": "Charleston",
+        "region": "South Carolina",
+        "country": "United States",
+        "country_code": "US"
+      },
+      "evidence_span": "1962 Charlie Hall Blvd, Charleston, South Carolina 29414, US",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.company_linkedin_url",
+      "is_proposed_field": false,
+      "value_": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "evidence_span": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.company_phone",
+      "is_proposed_field": false,
+      "value_": "+1 843-722-8000",
+      "evidence_span": "PHONE 843-722-8000",
+      "source_url": "https://charlestongi.com/careers-portal/",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.ehr_system",
+      "is_proposed_field": true,
+      "value_": "gGastro (Modernizing Medicine)",
+      "evidence_span": "Charleston GI Specialists implemented gGastro and its practice management system, gPM, in 2013.",
+      "source_url": "https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.ehr_go_live_year",
+      "is_proposed_field": true,
+      "value_": 2013,
+      "evidence_span": "Charleston GI Specialists implemented gGastro and its practice management system, gPM, in 2013.",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.ehr_vendor_current",
+      "is_proposed_field": true,
+      "value_": true,
+      "evidence_span": "Charleston GI increased patient payments with ModMed solutions",
+      "source_url": "https://www.modmed.com/resources/success-stories/charleston-gi-increased-patient-payments-with-modmed-solutions",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.primary_tech_stack",
+      "is_proposed_field": false,
+      "value_": [
+        "Klara"
+      ],
+      "evidence_span": "gGastro Patient Collaboration Success Story Gastroenterology Charleston GI improves the patient experience and operational efficiency with Klara",
+      "source_url": "https://www.modmed.com/resources/educational-guides/one-gi-practice-improves-the-patient-experience-with-klara",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.speech_recognition_system",
+      "is_proposed_field": true,
+      "value_": "Nuance Dragon Medical One PowerMic",
+      "evidence_span": "Nuance Dragon Medical One PowerMic",
+      "source_url": "https://www.mindwareconnections.com/hubfs/PDF's/Case%20Studies/DMO%20Case%20Studies/cs-charleston-gi-cloud-based-speech-recognition-en-us.pdf",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.patient_portal_name",
+      "is_proposed_field": true,
+      "value_": "My GI Patient Portal",
+      "evidence_span": "Existing patients should use the secure My GI Patient Portal",
+      "source_url": "https://charlestongi.com/doctors&staff/r-sidney-g-smith/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.online_bill_pay",
+      "is_proposed_field": true,
+      "value_": true,
+      "evidence_span": "We now offer online bill pay",
+      "source_url": "https://charlestongi.com/for-patients/patient-forms/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.ownership_status",
+      "is_proposed_field": true,
+      "value_": "Independent",
+      "evidence_span": "the first and largest independent group of GI specialists in Charleston",
+      "source_url": "https://charlestongi.com/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.independence_statement_date",
+      "is_proposed_field": true,
+      "value_": "2025-12-29",
+      "evidence_span": "December 29, 2025 article says, \u201cAt Charleston GI, we\u2019re proud to maintain a local, patient-centered focus\u201d",
+      "source_url": "https://charlestongi.com/news&events/navigating-the-changing-gi-investment-landscape-what-it-means-for-you/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.location_name",
+      "is_proposed_field": true,
+      "value_": "West Ashley",
+      "evidence_span": "West Ashley: \u201c1962 Charlie Hall Boulevard Charleston, SC 29414.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.location_address",
+      "is_proposed_field": true,
+      "value_": "1962 Charlie Hall Boulevard Charleston, SC 29414",
+      "evidence_span": "West Ashley: \u201c1962 Charlie Hall Boulevard Charleston, SC 29414.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.location_name",
+      "is_proposed_field": true,
+      "value_": "Summerville",
+      "evidence_span": "Summerville: \u201c328 Midland Parkway Summerville, SC 29485.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.location_address",
+      "is_proposed_field": true,
+      "value_": "328 Midland Parkway Summerville, SC 29485",
+      "evidence_span": "Summerville: \u201c328 Midland Parkway Summerville, SC 29485.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.location_name",
+      "is_proposed_field": true,
+      "value_": "Carnes Crossroads",
+      "evidence_span": "Carnes Crossroads: \u201cWindmill Station 2001 2nd Avenue, Suite 101 Summerville, SC 29486.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.location_address",
+      "is_proposed_field": true,
+      "value_": "Windmill Station 2001 2nd Avenue, Suite 101 Summerville, SC 29486",
+      "evidence_span": "Carnes Crossroads: \u201cWindmill Station 2001 2nd Avenue, Suite 101 Summerville, SC 29486.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.location_name",
+      "is_proposed_field": true,
+      "value_": "Mount Pleasant",
+      "evidence_span": "Mount Pleasant: \u201c180 Wingo Way, Ste. 305 Mount Pleasant, SC 29464.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.location_address",
+      "is_proposed_field": true,
+      "value_": "180 Wingo Way, Ste. 305 Mount Pleasant, SC 29464",
+      "evidence_span": "Mount Pleasant: \u201c180 Wingo Way, Ste. 305 Mount Pleasant, SC 29464.\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_name",
+      "is_proposed_field": true,
+      "value_": "Charleston Endoscopy Center",
+      "evidence_span": "official site lists Charleston Endoscopy Center at \u201c1962 Charlie Hall Boulevard Charleston, SC 29414\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_address",
+      "is_proposed_field": true,
+      "value_": "1962 Charlie Hall Boulevard Charleston, SC 29414",
+      "evidence_span": "Charleston Endoscopy Center at \u201c1962 Charlie Hall Boulevard Charleston, SC 29414\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_name",
+      "is_proposed_field": true,
+      "value_": "Summerville Endoscopy Center",
+      "evidence_span": "Summerville Endoscopy Center at \u201c328 Midland Parkway Summerville, SC 29485\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_address",
+      "is_proposed_field": true,
+      "value_": "328 Midland Parkway Summerville, SC 29485",
+      "evidence_span": "Summerville Endoscopy Center at \u201c328 Midland Parkway Summerville, SC 29485\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_procedure_rooms",
+      "is_proposed_field": true,
+      "value_": 2,
+      "evidence_span": "an office-based center with two procedure rooms",
+      "source_url": "https://www.gmka.com/charleston-gastro-specialists",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_name",
+      "is_proposed_field": true,
+      "value_": "LOWCOUNTRY ENDOSCOPY CENTER",
+      "evidence_span": "LOWCOUNTRY ENDOSCOPY CENTER 207 McBride Ln. Summerville SC 29486.",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_address",
+      "is_proposed_field": true,
+      "value_": "207 McBride Ln. Summerville SC 29486",
+      "evidence_span": "LOWCOUNTRY ENDOSCOPY CENTER 207 McBride Ln. Summerville SC 29486.",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_accreditation",
+      "is_proposed_field": true,
+      "value_": "nationally certified and state-licensed",
+      "evidence_span": "two nationally certified and state-licensed endoscopy centers",
+      "source_url": "https://www.mindwareconnections.com/hubfs/PDF's/Case%20Studies/DMO%20Case%20Studies/cs-charleston-gi-cloud-based-speech-recognition-en-us.pdf",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_legal_entity",
+      "is_proposed_field": true,
+      "value_": "Charleston Endoscopy Center, LLC",
+      "evidence_span": "Charleston Endoscopy Center, LLC by Wanda W. Punteney, its CEO",
+      "source_url": "https://dph.sc.gov/sites/scdph/files/2024-08/2024_August_Archived_CON_Applications.pdf",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.asc_legal_entity",
+      "is_proposed_field": true,
+      "value_": "Summerville Endoscopy Center, LLC",
+      "evidence_span": "Summerville Endoscopy Center, LLC by Wanda W Punteney, its CEO",
+      "source_url": "https://dph.sc.gov/sites/scdph/files/2025-04/2025_March_Archived_CON_Applications.pdf",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.employee_count",
+      "is_proposed_field": false,
+      "value_": 11,
+      "evidence_span": "11 providers on staff",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.employee_count",
+      "is_proposed_field": false,
+      "value_": 12,
+      "evidence_span": "Our team includes 12 incredible board-certified physicians",
+      "source_url": "https://charlestongi.com/for-patients/faq/endoscopy-faqs/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.daily_patient_volume",
+      "is_proposed_field": true,
+      "value_": "up to 200",
+      "evidence_span": "care in the field of gastroenterology for up to 200 patients a day",
+      "source_url": "https://www.mindwareconnections.com/hubfs/PDF's/Case%20Studies/DMO%20Case%20Studies/cs-charleston-gi-cloud-based-speech-recognition-en-us.pdf",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.referral_form_description",
+      "is_proposed_field": true,
+      "value_": "enables you to schedule an appointment with Charleston GI for your patient",
+      "evidence_span": "For referring physicians only, this form enables you to schedule an appointment with Charleston GI for your patient.",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.fax_number",
+      "is_proposed_field": true,
+      "value_": "843-647-6066",
+      "evidence_span": "FAX 843-647-6066",
+      "source_url": "https://charlestongi.com/careers-portal/",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.fax_number",
+      "is_proposed_field": true,
+      "value_": "843-723-7850",
+      "evidence_span": "fax \u201c(843) 723-7850\u201d",
+      "source_url": "https://datamanager-roperstfrancis.consumerism.pressganey.com/default/details/495?Practices=601%2C906%2C607%2C961%2C869%2C1152%2C1704%2C1705%2C1490%2C685&SetSize=48&SortBy=FamilyName&SortDirection=Asc&tab=2&tab=2&view=tiled",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.open_access_policy",
+      "is_proposed_field": true,
+      "value_": "No referral needed",
+      "evidence_span": "No referral needed!",
+      "source_url": "https://charlestongi.com/for-patients/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_role_prior_auth_specialist",
+      "is_proposed_field": true,
+      "value_": "Grace Ha***s",
+      "evidence_span": "Prior Authorization Specialist",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_role_referral_coordinator",
+      "is_proposed_field": true,
+      "value_": "Katelyn Lu***s",
+      "evidence_span": "Referral Coordinator",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_role_recall_specialist",
+      "is_proposed_field": true,
+      "value_": "Jerri Mc***l",
+      "evidence_span": "Recall Specialist",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_role_medical_records_clerk",
+      "is_proposed_field": true,
+      "value_": "Karen Bo***s",
+      "evidence_span": "Medical Records Clerk",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_role_medical_records_clerk",
+      "is_proposed_field": true,
+      "value_": "Amanda Wa***n",
+      "evidence_span": "Medical Records Clerk",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_role_team_scheduler",
+      "is_proposed_field": true,
+      "value_": "Chelsey Ke***y",
+      "evidence_span": "Team Scheduler",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_role_front_office_specialist",
+      "is_proposed_field": true,
+      "value_": "Leanna Li***s",
+      "evidence_span": "Front Office Specialist",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "weak",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.timing_signal_date",
+      "is_proposed_field": true,
+      "value_": "2025-12-29",
+      "evidence_span": "December 29, 2025",
+      "source_url": "https://charlestongi.com/news&events/navigating-the-changing-gi-investment-landscape-what-it-means-for-you/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.timing_signal_date",
+      "is_proposed_field": true,
+      "value_": "2025-04-18",
+      "evidence_span": "2025-04-18: Charleston GI published an InterStim article",
+      "source_url": "https://charlestongi.com/procedures/interstim/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.timing_signal_date",
+      "is_proposed_field": true,
+      "value_": "2024-03-21",
+      "evidence_span": "2024-03-21: Charleston GI published a stomach-cancer page",
+      "source_url": "https://charlestongi.com/conditions/stomach-cancer/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.timing_signal_date",
+      "is_proposed_field": true,
+      "value_": "2023-06-29",
+      "evidence_span": "2023-06-29: Charleston GI published that it had \u201cfour convenient Charleston area locations\u201d",
+      "source_url": "https://charlestongi.com/news&events/understanding-the-low-fodmap-diet/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.timing_signal_date",
+      "is_proposed_field": true,
+      "value_": "2017-04-30",
+      "evidence_span": "April 30, 2017",
+      "source_url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.con_filing_date",
+      "is_proposed_field": true,
+      "value_": "2025-03",
+      "evidence_span": "2025_March_Archived_CON_Applications",
+      "source_url": "https://dph.sc.gov/sites/scdph/files/2025-04/2025_March_Archived_CON_Applications.pdf",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.con_filing_date",
+      "is_proposed_field": true,
+      "value_": "2024-08",
+      "evidence_span": "2024_August_Archived_CON_Applications",
+      "source_url": "https://dph.sc.gov/sites/scdph/files/2024-08/2024_August_Archived_CON_Applications.pdf",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.con_filing_date",
+      "is_proposed_field": true,
+      "value_": "2025-12",
+      "evidence_span": "2025_December_Archived_CON_Applications",
+      "source_url": "https://dph.sc.gov/sites/scdph/files/2026-01/2025_December_Archived_CON_Applications.pdf",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.headcount_trend",
+      "is_proposed_field": true,
+      "value_": -0.09375,
+      "evidence_span": "organization_headcount_twelve_month_growth\": -0.09375",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.operational_pain",
+      "is_proposed_field": true,
+      "value_": "Referral intake and prior authorization appear to be manual, labor-intensive processes, evidenced by dedicated roles for Referral Coordinators and Prior Authorization Specialists without clear automation documentation.",
+      "evidence_span": "Referral Coordinator; Prior Authorization Specialist",
+      "source_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.strategic_moves",
+      "is_proposed_field": true,
+      "value_": "Expansion into Carnes Crossroads/Windmill Station and construction of Lowcountry Endoscopy Center to support regional growth.",
+      "evidence_span": "Carnes Crossroads: \u201cWindmill Station 2001 2nd Avenue, Suite 101\u201d",
+      "source_url": "https://charlestongi.com/contact-us/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.resonance.culture",
+      "is_proposed_field": false,
+      "value_": "Independent, local, patient-centered",
+      "evidence_span": "Charleston GI remains committed to being a trusted, independent resource",
+      "source_url": "https://charlestongi.com/news&events/navigating-the-changing-gi-investment-landscape-what-it-means-for-you/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.resonance.buying_culture",
+      "is_proposed_field": false,
+      "value_": "Long-term partnership oriented",
+      "evidence_span": "Charleston GI Specialists implemented gGastro and its practice management system, gPM, in 2013.",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "core.work_email",
+      "is_proposed_field": false,
+      "value_json": "wanda.punteney@charlestongi.com",
+      "evidence_span": "wanda.punteney@charlestongi.com",
+      "source_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_json": "Administrator, CEO",
+      "evidence_span": "Administrator, CEO at Charleston GI",
+      "source_url": "https://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_json": "Chief Executive Officer",
+      "evidence_span": "Chief Executive Officer",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.job_function",
+      "is_proposed_field": false,
+      "value_json": "Operations",
+      "evidence_span": "Administrator, CEO at Charleston GI",
+      "source_url": "https://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.job_level",
+      "is_proposed_field": false,
+      "value_json": "c_suite",
+      "evidence_span": "seniority\": \"c_suite\"",
+      "source_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_location",
+      "is_proposed_field": false,
+      "value_json": {
+        "raw": "Charleston, South Carolina, United States",
+        "country": "United States"
+      },
+      "evidence_span": "Charleston, South Carolina, United States",
+      "source_url": "https://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.organization_relationship",
+      "is_proposed_field": false,
+      "value_json": {
+        "relationship": "employed",
+        "basis": "current_employment",
+        "organization_id": "charleston-gi-specialists"
+      },
+      "evidence_span": "organization_name\": \"Charleston GI\"",
+      "source_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.persona",
+      "is_proposed_field": false,
+      "value_json": "economic_buyer",
+      "evidence_span": "Chief Executive Officer",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.role_on_committee",
+      "is_proposed_field": false,
+      "value_json": {
+        "role": "economic_buyer",
+        "confidence": "high",
+        "plausible": true,
+        "rationale": "Holds the Chief Executive Officer title for the practice and is named as CEO in regulatory filings for affiliated centers."
+      },
+      "evidence_span": "Chief Executive Officer",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.career_history",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "org": "Charleston Gastroenterology Specialists",
+          "role": "Chief Executive Officer",
+          "start": "1989",
+          "end": null
+        }
+      ],
+      "evidence_span": "Member of Charleston GI since 1989",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.stated_interests",
+      "is_proposed_field": false,
+      "value_json": [
+        "Practice growth",
+        "Regional access to care"
+      ],
+      "evidence_span": "we recognize the need to be here and we\u2019re thrilled to find a home in Carnes Crossroads",
+      "source_url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.public_appearances",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "title": "Windmill Station Groundbreaking",
+          "venue": "Post and Courier",
+          "url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+          "date": "2017-04-30"
+        }
+      ],
+      "evidence_span": "Wanda Punteney, CEO of Charleston GI",
+      "source_url": "https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.causes",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "cause": "Medical Group Management Association",
+          "context": "2005 Governor SCMGMA"
+        }
+      ],
+      "evidence_span": "2005 Governor SCMGMA - Wanda Punteney",
+      "source_url": "https://www.southcarolinamgma.org/about/cog",
+      "origin": "exa_deep",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "core.work_email",
+      "is_proposed_field": false,
+      "value_json": "tommy.punteney@charlestongi.com",
+      "evidence_span": "tommy.punteney@charlestongi.com",
+      "source_url": "https://app.apollo.io/#/people/6a8e800333952b00141258ca",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_json": "Chief Operating Officer",
+      "evidence_span": "Thomas D. Punteney, Chief Operating Officer of Charleston (S.C.) GI Specialists",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.job_function",
+      "is_proposed_field": false,
+      "value_json": "Operations",
+      "evidence_span": "manages operations for three offices and two surgery centers",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.job_level",
+      "is_proposed_field": false,
+      "value_json": "executive",
+      "evidence_span": "Chief Operating Officer",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.current_location",
+      "is_proposed_field": false,
+      "value_json": {
+        "raw": "Charleston, South Carolina, United States",
+        "country": "United States"
+      },
+      "evidence_span": "Charleston, South Carolina, United States",
+      "source_url": "https://app.apollo.io/#/people/6a8e800333952b00141258ca",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.organization_relationship",
+      "is_proposed_field": false,
+      "value_json": {
+        "relationship": "employed",
+        "basis": "current_employment",
+        "organization_id": "charleston-gi-specialists"
+      },
+      "evidence_span": "organization_name\": \"Charleston GI Specialists\"",
+      "source_url": "https://app.apollo.io/#/people/6a8e800333952b00141258ca",
+      "origin": "apollo",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.persona",
+      "is_proposed_field": false,
+      "value_json": "technical_evaluator",
+      "evidence_span": "Charleston GI Specialists implemented gGastro and its practice management system, gPM, in 2013",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.role_on_committee",
+      "is_proposed_field": false,
+      "value_json": {
+        "role": "technical_evaluator",
+        "confidence": "high",
+        "plausible": true,
+        "rationale": "Identified as the leader managing operations and the executive who selected and implemented the practice's EHR system."
+      },
+      "evidence_span": "manages operations for three offices and two surgery centers",
+      "source_url": "https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:thomas-punteney",
+      "field_key": "contact.facet.public_appearances",
+      "is_proposed_field": false,
+      "value_json": [
+        {
+          "title": "Thoughts on the Right EHR for Gastroenterologists",
+          "venue": "Becker's ASC / ModMed",
+          "url": "https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/",
+          "date": "2018-07-03"
+        }
+      ],
+      "evidence_span": "3 experts share their thoughts on the right EHR for gastroenterologists",
+      "source_url": "https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/",
+      "origin": "exa_cheap",
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.company_phone",
+      "is_proposed_field": false,
+      "value_": "843-722-8000",
+      "evidence_span": "PHONE 843-722-8000 (8437228000)",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.fax_number",
+      "is_proposed_field": false,
+      "value_": "843-647-6066",
+      "evidence_span": "FAX 843-647-6066 (8436476066)",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "core.hq_location",
+      "is_proposed_field": false,
+      "value_": {
+        "raw": "WEST ASHLEY OFFICE AND CHARLESTON ENDOSCOPY CENTER1962 Charlie Hall BoulevardCharleston, SC 29414",
+        "city": "Charleston",
+        "region": "SC",
+        "country": "USA",
+        "country_code": "US"
+      },
+      "evidence_span": "WEST ASHLEY OFFICE AND CHARLESTON ENDOSCOPY CENTER1962 Charlie Hall BoulevardCharleston, SC 29414",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.office_address_summerville",
+      "is_proposed_field": false,
+      "value_": "328 Midland ParkwaySummerville, SC 29485",
+      "evidence_span": "SUMMERVILLE OFFICE AND SUMMERVILLE ENDOSCOPY CENTER328 Midland ParkwaySummerville, SC 29485",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.office_address_carnes_crossroads",
+      "is_proposed_field": false,
+      "value_": "Windmill Station2001 2nd Avenue, Suite 101 Summerville, SC 29486",
+      "evidence_span": "CARNES CROSSROADS OFFICEWindmill Station2001 2nd Avenue, Suite 101 Summerville, SC 29486",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.office_address_lowcountry",
+      "is_proposed_field": false,
+      "value_": "207 McBride Ln. Summerville SC 29486",
+      "evidence_span": "LOWCOUNTRY ENDOSCOPY CENTER 207 McBride Ln. Summerville SC 29486",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.endoscopy_center_count",
+      "is_proposed_field": false,
+      "value_": "three nationally certified and state licensed endoscopy centers",
+      "evidence_span": "Charleston GI also operates three nationally certified and state licensed endoscopy centers.",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.stat_total_procedures_2020",
+      "is_proposed_field": false,
+      "value_": 16365,
+      "evidence_span": "Total procedures: 16,365",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.stat_total_colonoscopies_2020",
+      "is_proposed_field": false,
+      "value_": 11585,
+      "evidence_span": "Total Colonoscopies: 11,585",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.stat_total_precancerous_polyps_2020",
+      "is_proposed_field": false,
+      "value_": 5107,
+      "evidence_span": "Total precancerous polyps: 5,107",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.stat_total_cancer_2020",
+      "is_proposed_field": false,
+      "value_": 66,
+      "evidence_span": "Total Cancer: 66",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.board_certified_gastroenterologists_count",
+      "is_proposed_field": false,
+      "value_": 10,
+      "evidence_span": "our medical team includes 10 outstanding board-certified gastroenterologists",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.scheduling_policy",
+      "is_proposed_field": false,
+      "value_": "Schedule an appointment 5 days a week, no referral needed!",
+      "evidence_span": "Schedule an appointment 5 days a week, no referral needed!",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.patient_portal_name",
+      "is_proposed_field": false,
+      "value_": "My GI Patient Portal",
+      "evidence_span": "secure [My GI Patient Portal]",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.promotional_banner_text",
+      "is_proposed_field": false,
+      "value_": "Turn 45? It\u2019s Time to Screen For Colorectal Cancer. Learn More",
+      "evidence_span": "Turn 45? It\u2019s Time to Screen For Colorectal Cancer. Learn More",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_": "Chief Executive Officer",
+      "evidence_span": "Chief Executive Officer",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.career_history",
+      "is_proposed_field": false,
+      "value_": [
+        {
+          "org": "Charleston GI",
+          "role": "Member",
+          "start": "1989",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "Member of Charleston GI since 1989",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_cheap",
+      "identity_binding": "contact:wanda-punteney",
+      "use_class": "public_profile"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_jeffrey_basile",
+      "is_proposed_field": false,
+      "value_": "Jeffrey M. Basile, MD",
+      "evidence_span": "Jeffrey M. Basile, MD",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_theodore_gourdin",
+      "is_proposed_field": false,
+      "value_": "Theodore G. Gourdin, MD",
+      "evidence_span": "Theodore G. Gourdin, MD",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_william_marsteller",
+      "is_proposed_field": false,
+      "value_": "William F. Marsteller IV, MD",
+      "evidence_span": "William F. Marsteller IV, MD",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_marc_noble",
+      "is_proposed_field": false,
+      "value_": "Marc D. Noble, MD",
+      "evidence_span": "Marc D. Noble, MD",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_lee_royall",
+      "is_proposed_field": false,
+      "value_": "Lee M. Royall, MD",
+      "evidence_span": "Lee M. Royall, MD",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_sidney_smith",
+      "is_proposed_field": false,
+      "value_": "R Sidney G. Smith, MD",
+      "evidence_span": "R Sidney G. Smith, MD",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_william_brener",
+      "is_proposed_field": false,
+      "value_": "William Brener, MD Retired",
+      "evidence_span": "William Brener, MD Retired",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_john_corless",
+      "is_proposed_field": false,
+      "value_": "John K. Corless, MD Retired",
+      "evidence_span": "John K. Corless, MD Retired",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_tom_carico",
+      "is_proposed_field": false,
+      "value_": "Tom D. Carico, MD",
+      "evidence_span": "Tom D. Carico, MD",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_renee_larsen",
+      "is_proposed_field": false,
+      "value_": "Renee L. Larsen, PA-C",
+      "evidence_span": "Renee L. Larsen, PA-C",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_emily_brown",
+      "is_proposed_field": false,
+      "value_": "Emily K. Brown, PA-C",
+      "evidence_span": "Emily K. Brown, PA-C",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_heather_harrison",
+      "is_proposed_field": false,
+      "value_": "Heather Harrison, MMS, PA-C",
+      "evidence_span": "Heather Harrison, MMS, PA-C",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_sandi_engler",
+      "is_proposed_field": false,
+      "value_": "Sandi (Beth) Engler, PA-C",
+      "evidence_span": "Sandi (Beth) Engler, PA-C",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_stephanie_andrews",
+      "is_proposed_field": false,
+      "value_": "Stephanie C. Andrews, RN,BSN",
+      "evidence_span": "Stephanie C. Andrews, RN,BSN",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_julie_dupree",
+      "is_proposed_field": false,
+      "value_": "Julie Q. Dupree, LPN",
+      "evidence_span": "Julie Q. Dupree, LPN",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_gabby_rodriguez",
+      "is_proposed_field": false,
+      "value_": "Gabby Rodriguez, BSN, RN",
+      "evidence_span": "Gabby Rodriguez, BSN, RN",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.staff_hilliary_goode",
+      "is_proposed_field": false,
+      "value_": "Hilliary Goode, BS, MSN, CRNA",
+      "evidence_span": "Hilliary Goode, BS, MSN, CRNA",
+      "source_url": "https://charlestongi.com/doctors-and-staff/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_appointment_request",
+      "is_proposed_field": false,
+      "value_": "APPOINTMENT REQUEST FORM",
+      "evidence_span": "### APPOINTMENT REQUEST FORM",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_anesthesia_patient_letter",
+      "is_proposed_field": false,
+      "value_": "ANESTHESIA PATIENT LETTER",
+      "evidence_span": "### ANESTHESIA PATIENT LETTER",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_hipaa_privacy_policy",
+      "is_proposed_field": false,
+      "value_": "HIPAA PRIVACY POLICY",
+      "evidence_span": "### HIPAA PRIVACY POLICY",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_endoscopy_financial_information",
+      "is_proposed_field": false,
+      "value_": "ENDOSCOPY FINANCIAL INFORMATION FORM",
+      "evidence_span": "### ENDOSCOPY FINANCIAL INFORMATION FORM",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_financial_policy",
+      "is_proposed_field": false,
+      "value_": "FINANCIAL POLICY",
+      "evidence_span": "### FINANCIAL POLICY",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_patient_information",
+      "is_proposed_field": false,
+      "value_": "PATIENT INFORMATION FORM",
+      "evidence_span": "### PATIENT INFORMATION FORM",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_patient_rights_responsibilities",
+      "is_proposed_field": false,
+      "value_": "PATIENT RIGHTS AND RESPONSIBILITIES",
+      "evidence_span": "### PATIENT RIGHTS AND RESPONSIBILITIES",
+      "source_url": "https://charlestongi.com/referring-physicians/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_authorization_disclose",
+      "is_proposed_field": false,
+      "value_": "Authorization to Disclose Information",
+      "evidence_span": "Authorization to Disclose Information",
+      "source_url": "https://charlestongi.com/for-patients/patient-forms/",
+      "origin": "exa_cheap"
+    },
+    {
+      "entity": "account:charleston-gi-specialists",
+      "field_key": "account.form_release_records",
+      "is_proposed_field": false,
+      "value_": "Patient Instructions to Release Records",
+      "evidence_span": "Patient Instructions to Release Records",
+      "source_url": "https://charlestongi.com/for-patients/patient-forms/",
+      "origin": "exa_cheap"
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "account.ehr_system",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "The specific EHR system used by the practice.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Critical for understanding integration requirements and operational maturity."
+    },
+    {
+      "field_key": "account.ehr_go_live_year",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "integer",
+      "description": "The year the EHR system was implemented.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Indicates system lifecycle stage and potential migration pain."
+    },
+    {
+      "field_key": "account.ehr_vendor_current",
+      "entity_type": "account",
+      "value_type": "boolean",
+      "value_schema": "boolean",
+      "description": "Whether the vendor relationship is currently active.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Confirms if the system is legacy or active for sales targeting."
+    },
+    {
+      "field_key": "account.speech_recognition_system",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Speech recognition software in use for clinical documentation.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Identifies specific tech stack components and clinical workflow tools."
+    },
+    {
+      "field_key": "account.patient_portal_name",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "The name of the patient-facing web portal.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Useful for understanding patient engagement tech and custom naming."
+    },
+    {
+      "field_key": "account.online_bill_pay",
+      "entity_type": "account",
+      "value_type": "boolean",
+      "value_schema": "boolean",
+      "description": "Whether online bill pay is offered.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Indicates digital maturity and revenue cycle capabilities."
+    },
+    {
+      "field_key": "account.ownership_status",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Ownership structure (e.g., Independent, PE-backed).",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Drives segmentation and messaging strategy."
+    },
+    {
+      "field_key": "account.independence_statement_date",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "date (YYYY-MM-DD)",
+      "description": "Date of the most recent public independence statement.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Validates recency of ownership claims for prospecting."
+    },
+    {
+      "field_key": "account.location_name",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "The name of a specific office location.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Required to enumerate multiple locations for a single account."
+    },
+    {
+      "field_key": "account.location_address",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "The street address of a specific office location.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Enables precise targeting and logistics planning."
+    },
+    {
+      "field_key": "account.asc_name",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "The name of an Ambulatory Surgery Center (ASC) owned by the practice.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Identifies high-value procedural facilities separate from clinics."
+    },
+    {
+      "field_key": "account.asc_address",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "The address of an ASC.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Allows targeting of specific facility needs."
+    },
+    {
+      "field_key": "account.asc_procedure_rooms",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "integer",
+      "description": "Number of procedure rooms in an ASC.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Indicates procedural capacity and scale."
+    },
+    {
+      "field_key": "account.asc_accreditation",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Accreditation status (e.g., AAAHC, state-licensed).",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Highlights regulatory compliance and quality standards."
+    },
+    {
+      "field_key": "account.asc_legal_entity",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Legal entity name of an ASC.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Critical for legal and contracting context."
+    },
+    {
+      "field_key": "account.daily_patient_volume",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Average or peak daily patient volume.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Measures operational scale and throughput capacity."
+    },
+    {
+      "field_key": "account.referral_form_description",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Function of the referral form.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Understands how referrals are processed digitally vs manually."
+    },
+    {
+      "field_key": "account.fax_number",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "A specific fax number used by the practice.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Indicates reliance on legacy communication channels."
+    },
+    {
+      "field_key": "account.open_access_policy",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Whether referrals are required for appointments.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Identifies patient acquisition model (direct vs referral)."
+    },
+    {
+      "field_key": "account.staff_role_prior_auth_specialist",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Name of staff member handling prior authorizations.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Evidence of manual administrative burden in revenue cycle."
+    },
+    {
+      "field_key": "account.staff_role_referral_coordinator",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Name of staff member coordinating referrals.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Evidence of manual administrative burden in intake."
+    },
+    {
+      "field_key": "account.staff_role_recall_specialist",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Name of staff member managing patient recalls.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Indicates recall is a manual process rather than automated."
+    },
+    {
+      "field_key": "account.staff_role_medical_records_clerk",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Name of staff member managing medical records.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Evidence of manual administrative workload."
+    },
+    {
+      "field_key": "account.staff_role_team_scheduler",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Name of staff member handling scheduling.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Identifies operational bottlenecks in access."
+    },
+    {
+      "field_key": "account.staff_role_front_office_specialist",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "string",
+      "description": "Name of front office staff.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Identifies staff involved in patient intake and check-in."
+    },
+    {
+      "field_key": "account.timing_signal_date",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "date (YYYY-MM-DD)",
+      "description": "Date of a significant strategic or operational event.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Tracks momentum and change readiness."
+    },
+    {
+      "field_key": "account.con_filing_date",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "date (YYYY-MM)",
+      "description": "Date of a Certificate of Need filing.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Indicates expansion and capital investment projects."
+    },
+    {
+      "field_key": "account.headcount_trend",
+      "entity_type": "account",
+      "value_type": "number",
+      "value_schema": "float",
+      "description": "Year-over-year headcount growth rate.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Quantifies growth or contraction for sizing."
+    },
+    {
+      "field_key": "account.fax_number",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "phone_number",
+      "description": "General company fax number.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Contact information not currently in core schema."
+    },
+    {
+      "field_key": "account.endoscopy_center_count",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "text",
+      "description": "Count and certification status of endoscopy centers.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Specific facility operational detail."
+    },
+    {
+      "field_key": "account.board_certified_gastroenterologists_count",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "number",
+      "description": "Stated count of board-certified gastroenterologists.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Specific credentialing metric."
+    },
+    {
+      "field_key": "account.scheduling_policy",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "text",
+      "description": "Statement regarding referral requirements and availability.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Operational detail relevant to access."
+    },
+    {
+      "field_key": "account.patient_portal_name",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "text",
+      "description": "Name of the patient portal service.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "IT/Digital touchpoint identification."
+    },
+    {
+      "field_key": "account.promotional_banner_text",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "text",
+      "description": "Text of the site-wide promotional banner.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Marketing initiative tracking."
+    },
+    {
+      "field_key": "account.stat_total_procedures_2020",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "number",
+      "description": "Total procedures performed in 2020.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Operational volume metric."
+    },
+    {
+      "field_key": "account.stat_total_colonoscopies_2020",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "number",
+      "description": "Total colonoscopies performed in 2020.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Operational volume metric."
+    },
+    {
+      "field_key": "account.stat_total_precancerous_polyps_2020",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "number",
+      "description": "Total precancerous polyps found in 2020.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Clinical outcome metric."
+    },
+    {
+      "field_key": "account.stat_total_cancer_2020",
+      "entity_type": "account",
+      "value_type": "integer",
+      "value_schema": "number",
+      "description": "Total cancer cases found in 2020.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Clinical outcome metric."
+    },
+    {
+      "field_key": "account.office_address_summerville",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "postal_address",
+      "description": "Address of the Summerville office.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Additional office location not covered by HQ."
+    },
+    {
+      "field_key": "account.office_address_carnes_crossroads",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "postal_address",
+      "description": "Address of the Carnes Crossroads office.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Additional office location not covered by HQ."
+    },
+    {
+      "field_key": "account.office_address_lowcountry",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "postal_address",
+      "description": "Address of the Lowcountry Endoscopy Center.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Additional office location not covered by HQ."
+    },
+    {
+      "field_key": "account.staff_*",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "text",
+      "description": "Named staff members and their credentials.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Staff roster details not in core schema."
+    },
+    {
+      "field_key": "account.form_*",
+      "entity_type": "account",
+      "value_type": "string",
+      "value_schema": "text",
+      "description": "Named downloadable forms.",
+      "reuse_scope": "tenant_private",
+      "why_needed": "Specific administrative assets."
+    }
+  ]
+}

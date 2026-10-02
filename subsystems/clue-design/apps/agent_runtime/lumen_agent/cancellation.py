@@ -15,12 +15,11 @@ seam to refuse an over-budget call; this handler uses it to refuse a call the hu
 wants. One seam, two reasons, identical blast radius — and the runner's honest-finalize path is
 shared rather than copied.
 
-WHERE THE BOUNDARY ACTUALLY IS, stated plainly because it is the v1 contract: cancellation takes
-effect at the START of the next model call. A call already in flight is not interrupted — Python
-cannot interrupt the thread it runs on, and the fleet handler has said exactly this about its own
-cooperative stop since D5. So the observed latency of a cancel is one model call
-(`agent_llm_timeout_s` bounds the worst case). Rounds are made of model calls, so a round boundary
-is always at most one call away; nothing extra is needed to honour one.
+CANCELLATION BOUNDARIES. Check freshly before a model call and immediately after its return;
+streaming calls also check while receiving tokens. A non-streaming synchronous request may run
+until it returns or its configured timeout fires. Its caller retains the lease while unwinding;
+no chat acknowledgement implies that a Python thread was forcibly killed. The governed tool
+write seam also checks the same durable run signal before admitting a write.
 
 WHAT SURVIVES. Everything that was already durable. P0.4 commits each accepted authoring round to
 the document as it happens, so a cancelled run keeps every round it finished and loses only the
@@ -101,12 +100,13 @@ class CancellationProbe:
         self._cancelled = False
         self._last_read: Optional[float] = None
 
-    def __call__(self) -> bool:
+    def __call__(self, *, fresh: bool = False) -> bool:
         if self._cancelled:
             return True
         now = self._clock()
         if (
-            self._last_read is not None
+            not fresh
+            and self._last_read is not None
             and self._min_interval_s > 0
             and (now - self._last_read) < self._min_interval_s
         ):
@@ -136,6 +136,7 @@ class CancellationCallbackHandler:
     """
 
     raise_error = True
+    run_inline = False
     ignore_llm = False
     ignore_chain = True
     ignore_agent = True
@@ -154,17 +155,25 @@ class CancellationCallbackHandler:
             return lambda *args, **kwargs: None
         raise AttributeError(name)
 
-    def _check(self) -> None:
-        if self._probe():
+    def _check(self, *, fresh: bool = False) -> None:
+        cancelled = self._probe(fresh=fresh) if isinstance(self._probe, CancellationProbe) else self._probe()
+        if cancelled:
             _log.warning("run_cancelled_at_call_boundary", role=self._role)
             raise TurnCancelled()
 
     # Chat models fire on_chat_model_start; the text-completion path fires on_llm_start.
     def on_chat_model_start(self, serialized, messages, **kwargs) -> None:
-        self._check()
+        self._check(fresh=True)
 
     def on_llm_start(self, serialized, prompts, **kwargs) -> None:
+        self._check(fresh=True)
+
+    def on_llm_new_token(self, token, **kwargs) -> None:
         self._check()
+
+    def on_llm_end(self, response, **kwargs) -> None:
+        # A cached negative must not hand fresh tool calls to the graph after Stop.
+        self._check(fresh=True)
 
 
 def attach_cancellation_callback(model: Any, probe: Callable[[], bool], role: str) -> Any:

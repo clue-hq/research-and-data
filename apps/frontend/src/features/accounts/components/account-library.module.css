@@ -1,0 +1,104 @@
+.libraryCanvas {
+  margin-inline: auto;
+  max-width: 960px;
+  padding: 40px 32px 96px;
+  width: 100%;
+}
+
+.caption, .muted, .resultCount, .activityTime { color: var(--clue-content-subtle); }
+.caption, .resultCount {
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
+}
+.caption { margin: 10px 0 0; }
+.toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 28px; }
+.search {
+  align-items: center;
+  background: var(--clue-background-page);
+  border: 0.5px solid var(--clue-border-input);
+  border-radius: var(--clue-ds-product-component-button-md-radius);
+  color: var(--clue-content-subtle);
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  height: 34px;
+  min-width: 160px;
+  padding: 0 10px;
+}
+.search input { background: transparent; color: var(--clue-content-neutral); font: inherit; font-size: var(--clue-ds-typography-text-sm-font-size); min-width: 0; outline: none; width: 100%; }
+.search:focus-within { outline: 2px solid var(--clue-border-neutral); outline-offset: 2px; }
+.typeFilter { width: 144px; }
+.sortFilter { width: 134px; }
+.toolbar .viewControl { flex-shrink: 0; grid-template-columns: repeat(2, 30px); width: auto; }
+.resultCount { margin: 18px 0 12px; }
+.tableWrap { overflow-x: auto; }
+.artifactTable { border-collapse: collapse; font-size: var(--clue-ds-typography-text-sm-font-size); line-height: var(--clue-ds-typography-text-sm-line-height); text-align: left; width: 100%; }
+.artifactTable th { color: var(--clue-content-subtle); font-weight: 400; padding: 10px 12px; }
+.artifactTable td { padding: 12px; }
+.artifactTable th, .artifactTable td { border-bottom: 0.5px solid var(--clue-border-table); }
+.artifactTable th:first-child, .artifactTable td:first-child { padding-left: 0; width: 60%; }
+.artifactTable th:last-child, .artifactTable td:last-child { padding-right: 0; text-align: right; white-space: nowrap; }
+.artifactTable tbody tr:hover { background: var(--clue-background-hover); }
+.artifactName { align-items: center; cursor: pointer; display: flex; gap: 12px; min-height: 32px; text-align: left; width: 100%; }
+.nameText { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.nameText small { color: var(--clue-content-subtle); font-size: var(--clue-ds-typography-caption-font-size); }
+.typeIcon { align-items: center; border-radius: 5px; display: inline-flex; flex-shrink: 0; height: 32px; justify-content: center; width: 32px; background: var(--clue-background-hover); color: var(--clue-content-subtle); }
+.typeIcon[data-type="ad"] { background: var(--clue-ds-color-badge-bg-orange); color: var(--clue-ds-color-badge-content-orange); }
+.typeIcon[data-type="web"] { background: var(--clue-ds-color-badge-bg-cyan); color: var(--clue-ds-color-badge-content-cyan); }
+.artifactGrid { display: grid; gap: 20px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.artifactCard { border: 0.5px solid var(--clue-border-table); border-radius: 6px; cursor: pointer; min-width: 0; overflow: hidden; text-align: left; }
+.artifactCard:hover { border-color: var(--clue-border-neutral); background: var(--clue-background-hover); }
+.thumbnail { aspect-ratio: 16 / 10; background: var(--clue-background-page); border-bottom: 0.5px solid var(--clue-border-table); overflow: hidden; position: relative; }
+.cardBody { padding: 12px; }
+.cardTitle { align-items: center; display: flex; gap: 8px; font-size: var(--clue-ds-typography-text-sm-font-size); }
+.cardTitle > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cardTitle .nameText { min-width: 0; }
+.cardTitle .nameText > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cardBody p { color: var(--clue-content-subtle); font-size: var(--clue-ds-typography-caption-font-size); line-height: var(--clue-ds-typography-caption-line-height); margin: 8px 0 0; }
+.emptyState { align-items: center; border-top: 0.5px solid var(--clue-border-table); color: var(--clue-content-subtle); display: flex; flex-direction: column; padding: 72px 16px; text-align: center; }
+.emptyState h2 { color: var(--clue-content-neutral); font-size: var(--clue-ds-typography-text-default-font-size); font-weight: 500; margin: 16px 0 6px; }
+.emptyState p, .textButton { font-size: var(--clue-ds-typography-text-sm-font-size); line-height: var(--clue-ds-typography-text-sm-line-height); }
+.textButton { border-radius: 4px; color: var(--clue-content-neutral); cursor: pointer; margin-top: 16px; padding: 6px 10px; }
+.textButton:hover { background: var(--clue-background-hover); }
+.artifactName:focus-visible, .artifactCard:focus-visible, .textButton:focus-visible { border-radius: 4px; outline: 2px solid var(--clue-border-neutral); outline-offset: 3px; }
+.previewBackdrop { background: rgb(20 24 30 / 24%); inset: 0; position: fixed; z-index: 60; }
+.previewPopup { background: var(--clue-background-neutral); border: 0.5px solid var(--clue-border-neutral); border-radius: 8px; box-shadow: var(--clue-shadow-low); left: 50%; max-width: 1040px; outline: none; overflow: hidden; position: fixed; top: 50%; transform: translate(-50%, -50%); width: calc(100vw - 48px); z-index: 61; }
+.previewHeader { align-items: center; border-bottom: 0.5px solid var(--clue-border-table); display: flex; gap: 16px; justify-content: space-between; padding: 16px 20px; }
+.previewTitle { font-size: var(--clue-ds-typography-text-default-font-size); font-weight: 500; }
+.previewHeader .caption { margin-top: 4px; }
+.previewImage { height: min(68vh, 680px); position: relative; }
+.previewBackdrop { transition: opacity 140ms ease-out; }
+.previewPopup { transition: opacity 140ms ease-out, translate 180ms cubic-bezier(0.22, 1, 0.36, 1); }
+.previewBackdrop[data-starting-style], .previewBackdrop[data-ending-style],
+.previewPopup[data-starting-style], .previewPopup[data-ending-style] { opacity: 0; }
+.previewPopup[data-starting-style], .previewPopup[data-ending-style] { translate: 0 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .previewBackdrop, .previewPopup { transition: none; }
+}
+.activityHeader { align-items: center; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; }
+.activityHeader .actorFilter { grid-template-columns: repeat(3, auto); width: auto; }
+.actorOption { font-size: var(--clue-ds-typography-text-sm-font-size); line-height: var(--clue-ds-typography-text-sm-line-height); }
+.actorOption:focus-visible { outline: 2px solid var(--clue-border-neutral); outline-offset: 2px; }
+.activityFeed { list-style: none; margin: 32px 0 0; padding: 0; }
+.activityItem { display: grid; gap: 12px; grid-template-columns: 16px minmax(0, 1fr); padding-bottom: 22px; position: relative; }
+.activityItem:not(:last-child)::before { background: var(--clue-border-table); bottom: 6px; content: ""; left: 7.5px; position: absolute; top: 26px; width: 1px; }
+.activityIcon { align-items: center; color: var(--clue-content-subtle); display: flex; height: 24px; justify-content: center; width: 16px; }
+.actorMark { height: 14px; object-fit: contain; width: 14px; }
+.activityItem p { font-size: var(--clue-ds-typography-text-default-font-size); line-height: 24px; margin: 0; overflow-wrap: anywhere; }
+.actorName { font-weight: var(--clue-ds-typography-text-default-medium-font-weight); }
+.activityTime { font-size: var(--clue-ds-typography-text-sm-font-size); white-space: nowrap; }
+.railFeed { margin-top: 16px; }
+.railFeed .activityItem { gap: 8px; padding-bottom: 14px; }
+.railFeed .activityItem:last-child { padding-bottom: 0; }
+.railFeed .activityItem p { font-size: var(--clue-ds-typography-text-sm-font-size); line-height: 22px; }
+.railFeed .activityIcon { height: 22px; }
+.railFeed .activityItem:not(:last-child)::before { bottom: 4px; top: 24px; }
+.activityEmpty { color: var(--clue-content-subtle); font-size: var(--clue-ds-typography-text-sm-font-size); margin-top: 32px; }
+@media (max-width: 1100px) { .artifactGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .libraryCanvas { padding: 28px 20px 64px; }
+  .search { flex-basis: 100%; }
+  .typeFilter, .sortFilter { flex: 1; width: auto; }
+  .artifactGrid { grid-template-columns: 1fr; }
+  .artifactTable { min-width: 440px; }
+}

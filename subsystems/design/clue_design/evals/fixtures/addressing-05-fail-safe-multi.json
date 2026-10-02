@@ -1,0 +1,23 @@
+{
+  "name": "addressing-05-fail-safe-multi",
+  "kind": "addressing",
+  "artifacts": [
+    "1. \"Apollo ad\" (scene ad) [account: Apollo Clinics]",
+    "2. \"Mercy ad\" (scene ad) [account: Mercy Health]",
+    "3. \"Premier ad\" (scene ad) [account: Premier Gastro]"
+  ],
+  "artifact_count": 3,
+  "tags": [],
+  "brief": "Three launch ads for the Q3 clinic campaign, one per account.",
+  "history": [],
+  "message": "bolder",
+  "judgment": null,
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": true,
+    "addressed": null,
+    "ask": "Which of the designs is this for — one of them, a few, or all of them?"
+  },
+  "why": "The multi-document fail-safe INVERTS the single-document one (spec §3.5): an unparseable judgment on three artifacts must not fan out three runs on a guess, so the engine asks its own sentence and dispatches nothing."
+}

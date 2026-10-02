@@ -1,0 +1,24 @@
+2026-09-09 22:10:21 [info     ] storage.backend.configured     backend=fs fs_root=/Users/aryankeshri/conductor/workspaces/research-and-data/san-salvador/.artifacts
+2026-09-09 22:10:21 [info     ] arv2.person_research_launched  people=5 project_id=prj_arv2_answer_key replayed=False run_id=edb52ad3-cf41-577b-81dd-6f98583792e5
+2026-09-09 22:10:21 [info     ] arv2.account_research_enqueued accepted=5 offered=5 run_id=edb52ad3-cf41-577b-81dd-6f98583792e5
+{
+  "directive": "R3 acceptance \u2014 re-run on the fixed lock",
+  "enqueued": 5,
+  "job_ids": [
+    "d9cb39fb-a3eb-55a1-bace-a3a9afb7b500",
+    "b02de1f9-a41d-5b25-a2a7-e92940617b9c",
+    "7baf1d48-4940-51b1-9913-f2ba7ca460a5",
+    "cd63348c-6dba-5d52-ac06-24aa18fdd992",
+    "8d82aa56-bd62-53cd-a787-4f3fdd892c36"
+  ],
+  "people": {
+    "3acc1c9b-c33c-4e1c-aa36-084a420075a7": "Alastair Paterson",
+    "8d9eaa6b-d6c5-4def-8ee5-3085ee9149b8": "Vineet Edupuganti",
+    "a9b153a0-161e-45b5-a104-904a355a5253": "Alexander Semien",
+    "decb9929-176a-447e-b1da-16cc2e9b9f66": "Ana Corio",
+    "f6a8fb07-3bd4-4531-8adf-8da2d5e65f4b": "Cameron Coles"
+  },
+  "project_run_id": "0a2f18b6-1509-514a-8003-16397100c06b",
+  "replayed": false,
+  "run_id": "edb52ad3-cf41-577b-81dd-6f98583792e5"
+}

@@ -1,0 +1,11 @@
+# Asset-description mapping audit — 2026-09-22
+
+- User requested a thorough review following a visibly unrelated asset caption. Review only; no application code, live data, model settings or running services changed, and no paid provider replay ran.
+- All 489 snapshot images passed registry-ID/location/original-byte SHA-256 checks. All 158 ready analyses matched reconstructed production preview fingerprints, original fingerprints and source-occurrence membership. Ingestion remained in progress, so these are snapshot counts.
+- Visually screened all 158 ready previews and inspected suspicious records in detail. Found multiple unrelated-subject/wrong-brand captions, placeholder/refusal output, unavailable-pixel claims and missing white artwork. Stored metadata itself contains these errors; frontend mapping is not their source.
+- Offline production describer/enrichment replay with a mocked provider, in-memory persistence and 15 workers preserved all 158 associations. Shuffled responses mapped correctly; foreign IDs were refused. Ten bad/unusable analyses nevertheless passed the production validator.
+- Confirmed gaps: validation enforces structure/source IDs without semantic grounding; alpha-preserving previews have no explicit contrast matte; tabs can miss analysis rows initialized after load because polling covers only known queued/analyzing states.
+- Historical provider wire payload/response evidence was unavailable. Current fingerprint/replay checks do not prove what the historical provider decoded. Avoid declaring an exact upstream cause until instrumented reproduction.
+- 41 focused frontend repository/mapping tests passed. Browser JSON-route navigation was blocked and abandoned; read-only DB/blob and rendered-UI evidence sufficed. Temporary audit tabs closed; user tabs retained.
+- Full findings, asset-specific evidence, source trace, limits and recommended correction order: `docs/superpowers/verification/2026-09-22-asset-description-mapping-audit.md`. Ephemeral diagnostic files/scripts remain under `/tmp/san-diego-asset-audit/`, not committed.
+- Follow-up: provider receipts and representative vision reproduction, contrast-safe analysis previews, invalid-analysis handling/grounding checks, polling correction, then targeted reanalysis preserving overrides. None implemented in this review.

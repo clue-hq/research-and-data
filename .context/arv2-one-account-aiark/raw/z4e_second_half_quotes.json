@@ -1,0 +1,34 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "```json\n{\n  \"quotes\": [\n    {\n      \"quote\": \"An athlete being an athlete has a lot to do to bring in a new startup because you have to believe, you have to be competitor, you have to be obsessed, not losing in order to succeed, I believe.\",\n      \"topic\": \"leadership\",\n      \"why\": \"Explains her philosophy on the mindset required for startup success.\"\n    },\n    {\n      \"quote\": \"I think it's very important to understand that no matter which technology you're bringing to the world, at the end you have to deal with habits.\",\n      \"topic\": \"product_belief\",\n      \"why\": \"Highlights the core challenge of changing user habits when introducing new tech.\"\n    },\n    {\n      \"quote\": \"When we especially when we introduced, I don't know if I have to say but it's important for any young entrepreneur or anybody that wants to create a new impact in this world, I think it's very important to understand that no matter which technology you're bringing to the world, at the end you have to deal with habits.\",\n      \"topic\": \"product_belief\",\n      \"why\": \"Advice for entrepreneurs about the reality of technology adoption.\"\n    },\n    {\n      \"quote\": \"I do think this has been definitely the biggest challenge, understanding how you can also change habits with a very good technology but also make them believe that they can do it different.\",\n      \"topic\": \"product_belief\",\n      \"why\": \"Identifies changing customer habits as the biggest hurdle in her market.\"\n    },\n    {\n      \"quote\": \"These are the times that you say okay, when it works, it works. People are going to change their reality themselves and and I definitely wants to see these kind of scenarios more often.\",\n      \"topic\": \"personal\",\n      \"why\": \"Expresses pride in seeing customers organically viral-adopt and use her product.\"\n    },\n    {\n      \"quote\": \"Passion, obsession. There would be if you pick the problem you're going to solve that you believe that it's a problem, not because you told, you believe it and you're obsessed about solving it.\",\n      \"topic\": \"leadership\",\n      \"why\": \"Her single piece of core advice for aspiring entrepreneurs.\"\n    }\n  ]\n}\n```",
+            "thoughtSignature": "El4KXAERTTIP176GkEItBkukpylNuP62ZB0KzWGWg7ly5CY0vLcVeFMSPSqhuSo5Qta6sIf9Ky7Vt1EpXfD7n52C1kXrTbCH7yXpZIvVOd99hqc01WJ1sMY4NEO8Z1Ma"
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 4289,
+    "candidatesTokenCount": 517,
+    "totalTokenCount": 4806,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 4289
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.5-flash-lite",
+  "responseId": "itGXavyXDO-E1MkPnb2W4AE",
+  "_http_status": 200,
+  "_elapsed_s": 1.94,
+  "_request_parts_summary": "[{\"text\": \"Below is the verbatim second half of a podcast transcript. The guest is Sanaz Yashar, co-founder and CEO of Zafran Security.\\n\\nReturn STRICT JSON: {\\\"quotes\\\":[{\\\"quote\\\":\\\"<EXACT substring copied character-for-character from the text>\\\",\\\"topic\\\":\\\"buying_or_vendors|leadership|hiring|competition|product_belief|personal\\\",\\\"why\\\":\\\"one line\\\"}]}\\nGive 6 quotes, each 12-45 words, each an EXACT substring. Prefer moments about how she buys/evaluates vendors, how she builds and runs the company, what she believes, and what she is proud of. Never paraphrase.\\n\\nTEXT:\\nor of chemistry formula as well but but also I believe that passion and obsession in a way gets you to the number one banking companies. But yes, we have an amazing partnership from the investor level to customer level to partner level. It almost looked that we built this organism that is not anymore on my under my control. There is a live creature that named Zafran and it's doing great to solve this unsolved problem. And I can tell you that I don't know either Gili from Cyberstarts or Doug from Sequoia but they did watch some games of Steph Curry and he always mentioned his obsession to be the best. So that's amazing and it's definitely got him far. Yes, definitely. I I didn't know, don't tell anybody but I didn't tell who he is because I'm not very much. If it was soccer football, I'm really a football fan. I was not very aware of the basketball and I remember when they called us, this is the carafan an"
+}

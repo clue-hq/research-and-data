@@ -1,0 +1,270 @@
+schema_version: "1"
+kind: profile
+name: design
+# v2 (2026-09-19): v1 plus the three account reads. Nothing else moves.
+version: v2
+status: active
+role: design
+prompt:
+  name: design
+  version: v1
+  sha256: 2c2ac577f73ab40cb4cc632f03450a0d9e1246d505b5d028a12d73fe58023b16
+# The trio's 13 authored skills are design-runtime-internal (materialized into ITS
+# workspace by lumen_agent.materialize); the platform catalog carries none for v1.
+skills: []
+# The 49 governed design tools plus the P3.5 leg-level exit (finish_design_leg), and at v2
+# the three effect-free account reads — the exact authority the C6 audit grants this role
+# (the registry validates pins == grants; generated from the live tool registry).
+tools:
+  - name: design_advance_instance_batch
+    version: "1"
+    input_schema_sha256: 5fe9fbd77fbada33ae96a07016c4363f2012da26226c801d3442e1d24f218479
+    output_schema_sha256: 91e02ef2f3ed6a7cc9042773dc58e7394b7377e8b82a8d3fa884095979ced988
+  - name: design_advance_web_batch
+    version: "1"
+    input_schema_sha256: a35612d356388b7cfcaa2538aa19b3f03335df9b46e3aabd557cdc5e6e77eda4
+    output_schema_sha256: 91e02ef2f3ed6a7cc9042773dc58e7394b7377e8b82a8d3fa884095979ced988
+  - name: design_apply_edits
+    version: "1"
+    input_schema_sha256: ec5d7b1d256d0327f61cdd8030e1610e76c238d03c624190c1fcb08ac48cf41a
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_apply_operations
+    version: "1"
+    input_schema_sha256: ec5d7b1d256d0327f61cdd8030e1610e76c238d03c624190c1fcb08ac48cf41a
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_apply_web_operations
+    version: "1"
+    input_schema_sha256: 996c3d17e23762dc1d6fb7d185f096a8362379b37496d6f8dd66ce7d2c7367c6
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_attach_brand_kit
+    version: "1"
+    input_schema_sha256: 1250ab00eb74dc759724132af7bc5ae46dfee4789a09858e376774803ec0eb5f
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_compile_component
+    version: "1"
+    input_schema_sha256: adfdc503a30855dbf99baaba83384aecad92186cda58909bf20328f691769a3e
+    output_schema_sha256: db58217c1068cc9ca522cb9d2b5681d4e165623573cfa978cdeb4a4e4b479b48
+  - name: design_create_brand_compatibility_report
+    version: "1"
+    input_schema_sha256: 34c7b423e82fb7e5988ea0bf1100d3c31fca4eee6aba850c5810f0d7de789e53
+    output_schema_sha256: 0e45fa0535de7f2998d84ebd5ad038989e0a05bd8a3cb369304b995468ca43ce
+  - name: design_create_brand_kit
+    version: "1"
+    input_schema_sha256: a60e90f485cfc81095e15c057f382c88a5ccee33b5712cb8895ded8626151b52
+    output_schema_sha256: 1c04f0f1726deb37d4d80670ff7d93d84a27eddd1f2e5b048ad4e7d9b71e61ce
+  - name: design_create_document
+    version: "1"
+    input_schema_sha256: 94a61cd0059ff60d8ef3929dac77673f939c8377a3a0a2317b14ecd67f6357ae
+    output_schema_sha256: d0d994ed0675485bbb2a2185c0500e82800c0c60aa9b7400cfaca3b9b5c03a6d
+  - name: design_create_instance_batch
+    version: "1"
+    input_schema_sha256: b49fdd80a89bb618615669526bb51359ca6d7216276ef66b1a575413e33c2856
+    output_schema_sha256: e59e0d1d465266a26ad286dd7e8840333b8a8c53f6e91c45ff248f96b6078851
+  - name: design_create_snapshot
+    version: "1"
+    input_schema_sha256: f98446fc46441570701d47094ccf33d2aac28dd594e19c31916752b41352361e
+    output_schema_sha256: 5e9228649da5c16551bf8c53019ee8982229190f6c79a9673d032bc645de0d63
+  - name: design_create_web_account
+    version: "1"
+    input_schema_sha256: b00f4a87df42b3fbde264ddd34c3d74847df055d195f015cabd44af6a5b66a8e
+    output_schema_sha256: 1a0843bad5587f1b86d05a83a908349bc53bf46b258759d66f20773eae40bf03
+  - name: design_create_web_batch
+    version: "1"
+    input_schema_sha256: eff22b0eef40fbe092a4099a6c2f80c4098cadd36a095f570b822194eccb0028
+    output_schema_sha256: e59e0d1d465266a26ad286dd7e8840333b8a8c53f6e91c45ff248f96b6078851
+  - name: design_create_web_template
+    version: "1"
+    # input digest re-pinned at the 2026-08-29 website-editor merge: the design API's
+    # descriptor gained the clone-fidelity fields; output schema unchanged.
+    input_schema_sha256: cb640a4deeafdcba7c35ae69336a8e0ec158312b889313d0d151e67d10c2ae39
+    output_schema_sha256: d0d994ed0675485bbb2a2185c0500e82800c0c60aa9b7400cfaca3b9b5c03a6d
+  - name: design_delete_asset
+    version: "1"
+    input_schema_sha256: 90b74c855e850220f95c9abdb4082298962cf5c11f801c5952c71bd0e4116dc7
+    output_schema_sha256: 50801235fcdf430dfa7db2c4a14ac035c77b3be1017003deef0b9790f36d9519
+  - name: design_delete_binding_set
+    version: "1"
+    input_schema_sha256: bc6f7bc4f532d260c20ae91756db280e9a9b114d80b6c67a927f76874583a08d
+    output_schema_sha256: fdc1241eec0ac1ccddb05e7c4400ebd74379a98552272145c5999e4acdf300f0
+  - name: design_delete_web_account
+    version: "1"
+    input_schema_sha256: d17b5b01c158ee0ce8fb502e63f7a189573f8b7352de2a61653fac1252f64c2c
+    output_schema_sha256: fb8747d71396b6306143e17cae168f456a31a88ac3054b4f64a949d6fa10e61b
+  - name: design_derive_instance
+    version: "1"
+    input_schema_sha256: 77b30702a6c240fcc4b9d98d8e70d992550d1fdf32f52e57198dee66928752d8
+    output_schema_sha256: de19d5cd21de0bd36d9de66a4ccb6ecbf9ccbbf7608fd18c4f104bc3694f086d
+  - name: design_derive_web_document
+    version: "1"
+    input_schema_sha256: 50dc6c640a62f3bca7e5681b1772740825382772db4069148a3ab648ca97b2fc
+    output_schema_sha256: d0d994ed0675485bbb2a2185c0500e82800c0c60aa9b7400cfaca3b9b5c03a6d
+  - name: design_finalize_document
+    version: "1"
+    input_schema_sha256: bbcfde11f7cad6ad1b4994dd12175a37d9264f16d25bdf7ab962f140feef9f5a
+    output_schema_sha256: ff83d37a1617478ee73a6a6455ba1c3478d74cf2e8373b8b7c35d095322fa7b3
+  - name: design_ingest_assets
+    version: "1"
+    input_schema_sha256: 659f66d574ac853a848ac39ca698131e6d391c4ca966eeb5072b36f06894d550
+    output_schema_sha256: e3bc5e3c99a71789c130edf1d7de9c0bbaebbf96f9c5ca9aa4085d1aa2bd7f6d
+  - name: design_ingest_pdf
+    version: "1"
+    input_schema_sha256: 659f66d574ac853a848ac39ca698131e6d391c4ca966eeb5072b36f06894d550
+    output_schema_sha256: e3bc5e3c99a71789c130edf1d7de9c0bbaebbf96f9c5ca9aa4085d1aa2bd7f6d
+  - name: design_ingest_website
+    version: "1"
+    input_schema_sha256: 659f66d574ac853a848ac39ca698131e6d391c4ca966eeb5072b36f06894d550
+    output_schema_sha256: e3bc5e3c99a71789c130edf1d7de9c0bbaebbf96f9c5ca9aa4085d1aa2bd7f6d
+  - name: design_persist_preflight
+    version: "1"
+    input_schema_sha256: 9646715ce376576b2fa6bf8e7674a143cea082b56f90ad753cfbf2392bfda952
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_publish_brand_kit_version
+    version: "1"
+    input_schema_sha256: 3d0bb795320b0fcb7094aa5477541b91db387da0ab54da0dccfcb2096a5b33d0
+    output_schema_sha256: 1c04f0f1726deb37d4d80670ff7d93d84a27eddd1f2e5b048ad4e7d9b71e61ce
+  - name: design_publish_web
+    version: "1"
+    # output digest re-pinned 2026-09-03 (F5 multi-page publish): WebPublishRef gained
+    # page_count + routes; input schema unchanged.
+    input_schema_sha256: c228782776eb5fe32e7a02ad0c1cd36b8e5b746faf6a621771df46fad428c7ad  # re-pinned 2026-09-29 with v3 (public_base removed)
+    output_schema_sha256: 22ffc62459078972870b20971c1cbbd799e77aff80ad749686159b678e50c9bb
+  - name: design_record_diagnostics
+    version: "1"
+    input_schema_sha256: 6d369c4f5940e7bf2b15ce3c756ecfc7aaff3665e35c3b986428ea93ca641069
+    output_schema_sha256: 8ca1a620741a716cf9f71b3513bab04bf4dd44e787c7237e52cf7f14a2bf7a1f
+  - name: design_redo_document
+    version: "1"
+    input_schema_sha256: 86e7a6082dcff240240fb5b54a37faf703064b98184e74288169cff26f293c42
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_redo_web_document
+    version: "1"
+    input_schema_sha256: 0bdfa8ae7d0826cb4abb66b1a3ce1791cdd2021ecd563d5f7a516fca02a7e702
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_register_asset_record
+    version: "1"
+    input_schema_sha256: 61941b61d9f82c28531f8c7f19822a349f34d812dda34a3c87af73998bd80b6b
+    output_schema_sha256: 915975e4d1332e918816687aa267b168c744ea7f42efe5462763c08bc33937f5
+  - name: design_register_captured_assets
+    version: "1"
+    input_schema_sha256: 224340313834aee57172011c505f0a679b79a055fefae6984aae8f30f9b74e5a
+    output_schema_sha256: d45822d232d5079b49f71a22b9d8fffe13be1d69361ca2d6f14e6ad3b78383cf
+  - name: design_register_generated_asset
+    version: "1"
+    input_schema_sha256: 204b2b8e9b80ac4cb8b6feff99f41bbdec9543d2b4e2c36f3125a7ac31fed400
+    output_schema_sha256: 915975e4d1332e918816687aa267b168c744ea7f42efe5462763c08bc33937f5
+  - name: design_register_qr_asset
+    version: "1"
+    input_schema_sha256: 61941b61d9f82c28531f8c7f19822a349f34d812dda34a3c87af73998bd80b6b
+    output_schema_sha256: 915975e4d1332e918816687aa267b168c744ea7f42efe5462763c08bc33937f5
+  - name: design_replace_scene
+    version: "1"
+    input_schema_sha256: 2cf6332ca3587ba5bee518182848a42913c87d9b390edd6f373a7fe53b421a2c
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_rollback_web_publish
+    version: "1"
+    # re-pinned 2026-09-03 (F5 multi-page publish): output schema changed (WebPublishRef gained page_count + routes).
+    input_schema_sha256: ca2058b937ee6a66e87fca0ccc5b2f84b0cc73a21fa9a7eb25d92f9a61ff14a0
+    output_schema_sha256: 22ffc62459078972870b20971c1cbbd799e77aff80ad749686159b678e50c9bb
+  - name: design_set_agent_instructions
+    version: "1"
+    input_schema_sha256: f61e020a272d5d4329fc9a287a259d7280566a4584f819ac0847055fd25b8bf4
+    output_schema_sha256: 1c87fd9a750eb63048cd88311146584ca7ab4b30e2f05fff53c8a30f80ed97f9
+  - name: design_set_asset_description
+    version: "1"
+    input_schema_sha256: 5bac4aaee2efc3e5c3b21a610d3de835362072be240f5648fb5240c8f651b61b
+    output_schema_sha256: 3a88f2206a28f918eecd10af9cc7c1bdc79354963d7f385be453a93191b9bef7
+  - name: design_set_asset_status
+    version: "1"
+    input_schema_sha256: f6ba5dff10e9016e2255d2a8a3c64e82e96f8ab8cd49aa745038c1ccdaaf9415
+    output_schema_sha256: 915975e4d1332e918816687aa267b168c744ea7f42efe5462763c08bc33937f5
+  - name: design_set_brand_kit_approval
+    version: "1"
+    input_schema_sha256: 1ebe1eed2ae17e6f4725ccd03585a93c1f0e4009c65f254c5256f15d37866331
+    output_schema_sha256: 1c04f0f1726deb37d4d80670ff7d93d84a27eddd1f2e5b048ad4e7d9b71e61ce
+  - name: design_set_layout_managed_editing
+    version: "1"
+    input_schema_sha256: fb5c3444ba2b35d0a74dd15b0aacf65cd69fbd17408f15d868eaf29ee0be910b
+    output_schema_sha256: 1c87fd9a750eb63048cd88311146584ca7ab4b30e2f05fff53c8a30f80ed97f9
+  - name: design_start_agent_turn
+    version: "1"
+    input_schema_sha256: 83b497670ca3f350d9161e3e494f3446034b3273c73d89734881a65b7a0a45e7
+    output_schema_sha256: 71a388d934fd24b8343e82336ef418e18a7a22d266f51bf3fdbf11074be8f9bc
+  - name: design_start_web_turn
+    version: "1"
+    input_schema_sha256: 416c26d454cf17deb353584f45ccc7a0dea465e07fce0e35608a67c3184e6582
+    output_schema_sha256: 71a388d934fd24b8343e82336ef418e18a7a22d266f51bf3fdbf11074be8f9bc
+  - name: design_undo_document
+    version: "1"
+    input_schema_sha256: 86e7a6082dcff240240fb5b54a37faf703064b98184e74288169cff26f293c42
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_undo_web_document
+    version: "1"
+    input_schema_sha256: 0bdfa8ae7d0826cb4abb66b1a3ce1791cdd2021ecd563d5f7a516fca02a7e702
+    output_schema_sha256: 8e1028357e9beee248e132cb2998da92c1b14d592eed0f90c93ca9eb105c33ba
+  - name: design_unpublish_web
+    version: "1"
+    input_schema_sha256: e7d81e87bf448278b98b28b5eacdcd9ea1083d1a87953a6be46f8816c1c2a953
+    output_schema_sha256: 2dc07fb61adbf189ac9da6def4d165785e7fccf8e31fe14214176ce9622e7a6e
+  - name: design_update_web_account
+    version: "1"
+    input_schema_sha256: efd899e78a4a8cead8882455c0c2e8985f2eaa680042d416ede647a8f18d2606
+    output_schema_sha256: 1a0843bad5587f1b86d05a83a908349bc53bf46b258759d66f20773eae40bf03
+  - name: design_upsert_binding_set
+    version: "1"
+    input_schema_sha256: 752e4d619dad418e2c6acc4940a92ffca4bc534ed8b975ad9d129acb0fad3cda
+    output_schema_sha256: fdc1241eec0ac1ccddb05e7c4400ebd74379a98552272145c5999e4acdf300f0
+  - name: design_write_component_source
+    version: "1"
+    input_schema_sha256: 3ed9b9e767237206c697bf0f8a46469c82d7165918a6025d5eafe51c0ca2f47b
+    output_schema_sha256: 43dea526bb6c320fa3d1a4c7a9f8abf5ee0551a3d9d353fc5b2ccefb07ba9bd7
+  # P3.5 (PD-part3 §2.2): the leg-level exit — the composite's only path back to head-of-abm.
+  - name: finish_design_leg
+    version: "1"
+    input_schema_sha256: 3b28de03f9579fc1a0122cf8cd0e268ce181d64fd5fb496c40a5cb55dc7c5f86
+    output_schema_sha256: 873db0bba7e0c9832a4f9ad2a0de7153da4efb5ae5b6e4f943bdd7a817b2a76f
+  # 2026-09-19 — the account reads (granted to design so a 1:1 creative can open the target
+  # account's research itself; same contracts, receipts and journal as head-of-abm's).
+  # `read_account_research` is pinned at the PAGED `@2` — the contract head-of-abm has held
+  # since `head-of-abm@v56`. The design note names `@1`; `@1` is registered but granted to
+  # nobody (frozen for replay), so it is not a version a live profile can pin.
+  - name: read_project_accounts
+    version: "1"
+    input_schema_sha256: 9a7aa42aacc66b5dcf1834db46284e876e12406ecc814419b3b63d55d2275cdd
+    output_schema_sha256: b3d662ea77b66e6ed4d408e3b8c707ed2cae4efda9a3cc01b5c078a8f2cace08
+  - name: read_account_research
+    version: "2"
+    input_schema_sha256: 97e3f1dc122d321fa0d6165d65bfaf09f09b2de83cdf84d2e2331725e04bedd0
+    output_schema_sha256: 1697e1587da18c201a767fbe1bea67fda72a31b7280d1f422182127434af44fe
+  - name: read_claims
+    version: "1"
+    input_schema_sha256: fefe65c65874eee0c5832b5a63a764966cc53259b30c45c0613f35e44b59b578
+    output_schema_sha256: dc6936fd434e33fd37430cf46b2fd24885a6c8526330184f31b7ac6a84ca0f3e
+# P3.2 gate-ratified policy (see _memory/2026-08-14-part3-rulings.md): terra for the
+# composite's face; the runtime's per-role overrides (reviewer on claude-opus-4.8,
+# reasoning=medium) ride the design deployment env until the profile schema grows
+# per-role model policy. Output bounded; design turns are long (timeout at the cap).
+model:
+  model_id: x-ai/grok-4.6
+  timeout_s: 120.0
+  max_retries: 2
+  max_output_tokens: 32768
+  temperature: 1.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 4194304
+  max_file_bytes: 1048576
+  max_file_count: 80
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+# The design role delegates to nobody — the trio is INTERNAL to the design runtime
+# (D2), not platform delegation.
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 12
+turn_timeout_s: 1800.0
+max_model_rounds: 64

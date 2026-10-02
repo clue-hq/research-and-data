@@ -570,6 +570,8 @@ def test_the_platform_design_leg_path_auto_attaches_too(
     captured = _stub_scene_turn_runtime(monkeypatch)
 
     run_id = f"run_{uuid4().hex}"
+    from lumen_api.design_store import HybridRepository
+    HybridRepository(workspace_id).create_run(run_id, None)
     envelope = DesignTurnEnvelope(
         kind="agent_turn",
         work_id=work_id_for_run(run_id),
@@ -588,7 +590,7 @@ def test_the_platform_design_leg_path_auto_attaches_too(
     assert "reference_assets" not in envelope.config
 
     execute_agent_turn_job(
-        envelope, store=None, host=DesignTurnHost(), event_sink=None
+        envelope, store=HybridRepository(workspace_id), host=DesignTurnHost(), event_sink=None
     )
 
     config = captured["config"]
@@ -624,6 +626,8 @@ def test_a_legs_own_attachments_survive_the_key_less_envelope_and_beat_auto_atta
     captured = _stub_scene_turn_runtime(monkeypatch)
 
     run_id = f"run_{uuid4().hex}"
+    from lumen_api.design_store import HybridRepository
+    HybridRepository(workspace_id).create_run(run_id, None)
     execute_agent_turn_job(
         DesignTurnEnvelope(
             kind="agent_turn",
@@ -641,7 +645,7 @@ def test_a_legs_own_attachments_survive_the_key_less_envelope_and_beat_auto_atta
                 "leg": {"leg_id": "leg-w4-manual"},
             },
         ),
-        store=None,
+        store=HybridRepository(workspace_id),
         host=DesignTurnHost(),
         event_sink=None,
     )

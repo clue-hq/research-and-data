@@ -1,0 +1,39 @@
+{
+  "requestId": "407da386d56d89d96b7f33fcaa516028",
+  "results": [
+    {
+      "id": "https://www.cluehq.ai",
+      "title": "Clue - Agentic ABM for modern GTM teams",
+      "url": "https://www.cluehq.ai",
+      "author": null,
+      "text": "Clue - Agentic ABM for modern GTM teams\n\n# Agentic ABM for modern GTM teams\n\nBuild every campaign around the account, then carry it from first signal to market without losing context, quality, or control.\n\nGet Early Access\n\n[00] The problem/ Why ABM breaks\n\n## ABM was never limited by ambition.It was limited by the amount of work.\n\nGenuine 1:1 execution requires\n\nresearch, strategy, copy, design,audience creation, media operations,sales alignment, and constant coordination.\n\nAgents remove the production bottleneck.\n\n## IntroducingClue\n\nAI agents for end-to-end ABM execution\n\n[01] Platform/ How Clue works\n\n### Research every account.Build every campaign.Launch without the handoffs.\n\nFive specialized agents turn account context into one coherent campaign \u2014 from research and strategy through activation and measurement.\n\n### Research every account.Build every campaign.Launch without the handoffs.\n\nFive specialized agents turn account context into one coherent campaign \u2014 from research and strategy through activation and measurement.\n\n## Know the company, the people and the moment\n\nClue brings together 50+ company, market, intent, leadership and personal signals plus the custom data points your team cares about into one sourced account.\n\nIt reveals what is changing, who matters and where the strongest campaign opportunity exists.\n\n## Turn the research into one campaign idea\n\nClue defines the central angle, message hierarchy, stakeholder narratives, offer and creative direction that every campaign asset will follow.\n\nOne clear brief keeps the entire campaign grounded in why this account should care now.\n\n## Give every account a destination built around its priorities\n\nClue creates a dedicated microsite with the right story, proof, offer and call to action for the company and every person involved in the decision.\n\nNot a page with the company name swapped in, an experience shaped around the account.\n\n## Carry one campaign idea across every stage of attention\n\nClue builds coordinated LinkedIn and Meta campaigns for awareness, consideration and conversion, with every ad connected to the same account strategy.\n\nThe message changes by audience and stage without losing the idea that holds the campaign together.\n\n## Turn account insight into something they will remember\n\nClue creates the concept, copy and package for direct mail from founder letters and executive reports to hand written notes tied directly to the campaign story.\n\nEvery detail feels considered because it begins with the account, not the format.\n\n[02] Capabilities/ Built for production\n\n## Scale the work that never scaled\n\nNo more choosing where personalization stops\n\n### Custom research\n\nDefine the questions, sources, and signals Clue investigates for every account.\n\n### Buying committees\n\nMap the people behind each decision and build precise role-based audiences.\n\n### Brand intelligence\n\nKeep every campaign aligned to your positioning, voice, proof, and visual system.\n\n### Native activation\n\nSync audiences and creative across LinkedIn, Meta, CRM, sales, and direct mail.\n\n### Human in the loop\n\nReview the strategy, refine the creative, and approve what goes live.\n\n### Engagement intelligence\n\nSee how each account responds and where marketing or sales should act next.\n\n[03] Scale/ High-touch at any volume\n\n## High-touch marketing is no longer scarce\n\nThe depth once reserved for ten strategic accounts can now extend across the entire market without adding the team required to produce it.\n\n### More accounts, same standard\n\nExpand coverage without replacing thoughtful work with generic templates.\n\n### More relevance, less production\n\nSpend less time assembling campaigns and more time deciding where to compete.\n\n### More output, same headcount\n\nScale research, strategy, and execution without scaling the organization behind it.\n\n[04] Impact/ Before and with Clue\n\n## Let marketers direct the campaign, not assemble it\n\nClue gives your team finished campaign systems to direct and improve\n\nBefore\n\n### Your best marketers spend their time assembling campaigns\n\nDays lost gathering account context\n\nStrategy scattered across teams and tools\n\nCreative rebuilt for every channel\n\nHigh-touch work capped by headcount\n\nWith Clue\n\n### They spend it deciding how to win\n\nDeep account research arrives ready to use\n\nOne campaign direction stays intact\n\nAgents build and adapt every touchpoint\n\nThe same team covers far more accounts\n\n## Find your clue\n\nGet Early Access",
+      "image": "https://cluehq.ai/og.png",
+      "favicon": "https://cluehq.ai/favicon.svg"
+    }
+  ],
+  "statuses": [
+    {
+      "id": "https://www.cluehq.ai",
+      "status": "success",
+      "source": "crawled"
+    }
+  ],
+  "costDollars": {
+    "total": 0.001,
+    "contents": {
+      "text": 0.001
+    }
+  },
+  "searchTime": 1206.8942829994485,
+  "_http_status": 200,
+  "_elapsed_s": 1.32,
+  "_request": {
+    "urls": [
+      "https://www.cluehq.ai"
+    ],
+    "text": {
+      "maxCharacters": 10000
+    },
+    "livecrawl": "always"
+  }
+}

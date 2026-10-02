@@ -1,0 +1,111 @@
+{
+  "model": "gemini-embedding-2",
+  "dim": 768,
+  "chunks": 29,
+  "doc_tokens": 13894,
+  "doc_cost_usd": 0.002779,
+  "doc_elapsed_s": 11.09,
+  "query_tokens": 50,
+  "query_cost_usd": 1e-05,
+  "total_embed_cost_usd": 0.002789,
+  "raw_audio_embedding_would_have_cost_usd": 0.4662,
+  "raw_audio_seconds_considered": 2914,
+  "queries": [
+    {
+      "query": "What does Sanaz say about how she buys, evaluates or chooses security tools and vendors?",
+      "query_tokens": 18,
+      "query_cost_usd": 3.6e-06,
+      "latency_s": 0.39,
+      "hits": [
+        {
+          "rank": 1,
+          "score": 0.751,
+          "person": "Sanaz Yashar",
+          "timestamp": "[06:26\u201308:27]",
+          "source": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai",
+          "text": "[06:26] S2 (Sanaz Yashar): The name is Mandiant. [06:27] S2 (Sanaz Yashar): They are the ones that they responded to the solar winds and to the hacks in the elections and Olympic games and a lot of like big, big, big stuff out there. [06:38] S2 (Sanaz Yashar): I was heading a group for an investigation of an incident in the chain of hospitals, one of them unfortunately completely caught non-ready. [06:50] S2 (Sanaz Yashar): That means the attacker, before they deployed the ransomware, they wiped also the backup, because the backup was connected to the network, which is the no no no, you don't do this kind of stuff. [07:02] S2 (Sanaz Yashar): The attacker exploited a zero day three months pri"
+        },
+        {
+          "rank": 2,
+          "score": 0.7418,
+          "person": "Sanaz Yashar",
+          "timestamp": "[11:07\u201311:53]",
+          "source": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai",
+          "text": "[11:07] S2 (Sanaz Yashar): How does it look? [11:08] S2 (Sanaz Yashar): We check all the vulnerabilities that are mapped to this asset. [11:13] S2 (Sanaz Yashar): We bring them ourselves, we integrate with other tools. [11:17] S2 (Sanaz Yashar): Then we check the enemy of organizations, the enemy, but also the business is an internet, right? [11:24] S2 (Sanaz Yashar): We check which of these assets are actually exposed to the internet or not. [11:28] S2 (Sanaz Yashar): We have our own algo. [11:29] S2 (Sanaz Yashar): And then we have a line of my favorite, which is like threat intel. [11:33] S2 (Sanaz Yashar): What if there is a vulnerability, it's running, it's internet exposed, but there i"
+        },
+        {
+          "rank": 3,
+          "score": 0.7343,
+          "person": "Sanaz Yashar",
+          "timestamp": "[01:10\u201302:27]",
+          "source": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai",
+          "text": "[01:10] S2 (Sanaz Yashar): Moving forward a couple of years to Israel, I was the youngest in the class in the university because it was like pre-IDF. [01:19] S2 (Sanaz Yashar): And then I went to the IDF, so I was like this different as well. [01:23] S2 (Sanaz Yashar): I was like the biologist doing cyber. [01:25] S2 (Sanaz Yashar): And then coming out of the IDF to the commercial world, I think I have like all the different colors and frequencies that I could gathered to during my career path to make me ready for this job. [01:39] S2 (Sanaz Yashar): But coming from Iran to Israel, coming from biology and chemistry to the world of cybersecurity, it has been a great perspective and I owe a lo"
+        }
+      ]
+    },
+    {
+      "query": "What is Nick most proud of, and what does he invest his own time and money in?",
+      "query_tokens": 19,
+      "query_cost_usd": 3.8e-06,
+      "latency_s": 0.27,
+      "hits": [
+        {
+          "rank": 1,
+          "score": 0.7008,
+          "person": "Nick Fisher",
+          "timestamp": "[00:00\u201301:26]",
+          "source": "https://www.youtube.com/watch?v=8_YWBtq4eic",
+          "text": "[00:00] S1 (Nick): Hey everyone it's Nick just checking in. [00:00] S1 (Nick): Um I hope you guys have had as much fun watching these videos as I have been making them. [00:05] S1 (Nick): It is a a side hobby for me and uh one that is quite expensive and time consuming. [00:13] S1 (Nick): And so a lot of you have asked me to set up a Patreon page to chip in a couple bucks to make sure we can continue to do this going forward. [00:20] S1 (Nick): Um so just wanted to give you a little insight into what uh what I do and and my process. [00:26] S1 (Nick): So I basically film on my iPhone in my kitchen at home. [00:30] S1 (Nick): Um but I invest a lot in top quality liquors that I love and want t"
+        },
+        {
+          "rank": 2,
+          "score": 0.6445,
+          "person": "Nick Fisher",
+          "timestamp": "[01:29\u201301:29]",
+          "source": "https://www.youtube.com/watch?v=8_YWBtq4eic",
+          "text": "[01:29] S1 (Nick): Thanks."
+        },
+        {
+          "rank": 3,
+          "score": 0.5693,
+          "person": "Nick Fisher",
+          "timestamp": "[02:57\u201304:03]",
+          "source": "https://www.youtube.com/watch?v=avcD5WVLCYs",
+          "text": "[02:57] S1 (narrator): And finally, your spirit. [02:59] S1 (narrator): So for this Moscow mule, we're going to be using vodka. [03:04] S1 (narrator): Now, if vodka is not your thing, you can swap out the vodka for some bourbon and then it becomes a Kentucky Mule. [03:11] S1 (narrator): If you swap that out for a dark Jamaican rum, then it becomes a Dark 'n Stormy. [03:16] S1 (narrator): But technically that's supposed to be Gosling's. [03:18] S1 (narrator): Okay, then add your ice to the shaker tin and give it a shake. [03:27] S1 (narrator): Now, traditionally, a Moscow Mule is meant to be drunk out of a copper mug, and to this we're going to be adding some crystal clear ice blocks. [03:38]"
+        }
+      ]
+    },
+    {
+      "query": "What frustrates Sanaz most about how vulnerability management works today?",
+      "query_tokens": 13,
+      "query_cost_usd": 2.6e-06,
+      "latency_s": 0.28,
+      "hits": [
+        {
+          "rank": 1,
+          "score": 0.7887,
+          "person": "Sanaz Yashar",
+          "timestamp": "[08:29\u201309:52]",
+          "source": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai",
+          "text": "[08:29] S2 (Sanaz Yashar): It means the investigation was completely right, right? [08:33] S2 (Sanaz Yashar): But this is how you call it, the surgery was successful, the patient died, but at the end, it was too late because we couldn't recover the files, right? [08:41] S2 (Sanaz Yashar): And they couldn't also pay ransomware because it's a government hospital. [08:47] S2 (Sanaz Yashar): They can, they are not allowed to pay the ransomware. [08:51] S2 (Sanaz Yashar): So, when I saw that we had all the different data, nodes, uh, from network to endpoint, from the vulnerability that was exploited, the whole path and modus operandi of the threat actor inside the system, I knew that there is pro"
+        },
+        {
+          "rank": 2,
+          "score": 0.7847,
+          "person": "Sanaz Yashar",
+          "timestamp": "[09:57\u201311:03]",
+          "source": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai",
+          "text": "[09:57] S2 (Sanaz Yashar): So they don't know how to eat this elephant, how to fix. [10:01] S2 (Sanaz Yashar): And when you make from data insight, those insights is completely connected to the muscles of the organization and can move actions, then you will have a chance to be beyond the exploitation care. [10:17] S2 (Sanaz Yashar): So, as I told you, around 10 percentage of all these millions of millions of vulnerabilities are exploitble. [10:23] S2 (Sanaz Yashar): How we know that? [10:24] S2 (Sanaz Yashar): We started with a certain asset. [10:25] S2 (Sanaz Yashar): Asset could be your laptop, asset could be a server, asset could be a cloud asset. [10:31] S2 (Sanaz Yashar): And then we ad"
+        },
+        {
+          "rank": 3,
+          "score": 0.778,
+          "person": "Sanaz Yashar",
+          "timestamp": "[11:07\u201311:53]",
+          "source": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai",
+          "text": "[11:07] S2 (Sanaz Yashar): How does it look? [11:08] S2 (Sanaz Yashar): We check all the vulnerabilities that are mapped to this asset. [11:13] S2 (Sanaz Yashar): We bring them ourselves, we integrate with other tools. [11:17] S2 (Sanaz Yashar): Then we check the enemy of organizations, the enemy, but also the business is an internet, right? [11:24] S2 (Sanaz Yashar): We check which of these assets are actually exposed to the internet or not. [11:28] S2 (Sanaz Yashar): We have our own algo. [11:29] S2 (Sanaz Yashar): And then we have a line of my favorite, which is like threat intel. [11:33] S2 (Sanaz Yashar): What if there is a vulnerability, it's running, it's internet exposed, but there i"
+        }
+      ]
+    }
+  ]
+}

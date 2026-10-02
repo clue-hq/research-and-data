@@ -1,0 +1,27 @@
+[
+  {
+    "key": "eliadis",
+    "rows": 4,
+    "cost_usd": 0.0015051
+  },
+  {
+    "key": "hoffman",
+    "rows": 3,
+    "cost_usd": 0.00204625
+  },
+  {
+    "key": "blumberg",
+    "rows": 4,
+    "cost_usd": 0.002606
+  },
+  {
+    "key": "churba",
+    "rows": 4,
+    "cost_usd": 0.00194975
+  },
+  {
+    "key": "zhang",
+    "rows": 1,
+    "cost_usd": 0.001292
+  }
+]

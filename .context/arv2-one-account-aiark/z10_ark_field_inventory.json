@@ -1,0 +1,1243 @@
+{
+  "POST /v1/companies": {
+    "request": {
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "zafran.io"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "http": 200,
+    "elapsed_s": 1.99,
+    "credits": 0.1,
+    "envelope_fields": [
+      "content",
+      "empty",
+      "first",
+      "last",
+      "number",
+      "numberOfElements",
+      "pageable",
+      "size",
+      "sort",
+      "totalElements",
+      "totalPages"
+    ],
+    "totalElements": 1,
+    "fields": [
+      {
+        "field": "id",
+        "type": "str",
+        "value": "\"4d204374-9b1e-69fe-6840-539eacb7a436\""
+      },
+      {
+        "field": "summary.name",
+        "type": "str",
+        "value": "\"Zafran Security\""
+      },
+      {
+        "field": "summary.legal_name",
+        "type": "str",
+        "value": "\"Zafran Security Ltd.\""
+      },
+      {
+        "field": "summary.description",
+        "type": "str",
+        "value": "\"Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\\n\\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual pr\u2026"
+      },
+      {
+        "field": "summary.overview",
+        "type": "str",
+        "value": "\"Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability\u2026"
+      },
+      {
+        "field": "summary.founded_year",
+        "type": "int",
+        "value": "2022"
+      },
+      {
+        "field": "summary.type",
+        "type": "str",
+        "value": "\"PRIVATELY_HELD\""
+      },
+      {
+        "field": "summary.industry",
+        "type": "str",
+        "value": "\"computer and network security\""
+      },
+      {
+        "field": "summary.staff.total",
+        "type": "int",
+        "value": "167"
+      },
+      {
+        "field": "summary.staff.range.start",
+        "type": "int",
+        "value": "51"
+      },
+      {
+        "field": "summary.staff.range.end",
+        "type": "int",
+        "value": "200"
+      },
+      {
+        "field": "summary.logo.source",
+        "type": "str",
+        "value": "\"https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg\""
+      },
+      {
+        "field": "link.website",
+        "type": "str",
+        "value": "\"https://www.zafran.io\""
+      },
+      {
+        "field": "link.domain",
+        "type": "str",
+        "value": "\"zafran.io\""
+      },
+      {
+        "field": "link.domain_ltd",
+        "type": "str",
+        "value": "\"zafran.io\""
+      },
+      {
+        "field": "link.linkedin",
+        "type": "str",
+        "value": "\"https://www.linkedin.com/company/zafran-security\""
+      },
+      {
+        "field": "link.twitter",
+        "type": "str",
+        "value": "\"https://x.com/Zafran_io\""
+      },
+      {
+        "field": "link.crunchbase",
+        "type": "str",
+        "value": "\"https://www.crunchbase.com/organization/zafran\""
+      },
+      {
+        "field": "contact.email",
+        "type": "str",
+        "value": "\"info@zafran.io\""
+      },
+      {
+        "field": "financial.revenue.annual.start",
+        "type": "int",
+        "value": "10000000"
+      },
+      {
+        "field": "financial.revenue.annual.end",
+        "type": "int",
+        "value": "25000000"
+      },
+      {
+        "field": "financial.revenue.annual.amount",
+        "type": "str",
+        "value": "\"10000000-25000000\""
+      },
+      {
+        "field": "financial.funding.type",
+        "type": "str",
+        "value": "\"SERIES_C\""
+      },
+      {
+        "field": "financial.funding.total_amount",
+        "type": "int",
+        "value": "130500000"
+      },
+      {
+        "field": "financial.funding.last_amount",
+        "type": "int",
+        "value": "60000000"
+      },
+      {
+        "field": "financial.funding.num_investor",
+        "type": "int",
+        "value": "9"
+      },
+      {
+        "field": "financial.funding.num_funding_rounds",
+        "type": "int",
+        "value": "4"
+      },
+      {
+        "field": "financial.funding.rounds",
+        "type": "list[4]",
+        "value": "4 items -> fields below"
+      },
+      {
+        "field": "financial.funding.rounds[0].announced_at",
+        "type": "str",
+        "value": "\"2025-12-02\""
+      },
+      {
+        "field": "financial.funding.rounds[0].raised_amount",
+        "type": "int",
+        "value": "60000000"
+      },
+      {
+        "field": "financial.funding.rounds[0].type",
+        "type": "str",
+        "value": "\"SERIES_C\""
+      },
+      {
+        "field": "financial.funding.rounds[0].investors",
+        "type": "list[7] scalar",
+        "value": "[\"Vintage Investment Partners\", \"Cyberstarts\", \"Amex Ventures\", \"PSP Growth\", \"Knollwood Investment Advisory\", \"Sequoia Capital\", \"Menlo Ventures\"]"
+      },
+      {
+        "field": "financial.funding.rounds[*]",
+        "type": "list values",
+        "value": "[\"SERIES_C\", \"SERIES_B\", \"VENTURE_ROUND\", \"SEED_ROUND\"]"
+      },
+      {
+        "field": "financial.funding.date",
+        "type": "str",
+        "value": "\"2025-12-02\""
+      },
+      {
+        "field": "location.headquarter.continent",
+        "type": "str",
+        "value": "\"North America\""
+      },
+      {
+        "field": "location.headquarter.country",
+        "type": "str",
+        "value": "\"United States\""
+      },
+      {
+        "field": "location.headquarter.city",
+        "type": "str",
+        "value": "\"New York, New York\""
+      },
+      {
+        "field": "location.headquarter.raw_address",
+        "type": "str",
+        "value": "\"New York, New York, United States, North America\""
+      },
+      {
+        "field": "location.headquarter.position.lng",
+        "type": "float",
+        "value": "-73.98556"
+      },
+      {
+        "field": "location.headquarter.position.lat",
+        "type": "float",
+        "value": "40.748295"
+      },
+      {
+        "field": "location.locations",
+        "type": "list[1]",
+        "value": "1 items -> fields below"
+      },
+      {
+        "field": "location.locations[0].continent",
+        "type": "str",
+        "value": "\"North America\""
+      },
+      {
+        "field": "location.locations[0].country",
+        "type": "str",
+        "value": "\"United States\""
+      },
+      {
+        "field": "location.locations[0].city",
+        "type": "str",
+        "value": "\"New York, New York\""
+      },
+      {
+        "field": "location.locations[0].raw_address",
+        "type": "str",
+        "value": "\"New York, New York, United States, North America\""
+      },
+      {
+        "field": "location.locations[0].position.lng",
+        "type": "float",
+        "value": "-73.98556"
+      },
+      {
+        "field": "location.locations[0].position.lat",
+        "type": "float",
+        "value": "40.748295"
+      },
+      {
+        "field": "technologies",
+        "type": "list[10]",
+        "value": "10 items -> fields below"
+      },
+      {
+        "field": "technologies[0].name",
+        "type": "str",
+        "value": "\"dnssec\""
+      },
+      {
+        "field": "technologies[0].category",
+        "type": "str",
+        "value": "\"ns\""
+      },
+      {
+        "field": "technologies[*]",
+        "type": "list values",
+        "value": "[\"dnssec\", \"google cloud\", \"amazon s3\", \"envoy\", \"floc opt-out\", \"cloudflare automatic challenge\", \"cloudflare challenge\", \"hubspot hosted\", \"amazon oregon region\", \"zendesk mail\"]"
+      },
+      {
+        "field": "industries",
+        "type": "list[6] scalar",
+        "value": "[\"risk management\", \"cyber security\", \"information technology\", \"network security\", \"software\", \"computer and network security\"]"
+      },
+      {
+        "field": "languages",
+        "type": "list[1] scalar",
+        "value": "[\"english\"]"
+      },
+      {
+        "field": "last_updated",
+        "type": "str",
+        "value": "\"2026-08-22\""
+      }
+    ]
+  },
+  "POST /v1/people (person object)": {
+    "request": {
+      "contact": {
+        "fullName": {
+          "any": {
+            "include": {
+              "mode": "STRICT",
+              "content": [
+                "Vari Kaur",
+                "Varinder Kaur"
+              ]
+            }
+          }
+        }
+      },
+      "account": {
+        "domain": {
+          "any": {
+            "include": [
+              "zafran.io"
+            ]
+          }
+        }
+      },
+      "page": 0,
+      "size": 3
+    },
+    "http": 200,
+    "elapsed_s": 0.69,
+    "credits": 0.5,
+    "subject": "Vari Kaur (representative full person object)",
+    "envelope_fields": [
+      "content",
+      "empty",
+      "first",
+      "last",
+      "number",
+      "numberOfElements",
+      "pageable",
+      "size",
+      "sort",
+      "totalElements",
+      "totalPages",
+      "trackId"
+    ],
+    "totalElements": 1,
+    "fields": [
+      {
+        "field": "id",
+        "type": "str",
+        "value": "\"02321ba9-8571-0924-a589-abef8647c8fa\""
+      },
+      {
+        "field": "identifier",
+        "type": "str",
+        "value": "\"varinderkaur\""
+      },
+      {
+        "field": "profile.first_name",
+        "type": "str",
+        "value": "\"Vari\""
+      },
+      {
+        "field": "profile.middle_name",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "profile.last_name",
+        "type": "str",
+        "value": "\"Kaur\""
+      },
+      {
+        "field": "profile.full_name",
+        "type": "str",
+        "value": "\"Vari Kaur\""
+      },
+      {
+        "field": "profile.headline",
+        "type": "str",
+        "value": "\"Demand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth\""
+      },
+      {
+        "field": "profile.title",
+        "type": "str",
+        "value": "\"Head of Growth Marketing\""
+      },
+      {
+        "field": "profile.picture.source",
+        "type": "str",
+        "value": "\"https://images.ai-ark.com/52YGyxVQ6xPIjz1h6JSN7-w5HVq0eiF3fDN4sXOtw8g/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/02321ba9-8571-0924-a589-abef8647c8fa.jpg\""
+      },
+      {
+        "field": "profile.background.source",
+        "type": "str",
+        "value": "\"https://media.licdn.com/dms/image/v2/C5616AQGBuHa7E1riYg/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1617220225944?e=1786579200&v=beta&t=zeqEtP2NtiMWz9PaHEb4EjTZz6nS5Ccj4ZuOeo0R1jc\""
+      },
+      {
+        "field": "profile.summary",
+        "type": "str",
+        "value": "\"Results-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs for B2B SaaS companies across industries, including cybersecurity, healthcare, enterprise software, and AI. Strong track record in aligning marketing with sales to drive pipeline, revenue growth, and customer acquisition.\\n\\nI specialize in full-f\u2026"
+      },
+      {
+        "field": "link.linkedin",
+        "type": "str",
+        "value": "\"https://www.linkedin.com/in/varinderkaur\""
+      },
+      {
+        "field": "link.twitter",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "link.github",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "link.facebook",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "location.default",
+        "type": "str",
+        "value": "\"Easton, Pennsylvania, United States, North America\""
+      },
+      {
+        "field": "location.short",
+        "type": "str",
+        "value": "\"Easton, Pennsylvania\""
+      },
+      {
+        "field": "location.country",
+        "type": "str",
+        "value": "\"United States\""
+      },
+      {
+        "field": "location.state",
+        "type": "str",
+        "value": "\"Pennsylvania\""
+      },
+      {
+        "field": "location.city",
+        "type": "str",
+        "value": "\"Easton\""
+      },
+      {
+        "field": "location.position",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "languages.primary_locale.country",
+        "type": "str",
+        "value": "\"US\""
+      },
+      {
+        "field": "languages.primary_locale.language",
+        "type": "str",
+        "value": "\"en\""
+      },
+      {
+        "field": "languages.supported_locales",
+        "type": "list[1]",
+        "value": "1 items -> fields below"
+      },
+      {
+        "field": "languages.supported_locales[0].country",
+        "type": "str",
+        "value": "\"US\""
+      },
+      {
+        "field": "languages.supported_locales[0].language",
+        "type": "str",
+        "value": "\"en\""
+      },
+      {
+        "field": "languages.profile_languages",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "industry",
+        "type": "str",
+        "value": "\"Information Technology & Services\""
+      },
+      {
+        "field": "educations",
+        "type": "list[2]",
+        "value": "2 items -> fields below"
+      },
+      {
+        "field": "educations[0].school.id",
+        "type": "str",
+        "value": "\"6d97d024-dcdc-ad1c-4845-8971f3a526b0\""
+      },
+      {
+        "field": "educations[0].school.name",
+        "type": "str",
+        "value": "\"Punjab Technical University\""
+      },
+      {
+        "field": "educations[0].school.logo",
+        "type": "str",
+        "value": "\"https://images.ai-ark.com/wlvi3Nowb_Qn2jpQaOUoL_OwCH9r2nK52Ih8WyAgs1U/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/6d97d024-dcdc-ad1c-4845-8971f3a526b0.jpg\""
+      },
+      {
+        "field": "educations[0].school.url",
+        "type": "str",
+        "value": "\"https://www.linkedin.com/school/punjab-technical-university\""
+      },
+      {
+        "field": "educations[0].degree_name",
+        "type": "str",
+        "value": "\"Master of Business Administration (M.B.A)\""
+      },
+      {
+        "field": "educations[0].field_of_study",
+        "type": "str",
+        "value": "\"Marketing\""
+      },
+      {
+        "field": "educations[0].grade",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "educations[0].date.start",
+        "type": "str",
+        "value": "\"2008-01-01\""
+      },
+      {
+        "field": "educations[0].date.end",
+        "type": "str",
+        "value": "\"2010-12-31\""
+      },
+      {
+        "field": "educations[*]",
+        "type": "list values",
+        "value": "[\"Punjab Technical University\", \"Punjab Technical University\"]"
+      },
+      {
+        "field": "awards",
+        "type": "list[2]",
+        "value": "2 items -> fields below"
+      },
+      {
+        "field": "awards[0].title",
+        "type": "str",
+        "value": "\"CMO Special Mention Award\""
+      },
+      {
+        "field": "awards[0].description",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "awards[0].issuer",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "awards[0].date",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "awards[*]",
+        "type": "list values",
+        "value": "[\"CMO Special Mention Award\", \"Marketing Team Player Award\"]"
+      },
+      {
+        "field": "certifications",
+        "type": "list[8]",
+        "value": "8 items -> fields below"
+      },
+      {
+        "field": "certifications[0].name",
+        "type": "str",
+        "value": "\"Fundamentals of Next-Gen Marketing\""
+      },
+      {
+        "field": "certifications[0].authority",
+        "type": "str",
+        "value": "\"6sense\""
+      },
+      {
+        "field": "certifications[0].url",
+        "type": "str",
+        "value": "\"https://verify.skilljar.com/c/arzgsjcfpzxh\""
+      },
+      {
+        "field": "certifications[0].license_number",
+        "type": "str",
+        "value": "\"arzgsjcfpzxh\""
+      },
+      {
+        "field": "certifications[0].display_source",
+        "type": "str",
+        "value": "\"skilljar.com\""
+      },
+      {
+        "field": "certifications[0].company.id",
+        "type": "str",
+        "value": "\"4826043c-0a62-5a5b-67a2-c483c5f4cddf\""
+      },
+      {
+        "field": "certifications[0].company.name",
+        "type": "str",
+        "value": "\"6sense\""
+      },
+      {
+        "field": "certifications[0].company.logo",
+        "type": "str",
+        "value": "\"https://images.ai-ark.com/r53FvoChTgqks7XWxwZhHHDsWsJ-A0Oae2iMZp0RcyY/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4826043c-0a62-5a5b-67a2-c483c5f4cddf.jpg\""
+      },
+      {
+        "field": "certifications[0].company.url",
+        "type": "str",
+        "value": "\"https://www.linkedin.com/company/6sense\""
+      },
+      {
+        "field": "certifications[0].date.start",
+        "type": "str",
+        "value": "\"2025-03-01\""
+      },
+      {
+        "field": "certifications[0].date.end",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "certifications[*]",
+        "type": "list values",
+        "value": "[\"Fundamentals of Next-Gen Marketing\", \"Account-Based Go-to-Market (GTM) Certification\", \"Conversion Funnel Optimization\", \"ABM Advanced Certification\", \"Inbound Marketing\", \"Advanced Google Analytics\", \"Google Analytics Individual Qualification (GAIQ)\", \"Marketo Certified Expert (MCE)\"]"
+      },
+      {
+        "field": "position_groups",
+        "type": "list[8]",
+        "value": "8 items -> fields below"
+      },
+      {
+        "field": "position_groups[0].company.id",
+        "type": "str",
+        "value": "\"4d204374-9b1e-69fe-6840-539eacb7a436\""
+      },
+      {
+        "field": "position_groups[0].company.name",
+        "type": "str",
+        "value": "\"Zafran Security\""
+      },
+      {
+        "field": "position_groups[0].company.logo",
+        "type": "str",
+        "value": "\"https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg\""
+      },
+      {
+        "field": "position_groups[0].company.url",
+        "type": "str",
+        "value": "\"https://www.linkedin.com/company/zafran-security\""
+      },
+      {
+        "field": "position_groups[0].company.employees.start",
+        "type": "int",
+        "value": "51"
+      },
+      {
+        "field": "position_groups[0].company.employees.end",
+        "type": "int",
+        "value": "200"
+      },
+      {
+        "field": "position_groups[0].date.start",
+        "type": "str",
+        "value": "\"2025-05-01\""
+      },
+      {
+        "field": "position_groups[0].date.end",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "position_groups[0].profile_positions",
+        "type": "list[1]",
+        "value": "1 items -> fields below"
+      },
+      {
+        "field": "position_groups[0].profile_positions[0].company",
+        "type": "str",
+        "value": "\"Zafran Security\""
+      },
+      {
+        "field": "position_groups[0].profile_positions[0].description",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "position_groups[0].profile_positions[0].title",
+        "type": "str",
+        "value": "\"Head of Growth Marketing\""
+      },
+      {
+        "field": "position_groups[0].profile_positions[0].employment_type",
+        "type": "str",
+        "value": "\"Full-time\""
+      },
+      {
+        "field": "position_groups[0].profile_positions[0].location",
+        "type": "str",
+        "value": "\"New York, United States\""
+      },
+      {
+        "field": "position_groups[0].profile_positions[0].date.start",
+        "type": "str",
+        "value": "\"2025-05-01\""
+      },
+      {
+        "field": "position_groups[0].profile_positions[0].date.end",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "position_groups[*]",
+        "type": "list values",
+        "value": "[null, null, null, null, null, null, null, null]"
+      },
+      {
+        "field": "skills",
+        "type": "list[20] scalar",
+        "value": "[\"Website Conversion Optimization\", \"A/B Testing\", \"Website Optimization\", \"Web Conversion Optimization\", \"Demandbase\", \"Target Marketing\", \"Inbound Marketing\", \"Inbound Lead Generation\", \"HubSpot Marketing Hub\", \"HubSpot\", \"Go-to-Market Strategy\", \"Funnel Optimization\", \"Performance Marketing\", \"Analytical Skills\", \"Multi-Channel Marketing\", \"Marketing Campaign Management\", \"Campaign Execution\", "
+      },
+      {
+        "field": "member_badges.premium",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "member_badges.creator",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "member_badges.open_to_work",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "member_badges.hiring",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "member_badges.verified",
+        "type": "bool",
+        "value": "true"
+      },
+      {
+        "field": "member_badges.influencer",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "statistics.network.influencer",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "statistics.network.followable",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "statistics.network.followers_count",
+        "type": "int",
+        "value": "2478"
+      },
+      {
+        "field": "statistics.network.connections_count",
+        "type": "int",
+        "value": "1899"
+      },
+      {
+        "field": "statistics.experience.prev_job_titles",
+        "type": "null (EMPTY)",
+        "value": "null"
+      },
+      {
+        "field": "statistics.experience.tenure.company",
+        "type": "str",
+        "value": "\"2025-05-01\""
+      },
+      {
+        "field": "statistics.experience.tenure.start",
+        "type": "str",
+        "value": "\"2006-01-01\""
+      },
+      {
+        "field": "statistics.experience.tenure.title",
+        "type": "str",
+        "value": "\"2025-05-01\""
+      },
+      {
+        "field": "company.id",
+        "type": "str",
+        "value": "\"4d204374-9b1e-69fe-6840-539eacb7a436\""
+      },
+      {
+        "field": "company.summary.name",
+        "type": "str",
+        "value": "\"Zafran Security\""
+      },
+      {
+        "field": "company.summary.legal_name",
+        "type": "str",
+        "value": "\"Zafran Security Ltd.\""
+      },
+      {
+        "field": "company.summary.description",
+        "type": "str",
+        "value": "\"Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\\n\\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual pr\u2026"
+      },
+      {
+        "field": "company.summary.overview",
+        "type": "str",
+        "value": "\"Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability\u2026"
+      },
+      {
+        "field": "company.summary.founded_year",
+        "type": "int",
+        "value": "2022"
+      },
+      {
+        "field": "company.summary.type",
+        "type": "str",
+        "value": "\"PRIVATELY_HELD\""
+      },
+      {
+        "field": "company.summary.industry",
+        "type": "str",
+        "value": "\"computer and network security\""
+      },
+      {
+        "field": "company.summary.staff.total",
+        "type": "int",
+        "value": "167"
+      },
+      {
+        "field": "company.summary.staff.range.start",
+        "type": "int",
+        "value": "51"
+      },
+      {
+        "field": "company.summary.staff.range.end",
+        "type": "int",
+        "value": "200"
+      },
+      {
+        "field": "company.summary.logo.source",
+        "type": "str",
+        "value": "\"https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg\""
+      },
+      {
+        "field": "company.link.website",
+        "type": "str",
+        "value": "\"https://www.zafran.io\""
+      },
+      {
+        "field": "company.link.domain",
+        "type": "str",
+        "value": "\"zafran.io\""
+      },
+      {
+        "field": "company.link.domain_ltd",
+        "type": "str",
+        "value": "\"zafran.io\""
+      },
+      {
+        "field": "company.link.linkedin",
+        "type": "str",
+        "value": "\"https://www.linkedin.com/company/zafran-security\""
+      },
+      {
+        "field": "company.link.twitter",
+        "type": "str",
+        "value": "\"https://x.com/Zafran_io\""
+      },
+      {
+        "field": "company.link.crunchbase",
+        "type": "str",
+        "value": "\"https://www.crunchbase.com/organization/zafran\""
+      },
+      {
+        "field": "company.financial.revenue.annual.start",
+        "type": "int",
+        "value": "10000000"
+      },
+      {
+        "field": "company.financial.revenue.annual.end",
+        "type": "int",
+        "value": "25000000"
+      },
+      {
+        "field": "company.financial.revenue.annual.amount",
+        "type": "str",
+        "value": "\"10000000-25000000\""
+      },
+      {
+        "field": "company.financial.funding.type",
+        "type": "str",
+        "value": "\"SERIES_C\""
+      },
+      {
+        "field": "company.financial.funding.total_amount",
+        "type": "int",
+        "value": "130500000"
+      },
+      {
+        "field": "company.financial.funding.last_amount",
+        "type": "int",
+        "value": "60000000"
+      },
+      {
+        "field": "company.financial.funding.num_investor",
+        "type": "int",
+        "value": "9"
+      },
+      {
+        "field": "company.financial.funding.num_funding_rounds",
+        "type": "int",
+        "value": "4"
+      },
+      {
+        "field": "company.financial.funding.rounds",
+        "type": "list[4]",
+        "value": "4 items -> fields below"
+      },
+      {
+        "field": "company.financial.funding.rounds[0].announced_at",
+        "type": "str",
+        "value": "\"2025-12-02\""
+      },
+      {
+        "field": "company.financial.funding.rounds[0].raised_amount",
+        "type": "int",
+        "value": "60000000"
+      },
+      {
+        "field": "company.financial.funding.rounds[0].type",
+        "type": "str",
+        "value": "\"SERIES_C\""
+      },
+      {
+        "field": "company.financial.funding.rounds[0].investors",
+        "type": "list[7] scalar",
+        "value": "[\"Vintage Investment Partners\", \"Cyberstarts\", \"Amex Ventures\", \"PSP Growth\", \"Knollwood Investment Advisory\", \"Sequoia Capital\", \"Menlo Ventures\"]"
+      },
+      {
+        "field": "company.financial.funding.rounds[*]",
+        "type": "list values",
+        "value": "[\"SERIES_C\", \"SERIES_B\", \"VENTURE_ROUND\", \"SEED_ROUND\"]"
+      },
+      {
+        "field": "company.financial.funding.date",
+        "type": "str",
+        "value": "\"2025-12-02\""
+      },
+      {
+        "field": "company.financial.aberdeen.it_spend",
+        "type": "int",
+        "value": "7626866"
+      },
+      {
+        "field": "company.location.headquarter.continent",
+        "type": "str",
+        "value": "\"North America\""
+      },
+      {
+        "field": "company.location.headquarter.country",
+        "type": "str",
+        "value": "\"United States\""
+      },
+      {
+        "field": "company.location.headquarter.city",
+        "type": "str",
+        "value": "\"New York, New York\""
+      },
+      {
+        "field": "company.location.headquarter.raw_address",
+        "type": "str",
+        "value": "\"New York, New York, United States, North America\""
+      },
+      {
+        "field": "company.location.headquarter.position.lng",
+        "type": "float",
+        "value": "-73.98556"
+      },
+      {
+        "field": "company.location.headquarter.position.lat",
+        "type": "float",
+        "value": "40.748295"
+      },
+      {
+        "field": "company.location.locations",
+        "type": "list[1]",
+        "value": "1 items -> fields below"
+      },
+      {
+        "field": "company.location.locations[0].continent",
+        "type": "str",
+        "value": "\"North America\""
+      },
+      {
+        "field": "company.location.locations[0].country",
+        "type": "str",
+        "value": "\"United States\""
+      },
+      {
+        "field": "company.location.locations[0].city",
+        "type": "str",
+        "value": "\"New York, New York\""
+      },
+      {
+        "field": "company.location.locations[0].raw_address",
+        "type": "str",
+        "value": "\"New York, New York, United States, North America\""
+      },
+      {
+        "field": "company.location.locations[0].position.lng",
+        "type": "float",
+        "value": "-73.98556"
+      },
+      {
+        "field": "company.location.locations[0].position.lat",
+        "type": "float",
+        "value": "40.748295"
+      },
+      {
+        "field": "company.technologies",
+        "type": "list[10]",
+        "value": "10 items -> fields below"
+      },
+      {
+        "field": "company.technologies[0].name",
+        "type": "str",
+        "value": "\"dnssec\""
+      },
+      {
+        "field": "company.technologies[0].category",
+        "type": "str",
+        "value": "\"ns\""
+      },
+      {
+        "field": "company.technologies[*]",
+        "type": "list values",
+        "value": "[\"dnssec\", \"google cloud\", \"amazon s3\", \"envoy\", \"floc opt-out\", \"cloudflare automatic challenge\", \"cloudflare challenge\", \"hubspot hosted\", \"amazon oregon region\", \"zendesk mail\"]"
+      },
+      {
+        "field": "company.industries",
+        "type": "list[6] scalar",
+        "value": "[\"risk management\", \"cyber security\", \"information technology\", \"network security\", \"software\", \"computer and network security\"]"
+      },
+      {
+        "field": "company.languages",
+        "type": "list[1] scalar",
+        "value": "[\"english\"]"
+      },
+      {
+        "field": "company.last_updated",
+        "type": "str",
+        "value": "\"2026-08-22\""
+      },
+      {
+        "field": "department.departments",
+        "type": "list[1] scalar",
+        "value": "[\"marketing\"]"
+      },
+      {
+        "field": "department.sub_departments",
+        "type": "list[1] scalar",
+        "value": "[\"growth_marketing\"]"
+      },
+      {
+        "field": "department.functions",
+        "type": "list[1] scalar",
+        "value": "[\"marketing\"]"
+      },
+      {
+        "field": "department.seniority",
+        "type": "str",
+        "value": "\"head\""
+      },
+      {
+        "field": "last_updated",
+        "type": "str",
+        "value": "\"2026-08-22\""
+      }
+    ]
+  },
+  "POST /v1/people/export/single (email block)": {
+    "request": {
+      "url": "https://www.linkedin.com/in/varinderkaur"
+    },
+    "http": 200,
+    "elapsed_s": 0.83,
+    "credits": 1.0,
+    "subject": "Vari Kaur",
+    "envelope_fields": [
+      "awards",
+      "certifications",
+      "company",
+      "department",
+      "educations",
+      "email",
+      "id",
+      "identifier",
+      "industry",
+      "languages",
+      "last_updated",
+      "link",
+      "location",
+      "member_badges",
+      "position_groups",
+      "profile",
+      "skills",
+      "statistics"
+    ],
+    "note": "the export returns the SAME person object as /v1/people plus one extra top-level block: `email`. Only the `email` block is inventoried here.",
+    "fields": [
+      {
+        "field": "email.state",
+        "type": "str",
+        "value": "\"DONE\""
+      },
+      {
+        "field": "email.output",
+        "type": "list[1]",
+        "value": "1 items -> fields below"
+      },
+      {
+        "field": "email.output[0].address",
+        "type": "str",
+        "value": "\"vari@zafran.io\""
+      },
+      {
+        "field": "email.output[0].mx.record",
+        "type": "str",
+        "value": "\"aspmx.l.google.com\""
+      },
+      {
+        "field": "email.output[0].mx.google",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "email.output[0].mx.found",
+        "type": "bool",
+        "value": "true"
+      },
+      {
+        "field": "email.output[0].mx.provider",
+        "type": "str",
+        "value": "\"g-suite\""
+      },
+      {
+        "field": "email.output[0].domainType",
+        "type": "str",
+        "value": "\"SMTP\""
+      },
+      {
+        "field": "email.output[0].status",
+        "type": "str",
+        "value": "\"VALID\""
+      },
+      {
+        "field": "email.output[0].subStatus",
+        "type": "str",
+        "value": "\"EMPTY\""
+      },
+      {
+        "field": "email.output[0].date",
+        "type": "str",
+        "value": "\"2026-08-31T07:51:52.000461\""
+      },
+      {
+        "field": "email.output[0].free",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "email.output[0].generic",
+        "type": "bool",
+        "value": "false"
+      },
+      {
+        "field": "email.output[0].found",
+        "type": "bool",
+        "value": "true"
+      }
+    ]
+  },
+  "GET /v1/credit": {
+    "http": 401,
+    "elapsed_s": 0.69,
+    "credits": 0.0,
+    "result": "401, empty body \u2014 no readable balance endpoint on this key; credits in this run are counted from returned-result arithmetic."
+  },
+  "GET api.ashbyhq.com/posting-api/job-board/zafran-security (FREE, for contrast)": {
+    "http": 200,
+    "n_jobs": 27,
+    "board_top_keys": [
+      "apiVersion",
+      "jobs"
+    ],
+    "job_field_names": [
+      "address",
+      "applyUrl",
+      "compensation",
+      "department",
+      "descriptionHtml",
+      "descriptionPlain",
+      "employmentType",
+      "id",
+      "isListed",
+      "isRemote",
+      "jobUrl",
+      "location",
+      "publishedAt",
+      "secondaryLocations",
+      "shouldDisplayCompensationOnJobPostings",
+      "team",
+      "title",
+      "workplaceType"
+    ],
+    "credits": 0.0,
+    "cost_usd": 0.0
+  }
+}

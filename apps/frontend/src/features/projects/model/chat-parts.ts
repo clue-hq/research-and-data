@@ -32,6 +32,7 @@ export const ChatPartKindSchema = z.enum([
   "gate",
   "sources",
   "action",
+  "clarification",
 ]);
 
 /** The AI Elements tool lifecycle, spelled exactly as §3.4 requires. */
@@ -167,8 +168,8 @@ export interface ChatToolPart {
  * `text_ephemeral` is the backend saying the load-bearing thing about that
  * text: unlike assistant prose it has no durable counterpart, so it exists for
  * as long as the stream held it and cannot be re-fetched after a reload or a
- * `stream.reset`. The adapter renders it as a live diagnostic, never as part of
- * the transcript.
+ * `stream.reset`. The frontend groups supplied text into one plain-text
+ * disclosure per response; its presentation does not change that retention.
  */
 const ReasoningPartWireSchema = z.object({
   ...partBase,
@@ -244,6 +245,8 @@ const TaskCountsWireSchema = z.object({
   running: z.number().int().min(0).default(0),
   completed: z.number().int().min(0).default(0),
   partial: z.number().int().min(0).default(0),
+  /** Defaulted like its siblings, so a snapshot persisted before the split still parses. */
+  needs_review: z.number().int().min(0).default(0),
   blocked: z.number().int().min(0).default(0),
   failed: z.number().int().min(0).default(0),
 });
@@ -264,6 +267,8 @@ export interface ChatTaskCounts {
   running: number;
   completed: number;
   partial: number;
+  /** Finished and routed to a human — a queue, not the shortfall `partial` names. */
+  needsReview: number;
   blocked: number;
   failed: number;
 }
@@ -277,6 +282,28 @@ export interface ChatTaskPart {
   runRef: ChatObjectRef;
   counts: ChatTaskCounts;
   exceptionRefs: readonly ChatObjectRef[];
+}
+
+function toTaskPart(wire: z.infer<typeof TaskPartWireSchema>): ChatTaskPart {
+  return {
+    kind: "task",
+    partId: wire.part_id,
+    revision: wire.revision,
+    state: wire.state,
+    title: wire.title,
+    runRef: toObjectRef(wire.run_ref),
+    counts: {
+      total: wire.counts.total,
+      queued: wire.counts.queued,
+      running: wire.counts.running,
+      completed: wire.counts.completed,
+      partial: wire.counts.partial,
+      needsReview: wire.counts.needs_review,
+      blocked: wire.counts.blocked,
+      failed: wire.counts.failed,
+    },
+    exceptionRefs: wire.exception_refs.map(toObjectRef),
+  };
 }
 
 // --- plan ----------------------------------------------------------------
@@ -371,6 +398,61 @@ export function parseCentAmount(
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+// --- clarification -------------------------------------------------------
+
+const ClarificationQuestionWireSchema = z.object({
+  id: z.string().min(1),
+  question: z.string(),
+  why_it_matters: z.string().default(""),
+  options: z.array(z.string()).default([]),
+  default: z.string(),
+  allow_freeform: z.boolean().default(true),
+});
+
+/**
+ * Spec 2026-09-20 (clarification cards) §2.1: a design document's opening-move
+ * questions, one part per document whose run stopped to ask.
+ *
+ * `account_name` is `.nullable().optional()` because the backend's `_Part.wire()`
+ * drops `None` fields — an untagged document sends no `account_name` key at all,
+ * and both spellings mean the same thing here: no account, render no suffix.
+ */
+const ClarificationPartWireSchema = z.object({
+  ...partBase,
+  kind: z.literal("clarification"),
+  document_id: z.string().min(1),
+  document_title: z.string(),
+  doc_kind: z.string(),
+  account_name: z.string().nullable().optional(),
+  run_id: z.string().min(1),
+  // No default: a clarification part without its questions is not a card with
+  // nothing in it, it is an unreadable snapshot — the stream drops it rather
+  // than rendering an empty card.
+  questions: z.array(ClarificationQuestionWireSchema),
+});
+
+export interface ChatClarificationQuestion {
+  id: string;
+  question: string;
+  whyItMatters: string;
+  options: readonly string[];
+  /** What the runtime uses when the question is skipped. */
+  default: string;
+  allowFreeform: boolean;
+}
+
+export interface ChatClarificationPart {
+  kind: "clarification";
+  partId: string;
+  revision: number;
+  documentId: string;
+  documentTitle: string;
+  docKind: string;
+  accountName: string | null;
+  runId: string;
+  questions: readonly ChatClarificationQuestion[];
+}
+
 // --- sources -------------------------------------------------------------
 
 const SourceItemWireSchema = z.object({
@@ -434,7 +516,8 @@ export type ChatPart =
   | ChatTaskPart
   | ChatPlanPart
   | ChatGatePart
-  | ChatSourcesPart;
+  | ChatSourcesPart
+  | ChatClarificationPart;
 
 /**
  * One part snapshot, exactly as `part.created|updated|completed|failed` carries it.
@@ -452,6 +535,7 @@ export const ChatPartSnapshotSchema = z
     PlanPartWireSchema,
     GatePartWireSchema,
     SourcesPartWireSchema,
+    ClarificationPartWireSchema,
   ])
   .transform((wire): ChatPart => {
     switch (wire.kind) {
@@ -502,16 +586,7 @@ export const ChatPartSnapshotSchema = z
           })),
         };
       case "task":
-        return {
-          kind: "task",
-          partId: wire.part_id,
-          revision: wire.revision,
-          state: wire.state,
-          title: wire.title,
-          runRef: toObjectRef(wire.run_ref),
-          counts: wire.counts,
-          exceptionRefs: wire.exception_refs.map(toObjectRef),
-        };
+        return toTaskPart(wire);
       case "plan":
         return {
           kind: "plan",
@@ -544,6 +619,25 @@ export const ChatPartSnapshotSchema = z
           decision: wire.decision ?? null,
           answeredByUserId: wire.answered_by_user_id ?? null,
           answeredAt: wire.answered_at ?? null,
+        };
+      case "clarification":
+        return {
+          kind: "clarification",
+          partId: wire.part_id,
+          revision: wire.revision,
+          documentId: wire.document_id,
+          documentTitle: wire.document_title,
+          docKind: wire.doc_kind,
+          accountName: wire.account_name ?? null,
+          runId: wire.run_id,
+          questions: wire.questions.map((question) => ({
+            id: question.id,
+            question: question.question,
+            whyItMatters: question.why_it_matters,
+            options: question.options,
+            default: question.default,
+            allowFreeform: question.allow_freeform,
+          })),
         };
       case "sources":
         return {

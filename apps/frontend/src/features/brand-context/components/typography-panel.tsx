@@ -1,5 +1,6 @@
 import type { ChangeEvent } from "react";
 import type { BrandContextController } from "../hooks/use-brand-context-controller";
+import { TypefaceSample } from "./typeface-sample";
 import { BrandContextIcon } from "./brand-context-icon";
 import styles from "./brand-context.module.css";
 
@@ -28,9 +29,7 @@ export function TypographyPanel({
                     <span>{typeface.family}</span>
                     {typeface.source === "custom" ? <small>Custom</small> : null}
                   </div>
-                  <p style={{ fontFamily: typeface.family === "Satoshi Variable" ? "Satoshi" : typeface.family }}>
-                    a quick brown fox jumps over a lazy dog
-                  </p>
+                  <TypefaceSample typeface={typeface} />
                   <button
                     aria-expanded={controller.typefaceMenuId === typeface.id}
                     aria-label={`${typeface.family} actions`}

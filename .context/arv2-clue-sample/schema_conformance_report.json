@@ -1,0 +1,62 @@
+[
+  {
+    "field_key": "account.resonance.buying_culture",
+    "entity": "account:charleston-gi-specialists",
+    "value_json": "Long-term partnership oriented",
+    "problems": [
+      "declared object, got str"
+    ]
+  },
+  {
+    "field_key": "contact.organization_relationship",
+    "entity": "contact:wanda-punteney",
+    "value_json": {
+      "relationship": "employed",
+      "basis": "current_employment",
+      "organization_id": "charleston-gi-specialists"
+    },
+    "problems": [
+      "'relationship'='employed' not in enum ['current_employee']",
+      "'basis'='current_employment' not in enum ['provider_returned_current_employer', 'provider_inferred_team_membership']"
+    ]
+  },
+  {
+    "field_key": "contact.role_on_committee",
+    "entity": "contact:wanda-punteney",
+    "value_json": {
+      "role": "economic_buyer",
+      "confidence": "high",
+      "plausible": true,
+      "rationale": "Holds the Chief Executive Officer title for the practice and is named as CEO in regulatory filings for affiliated centers."
+    },
+    "problems": [
+      "'confidence' declared number, got str"
+    ]
+  },
+  {
+    "field_key": "contact.organization_relationship",
+    "entity": "contact:thomas-punteney",
+    "value_json": {
+      "relationship": "employed",
+      "basis": "current_employment",
+      "organization_id": "charleston-gi-specialists"
+    },
+    "problems": [
+      "'relationship'='employed' not in enum ['current_employee']",
+      "'basis'='current_employment' not in enum ['provider_returned_current_employer', 'provider_inferred_team_membership']"
+    ]
+  },
+  {
+    "field_key": "contact.role_on_committee",
+    "entity": "contact:thomas-punteney",
+    "value_json": {
+      "role": "technical_evaluator",
+      "confidence": "high",
+      "plausible": true,
+      "rationale": "Identified as the leader managing operations and the executive who selected and implemented the practice's EHR system."
+    },
+    "problems": [
+      "'confidence' declared number, got str"
+    ]
+  }
+]

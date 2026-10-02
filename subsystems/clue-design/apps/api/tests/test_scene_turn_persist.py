@@ -49,9 +49,9 @@ def minimal_scene() -> dict:
     return json.loads(MINIMAL_SCENE_PATH.read_text())
 
 
-def create_document(client: TestClient) -> dict:
+def create_document(client: TestClient, scene: dict | None = None) -> dict:
     response = client.post(
-        "/documents", json={"title": "Hospital Letter", "scene": minimal_scene()}
+        "/documents", json={"title": "Hospital Letter", "scene": scene or minimal_scene()}
     )
     assert response.status_code == 200, response.text
     return response.json()["document"]
@@ -133,6 +133,8 @@ def _scene_envelope(document_id: str, workspace_id: str, config: dict):
     from clue_design.envelopes import DesignTurnEnvelope
 
     run_id = f"run_{uuid4().hex[:12]}"
+    # Executions pin metadata on their durable run, just as fleet-offered turns do.
+    HybridRepository(workspace_id).create_run(run_id, None)
     return DesignTurnEnvelope(
         kind="agent_turn",
         work_id=uuid4(),
@@ -305,23 +307,192 @@ def test_a_leg_scene_turns_commit_is_labelled_with_the_users_message(
 # --- (b) the CAS loss --------------------------------------------------------
 
 
-def test_a_leg_scene_turn_on_a_moved_document_conflicts_before_the_runner(
+def _drive_leg_turn(
     client: TestClient,
-) -> None:
-    """A human edit landed while the turn was queued. The turn comes back conflicted, the
-    document is untouched, and the trio never ran at all."""
+    document: dict,
+    *,
+    base_version: int,
+    operations: list,
+    prompt: str = "Go ahead.",
+    received: dict | None = None,
+):
+    """One leg turn through the REAL executor, RECORDED on a run row the way the fleet worker
+    records it (create → execute → complete).
+
+    The recording is load-bearing for session continuity: "the version this session last wrote"
+    is read off the newest succeeded run's stamped ``current_version``, so a turn nobody
+    completed leaves no trace for the next turn to notice drift against.
+    """
 
     from lumen_api.main import execute_agent_turn_job
 
+    store = HybridRepository()
+    envelope = _scene_envelope(
+        document["id"], store.workspace_id, _leg_config(document, base_version, prompt=prompt)
+    )
+    store.create_run(envelope.run_id, document["id"], kind="agent_turn", payload={})
+    status, response, event_type, event_data = execute_agent_turn_job(
+        envelope,
+        store=store,
+        host=_turn_host(client, proposing_runner(operations, received)),
+        event_sink=None,
+    )
+    store.complete_run(envelope.run_id, status, response, event_type, event_data)
+    return status, response, event_type, event_data
+
+
+def test_a_leg_scene_turn_on_a_moved_document_notes_the_drift_and_runs_anyway(
+    client: TestClient,
+) -> None:
+    """Session continuity (2026-09-18) replaces the pre-run conflict.
+
+    The session IS the document, so "the document moved since my last turn" is the normal
+    condition of a second turn, not a terminal failure: the executor re-reads the document,
+    tells the continued session what changed as DATA, and commits against the version it
+    actually read. The frozen envelope base is no longer the CAS base — the write-time CAS
+    (the test below) is what still protects a human edit that lands mid-run.
+    """
+
     document = create_document(client)
-    # The human edit: the document is now at version 1, the envelope still pins 0.
+    # Turn one: the agent commits, stamping `current_version` on its succeeded run — that stamp
+    # is what makes "the version I last wrote" readable at all.
+    status, response, _, _ = _drive_leg_turn(
+        client, document, base_version=0, operations=[title_operation("Agent Title")]
+    )
+    assert (status, response["current_version"]) == ("succeeded", 1)
+
+    # The human edit between turns: the document is now at version 2, the envelope still pins 0.
     applied = client.post(
         f"/documents/{document['id']}/operations",
-        json={"operations": [title_operation("Human Title")]},
+        json={"operations": [title_operation("Human Title")], "intent": "human moved the logo"},
+    )
+    assert applied.status_code == 200, applied.text
+
+    received: dict = {}
+    status, response, _, _ = _drive_leg_turn(
+        client,
+        document,
+        base_version=0,
+        operations=[title_operation("Agent Title 2")],
+        received=received,
+    )
+
+    assert status == "succeeded", response
+    prompt = received["payload"].prompt
+    assert "DOCUMENT CHANGED SINCE YOUR LAST TURN" in prompt
+    assert "human moved the logo" in prompt
+    # It designed from the document's CURRENT scene, and committed on top of the human's edit
+    # rather than clobbering it or refusing.
+    assert received["payload"].scene["meta"]["title"] == "Human Title"
+    store = HybridRepository()
+    stored = store.require_document(document["id"])
+    assert (stored["current_version"], response["current_version"]) == (3, 3)
+    assert stored["scene"]["meta"]["title"] == "Agent Title 2"
+
+
+def test_a_leg_scene_turn_on_a_document_no_agent_has_written_gets_no_drift_note(
+    client: TestClient,
+) -> None:
+    """Drift is measured against the SESSION's own last write. With no prior agent run there
+    is no "since your last turn" to speak of, so a moved document is simply the document."""
+
+    document = create_document(client)
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Human Title")], "intent": "human moved the logo"},
+    )
+    assert applied.status_code == 200, applied.text
+
+    received: dict = {}
+    status, response, _, _ = _drive_leg_turn(
+        client,
+        document,
+        base_version=0,
+        operations=[title_operation("Agent Title")],
+        received=received,
+    )
+
+    assert status == "succeeded", response
+    assert "DOCUMENT CHANGED SINCE YOUR LAST TURN" not in received["payload"].prompt
+    assert response["current_version"] == 2
+
+
+def test_a_direct_editor_turn_joins_no_session_even_on_a_document_the_agent_wrote(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ruling T6-1: the session is a LEG-turn concept.
+
+    A direct editor turn (``POST /agent/turns``) pins a document but carries no ``leg`` block, and
+    the route threads it on its own run id — so it must keep its per-run runtime folder, join no
+    session, and hear nothing about drift. Proven on the hardest case: a document THIS workspace's
+    agent wrote and a human then moved, which is exactly when a leg turn would be told.
+    """
+
+    import lumen_api.main as main
+
+    document = create_document(client)
+    # A leg turn writes (and is recorded), then a human moves the document: drift now exists.
+    status, response, _, _ = _drive_leg_turn(
+        client, document, base_version=0, operations=[title_operation("Agent Title")]
+    )
+    assert (status, response["current_version"]) == ("succeeded", 1)
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Human Title")], "intent": "human moved the logo"},
     )
     assert applied.status_code == 200, applied.text
 
     store = HybridRepository()
+    captured: dict = {}
+
+    def run_preview(payload, _root, **kwargs):
+        captured["session_id"] = kwargs.get("session_id")
+        captured["run_id"] = kwargs.get("run_id")
+        captured["prompt"] = payload.prompt
+        return proposing_runner([])(payload, _root)
+
+    monkeypatch.setattr(main, "run_agent_turn_preview", run_preview)
+    status, response, _, _ = main.execute_agent_turn_job(
+        _scene_envelope(
+            document["id"],
+            store.workspace_id,
+            {
+                "request": {
+                    "prompt": "Repair the headline",
+                    "scene": minimal_scene(),
+                    "document_id": document["id"],
+                }
+            },
+        ),
+        store=store,
+        host=_turn_host(client, None),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert captured["session_id"] is None
+    assert captured["run_id"] is None
+    # Byte-identical: the human's own words, no drift note, no leg blocks.
+    assert captured["prompt"] == "Repair the headline"
+
+
+class _StoreWithNoReadableHistory(HybridRepository):
+    """A store whose DOCUMENT reads work and whose session-history read does not."""
+
+    def latest_agent_written_version(self, document_id):  # type: ignore[override]
+        raise RuntimeError("the history read failed")
+
+
+def test_an_unreadable_session_history_costs_a_paragraph_not_the_turn(
+    client: TestClient,
+) -> None:
+    """The drift note is advisory context. A turn that cannot read what moved still designs from
+    the document it CAN read — the alternative is killing paid work over a paragraph."""
+
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = _StoreWithNoReadableHistory()
     received: dict = {}
 
     status, response, _, _ = execute_agent_turn_job(
@@ -331,21 +502,70 @@ def test_a_leg_scene_turn_on_a_moved_document_conflicts_before_the_runner(
         event_sink=None,
     )
 
-    assert status == "failed"
-    assert response["status"] == "conflicted"
-    assert response["diagnostics"][0]["code"] == "agent_turn.version_conflict"
-    assert response["base_version"] == 0
+    assert status == "succeeded", response
+    assert "DOCUMENT CHANGED SINCE YOUR LAST TURN" not in received["payload"].prompt
     assert response["current_version"] == 1
-    # The platform's scene summarizer renders `stop_reason` into the chat thread and nothing
-    # else, so a conflict that leaves it None reaches the marketer as a contentless "Design
-    # turn conflicted." Both user-facing strings must name BOTH versions and say the edit
-    # survived — the two facts a human needs to know what just happened.
-    _assert_conflict_is_legible(response, moved_from=0, moved_to=1)
-    # The human's edit survived, and the trio was never asked to spend a token.
-    stored = store.require_document(document["id"])
-    assert stored["current_version"] == 1
-    assert stored["scene"]["meta"]["title"] == "Human Title"
-    assert received == {}
+
+
+def test_the_scene_the_trio_designs_from_comes_from_the_document(client: TestClient) -> None:
+    """The envelope's scene was frozen when the leg was dispatched; the document is truth."""
+
+    document = create_document(client)
+    applied = client.post(
+        f"/documents/{document['id']}/operations",
+        json={"operations": [title_operation("Fresh")]},
+    )
+    assert applied.status_code == 200, applied.text
+
+    received: dict = {}
+    store = HybridRepository()
+    config = _leg_config(document, 0)
+    # Deliberately stale, the way a queued leg envelope is.
+    config["request"]["scene"]["meta"]["title"] = "Stale"
+
+    from lumen_api.main import execute_agent_turn_job
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, config),
+        store=store,
+        host=_turn_host(client, proposing_runner([title_operation("Agent Title")], received)),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert received["payload"].scene["meta"]["title"] == "Fresh"
+    # ...and the CAS base is the version actually read, not the envelope's frozen 0.
+    assert response["current_version"] == 2
+
+
+def test_a_leg_scene_turn_runs_inside_the_documents_session(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The runtime is told which session this turn belongs to, and which run it is — the
+    session id continues the document's thread, the run id makes a RETRIED run resumable."""
+
+    import lumen_api.main as main
+
+    from clue_design.sessions import design_session_id
+
+    document = create_document(client)
+    store = HybridRepository()
+    captured: dict = {}
+
+    def run_preview(payload, _root, **kwargs):
+        captured["session_id"] = kwargs.get("session_id")
+        captured["run_id"] = kwargs.get("run_id")
+        return proposing_runner([])(payload, _root)
+
+    monkeypatch.setattr(main, "run_agent_turn_preview", run_preview)
+    envelope = _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0))
+    status, response, _, _ = main.execute_agent_turn_job(
+        envelope, store=store, host=_turn_host(client, None), event_sink=None
+    )
+
+    assert status == "succeeded", response
+    assert captured["session_id"] == design_session_id(store.workspace_id, document["id"])
+    assert captured["run_id"] == envelope.run_id
 
 
 def test_a_leg_scene_turn_that_loses_the_race_mid_run_conflicts_at_the_write(
@@ -426,8 +646,10 @@ def test_a_non_leg_scene_turn_persists_nothing_and_stays_byte_identical(
     )
 
     assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
-    # Byte-identical: the runner's own envelope, no `current_version` grafted on.
-    assert response == expected
+    # Byte-identical: the runner's own envelope, no `current_version` grafted on. The one
+    # addition every executor makes is lane 3 slice 5's `model_calls` receipts key, which is
+    # present on EVERY terminal return — empty here, because the stub runner spends nothing.
+    assert response == {**expected, "model_calls": []}
     assert "current_version" not in response
     # Nothing was committed — the editor still owns that commit.
     stored = store.require_document(document["id"])
@@ -640,7 +862,9 @@ def test_a_leg_turn_on_an_all_empty_scene_is_steered_to_fill_the_birth_page(
 ) -> None:
     from lumen_api.main import execute_agent_turn_job  # noqa: F401  (import parity)
 
-    document = create_document(client)
+    # The newborn ad's scene is the DOCUMENT's scene, not only the envelope's: since session
+    # continuity (2026-09-18) the executor designs from what the document holds.
+    document = create_document(client, empty_ad_scene())
     config = _leg_config(document, 0, prompt="Go ahead.")
     config["request"]["scene"] = empty_ad_scene()
 
@@ -663,7 +887,7 @@ def test_the_steering_block_reads_the_page_id_and_size_off_the_scene(
 ) -> None:
     """A second document, a different id and format: the block moves with the scene."""
 
-    document = create_document(client)
+    document = create_document(client, empty_ad_scene("page_deadbeefdeadbeef", 1080.0, 1920.0))
     config = _leg_config(document, 0)
     config["request"]["scene"] = empty_ad_scene("page_deadbeefdeadbeef", 1080.0, 1920.0)
 
@@ -769,8 +993,8 @@ def test_the_dsl_the_steering_block_quotes_actually_compiles_against_the_empty_p
     are orphaned. That is why the quoted line restates the page's name.)
     """
 
-    document = create_document(client)
     scene = empty_ad_scene()
+    document = create_document(client, scene)
     config = _leg_config(document, 0)
     config["request"]["scene"] = scene
 
@@ -958,7 +1182,8 @@ def test_a_leg_scene_turn_proposing_nothing_on_a_content_bearing_document_still_
     )
 
     assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
-    assert response == proposing_runner([])(None, None)
+    # Plus the executor's `model_calls` receipts key — see the (a) byte-identity pin.
+    assert response == {**proposing_runner([])(None, None), "model_calls": []}
     stored = store.require_document(document["id"])
     assert stored["current_version"] == 0
     assert store.list_envelopes(document["id"]) == []
@@ -1134,7 +1359,8 @@ def test_a_non_leg_turn_on_a_pageless_document_stays_byte_identical(
     )
 
     assert (status, kind, marker) == ("succeeded", "result", {"status": "proposed"})
-    assert response == expected
+    # Plus the executor's `model_calls` receipts key — see the (a) byte-identity pin.
+    assert response == {**expected, "model_calls": []}
     stored = store.require_document(document["id"])
     assert stored["current_version"] == 0
     assert stored["scene"]["pages"] == {}
@@ -1537,6 +1763,69 @@ def test_checkpoints_reach_the_same_head_as_one_finalize_write(
     assert len(store.list_envelopes(at_once["id"])) == 1
 
 
+def test_retokenized_text_matches_runtime_after_checkpoint_save_and_preflight(
+    client: TestClient,
+) -> None:
+    """Same-token rebinding retains the accepted size across the real persist seam."""
+    from lumen_agent.retokenize import build_retokenize_operations
+    from lumen_api.main import execute_agent_turn_job
+
+    core = client.app.state.core
+    kit = core.platform_default_brand_kit()
+    for name, entry in kit["tokens"]["typography"].items():
+        style = entry["value"]["default"]
+        if style.get("kind") == "style":
+            style.update(
+                font_family="Inter",
+                font_weight=400,
+                font_size=51.0 if name == "type.display" else 16.0,
+            )
+    sizes = []
+    for checkpointed in (False, True):
+        seed = core.new_scene(f"doc_token_replay_{checkpointed}", "Typography replay")
+        unresolved = core.compile_dsl_into_scene(seed, '''page square size(1080,1080,px)
+  artboard fr s(fill,fill) fill($surface.page)
+    headline text "One clear idea" s(900,hug) style($type.display) font_size($type.size.7xl) fill($text.primary)
+''')["scene"]
+        # Establish the isolated test tenant through the normal API before
+        # preflight loads the tenant's optional font-library cache.
+        response = client.post("/documents", json={"title": "Typography replay", "scene": unresolved})
+        assert response.status_code == 200, response.text
+        document = response.json()["document"]
+        store = HybridRepository()
+        runtime = core.preflight_scene(unresolved, kit)
+        assert not runtime["preflight"]["has_errors"]
+        assert runtime["scene"]["nodes"]["headline"]["kind"]["font_size"] == 80.0
+        operations = build_retokenize_operations(runtime["scene"], kit)
+        assert len(operations) >= 2, "exercise incremental checkpoint tails"
+        runtime_final = core.preflight_scene(
+            core.apply_operations(runtime["scene"], operations)["scene"], kit
+        )
+        assert not runtime_final["preflight"]["has_errors"]
+        runner = (
+            checkpointing_runner([operations[:1], operations[1:]])
+            if checkpointed else proposing_runner(operations)
+        )
+        status, response, _, _ = execute_agent_turn_job(
+            _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+            store=store,
+            host=_turn_host(client, runner),
+            event_sink=None,
+        )
+        assert status == "succeeded", response
+        saved = store.require_document(document["id"])
+        assert saved["current_version"] == len(operations)
+        assert saved["scene"]["nodes"]["headline"]["kind"]["font_size_token"] == "type.size.7xl"
+        preflight = core.preflight_scene(saved["scene"], kit)
+        assert not preflight["preflight"]["has_errors"]
+        assert (
+            preflight["scene"]["nodes"]["headline"]["kind"]
+            == runtime_final["scene"]["nodes"]["headline"]["kind"]
+        )
+        sizes.append(preflight["scene"]["nodes"]["headline"]["kind"]["font_size"])
+    assert sizes == [80.0, 80.0]
+
+
 def test_a_run_that_fails_after_an_accepted_round_leaves_that_round_as_the_head(
     client: TestClient,
 ) -> None:
@@ -1569,13 +1858,17 @@ def test_a_run_that_fails_after_an_accepted_round_leaves_that_round_as_the_head(
     assert response["current_version"] == 1, "a failed-but-saved turn must say what it saved"
 
 
-def test_a_redrive_after_a_checkpoint_neither_double_commits_nor_blames_a_human(
+def test_a_redrive_after_a_checkpoint_continues_from_the_version_it_saved(
     client: TestClient,
 ) -> None:
-    """(i4) Replay semantics. A takeover restarts the agent from the FROZEN envelope scene, so its
-    fresh operation history would double-apply onto its own committed work. The redrive must
-    recognise its own checkpoint (via the durable run-event mark) and refuse — and it must not
-    tell the marketer a human moved their document, because nobody did.
+    """(i4) Replay semantics, restated by session continuity (2026-09-18).
+
+    Until this slice a redrive that found the document moved had to GUESS whether the mover was
+    a human or its own checkpoint, and refused either way (``agent_turn.interrupted_after_
+    checkpoint``, read off the durable run-event mark). It no longer has to: the turn re-reads
+    the document, so the scene it designs from and the version it CAS's on are already the ones
+    its earlier attempt left behind. The redrive simply carries on from there — and it still
+    never accuses a human of an edit nobody made.
     """
     from lumen_api.main import execute_agent_turn_job
 
@@ -1598,14 +1891,8 @@ def test_a_redrive_after_a_checkpoint_neither_double_commits_nor_blames_a_human(
     )
     assert first_status == "failed"
     assert store.require_document(document["id"])["current_version"] == 1
-    marks = [
-        event
-        for event in store.list_run_events(envelope.run_id)
-        if event["type"] == "scene_checkpoint_committed"
-    ]
-    assert [mark["data"]["version"] for mark in marks] == [1]
 
-    # The takeover: the SAME envelope, same frozen base of 0, driven again.
+    # The takeover: the SAME envelope, its frozen base of 0 now irrelevant, driven again.
     status, response, _, _ = execute_agent_turn_job(
         envelope,
         store=store,
@@ -1616,19 +1903,14 @@ def test_a_redrive_after_a_checkpoint_neither_double_commits_nor_blames_a_human(
         event_sink=None,
     )
 
-    assert status == "failed", response
-    diagnostic = response["diagnostics"][0]
-    assert diagnostic["code"] == "agent_turn.interrupted_after_checkpoint"
-    # Truthful about what survived, and it does NOT accuse a human of editing.
-    assert "version 1" in diagnostic["hint"]
-    assert "nothing is lost" in diagnostic["hint"]
-    assert "preserved" not in response["summary"]
-    # Nothing was applied twice: the head, its scene and its history are exactly as the first
-    # attempt left them.
+    assert status == "succeeded", response
+    # It started from the version its own checkpoint left and advanced it by its own one write —
+    # the first attempt's work is neither lost nor applied twice.
     stored = store.require_document(document["id"])
-    assert stored["current_version"] == 1
-    assert stored["scene"]["meta"]["title"] == "Saved round"
-    assert len(store.list_envelopes(document["id"])) == 1
+    assert stored["current_version"] == 2
+    assert stored["scene"]["meta"]["title"] == "Redrive round"
+    assert len(store.list_envelopes(document["id"])) == 2
+    assert "preserved" not in (response.get("summary") or "")
 
 
 def test_a_human_edit_during_a_checkpointed_run_still_conflicts_at_the_next_write(
@@ -1679,3 +1961,289 @@ def test_a_human_edit_during_a_checkpointed_run_still_conflicts_at_the_next_writ
     stored = store.require_document(document["id"])
     assert stored["scene"]["meta"]["title"] == "Human wins"
     assert stored["current_version"] == 2
+
+
+# --- (d) the session folder travels ------------------------------------------
+
+
+@pytest.mark.parametrize("scene_skill_bundle", ["legacy", "candidate"])
+def test_a_leg_scene_turn_stores_its_session_folder_and_names_the_manifest(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    scene_skill_bundle: str,
+) -> None:
+    """Session continuity (2026-09-18), Task 8: the session folder is not the worker's.
+
+    A session's memory lives in a folder on whichever worker ran its last turn, and fleet work is
+    not sticky — so at turn end the agent-visible ``workspace/`` tree is registered as
+    content-addressed blobs and the manifest's DIGEST is stamped on the run result. That stamp is
+    the only durable pointer the next turn has, so this drives the REAL
+    ``run_agent_turn_preview`` (no ``agent_turn_runner`` override) with only the runtime's own
+    model call stubbed, and reads the manifest back the way the restore path will:
+    ``read_blob(sha)``.
+
+    BOTH skill bundles, because the CANDIDATE bundle re-roots the whole runtime at
+    ``<trace_dir>/scene-candidate`` — that rebase is exactly what
+    ``harness.effective_runtime_config`` exists to keep in one place, and a test that knew the
+    folder by a hand-built path would pass under one bundle and lie under the other (the lane's
+    own ``.env`` sets ``candidate``). The fake below therefore resolves the folder the way the
+    real ``create_design_deepagent`` does, through that same helper.
+    """
+
+    from dataclasses import replace as dataclass_replace
+
+    import lumen_agent.config as agent_config
+    import lumen_agent.harness as agent_harness
+    import lumen_agent.llm as agent_llm
+    from lumen_api.main import execute_agent_turn_job
+
+    from clue_design.sessions import design_session_id
+
+    document = create_document(client)
+    store = HybridRepository()
+
+    # The runtime's workspace root is redirected into tmp_path so the turn's session folder is
+    # this test's, not the checkout's `.deepagent-workspace`.
+    base_config = dataclass_replace(
+        agent_config.AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "agent-workspace",
+        scene_skill_bundle=scene_skill_bundle,
+    )
+    monkeypatch.setattr(
+        agent_config.AgentRuntimeConfig,
+        "from_env",
+        classmethod(lambda _cls, _root=None: base_config),
+    )
+    # The multimodal preflight is a live model-catalogue call; the loop itself never runs here.
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Tools:
+        def __init__(self, turn_dir: Path) -> None:
+            self.turn_dir = turn_dir
+            self.scene = minimal_scene()
+
+    seen: dict = {}
+
+    def fake_turn(_prompt, config, **_kwargs):
+        """Stand in for the trio: leave one file in the session workspace and stop.
+
+        The REAL harness rebases the config inside ``create_design_deepagent`` before it touches
+        any path, so the fake has to rebase too — otherwise it writes to a folder the snapshot
+        (correctly) does not look in, and the test fails for a reason that is purely its own.
+        """
+        session_dir = agent_harness.effective_runtime_config(config).session_dir()
+        seen["session_dir"] = session_dir
+        (session_dir / "workspace").mkdir(parents=True, exist_ok=True)
+        (session_dir / "workspace" / "brief.md").write_text("the brief", encoding="utf-8")
+        turn_dir = session_dir / "turns" / str(config.run_id)
+        turn_dir.mkdir(parents=True, exist_ok=True)
+        return (
+            {
+                "outcome": "clarification_requested",
+                "summary": "One question first.",
+                "run_id": config.run_id,
+                "clarification": {"questions": ["Which headline?"]},
+            },
+            _Tools(turn_dir),
+        )
+
+    monkeypatch.setattr(agent_harness, "run_deepagent_turn", fake_turn)
+
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=_turn_host(client, None),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    # Named through the same helper the harness and the snapshot both use, so the expectation
+    # cannot drift from the rule — under `candidate` this is the `scene-candidate` sub-root.
+    expected_root = agent_harness.effective_runtime_config(base_config).trace_dir
+    assert seen["session_dir"] == (
+        expected_root / "sessions" / design_session_id(store.workspace_id, document["id"])
+    )
+    sha = response["session_manifest_sha256"]
+    assert isinstance(sha, str) and len(sha) == 64
+    media_type, data = make_blob_store(client.app).read_blob(sha)
+    assert media_type == "application/json"
+    manifest = json.loads(data)
+    assert manifest["schema_version"] == 1
+    # The agent-visible workspace travelled; the turn's own outputs did not.
+    assert set(manifest["files"]) == {"workspace/brief.md"}
+    entry = manifest["files"]["workspace/brief.md"]
+    assert entry["sha256"] == hashlib.sha256(b"the brief").hexdigest()
+    # ...and the bytes are really in custody, which is what makes the restore possible.
+    assert make_blob_store(client.app).read(entry["sha256"]) == b"the brief"
+
+
+# --- (e) the platform's reads reach the runtime -------------------------------
+
+
+def test_a_leg_turn_hands_the_platform_reads_to_the_runtime_and_a_direct_turn_does_not(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Design note 2026-09-19: a LEG turn's runtime config carries the platform's reads.
+
+    The reads are a capability the PLATFORM composes (the account's research through the
+    governed tools, the seller's pinned knowledge) and hands the design host as a factory; the
+    design side never opens the platform database, so the only proof that matters is that the
+    resolved object arrives on ``AgentRuntimeConfig`` — by value, for a leg turn, and for
+    nothing else. A direct editor turn has no ``leg`` block, so the factory is never called and
+    the runtime sees ``None``: same config as before this note.
+
+    Drives the REAL ``run_agent_turn_preview`` (no ``agent_turn_runner`` override) with only the
+    runtime's model call stubbed, exactly as the session-folder test above does — the config is
+    assembled inside that function, so an executor-level capture would prove nothing.
+    """
+
+    from dataclasses import replace as dataclass_replace
+
+    import lumen_agent.config as agent_config
+    import lumen_agent.harness as agent_harness
+    import lumen_agent.llm as agent_llm
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+
+    base_config = dataclass_replace(
+        agent_config.AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "agent-workspace",
+    )
+    monkeypatch.setattr(
+        agent_config.AgentRuntimeConfig,
+        "from_env",
+        classmethod(lambda _cls, _root=None: base_config),
+    )
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Tools:
+        def __init__(self, turn_dir: Path) -> None:
+            self.turn_dir = turn_dir
+            self.scene = minimal_scene()
+
+    seen: list = []
+
+    def fake_turn(_prompt, config, **_kwargs):
+        seen.append(config.platform_reads)
+        turn_dir = tmp_path / "turns" / str(config.run_id)
+        turn_dir.mkdir(parents=True, exist_ok=True)
+        return (
+            {
+                "outcome": "clarification_requested",
+                "summary": "One question first.",
+                "run_id": config.run_id,
+                "clarification": {"questions": ["Which headline?"]},
+            },
+            _Tools(turn_dir),
+        )
+
+    monkeypatch.setattr(agent_harness, "run_deepagent_turn", fake_turn)
+
+    sentinel = object()
+    calls: list = []
+
+    def factory(envelope):
+        calls.append(envelope.run_id)
+        return sentinel if "leg" in envelope.config else None
+
+    host = dataclass_replace(_turn_host(client, None), platform_reads_factory=factory)
+
+    leg = _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0))
+    status, response, _, _ = execute_agent_turn_job(leg, store=store, host=host, event_sink=None)
+    assert status == "succeeded", response
+
+    direct = _scene_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {
+                "prompt": "Repair the headline",
+                "scene": minimal_scene(),
+                "document_id": document["id"],
+            }
+        },
+    )
+    status, response, _, _ = execute_agent_turn_job(direct, store=store, host=host, event_sink=None)
+    assert status == "succeeded", response
+
+    assert seen == [sentinel, None]
+    # ...and the factory was asked ONCE, for the leg turn only: a direct turn does not even
+    # reach the platform to be told "no".
+    assert calls == [leg.run_id]
+
+
+def test_a_leg_turn_whose_platform_reads_cannot_be_composed_still_designs(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reads are a capability, not a precondition (design note 2026-09-19).
+
+    A scoped-preference failure refuses the turn, because a queued preference pin is the
+    human's explicit selection and serving it unauthorized would be worse than not running.
+    These reads are the opposite: nothing about them was chosen turn-by-turn, so a turn that
+    cannot compose them designs from the brief exactly as it did before the note.
+    """
+
+    from dataclasses import replace as dataclass_replace
+
+    import lumen_agent.config as agent_config
+    import lumen_agent.harness as agent_harness
+    import lumen_agent.llm as agent_llm
+    from lumen_api.main import execute_agent_turn_job
+
+    document = create_document(client)
+    store = HybridRepository()
+
+    base_config = dataclass_replace(
+        agent_config.AgentRuntimeConfig.from_env(REPO_ROOT),
+        trace_dir=tmp_path / "agent-workspace",
+    )
+    monkeypatch.setattr(
+        agent_config.AgentRuntimeConfig,
+        "from_env",
+        classmethod(lambda _cls, _root=None: base_config),
+    )
+    monkeypatch.setattr(agent_llm, "assert_model_supports_image_input", lambda *a, **k: None)
+
+    class _Tools:
+        def __init__(self, turn_dir: Path) -> None:
+            self.turn_dir = turn_dir
+            self.scene = minimal_scene()
+
+    seen: list = []
+
+    def fake_turn(_prompt, config, **_kwargs):
+        seen.append(config.platform_reads)
+        turn_dir = tmp_path / "turns" / str(config.run_id)
+        turn_dir.mkdir(parents=True, exist_ok=True)
+        return (
+            {
+                "outcome": "clarification_requested",
+                "summary": "One question first.",
+                "run_id": config.run_id,
+                "clarification": {"questions": ["Which headline?"]},
+            },
+            _Tools(turn_dir),
+        )
+
+    monkeypatch.setattr(agent_harness, "run_deepagent_turn", fake_turn)
+
+    def exploding_factory(_envelope):
+        raise RuntimeError("the platform loop is gone")
+
+    host = dataclass_replace(_turn_host(client, None), platform_reads_factory=exploding_factory)
+    status, response, _, _ = execute_agent_turn_job(
+        _scene_envelope(document["id"], store.workspace_id, _leg_config(document, 0)),
+        store=store,
+        host=host,
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert seen == [None]

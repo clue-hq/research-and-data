@@ -1,0 +1,695 @@
+{
+  "summary": {
+    "_summary": true,
+    "agent": "A",
+    "budget_usd": 0.4,
+    "spent_usd": 0.177,
+    "ai_ark_credits_used": 0,
+    "by_provider": {
+      "live_http": {
+        "calls": 13,
+        "wall_s": 3.04,
+        "cost_usd": 0.0,
+        "ops": {
+          "GET https://www.cluehq.ai": 1,
+          "GET https://www.cluehq.ai/assets/capability-activation.png": 1,
+          "GET https://www.cluehq.ai/assets/capability-brand.png": 1,
+          "GET https://www.cluehq.ai/assets/capability-committee.png": 1,
+          "GET https://www.cluehq.ai/assets/capability-engagement.png": 1,
+          "GET https://www.cluehq.ai/assets/capability-human.png": 1,
+          "GET https://www.cluehq.ai/assets/capability-research.png": 1,
+          "GET https://www.cluehq.ai/privacy": 1,
+          "GET https://www.cluehq.ai/terms": 1,
+          "GET https://www.cluehq.ai/product": 1,
+          "GET https://www.cluehq.ai/how-it-works": 1,
+          "GET https://www.cluehq.ai/pricing": 1,
+          "GET https://www.cluehq.ai/about": 1
+        }
+      },
+      "exa": {
+        "calls": 27,
+        "wall_s": 35.67,
+        "cost_usd": 0.177,
+        "ops": {
+          "contents": 1,
+          "contents/always": 1,
+          "auto": 25
+        }
+      }
+    },
+    "exa_unit_costs_observed": {
+      "search_neural_10_results": 0.007,
+      "search_neural_5_results": 0.007,
+      "contents_text_per_page_cached": 0.001,
+      "contents_text_per_page_livecrawl": 0.001,
+      "note": "contents.text bundled inside a /search call added $0.000 to the observed total \u2014 all 23 A4 searches billed a flat $0.007 despite returning 1200-1500 chars per result. Text-in-search appears to be free at this size; this is a material cost finding."
+    },
+    "failures": {
+      "http_non_200": 6,
+      "detail": "6 live 404s on cluehq.ai routes (/privacy, /terms, /product, /how-it-works, /pricing, /about) \u2014 a finding, not an error. 0 provider errors, 0 retries, 0 rate limits."
+    },
+    "waste": "6 of the 13 live_http calls fetched PNG assets (~12MB) because the A1a link discovery did not filter asset URLs. $0 cost, ~2s wasted. Fixed before A1b."
+  },
+  "calls": [
+    {
+      "provider": "live_http",
+      "label": "root",
+      "op": "GET https://www.cluehq.ai",
+      "http": 200,
+      "elapsed_s": 0.33,
+      "cost_usd": 0.0,
+      "bytes": 27311,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:15Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "assets_capability_activation_png",
+      "op": "GET https://www.cluehq.ai/assets/capability-activation.png",
+      "http": 200,
+      "elapsed_s": 0.33,
+      "cost_usd": 0.0,
+      "bytes": 2338658,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:15Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "assets_capability_brand_png",
+      "op": "GET https://www.cluehq.ai/assets/capability-brand.png",
+      "http": 200,
+      "elapsed_s": 0.3,
+      "cost_usd": 0.0,
+      "bytes": 2270887,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:16Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "assets_capability_committee_png",
+      "op": "GET https://www.cluehq.ai/assets/capability-committee.png",
+      "http": 200,
+      "elapsed_s": 0.28,
+      "cost_usd": 0.0,
+      "bytes": 1917022,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:16Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "assets_capability_engagement_png",
+      "op": "GET https://www.cluehq.ai/assets/capability-engagement.png",
+      "http": 200,
+      "elapsed_s": 0.33,
+      "cost_usd": 0.0,
+      "bytes": 1963698,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:17Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "assets_capability_human_png",
+      "op": "GET https://www.cluehq.ai/assets/capability-human.png",
+      "http": 200,
+      "elapsed_s": 0.2,
+      "cost_usd": 0.0,
+      "bytes": 1718725,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:17Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "assets_capability_research_png",
+      "op": "GET https://www.cluehq.ai/assets/capability-research.png",
+      "http": 200,
+      "elapsed_s": 0.33,
+      "cost_usd": 0.0,
+      "bytes": 2068660,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:18Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "privacy",
+      "op": "GET https://www.cluehq.ai/privacy",
+      "http": 404,
+      "elapsed_s": 0.14,
+      "cost_usd": 0.0,
+      "bytes": 9,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:43Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "terms",
+      "op": "GET https://www.cluehq.ai/terms",
+      "http": 404,
+      "elapsed_s": 0.18,
+      "cost_usd": 0.0,
+      "bytes": 9,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:43Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "probe_product",
+      "op": "GET https://www.cluehq.ai/product",
+      "http": 404,
+      "elapsed_s": 0.18,
+      "cost_usd": 0.0,
+      "bytes": 9,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:44Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "probe_how_it_works",
+      "op": "GET https://www.cluehq.ai/how-it-works",
+      "http": 404,
+      "elapsed_s": 0.12,
+      "cost_usd": 0.0,
+      "bytes": 9,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:44Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "probe_pricing",
+      "op": "GET https://www.cluehq.ai/pricing",
+      "http": 404,
+      "elapsed_s": 0.14,
+      "cost_usd": 0.0,
+      "bytes": 9,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:44Z"
+    },
+    {
+      "provider": "live_http",
+      "label": "probe_about",
+      "op": "GET https://www.cluehq.ai/about",
+      "http": 404,
+      "elapsed_s": 0.18,
+      "cost_usd": 0.0,
+      "bytes": 9,
+      "server": "cloudflare",
+      "agent": "A",
+      "ts": "2026-08-31T07:13:45Z"
+    },
+    {
+      "provider": "exa",
+      "label": "a1_contents_cached",
+      "op": "contents",
+      "http": 200,
+      "elapsed_s": 0.34,
+      "cost_usd": 0.001,
+      "cost_breakdown": {
+        "total": 0.001,
+        "contents": {
+          "text": 0.001
+        }
+      },
+      "n_results": 1,
+      "agent": "A",
+      "ts": "2026-08-31T07:14:05Z"
+    },
+    {
+      "provider": "exa",
+      "label": "a1_contents_livecrawl",
+      "op": "contents/always",
+      "http": 200,
+      "elapsed_s": 1.32,
+      "cost_usd": 0.001,
+      "cost_breakdown": {
+        "total": 0.001,
+        "contents": {
+          "text": 0.001
+        }
+      },
+      "n_results": 1,
+      "agent": "A",
+      "ts": "2026-08-31T07:14:08Z"
+    },
+    {
+      "provider": "exa",
+      "label": "a1_search_nl",
+      "op": "auto",
+      "query": "Clue cluehq.ai agentic ABM platform AI agents for account-based marketing",
+      "http": 200,
+      "elapsed_s": 1.16,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:14:10Z"
+    },
+    {
+      "provider": "exa",
+      "label": "a1_search_domain",
+      "op": "auto",
+      "query": "Clue agentic ABM platform",
+      "http": 200,
+      "elapsed_s": 1.12,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 1,
+      "agent": "A",
+      "ts": "2026-08-31T07:14:12Z"
+    },
+    {
+      "provider": "exa",
+      "label": "d1_semantic_saas",
+      "op": "auto",
+      "query": "US Series B B2B SaaS company selling to large enterprise named accounts with a small marketing team running account-based marketing campaigns",
+      "http": 200,
+      "elapsed_s": 1.87,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:18:19Z"
+    },
+    {
+      "provider": "exa",
+      "label": "d2_semantic_health",
+      "op": "auto",
+      "query": "Series A or Series B US healthcare software company selling to hospitals, health systems and payers with an enterprise sales team and a small marketing team",
+      "http": 200,
+      "elapsed_s": 1.71,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:18:21Z"
+    },
+    {
+      "provider": "exa",
+      "label": "d3_jobs_abm",
+      "op": "auto",
+      "query": "Account Based Marketing Manager job opening: build and maintain the target account list, research accounts, run 1:1 ABM campaigns for our top accounts",
+      "http": 200,
+      "elapsed_s": 1.17,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:18:24Z"
+    },
+    {
+      "provider": "exa",
+      "label": "d4_jobs_demandgen",
+      "op": "auto",
+      "query": "Demand Generation Manager job description: account research, target account lists, personalized outbound campaigns, direct mail and field marketing",
+      "http": 200,
+      "elapsed_s": 1.22,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:18:26Z"
+    },
+    {
+      "provider": "exa",
+      "label": "d5_funding_gtm",
+      "op": "auto",
+      "query": "raises Series B funding to expand its enterprise go-to-market and sales team, B2B software company, United States",
+      "http": 200,
+      "elapsed_s": 1.56,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:18:29Z"
+    },
+    {
+      "provider": "exa",
+      "label": "d6_founder_pain",
+      "op": "auto",
+      "query": "we spent weeks researching accounts to personalize outbound and only shipped a handful of campaigns \u2014 B2B marketing leader writing about ABM being too much work",
+      "http": 200,
+      "elapsed_s": 1.41,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:18:31Z"
+    },
+    {
+      "provider": "exa",
+      "label": "d7_fintech_banks",
+      "op": "auto",
+      "query": "venture-backed US fintech software company selling software to banks and credit unions, enterprise deals, named account sales",
+      "http": 200,
+      "elapsed_s": 1.51,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:18:34Z"
+    },
+    {
+      "provider": "exa",
+      "label": "d8_agency",
+      "op": "auto",
+      "query": "venture-backed US B2B marketing services company running account-based marketing programs for enterprise software clients",
+      "http": 200,
+      "elapsed_s": 1.08,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 10,
+      "agent": "A",
+      "ts": "2026-08-31T07:18:36Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_cogent_security",
+      "op": "auto",
+      "query": "Cogent Security AI autonomous cyber defense funding round investors headquarters",
+      "http": 200,
+      "elapsed_s": 1.18,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:19:58Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_oscilar",
+      "op": "auto",
+      "query": "Oscilar AI Risk Decisioning Neha Narkhede funding round Series A investors headquarters",
+      "http": 200,
+      "elapsed_s": 2.02,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:02Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_harmonic_security",
+      "op": "auto",
+      "query": "Harmonic Security AI governance funding Series A Series B investors headquarters",
+      "http": 200,
+      "elapsed_s": 1.33,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:04Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_zafran_security",
+      "op": "auto",
+      "query": "Zafran Security funding Series B investors headquarters location",
+      "http": 200,
+      "elapsed_s": 1.12,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:06Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_revenuecat",
+      "op": "auto",
+      "query": "RevenueCat funding Series C investors headquarters San Francisco",
+      "http": 200,
+      "elapsed_s": 1.23,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:09Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_arintra",
+      "op": "auto",
+      "query": "Arintra autonomous medical coding Series B funding investors headquarters",
+      "http": 200,
+      "elapsed_s": 1.09,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:11Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_translucent_health",
+      "op": "auto",
+      "query": "Translucent healthcare finance $27M Series A GV headquarters founders",
+      "http": 200,
+      "elapsed_s": 0.99,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:13Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_prosper_ai",
+      "op": "auto",
+      "query": "Prosper AI patient access automation $30M Series A a16z headquarters",
+      "http": 200,
+      "elapsed_s": 0.76,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:15Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_vendelux",
+      "op": "auto",
+      "query": "Vendelux event intelligence $50M funding round investors headquarters New York",
+      "http": 200,
+      "elapsed_s": 1.34,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:17Z"
+    },
+    {
+      "provider": "exa",
+      "label": "v_uptiq",
+      "op": "auto",
+      "query": "Uptiq AI financial AI platform for banks credit unions funding round headquarters",
+      "http": 200,
+      "elapsed_s": 1.72,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:20:20Z"
+    },
+    {
+      "provider": "exa",
+      "label": "t_oscilar_round",
+      "op": "auto",
+      "query": "Oscilar raises funding round Series A Series B 2026 investors Neha Narkhede",
+      "http": 200,
+      "elapsed_s": 1.98,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:22:19Z"
+    },
+    {
+      "provider": "exa",
+      "label": "t_jobs_arintra",
+      "op": "auto",
+      "query": "Arintra marketing demand generation growth job opening",
+      "http": 200,
+      "elapsed_s": 1.24,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:22:22Z"
+    },
+    {
+      "provider": "exa",
+      "label": "t_jobs_uptiq",
+      "op": "auto",
+      "query": "Uptiq marketing demand generation growth job opening banks credit unions",
+      "http": 200,
+      "elapsed_s": 1.72,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:22:24Z"
+    },
+    {
+      "provider": "exa",
+      "label": "t_jobs_vendelux",
+      "op": "auto",
+      "query": "Vendelux marketing demand generation growth job opening events intelligence",
+      "http": 200,
+      "elapsed_s": 1.39,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:22:27Z"
+    },
+    {
+      "provider": "exa",
+      "label": "t_jobs_translucent",
+      "op": "auto",
+      "query": "Translucent AI healthcare finance marketing growth job opening New York",
+      "http": 200,
+      "elapsed_s": 1.09,
+      "cost_usd": 0.007,
+      "cost_breakdown": {
+        "total": 0.007,
+        "search": {
+          "neural": 0.007
+        }
+      },
+      "n_results": 5,
+      "agent": "A",
+      "ts": "2026-08-31T07:22:29Z"
+    }
+  ]
+}

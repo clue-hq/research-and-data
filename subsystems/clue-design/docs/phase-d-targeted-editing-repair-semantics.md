@@ -280,6 +280,29 @@ Node targets should support the same safe visual properties used for creation:
 
 Each property lowers into the narrowest possible `NodePatch`.
 
+#### Explicit typography token intent
+
+`NodePatch.explicit_text_tokens` is an optional mask of `style`, `font_size`,
+`line_height`, and `letter_spacing` booleans. It accompanies a text-kind update
+and records which token channels the author deliberately set or cleared.
+Reapplying the same token is explicit: changing a raw size from a skeleton value
+to a resolved value must not detach an intentionally reapplied size token.
+
+Sparse `TextEditPatch` lowering carries `Set`/`Clear` intent into this mask.
+Declarative reconcile carries the full intended text state, and the active
+retokenizer marks the bindings it creates. Inverse operations retain the mask
+when restoring the captured text state. The mask is absent from legacy/raw
+inspector updates: copied tokens still detach when their numeric channel changes,
+so a person's raw font-size edit survives later brand resolution. Content-only
+edits preserve bindings. This is additive operation metadata, not a scene schema
+revision or a new token-resolution mode.
+
+The runtime and saved-ledger paths must resolve to the same typography even
+when only the runtime working copy has passed through preflight. Preflight still
+consumes role and size bindings together in its resolved output; producers must
+not depend on token-string inequality against that transient state to express
+authoring intent.
+
 ### Text Replacement
 
 Text replacement is a core Phase D requirement because visual critique often

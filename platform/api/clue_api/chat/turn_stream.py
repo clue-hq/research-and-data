@@ -41,11 +41,11 @@ from __future__ import annotations
 
 import hashlib
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import ROUND_CEILING, Decimal
-from typing import Any, Final
+from typing import Any
 from uuid import UUID, uuid5
 
 from langchain_core.callbacks import AsyncCallbackHandler
@@ -53,7 +53,11 @@ from langchain_core.outputs import ChatGenerationChunk, GenerationChunk, LLMResu
 from pydantic import JsonValue
 from sqlalchemy import text as sql_text
 
-from clue_api.agent_gate import GATE_OBJECT_TYPE, KIND_ICP_CONFIRMATION
+from clue_api.agent_gate import (
+    GATE_OBJECT_TYPE,
+    KIND_ICP_CONFIRMATION,
+    KIND_PRODUCT_SET_SELECTION,
+)
 from clue_api.chat.finalize_stream import FinalizeTextDeltaExtractor
 from clue_api.chat.turn_events import (
     TurnEventType,
@@ -66,6 +70,8 @@ from clue_api.chat.turn_parts import (
     ActivityStep,
     ActivityStepStatus,
     AgentActivityPart,
+    ClarificationPart,
+    ClarificationQuestion,
     GatePart,
     PartKind,
     PlanPart,
@@ -79,6 +85,7 @@ from clue_api.chat.turn_parts import (
     TurnPart,
     activity_part_id,
     assistant_message_id,
+    clarification_part_id,
     gate_part_id,
     object_ref_wire,
     plan_part_id,
@@ -153,6 +160,7 @@ class _TextPartState:
     call_index: int
     next_delta_index: int = 0
     pending: list[str] = field(default_factory=list)
+    accepted_text: list[str] = field(default_factory=list)
     started: bool = False
     ended: bool = False
     last_flush: float = 0.0
@@ -206,6 +214,7 @@ class TurnStreamEmitter:
         self._text: _TextPartState | None = None
         self._reasoning: dict[int, _ReasoningTextState] = {}
         self._rounds = 0
+        self._active_rounds: set[int] = set()
         #: Emission failures, counted rather than raised: the stream may never fail a turn.
         self.emission_failures: list[str] = []
 
@@ -346,6 +355,8 @@ class TurnStreamEmitter:
         audit, and no ``text.end`` is ever emitted for it — a cancelled generation must not be able
         to masquerade as a completed assistant message (§3.3(8))."""
 
+        for ordinal in tuple(self._active_rounds):
+            await self.round_finished(round_ordinal=ordinal, failed=True)
         await self._flush_text()
         if self._text is not None and self._text.started and not self._text.ended:
             await self._emit(
@@ -375,6 +386,7 @@ class TurnStreamEmitter:
         )
 
     async def round_started(self, *, round_ordinal: int) -> None:
+        self._active_rounds.add(round_ordinal)
         self._rounds = max(self._rounds, round_ordinal)
         part_id = self._reasoning_part_id(round_ordinal)
         await self._part(
@@ -457,6 +469,7 @@ class TurnStreamEmitter:
         failed: bool = False,
     ) -> None:
         part_id = self._reasoning_part_id(round_ordinal)
+        self._active_rounds.discard(round_ordinal)
         trace = self._reasoning.pop(round_ordinal, None)
         if trace is not None:
             await self._flush_reasoning(trace)
@@ -591,6 +604,7 @@ class TurnStreamEmitter:
         if not delta:
             return
         state = await self._text_state(round_ordinal=round_ordinal, call_index=call_index)
+        state.accepted_text.append(delta)
         state.pending.append(delta)
         pending_chars = sum(len(item) for item in state.pending)
         first = state.next_delta_index == 0
@@ -644,6 +658,10 @@ class TurnStreamEmitter:
         )
         state.started = True
         return state
+
+    def interrupted_answer(self) -> str:
+        """Only the latest finalize-call answer prefix, including its unflushed tail."""
+        return "" if self._text is None else "".join(self._text.accepted_text)
 
     async def _flush_text(self) -> None:
         state = self._text
@@ -892,6 +910,43 @@ class TurnStreamEmitter:
             ),
         )
 
+    async def emit_clarification_part(
+        self,
+        *,
+        document_id: str,
+        document_title: str,
+        doc_kind: str,
+        account_name: str | None,
+        run_id: str,
+        questions: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Spec 2026-09-20 §2.1: the questions a document's run asked, as one part per document."""
+
+        part_id = clarification_part_id(document_id)
+        await self._part(
+            TurnEventType.PART_CREATED,
+            ClarificationPart(
+                part_id=part_id,
+                revision=self._revision(part_id),
+                document_id=document_id,
+                document_title=document_title,
+                doc_kind=doc_kind,
+                account_name=account_name,
+                run_id=run_id,
+                questions=tuple(
+                    ClarificationQuestion(
+                        id=str(q["id"]),
+                        question=str(q["question"]),
+                        why_it_matters=str(q.get("why_it_matters") or ""),
+                        options=tuple(str(o) for o in (q.get("options") or ())),
+                        default=str(q["default"]),
+                        allow_freeform=bool(q.get("allow_freeform", True)),
+                    )
+                    for q in questions
+                ),
+            ),
+        )
+
     async def emit_sources_part(self, *, items: Sequence[SourceItem]) -> None:
         if not items:
             return
@@ -1118,8 +1173,19 @@ def _gate_subject_ref(view: GateView) -> dict[str, JsonValue]:
     """
 
     if view.kind == KIND_ICP_CONFIRMATION:
-        identifier = view.subject_snapshot.get("icp_key")
-        object_type = "icp_spec"
+        if view.subject_snapshot.get("subject_kind") == "brand_knowledge_document":
+            # ARV2 onboarding O6: the subject is a file the human can open, so the ref names the
+            # document rather than the ICP key — the key is one of the document's own facts.
+            identifier = view.subject_snapshot.get("document_id")
+            object_type = "brand_knowledge_document"
+        else:
+            identifier = view.subject_snapshot.get("icp_key")
+            object_type = "icp_spec"
+    elif view.kind == KIND_PRODUCT_SET_SELECTION:
+        # The subject is the brand's catalog as a whole — the candidates are its products — so the
+        # ref names the brand, and the exact catalog document lives in the snapshot beside it.
+        identifier = view.subject_snapshot.get("brand_id")
+        object_type = "brand_product_catalog"
     else:
         identifier = view.subject_snapshot.get("research_directive_id")
         object_type = "research_directive"
@@ -1135,48 +1201,57 @@ def _gate_subject_ref(view: GateView) -> dict[str, JsonValue]:
     return ref
 
 
-#: Content-block members that hold reasoning text on the shapes the gateway's models produce.
-#: ``summary`` is the OpenAI-Responses reasoning-summary stream (``summary_text`` deltas);
-#: ``content`` is where a thinking-block provider's text lands once OpenRouter has normalized it.
-_REASONING_TEXT_MEMBERS: Final = ("summary", "content")
-
-
 def reasoning_deltas_from_chunk(message: Any) -> tuple[str, ...]:
-    """Every newly produced reasoning fragment on one streamed chunk — **dev lens only**.
+    """Choose one displayable reasoning representation per delta, never answer/tool text.
 
-    Pure, and deliberately shape-tolerant rather than shape-trusting: the gateway builds
-    ``ChatOpenAI(use_responses_api=True, output_version="responses/v1")``, which surfaces reasoning
-    as ``{"type": "reasoning", "summary": [{"type": "summary_text", "text": …}]}`` content blocks;
-    a thinking-block provider routed through OpenRouter arrives in the same block's ``content``
-    member; and a chat-completions passthrough puts a plain string in
-    ``additional_kwargs['reasoning_content']``. All three are the *normalized* LangChain shape — no
-    provider wire format reaches here — so reading whichever is present is compatibility, not
-    leniency about untrusted input.
-
-    Returns only non-empty fragments, in production order. It never returns the assistant's answer:
-    a chunk's ordinary text/tool-call content is not inspected at all, so this function cannot be
-    the path by which the finalize argument or provider chatter leaks — that remains
-    :class:`~clue_api.chat.finalize_stream.FinalizeTextDeltaExtractor`'s sole job.
+    Standard content blocks and Responses summaries take precedence over provider
+    aliases. Never deduplicate by value: repeated words in separate deltas are real.
+    Encrypted continuation fields are deliberately absent from this allowlist.
     """
-
-    fragments: list[str] = []
-    content = getattr(message, "content", None)
-    if isinstance(content, list):
+    for content in (getattr(message, "content", None), getattr(message, "content_blocks", None)):
+        fragments: list[str] = []
+        if not isinstance(content, list):
+            continue
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "reasoning":
                 continue
-            for member in _REASONING_TEXT_MEMBERS:
-                for item in block.get(member) or ():
-                    if isinstance(item, dict):
-                        piece = item.get("text")
-                        if isinstance(piece, str) and piece:
-                            fragments.append(piece)
+            standard = block.get("reasoning")
+            if isinstance(standard, str) and standard:
+                fragments.append(standard)
+                continue
+            for member in ("summary", "content"):
+                items = block.get(member)
+                if not isinstance(items, list):
+                    continue
+                fragments.extend(
+                    item["text"]
+                    for item in items
+                    if isinstance(item, dict) and isinstance(item.get("text"), str) and item["text"]
+                )
+        if fragments:
+            return tuple(fragments)
     extra = getattr(message, "additional_kwargs", None)
-    if isinstance(extra, dict):
-        piece = extra.get("reasoning_content")
-        if isinstance(piece, str) and piece:
-            fragments.append(piece)
-    return tuple(fragments)
+    if not isinstance(extra, dict):
+        return ()
+    piece = extra.get("reasoning_content")
+    if isinstance(piece, str) and piece:
+        return (piece,)
+    details = extra.get("reasoning_details")
+    if not isinstance(details, list):
+        return ()
+    return tuple(
+        piece
+        for detail in details
+        if isinstance(detail, dict)
+        for key in (
+            "text"
+            if detail.get("type") == "reasoning.text"
+            else "summary"
+            if detail.get("type") == "reasoning.summary"
+            else "",
+        )
+        if key and isinstance(piece := detail.get(key), str) and piece
+    )
 
 
 class TurnStreamCallbackHandler(AsyncCallbackHandler):

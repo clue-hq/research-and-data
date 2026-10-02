@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
@@ -10,8 +11,8 @@ from decimal import Decimal
 from typing import Annotated, Literal, Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from langchain_core.tools import StructuredTool, ToolException
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from sqlalchemy import text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -44,7 +45,11 @@ from clue_agents.entity_research_runtime import (
     EntityResearchGovernedToolRefusal,
     current_entity_research_tool_execution,
 )
-from clue_api.entity_research_tools import convert_engine_authority_rejections
+from clue_api.entity_research_tools import (
+    EntityResearchGovernedRejection,
+    convert_engine_authority_rejections,
+    semantic_validation_error,
+)
 from clue_core import EntityId, serialize_value_json
 from clue_core.entity_research import (
     ContactChannel,
@@ -68,6 +73,16 @@ _ACCOUNT_TOOL_PREFIXES = (
     "finalize_account",
 )
 _PROVIDER_TOOLS = {"research_contact_deep", "enrich_contact"}
+#: Contact tools that buy nothing (see the account lane's identical note): repeating one in a
+#: single model round is reading, never duplicated provider work.
+_READ_ONLY_TOOL_NAMES = frozenset(
+    {
+        "read_contact_research_state",
+        "inspect_contact_evidence",
+        "read_research_result",
+        "read_evidence",
+    }
+)
 _TERMINAL_CHANNEL_STATES = {"succeeded", "rejected", "failed_terminal", "cancelled"}
 _PENDING_CHANNEL_STATES = {
     "planned",
@@ -681,10 +696,9 @@ class ContactResearchStateStore:
                 if unresolved or review_flags
                 else ResearchFinalizationOutcome.COMPLETED
             )
-            if inputs.requested_outcome is not expected:
-                raise ContactResearchAuthorityError(
-                    f"requested outcome must be {expected.value} for persisted contact coverage"
-                )
+            # Engine-derived, same normalization as the account lane: the model's requested
+            # outcome never reaches the proposal, so a mismatch is corrected by the honest derived
+            # value in the tool result instead of a refusal the model can wedge itself against.
             proposal_id = uuid5(
                 _PROPOSAL_NAMESPACE,
                 f"{authorization.job_id}:{coverage_id}:{state_sha}:{expected.value}",
@@ -882,12 +896,19 @@ class ContactResearchStateStore:
                         "result_request ON result_request.tool_request_id=result.tool_request_id "
                         "WHERE result.provider_operation_ref=observation.provider_operation_ref "
                         "AND result_request.job_id=request_row.job_id) "
-                        # A zero-cost fold without any result is a deterministic terminal
-                        # rejection: never pending (live Sumble 402 livelock).
+                        # A fold without any result is a deterministic terminal rejection: never
+                        # pending (live Sumble 402 livelock). It releases the operation whichever
+                        # job filed it — a fold is a property of the operation, not of the asker,
+                        # and the join above already scopes this to operations *this* job observed.
+                        # Content-keyed operations are reused across jobs and the fold is written
+                        # once, ON CONFLICT DO NOTHING, so demanding one's own job id left a
+                        # replaying job waiting forever on work the provider had already finished
+                        # (the live 2026-08-19 Millennium wedge). Results stay job-scoped: a
+                        # cross-job result is repairable by a zero-spend replay under this job.
                         "AND NOT EXISTS (SELECT 1 FROM "
                         "entity_research_provider_settlement_fold fold WHERE "
                         "fold.provider_operation_ref=observation.provider_operation_ref AND "
-                        "fold.job_id=request_row.job_id AND NOT EXISTS (SELECT 1 FROM "
+                        "NOT EXISTS (SELECT 1 FROM "
                         "entity_research_result settled WHERE settled.provider_operation_ref="
                         "fold.provider_operation_ref)) ORDER BY 1"
                     ),
@@ -1031,7 +1052,9 @@ class ContactResearchExecutionGuard(EntityResearchExecutionGuard):
         if context.authorization.subject_type is not ResearchSubjectType.CONTACT:
             raise ContactResearchAuthorityError("contact guard received another subject type")
         names = [call.tool_name for call in calls]
-        duplicates = {name for name in names if names.count(name) > 1}
+        duplicates = {
+            name for name in names if names.count(name) > 1 and name not in _READ_ONLY_TOOL_NAMES
+        }
         if duplicates:
             if duplicates != {"delegate_contact_facet"}:
                 raise ContactResearchAuthorityError(
@@ -1074,12 +1097,32 @@ class ContactResearchExecutionGuard(EntityResearchExecutionGuard):
             raise ContactResearchAuthorityError("contact deep research uses target-locked Exa")
         if call.tool_name == "enrich_contact" and "exa_deep" in sources:
             raise ContactResearchAuthorityError("structured contact enrichment is independent")
+        if call.tool_name in _PROVIDER_TOOLS and not fields:
+            # Parity with the account guard: ``EntityResearchSemanticToolInput.field_keys`` has no
+            # minimum length and the record-time field/source pairing check is conditional on a
+            # non-empty set, so a zero-field bundle reached the provider action and died there on
+            # ``EntityResearchResultIntegrityError`` — the *suspending* species — for what is a
+            # model argument mistake. Refuse it here as the turn the agent can act on.
+            raise ContactResearchAuthorityError("contact research needs at least one field to buy")
         if call.tool_name == "delegate_contact_facet":
             facet = str(call.arguments.get("facet_key", ""))
             if facet not in authorization.effective_facet_keys:
                 raise ContactResearchAuthorityError("facet delegation widened selected facets")
         if call.tool_name in {"reveal_contact_channel", "validate_contact_channel"}:
-            channel = ContactChannel(str(call.arguments.get("channel", "")))
+            requested = str(call.arguments.get("channel", ""))
+            try:
+                channel = ContactChannel(requested)
+            except ValueError as invalid:
+                # A channel name the model invented is not a ``ContactChannel`` member, and a raw
+                # ``ValueError`` here is not an ``EntityResearchGovernedToolRefusal``, so the
+                # middleware could not render it and the whole contact job failed on a typo.
+                permitted = sorted(
+                    value.value for value in authorization.effective_channel_permissions
+                )
+                raise ContactResearchAuthorityError(
+                    f"channel tool named an unknown channel {requested!r}; the exact permitted "
+                    f"channels are {permitted}"
+                ) from invalid
             if channel not in authorization.effective_channel_permissions:
                 raise ContactResearchAuthorityError("channel tool widened exact permission")
         async with self._conn_factory() as conn:
@@ -1167,9 +1210,13 @@ class ContactResearchFinalizationEngine(EntityResearchFinalizationEngine):
                             "result_request.tool_request_id=result.tool_request_id WHERE "
                             "result.provider_operation_ref=obs.provider_operation_ref AND "
                             "result_request.job_id=req.job_id) AND NOT EXISTS "
+                            # Same predicate as ``_pending_refs``, and for the same reason: the
+                            # fold releases this job's observation whichever job filed it, because
+                            # a fold says the provider is done with the operation. Only the spend
+                            # sum above stays job-scoped — a replaying job bought nothing.
                             "(SELECT 1 FROM entity_research_provider_settlement_fold fold "
                             "WHERE fold.provider_operation_ref=obs.provider_operation_ref "
-                            "AND fold.job_id=req.job_id AND NOT EXISTS (SELECT 1 FROM "
+                            "AND NOT EXISTS (SELECT 1 FROM "
                             "entity_research_result settled WHERE "
                             "settled.provider_operation_ref=fold.provider_operation_ref))) "
                             "AS pending, "
@@ -1306,10 +1353,27 @@ def contact_engine_tool_bindings(
     def repairable(
         coroutine: Callable[..., Awaitable[dict[str, JsonValue]]],
     ) -> Callable[..., Awaitable[dict[str, JsonValue]]]:
-        return convert_engine_authority_rejections(
+        governed = convert_engine_authority_rejections(
             coroutine,
             error_types=(ContactResearchAuthorityError,),
         )
+
+        @functools.wraps(governed)
+        async def guarded(*args: object, **kwargs: object) -> dict[str, JsonValue]:
+            try:
+                return await governed(*args, **kwargs)
+            except ValidationError as error:
+                # Parity with the account lane: these tools re-validate their own arguments in the
+                # body, so a malformed one surfaced here as a raw ``ValidationError`` and killed
+                # the contact execution. A wrong-shaped argument is the model's to repair.
+                raise ToolException(semantic_validation_error(error)) from error
+            except EntityResearchGovernedRejection as rejection:
+                # Already the repairable species (a model-typed reference of the wrong shape from
+                # the shared read helpers, or a channel refusal): render it rather than let it
+                # escape raw, which is exactly how the account lane lost a live job.
+                raise ToolException(rejection.render()) from rejection
+
+        return guarded
 
     async def read_state(include_result_index: bool = True) -> dict[str, JsonValue]:
         value = await store.state()
@@ -1356,6 +1420,7 @@ def contact_engine_tool_bindings(
             name="read_contact_research_state",
             description="Read exact contact identity, results, facets, channels, gaps, and spend.",
             args_schema=ReadContactResearchStateInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "inspect_contact_evidence": StructuredTool.from_function(
@@ -1363,6 +1428,7 @@ def contact_engine_tool_bindings(
             name="inspect_contact_evidence",
             description="Inspect evidence for exact persisted contact results.",
             args_schema=InspectContactEvidenceInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "assess_contact_coverage": StructuredTool.from_function(
@@ -1370,6 +1436,7 @@ def contact_engine_tool_bindings(
             name="assess_contact_coverage",
             description="Derive durable field, facet, channel, identity, and review coverage.",
             args_schema=AssessContactCoverageInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
         "delegate_contact_facet": StructuredTool.from_function(
@@ -1377,27 +1444,38 @@ def contact_engine_tool_bindings(
             name="delegate_contact_facet",
             description="Run one admitted depth-one contact facet child on the shared budget.",
             args_schema=DelegateContactFacetInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
+        # The channel pair is popped out of this map and merged past ``compose`` by the contact
+        # composition, so it never inherits the factory's rendering: without its own wrapper and
+        # error handlers, every refusal it raised — a channel outside the selected permissions, a
+        # validation with no acquisition — escaped raw and failed the whole contact execution.
+        # ``EntityResearchExternalWait`` is not a ``ToolException`` and still suspends normally.
         "reveal_contact_channel": StructuredTool.from_function(
-            coroutine=reveal,
+            coroutine=repairable(reveal),
             name="reveal_contact_channel",
             description=(
                 "Acquire one explicitly approved exact-contact channel without validating it."
             ),
             args_schema=ContactChannelToolInput,
+            handle_validation_error=semantic_validation_error,
+            handle_tool_error=True,
         ),
         "validate_contact_channel": StructuredTool.from_function(
-            coroutine=validate,
+            coroutine=repairable(validate),
             name="validate_contact_channel",
             description="Independently validate one already acquired exact-contact channel.",
             args_schema=ContactChannelToolInput,
+            handle_validation_error=semantic_validation_error,
+            handle_tool_error=True,
         ),
         "finalize_contact_research": StructuredTool.from_function(
             coroutine=repairable(finalize),
             name="finalize_contact_research",
             description="Ask the engine for the only admissible contact finalization proposal.",
             args_schema=FinalizeContactResearchInput,
+            handle_validation_error=semantic_validation_error,
             handle_tool_error=True,
         ),
     }

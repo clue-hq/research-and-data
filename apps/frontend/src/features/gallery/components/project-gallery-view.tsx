@@ -12,11 +12,17 @@ import styles from "./project-gallery.module.css";
 
 export function ProjectGalleryView({
   controller,
+  documentsLoading,
+  documentsError,
+  onRetryDocuments,
   onOpenArtifact,
   projectTitle,
   showSkeletons,
 }: {
   controller: ProjectGalleryController;
+  documentsLoading?: boolean;
+  documentsError?: string | null;
+  onRetryDocuments?: () => void;
   onOpenArtifact: (artifact: GalleryArtifact) => void;
   projectTitle?: string;
   showSkeletons: boolean;
@@ -32,8 +38,9 @@ export function ProjectGalleryView({
         <strong>Gallery</strong>
         <small>{controller.visibleArtifactCount} artifacts</small>
       </nav>
-      <GalleryToolbar controller={controller} />
-      {isEmpty ? (
+      <div><GalleryToolbar controller={controller} />
+      {documentsError ? <div role="alert" className={styles.documentNotice}>{documentsError} <button type="button" onClick={onRetryDocuments}>Try again</button></div> : null}</div>
+      {documentsLoading && isEmpty ? <div className={styles.emptyState} role="status">Loading documents…</div> : isEmpty && !documentsError ? (
         <div className={styles.emptyState}>
           <strong>No artifacts found</strong>
           <span>Adjust the filters or create a new artifact in this project.</span>
@@ -63,7 +70,7 @@ export function ProjectGalleryView({
               {controller.groupBy !== "none" ? (
                 <header className={styles.groupHeader}>
                   {group.account?.logoPath ? (
-                    <Image alt="" height={16} src={group.account.logoPath} width={16} />
+                    <Image alt="" height={16} src={group.account.logoPath} unoptimized width={16} />
                   ) : null}
                   <span>{group.label}</span>
                   <small>{group.artifacts.length}</small>

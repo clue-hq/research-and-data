@@ -1,6 +1,6 @@
 """L3 message-tracing tests: TraceCallbackHandler + the CLI trace viewer.
 
-Handler tests mirror usage_capture's approach (a stubbed LLMResult driven
+Handler tests use the same approach as the usage extractor's (a stubbed LLMResult driven
 through a real callback method, asserting on the emitted structured events via
 py_lumen_obs's capture fixture). Viewer tests render a synthetic run.jsonl
 fixture through the colourless plain-ANSI path — deterministic, no rich needed.

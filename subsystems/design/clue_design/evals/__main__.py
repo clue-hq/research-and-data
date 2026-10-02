@@ -33,10 +33,12 @@ def main() -> int:
     _print("decision baseline (canned judgments)", baseline)
 
     def never_exits(_fixture: ExitGoldenFixture) -> ExitJudgment:
-        return ExitJudgment(action="continue")
+        return ExitJudgment(close_this_session=False, reasoning="keep going")
 
     def always_locks(_fixture: ExitGoldenFixture) -> ExitJudgment:
-        return ExitJudgment(action="finish", reason="locked")
+        return ExitJudgment(
+            close_this_session=True, current_artifact_accepted=True, reasoning="locked"
+        )
 
     for name, judge in (("never-exits", never_exits), ("always-locks", always_locks)):
         report = score_judge(judge)

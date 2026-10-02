@@ -100,7 +100,7 @@ test("tokenTextColor writes the lowercased token through the textColor facet", (
 });
 
 test("a raw hex color produces no operation (custom tab is inert, §3)", () => {
-  assert.equal(change("textColor", "#00F59B"), null);
+  assert.equal(change("textColor", "#123456"), null);
 });
 
 // ── alignment (row 7) ───────────────────────────────────────────────────────
@@ -430,7 +430,7 @@ test("tokenBackgroundColor writes the lowercased token through bgColor", () => {
 });
 
 test("a hex background color produces no operation (tokens only, R2)", () => {
-  assert.equal(changeImage("tokenBackgroundColor", "#00F59B", "cta"), null);
+  assert.equal(changeImage("tokenBackgroundColor", "#123456", "cta"), null);
   assert.equal(changeImage("tokenBackgroundColor", "   ", "cta"), null);
 });
 
@@ -503,8 +503,8 @@ test("a background token on a kind with no sanctioned background control is refu
 });
 
 test("a hex background (the §3-inert custom tab) produces no operation", () => {
-  assert.equal(v33Change("tokenBackgroundColor", "#00F59B", "fgrid"), null);
-  assert.equal(v33Change("backgroundColor", "#00F59B", "fgrid"), null);
+  assert.equal(v33Change("tokenBackgroundColor", "#123456", "fgrid"), null);
+  assert.equal(v33Change("backgroundColor", "#123456", "fgrid"), null);
 });
 
 // ── container display segmented (row 20) ───────────────────────────────────
@@ -686,8 +686,8 @@ test("row 1: the canvas background rewrites only its own family", () => {
 });
 
 test("row 1: the canvas hex/custom tab stays §3-inert", () => {
-  assert.equal(rootChange("tokenBackgroundColor", "#00F59B"), null);
-  assert.equal(rootChange("backgroundColor", "#00F59B"), null);
+  assert.equal(rootChange("tokenBackgroundColor", "#123456"), null);
+  assert.equal(rootChange("backgroundColor", "#123456"), null);
 });
 
 test("row 1: kinds with no background control are still refused (embed/icon)", () => {

@@ -1,0 +1,62 @@
+{
+  "requestId": "6814fc0f21cb51c7913b15b13b56c317",
+  "results": [
+    {
+      "id": "https://www.simonandschuster.com/authors/Nick-Fisher/177280135",
+      "title": "Nick Fisher | Official Publisher Page | Simon & Schuster",
+      "url": "https://www.simonandschuster.com/authors/Nick-Fisher/177280135",
+      "author": null,
+      "text": "Nick Fisher | Official Publisher Page | Simon & Schuster\n\n# Nick Fisher\n\nPhotograph by Nick Fisher\n\n## About The Author\n\nNick Fisher cut his teeth in New York City during the burgeoning cocktail renaissance where he learned to appreciate a craft cocktail made with fresh ingredients, but it took a \u201cCocktails 101\u201d class at a San Francisco speakeasy to spark a creative passion in home bartending. It wasn\u2019t long until he was experimenting with advanced techniques such as putting a cocktail inside a ball of ice only to smash it open, revealing the drink. In 2014, he created the YouTube channel Cocktail Chemistry to showcase these techniques, and it quickly rose to one of the most-watched cocktail channels. His creative and unique takes on classic cocktails combined with beautiful visuals and easy-to-follow instructions are designed for aspiring home bartenders looking to get started, as well as cocktail enthusiasts looking for innovative new techniques. Nick lives in San Francisco with his wife and young daughter, who prefers to drink straight from the bottle.\n\n## Author Alerts\n\nGet updates about Nick Fisher and recommended reads from Simon & Schuster. Plus, get a FREE ebook when you sign up!\n\nBy clicking 'Sign me up' I agree to the Terms of Use and acknowledge the Privacy Policy and Notice of Financial Incentive. Free ebook offer available to NEW US subscribers only. Offer redeemable at Simon & Schuster's ebook fulfillment partner. Must redeem within 90 days. See full terms and conditions and this month's choices.\n\n## Books by Nick Fisher\n\nCocktail Chemistry\n\n## The Art and Science of Drinks from Iconic TV Shows and Movies\n\n\u201cCocktail Chemistry offers the essential knowledge, techniques, and flair for creating perfectly mixed drinks at home.\u201d \u2014Bartender Magazine Enjoy clever, pop culture-inspired drinks with this collection of more than 80 recipes from the beloved Cocktail Chemistry...\n\nPaper Over Board\n\nLIST PRICE $25.99\n\nPRICE MAY VARY BY RETAILER\n\nBuy From Us\n\nBuy from Other Retailers\n\nManage Cookies\n\nword word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word\n\nmmMwWLliI0fiflO&1mmMwWLliI0fiflO&1mmMwWLliI0fiflO&1mmMwWLliI0fiflO&1mmMwWLliI0fiflO&1mmMwWLliI0fiflO&1mmMwWLliI0fiflO&1",
+      "image": "https://d28hgpri8am2if.cloudfront.net/author_images/8158885/nick-fisher-177280135.jpg"
+    },
+    {
+      "id": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "title": "Why I joined Zafran Security",
+      "url": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "publishedDate": "2024-04-25T15:20:36.000Z",
+      "author": null,
+      "text": "Why I joined Zafran Security\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nThe Zafran Risk & Mitigation Platform\n\nFor me, the decision to join a startup comes down to 3 basic criteria:\n\n1. Is this a market with a massive unsolved problem at the center?\n2. Is the product poised to solve it in a unique and valuable way?\n3. Do the people bring something special in creating a world-class company?\n\nZafran (means \"saffron\") has emerged from stealth to spice up the cybersecurity industry and I'm honored to be leading the marketing team. Here's why:\n\n---\n\n### Vuln management is a recurring nightmare, and it's only getting worse\n\n> \"I wake up every day, right here, and there's always 10,000 vulnerabilities\"\n\nThis was the sentiment I heard during my first week when combing through dozens of Gong calls with vuln management teams. A large bank described the process of identification to prioritization to remediation as entirely manual, requiring a massive effort from multiple teams.\n\nThese teams want to know: What is actionable? What is truly exploitable? How do I get my stakeholders to prioritize patching the vulns most likely to be exploited against the organization?\n\nMeanwhile, their pre-defined base severity scores don't account for exploit prevalence, compensating controls, mitigations available, and business context to reflect the potential impact onto the organization.\n\nThen the security engineers and architects get pulled into the discussion, they oversee tools like CrowdStrike, Akamai Technologies, Rapid7, or Palo Alto Networks.\n\nThese teams want to know: What is the efficacy of my compensating controls? Which ones are mitigating my top risks, and where are the gaps? Which controls do we want to replace or remove overlaps?\n\nAnd finally, am I protected against [insert latest vulnerability in the news that my boss is definitely going to ask me about tomorrow]?\n\nYou quickly realize the ultimate problem isn't about managing patch SLAs across teams. A CISO at a major electronics customer put it best: it's about understanding my real risk exposure.\n\n---\n\n### The \"aha\" moment: From patch management to risk reduction\n\n> \"We're in a transformational period of how we view security. The sum of our tools is more valuable than they are individually\"\n\nWe heard this from a security architect at a major financial services firm before his \"aha\" moment during the Zafran proof of value, where we revealed how 96% of vulnerabilities didn\u2019t require patching and can be mitigated using existing controls.\n\nTheir current vuln prioritization process hadn't considered compensating controls, in addition to signals like exploitability, reachability, and runtime context.\n\n## Recommended by LinkedIn\n\nA CISO\u2019s Life: Always Against the Tide Anil K Appayanna 1 year ago\n\nA Strategic Approach to Harness Cybersecurity\u2026 Silvio D Gomes 2 years ago\n\nCyber Security Trends 2026: The New Threat Landscape\u2026 Check Point Software 5 months ago\n\nUp until then, their tools simply were not aware of each other and what they were protecting, and Zafran connected the dots. For example, we were able to automatically match a relevant configuration in their Palo Alto Networks firewall with a critical vulnerability from Qualys to a specific asset and calculate the real, Applicable Risk\u2122 of the vulnerability.\n\nThen we automated that at scale across thousands of assets and vulnerabilities. All using an agentless, API-based approach.\n\nBut the value goes way beyond the operational improvements and cost savings of vuln prioritization. We also showed how they can use their existing controls to reduce risk.\n\nFor each vulnerability, Zafran gives clear and actionable mitigations. For example, changing a rule in your firewall from detection mode to prevent mode, or feeding IOC data into your SOAR to block IPs known to be exploiting the vuln (what one customer calls \"the easy button\").\n\nThen continuously stream the relevant configurations, policies and IOCs to your existing security tools like ServiceNow VR to automate the response processes.\n\nBut where's the low hanging fruit? From the dashboard you can execute a single action that mitigates findings across thousands of assets.\n\nGrab that low hanging fruit!\n\nAnd to the CISO that has purchased multiple security controls, Zafran presents a simple dashboard to assess the effectiveness of their tools in actually mitigating risk, and empowers their team to take measurable steps to improve their security posture.\n\nThis is the way, and nobody is solving it like Zafran today.\n\n---\n\n### A world-class team with a passion for making customers successful\n\nSeamless photoshop skills\n\nZafran is attacking a massive market with a differentiated product, but the real secret spice comes from the team.\n\nTheir shared frustration in seeing a hospital fall victim to the DeepBlueMagic ransomware led Sanaz Yashar Snir Havdala and Ben Seri to quit their jobs and build a better future. This drew the attention of legendary investors Douglas Leone at Sequoia Capital along with Gili Raanan and Lior Simon at Cyberstarts who led the Series A round.\n\nMy first week I saw first hand how the team goes above and beyond for customers. When a threat group campaign was heating up, the founding team spent a Friday night working to ensure we had coverage and help them understand and mitigate their potential exposure.\n\nJoining a startup is always, to some extent, a leap into the unknown. But I can't help but feel we have a unfair advantage in building an iconic company.\n\nAnd of course, we are hiring:)\n\nLike\n\nComment\n\n301 59 Comments\n\nTo view or add a comment, sign in\n\n## More articles by Nick Fisher\n\nThe 5 habits of highly effective Product Marketers\n\nJun 24, 2014\n\n### The 5 habits of highly effective Product Marketers\n\nProduct Marketing means different things at different companies, but there are common traits that seem to be shared\u2026\n\n10 Comments\n\n## Others",
+      "image": "https://media.licdn.com/dms/image/v2/D5612AQHFrn7L8rbGUQ/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1713844053687?e=2147483647&v=beta&t=d_wnxGEysSu25m20VIE7-7ZeKgN-CzS51yI0r6HwQQ8",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    }
+  ],
+  "statuses": [
+    {
+      "id": "https://www.cocktailchemistrylab.com/about",
+      "status": "error",
+      "error": {
+        "httpStatusCode": 404,
+        "tag": "CRAWL_NOT_FOUND"
+      }
+    },
+    {
+      "id": "https://www.simonandschuster.com/authors/Nick-Fisher/177280135",
+      "status": "success",
+      "source": "cached"
+    },
+    {
+      "id": "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf",
+      "status": "success",
+      "source": "cached"
+    }
+  ],
+  "costDollars": {
+    "total": 0.002,
+    "contents": {
+      "text": 0.002
+    }
+  },
+  "searchTime": 664.1476039998233,
+  "_http_status": 200,
+  "_elapsed_s": 0.74,
+  "_request": {
+    "urls": [
+      "https://www.cocktailchemistrylab.com/about",
+      "https://www.simonandschuster.com/authors/Nick-Fisher/177280135",
+      "https://www.linkedin.com/pulse/why-i-joined-zafran-security-nick-fisher-jqinf"
+    ],
+    "text": {
+      "maxCharacters": 6000
+    }
+  }
+}

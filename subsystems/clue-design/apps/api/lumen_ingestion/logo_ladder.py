@@ -2620,6 +2620,10 @@ async def fetch_logo_family(
 
     Every request goes through the shared SSRF/redirect/size guard in
     `capture.net`, which re-guards redirect hops and caps a logo at 15 MB.
+
+    When it owns its client, `LUMEN_LADDER_IMPERSONATE_CHROME` (default on) decides the
+    transport: a real Chrome TLS fingerprint that Cloudflare-walled sites answer, or plain
+    httpx. A caller-supplied `client` is used as given.
     """
     # Deferred import: `capture.candidates` imports this module, so a module-scope import of
     # `capture.net` would be a cycle — importing `capture.net` runs the `capture` package
@@ -2704,11 +2708,20 @@ async def fetch_logo_family(
                 )
         attach_bytes(candidates, fetched)
 
+        # Which transport actually fetched this page — diagnostic only; `resolve` reads
+        # page_meta by key and ignores anything it does not know.
+        from .capture.impersonate import ImpersonatingClient
+
         page_meta = {
             "homepage_url": final_url,
             "page_title": page_title(tree),
             "jsonld_org_names": jsonld_org_names(tree),
             "tier": "static",
+            "transport": (
+                "chrome-impersonated"
+                if isinstance(http_client, ImpersonatingClient)
+                else "httpx"
+            ),
         }
         resolution = resolve(candidates, page_meta, host_of(final_url), company_name)
         if not any(c.rung in ("HEADER", "NAV_VISIBLE", "INLINE_SVG", "FOOTER") for c in candidates):
@@ -2717,8 +2730,20 @@ async def fetch_logo_family(
 
     if client is not None:
         return await run(client)
+    if _impersonate_chrome():
+        from .capture.impersonate import ImpersonatingClient
+
+        async with ImpersonatingClient(timeout=REQUEST_TIMEOUT_SECONDS) as owned:
+            return await run(owned)
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as owned:
         return await run(owned)
+
+
+def _impersonate_chrome() -> bool:
+    """Read the transport flag at call time, so a flip is honoured without a restart."""
+    from py_lumen_config import settings
+
+    return bool(settings.lumen_ladder_impersonate_chrome)
 
 
 def _fetch_error_text(result) -> str:

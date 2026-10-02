@@ -268,9 +268,13 @@ class ContactResearchDefinitionResolver(EntityResearchDefinitionResolver):
         )
         context = EntityResearchRuntimeContext(
             agent_execution_id=job.authorization.attempt_id,
+            # One drive is one turn; see the account resolver's note. The attempt ordinal keeps a
+            # resumed job from re-minting its crashed drive's turn id (a released lease restarts
+            # at generation 1).
             agent_turn_id=uuid5(
                 _TURN_NAMESPACE,
-                f"{job.job_id}:{fence.lease_generation}:{job.current_state_sha256}",
+                f"{job.job_id}:{fence.lease_generation}:{fence.task_attempt}"
+                f":{job.current_state_sha256}",
             ),
             role=EntityAgentRole.CONTACT,
             authorization=job.authorization,

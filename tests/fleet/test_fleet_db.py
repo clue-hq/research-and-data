@@ -11,6 +11,7 @@ rather than sleeps — deterministic, no timing flakes."""
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 
 import pytest
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from tests.fleet.conftest import rollback_conn, run_async
 
 from clue_core import new_project_run_id
+from clue_db import db_lifespan
 from clue_fleet import (
     FleetTaskKind,
     FleetTaskStatus,
@@ -41,6 +43,42 @@ _TTL = timedelta(seconds=60)
 _EXPIRED = timedelta(0)
 _FRESH = timedelta(seconds=60)
 _STALE_NOW = timedelta(0)
+
+
+def test_concurrent_claimers_each_receive_one_distinct_task() -> None:
+    async def case():
+        async with db_lifespan() as engine:
+            run = new_project_run_id()
+            async with engine.begin() as conn:
+                for i in range(90):
+                    await enqueue_task(
+                        conn, kind=FleetTaskKind.DRIVE_RUN, project_run_id=run, dedup_key=str(i)
+                    )
+
+            async def claim(index):
+                async with engine.begin() as conn:
+                    return await claim_next_task(
+                        conn,
+                        kind=FleetTaskKind.DRIVE_RUN,
+                        project_run_id=run,
+                        worker_id=f"claimant-{index}",
+                        stale_after=_FRESH,
+                    )
+
+            try:
+                rows = []
+                for _ in range(3):
+                    rows.extend(await asyncio.gather(*(claim(i) for i in range(30))))
+                assert all(row is not None for row in rows)
+                assert len({row.task_id for row in rows}) == 90
+                assert all(row.attempts == 1 for row in rows)
+            finally:
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        text("DELETE FROM fleet_task WHERE work_id=:run"), {"run": run}
+                    )
+
+    run_async(case())
 
 
 async def _enum_labels(conn: AsyncConnection, typname: str) -> list[str]:

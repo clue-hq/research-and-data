@@ -131,17 +131,19 @@ def test_dsar_reaches_every_agent_copy_and_replay_cannot_restore_fact_bodies(
             budget = await put(b'{"remaining":100}')
             manifest = await put(b'{"resources":[]}')
             user_message = await put(b"What do we know?", "text/plain")
+            turn_id = uuid4()
+            thread_id = f"thread-s4e-{turn_id.hex[:8]}"
             harness = make_workspace(
                 tmp_path,
                 execution_id=execution_id,
                 workspace_id=project.workspace_id,
                 project_id=project.project_id,
+                thread_id=thread_id,
             )
             runtime_profile = profile()
-            turn_id = uuid4()
             request = AgentTurnRequest(
                 turn_id=turn_id,
-                thread_id=f"thread-s4e-{turn_id.hex[:8]}",
+                thread_id=thread_id,
                 constitution=constitution(
                     workspace_id=project.workspace_id,
                     project_id=project.project_id,

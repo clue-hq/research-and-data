@@ -158,6 +158,36 @@ def test_a_captured_page_leaves_real_fragment_rows_bound_to_its_kit(
     assert {minted.fragment_id for minted in outcome.minted} == {row["fragment_id"] for row in rows}
 
 
+
+def test_sections_arriving_after_kit_approval_are_released_and_replay_keeps_retirements(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    kit = _seed_kit(workspace_id)
+    HybridRepository(workspace_id=workspace_id).update_brand_kit_approval(
+        kit["brand_kit_id"], "approved"
+    )
+    first = _mint(workspace_id, design_storage, kit=kit)
+    assert all(row["status"] == "approved" for row in list_web_fragments(workspace_id=workspace_id))
+    retired = first.minted[0].fragment_id
+    set_web_fragment_status(workspace_id=workspace_id, fragment_id=retired, status="deprecated")
+    _mint(workspace_id, design_storage, kit=kit)
+    rows = {row["fragment_id"]: row["status"] for row in list_web_fragments(workspace_id=workspace_id)}
+    assert rows[retired] == "deprecated"
+    assert all(status == "approved" for fid, status in rows.items() if fid != retired)
+
+
+def test_newer_kit_approval_does_not_release_sections_bound_to_an_older_draft(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    kit = _seed_kit(workspace_id)
+    HybridRepository(workspace_id=workspace_id).create_brand_kit(
+        {**kit["brand_kit"], "version": 2, "approval_status": "approved"}, {}, [], "website"
+    )
+    _mint(workspace_id, design_storage, kit=kit)
+    rows = list_web_fragments(workspace_id=workspace_id)
+    assert rows
+    assert all(row["status"] == "draft" and row["source_kit_version"] == 1 for row in rows)
+
 def test_a_minted_fragment_reads_back_as_a_self_contained_clone(
     workspace_id: str, design_storage: FsStorage
 ) -> None:
@@ -446,14 +476,14 @@ def test_the_website_ingestion_job_mints_the_sections_it_captured(
     assert job["status"] == "succeeded", job
     rows = list_web_fragments(workspace_id=workspace_id)
     assert {row["section_role"] for row in rows} >= {"nav", "hero", "footer"}
-    assert all(row["status"] == "draft" for row in rows)
+    assert all(row["status"] == "approved" for row in rows)
     assert all(row["source_kit_id"] == job["brand_kit_id"] for row in rows)
     assert all(row["source_kit_version"] == job["brand_kit_version"] for row in rows)
     # And the job itself says what it cloned, so "what did this ingestion keep?" is answerable
     # from the job row rather than only by querying the registry.
     on_job = job["evidence"]["web_fragments"]
     assert {ref["role"] for ref in on_job} == {row["section_role"] for row in rows}
-    assert all(ref["status"] == "draft" for ref in on_job)
+    assert all(ref["status"] == "approved" for ref in on_job)
 
 
 def test_a_page_whose_sections_cannot_be_minted_still_finishes_its_ingestion(

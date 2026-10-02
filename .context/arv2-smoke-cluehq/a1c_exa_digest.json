@@ -1,0 +1,154 @@
+{
+  "contents_cached": {
+    "http": 200,
+    "elapsed_s": 0.34,
+    "cost_usd": 0.001,
+    "n_results": 1,
+    "results": [
+      {
+        "url": "https://www.cluehq.ai",
+        "title": "Clue - Agentic ABM for modern GTM teams",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 4477,
+        "text_head": "Clue - Agentic ABM for modern GTM teams\n\n# Agentic ABM for modern GTM teams\n\nBuild every campaign around the account, then carry it from first signal to market without losing context, quality, or control.\n\nGet Early Access\n\n[00] The problem/ Why ABM breaks\n\n## ABM was never limited by ambition.It was limited by the amount of work.\n\nGenuine 1:1 execution requires\n\nresearch, strategy, copy, design,audience creation, media operations,sales alignment, and constant coordination.\n\nAgents remove the production bottleneck.\n\n## IntroducingClue\n\nAI agents for end-to-end ABM execution\n\n[01] Platform/ How"
+      }
+    ],
+    "statuses": [
+      {
+        "id": "https://www.cluehq.ai",
+        "status": "success",
+        "source": "cached"
+      }
+    ]
+  },
+  "contents_livecrawl": {
+    "http": 200,
+    "elapsed_s": 1.32,
+    "cost_usd": 0.001,
+    "n_results": 1,
+    "results": [
+      {
+        "url": "https://www.cluehq.ai",
+        "title": "Clue - Agentic ABM for modern GTM teams",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 4477,
+        "text_head": "Clue - Agentic ABM for modern GTM teams\n\n# Agentic ABM for modern GTM teams\n\nBuild every campaign around the account, then carry it from first signal to market without losing context, quality, or control.\n\nGet Early Access\n\n[00] The problem/ Why ABM breaks\n\n## ABM was never limited by ambition.It was limited by the amount of work.\n\nGenuine 1:1 execution requires\n\nresearch, strategy, copy, design,audience creation, media operations,sales alignment, and constant coordination.\n\nAgents remove the production bottleneck.\n\n## IntroducingClue\n\nAI agents for end-to-end ABM execution\n\n[01] Platform/ How"
+      }
+    ],
+    "statuses": [
+      {
+        "id": "https://www.cluehq.ai",
+        "status": "success",
+        "source": "crawled"
+      }
+    ]
+  },
+  "search_nl": {
+    "http": 200,
+    "elapsed_s": 1.16,
+    "cost_usd": 0.007,
+    "n_results": 10,
+    "results": [
+      {
+        "url": "https://cluehq.ai/",
+        "title": "Clue - Agentic ABM for modern GTM teams",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://factorshq.space/",
+        "title": "Factors.ai: The AI ABM Platform For GTM Teams",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://abmatic.ai/platform",
+        "title": "Account-based Marketing | Abmatic AI",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://www.gr0.ai/agents/abm",
+        "title": "Account-Based Marketing (ABM) Agent - Named accounts, coordinated across every channel.",
+        "publishedDate": null,
+        "author": "gr0.ai",
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://amyagent.ai/",
+        "title": "Amy | 50+ AI Agents for B2B GTM Teams",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://www.octavehq.com/ai-features/enterprise-abm-orchestration",
+        "title": "Octave | Your Agentic GTM Brain",
+        "publishedDate": "2026-05-22T00:00:00.000Z",
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://thesmarketers.com/ai-agents/ai-abm-agent/",
+        "title": "AI ABM Agent | Autonomous Account-Based Marketing | The Smarketers",
+        "publishedDate": "2026-05-22T00:00:00.000Z",
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://caimpare.ai/tool/72905",
+        "title": "Seam AI | cAImpare",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://clearcue.ai/",
+        "title": "Clearcue - The GTM Signal Engine | Real-Time Buyer Intent",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      },
+      {
+        "url": "https://www.clari.com/products/revenue-ai-agents-for-enterprise/",
+        "title": "Revenue AI Agents for Enterprise | Clari",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      }
+    ],
+    "statuses": null
+  },
+  "search_domain": {
+    "http": 200,
+    "elapsed_s": 1.12,
+    "cost_usd": 0.007,
+    "n_results": 1,
+    "results": [
+      {
+        "url": "https://cluehq.ai/",
+        "title": "Clue - Agentic ABM for modern GTM teams",
+        "publishedDate": null,
+        "author": null,
+        "text_chars": 0,
+        "text_head": ""
+      }
+    ],
+    "statuses": null
+  }
+}

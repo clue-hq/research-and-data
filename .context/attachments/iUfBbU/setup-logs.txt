@@ -1,0 +1,853 @@
+The user's setup script failed. (Conductor runs the setup script in each new workspace after it's been created.) Can you fix it?
+
+The setup script is: `uv sync
+docker rm -f "clue-pg-$CONDUCTOR_WORKSPACE_NAME" >/dev/null 2>&1 || true
+docker run -d --name "clue-pg-$CONDUCTOR_WORKSPACE_NAME" -e POSTGRES_USER=clue -e POSTGRES_PASSWORD=clue -e POSTGRES_DB=clue -p "$CONDUCTOR_PORT:5432" pgvector/pgvector:pg16 >/dev/null
+`. The user can change this script in Settings > Setup script.
+
+Setup logs:
+Using CPython 3.12.12 interpreter at: 36m/opt/homebrew/opt/python@3.12/bin/python3.1239m
+Creating virtual environment at: 36m.venv39m
+2mResolved 1m157 packages0m 2min 24ms0m0m
+37m⠙0m 2m0m (0/0)                                                                        2K37m⠙0m 2mPreparing packages...0m (0/0)                                                   2K37m⠙0m 2mPreparing packages...0m (0/19)                                                  2K   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  1A2K1B2K1A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  2A2K1B2K1B2K2A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  3A2K1B2K1B2K1B2K3A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  4A2K1B2K1B2K1B2K1B2K4A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  5A2K1B2K1B2K1B2K1B2K1B2K5A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  6A2K1B2K1B2K1B2K1B2K1B2K1B2K6A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  7A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K7A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  8A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K8A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  9A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K9A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  10A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K10A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  11A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K11A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  12A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K12A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  13A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K13A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  14A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K14A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  15A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K15A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  16A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K16A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+37m⠙0m 2mPreparing packages...0m (0/19)                                                  17A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K17A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠙0m 2mPreparing packages...0m (0/19)
+2mpillow              0m 32m30m2m------------------------------0m0m     0 B/4.56 MiB            19A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K19A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠙0m 2mPreparing packages...0m (0/19)
+2mpillow              0m 32m30m2m------------------------------0m0m 16.00 KiB/4.56 MiB          19A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K19A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠙0m 2mPreparing packages...0m (0/19)
+2mpillow              0m 32m30m2m------------------------------0m0m 32.00 KiB/4.56 MiB          19A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K19A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠹0m 2mPreparing packages...0m (0/19)
+2mpillow              0m 32m30m2m------------------------------0m0m 94.43 KiB/4.56 MiB          19A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K19A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠹0m 2mPreparing packages...0m (0/19)
+2mpillow              0m 32m---30m2m---------------------------0m0m 590.43 KiB/4.56 MiB         19A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K19A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠹0m 2mPreparing packages...0m (0/19)
+2mpillow              0m 32m----30m2m--------------------------0m0m 686.43 KiB/4.56 MiB         19A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K19A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠹0m 2mPreparing packages...0m (0/19)
+2mpillow              0m 32m---------------------------30m2m---0m0m 4.23 MiB/4.56 MiB           19A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K19A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠹0m 2mPreparing packages...0m (0/19)                                                  18A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K18A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠸0m 2mPreparing packages...0m (1/19)                                                  18A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K18A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠼0m 2mPreparing packages...0m (1/19)                                                  18A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K18A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠴0m 2mPreparing packages...0m (1/19)                                                  18A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K18A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+   36m1mBuilding0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠦0m 2mPreparing packages...0m (1/19)                                                  18A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K18A   36m1mBuilding0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠦0m 2mPreparing packages...0m (1/19)                                                  18A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K18A      32m1mBuilt0m39m clue-agents2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠦0m 2mPreparing packages...0m (1/19)                                                  17A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K17A   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  17A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K17A   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  17A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K17A   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+   36m1mBuilding0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  17A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K17A   36m1mBuilding0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  17A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K17A      32m1mBuilt0m39m clue-api2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  16A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K16A      32m1mBuilt0m39m clue-auth2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  15A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K15A   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  15A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K15A   36m1mBuilding0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  15A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K15A      32m1mBuilt0m39m clue-config2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  14A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K14A   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠧0m 2mPreparing packages...0m (3/19)                                                  14A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K14A   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+   36m1mBuilding0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2mPreparing packages...0m (12/19)                                                 14A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K14A   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+      32m1mBuilt0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+   36m1mBuilding0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2mPreparing packages...0m (12/19)                                                 14A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K14A   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+      32m1mBuilt0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+   36m1mBuilding0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2mPreparing packages...0m (12/19)                                                 14A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K14A   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+      32m1mBuilt0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+   36m1mBuilding0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+      32m1mBuilt0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2mPreparing packages...0m (12/19)                                                 14A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K14A   36m1mBuilding0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+      32m1mBuilt0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+      32m1mBuilt0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+      32m1mBuilt0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2mPreparing packages...0m (12/19)                                                 14A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K14A      32m1mBuilt0m39m clue-content2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+      32m1mBuilt0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+   36m1mBuilding0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+      32m1mBuilt0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+      32m1mBuilt0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2mPreparing packages...0m (12/19)                                                 13A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K13A      32m1mBuilt0m39m clue-core2m @ file:///Users/shashank/conductor/workspaces/research-and0m
+      32m1mBuilt0m39m clue-db2m @ file:///Users/shashank/conductor/workspaces/research-and-d0m
+      32m1mBuilt0m39m clue-execution2m @ file:///Users/shashank/conductor/workspaces/researc0m
+      32m1mBuilt0m39m clue-fleet2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+   36m1mBuilding0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+      32m1mBuilt0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+      32m1mBuilt0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2mPreparing packages...0m (12/19)                                                 9A2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K1B2K9A      32m1mBuilt0m39m clue-gateway2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-locks2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-memory2m @ file:///Users/shashank/conductor/workspaces/research-a0m
+      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+      32m1mBuilt0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+      32m1mBuilt0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2mPreparing packages...0m (12/19)                                                 6A2K1B2K1B2K1B2K1B2K1B2K1B2K6A      32m1mBuilt0m39m clue-obs2m @ file:///Users/shashank/conductor/workspaces/research-and-0m
+      32m1mBuilt0m39m clue-projections2m @ file:///Users/shashank/conductor/workspaces/resea0m
+      32m1mBuilt0m39m clue-research2m @ file:///Users/shashank/conductor/workspaces/research0m
+      32m1mBuilt0m39m clue-spine2m @ file:///Users/shashank/conductor/workspaces/research-an0m
+      32m1mBuilt0m39m clue-storage2m @ file:///Users/shashank/conductor/workspaces/research-0m
+      32m1mBuilt0m39m clue-toolbelt2m @ file:///Users/shashank/conductor/workspaces/research0m
+37m⠇0m 2m0m (19/19)                                                                      2K2mPrepared 1m19 packages0m 2min 1.57s0m0m
+░░░░░░░░░░░░░░░░░░░░ [0/0] 2mInstalling wheels...                                 0m2K░░░░░░░░░░░░░░░░░░░░ [0/155] 2mInstalling wheels...                               0m2K░░░░░░░░░░░░░░░░░░░░ [0/155] 2mlanggraph-checkpoint-postgres==3.1.0               0m2K░░░░░░░░░░░░░░░░░░░░ [1/155] 2mlanggraph-checkpoint-postgres==3.1.0               0m2K░░░░░░░░░░░░░░░░░░░░ [1/155] 2maiohttp==3.14.2                                    0m2K░░░░░░░░░░░░░░░░░░░░ [2/155] 2maiohttp==3.14.2                                    0m2K░░░░░░░░░░░░░░░░░░░░ [2/155] 2mlangchain==1.3.14                                  0m2K░░░░░░░░░░░░░░░░░░░░ [3/155] 2mlangchain==1.3.14                                  0m2K░░░░░░░░░░░░░░░░░░░░ [3/155] 2mpillow==12.3.0                                     0m2K░░░░░░░░░░░░░░░░░░░░ [4/155] 2mpillow==12.3.0                                     0m2K░░░░░░░░░░░░░░░░░░░░ [4/155] 2maioboto3==15.5.0                                   0m2K░░░░░░░░░░░░░░░░░░░░ [5/155] 2maioboto3==15.5.0                                   0m2K░░░░░░░░░░░░░░░░░░░░ [5/155] 2masyncpg==0.31.0                                    0m2K░░░░░░░░░░░░░░░░░░░░ [6/155] 2masyncpg==0.31.0                                    0m2K░░░░░░░░░░░░░░░░░░░░ [6/155] 2mstarlette==1.3.1                                   0m2K░░░░░░░░░░░░░░░░░░░░ [7/155] 2mstarlette==1.3.1                                   0m2K░░░░░░░░░░░░░░░░░░░░ [7/155] 2mclick==8.4.1                                       0m2K█░░░░░░░░░░░░░░░░░░░ [8/155] 2mclick==8.4.1                                       0m2K█░░░░░░░░░░░░░░░░░░░ [8/155] 2mclue-gateway==0.0.0 (from file:///Users/shashank/co0m2K█░░░░░░░░░░░░░░░░░░░ [9/155] 2mclue-gateway==0.0.0 (from file:///Users/shashank/co0m2K██░░░░░░░░░░░░░░░░░░ [16/155] 2mtyping-inspection==0.4.2                          0m2K██░░░░░░░░░░░░░░░░░░ [17/155] 2mtyping-inspection==0.4.2                          0m2K███░░░░░░░░░░░░░░░░░ [27/155] 2mclue-api==0.0.0 (from file:///Users/shashank/condu0m2K████░░░░░░░░░░░░░░░░ [36/155] 2mcertifi==2026.6.17                                0m2K██████░░░░░░░░░░░░░░ [52/155] 2mopentelemetry-sdk==1.42.1                         0m2K█████████░░░░░░░░░░░ [73/155] 2mmarkupsafe==3.0.3                                 0m2K█████████████░░░░░░░ [101/155] 2msoupsieve==2.9                                   0m2K█████████████░░░░░░░ [102/155] 2maiohappyeyeballs==2.7.1                          0m2K█████████████████░░░ [132/155] 2mdistro==1.9.0                                    0m2K2mInstalled 1m155 packages0m 2min 470ms0m0m
+ 32m+39m 1maioboto30m2m==15.5.00m
+ 32m+39m 1maiobotocore0m2m==2.25.10m
+ 32m+39m 1maiofiles0m2m==25.1.00m
+ 32m+39m 1maiohappyeyeballs0m2m==2.7.10m
+ 32m+39m 1maiohttp0m2m==3.14.20m
+ 32m+39m 1maioitertools0m2m==0.13.00m
+ 32m+39m 1maiosignal0m2m==1.4.00m
+ 32m+39m 1malembic0m2m==1.18.40m
+ 32m+39m 1mannotated-doc0m2m==0.0.40m
+ 32m+39m 1mannotated-types0m2m==0.7.00m
+ 32m+39m 1manthropic0m2m==0.120.00m
+ 32m+39m 1manyio0m2m==4.14.00m
+ 32m+39m 1mapify-fingerprint-datapoints0m2m==0.13.00m
+ 32m+39m 1mast-serialize0m2m==0.5.00m
+ 32m+39m 1masyncpg0m2m==0.31.00m
+ 32m+39m 1mattrs0m2m==26.1.00m
+ 32m+39m 1mbeautifulsoup40m2m==4.15.00m
+ 32m+39m 1mboto30m2m==1.40.610m
+ 32m+39m 1mbotocore0m2m==1.40.610m
+ 32m+39m 1mbracex0m2m==3.0.10m
+ 32m+39m 1mbrowserforge0m2m==1.2.40m
+ 32m+39m 1mcertifi0m2m==2026.6.170m
+ 32m+39m 1mcffi0m2m==2.1.00m
+ 32m+39m 1mcharset-normalizer0m2m==3.4.70m
+ 32m+39m 1mclick0m2m==8.4.10m
+ 32m+39m 1mclue-agents0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/platform/agents)0m
+ 32m+39m 1mclue-api0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/platform/api)0m
+ 32m+39m 1mclue-auth0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/platform/auth)0m
+ 32m+39m 1mclue-config0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/libs/clue-config)0m
+ 32m+39m 1mclue-content0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/subsystems/content)0m
+ 32m+39m 1mclue-core0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/libs/clue-core)0m
+ 32m+39m 1mclue-db0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/libs/clue-db)0m
+ 32m+39m 1mclue-execution0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/platform/execution)0m
+ 32m+39m 1mclue-fleet0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/platform/fleet)0m
+ 32m+39m 1mclue-gateway0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/libs/clue-gateway)0m
+ 32m+39m 1mclue-locks0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/libs/clue-locks)0m
+ 32m+39m 1mclue-memory0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/subsystems/memory)0m
+ 32m+39m 1mclue-obs0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/libs/clue-obs)0m
+ 32m+39m 1mclue-projections0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/platform/projections)0m
+ 32m+39m 1mclue-research0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/subsystems/research)0m
+ 32m+39m 1mclue-spine0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/libs/clue-spine)0m
+ 32m+39m 1mclue-storage0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/libs/clue-storage)0m
+ 32m+39m 1mclue-toolbelt0m2m==0.0.0 (from file:///Users/shashank/conductor/workspaces/research-and-data/winnipeg/platform/toolbelt)0m
+ 32m+39m 1mcryptography0m2m==49.0.00m
+ 32m+39m 1mcssselect0m2m==1.4.00m
+ 32m+39m 1mcurl-cffi0m2m==0.15.00m
+ 32m+39m 1mdeepagents0m2m==0.6.120m
+ 32m+39m 1mdistro0m2m==1.9.00m
+ 32m+39m 1mdocstring-parser0m2m==0.18.00m
+ 32m+39m 1mfakeredis0m2m==2.36.20m
+ 32m+39m 1mfastapi0m2m==0.138.00m
+ 32m+39m 1mfiletype0m2m==1.2.00m
+ 32m+39m 1mfrozenlist0m2m==1.8.00m
+ 32m+39m 1mgoogle-auth0m2m==2.56.20m
+ 32m+39m 1mgoogle-genai0m2m==2.14.00m
+ 32m+39m 1mgreenlet0m2m==3.5.20m
+ 32m+39m 1mgrimp0m2m==3.140m
+ 32m+39m 1mh110m2m==0.16.00m
+ 32m+39m 1mhttpcore0m2m==1.0.90m
+ 32m+39m 1mhttpx0m2m==0.28.10m
+ 32m+39m 1midna0m2m==3.180m
+ 32m+39m 1mimport-linter0m2m==2.110m
+ 32m+39m 1miniconfig0m2m==2.3.00m
+ 32m+39m 1mjiter0m2m==0.15.00m
+ 32m+39m 1mjmespath0m2m==1.1.00m
+ 32m+39m 1mjsonpatch0m2m==1.330m
+ 32m+39m 1mjsonpointer0m2m==3.1.10m
+ 32m+39m 1mlangchain0m2m==1.3.140m
+ 32m+39m 1mlangchain-anthropic0m2m==1.5.20m
+ 32m+39m 1mlangchain-core0m2m==1.5.10m
+ 32m+39m 1mlangchain-google-genai0m2m==4.3.10m
+ 32m+39m 1mlangchain-openai0m2m==1.4.10m
+ 32m+39m 1mlangchain-protocol0m2m==0.0.180m
+ 32m+39m 1mlanggraph0m2m==1.2.60m
+ 32m+39m 1mlanggraph-checkpoint0m2m==4.1.10m
+ 32m+39m 1mlanggraph-checkpoint-postgres0m2m==3.1.00m
+ 32m+39m 1mlanggraph-prebuilt0m2m==1.1.00m
+ 32m+39m 1mlanggraph-sdk0m2m==0.4.20m
+ 32m+39m 1mlangsmith0m2m==0.8.180m
+ 32m+39m 1mlibrt0m2m==0.11.00m
+ 32m+39m 1mlxml0m2m==6.1.10m
+ 32m+39m 1mmako0m2m==1.3.120m
+ 32m+39m 1mmarkdown-it-py0m2m==4.2.00m
+ 32m+39m 1mmarkdownify0m2m==1.2.30m
+ 32m+39m 1mmarkupsafe0m2m==3.0.30m
+ 32m+39m 1mmdurl0m2m==0.1.20m
+ 32m+39m 1mmsgspec0m2m==0.21.10m
+ 32m+39m 1mmultidict0m2m==6.7.10m
+ 32m+39m 1mmypy0m2m==2.1.00m
+ 32m+39m 1mmypy-extensions0m2m==1.1.00m
+ 32m+39m 1mnumpy0m2m==2.4.60m
+ 32m+39m 1mopenai0m2m==2.48.00m
+ 32m+39m 1mopentelemetry-api0m2m==1.42.10m
+ 32m+39m 1mopentelemetry-sdk0m2m==1.42.10m
+ 32m+39m 1mopentelemetry-semantic-conventions0m2m==0.63b10m
+ 32m+39m 1morjson0m2m==3.11.90m
+ 32m+39m 1mormsgpack0m2m==1.12.20m
+ 32m+39m 1mpackaging0m2m==26.20m
+ 32m+39m 1mpatchright0m2m==1.61.20m
+ 32m+39m 1mpathspec0m2m==1.1.10m
+ 32m+39m 1mpgvector0m2m==0.4.20m
+ 32m+39m 1mpillow0m2m==12.3.00m
+ 32m+39m 1mplaywright0m2m==1.61.00m
+ 32m+39m 1mpluggy0m2m==1.6.00m
+ 32m+39m 1mpropcache0m2m==0.5.20m
+ 32m+39m 1mprotego0m2m==0.6.20m
+ 32m+39m 1mpsycopg0m2m==3.3.40m
+ 32m+39m 1mpsycopg-pool0m2m==3.3.10m
+ 32m+39m 1mpyasn10m2m==0.6.40m
+ 32m+39m 1mpyasn1-modules0m2m==0.4.20m
+ 32m+39m 1mpycparser0m2m==3.00m
+ 32m+39m 1mpydantic0m2m==2.13.40m
+ 32m+39m 1mpydantic-core0m2m==2.46.40m
+ 32m+39m 1mpydantic-settings0m2m==2.14.10m
+ 32m+39m 1mpyee0m2m==13.0.10m
+ 32m+39m 1mpygments0m2m==2.20.00m
+ 32m+39m 1mpyjwt0m2m==2.13.00m
+ 32m+39m 1mpypdf0m2m==6.13.30m
+ 32m+39m 1mpytesseract0m2m==0.3.130m
+ 32m+39m 1mpytest0m2m==9.1.00m
+ 32m+39m 1mpython-dateutil0m2m==2.9.0.post00m
+ 32m+39m 1mpython-dotenv0m2m==1.2.20m
+ 32m+39m 1mpyyaml0m2m==6.0.30m
+ 32m+39m 1mredis0m2m==8.0.00m
+ 32m+39m 1mregex0m2m==2026.7.190m
+ 32m+39m 1mrequests0m2m==2.34.20m
+ 32m+39m 1mrequests-toolbelt0m2m==1.0.00m
+ 32m+39m 1mrich0m2m==15.0.00m
+ 32m+39m 1mruff0m2m==0.15.170m
+ 32m+39m 1ms3transfer0m2m==0.14.00m
+ 32m+39m 1mscrapling0m2m==0.4.110m
+ 32m+39m 1msix0m2m==1.17.00m
+ 32m+39m 1msniffio0m2m==1.3.10m
+ 32m+39m 1msortedcontainers0m2m==2.4.00m
+ 32m+39m 1msoupsieve0m2m==2.90m
+ 32m+39m 1msqlalchemy0m2m==2.0.510m
+ 32m+39m 1mstarlette0m2m==1.3.10m
+ 32m+39m 1mstructlog0m2m==26.1.00m
+ 32m+39m 1mtenacity0m2m==9.1.40m
+ 32m+39m 1mtiktoken0m2m==0.13.00m
+ 32m+39m 1mtld0m2m==0.13.20m
+ 32m+39m 1mtqdm0m2m==4.68.30m
+ 32m+39m 1mtypes-pyyaml0m2m==6.0.12.202607240m
+ 32m+39m 1mtyping-extensions0m2m==4.15.00m
+ 32m+39m 1mtyping-inspection0m2m==0.4.20m
+ 32m+39m 1murllib30m2m==2.7.00m
+ 32m+39m 1muuid-utils0m2m==0.16.20m
+ 32m+39m 1muvicorn0m2m==0.52.00m
+ 32m+39m 1mw3lib0m2m==2.4.10m
+ 32m+39m 1mwcmatch0m2m==11.00m
+ 32m+39m 1mwebsockets0m2m==15.0.10m
+ 32m+39m 1mwrapt0m2m==1.17.30m
+ 32m+39m 1mxxhash0m2m==3.7.00m
+ 32m+39m 1myarl0m2m==1.24.50m
+ 32m+39m 1mzstandard0m2m==0.25.00m
+/Users/shashank/.conductor/projects/--Users--shashank--conductor--workspaces--research-and-data--winnipeg/setup-setup:3e1a8483-e4cb-4fd5-8b2a-b0c69fac6e81.sh:3: command not found: docker

@@ -7,12 +7,39 @@ import {
   type ImageExportScale,
 } from "../model/image-export";
 
-export function useImageExportController({ title }: { title: string }) {
+/**
+ * Artifacts page (2026-09-15): `onExport` is the ADDITIVE direct leg. The
+ * editor's callers pass none and keep the original event-dispatch path
+ * untouched — there the window listener (`use-scene-export.ts`) owns the
+ * export and its status. A caller that has no such listener on the page (the
+ * artifacts gallery) passes `onExport` and the menu awaits it directly,
+ * announcing what actually happened rather than what was requested.
+ */
+export function useImageExportController({
+  title,
+  onExport,
+}: {
+  title: string;
+  onExport?: (options: { format: ImageExportFormat; scale: ImageExportScale }) => Promise<void>;
+}) {
   const [format, setFormat] = useState<ImageExportFormat>("PNG");
   const [menuOpen, setMenuOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [scale, setScale] = useState<ImageExportScale>("1x");
   const [statusMessage, setStatusMessage] = useState("");
+  const [exporting, setExporting] = useState(false);
+  /**
+   * Whether the LAST direct-leg attempt ended with no file. It exists so a
+   * caller can hand `ImageExportMenu` a `SceneExportStatus` and get a refusal
+   * rendered VISIBLY — the menu promotes its status line out of the `.srOnly`
+   * span only on `failed` (`image-export-menu.tsx`), and without this a direct
+   * -leg refusal was announced to screen readers alone, which is the exact
+   * defect `SceneExportStatus.failed` was introduced to prevent.
+   *
+   * The event-dispatch path never touches it: there the window listener owns
+   * the outcome and supplies its own status, so the editor is unchanged.
+   */
+  const [exportFailed, setExportFailed] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -32,7 +59,26 @@ export function useImageExportController({ title }: { title: string }) {
     };
   }, [closeMenu]);
 
-  const requestExport = useCallback(() => {
+  const requestExport = useCallback(async () => {
+    if (onExport) {
+      // Single-flight: a second click while a 4x PNG is still rendering would
+      // start a second identical export and land two files.
+      if (exporting) return;
+      setExporting(true);
+      setStatusMessage("");
+      setExportFailed(false);
+      try {
+        await onExport({ format, scale });
+        setStatusMessage(`${format} download started`);
+        setExportFailed(false);
+      } catch (error) {
+        setStatusMessage(error instanceof Error ? error.message : "Export failed. Please try again.");
+        setExportFailed(true);
+      } finally {
+        setExporting(false);
+      }
+      return;
+    }
     const supportsScale = imageExportSupportsScale(format);
     // Gate G-E: the request detail carries no `transparentBackground` field —
     // the toggle is held pending the §8 engine verification.
@@ -45,7 +91,7 @@ export function useImageExportController({ title }: { title: string }) {
       },
     }));
     setStatusMessage(`${format} export requested${supportsScale ? ` at ${scale}` : ""}`);
-  }, [format, scale, title]);
+  }, [exporting, format, onExport, scale, title]);
 
   const chooseFormat = useCallback((nextFormat: ImageExportFormat) => {
     setFormat(nextFormat);
@@ -54,6 +100,8 @@ export function useImageExportController({ title }: { title: string }) {
   return {
     controller: {
       closeMenu,
+      exportFailed,
+      exporting,
       format,
       menuOpen,
       previewOpen,

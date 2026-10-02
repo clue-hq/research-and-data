@@ -26,6 +26,22 @@ export function projectGalleryHref(projectId: string, threadId: string) {
   });
 }
 
+// The target-accounts rail surface, addressable. Ruling R3 forbids the design
+// build's `threadId ?? "thread-primary"` fallback in a production URL, and a
+// caller like the `/projects/{id}/accounts` redirect genuinely may not know a
+// thread id — so a threadless call points at the project landing route instead
+// of inventing a thread. `/projects/{id}` is the legacy absorber (ruling R1):
+// it carries the whole query — `surface` included — through its client-side
+// canonicalization to `/chats/{resolved}`, so the surface survives the hop.
+export function projectTargetAccountsHref(projectId: string, threadId?: string) {
+  if (threadId) {
+    return projectChatHref(projectId, threadId, { surface: "target-accounts" });
+  }
+  return withQuery(`/projects/${routeSegment(projectId)}`, {
+    surface: "target-accounts",
+  });
+}
+
 export function projectChatHref(
   projectId: string,
   chatId: string,

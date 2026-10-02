@@ -31,10 +31,19 @@ const TOOL_LABELS: Readonly<Record<string, string>> = {
   override_stage0_readiness: "Record the readiness decision",
   inspect_readiness_history: "Review profile readiness",
   synthesize_icps: "Create an ideal customer profile proposal",
+  author_icp_document: "Draft an ideal customer profile",
+  request_persona_synthesis: "Write the buyer personas",
+  write_project_document: "Write the project plan",
   open_icp_confirmation_gate: "Prepare the profile for your review",
   start_confirmed_project_run: "Start the project",
   draft_account_research_directive: "Prepare the research plan",
   launch_account_research: "Start account research",
+  read_project_accounts: "Review the project's accounts",
+  read_account_research: "Review an account's research",
+  read_discovery_run: "Review the discovery run",
+  read_claims: "Query the claims",
+  read_artifact: "Open an artifact",
+  web_search: "Search the web",
 };
 
 const FIELD_LABELS: Readonly<Record<string, string>> = {
@@ -97,15 +106,6 @@ export function profileDisplayName(value: unknown): string {
 
 export function toolDisplayLabel(toolName: string): string {
   return TOOL_LABELS[toolName] ?? "Complete a project step";
-}
-
-export function activityStepLabel(kind: string, wireLabel: string): string {
-  if (kind === "model_round") return "Think through the next step";
-  if (kind === "tool_call") {
-    const [toolName] = wireLabel.split("@", 1);
-    return toolDisplayLabel(toolName);
-  }
-  return "Work on the project";
 }
 
 function outputValues(part: ChatToolPart): Record<string, unknown> {

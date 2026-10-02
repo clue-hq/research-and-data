@@ -1,0 +1,145 @@
+{
+  "person": {
+    "id": "66f54fcc962ce60001a2a3f3",
+    "first_name": "Wanda",
+    "last_name": "Punteney",
+    "name": "Wanda Punteney",
+    "linkedin_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+    "title": "Administrator, CEO",
+    "photo_url": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+    "twitter_url": null,
+    "github_url": null,
+    "facebook_url": null,
+    "extrapolated_email_confidence": null,
+    "headline": "Administrator, CEO at Charleston GI",
+    "organization_id": "66e6b7de0062340001c9ea58",
+    "employment_history": [
+      {
+        "_id": "6a7bf4831f7cc700018e40cf",
+        "created_at": null,
+        "current": true,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": null,
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": true,
+        "organization_id": "66e6b7de0062340001c9ea58",
+        "organization_name": "Charleston GI",
+        "raw_address": null,
+        "start_date": null,
+        "title": "Administrator, CEO",
+        "updated_at": null,
+        "id": "6a7bf4831f7cc700018e40cf",
+        "key": "6a7bf4831f7cc700018e40cf"
+      }
+    ],
+    "street_address": "",
+    "city": "Charleston",
+    "state": "South Carolina",
+    "country": "United States",
+    "postal_code": null,
+    "formatted_address": "Charleston, SC, USA",
+    "time_zone": "America/New_York",
+    "email": "wanda.punteney@charlestongi.com",
+    "email_status": "verified",
+    "organization": {
+      "id": "66e6b7de0062340001c9ea58",
+      "name": "Charleston GI",
+      "website_url": null,
+      "angellist_url": null,
+      "linkedin_url": "http://www.linkedin.com/company/charleston-gi",
+      "twitter_url": null,
+      "facebook_url": null,
+      "languages": [],
+      "alexa_ranking": null,
+      "phone": null,
+      "linkedin_uid": "58995091",
+      "founded_year": null,
+      "publicly_traded_symbol": null,
+      "publicly_traded_exchange": null,
+      "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/63edac0a998f12000100b12d/picture",
+      "crunchbase_url": null,
+      "primary_domain": null,
+      "industry": "medical practice",
+      "estimated_num_employees": 4,
+      "keywords": [
+        "medical practices",
+        "hospital & health care"
+      ],
+      "organization_revenue_printed": null,
+      "organization_revenue": 0.0,
+      "industries": [
+        "medical practice"
+      ],
+      "secondary_industries": [],
+      "snippets_loaded": true,
+      "industry_tag_id": "5567d0467369645dbc200000",
+      "industry_tag_hash": {
+        "medical practice": "5567d0467369645dbc200000"
+      },
+      "retail_location_count": 0,
+      "raw_address": "Summerville, South Carolina",
+      "street_address": "",
+      "city": "Summerville",
+      "state": "South Carolina",
+      "postal_code": null,
+      "country": "United States",
+      "owned_by_organization_id": null,
+      "short_description": null,
+      "suborganizations": [],
+      "num_suborganizations": 0,
+      "total_funding": null,
+      "total_funding_printed": null,
+      "latest_funding_round_date": null,
+      "latest_funding_stage": null,
+      "funding_events": [],
+      "technology_names": [],
+      "current_technologies": [],
+      "org_chart_root_people_ids": [
+        "66f54fcc962ce60001a2a3f3"
+      ],
+      "org_chart_sector": null,
+      "org_chart_removed": null,
+      "org_chart_show_department_filter": null,
+      "is_placeholder_organization": null,
+      "organization_headcount_six_month_growth": 0.0,
+      "organization_headcount_twelve_month_growth": 0.0,
+      "organization_headcount_twenty_four_month_growth": 0.0
+    },
+    "departments": [
+      "c_suite"
+    ],
+    "subdepartments": [
+      "executive"
+    ],
+    "seniority": "c_suite",
+    "functions": [],
+    "intent_strength": null,
+    "show_intent": false,
+    "email_domain_catchall": false,
+    "email_domain_catchall_verdict": "allow",
+    "revealed_for_current_team": true
+  },
+  "request_id": 7436343299844328499,
+  "_http_status": 200,
+  "_elapsed_s": 0.3,
+  "_rate_headers": {
+    "x-minute-requests-left": "998",
+    "x-rate-limit-24-hour": "",
+    "x-rate-limit-hourly": "",
+    "x-rate-limit-minute": "1000"
+  },
+  "_request": {
+    "method": "POST",
+    "path": "/people/match",
+    "body": {
+      "first_name": "Wanda",
+      "last_name": "Punteney",
+      "domain": "charlestongi.com",
+      "reveal_personal_emails": false
+    }
+  }
+}

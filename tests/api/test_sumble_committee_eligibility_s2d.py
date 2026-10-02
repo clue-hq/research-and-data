@@ -259,7 +259,14 @@ def test_s2d_eligible_acquires_resumes_and_fresh_replay_reuses_without_calls(
     async def scenario() -> None:
         storage = FsStorage(tmp_path / "artifacts")
         async with rollback_conn(seed_pack=True) as conn:
-            request = await _setup(conn, storage, workspace_id="ws-s2d-eligible", strict_s2d=True)
+            request = await _setup(
+                conn,
+                storage,
+                workspace_id="ws-s2d-eligible",
+                strict_s2d=True,
+                account_tier="tier4",
+                tier_claim_source_tier=4,
+            )
 
             @asynccontextmanager
             async def same_connection() -> AsyncIterator[AsyncConnection]:

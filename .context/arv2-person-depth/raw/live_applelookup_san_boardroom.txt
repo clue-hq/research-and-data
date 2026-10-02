@@ -1,0 +1,10 @@
+
+
+
+{
+ "resultCount":1,
+ "results": [
+{"wrapperType":"track", "kind":"podcast", "collectionId":1749699539, "trackId":1749699539, "artistName":"Boardroom Club", "collectionName":"Boardroom Club", "trackName":"Boardroom Club", "collectionCensoredName":"Boardroom Club", "trackCensoredName":"Boardroom Club", "collectionViewUrl":"https://podcasts.apple.com/us/podcast/boardroom-club/id1749699539?uo=4", "feedUrl":"https://anchor.fm/s/f695d6d8/podcast/rss", "trackViewUrl":"https://podcasts.apple.com/us/podcast/boardroom-club/id1749699539?uo=4", "artworkUrl30":"https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/d4/97/ca/d497ca2d-bc43-c185-1d27-2812f2bda4ae/mza_1332494387896370315.jpg/30x30bb.jpg", "artworkUrl60":"https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/d4/97/ca/d497ca2d-bc43-c185-1d27-2812f2bda4ae/mza_1332494387896370315.jpg/60x60bb.jpg", "artworkUrl100":"https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/d4/97/ca/d497ca2d-bc43-c185-1d27-2812f2bda4ae/mza_1332494387896370315.jpg/100x100bb.jpg", "collectionPrice":0.00, "trackPrice":0.00, "collectionHdPrice":0, "releaseDate":"2026-08-23T16:00:00Z", "collectionExplicitness":"notExplicit", "trackExplicitness":"cleaned", "trackCount":100, "trackTimeMillis":2692, "country":"USA", "currency":"USD", "primaryGenreName":"Technology", "contentAdvisoryRating":"Clean", "artworkUrl600":"https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/d4/97/ca/d497ca2d-bc43-c185-1d27-2812f2bda4ae/mza_1332494387896370315.jpg/600x600bb.jpg", "genreIds":["1318", "26"], "genres":["Technology", "Podcasts"]}]
+}
+
+

@@ -1,0 +1,536 @@
+{
+  "model": "z-ai/glm-4.7",
+  "claims": [
+    {
+      "entity": "account:lassie",
+      "field_key": "core.account_name",
+      "value_json": "Lassie",
+      "evidence_span": "Lassie, the company building autonomous systems to run small businesses",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.primary_domain",
+      "value_json": "lassie.ai",
+      "evidence_span": "Lassie is the San Francisco-based operating company behind lassie.ai",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.industry",
+      "value_json": "AI software",
+      "evidence_span": "an AI software company building autonomous administrative systems",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.company_about",
+      "value_json": "AI that runs the doctor's office",
+      "evidence_span": "Lassie \u2014 AI That Runs the Doctor's Office",
+      "source_url": "https://www.lassie.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.hq_location",
+      "value_json": {
+        "raw": "SAN FRANCISCO, Calif.",
+        "city": "San Francisco",
+        "region": "California",
+        "country": "United States",
+        "country_code": "US"
+      },
+      "evidence_span": "SAN FRANCISCO, Calif.--(BUSINESS WIRE)-- Lassie",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "core.annual_revenue",
+      "value_json": {
+        "amount": 10000000,
+        "currency": "USD",
+        "as_of": "2026-06-03",
+        "estimate_kind": "third_party_estimate"
+      },
+      "evidence_span": "generates more than $10 million in annualized revenue",
+      "source_url": "https://a16z.com/announcement/investing-in-lassie/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 35000000,
+        "round": "Series A"
+      },
+      "evidence_span": "announced it has raised $35 million in Series A financing",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.total_funding",
+      "value_json": {
+        "amount_usd": 47000000,
+        "estimate_kind": "reported"
+      },
+      "evidence_span": "bringing its total capital raised to $47 million",
+      "source_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 5,
+      "evidence_span": "Software Engineer, Applied AI; Software Engineer, Growth; Software Engineer, Platform; Software Engineer, Product; Software Engineer, Security",
+      "source_url": "https://jobs.ashbyhq.com/lassie",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.strategic_moves",
+      "value_json": "Turning customer love into compounding demand",
+      "evidence_span": "turning customer love into compounding demand",
+      "source_url": "https://jobs.ashbyhq.com/lassie/297fd72f-fe6d-40f1-8931-89085e66fa2f",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "account:lassie",
+      "field_key": "account.resonance.culture",
+      "value_json": "We value craft, rigor of thought, and direct communication",
+      "evidence_span": "We value craft, rigor of thought, and direct communication",
+      "source_url": "https://www.lassie.ai/company",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.current_title",
+      "value_json": "CEO and Co-Founder - Lassie",
+      "evidence_span": "CEO and Co-Founder - Lassie.",
+      "source_url": "https://www.linkedin.com/in/steijn",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.job_level",
+      "value_json": "C-Level",
+      "evidence_span": "CEO and Co-Founder - Lassie.",
+      "source_url": "https://www.linkedin.com/in/steijn",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.current_location",
+      "value_json": {
+        "raw": "San Francisco",
+        "country": "United States"
+      },
+      "evidence_span": "CEO and Co-Founder - Lassie... San Francisco.",
+      "source_url": "https://www.linkedin.com/in/steijn",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.persona",
+      "value_json": "economic_buyer",
+      "evidence_span": "CEO and Co-Founder - Lassie.",
+      "source_url": "https://www.linkedin.com/in/steijn",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.role_on_committee",
+      "value_json": {
+        "role": "economic_buyer",
+        "rationale": "CEO and Co-Founder of Lassie."
+      },
+      "evidence_span": "CEO and Co-Founder - Lassie.",
+      "source_url": "https://www.linkedin.com/in/steijn",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Robinhood",
+          "role": "Product Manager",
+          "start": "2018-12",
+          "end": "2019-11"
+        },
+        {
+          "org": "Coinbase",
+          "role": "Product Lead, Growth",
+          "start": "2018-01",
+          "end": "2018-07"
+        },
+        {
+          "org": "HealthTap",
+          "role": "Product Manager, Growth",
+          "start": "2016-02",
+          "end": "2017-12"
+        },
+        {
+          "org": "FITMO",
+          "role": "COO and Co-Founder",
+          "start": "2014-04",
+          "end": "2016-02"
+        },
+        {
+          "org": "Pelliano",
+          "role": "CEO and Co-Founder",
+          "start": "2011-06",
+          "end": "2014-04"
+        },
+        {
+          "org": "ELF Entertainment",
+          "role": "CEO and Co-Founder",
+          "start": "2007-01",
+          "end": "2011-05"
+        }
+      ],
+      "evidence_span": "Robinhood - Product Manager, December 2018\u2013November 2019... Coinbase - Product Lead, Growth, January\u2013July 2018... HealthTap - Product Manager, Growth, February 2016\u2013December 2017... FITMO - COO and Co-Founder, April 2014\u2013February 2016... Pelliano - CEO and Co-Founder, June 2011\u2013April 2014... ELF Entertainment - CEO and Co-Founder, January 2007\u2013May 2011.",
+      "source_url": "https://www.linkedin.com/in/steijn",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.alma_mater",
+      "value_json": [
+        "Rotterdam School of Management, Erasmus University"
+      ],
+      "evidence_span": "Bachelor of Science, Business Administration",
+      "source_url": "https://www.linkedin.com/in/steijn",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong",
+      "use_class": "personal-public-non-sensitive"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.communication_style",
+      "value_json": {
+        "style_label": "Direct and Analytical",
+        "summary": "Recurring themes: autonomy, busywork removal, customer focus, growth loops, product quality, direct communication. Writes in specific user, experiment, team and revenue numbers."
+      },
+      "evidence_span": "We value craft, rigor of thought, and direct communication.",
+      "source_url": "https://www.lassie.ai/company",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.public_appearances",
+      "value_json": [
+        {
+          "title": "Lassie: From Flying to 100 Dental Offices to $100M ARR Via Product Obsession with Steijn Pelle",
+          "venue": "Founder-Led Sales Stories",
+          "url": "https://founderledsalesstories.substack.com/p/lassie-from-flying-to-100-dental",
+          "date": "2025-08-22"
+        },
+        {
+          "title": "Getting Paid in the Age of AI: Back Office Automation from Silicon Valley Pt. 2",
+          "venue": "Dental Success Institute / Dentalpreneur Podcast",
+          "url": "https://www.truedentalsuccess.com/the-dentalpreneur-podcast/2315-getting-paid-in-the-age-of-ai-back-office-automation-from-silicon-valley-pt-2/",
+          "date": "2025-08-19"
+        },
+        {
+          "title": "Steijn Pelle on Dental AI Automation",
+          "venue": "MDIB Podcast",
+          "url": "https://mommydibs.com/steijn-pelle-lassie-ai/",
+          "date": "2026-02-20"
+        }
+      ],
+      "evidence_span": "Founder-Led Sales Stories... Dental Success Institute / Dentalpreneur Podcast... MDIB Podcast",
+      "source_url": "https://founderledsalesstories.substack.com/p/lassie-from-flying-to-100-dental",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.publications",
+      "value_json": [
+        {
+          "title": "I\u2019m joining Coinbase",
+          "venue": "Medium",
+          "url": "https://medium.com/@steijnpelle/im-joining-coinbase-4c10b34bf161",
+          "date": "2018-04-09"
+        }
+      ],
+      "evidence_span": "\u201cI\u2019m joining Coinbase,\u201d Medium, April 9, 2018.",
+      "source_url": "https://medium.com/@steijnpelle/im-joining-coinbase-4c10b34bf161",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Today, we're introducing Lassie and $47M in funding led by a16z. We're building AI that runs small businesses, starting with doctors' offices.",
+      "evidence_span": "Today, we're introducing Lassie and $47M in funding led by a16z. We're building AI that runs small businesses, starting with doctors' offices.",
+      "source_url": "https://www.linkedin.com/posts/steijn_today-were-introducing-lassie-and-47m-activity-7467951103591038976-gfAQ",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.hobby",
+      "value_json": "Former Professional Runner",
+      "evidence_span": "Former Professional Runner",
+      "source_url": "https://www.f6s.com/company/fitmoteam?flow=seePage",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.65,
+      "identity_binding": "strong",
+      "use_class": "personal-public-non-sensitive"
+    },
+    {
+      "entity": "contact:steijn-pelle",
+      "field_key": "contact.facet.recent_award",
+      "value_json": "Young Entrepreneur of the Year",
+      "evidence_span": "Awarded Young Entrepreneur of the Year",
+      "source_url": "https://www.f6s.com/company/fitmoteam?flow=seePage",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.65,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "account.ecosystem_integrations",
+      "entity_type": "account",
+      "value_type": "list[str]",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "Key third-party systems or platforms (e.g., PMS, CRM) that the account's software integrates with natively.",
+      "reuse_scope": "public_footprint",
+      "hypothesis": "For ABM targeting in healthcare/dental verticals, knowing which Practice Management Systems (PMS) a vendor integrates with (e.g., Dentrix, Eaglesoft) is critical to determine compatibility with a prospect's existing stack and to assess switching costs or technical viability.",
+      "example_value": [
+        "Dentrix",
+        "Eaglesoft",
+        "Open Dental"
+      ],
+      "example_evidence_span": "We automate EOB posting and payment matching across Dentrix, Eaglesoft, and Open Dental, without human intervention.",
+      "example_source_url": "https://www.lassie.ai/blog/ai-dental-admin-support"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 17968,
+    "completion_tokens": 9572,
+    "total_tokens": 27540,
+    "cost": 0.02547136,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.02547136,
+      "upstream_inference_prompt_cost": 0.00862464,
+      "upstream_inference_completions_cost": 0.01684672
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 6277,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "elapsed_s": 169.3,
+  "defects": {
+    "wrong_value_key": 24,
+    "string_confidence": 24,
+    "unregistered_field": [],
+    "missing_source_url": [],
+    "unquoted_evidence": [
+      "account.hiring_velocity_eng",
+      "contact.current_location",
+      "contact.facet.career_history",
+      "contact.facet.public_appearances"
+    ]
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330133-GX99OVmPxHKu5GKS8kUn",
+  "object": "chat.completion",
+  "created": 1788330133,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"Mandar Marathe is a long-running visiting faculty member at IIT Bombay\u2019s Shailesh J. Mehta School of Management who says he \\\"take[s] a full 21-hour elective course on Digital Marketing for 2nd year MBA students at SJMSOM,\\\" and he helped launch an executive programme \\\"Executive Leadership for CMOs in the Age of AI\\\" delivered by IIT Bombay where he will \\\"be taking sessions on integrating Generative AI and agentic workflows into modern marketing operations.\\\"\",\n    \"evidence_quote\": \"\\\"I take a full 21-hour elective course on Digital Marketing for 2nd year MBA students at SJMSOM.\\\"\",\n    \"source_url\": \"https://www.linkedin.com/in/mandarmarathe\",\n    \"why_generic_tools_miss_it\": \"Standard enrichment tools index job titles and companies but typically won't surface course-hour commitments or program-launch authorship tied to a specific academic elective and executive programme.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.public_appearances\",\n      \"value\": \"Launched and announced 'Executive Leadership for CMOs in the Age of AI' (IIT Bombay) and will take sessions on integrating Generative AI and agentic workflows into marketing operations\",\n      \"evidence_quote\": \"\\\"Elated to announce the launch of 'Executive Leadership for CMOs in the Age of AI' - India's first executive programme integrating marketing strategy, data-driven growth, and Artificial Intelligence.\\\"\",\n      \"source_url\": \"https://www.linkedin.com/posts/mandarmarathe_iit-bombay-cmo-programme-in-marketing-leadership-activity-7477257565010317312-xXTv\",\n      \"charter_category\": \"professional_identity\",\n      \"priority\": \"P1\",\n      \"use_class\": \"professional-public\",\n      \"outreach_safe\": true\n    },\n    {\n      \"field_key\": \"contact.facet.other_roles|contact.facet.stated_interests\",\n      \"value\": [\n        \"Promoter - Elemnt Sports Science (Feb 2022 - Present)\",\n        \"Entrepreneur in Residence - MAGIC Business Incubator SME Accelerator (Jan 2024 - Present)\",\n        \"Marketing Specialist - T72 Club (Current)\"\n      ],\n      \"evidence_quote\": \"\\\"Promoter - Elemnt Sports Science (Current)\\\", \\\"Entrepreneur in Residence - MAGIC Business Incubator SME Accelerator (Current)\\\", \\\"Marketing Specialist - T72 Club (Current)\\\"\",\n      \"source_url\": \"https://www.linkedin.com/in/mandarmarathe\",\n      \"charter_category\": \"background\",\n      \"priority\": \"P2\",\n      \"use_class\": \"professional-public\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8CWxqfGcFgCJLLPACbBoWhUuElfoGM5TymjOxPVf7M2wD-IB2Trl3fmQqw1T4gqdBbq_N0K-3fjGNlsLNAm6CEaOvsSESqWoUXUSUHoJOs4rDzXB7ELXttMAtrE4b5jctRGeca2Im-Mvgp1p_eJHdn5M8Vv-GiHe73-hU_QRPafCU3vg5c3ty6ISSRCl0RMEQGbKeX8ZI8-4j_lGy0QuN3fzr_dnJDOwlBdKxsUx1GWdUmto74rXeQ-XgApKgEY0JLsAYE_qEOE4FrLCwcN3VcULFKrb_2hbtpGKYRHPLJWflWkBFj2GWw5kC_FI4YvThJ9H4MI6CyryCP1m49wC3jdNFmhsFanwtQpBMsWjtslEnu3hnjEIkOMVks603pWrozgfGkQ4vkrA-RQXcgAZkRX1S032q6vHQiyvQMEFXqBR70eI233geZyQksx2FxWD3tzE0k3xiZ95dCY2b-18jBo8PTufm8icp9NL0nirEiLN6uREGw1CdZuUNTerm2neNROBwaFtTdr1gjLLh5hVhwnobmOr3yyhmImHj5oanRt-TvLSGNMNVCPbDEi3X8XO7VjfsF5gNkm6W3c1ObdFam0A1-g5OiD-Z4EOZu6pCeWS84JZ0txNjlZ2fP8eJSh5Q1vbkFz_jx8Oq5Zw-7ugCiEGRwjtS-qV2_VZdj38zOPN702ya-K8qe6HtRRI-X4trwVcRTBzginCd4uY8ASrv6yzXlglvAWSaV-Yaa51QWL-8EUwcVbLFtEVVkAaAPPQuJjcyj1oFI-_9_npxYHu4-Tohqg3GpK0Qp90xPPSlqtT_-m7bLBxCPfL-Zt_VHcPTTOb_6UtzpGspqImRH-OfjlPSTlYn0g8Qf9zvEUofZZWTS6Sw1cgykucJuvdX98Fz753NcBkqxFdO8Q6oIX6T3VaM8sOoiVKT04tRd18a0zM31b8ol14utKQC_0QLzGg85vZACjP7EiW6WMm3r4UnZKniqiyhOWvIL8Jd4jv-xaFsn-XpSuN5F37ZBvRV3qqFrFFpcoAqt65CCH1Adq-g3s0mDWjY7jnWeDFLPdi5tq89NW8qYg_mICnCWRXBmjK5zdMwjwrqsvt92L-MyheTDfWBSUo90jv2rgLDj4Vjn1H9D0NIA6NNtvjFxUB4tQGBBRjPsifzWLC2Xtq8OM_LEMr17ZCUDKaFX4qpJm8k_O2UCJkJ35qLfvsc9K4DFGG7hvzs34o3VIal5Ne5hW05pXNI9qVDePep2zaFjoDedU7MI16llWxC4foiM8OMqsplMctkmkgbbwFodzc1DEH9Q3jIuLSmnLqTG21KdZeyKpUndcFvL-f2arZdpxiVLshzz7-aE5uPJbZLE79FuInXNbORj5Qnvwjy7kU0ui1DH8jvc07M_oYsOgBp0V2qgvg46-.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0168c5952bd7059b016a97c09689c887d08b6588ef4c760413",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3105,
+    "completion_tokens": 606,
+    "total_tokens": 3711,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00198825,
+      "upstream_inference_prompt_cost": 0.00077625,
+      "upstream_inference_completions_cost": 0.001212
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 6.13
+}

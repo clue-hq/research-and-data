@@ -50,9 +50,12 @@ def _governed_provider(
     provider_sort: str | None,
     timeout_s: float,
     fallback_model: str | None = None,
+    chat_completions: bool = False,
 ):
     """The cached governed provider for one gateway policy fingerprint."""
-    key = (base_url, api_key, reasoning, provider_sort, timeout_s, fallback_model)
+    key = (
+        base_url, api_key, reasoning, provider_sort, timeout_s, fallback_model, chat_completions
+    )
     if key not in _PROVIDER_CACHE:
         from pydantic import SecretStr
 
@@ -66,6 +69,9 @@ def _governed_provider(
             fallback_model=fallback_model,
             openrouter_provider_sort=provider_sort,  # type: ignore[arg-type]
             openrouter_usage_include=True,
+            # 2026-09-04: non-OpenAI ids over chat-completions (the platform lane's
+            # ruling); /responses' bridge dropped a 136s grok generation mid-stream.
+            openrouter_chat_completions_fallback=chat_completions,
             agent_reasoning=(
                 ReasoningRequest(effort=reasoning) if reasoning is not None else None
             ),
@@ -84,6 +90,7 @@ def init_model(
     timeout_s: float | None = None,
     role: str | None = None,
     fallback_model: str | None = None,
+    chat_completions: bool = False,
 ):
     """Build a deep-agent LLM bound to the OpenRouter gateway.
 
@@ -147,6 +154,7 @@ def init_model(
         provider_sort=provider_sort,
         timeout_s=effective_timeout,
         fallback_model=fallback_model,
+        chat_completions=chat_completions,
     )
     # P3.2 rulings, restated where they bind: max output is BOUNDED by default (the
     # governed build refuses unbounded generation); temperature=1.0 approximates the

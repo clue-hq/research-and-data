@@ -70,8 +70,9 @@
   position: relative;
   display: flex;
   width: 100%;
+  /* Long drafts scroll in the editor without moving the footer or surrounding page. */
+  height: 126px;
   min-height: 126px;
-  max-height: min(248px, calc(100dvh - 160px));
   flex-direction: column;
   justify-content: space-between;
   overflow: visible;
@@ -89,24 +90,28 @@
   box-shadow: var(--clue-ds-shadow-card-subtle), 0 0 0 2px white;
 }
 
+/* Ruling 5: while a file drag is over the chat, the composer is the drop
+   target — a dashed outline and nothing else (no overlay, no copy). */
+.composer[data-drop-target="true"] {
+  border: 1px dashed var(--clue-ds-color-border-neutral);
+}
+
 .composerBody {
   display: flex;
   min-width: 0;
-  min-height: 64px;
-  flex: 1 1 auto;
+  min-height: 0;
+  flex: 1 1 0;
   flex-direction: column;
 }
 
 .composerWithAttachments {
+  height: 151px;
   min-height: 151px;
-}
-
-.composerWithAttachments .composerBody {
-  min-height: 89px;
 }
 
 .composerAttachments {
   width: 100%;
+  flex-shrink: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
   padding: 0 4px;
@@ -117,7 +122,32 @@
   display: none;
 }
 
+.chatAttachment {
+  max-width: 100%;
+  border-color: var(--clue-ds-color-primitives-gray-alpha-100);
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-neutral);
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
+}
+
+.chatAttachment:hover {
+  border-color: var(--clue-ds-color-primitives-gray-alpha-200);
+  background: var(--clue-ds-color-bg-subtle);
+  color: var(--clue-ds-color-content-neutral);
+}
+
+.chatAttachmentPreview {
+  background: transparent;
+}
+
+.chatAttachmentPreview > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--clue-ds-color-content-subtle);
+}
+
 .composerAttachmentError {
+  flex-shrink: 0;
   margin: 0;
   padding: 2px 6px 0;
   color: var(--clue-ds-color-content-danger, #b42318);
@@ -127,18 +157,22 @@
 
 .composerEditorShell {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
-  min-height: 44px;
-  max-height: 120px;
-  flex: 1 1 auto;
-  overflow: hidden;
+  min-height: 0;
+  flex: 1 1 0;
+  /* The editor below is the scroll container for long drafts. The shell must stay
+     visible: the `@` entity picker is positioned above it and was clipped when the
+     shell hid overflow. */
+  overflow: visible;
 }
 
 .composerEditor {
   box-sizing: border-box;
   width: 100%;
-  min-height: 44px;
-  max-height: 120px;
+  min-height: 0;
+  flex: 1 1 0;
   overflow-x: hidden;
   overflow-y: auto;
   border: 0;
@@ -147,8 +181,8 @@
   padding: 6px 8px;
   color: var(--clue-ds-color-content-neutral);
   font: inherit;
-  font-size: 15px;
-  line-height: 22px;
+  font-size: var(--clue-ds-product-component-chat-body-font-size);
+  line-height: var(--clue-ds-product-component-chat-body-line-height);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   word-break: break-word;
@@ -165,11 +199,13 @@
 }
 
 .composerParagraph {
-  min-height: 40px;
+  /* Slate's absolute placeholder must share the text's padded line origin. */
+  position: relative;
+  min-height: var(--clue-ds-product-component-chat-body-line-height);
   margin: 0;
 }
 
-.composerMention {
+.chatMention {
   display: inline-block;
   margin: 0 1px;
   border: 0;
@@ -178,17 +214,22 @@
   padding: 0;
   color: var(--clue-ds-color-content-neutral);
   font: inherit;
-  line-height: 22px;
+  font-size: var(--clue-ds-product-component-chat-body-font-size);
+  line-height: var(--clue-ds-product-component-chat-body-line-height);
+  max-width: 100%;
+  min-width: 0;
   user-select: none;
   vertical-align: baseline;
   transition: background var(--clue-ds-product-motion-duration-fast) ease,
     box-shadow var(--clue-ds-product-motion-duration-fast) ease;
 }
 
-.composerMentionVisual {
+.chatMentionVisual {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 100%;
+  min-width: 0;
   vertical-align: -2px;
 }
 
@@ -196,26 +237,25 @@
   display: block;
 }
 
-.composerMentionVisual > span:last-child {
-  border-bottom: 1px solid var(--clue-ds-color-border-neutral);
-  line-height: 19px;
+.chatMentionLabel {
+  border-bottom: 1px solid var(--clue-ds-color-primitives-gray-alpha-200);
+  line-height: calc(var(--clue-ds-product-component-chat-body-line-height) - 3px);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: border-color var(--clue-ds-product-motion-duration-fast) ease;
 }
 
-.composerMention:hover .composerMentionVisual > span:last-child {
+.chatMention:hover .chatMentionLabel {
   border-bottom-color: var(--clue-ds-color-content-subtle);
 }
 
-.composerMention img {
+.chatMentionLogo {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
   object-fit: contain;
-}
-
-.composerMention .composerMentionAvatar {
-  border-radius: 50%;
-  object-fit: cover;
 }
 
 .composerMentionSelected {
@@ -224,7 +264,7 @@
   box-shadow: 0 0 0 1px #9fc5f8;
 }
 
-.composerMentionSelected .composerMentionVisual > span:last-child {
+.composerMentionSelected .chatMentionLabel {
   border-bottom-color: transparent;
 }
 
@@ -363,7 +403,7 @@
   align-items: center;
   justify-content: center;
   border: 0.5px solid var(--clue-ds-color-primitives-brand-950);
-  border-radius: 999px;
+  border-radius: 4px;
   background: var(--clue-ds-color-primitives-brand-950);
   color: white;
   cursor: pointer;
@@ -429,6 +469,49 @@
   text-align: left;
 }
 
+.entityRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.entityRow[data-nested="true"] {
+  padding-left: 28px;
+}
+
+.entityRow > .entityOption {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.entityExpand {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+  cursor: pointer;
+  padding: 6px;
+  font-size: 12px;
+}
+
+.entityExpand:hover {
+  background: var(--clue-ds-color-bg-page);
+}
+
+.entityExpandChevron {
+  display: inline-flex;
+  transition: transform var(--clue-ds-product-motion-duration-standard)
+    var(--clue-ds-product-motion-easing-standard);
+}
+
+.entityExpand[aria-expanded="true"] .entityExpandChevron {
+  transform: rotate(90deg);
+}
+
 .entityPickerEmpty {
   margin: 0;
   padding: 20px 12px;
@@ -436,6 +519,65 @@
   font-size: 13px;
   line-height: 18px;
   text-align: center;
+}
+
+.pickerCategory {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 14px;
+  text-align: left;
+}
+
+.pickerCategory > span {
+  flex: 1 1 auto;
+}
+
+.pickerCategory > small {
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+}
+
+.pickerCategory:hover,
+.pickerCategory[data-active="true"] {
+  background: var(--clue-ds-color-bg-page);
+}
+
+.pickerBack {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+/* ProjectIcon renders an <img>, so the chevron is flipped by element, not by tag. */
+.pickerBack > * {
+  transform: rotate(180deg);
+}
+
+.entityIcon {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--clue-ds-color-bg-page);
+  color: var(--clue-ds-color-content-subtle);
 }
 
 .modelOption {
@@ -800,6 +942,11 @@
 }
 
 .transcriptScroll {
+  /* The containing block for absolutely positioned descendants. Message parts carry `sr-only`
+     spans (position: absolute); without this they resolve against the chat pane, escape the
+     scroller's clipping, and inflate the pane's scrollable overflow to the transcript's full
+     height — which is what let a programmatic scroll move the whole pane (2026-09-16). */
+  position: relative;
   min-width: 0;
   min-height: 0;
   overflow-x: hidden;
@@ -840,7 +987,7 @@
   max-width: 100%;
   border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: 8px 0 8px 8px;
-  background: white;
+  background: var(--clue-ds-product-component-chat-user-message-background);
   padding: 8px;
 }
 
@@ -997,6 +1144,92 @@
   cursor: default;
 }
 
+/* The set-valued product gate: one checkbox list, grouped by offering kind. */
+.productSetGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.productSetGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.productSetGroupHeading {
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.productSetOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 8px;
+  background: white;
+  padding: 10px 12px;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.productSetOption:hover:has(input:not(:disabled)) {
+  border-color: var(--clue-ds-color-bg-brand);
+}
+
+.productSetOption[data-archived="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.productSetOption input {
+  margin-top: 3px;
+  flex: none;
+}
+
+.productSetOptionBody {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.productSetOptionName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.productSetOptionBody span,
+.productSetOptionBody small {
+  overflow-wrap: anywhere;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.productSetOptionName strong {
+  color: var(--clue-ds-color-content-neutral);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.productSetDuplicate {
+  border: 0.5px solid var(--clue-ds-color-border-neutral);
+  border-radius: 999px;
+  padding: 0 6px;
+  color: var(--clue-ds-color-content-subtle);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: help;
+}
+
 .planApproval > header {
   display: flex;
   align-items: center;
@@ -1057,14 +1290,6 @@
   cursor: pointer;
 }
 
-.reasoning,
-.chainOfThought {
-  width: 100%;
-  color: var(--clue-ds-color-content-subtle);
-}
-
-.reasoning > button,
-.chainOfThought > button,
 .generationBlock > button {
   display: inline-flex;
   align-items: center;
@@ -1082,94 +1307,12 @@
     var(--clue-ds-product-motion-easing-standard);
 }
 
-.reasoning[data-open="true"] .reasoningChevron,
-.chainOfThought[data-open="true"] .reasoningChevron {
-  transform: rotate(180deg);
-}
-
-.reasoningReveal,
-.chainReveal {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition: grid-template-rows var(--clue-ds-product-motion-duration-standard)
-      var(--clue-ds-product-motion-easing-standard),
-    opacity var(--clue-ds-product-motion-duration-fast) ease;
-}
-
-.reasoningReveal > div,
-.chainReveal > div {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.reasoning[data-open="true"] .reasoningReveal,
-.chainOfThought[data-open="true"] .chainReveal {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-
-.reasoningReveal > div {
-  padding-top: 12px;
-  color: var(--clue-ds-color-content-neutral);
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.reasoningReveal p {
-  margin: 0;
-}
-
 .shimmerText {
   color: transparent;
   background: linear-gradient(90deg, #5e636c 20%, #d6d9e0 48%, #5e636c 75%);
   background-size: 220% 100%;
   background-clip: text;
   animation: reasoning-shimmer 1.4s linear infinite;
-}
-
-.chainContent {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding-top: 12px;
-}
-
-.traceStep {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  gap: 8px;
-  color: var(--clue-ds-color-content-subtle);
-}
-
-.traceRail {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding-top: 1px;
-}
-
-.traceRail > i {
-  width: 1px;
-  min-height: 12px;
-  flex: 1;
-  background: var(--clue-ds-color-border-neutral);
-  margin-top: 6px;
-}
-
-.traceStep[data-last="true"] .traceRail > i {
-  display: none;
-}
-
-.traceCopy {
-  min-width: 0;
-  padding-bottom: 12px;
-}
-
-.traceCopy > p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 18px;
 }
 
 .thoughtImage {
@@ -2715,58 +2858,37 @@
   gap: 12px;
 }
 
+.messageParts > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .projectMessage[data-role="user"] .messageParts {
   width: fit-content;
   max-width: 100%;
   align-items: flex-end;
   border: 0.5px solid var(--clue-ds-color-border-neutral);
   border-radius: 8px 0 8px 8px;
-  background: white;
+  background: var(--clue-ds-product-component-chat-user-message-background);
   padding: 8px;
 }
 
 .messageText {
+  font-size: var(--clue-ds-product-component-chat-body-font-size);
+  line-height: var(--clue-ds-product-component-chat-body-line-height);
   min-width: 0;
   max-width: 100%;
   margin: 0;
   overflow-wrap: anywhere;
-  word-break: break-word;
+  word-break: normal;
 }
 
 .messageContextRefs {
   display: flex;
   max-width: 100%;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.messageContextRefs > span {
-  overflow: hidden;
-  max-width: 240px;
-  border: 0.5px solid var(--clue-ds-color-border-neutral);
-  border-radius: 999px;
-  background: var(--clue-ds-color-bg-page);
-  color: var(--clue-ds-color-content-neutral);
-  font-size: 11px;
-  line-height: 18px;
-  padding: 0 7px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.messageContextRefs > .messageReferenceImage {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding-left: 3px;
-}
-
-.messageReferenceThumbnail {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  border-radius: 999px;
-  object-fit: cover;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .gateAnswerReceipt {
@@ -2888,15 +3010,6 @@
   color: var(--clue-ds-color-content-subtle);
 }
 
-.reasoning,
-.chainOfThought {
-  width: 100%;
-  margin: 0;
-  color: var(--clue-ds-color-content-subtle);
-}
-
-.reasoningTrigger,
-.chainHeader,
 .generationTrigger,
 .toolActivityTrigger,
 .projectSourcesTrigger {
@@ -2912,47 +3025,8 @@
   cursor: pointer;
 }
 
-.reasoningContent {
-  margin-top: 0;
-  padding-top: 12px;
-  color: var(--clue-ds-color-content-neutral);
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.reasoningContent p {
-  margin: 0;
-}
-
 .reasoningStatus {
   cursor: default;
-}
-
-/*
- * The dev-lens raw reasoning disclosure. It exists only when the backend sent a
- * trace, which only a development deployment can be configured to do, so it is
- * deliberately styled as a diagnostic — monospaced, muted, dashed — and never as
- * part of the conversation.
- */
-.reasoningTrace {
-  margin: 0;
-}
-
-.reasoningTrace .reasoningStatus {
-  cursor: pointer;
-}
-
-.reasoningTraceContent {
-  margin-top: 6px;
-  border-left: 2px dashed var(--clue-ds-color-border-subtle);
-  padding-left: 10px;
-}
-
-.reasoningTraceNote {
-  margin: 0 0 6px;
-  color: var(--clue-ds-color-content-subtle);
-  font-size: 11px;
-  line-height: 15px;
 }
 
 /*
@@ -2962,23 +3036,8 @@
  * styles.
  *
  * Styled as a developer tool throughout: monospace addresses, muted notes, a
- * dashed frame. It is never rendered in a production deployment, because the
- * affordance that opens it is not rendered when the capability probe 404s.
+ * dashed frame. The inspector is no longer mounted in the chat interface.
  */
-.turnLensTrigger {
-  margin-left: auto;
-  border: 0.5px dashed var(--clue-ds-color-border-subtle);
-  border-radius: 4px;
-  background: transparent;
-  padding: 1px 6px;
-  color: var(--clue-ds-color-content-subtle);
-  font-size: 10px;
-  line-height: 14px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
 .turnLensPanel {
   display: flex;
   position: absolute;
@@ -3157,58 +3216,10 @@
   overflow-wrap: anywhere;
 }
 
-.reasoningTraceText {
-  margin: 0;
-  color: var(--clue-ds-color-content-neutral);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
-  line-height: 17px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.reasoning[data-state="open"] .reasoningChevron,
-.chainOfThought:has([data-state="open"]) .reasoningChevron,
 .toolActivity[data-state="open"] .reasoningChevron,
 .generationBlock[data-state="open"] .reasoningChevron,
 .projectSources[data-state="open"] .reasoningChevron {
   transform: rotate(180deg);
-}
-
-.chainHeader {
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.chainContent {
-  width: 100%;
-  margin-top: 0;
-  padding-top: 12px;
-}
-
-.chainContent > div:last-child > div:first-child > div:last-child {
-  display: none;
-}
-
-.traceStep {
-  display: flex;
-  gap: 8px;
-  color: var(--clue-ds-color-content-subtle);
-  font-size: 13px;
-  line-height: 18px;
-}
-
-.traceStep > div:first-child {
-  margin-top: 1px;
-}
-
-.traceStep > div:first-child > div:last-child {
-  top: 22px;
-  background: var(--clue-ds-color-border-neutral);
-}
-
-.traceStep > div:last-child {
-  padding-bottom: 12px;
 }
 
 .thoughtTag {
@@ -3532,8 +3543,6 @@
     animation: none;
   }
   .reasoningChevron,
-  .reasoningReveal,
-  .chainReveal,
   .generationStep > i b,
   .sendButton {
     transition: none;
@@ -3553,7 +3562,15 @@
  * container owns block rhythm. Everything below is typography only: no state,
  * no timing, no animation that a wire value could drive.
  */
+.messageText :global(.clue-markdown) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .messageText :global(.clue-markdown) > * {
+  min-width: 0;
+  max-width: 100%;
   margin: 0 0 8px;
 }
 
@@ -3583,7 +3600,8 @@
 
 .messageText :global(.clue-markdown) code {
   overflow-wrap: anywhere;
-  word-break: break-word;
+  word-break: normal;
+  white-space: pre-wrap;
   border-radius: 4px;
   background: var(--clue-surface-muted, rgba(17, 19, 24, 0.06));
   padding: 1px 4px;
@@ -3592,8 +3610,10 @@
 }
 
 .messageText :global(.clue-markdown) pre {
+  min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   border-radius: 8px;
   background: var(--clue-surface-muted, rgba(17, 19, 24, 0.06));
   padding: 10px 12px;
@@ -3691,3 +3711,16 @@
   min-height: 48px;
   padding: 6px;
 }
+
+.planDocumentLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.planDocumentLink:hover { text-decoration: underline; }
+.planDocumentLink:focus-visible { outline: 2px solid var(--clue-ds-color-border-brand-default); outline-offset: 4px; }

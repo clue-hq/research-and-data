@@ -7,6 +7,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from sqlalchemy import text
@@ -22,13 +23,19 @@ from clue_core import (
     DiscoveryProviderEvent,
     DiscoveryWakeReason,
     DiscoveryWakeRequest,
+    ExtractionMethod,
     PhaseContext,
     PhaseResult,
     PhaseStatus,
     ProjectPhase,
+    ResearchMode,
+    account_claim,
     new_discovery_batch_id,
     new_discovery_plan_id,
+    revalidate_with,
 )
+from clue_core.entity_research import SealedDiscoveryLaunchReceipt
+from clue_research.claimstore import insert_claim
 from clue_research.durable import (
     DbProjectRunStore,
     DiscoveryReplayConflict,
@@ -38,6 +45,7 @@ from clue_research.durable import (
     ProjectRun,
     cancel_discovery_batch,
     claim_due_discovery_wakes,
+    discovery_manifest_members,
     get_checkpoint,
     get_current_discovery_batch,
     get_discovery_batch,
@@ -52,6 +60,7 @@ from clue_research.durable import (
     schedule_discovery_wake,
     upsert_checkpoint,
 )
+from clue_research.identity import stamp_reuse
 from clue_storage import FsStorage
 from tests.db.conftest import run_async
 from tests.durable.conftest import rollback_conn
@@ -325,6 +334,90 @@ def test_waits_then_seals_and_project_run_advances_once(tmp_path: Path) -> None:
             assert accounts.required_criteria == ("is an independent practice",)
             assert accounts.required_account_fields
             assert len(accounts.field_resolutions) == len(accounts.required_account_fields)
+
+            # Regression: later Account-profile claims can legitimately reuse the discovery
+            # item's raw artifact. The historical live-membership query absorbs that claim, but
+            # post-seal authority is the stored bundle/artifacts and must remain unchanged.
+            raw_artifact_key = (
+                await conn.execute(
+                    text(
+                        "SELECT item.raw_artifact_key FROM discovery_candidate_link candidate "
+                        "JOIN discovery_item_snapshot item ON item.id=candidate.item_snapshot_id "
+                        "AND item.workspace_id=candidate.workspace_id "
+                        "WHERE candidate.workspace_id=:workspace_id "
+                        "AND candidate.batch_id=:batch_id LIMIT 1"
+                    ),
+                    {"workspace_id": workspace_id, "batch_id": started.batch_id},
+                )
+            ).scalar_one()
+            later_claim = revalidate_with(
+                stamp_reuse(
+                    account_claim(
+                        entity_id=ready.account_id,
+                        field_key="core.company_about",
+                        value_json="Later Account profiling reused the discovery source artifact.",
+                        source_tier=1,
+                        extraction_method=ExtractionMethod.API,
+                        confidence=0.95,
+                        run_id=started.project_run_id,
+                        research_mode=ResearchMode.ACCOUNT_PROFILING,
+                        source_url="https://example.test/later-profile",
+                        evidence_span="Later evidence-backed Account-profile observation.",
+                    ),
+                    workspace_id=workspace_id,
+                ),
+                # The regression is about membership's entity+artifact join, independent of the
+                # provider. Reuse the fixture's registered discovery source so this focused D5
+                # test does not have to fabricate an Exa Deep operation/snapshot/result chain.
+                source_key="exa_websets",
+                artifact_key=raw_artifact_key,
+            )
+            later_claim_id = await insert_claim(conn, later_claim, validate_field=False)
+            _, live_claim_ids, _ = await discovery_manifest_members(
+                conn, workspace_id=workspace_id, batch_id=started.batch_id
+            )
+            assert UUID(str(later_claim_id)) in live_claim_ids
+            assert UUID(str(later_claim_id)) not in bundle.claim_ids
+
+            receipt = SealedDiscoveryLaunchReceipt(
+                discovery_batch_id=UUID(str(started.batch_id)),
+                discovery_generation=bundle.generation,
+                discovery_seal_sha256=seal.seal_sha256,
+                account_manifest_ref=bundle.account_manifest_artifact_key,
+                account_manifest_sha256=bundle.account_manifest_sha256,
+                claim_manifest_ref=bundle.claim_manifest_artifact_key,
+                claim_manifest_sha256=bundle.claim_manifest_sha256,
+            )
+            reread = await reader.read(
+                workspace_id=workspace_id,
+                project_run_id=started.project_run_id,
+                icp_key="independent-specialty-practices",
+                icp_version=1,
+                discovery_receipt=receipt,
+            )
+            assert reread is not None
+            assert reread.claim_ids == tuple(bundle.claim_ids)
+
+            # A receipt is authority only while it still describes the stored lineage exactly.
+            # Every field of it is compared, so a job whose pinned receipt disagrees with the seal
+            # it names — a replaced generation, a re-pointed or re-hashed manifest — fails closed
+            # instead of quietly researching against a lineage it was never authorized for.
+            for mismatch in (
+                {"discovery_generation": bundle.generation + 1},
+                {"discovery_seal_sha256": "0" * 64},
+                {"account_manifest_ref": f"{bundle.account_manifest_artifact_key}-other"},
+                {"account_manifest_sha256": "1" * 64},
+                {"claim_manifest_ref": f"{bundle.claim_manifest_artifact_key}-other"},
+                {"claim_manifest_sha256": "2" * 64},
+            ):
+                with pytest.raises(DiscoverySealConflict, match="differs from launch receipt"):
+                    await reader.read(
+                        workspace_id=workspace_id,
+                        project_run_id=started.project_run_id,
+                        icp_key="independent-specialty-practices",
+                        icp_version=1,
+                        discovery_receipt=receipt.model_copy(update=mismatch),
+                    )
 
             # A late team-level webhook remains auditable but is explicitly outside the sealed
             # generation. It cannot change candidate membership or field resolution.

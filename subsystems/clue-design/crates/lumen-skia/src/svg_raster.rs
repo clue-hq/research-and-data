@@ -15,7 +15,7 @@
 //! and the helper is the composition point that already depends on both.
 
 use lumen_export::ensure_raster_within_budget;
-use skia_safe::{surfaces, AlphaType, ColorType, EncodedImageFormat, FontMgr, Image, ImageInfo};
+use skia_safe::{surfaces, AlphaType, ColorType, EncodedImageFormat, Image, ImageInfo};
 
 /// Rasterize `svg_bytes` into a PNG thumbnail, returning
 /// `(png_bytes, pixel_width, pixel_height)`.
@@ -41,9 +41,7 @@ pub fn rasterize_svg_thumbnail(
     max_dimension: u32,
     min_short_dimension: u32,
 ) -> Option<(Vec<u8>, u32, u32)> {
-    // Same `Dom` + `FontMgr` acquisition as the placed-asset painter.
-    let font_mgr: FontMgr = FontMgr::new();
-    let mut dom = skia_safe::svg::Dom::from_bytes(svg_bytes, font_mgr).ok()?;
+    let mut dom = crate::svg_dom::parse(svg_bytes).ok()?;
 
     // A root with absolute width/height renders at its intrinsic size and
     // ignores the container size, so it is scaled; a root without one (a

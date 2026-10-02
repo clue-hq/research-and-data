@@ -239,6 +239,9 @@ class ToolContext:
     * ``action_ref`` — captured UI/turn action. Human gates derive receipts from this ambient value;
       caller-authored tool arguments never choose who approved an operation or which action carried
       the approval.
+    * ``project_id`` — the project the call runs for, when its caller knows it (a turn's recipe
+      execution, a design leg). Read-only scoping, never authority: a tool that serves
+      project-scoped state reads it to pick the right project; ``None`` means unknown.
     """
 
     workspace_id: str
@@ -256,6 +259,7 @@ class ToolContext:
     parent_execution_id: ExecutionId | None = None
     execution_worker_id: str | None = None
     lease_generation: int | None = None
+    project_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.principal_kind is None:

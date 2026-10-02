@@ -342,3 +342,63 @@ def test_concurrent_emitters_get_distinct_increasing_seqs_and_both_bump_the_cloc
             await engine.dispose()
 
     run_async(scenario())
+
+
+@pytest.mark.usefixtures("require_design_db")
+def test_runs_for_execution_lists_the_executions_runs_oldest_first() -> None:
+    """Spec 2026-09-19 §3.3/§3.9: one leg turn may dispatch MANY runs, and the batch of that turn
+    is exactly the runs stamped with the turn's execution id."""
+
+    async def scenario() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                ws = await _seed_ws(conn, "runexec")
+                other_ws = await _seed_ws(conn, "runexecother")
+                execution_id = uuid4()
+                await conn.execute(
+                    text(
+                        "INSERT INTO execution (id, workspace_id, project_id, started_by,"
+                        " parameter_manifest_hash, pin_manifest_hash)"
+                        " VALUES (:id, :w, NULL, 'agent', :hash, :hash)"
+                    ),
+                    {"id": execution_id, "w": ws, "hash": "0" * 64},
+                )
+                for run_id in ("run_a", "run_b"):
+                    await design_runs.create_run(
+                        conn,
+                        workspace_id=ws,
+                        run_id=run_id,
+                        document_id=None,
+                        payload={},
+                        execution_id=execution_id,
+                    )
+                # A run of the same workspace under NO execution is not part of the batch.
+                await design_runs.create_run(
+                    conn, workspace_id=ws, run_id=f"run_{uuid4().hex}", document_id=None
+                )
+
+                rows = await design_runs.runs_for_execution(
+                    conn, workspace_id=ws, execution_id=execution_id
+                )
+                assert [row["run_id"] for row in rows] == ["run_a", "run_b"]
+                # The ported DTO shape, not the durable-job view.
+                assert set(rows[0]) == {
+                    "run_id",
+                    "status",
+                    "document_id",
+                    "result",
+                    "created_at",
+                    "updated_at",
+                }
+                # Fail-closed tenancy: the same execution id read from another workspace is empty.
+                assert (
+                    await design_runs.runs_for_execution(
+                        conn, workspace_id=other_ws, execution_id=execution_id
+                    )
+                    == []
+                )
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())

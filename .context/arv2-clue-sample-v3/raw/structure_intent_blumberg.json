@@ -1,0 +1,65 @@
+{
+  "id": "gen-1787808920-0JtNw0Cj47Dz5DMxHXzC",
+  "object": "chat.completion",
+  "created": 1787808920,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\"contact_claims\": [{\"entity\": \"contact:kate-blumberg\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization\", \"evidence_span\": \"I\u2019m excited to share that I\u2019ve joined Probook to lead growth and build out the marketing organization\", \"source_url\": \"https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z\", \"confidence\": 0.95, \"priority\": 1, \"use_class\": \"professional-public\"}, {\"entity\": \"contact:kate-blumberg\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"The martech hype cycle is relentless and Clay is everywhere right now. Glad to see new tools like Riveter gaining traction and cutting through the noise\", \"evidence_span\": \"The martech hype cycle is relentless and Clay is everywhere right now. Glad to see new tools like Riveter gaining traction and cutting through the noise\", \"source_url\": \"https://www.linkedin.com/posts/kibrady12_the-martech-hype-cycle-is-relentless-and-activity-7488693969325846528-STdm\", \"confidence\": 0.9, \"priority\": 1, \"use_class\": \"professional-public\"}, {\"entity\": \"contact:kate-blumberg\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"After two incredible years at BuildOps, I\u2019m excited to share that I\u2019m looking for my next role\", \"evidence_span\": \"After two incredible years at BuildOps, I\u2019m excited to share that I\u2019m looking for my next role\", \"source_url\": \"https://www.linkedin.com/posts/kibrady12_after-two-incredible-years-at-buildops-i-activity-7459629371444703232-esk_\", \"confidence\": 0.9, \"priority\": 1, \"use_class\": \"professional-public\"}, {\"entity\": \"contact:kate-blumberg\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"When I joined BuildOps, it was to join a high-performing, revenue-obsessed team where I could focus on one thing: building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid\u2026 creating systems, scaling teams, sharpening positioning, and helping turn momentum into revenue.\", \"evidence_span\": \"When I joined BuildOps, it was to join a high-performing, revenue-obsessed team where I could focus on one thing: building a demand generation engine that delivered for sales\u2026 hiring and leading a team, scaling programs across inbound, ABM, events, lifecycle, and paid\u2026 creating systems, scaling teams, sharpening positioning, and helping turn momentum into revenue.\", \"source_url\": \"https://www.linkedin.com/posts/kibrady12_after-two-incredible-years-at-buildops-i-activity-7459629371444703232-esk_\", \"confidence\": 0.9, \"priority\": 1, \"use_class\": \"professional-public\"}]}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqj8yZfNj1ZJWQJ8po0JKSEDmy0I2RXYH2taS-KiWm00XPmm19XN-1HObZE9UacEXbc7lnidTmwB6xqk-fhWK-08PKpxZneG9VMNdshQ92g2UjOXpOWbuXY10hvrrtnoPsXLOC_QIP-LYBpehNg1huMqrwcYNUgAym9DJPwfLKskjQW1QKQ18frO9XSndjsf4f5hUyJM9AGiIWA4wIglk9rYB4KKDWHbDR1j4s4ZhPNNUanu_bKaZQJ0bJZOT5MeSb2seg7lqpUUoXkq0Ye7pnG9AbuoKLmaMI8GBvGYoY_AP68cOYFCmOob1OzjUDHr9LeOu6G1eEODChthhrWOpcDPaQ3GLUA0hKoQIVJk29QDxVRdb647zBBILexeDl4aWMFROnr6GxlUkz1LSpC7lX7OWtfLBiLWzbZ-kTLxBUHCs6Kygu_TYTyYM6v6eCg2RIe3vFK7l3f5I9E0pD0MoOTh0Zl4TeGid8h_2N9ixGJ-KaL3acSIRXZRW_k8zCuhVLSnpOnO4Ima9HylNxqoidCUZAzyREwilW7YAsBHRWWL4s-clMoBLg0dz-_KIEbdSKwQIWMTnJfxYJdH7lI1XJcP4WUPtkAiMiGLWWA0hWAfejFfJcBuOsSnnaXii3hQKCCyotiXKR7jjInVCnBIMJgE3a6Yk9A0I5nFMSKi6UrhzJI2IobRa4VkkZZaifZqK08aYKuDCpD3s-CpUryYQCdmMfSFq9JIK2QVwR2QqdLm7xN7NA9J44wkQEweUJHrWffPDOINHJ_Fx7eqmp-Rr1MIOBhB73ebMMatkN_DuUatrDZErSlel6b37YM_OvZk8lno5xO1pDTEXQsK497JXyo56ekvgpX1HJrUY31qCwlVu4HJyT-Mq2ONbozISNlJ-XzEsGDIojY0Xu7PFh2_cJ3FTCric_Qi1s8oKCOI6x-vo_EzgEHiumrirdREYLgpJ433OUz57h8-5BDYjVj84f-XRWtAJ3hbY71je10OCcGeZD4x3v6dS7tjRe03PmkY3AWuFUhx-8QgniTP4AYsMxmJAd-McqyeVr_YUEVfG8oFUdVNlHdQhQmRhlEzAHDs4Qjc-a2g9KJXabgtG7H05hFySfcBwTxpZ9m_g-ozJNFqcaX2V8RH6UwYyn2E1bD6Dzfh_Hw-EZ2s8ugvwx3Q5pqiqfPnLEL_i7sg6tN1op_O3p2Sq2iVyqoY61dD-fhgrxsjm43bj7BfAz0RcPQ3lTNbR-RjkNXkL3LbYZZcAqwcHYFQ7Q8R_eykzPPm6RjNHslz1dsk0rPlNji0dY5P387MeM_43QqoV0Mzb6b8HVPXnlIDDWWAIvwd2Cfdu4iPChoqpIiw-YkISJj3kptTB7BZc5NWJ7klmJ5-ka20BzVCsp4wv2tWEAk6H7DUD2n4QnvYnz5jKpvR0DY69GxnqCoxT-BQ==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_09b6f4e4c2c3c12f016a8fcc991bac87d0b063791b57a0bb76",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4840,
+    "completion_tokens": 698,
+    "total_tokens": 5538,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.002606,
+      "upstream_inference_prompt_cost": 0.00121,
+      "upstream_inference_completions_cost": 0.001396
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 7.8,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 20309,
+    "response_format": {
+      "type": "json_object"
+    }
+  }
+}

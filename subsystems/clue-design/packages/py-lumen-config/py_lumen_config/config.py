@@ -17,8 +17,9 @@ Notes:
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # D5 Round B (R-D5-B1): this package moved from `<clue-design>/py_lumen_config/` into its own
@@ -117,6 +118,24 @@ class Settings(BaseSettings):
     # A typo must fail at startup rather than silently seat the other page, so it is
     # enum-validated below.
     lumen_degraded_repair_selection: str = "keep_flagged"
+    # Whether the two automated QA renderers — the page thumbnail and the clone-review walk —
+    # present a normal Chrome User-Agent instead of the headless one. Brandfetch's logo CDN
+    # refuses any User-Agent containing `HeadlessChrome`, so a hotlinked decorative logo renders
+    # EMPTY there and the review cannot judge the page as a visitor sees it. FOUNDER DECISION
+    # (2026-09-02, plan D11): default ON; `0` restores the headless User-Agent, which is the
+    # switch to reach for if the vendor objects. It reaches those two renderers only — never the
+    # editor, never publish, never fragment isolation. See `lumen_api/qa_render_ua.py`.
+    lumen_qa_render_ua_override: bool = True
+
+    # Whether the in-house logo ladder (the target-logo scrape that runs as the second rung
+    # behind Brandfetch) fetches with a real Chrome TLS/HTTP fingerprint — curl_cffi
+    # `impersonate="chrome"`, the engine under scrapling's Fetcher. Cloudflare-walled sites
+    # score the TLS/HTTP2 handshake, not the User-Agent string, so plain httpx gets a 403
+    # challenge page (openai.com) and the rung reports "blocked" no matter what UA we send.
+    # FOUNDER DECISION (2026-09-02): default ON; `0` restores the plain httpx transport.
+    # It reaches the LADDER's own client only — the brand-kit ingestion capture keeps httpx.
+    # See `lumen_ingestion/capture/impersonate.py`.
+    lumen_ladder_impersonate_chrome: bool = True
 
     # --- Image generation (image_provider) ---
     # Blank base_url/api_key → /assets/generate returns a clean 503.
@@ -193,13 +212,35 @@ class Settings(BaseSettings):
     # in `.env.example`) — ~$0.00021 per caption vs grok-4.5's ~$0.0039, and
     # the describe stage keeps its OWN model: brief/vision/assist are untouched.
     lumen_ingestion_describe: bool = True
-    lumen_ingestion_describe_model: str = "google/gemini-2.5-flash-lite"
+    lumen_ingestion_describe_model: str = "deepseek/deepseek-v4.1-flash"
+    lumen_ingestion_describe_concurrency: int = Field(default=40, ge=1, le=128)
+    # Output cap per described asset, sent as ``max_tokens`` (one describe call = one asset;
+    # a multi-asset call multiplies it, capped at 131072). Without it the model's own ceiling
+    # was the only stop: on 2026-09-29 a looping deepseek answer ran to 131072 tokens at $0.157
+    # a call, and 35 such runaways were $5.02 of a $6.46 describe bill. A finished analysis of
+    # that same site measured a median of ~4.5k output tokens and a p99 of ~15k, so 32768 is
+    # twice the p99 — generous for the largest legitimate answer, a quarter of a runaway.
+    lumen_ingestion_describe_max_tokens_per_asset: int = Field(default=32768, ge=1024, le=131072)
+    lumen_ingestion_pool_workers: int = Field(default=4, ge=1, le=32)
+    lumen_ingestion_worker_concurrency: int = Field(default=10, ge=1, le=32)
+    lumen_ingestion_pool_idle_seconds: int = Field(default=60, ge=1)
+    lumen_ingestion_pool_poll_seconds: float = Field(default=2, gt=0)
+    # The ingestion pool CONTROLLER's own database address. Empty (the default) → it uses
+    # CLUE_DATABASE_URL like everything else. The worker VM sets it to a direct Postgres URL:
+    # the controller's leadership is a session advisory lock, which PgBouncer's transaction
+    # pooling would strand on a borrowed server connection. Its children never read it, so they
+    # stay on the container's PgBouncer CLUE_DATABASE_URL (first deployment, Task 3 Step 3).
+    lumen_ingestion_controller_database_url: str = ""
     # The design-brief agent (tier 2). OFF → ingestion publishes exactly the kit
     # it publishes today, with no `brand_kit_json.brief` and no diagnostic about
     # one. The model must be vision-capable: the stage hands it the capture's
     # screenshots alongside the measured evidence.
     lumen_ingestion_brief: bool = False
-    lumen_ingestion_brief_model: str = "x-ai/grok-4.5"
+    lumen_ingestion_brief_model: str = "x-ai/grok-4.7"
+    # The brief's own reasoning effort (founder ruling 2026-09-29: grok-4.7 at medium).
+    # Separate from LUMEN_AGENT_REASONING so the design trio and the brief move independently;
+    # blank/unset -> no reasoning field on the request.
+    lumen_ingestion_brief_reasoning: str | None = "medium"
 
     # --- Brand Ad Assets v1 (docs/brand-ad-assets-v1-spec.md §5 W2) ---
     # THE lane flag. OFF (the default) → the whole ad-assets substrate is absent: the
@@ -235,6 +276,17 @@ class Settings(BaseSettings):
     pdl_api_key: str = ""
     pdl_base_url: str = "https://api.peopledatalabs.com"
     pdl_timeout_s: float = 30.0
+
+    # -- Brandfetch (target-account logo vendor; vendor-first logo family, 2026-09-02) ----
+    # Brand API key (Bearer). Blank = vendor rung disabled: `fetch_logo` degrades honestly
+    # to the in-house ladder, exactly like a blank PDL_API_KEY degrades ad identity.
+    brandfetch_api_key: str = ""
+    # Logo API *client id* (PUBLIC — appears in published-page <img> URLs). Powers the
+    # hotlink lane only; blank = the hotlink prompt guidance is omitted.
+    brandfetch_client_id: str = ""
+    brandfetch_api_base_url: str = "https://api.brandfetch.io"
+    brandfetch_timeout_s: float = 20.0
+
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
     lumen_ad_dna_model: str = "x-ai/grok-4.5"
@@ -295,6 +347,14 @@ class Settings(BaseSettings):
     # OpenRouter values are latency|throughput|price, but this is not enum-validated
     # here — an unknown value is forwarded and OpenRouter rejects it loudly.
     lumen_agent_provider_sort: str | None = "latency"
+    # Route NON-OpenAI agent models (x-ai/grok-4.6 is the default) over OpenRouter's
+    # chat-completions endpoint instead of its /responses bridge — the platform lane's own
+    # ruling (`openrouter_chat_completions_fallback`), now mirrored here. Live 2026-09-04: a
+    # 136-second grok generation on /responses died mid-stream with a server-side
+    # `Auth context expired` and took a six-minute solo run with it. OpenAI-family ids are
+    # unaffected either way (the gateway applies the switch to non-`openai/` ids only).
+    # Env: LUMEN_AGENT_OPENROUTER_CHAT_COMPLETIONS. 0 restores the /responses path.
+    lumen_agent_openrouter_chat_completions: bool = True
     # P3.2: OPTIONAL fallback model id (bare OpenRouter id) tried when the primary
     # errors — rides GatewayConfig.fallback_model with truthful answering-model
     # attribution. Must be vision-capable (the loop is mandatory-multimodal).
@@ -326,6 +386,15 @@ class Settings(BaseSettings):
     # the production loop — proven live across the reference-ads acceptance
     # runs. Set LUMEN_AGENT_FAST_LOOP=0 to fall back to the legacy loop.
     lumen_agent_fast_loop: bool = True
+    # Scene-only knowledge selection; separate workspace roots prevent mixing
+    # knowledge during concurrent control/candidate runs. Website is unchanged.
+    lumen_agent_scene_skill_bundle: Literal["legacy", "candidate"] = "legacy"
+    # Optional caller-owned viewing profile from the candidate manifest. Empty
+    # means no numeric native-copy floor. Never inferred from page units/brand.
+    lumen_agent_scene_review_profile: str = ""
+    # Default-off single-agent scene experiment. Requires candidate knowledge
+    # and the fast loop at scene construction; has no effect on website turns.
+    lumen_agent_scene_solo: bool = False
     # R3's kill-switch. Under the fast loop the `lumen-visual-reviewer` subagent
     # is NOT dispatched on scene turns (the author's own self-audit critique.json
     # replaces it); setting this to 1 re-enables the reviewer WITHOUT leaving the
@@ -351,6 +420,16 @@ class Settings(BaseSettings):
     # web fast loop. Meaningless (and ignored) when that flag is off — the reviewer is always
     # dispatched there.
     lumen_agent_web_reviewer: bool = False
+    # SOLO MODE (founder ruling 2026-09-04): ONE web deepagent — director, designer and
+    # reviewer in a single model loop. Both subagents (`lumen-web-author`,
+    # `lumen-web-reviewer`) are QUARANTINED (not registered; tool-absence enforcement, the
+    # D-F7 pattern), the orchestrator carries the full authoring toolset, and the merged
+    # solo prompt replaces direction-by-delegation with plan -> build -> render -> self-review.
+    # Motive: the 2026-09-01 OpenAI-CFO diagnostic run measured ~20+ minutes of pure trio
+    # coordination overhead (per-delegation skill re-reads, brief writing, discovery loss)
+    # in a 57-minute page build. Overrides the two web flags above when on: there are no
+    # subagents to quarantine selectively.
+    lumen_agent_web_solo: bool = False
     # §5.6 budgets. RULING D1 (founder, 2026-08-26) SPLIT THESE IN TWO: budgets
     # are GUIDANCE, not gates.
     #
@@ -404,6 +483,7 @@ class Settings(BaseSettings):
         "lumen_agent_base_url",
         "lumen_agent_api_key",
         "lumen_agent_reasoning",
+        "lumen_ingestion_brief_reasoning",
         "lumen_agent_provider_sort",
         "lumen_agent_fallback_model",
         "lumen_agent_llm_timeout_s",
@@ -422,7 +502,7 @@ class Settings(BaseSettings):
             return None
         return value
 
-    @field_validator("lumen_agent_reasoning")
+    @field_validator("lumen_agent_reasoning", "lumen_ingestion_brief_reasoning")
     @classmethod
     def _validate_reasoning_effort(cls, value: str | None) -> str | None:
         """A typo'd effort must fail at startup, not silently no-op mid-run."""

@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -31,7 +32,13 @@ from clue_api.trial.account_deep_fixture import (
 )
 from clue_api.trial.discovery_fixture import BRAND_ID, PRODUCT_ID, PROJECT_ID, WORKSPACE_ID
 from clue_config import Settings
-from clue_core import PhaseContext, ProjectPhase, ResearchQuestion, new_operation_id
+from clue_core import (
+    DiscoveryGapOperationState,
+    PhaseContext,
+    ProjectPhase,
+    ResearchQuestion,
+    new_operation_id,
+)
 from clue_research.durable import (
     AccountDeepLaunchConflict,
     account_deep_launch_account_pins,
@@ -39,11 +46,16 @@ from clue_research.durable import (
     get_account_deep_launch,
     get_account_run,
     get_project_run,
+    list_account_gap_snapshots,
     preview_account_deep_launch,
 )
 from clue_research.icp import get_icp_version
 from clue_research.resolvers.exa import ExaDeepSearchRequest, exa_field_alias
-from clue_research.resolvers.sumble import SumbleClient, SumbleCreditBudget
+from clue_research.resolvers.sumble import (
+    ORGANIZATIONS_SOURCE_KEY,
+    SumbleClient,
+    SumbleCreditBudget,
+)
 from clue_research.verification import PreSpendGateImpl
 from clue_storage import FsStorage
 from clue_toolbelt import ToolContext, invoke_tool
@@ -298,6 +310,7 @@ def test_launch_is_immutable_exactly_replayable_and_drives_the_effective_budget(
 
 def test_durable_sumble_inputs_are_derived_from_the_launch_and_s1_identity(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario() -> None:
         async with rollback_conn(seed=False) as conn:
@@ -368,7 +381,7 @@ def test_durable_sumble_inputs_are_derived_from_the_launch_and_s1_identity(
                 cents_per_credit=Decimal("0.5"),
                 conn_factory=same_connection,
             )
-            await starter.start(
+            gap_result = await starter.start(
                 workspace_id=WORKSPACE_ID,
                 project_run_id=fixture.project_run_id,
                 account_id=fixture.selected_account_id,
@@ -377,11 +390,12 @@ def test_durable_sumble_inputs_are_derived_from_the_launch_and_s1_identity(
                 allow_unbounded_tech=False,
             )
 
-            inputs = await DurableSumbleCommitteeInputResolver(
+            resolver = DurableSumbleCommitteeInputResolver(
                 settings=Settings(_env_file=None, sumble_cents_per_credit=Decimal("0.5")),
                 storage=storage,
                 conn_factory=same_connection,
-            ).resolve(
+            )
+            inputs = await resolver.resolve(
                 account_entity_id=fixture.selected_account_id,
                 account_run_id=account_run_id,
                 project_run_id=fixture.project_run_id,
@@ -403,6 +417,62 @@ def test_durable_sumble_inputs_are_derived_from_the_launch_and_s1_identity(
             assert inputs.authorization.contact_reveals_allowed is False
             assert inputs.authorization.budget_authorization_ref == (
                 f"account-deep-launch:{launch.launch.id}"
+            )
+
+            # Required-field discovery owns the first paid Organizations lookup in the normal
+            # product flow. Verify committee preparation can reuse that exact sealed-batch
+            # response when no later account-gap snapshot exists.
+            account_gap_snapshots = await list_account_gap_snapshots(
+                conn,
+                workspace_id=WORKSPACE_ID,
+                operation_id=gap_result.operation.operation_id,
+            )
+            organization_snapshot = next(
+                item
+                for item in account_gap_snapshots
+                if item.source_key == ORGANIZATIONS_SOURCE_KEY
+            )
+            assert organization_snapshot.response_artifact_key is not None
+
+            async def no_account_gap_snapshot(*_args: object, **_kwargs: object) -> None:
+                return None
+
+            async def discovery_gap_operations(
+                *_args: object, **_kwargs: object
+            ) -> tuple[SimpleNamespace, ...]:
+                return (
+                    SimpleNamespace(
+                        request=SimpleNamespace(
+                            project_run_id=fixture.project_run_id,
+                            account_id=fixture.selected_account_id,
+                            source_key=ORGANIZATIONS_SOURCE_KEY,
+                        ),
+                        state=DiscoveryGapOperationState.SUCCEEDED,
+                        response_artifact_key=organization_snapshot.response_artifact_key,
+                        updated_at=organization_snapshot.updated_at,
+                        operation_id=gap_result.operation.operation_id,
+                    ),
+                )
+
+            monkeypatch.setattr(
+                "clue_api.sumble_committee_inputs.latest_succeeded_account_gap_snapshot",
+                no_account_gap_snapshot,
+            )
+            monkeypatch.setattr(
+                "clue_api.sumble_committee_inputs.list_discovery_gap_operations",
+                discovery_gap_operations,
+            )
+            discovery_inputs = await resolver.resolve(
+                account_entity_id=fixture.selected_account_id,
+                account_run_id=account_run_id,
+                project_run_id=fixture.project_run_id,
+                workspace_id=WORKSPACE_ID,
+                tier="high",
+            )
+            assert discovery_inputs.preflight.request.provider_organization_id == "1726684"
+            assert discovery_inputs.preflight.request.organization_identity_ref == (
+                f"discovery-gap-operation:{gap_result.operation.operation_id}:"
+                f"{ORGANIZATIONS_SOURCE_KEY}"
             )
             assert [call["url"].rsplit("/", 1)[-1] for call in http.calls] == [
                 "organizations",
@@ -469,10 +539,13 @@ def test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot
 
             payload = json.loads(_EXA_RESPONSE.read_text(encoding="utf-8"))
             payload["costDollars"]["total"] = 0.07
-            # The confirmed field boundary has two additional admitted fallbacks beyond the
-            # recorded two-field E1 response. Explicit nulls preserve the closed output contract
-            # and prove that unsupported output remains empty rather than being invented.
-            payload["output"]["content"][exa_field_alias(DEEP_FIELD_KEYS[0])] = None
+            # The confirmed field boundary has one additional admitted fallback beyond the
+            # recorded two-field E1 response. The explicit null preserves the closed output
+            # contract and proves that unsupported output remains empty rather than being invented.
+            # ``DEEP_FIELD_KEYS[0]`` (``account.hiring_velocity_eng``) is deliberately no longer
+            # among them: comprehensive-research contract §3.1 gives that row to Sumble Jobs alone,
+            # and the ``exa_deep`` source manifest stopped claiming the whole ``account`` class, so
+            # Exa is no longer asked — and no longer paid — for a field it does not own.
             payload["output"]["content"][exa_field_alias(DEEP_FIELD_KEYS[4])] = None
             transport = _ExaTransport(payload)
             conn_factory = _TaskReentrantConnectionFactory(conn)
@@ -505,9 +578,10 @@ def test_production_exa_preparation_acquires_once_then_replays_from_the_snapshot
             request = transport.calls[0]
             assert isinstance(request, ExaDeepSearchRequest)
             properties = request.output_schema["properties"]
+            # §3.1 ownership decides the bundle: the Sumble-owned hiring row stays out even though
+            # the human confirmed it as a directive field (its question still rides along below).
             assert set(properties) == {
-                exa_field_alias(DEEP_FIELD_KEYS[0]),
-                *(exa_field_alias(field_key) for field_key in DEEP_FIELD_KEYS[2:]),
+                exa_field_alias(field_key) for field_key in DEEP_FIELD_KEYS[2:]
             }
             assert all(exa_field_alias(field_key) not in properties for field_key in contact_fields)
             assert request.additional_queries == (

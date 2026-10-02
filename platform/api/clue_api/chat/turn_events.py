@@ -94,6 +94,21 @@ class TurnEventType(StrEnum):
     LEG_AWAITING_USER = "leg.awaiting_user"
     LEG_CLOSED = "leg.closed"
     LEG_REOPENED = "leg.reopened"
+    # Scene live-streaming rung A: the design agent commits its work in progress mid-run (P0.4),
+    # and each commit marks the design run's own event stream. This is that mark, forwarded onto
+    # the leg's thread by the inline design lane (``clue_api.design_fleet``) so a marketer sees
+    # the document advance instead of a spinner. Progress, not lifecycle: a checkpoint frame
+    # announces a version the document ALREADY holds, it never ends or gates a turn, and losing
+    # one costs a redraw — which is why the forwarder is best-effort by construction.
+    DESIGN_CHECKPOINT = "design.checkpoint"
+    # Scene live-streaming rung B: the operations of a single mid-run mutation, streamed as the
+    # agent makes it, with ``operations_total`` — the position that batch ends at in the run's
+    # operation ledger, the same ledger a checkpoint frame counts. Unlike a checkpoint, an op
+    # batch announces work that is NOT yet durable: a consumer may render it optimistically and
+    # reconcile against the next checkpoint by subtracting the positions. Progress, not
+    # lifecycle, and best-effort for the same reason — a lost batch costs a frame of animation,
+    # never correctness, because the checkpoint behind it still names the durable version.
+    DESIGN_OP_BATCH = "design.op_batch"
 
 
 #: The stored vocabulary as plain strings, kept equal to the enum (and to the DB CHECK) by a test —
@@ -472,6 +487,11 @@ _PRUNE_SQL = text(
     WHERE turn_id IN (
         SELECT turn_id
         FROM agent_turn_event_stream
+        WHERE NOT EXISTS (
+            SELECT 1 FROM agent_turn_control_request c
+            WHERE c.turn_id=agent_turn_event_stream.turn_id AND c.kind='stop'
+              AND NOT EXISTS (SELECT 1 FROM agent_turn_stop_ack a WHERE a.control_id=c.control_id)
+        )
         GROUP BY turn_id
         HAVING bool_or(event_type IN ('turn.completed', 'turn.failed', 'turn.cancelled',
                                       'turn.awaiting_input'))

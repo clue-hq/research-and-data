@@ -45,6 +45,10 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.account_research_fleet import AccountResearchFleetState
 from clue_api.contact_eligibility import (
+    AccountRunReferenceIndexSource,
+    ChainedClaimReferenceSource,
+    ContactEligibilityResolver,
+    EntityResearchCoverageReferenceSource,
     build_contact_eligibility_resolver,
     build_production_handoff_committee_reader,
 )
@@ -716,7 +720,15 @@ def test_the_deployment_composes_and_wakes_with_every_provider_flag_off(
 def test_the_committee_personas_the_bridge_serves_come_from_the_coverage_row() -> None:
     """A guard on the fixture itself: the committee this suite proves is seated by
     ``entity_research_account_coverage``, not by a stray persona claim the reader could have found
-    without the bridge. (Deleting the coverage row must empty the committee.)"""
+    without the bridge. (Deleting the coverage row must empty the committee.)
+
+    2026-09-09 (ARV2 R3 Task 7) — the guard now reads through the **legacy chain explicitly**.
+    Finding a committee from a live ``contact.persona`` claim is no longer the accident this test
+    was written to catch: it is what ``Arv2CommitteeReferenceSource`` deliberately does, and it now
+    leads the default chain. Asserting the coverage bridge therefore means naming the sources this
+    assertion is about; the default chain's own order is proven in
+    ``tests/api/test_r11_committee_bridge.py``.
+    """
 
     async def scenario() -> None:
         async with rollback_conn() as conn:
@@ -724,10 +736,13 @@ def test_the_committee_personas_the_bridge_serves_come_from_the_coverage_row() -
             envelope: EntityResearchRunEnvelope = await _launch_for(
                 conn, world.scope, world.accounts
             )
-            resolver = build_contact_eligibility_resolver(
+            resolver = ContactEligibilityResolver(
                 project_run_id=world.scope.project_run_id,
                 product_id=world.scope.product_id,
                 conn_factory=lambda: _same_connection(conn),
+                claim_reference_source=ChainedClaimReferenceSource(
+                    (EntityResearchCoverageReferenceSource(), AccountRunReferenceIndexSource())
+                ),
             )
             # Before any coverage row exists the fleet run has published nothing, so the read is
             # the honest empty committee (and, with zero account runs, cannot come from the legacy

@@ -1,0 +1,44 @@
+# The Rise of the Autonomous Blue Team with Vineet Edupuganti
+# https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/
+# mp3: https://mcdn.podbean.com/mf/web/3zewen7za624jpfj/HVS25_EP391_Cogent_Audiobns0t.mp3
+# duration: 2244
+
+ What if defenders had their own AI-powered task force, always on, always adapting, and finally one step ahead of attackers? 
+ 
+In this episode, Ron welcomes Vineet Edupuganti, Founder and CEO of Cogent Security, to discuss how AI agents are rewriting the rules of cybersecurity. Vineet shares why traditional vulnerability management is fundamentally broken, why exposure management matters more than ever, and how Cogent is building an “AI Task Force” to give defenders the edge. From his early days in machine learning to reshaping the future of cyber defense, Vineet breaks down the urgent need for automation, context-driven insights, and explainable AI in security. 
+ 
+Impactful Moments:
+00:00 - Introduction
+02:00 - Vineet’s journey into AI and cyber
+04:30 - Why vulnerability management is broken
+06:10 - Generative AI as a defender’s edge
+08:20 - Why AI agents outperform brittle automation
+09:45 - The first use cases for Cogent’s agents
+12:00 - Rethinking tier-one SOC analyst roles
+13:30 - The rise of exposure management (CTEM)
+17:10 - Cogent’s vision for an AI task force
+18:30 - Early wins and insights with Cogent
+20:00 - Biggest misconceptions about AI in security
+23:00 - What enterprises should demand from vendors
+25:00 - Why explainability is essential in AI systems
+27:00 - Startups vs incumbents in cybersecurity innovation
+29:30 - Why enterprises must invest in AI now 
+   
+ 
+Links:
+Connect with our guest, Vineet Edupuganti, on LinkedIn:  https://www.linkedin.com/in/vineetedupuganti  
+ 
+Learn more about Cogent Security:  https://www.cogent.security   
+   
+ Check out our upcoming events:  https://www.hackervalley.com/livestreams  
+ 
+Join our creative mastermind and stand out as a cybersecurity professional:
+ https://www.patreon.com/hackervalleystudio  
+ 
+Love Hacker Valley Studio? Pick up some swag:  https://store.hackervalley.com  
+ 
+Continue the conversation by joining our Discord:  https://hackervalley.com/discord  
+ 
+Become a sponsor of the show to amplify your brand:  https://hackervalley.com/work-with-us/  
+   
+   

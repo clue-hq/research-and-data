@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { z } from "zod";
 import {
   DISABLED_ACCOUNT_BULK_CAPABILITIES,
-  DISABLED_CONTACT_BULK_CAPABILITIES,
   readAccountBulkCapabilities,
-  readContactBulkCapabilities,
 } from "./bulk-capabilities.repository";
+import { z } from "zod";
 import { ClueApiError } from "./frontend-api";
 
 test("expected Account capability failures hide optional bulk controls", async () => {
@@ -21,7 +19,7 @@ test("expected Account capability failures hide optional bulk controls", async (
   assert.deepEqual(result, DISABLED_ACCOUNT_BULK_CAPABILITIES);
 });
 
-test("invalid Contact capability payloads fail closed", async () => {
+test("an invalid capability payload fails closed", async () => {
   const schemaError = (() => {
     try {
       z.object({ allowed: z.boolean() }).parse({ allowed: "yes" });
@@ -31,11 +29,11 @@ test("invalid Contact capability payloads fail closed", async () => {
     throw new Error("schema fixture should fail");
   })();
 
-  const result = await readContactBulkCapabilities("account-1", async () => {
+  const result = await readAccountBulkCapabilities(async () => {
     throw schemaError;
   });
 
-  assert.deepEqual(result, DISABLED_CONTACT_BULK_CAPABILITIES);
+  assert.deepEqual(result, DISABLED_ACCOUNT_BULK_CAPABILITIES);
 });
 
 test("unexpected capability programming errors remain observable", async () => {
@@ -47,4 +45,16 @@ test("unexpected capability programming errors remain observable", async () => {
     }),
     (error: unknown) => error === bug,
   );
+});
+
+test("fixture mode closes the bulk actions without asking a backend", async () => {
+  process.env.CLUE_ACCOUNTS_FIXTURE_MODE = "true";
+  try {
+    const result = await readAccountBulkCapabilities(async () => {
+      throw new Error("fixture mode must not read the backend");
+    });
+    assert.deepEqual(result, DISABLED_ACCOUNT_BULK_CAPABILITIES);
+  } finally {
+    delete process.env.CLUE_ACCOUNTS_FIXTURE_MODE;
+  }
 });

@@ -1,0 +1,44 @@
+{
+  "contact_claims": [
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Until December, our 'sales team' was just me",
+      "evidence_span": "Until December, our 'sales team' was just me",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+      "confidence": 0.9,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "I've personally met pretty much every Probook customer, run every demo, and traveled across the US to visit almost every shop.",
+      "evidence_span": "I've personally met pretty much every Probook customer, run every demo, and traveled across the US to visit almost every shop.",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+      "confidence": 0.95,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead.",
+      "evidence_span": "The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead.",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_today-were-announcing-40m-in-funding-from-activity-7475172924774293504-mVOB",
+      "confidence": 0.95,
+      "priority": 1,
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner",
+      "evidence_span": "Being stuck in founder-led sales isn't a flex. I wish I realized that sooner",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+      "confidence": 0.94,
+      "priority": 1,
+      "use_class": "professional-public"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "addressing-02-named-two",
+  "kind": "addressing",
+  "artifacts": [
+    "1. \"Apollo ad\" (scene ad) [account: Apollo Clinics]",
+    "2. \"Mercy ad\" (scene ad) [account: Mercy Health]",
+    "3. \"Premier ad\" (scene ad) [account: Premier Gastro]"
+  ],
+  "artifact_count": 3,
+  "tags": [],
+  "brief": "Three launch ads for the Q3 clinic campaign, one per account.",
+  "history": [],
+  "message": "the two hospital ones need a softer palette",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "addressed_artifacts": [
+      2,
+      3
+    ],
+    "clarifying_question": null,
+    "reasoning": "Mercy Health and Premier Gastro are the hospital accounts; Apollo Clinics is not."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false,
+    "addressed": [
+      2,
+      3
+    ],
+    "ask": null
+  },
+  "why": "Artifacts named in words are matched against the list BY THEIR ACCOUNT. 'The two hospital ones' identifies a subset unambiguously, so it is dispatched rather than asked about."
+}

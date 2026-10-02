@@ -1,0 +1,64 @@
+{
+ "id": "gen-1788504527-QGIratReI41yj38WkybY",
+ "object": "chat.completion",
+ "created": 1788504527,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"angles\",\"empty\":false,\"items\":[{\"h2\":\"Landing page: Show how ABM can map buying groups around existing security workflows\",\"body\":[{\"text\":\"Zafran targets CISOs, security practitioners, and business leaders with an ABM-driven go-to-market motion.\",\"claimIds\":[\"zaf-140\"]},{\"text\":\"A landing page that connects account research to coordinated buying-group engagement will match that stated focus.\",\"claimIds\":[\"zaf-140\"]}],\"sendLine\":\"On the landing page: Show how Clue maps buying groups and coordinates personalised account plays around the tools and workflows teams already use.\",\"contactRefs\":[],\"priority\":1},{\"h2\":\"Content: Turn Zafran’s exposure metrics into an account-specific proof point\",\"body\":[{\"text\":\"Zafran claims that 99% of critical vulnerabilities are not exploitable, that it can de-risk 90% of critical vulnerabilities overnight, and that RemOps reduces time per vulnerability by 87%.\",\"claimIds\":[\"zaf-174\"]},{\"text\":\"Those concrete metrics create a clear foundation for content about prioritisation, proof, and measurable outcomes.\",\"claimIds\":[\"zaf-174\"]}],\"sendLine\":\"Brief the design agent with: Build a proof-led asset around prioritising the exposures that matter, using Zafran’s stated 99%, 90%, and 87% metrics as the account context.\",\"contactRefs\":[],\"priority\":1},{\"h2\":\"Direct mail: Use Nick’s Cocktail Chemistry craft as a precise personal hook\",\"body\":[{\"text\":\"Nick Fisher is described as a cocktail YouTuber and creator of the Cocktail Chemistry channel and book.\",\"claimIds\":[\"zaf-110\"]},{\"text\":\"That published creative work offers a specific craft-based entry point for a one-to-one direct-mail concept.\",\"claimIds\":[\"zaf-110\"]}],\"sendLine\":\"In the direct-mail brief: Create a craft-led package for Nick Fisher that connects the precision of Cocktail Chemistry with the precision of account research.\",\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":1}]}]}",
+    "refusal": null,
+    "reasoning": "**Considering strategic moves**\n\nI need to explain the strategic move starting from zero and how it connects to channel relevance. I should also highlight any unsupported “partner-led exposure conversation” recommendations, which shouldn’t be included. It might be helpful to use content with metrics as proof points, but I'm wondering if I should rely on the company’s claims. I think emphasizing the 99%/1% distinction could illustrate my points clearly using the exact values from the claims.",
+    "reasoning_details": [
+     {
+      "type": "reasoning.summary",
+      "summary": "**Considering strategic moves**\n\nI need to explain the strategic move starting from zero and how it connects to channel relevance. I should also highlight any unsupported “partner-led exposure conversation” recommendations, which shouldn’t be included. It might be helpful to use content with metrics as proof points, but I'm wondering if I should rely on the company’s claims. I think emphasizing the 99%/1% distinction could illustrate my points clearly using the exact values from the claims.",
+      "format": "openai-responses-v1",
+      "index": 0
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmnVxBH4ZmZ1Y_HreK7vYi-3FVnQ37OH_KKyYkOpVpwJ-d_sncghN9Z4aB7ZuS-VZAwheuUqO1fFk0RkVq2W3c0pKN7pij1BCDFOY67Dfd_HqM0jqHPM4Gay5fZh77GqgLH83wjsjaKwleUI8q1l_jxbiqN0kjj9ufH-9GG1vAjVEU7AZ5YDbgvKYPFHaPEwsYVhw-1cMurIM1U9AC7PfHdnw2s0oOXjHq2qY0LRznTuIFrd4sq1gcaMLCtA4G_XpnqhCE29PHmV6r1TbeoGnaP6HvN6hiVcB4cQxKoIe-zuNRJAUhEtqCAvhqLx2CyJyyv64eGxbozlIZSqFTjd76IEI0hP9hKiwQYbSaRP5rZjCX5_QVsKKCZcjh_BH6iHprQDUXOCZzDAPNn6pxomuyNXSOdukRFFIfmd3g9dyveC6ids5zi0WfESigleDXR4LeaxsjpeNEHR46QBDS2inMZRgqf80PbTVrWofihAnluGfyZd9k34YgQQ7ZxK9UCGgis82YqeVO0wSboxiyVQJOXTpI0qF8ueseP2RUSWhEZR2gn2pSc9hdev1GDUcndWpY_sTr7acZhcsPbYtZ_1J6BHWRLyJBsmoQSuXzHoNsjxbc8rQiLI_kjaT7Onxv_ncN2cCJbdGzCNaTjBuVQ1hmiLimU0TPIJeZtYX3QG4uJdIEvYvd5V8OOZnnPYnmdujdCGOs0etTjrpyTnAsB--y24xWvtD0LPzkKLl_4z4Y1qq_gMQNw959YN7L_9borFDnLeLA6Wacd5yIDiAY4foSYjhIV-nozVFLaSHHnCiSFH0nMS8n3NcOawUqIefOOA9S6DmgMyjhesZRDHeMmjNuOjNvk_SUXeQG-oWKV8jybooaG89KCkImtXg_lwdhFKqo-uDL1imYvm2j_lt5yxM9T_1sj33kZRMXcC89qhrktlrF-G5wthS2xDhhEhBSmVckgUfs-KWb6xu45Qt7o3X2_zdjyRf63AWJMFnExkQ-ySy7AuZdONmflK_OomERYmCZhk9nE_Ya3ZJrK8Zd-J3Z8H0PaCXA5M6aZr-3cr0kj-mqYd689d4ptEurzoh3nb4lFQBWpGiCeSxQY18i7KHGs9QZKTYdgT-SzL9SLFrncpVxqIfqs1BlGUkFT4QI5PKRxphwnLjlgaA-eNE7y3FfnN3bh8Km3Wrwkedc7zgYJUt0VREZ4y_x5oZ27zo2XJqwJ1nkWv55dpmsjB1fVLe2Fxy0w24244rfIQDQ6bT8glXJa7OxPsOlzkIPE3YKQjMTlEjQUaocG63EhgxGGNb4CuQcWFirtu0EHs09jMTNB9W6Xm5beHhVk29TPX0Q1DdhxnbYzrOp8dMnTtxaWCPifnsFi-HPfRuysDw1jNxoBHee-zVNGaPO89zKrutR3-YbWODojU2XT7ZZazmtkbxEg2rp4umsbTKAiFYgC5nFk4kua2nm1wk0jj9gmcW9j0sgR4wvgmsJw_qh69MtEcPdhFh8kzfgawC2KZly27Gv4_GOfTCqUGumYzsQ-HWF_R6U0SHu8R0R3TXP4P6NtI8KGk2TW0l0ug6TWtZEO4MmG6NSNpjKnYxneXnVbY4Msl7IkL3dSFtkkjAWa1cc4C7ULKkbPkiQE9djWa-2vZ5ut09KIlKFe2o-IlTB2gCfKMiefdH0nubPxnro6sffMtRkhhf6Opua6xRVbGSuVOWdxb4KMQvTmzPX1c1Z-f9w__0JHZBLzkXvpx6nH6dBc5kK_TUTCRTtA2L4eQB03Bd09ImyRmW5UOBTyNSGh6bBRvVdrXb4e37y3V_zZV89_fUEr4VRQS6AZTpn5GSi-sXI8yEufRCeDKJRangaWu4A34piUk2r6yOV-Gwgwigqm4km2MzDtVcWo3kn1DbLgVZ1JkOcUJX_3PmOsAJzFrbbEHsAmMTwI1Q22_CaHooxZpPrxPQW4vcjaCj9p9SJRltMNXPrUZCEnP8wtYQFQn-rOe-_cA8ZrNlCcP3PSkxXTF0v1xFaxoBJ9NkiINoRHQ5R1M76NATV6ooZo4HSs3M2PL5QgBLA92803EnIZZ_rbu_yXC_5z4hNkD6U--g4LKySE2xdx88cnb8TZs5YZ2QyodFGv6JldRwtGgbr9PzEHy_Kv43i5JWuEMJHl8YDUaWTFnheNpRN0TGizgJs0sIatUYbZRBcFwajYjpDzmKXfBgCjv5Er-acoPjPD5XELS5CUlRmTy4vQJmYab7cz-OHdpdZmiOZ20Z4Vs5VNXrSfMFlSSCwOzTG_DcJCo-vMV50uFRCpBmDSLvuk0iE2SA-YsvTnwb3L-aatLn0cVTHD-yZNxesANn1oazk1HbevOmAD6Uibt6rUO6FIy-VPWT7aaybUY6mt3TqcDu0svB49W5Gr6K29PyFxYM85ZT3WiHsK5hLi-kzgkjB4Hg9bSWO1HaL_iTNPjOTaJJFAOLsBS-HGVSma_Yt1HlyrFpoqx6kOlTXtObrBZ-Yrh2Tn1hdMosqEPSWTYpBf3B1uNCg_Pqms7srX0wGm569ym76SawhuSxo3RF9sRCepBL5-3ggA-qPAvYsgTIh8EOXxtuqgr5jJdWtWpeAlYgprUbJ_YokQslDIXw7Kyy0-Y2OOEz8pdM2QTUaOGuBolM0AWu3QIsypZaJW4JI6dkX3L0w-TGngATzE1QmcNGxN0xq13KMBvndqjWyJcdGlhPt0a_-h0TBoIhGjiwb3vDhg-w-nvnJVnyzwqhT0nYQM2PlxPPr_G2vmWI8CTRsQSSqmlSJ3OwkutgRmp0suAN8pRvq_8YSm_OpM5aYdqRI3RfVI7DXPnDTIHERyBr0WTuukMCY1AnYt-FqhRpI-XzUNO7P1OPU32ZgbKqWMz1sntuLZibNryCqjKUD2IqA8h6Bhm_qql-97jGk744A3JFoj3YLMqfZr-nvAg3-yoCFeCh5k0SOdBOY0LCjwavN5pAPVxXROGpUX3H0JSwogOv1b-kTMs5yih9CZbQhijvRzld17SSBr7W0CfYr_TpzDpTsAdU23u2bPKl3JhV0BNs9kOtudt1Rij9hZSK9KY9wN20egodX98If17XZbusTyvzhYr3JysrxPEX6fyBsl6ouInV7pTIQfFYH-NICNrHOlDJ6cjpCpzTHeynR2Xad58oL-qZi8XFXVRXl4aBoyBirQl_Bp1UWn-O1Yf4J9V4Q7ysHB_7fdnUfxvFl2Ma9oGtbIE2BS1Au3X3RKDuY68cAbB2NAzUBmKO2Ktx21_aIZp3Aj3ZSbempjz9vWXN6mkjMT7vZUPpI-ayqDJlpOwD0PryONpk9HLcfljE4AtycKcAGqW6wXlnNMC9dL_gDsMOuVjXZoEkAZfYjyvR9yIbHs6Yyj1ga8mSYIxhnFMXGdpZk_qVz_fENdYwU_hgR5PMvz57Nel2lYn-TRgfDR778MJjco-fe3NELyJy2DQ9fdiSEKzTzI8o89gB8HBbkM5kK2T3zCwP8uEKPxe5Lg8eW0tP5UdRp0HP3nCxIPdSwBQuVsxzZmGhpt6NFX2KIyqwQ8Vi9okelfYi28rM_k2LBR7tJv7QmzUO6RIRdK1ErKkpjNTco2UGbitSNcqGueKat-IfhjX9IrXm71aT8WyhmlCw7wHmFDCJM3AJ18PU7H7lfovawQBi64mV7kTOp-5LMgg1KiMywB5Gtln-SeULXIAykiIboaY4Ae2zt-5pEJGTSTpudTsKUyF5I6YbqFoSH9eFM8OA5gyTO07DCJL4KpGHB2W6X5g_w0YHzFPAi17q_bgfgIbeTsU4r89Xr2bBSnHkeVnkSzK8Zx1IBV12293Hm3ZNMdsrMmZIJKIJ_4krYVt8HlXkpRfpVFXcfHdub-whzm9ZBtpOeE5wpMoImpRKgZMlXVqTjSGI_njZc5nNQeMFqwDGMJiKrdhii31IMhaoVz2myw08rIHbjLlVSTfiLAssLq_UbqmZUZYKn_KFysgbU57v6X5kGfWLfRH1diSwWbowXJPBaGQJ78ea7e-aRg5wf1npsC09QNaxIepkebvcR3LJzHvAo21N98pEmrj6MDPWtHReE9Lrrq-hP3w0VsYIX8Ff_zIXSIIBj_zYoTVaZiaeXyYopxtmFyxRgwoscGGN-9C6Rn1_JPWyfe8H75tIsVNJbsHQsGHGNmQqUnCik4pi8WnM9zIYeKY9GLoVuuYBSGfeFKM-GEoTHlZlrUcrS2lfSqPVVhAdJ23nVQGjrmhNGokLt9XJERYnbjyCn6lkfaGqq-A4Hyhs9_laeDuzP6O7M19Wv1ee4uizYz-T_O1d099EJ_fH8nix-QlhHMx3Vmqt6kZ30WDQnIDmGvzkXVj842RPiOmruz9IT-nNfBC-wy8OGj2CfsXrCGWqqrGCwhszXc8E71qEADsA8FTHaLP3eDDa1li16yZhXtNjNVUdkIA8Xy-_Ajm6mGmeFkwKamWxJorcjb6NRymaSo20pHF5OoxwdrU1NapQF6gjwd6d8wU.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_008d322e73bd2cd1016a9a69d022c887d0a482c1f7e098a369",
+      "index": 1
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 15334,
+  "completion_tokens": 952,
+  "total_tokens": 16286,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 15331,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00497575,
+   "upstream_inference_prompt_cost": 0.00383335,
+   "upstream_inference_completions_cost": 0.0011424
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 516,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.3,
+ "_attempt": 0
+}

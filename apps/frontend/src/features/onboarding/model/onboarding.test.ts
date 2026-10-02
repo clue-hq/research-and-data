@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ProvisionedWorkspaceSchema,
+  ProvisionWorkspaceInputSchema,
   validateProfileDraft,
   type OnboardingDraft,
 } from "./onboarding";
@@ -17,7 +18,7 @@ const COMPLETE_DRAFT: OnboardingDraft = {
   companyWebsite: "insight.health",
 };
 
-test("profile validation demands every field in clerk mode", () => {
+test("profile validation demands every field but the company name in clerk mode", () => {
   assert.equal(validateProfileDraft(COMPLETE_DRAFT), null);
   assert.match(
     validateProfileDraft({ ...COMPLETE_DRAFT, firstName: "  " }) ?? "",
@@ -25,12 +26,44 @@ test("profile validation demands every field in clerk mode", () => {
   );
   assert.match(validateProfileDraft({ ...COMPLETE_DRAFT, role: "" }) ?? "", /role/);
   assert.match(
-    validateProfileDraft({ ...COMPLETE_DRAFT, companyName: "" }) ?? "",
-    /company name/,
-  );
-  assert.match(
     validateProfileDraft({ ...COMPLETE_DRAFT, companyWebsite: "" }) ?? "",
     /website/,
+  );
+});
+
+test("a blank company name is allowed: the website's own name is used instead", () => {
+  // The workspace is named from the website when the field is left blank, so an
+  // empty company name must not stop the profile screen.
+  assert.equal(validateProfileDraft({ ...COMPLETE_DRAFT, companyName: "" }), null);
+  assert.equal(validateProfileDraft({ ...COMPLETE_DRAFT, companyName: "   " }), null);
+  assert.match(
+    validateProfileDraft({ ...COMPLETE_DRAFT, companyName: "", companyWebsite: " " }) ?? "",
+    /website/,
+    "the website is what the name is derived from, so it is still required",
+  );
+});
+
+test("provisioning accepts a null company name and refuses a blank one", () => {
+  assert.equal(
+    ProvisionWorkspaceInputSchema.parse({
+      first_name: "Aakash",
+      last_name: "Shrivastava",
+      job_role: "Founder",
+      company_name: null,
+      company_website: "insight.health",
+    }).company_name,
+    null,
+  );
+  assert.equal(
+    ProvisionWorkspaceInputSchema.safeParse({
+      first_name: "Aakash",
+      last_name: "Shrivastava",
+      job_role: "Founder",
+      company_name: "",
+      company_website: "insight.health",
+    }).success,
+    false,
+    "an empty string is not a name; omitting it means null",
   );
 });
 

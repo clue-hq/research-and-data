@@ -254,6 +254,7 @@ class WriteSeam:
             status=status,
             creating_quote=submission.creating_quote,
             subject_entity_id=submission.subject_entity_id,
+            source_thread_id=submission.source_thread_id,
             claim_refs=submission.claim_refs,
         )
 

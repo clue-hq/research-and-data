@@ -130,6 +130,7 @@ class DesignIngestionKind(StrEnum):
     PDF = "pdf"
     ASSET_UPLOAD = "asset_upload"
     AD_ASSETS = "ad_assets"
+    ASSET_ENRICHMENT = "asset_enrichment"
 
 
 class DesignIngestionStatus(StrEnum):

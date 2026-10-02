@@ -23,8 +23,14 @@ committee sections and made Lane E's value narrative refuse ``committee_unavaila
 (the ``[LaneE×R11/C7]`` HB-1 gap).  The fix is at the *reference source only* — see
 :class:`ClaimReferenceSource` and :func:`default_claim_reference_source`.  Everything below the
 source (the product-exact filter, contact liveness, survivor redirects, the use-decision gate,
-merge, and the deterministic sort) is shared and unchanged, so the two sources cannot drift into
-two governance regimes.
+merge, and the deterministic sort) is shared and unchanged, so the sources cannot drift into
+several governance regimes.
+
+**ARV2 R3 — the ARV2 lane leads that chain (founder ruling 2026-09-09).** ARV2's own rows are the
+only truth for the accounts screens, and ARV2 records a committee as claims on the person:
+:class:`Arv2CommitteeReferenceSource` reads them and answers first, with the two legacy sources
+left behind it for accounts only the old lane ever researched.  It is a third *source*, nothing
+more — the governance below it is the same shared code.
 """
 
 from __future__ import annotations
@@ -67,6 +73,7 @@ from clue_research.claimstore import (
     WorkspaceScope,
     active_merge_policy,
     claims_by_ids,
+    claims_for_entities,
     merge_claims,
 )
 from clue_research.compliance import latest_use_decisions
@@ -170,6 +177,60 @@ class ClaimReferenceSource(Protocol):
         account_entity_id: EntityId,
         workspace_id: str,
     ) -> AccountClaimReferences | None: ...
+
+
+class Arv2CommitteeReferenceSource:
+    """ARV2 R3: the committee is whoever the claim store says holds a seat at this account.
+
+    Founder ruling 2026-09-09 — ARV2's own rows are the only truth for the accounts screens. R3's
+    committee step resolves a candidate, creates the contact entity under the account, and writes
+    ``contact.persona`` / ``contact.role_on_committee`` / ``contact.current_title`` onto that
+    person (strongly bound, citing the page that confirmed them). Those claims *are* the record of
+    the committee — there is no separate membership ledger to consult, and this source reads no
+    legacy table.
+
+    Applicability is one question: does any live contact under this account hold a
+    ``contact.persona`` claim? ``None`` when none does, which is what leaves the legacy sources in
+    charge of an account only the old lane ever researched. When one does, this source is the
+    authority for the account and hands the resolver every live claim of every seated contact —
+    the seat pair the membership rule needs, plus the professional facts and facets the governed
+    view is assembled from. Everything below the source (product-exact filtering, the
+    strong-binding rule, the merge, the use-decision gate, the sort) is the shared governance, so
+    the ARV2 answer is governed exactly like a coverage-sourced one.
+
+    ``project_run_id`` is deliberately unused: an ARV2 committee claim is a fact about a person at
+    an account, not a per-project-run artifact, so every project targeting the account reads the
+    same seated people.
+    """
+
+    async def read(
+        self,
+        conn: AsyncConnection,
+        *,
+        project_run_id: ProjectRunId,
+        account_entity_id: EntityId,
+        workspace_id: str,
+    ) -> AccountClaimReferences | None:
+        # Merged losers included on purpose: a merge does not rewrite their immutable claims, so a
+        # survivor whose facts all sit on a loser row would otherwise read as unseated. The
+        # resolver redirects both the claims and the member ids through ``surviving_ids``.
+        contacts = await contact_ids_for_account(conn, account_entity_id, include_merged=True)
+        if not contacts:
+            return None
+        claims = await claims_for_entities(
+            conn,
+            list(contacts),
+            scope=WorkspaceScope.for_workspace(workspace_id),
+        )
+        members = {claim.entity_id for claim in claims if str(claim.field_key) == PERSONA}
+        if not members:
+            return None
+        return AccountClaimReferences(
+            claim_ids=tuple(
+                sorted((claim.id for claim in claims if claim.entity_id in members), key=str)
+            ),
+            committee_member_ids=tuple(sorted(members, key=str)),
+        )
 
 
 class EntityResearchCoverageReferenceSource:
@@ -277,14 +338,20 @@ class ChainedClaimReferenceSource:
 
 
 def default_claim_reference_source() -> ClaimReferenceSource:
-    """M8D coverage first, the legacy references index second (R11.5).
+    """ARV2 committee claims first, then M8D coverage, then the legacy references index.
 
-    Order is the whole design: a project run that has M8D research output is described by that
-    output, and only a run without it falls back to what the retired orchestrator left behind.
+    Order is the whole design, and ARV2 leads it (founder ruling 2026-09-09): an account whose
+    committee the ARV2 lane has seated is described by that lane's own rows, and only an account
+    it never seated falls through to the M8D coverage output, and then to what the retired
+    orchestrator left behind.
     """
 
     return ChainedClaimReferenceSource(
-        (EntityResearchCoverageReferenceSource(), AccountRunReferenceIndexSource())
+        (
+            Arv2CommitteeReferenceSource(),
+            EntityResearchCoverageReferenceSource(),
+            AccountRunReferenceIndexSource(),
+        )
     )
 
 
@@ -715,6 +782,7 @@ def build_governed_committee_view_reader(
 __all__ = [
     "AccountClaimReferences",
     "AccountRunReferenceIndexSource",
+    "Arv2CommitteeReferenceSource",
     "ChainedClaimReferenceSource",
     "ClaimReferenceSource",
     "ContactEligibilityResolver",

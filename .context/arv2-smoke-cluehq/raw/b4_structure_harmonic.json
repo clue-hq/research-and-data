@@ -1,0 +1,68 @@
+{
+  "id": "gen-1788163027-NcUUmEiHVaowlNMPswFH",
+  "object": "chat.completion",
+  "created": 1788163027,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"account_claims\": [\n    {\n      \"field_key\": \"core.primary_domain\",\n      \"value_json\": \"harmonic.security\",\n      \"evidence_span\": \"Domains: harmonic.security; partner.harmonic.security.\",\n      \"source_url\": \"https://www.harmonic.security/company/careers\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.company_linkedin_url\",\n      \"value_json\": \"https://linkedin.com/company/harmonic-security\",\n      \"evidence_span\": \"LinkedIn: https://linkedin.com/company/harmonic-security.\",\n      \"source_url\": \"https://linkedin.com/company/harmonic-security\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.company_about\",\n      \"value_json\": \"Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders visibility and control to help companies innovate at pace.\",\n      \"evidence_span\": \"As every employee adopts AI in their work, organizations need control and visibility. Harmonic Security delivers AI Governance and Control (AIGC), the intelligent control layer that secures and enables the AI-First workforce. By understanding user intent and data context in real time, Harmonic gives security leaders all they need to help their companies innovate at pace.\",\n      \"source_url\": \"https://www.harmonic.security/company/careers\",\n      \"confidence\": 0.9,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.industry\",\n      \"value_json\": \"Technology\",\n      \"evidence_span\": \"Harmonic Security is a Technology, Information and Internet company.\",\n      \"source_url\": \"https://www.linkedin.com/in/anastasiacorio\",\n      \"confidence\": 0.8,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.total_funding\",\n      \"value_json\": {\n        \"amount_usd\": 26000000,\n        \"estimate_kind\": \"reported\"\n      },\n      \"evidence_span\": \"more than $26 million since the company launched\",\n      \"source_url\": \"https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market\",\n      \"confidence\": 0.85,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.recent_funding\",\n      \"value_json\": {\n        \"amount_usd\": 17500000,\n        \"round\": \"Series A\"\n      },\n      \"evidence_span\": \"Series A: $17.5M, announced 2 October 2024, led by Next47; Ten Eleven Ventures joined.\",\n      \"source_url\": \"https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market\",\n      \"confidence\": 0.9,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"core.account_name\",\n      \"value_json\": \"Harmonic Security\",\n      \"evidence_span\": \"Harmonic Security | AI Governance & Control Platform\",\n      \"source_url\": \"https://www.harmonic.security\",\n      \"confidence\": 0.95,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.hq_location\",\n      \"value_json\": {\n        \"raw\": \"1390 Market Street, Suite 200, San Francisco, California 94102, US\",\n        \"city\": \"San Francisco\",\n        \"region\": \"California\",\n        \"country\": \"United States\",\n        \"country_code\": \"US\"\n      },\n      \"evidence_span\": \"HQ: \\\"1390 Market Street, Suite 200, San Francisco, California 94102, US\\\" (automated LinkedIn-derived profile record).\",\n      \"source_url\": \"https://linkedin.com/company/harmonic-security\",\n      \"confidence\": 0.6,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.employee_range\",\n      \"value_json\": {\n        \"label\": \"50-60\",\n        \"min\": 50,\n        \"max\": 60\n      },\n      \"evidence_span\": \"Harmonic Security has 50-60 employees\",\n      \"source_url\": \"https://www.linkedin.com/in/anastasiacorio\",\n      \"confidence\": 0.7,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.strategic_moves\",\n      \"value_json\": \"Use Series A capital to accelerate go-to-market progress and product rollout; development and launch of MCP Gateway and Harmonic Protect as part of expanding AI governance and control capabilities.\",\n      \"evidence_span\": \"use the Series A to accelerate the rapid progress we have already achieved.\",\n      \"source_url\": \"https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market\",\n      \"confidence\": 0.8,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.operational_pain\",\n      \"value_json\": \"Legacy data-protection tools produce noisy rules and meaningless false positives and are not fit for purpose for generative-AI adoption; need for real-time intent classification and reduced false positives.\",\n      \"evidence_span\": \"legacy data-protection tools are \u201cnot fit for purpose\u201d amid generative-AI adoption; classification/labeling and noisy rules create \u201ca huge burden of meaningless false positives.\u201d\",\n      \"source_url\": \"https://venturebeat.com/business/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market\",\n      \"confidence\": 0.85,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"core.primary_tech_stack\",\n      \"value_json\": [\n        \"MCP Gateway\",\n        \"browser extension\",\n        \"endpoint agent\"\n      ],\n      \"evidence_span\": \"Roll out through Intune, JAMF, Kandji, or Group Policy. The browser extension covers all browsers and MCP gateway run on Windows, macOS, and Linux.\",\n      \"source_url\": \"https://www.harmonic.security/company/careers\",\n      \"confidence\": 0.8,\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.hiring_velocity_eng\",\n      \"value_json\": 1,\n      \"evidence_span\": \"JOB Solutions Architect | ... published=2026-07-14T13:03:30.157+00:00 | STILL LISTED TODAY (2026-08-31)=True\",\n      \"source_url\": \"https://jobs.ashbyhq.com/harmonic-security-inc/87fb4ade-26b7-4550-b331-9789df39d9b3\",\n      \"confidence\": 0.7,\n      \"priority\": 1\n    },\n    {\n      \"field_key\": \"account.hiring_velocity_eng\",\n      \"value_json\": 0,\n      \"evidence_span\": \"JOB Business Development Representative - East | ... published=2026-08-04T22:39:24.369+00:00 | STILL LISTED TODAY (2026-08-31)=True\",\n      \"source_url\": \"https://jobs.ashbyhq.com/harmonic-security-inc/f568f331-f4ea-4328-a690-03772941f561\",\n      \"confidence\": 0.6,\n      \"priority\": 3\n    }\n  ],\n  \"proposed_fields\": [\n    {\n      \"field_key\": \"account.named_customers\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"list[str]\",\n      \"value_schema\": {\n        \"type\": \"array\",\n        \"items\": {\n          \"type\": \"string\"\n        }\n      },\n      \"description\": \"Named customer logos or references reported by the company or third parties (not in provided catalog).\",\n      \"reuse_scope\": \"account:harmonic-security\",\n      \"hypothesis\": \"An ABM platform needs named customers to demonstrate product-market fit and to prioritize look-alike accounts; knowing specific customers helps craft tailored outreach and use-case messaging.\",\n      \"example_value\": [\n        \"Advisor360\"\n      ],\n      \"example_evidence_span\": \"Named customer: Advisor360 is listed by CB Insights as a customer.\",\n      \"example_source_url\": \"https://www.cbinsights.com/company/harmonic-security\",\n      \"priority\": 2\n    },\n    {\n      \"field_key\": \"account.founders\",\n      \"entity_type\": \"account\",\n      \"value_type\": \"list[object]\",\n      \"value_schema\": {\n        \"type\": \"array\",\n        \"items\": {\n          \"type\": \"object\",\n          \"required\": [\n            \"name\",\n            \"role\"\n          ],\n          \"properties\": {\n            \"name\": {\n              \"type\": \"string\"\n            },\n            \"role\": {\n              \"type\": \"string\"\n            }\n          }\n        }\n      },\n      \"description\": \"Founders and primary executive roles (not in provided catalog).\",\n      \"reuse_scope\": \"account:harmonic-security\",\n      \"hypothesis\": \"Founders/execs are key buying-committee influencers for strategic deals; ABM workflows can target or reference founders for credibility and executive-level outreach.\",\n      \"example_value\": [\n        {\n          \"name\": \"Alastair Paterson\",\n          \"role\": \"CEO & Co-Founder\"\n        },\n        {\n          \"name\": \"Bryan Woolgar-O'Neil\",\n          \"role\": \"CTO & Co-Founder\"\n        }\n      ],\n      \"example_evidence_span\": \"Alastair Paterson \u2014 CEO and co-founder.\",\n      \"example_source_url\": \"https://www.harmonic.security/about\",\n      \"priority\": 2\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqlTPVl3QMbj7BhRntywvW3tYJa-Tv_Tz9cEwXHDMCWt1Gzw0SfXL7cLkwGFmKnIOC55AWEGUW6kHz4Ap2laVt9k7bf8pc-osrlVuCQ8TaGghdIcD6gCa1DkYFBfzFVyzC7oZSJztRLgF6dWQCY4TbVPXHhbF6XPTl2x5L4N75T1_Pa_jfU4ccwXIPwRlPKbXirDefXzySAAiq5OPWpdNzyhBbXbAE0vRaLgjGrljLAw5njf9w8t39pxW6VAULrauJcDDOUVTICxGtehdGhyQAacmo_HQQvc05M3hOpTQHCnhRmiIZPAuJme_1iWeGngv_eyHsKXTA411gFR-xHGxchRFQmUCDOXsHeK7gKycHKd-GkZ_E2OI3ZNMfJ-4qhfSOGcEhaEj8a1VtzxPZN1XbDSab_8xVGwIwxIXytaQbyIPkrvTBbIGD_6jr1MOTNWO3pNW-V0BzRQP0P9gHdhVRiNUiOy3PThByeWPm00D_2iWhCnVFBgq4KBTrNaYzi4sspXwQh-mgtaT5OX4KEcLGzdEbQ5zUFVlVcN0irbbVMm2a0mxe5EFLjANb4NEn-vuodDRXtvWXRJJIYYT3vjBc2ycLuE-vMKU5naSvj6kN0GXNQvUQ_xJaxoINPP9KSdcLoZ-O7D3AzVFH3vXnNwCmeHhUmMvcCf2khIzk-wB01ELnkI8-A39gtZ_nG1FybZJEn87sp92xoUbGXWWfEut1P02KwzqpVLDHjwaNEouYi9gIfL1tEf1r2C2W8PZM9pHjWs17ZXApp83Zngu4zI5hJft6TZAnBb3ngIf9bgxTBI1i13YMV2ykz24kb3mfMAvbEjfwOQGjYtYx4iQQ4YcD61sgOnZCADwsMMwLPYxpzB26583oLfLYVydg_EM64wGKCi7x_8Cjvj6qq67uC6bQHplm3enQ9J3PfE8iO40X1HqmVPOa2oWI9Itui9bZP_txlqItgDCDghXK6_fMf3DlKAfy1YW9W9CiTh5Zn-eU1uD_cMLb9kgdWUq44bkk9TlrD1uyoF7zsKhY1u6Nhyx2Nq1v5oDHW3fw7CvsuLCFyTIzUw-hqKv9PJLnCk0xe40iDGQypj8zKBLJ56El3aRlRnhMY0Sst0FNHbqocDbxFvnh4PupuMMnjdbJ4Em7Ae3mgfvcR2M1vMfYvt3ZnppTJ9vQUojPsjNWmuQ11DZlQFizMrm80f7Xsn7ue_iP238cvCwV1Lff_gJafLEV8TV2zCBNnxN4o8RbuFvehPnzo9y5ZwrFN9DjYIcfj2NIVaUmlwuZpsYsSaXUn0jr2yBruRYxmbNRUfr6nHbV8DqsAQO9iK0_gltJo8jeDbYdITQz13j6bluKmIpUkOxQjwFCoh4rmpg0O1822ZLx_1tNx0SQczM1HFfhoLMWHqWx8cpI5GTqumH_hTK-STwKgzWgr8-A2w==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_07f8300f9337f540016a9533d598c087d0b66472f731eec2f1",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 16296,
+    "completion_tokens": 2158,
+    "total_tokens": 18454,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 2816,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0077564,
+      "upstream_inference_prompt_cost": 0.0034404,
+      "upstream_inference_completions_cost": 0.004316
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 19.74,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 72199,
+    "response_format": {
+      "type": "json_object"
+    },
+    "reasoning": {
+      "effort": "minimal"
+    }
+  }
+}

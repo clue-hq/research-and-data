@@ -1,0 +1,258 @@
+{
+  "phases": [
+    {
+      "phase": "A1a_live_http_fetch",
+      "seconds": 3.99,
+      "note": "7 pages via urllib+browser UA",
+      "ts": "2026-08-31T07:13:18Z"
+    },
+    {
+      "phase": "A1b_live_subpages",
+      "seconds": 2.17,
+      "note": "6 urls (2 real + 4 route probes)",
+      "ts": "2026-08-31T07:13:45Z"
+    },
+    {
+      "phase": "A1c_exa_probes",
+      "seconds": 6.96,
+      "note": "2 contents (cached+livecrawl) + 2 searches",
+      "ts": "2026-08-31T07:14:12Z"
+    },
+    {
+      "phase": "A1d_write_comparison_doc",
+      "seconds": 0,
+      "note": "analysis+writing (agent-side, no provider calls)",
+      "ts": "2026-08-31T07:15:22Z"
+    },
+    {
+      "phase": "A2_A3_product_context_and_icp",
+      "seconds": 134.0,
+      "note": "agent-side synthesis + writing, no provider calls",
+      "ts": "2026-08-31T07:17:36Z"
+    },
+    {
+      "phase": "A4a_search_d1_semantic_saas",
+      "seconds": 1.88,
+      "note": "semantic_icp",
+      "ts": "2026-08-31T07:18:19Z"
+    },
+    {
+      "phase": "A4a_search_d2_semantic_health",
+      "seconds": 1.71,
+      "note": "semantic_icp_vertical_health",
+      "ts": "2026-08-31T07:18:21Z"
+    },
+    {
+      "phase": "A4a_search_d3_jobs_abm",
+      "seconds": 1.17,
+      "note": "signal_first_job_req_abm",
+      "ts": "2026-08-31T07:18:24Z"
+    },
+    {
+      "phase": "A4a_search_d4_jobs_demandgen",
+      "seconds": 1.23,
+      "note": "signal_first_job_req_demandgen",
+      "ts": "2026-08-31T07:18:26Z"
+    },
+    {
+      "phase": "A4a_search_d5_funding_gtm",
+      "seconds": 1.56,
+      "note": "funding_signal_gtm_earmark",
+      "ts": "2026-08-31T07:18:29Z"
+    },
+    {
+      "phase": "A4a_search_d6_founder_pain",
+      "seconds": 1.41,
+      "note": "founder_pain_post",
+      "ts": "2026-08-31T07:18:31Z"
+    },
+    {
+      "phase": "A4a_search_d7_fintech_banks",
+      "seconds": 1.52,
+      "note": "vertical_fintech_finite_market",
+      "ts": "2026-08-31T07:18:34Z"
+    },
+    {
+      "phase": "A4a_search_d8_agency",
+      "seconds": 1.08,
+      "note": "agency_second_order",
+      "ts": "2026-08-31T07:18:36Z"
+    },
+    {
+      "phase": "A4a_discovery_searches",
+      "seconds": 20.39,
+      "note": "8 exa searches, 5 angles",
+      "ts": "2026-08-31T07:18:37Z"
+    },
+    {
+      "phase": "A4b_verify_cogent_security",
+      "seconds": 1.18,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:19:58Z"
+    },
+    {
+      "phase": "A4b_verify_oscilar",
+      "seconds": 2.03,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:02Z"
+    },
+    {
+      "phase": "A4b_verify_harmonic_security",
+      "seconds": 1.33,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:04Z"
+    },
+    {
+      "phase": "A4b_verify_zafran_security",
+      "seconds": 1.12,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:06Z"
+    },
+    {
+      "phase": "A4b_verify_revenuecat",
+      "seconds": 1.24,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:09Z"
+    },
+    {
+      "phase": "A4b_verify_arintra",
+      "seconds": 1.1,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:11Z"
+    },
+    {
+      "phase": "A4b_verify_translucent_health",
+      "seconds": 0.99,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:13Z"
+    },
+    {
+      "phase": "A4b_verify_prosper_ai",
+      "seconds": 0.76,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:15Z"
+    },
+    {
+      "phase": "A4b_verify_vendelux",
+      "seconds": 1.34,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:17Z"
+    },
+    {
+      "phase": "A4b_verify_uptiq",
+      "seconds": 1.73,
+      "note": "H1/H2 gate verification",
+      "ts": "2026-08-31T07:20:20Z"
+    },
+    {
+      "phase": "A4b_verification",
+      "seconds": 23.9,
+      "note": "10 cheap gate-verification searches",
+      "ts": "2026-08-31T07:20:21Z"
+    },
+    {
+      "phase": "A4c_t_oscilar_round",
+      "seconds": 1.98,
+      "note": "tie-break",
+      "ts": "2026-08-31T07:22:19Z"
+    },
+    {
+      "phase": "A4c_t_jobs_arintra",
+      "seconds": 1.25,
+      "note": "tie-break",
+      "ts": "2026-08-31T07:22:22Z"
+    },
+    {
+      "phase": "A4c_t_jobs_uptiq",
+      "seconds": 1.72,
+      "note": "tie-break",
+      "ts": "2026-08-31T07:22:24Z"
+    },
+    {
+      "phase": "A4c_t_jobs_vendelux",
+      "seconds": 1.4,
+      "note": "tie-break",
+      "ts": "2026-08-31T07:22:27Z"
+    },
+    {
+      "phase": "A4c_t_jobs_translucent",
+      "seconds": 1.09,
+      "note": "tie-break",
+      "ts": "2026-08-31T07:22:29Z"
+    },
+    {
+      "phase": "A4c_tiebreak",
+      "seconds": 12.98,
+      "note": "5 probes",
+      "ts": "2026-08-31T07:22:30Z"
+    },
+    {
+      "phase": "A4d_scoring",
+      "seconds": 0.0,
+      "note": "rubric application + candidates.json",
+      "ts": "2026-08-31T07:26:16Z"
+    },
+    {
+      "phase": "A4e_discovery_doc",
+      "seconds": 0.0,
+      "note": "verbatim appendix generation",
+      "ts": "2026-08-31T07:26:37Z"
+    }
+  ],
+  "summary": {
+    "agent": "A \u2014 ICP Architect",
+    "date": "2026-08-31",
+    "phase_seconds": {
+      "A1a_live_http_fetch": 3.99,
+      "A1b_live_subpages": 2.17,
+      "A1c_exa_probes": 6.96,
+      "A1d_write_comparison_doc": 0,
+      "A2_A3_product_context_and_icp": 134.0,
+      "A4a_discovery_searches": 20.39,
+      "A4b_verification": 23.9,
+      "A4c_tiebreak": 12.98,
+      "A4d_scoring": 0.0,
+      "A4e_discovery_doc": 0.0
+    },
+    "phase_total_seconds": 204.39,
+    "provider_wall_clock_seconds": 38.71,
+    "provider_wall_clock_breakdown": {
+      "exa": 35.67,
+      "live_http": 3.04
+    },
+    "provider_wall_clock_target_seconds": 720,
+    "provider_wall_clock_vs_target": "38.71s used of a 720s (12 min) target \u2014 5.4% of budget",
+    "agent_side_seconds": 165.68,
+    "per_call_child_timings": {
+      "A4a_search_d1_semantic_saas": 1.88,
+      "A4a_search_d2_semantic_health": 1.71,
+      "A4a_search_d3_jobs_abm": 1.17,
+      "A4a_search_d4_jobs_demandgen": 1.23,
+      "A4a_search_d5_funding_gtm": 1.56,
+      "A4a_search_d6_founder_pain": 1.41,
+      "A4a_search_d7_fintech_banks": 1.52,
+      "A4a_search_d8_agency": 1.08,
+      "A4b_verify_cogent_security": 1.18,
+      "A4b_verify_oscilar": 2.03,
+      "A4b_verify_harmonic_security": 1.33,
+      "A4b_verify_zafran_security": 1.12,
+      "A4b_verify_revenuecat": 1.24,
+      "A4b_verify_arintra": 1.1,
+      "A4b_verify_translucent_health": 0.99,
+      "A4b_verify_prosper_ai": 0.76,
+      "A4b_verify_vendelux": 1.34,
+      "A4b_verify_uptiq": 1.73,
+      "A4c_t_oscilar_round": 1.98,
+      "A4c_t_jobs_arintra": 1.25,
+      "A4c_t_jobs_uptiq": 1.72,
+      "A4c_t_jobs_vendelux": 1.4,
+      "A4c_t_jobs_translucent": 1.09
+    },
+    "notes": [
+      "A1d/A4d/A4e record 0.00s because the wall-clock for those phases is agent reasoning and file writing, which the script cannot time; the provider cost of each is $0.",
+      "A2_A3 (134s) is agent-side synthesis of product-context.md + icp.md \u2014 no provider calls.",
+      "Slowest single provider call in the whole run: exa contents with livecrawl=always (1.32s).",
+      "Zero retries, zero 429s, zero non-200 responses from Exa across 27 calls."
+    ]
+  }
+}

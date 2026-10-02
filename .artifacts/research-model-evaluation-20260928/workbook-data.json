@@ -1,0 +1,4137 @@
+{
+  "runs": [
+    {
+      "id": "P1",
+      "key": "premier-grok46-medium",
+      "scenario": "Insight Health → Premier",
+      "model": "x-ai/grok-4.6",
+      "effort": "medium",
+      "start": "2026-09-27 19:19:27.845912+00:00",
+      "wall": 1677.663472,
+      "settledWall": 1882,
+      "parts": [
+        8.07496,
+        0.208,
+        0,
+        0,
+        0,
+        4.12588,
+        0.10485,
+        0,
+        0
+      ],
+      "total": 12.51369,
+      "credits": 3.1,
+      "summary": "Both dossiers and pages saved; person completion failed; old account continuations added cost.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24",
+      "notes": "Live search results vary; this is not a fixed-corpus model evaluation. One account and one selected person; Beth and Todd are different research subjects. AI Ark credits are separate non-USD units, not included in dollar totals. No transcription call was exercised. Recorded costs are usage-ledger/provider-reported amounts, not invoice reconciliation. Run started Sept 27 UTC / Sept 28 Asia/Kolkata. Old reconciliation repeatedly continued the account; initial 52 findings versus latest 60. Overall elapsed below ends at person terminal; worker stopped about 31m22s after initial start during a third continuation. In-flight charge may be absent. Fresh Head briefing differs from retained Head brief used by subsequent Muse/Grok4.7 tests."
+    },
+    {
+      "id": "P2",
+      "key": "premier-muse-medium",
+      "scenario": "Insight Health → Premier",
+      "model": "meta/muse-spark-1.3",
+      "effort": "medium",
+      "start": "2026-09-28 04:31:05.425487+00:00",
+      "wall": 1548.535502,
+      "settledWall": 1548.535502,
+      "parts": [
+        2.3588940000000003,
+        0.186,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "total": 2.544894,
+      "credits": 2.1,
+      "summary": "Account saved. Beth cancelled during prolonged Exa wait; recorded cost is a subtotal.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/REVIEW-IN-PROGRESS.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04",
+      "notes": "Live search results vary; this is not a fixed-corpus model evaluation. One account and one selected person; Beth and Todd are different research subjects. AI Ark credits are separate non-USD units, not included in dollar totals. No transcription call was exercised. Recorded costs are usage-ledger/provider-reported amounts, not invoice reconciliation. Reuses Head brief created by setup run01; its $0.118116 is reported once under setup_attempts, not charged again here. Pinned persona lineage is advisory; unresolved lineage affects certainty of persona comparisons. Person test user-cancelled during approximately 17-minute pending Exa deep call; eventual provider charge/cancellation is unknown. Original/default label was misleading: actual outgoing request explicitly used medium reasoning. Total is a known recorded subtotal, not final all-in cost."
+    },
+    {
+      "id": "P3",
+      "key": "premier-muse-high",
+      "scenario": "Insight Health → Premier",
+      "model": "meta/muse-spark-1.3",
+      "effort": "high",
+      "start": "2026-09-28 05:18:19.096110+00:00",
+      "wall": 872.436407,
+      "settledWall": 872.436407,
+      "parts": [
+        3.9056290000000002,
+        0.18,
+        0,
+        0,
+        0.100531,
+        0,
+        0,
+        0.00084375,
+        0
+      ],
+      "total": 4.18700375,
+      "credits": 2.1,
+      "summary": "Both dossiers saved; Beth narrative unpublished after parent-version errors.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05",
+      "notes": "Live search results vary; this is not a fixed-corpus model evaluation. One account and one selected person; Beth and Todd are different research subjects. AI Ark credits are separate non-USD units, not included in dollar totals. No transcription call was exercised. Recorded costs are usage-ledger/provider-reported amounts, not invoice reconciliation. Reuses Head brief created by setup run01; its $0.118116 is reported once under setup_attempts, not charged again here. Pinned persona lineage is advisory; unresolved lineage affects certainty of persona comparisons. Predates narrative-version error improvement 93d87fe35; failure feedback differs from later Grok/xhigh."
+    },
+    {
+      "id": "P4",
+      "key": "premier-grok47-high",
+      "scenario": "Insight Health → Premier",
+      "model": "x-ai/grok-4.7",
+      "effort": "high",
+      "start": "2026-09-28 06:04:00.689951+00:00",
+      "wall": 3098.805648,
+      "settledWall": 3106,
+      "parts": [
+        10.384506,
+        0.206,
+        0,
+        0,
+        0.15531075,
+        0,
+        0,
+        0.0017984,
+        0
+      ],
+      "total": 10.74761515,
+      "credits": 0.1,
+      "summary": "Both dossiers and Todd page saved. Account page produced by separate Muse reconciliation.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06",
+      "notes": "Live search results vary; this is not a fixed-corpus model evaluation. One account and one selected person; Beth and Todd are different research subjects. AI Ark credits are separate non-USD units, not included in dollar totals. No transcription call was exercised. Recorded costs are usage-ledger/provider-reported amounts, not invoice reconciliation. Reuses Head brief created by setup run01; its $0.118116 is reported once under setup_attempts, not charged again here. Pinned persona lineage is advisory; unresolved lineage affects certainty of persona comparisons. Final account narrative comes from common Muse focused reconciliation, not Grok. AI Ark person lookup subject-lock-refused; low credits do not prove cheaper successful enrichment."
+    },
+    {
+      "id": "P5",
+      "key": "premier-muse-xhigh",
+      "scenario": "Insight Health → Premier",
+      "model": "meta/muse-spark-1.3",
+      "effort": "xhigh",
+      "start": "2026-09-28 07:05:53.476805+00:00",
+      "wall": 663.170414,
+      "settledWall": 663.170414,
+      "parts": [
+        2.6032821999999998,
+        0.194,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0.00052925,
+        0
+      ],
+      "total": 2.79781145,
+      "credits": 1.6,
+      "summary": "Account saved. Todd stopped by database disk exhaustion before dossier.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/XHIGH.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07",
+      "notes": "Live search results vary; this is not a fixed-corpus model evaluation. One account and one selected person; Beth and Todd are different research subjects. AI Ark credits are separate non-USD units, not included in dollar totals. No transcription call was exercised. Recorded costs are usage-ledger/provider-reported amounts, not invoice reconciliation. Reuses Head brief created by setup run01; its $0.118116 is reported once under setup_attempts, not charged again here. Pinned persona lineage is advisory; unresolved lineage affects certainty of persona comparisons. Person interrupted by full Postgres Docker volume, not model-quality failure. Two model calls recovered only from Langfuse after DB recording failed; included once in total. No complete person comparison or reconciliation result."
+    },
+    {
+      "id": "Z1",
+      "key": "grok46",
+      "scenario": "Clue → Zafran",
+      "model": "x-ai/grok-4.6",
+      "effort": "medium",
+      "start": "2026-09-28 08:40:34.761052+00:00",
+      "wall": 1813.278611,
+      "settledWall": 1815.537035,
+      "parts": [
+        12.102434,
+        0.293,
+        0.081146,
+        0.001019,
+        0.174809,
+        0,
+        0,
+        0.000818,
+        0
+      ],
+      "total": 12.653226,
+      "credits": 3.1,
+      "summary": "All three dossiers and narratives saved; person finalization failed. Reconciliation settled.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46",
+      "notes": "Resource revision 24; fixed Nick and Vari. last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions. 0 unpriced researcher call(s). Runtime may differ despite shared resource pins."
+    },
+    {
+      "id": "Z2",
+      "key": "grok47",
+      "scenario": "Clue → Zafran",
+      "model": "x-ai/grok-4.7",
+      "effort": "medium",
+      "start": "2026-09-28 08:40:34.769424+00:00",
+      "wall": 1597.105798,
+      "settledWall": 1597.105798,
+      "parts": [
+        3.926011,
+        0.095,
+        0.065516,
+        0.000759,
+        0,
+        0,
+        0,
+        0.0008864,
+        0
+      ],
+      "total": 4.0881724,
+      "credits": 4.6,
+      "summary": "Provider capacity failure during draft. Nick and Vari never started.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47",
+      "notes": "Resource revision 24; fixed Nick and Vari. last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions. 1 unpriced researcher call(s). Runtime may differ despite shared resource pins."
+    },
+    {
+      "id": "Z3",
+      "key": "glm53",
+      "scenario": "Clue → Zafran",
+      "model": "z-ai/glm-5.3",
+      "effort": "medium",
+      "start": "2026-09-28 08:40:34.768307+00:00",
+      "wall": 222.034146,
+      "settledWall": 222.034146,
+      "parts": [
+        1.120041,
+        0.09,
+        0.05093,
+        0.000579,
+        0,
+        0,
+        0,
+        0.000037,
+        0
+      ],
+      "total": 1.261587,
+      "credits": 2.1,
+      "summary": "No authored dossier. Wrong nominations and missing final output; operator stop followed failure.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53",
+      "notes": "Resource revision 24; fixed Nick and Vari. last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions. 0 unpriced researcher call(s). Runtime may differ despite shared resource pins."
+    },
+    {
+      "id": "Z4",
+      "key": "glm53-untouched-02",
+      "scenario": "Clue → Zafran",
+      "model": "z-ai/glm-5.3",
+      "effort": "medium",
+      "start": "2026-09-28 08:51:41.330720+00:00",
+      "wall": 140.63112,
+      "settledWall": 141.837677,
+      "parts": [
+        0.704624,
+        0.09,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "total": 0.794624,
+      "credits": 0.1,
+      "summary": "Untouched retry truncated at 16,384 output tokens; no authored dossier.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02",
+      "notes": "Resource revision 24; fixed Nick and Vari. last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions. 0 unpriced researcher call(s). Runtime may differ despite shared resource pins."
+    },
+    {
+      "id": "Z5",
+      "key": "deepseek4pro-high",
+      "scenario": "Clue → Zafran",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "effort": "high",
+      "start": "2026-09-28 09:04:57.109224+00:00",
+      "wall": 3381.047269,
+      "settledWall": 3475.226815,
+      "parts": [
+        7.954206,
+        0.201,
+        0,
+        0,
+        0.258532,
+        0,
+        0,
+        0.0000187776,
+        0
+      ],
+      "total": 8.4137567776,
+      "credits": 1.6,
+      "summary": "Account and Nick imported; Vari incomplete; no narratives; reconciliation failed.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high",
+      "notes": "Resource revision 24; fixed Nick and Vari. last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions. 0 unpriced researcher call(s). Runtime may differ despite shared resource pins."
+    },
+    {
+      "id": "Z6",
+      "key": "muse-max",
+      "scenario": "Clue → Zafran",
+      "model": "meta/muse-spark-1.3",
+      "effort": "max",
+      "start": "2026-09-28 09:48:00.853979+00:00",
+      "wall": 2059.849252,
+      "settledWall": 2163.468525,
+      "parts": [
+        12.399157,
+        0.338,
+        0,
+        0,
+        0.40414,
+        0,
+        0,
+        0.000117,
+        0
+      ],
+      "total": 13.141414,
+      "credits": 3.1,
+      "summary": "All dossiers imported; account page saved; contact pages unpublished; reconciliation failed.",
+      "report": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md",
+      "root": "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max",
+      "notes": "Resource revision 24; fixed Nick and Vari. last research terminal or last reconciliation completed timestamp; excludes later operator/probe actions. 0 unpriced researcher call(s). Runtime may differ despite shared resource pins."
+    }
+  ],
+  "jobs": [
+    {
+      "id": "P1",
+      "name": "Premier Gastroenterology",
+      "subject": "account",
+      "status": "completed",
+      "start": "2026-09-27 19:19:27.845912+00:00",
+      "end": "2026-09-27 19:35:59.004636+00:00",
+      "wall": 991.158724,
+      "pre": 379.624,
+      "formation": 461.759046,
+      "post": 113.801494,
+      "findings": 52,
+      "latest": 60,
+      "narrative": true,
+      "modelCost": 4.80246,
+      "calls": 78,
+      "input": 7510383,
+      "cache": 7032448,
+      "output": 55061,
+      "modelSeconds": 836.7870137090795,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "8e9c0c15-df34-5047-a1b6-c2a482b42a48"
+    },
+    {
+      "id": "P1",
+      "name": "Todd Greer",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-27 19:33:30.679892+00:00",
+      "end": "2026-09-27 19:47:25.509384+00:00",
+      "wall": 834.829492,
+      "pre": 344.738,
+      "formation": 163.506232,
+      "post": 281.541105,
+      "findings": 37,
+      "latest": 37,
+      "narrative": true,
+      "modelCost": 3.2725,
+      "calls": 48,
+      "input": 4480655,
+      "cache": 3992448,
+      "output": 49977,
+      "modelSeconds": 723.238753256388,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "51acdfbb-d6c1-5ce2-8c7b-74761f40dddd"
+    },
+    {
+      "id": "P2",
+      "name": "Premier Gastroenterology",
+      "subject": "account",
+      "status": "completed",
+      "start": "2026-09-28 04:31:05.425487+00:00",
+      "end": "2026-09-28 04:38:44.073797+00:00",
+      "wall": 458.64831,
+      "pre": 232.959,
+      "formation": 76.560238,
+      "post": 130.864546,
+      "findings": 19,
+      "latest": 19,
+      "narrative": true,
+      "modelCost": 1.708644,
+      "calls": 48,
+      "input": 4530300,
+      "cache": 3682736,
+      "output": 22772,
+      "modelSeconds": 364.1482719548512,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "c80f26cc-33e8-5529-b018-84f06ccbb325"
+    },
+    {
+      "id": "P2",
+      "name": "Beth Smith",
+      "subject": "person",
+      "status": "cancelled_by_user",
+      "start": "2026-09-28 04:36:16.329039+00:00",
+      "end": "2026-09-28T04:56:53.960989+00:00",
+      "wall": 1237.63195,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 0.65025,
+      "calls": 21,
+      "input": 1167061,
+      "cache": 768581,
+      "output": 8674,
+      "modelSeconds": 100.14568137656897,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "a367f7c4-e2fc-5236-b5c9-ea7133b55e42"
+    },
+    {
+      "id": "P3",
+      "name": "Premier Gastroenterology",
+      "subject": "account",
+      "status": "completed",
+      "start": "2026-09-28 05:18:19.096110+00:00",
+      "end": "2026-09-28 05:25:24.481914+00:00",
+      "wall": 425.385804,
+      "pre": 238.323,
+      "formation": 79.924601,
+      "post": 79.004376,
+      "findings": 26,
+      "latest": 26,
+      "narrative": true,
+      "modelCost": 1.7524170000000001,
+      "calls": 55,
+      "input": 5006007,
+      "cache": 4194375,
+      "output": 25581,
+      "modelSeconds": 315.3260094996076,
+      "reads": 50,
+      "batches": 20,
+      "maxBatch": 4,
+      "readRepeats": 0,
+      "jobId": "c80f26cc-33e8-5529-b018-84f06ccbb325"
+    },
+    {
+      "id": "P3",
+      "name": "Beth Smith",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-28 05:23:40.248396+00:00",
+      "end": "2026-09-28 05:32:51.532517+00:00",
+      "wall": 551.284121,
+      "pre": 270.255,
+      "formation": 120.830095,
+      "post": null,
+      "findings": 19,
+      "latest": 19,
+      "narrative": false,
+      "modelCost": 2.153212,
+      "calls": 61,
+      "input": 6105419,
+      "cache": 5127164,
+      "output": 37957,
+      "modelSeconds": 443.5491494596936,
+      "reads": 49,
+      "batches": 20,
+      "maxBatch": 3,
+      "readRepeats": 0,
+      "jobId": "ce2ce4f1-ab74-5f41-b739-6dd5a201088e"
+    },
+    {
+      "id": "P4",
+      "name": "Premier Gastroenterology",
+      "subject": "account",
+      "status": "needs_review",
+      "start": "2026-09-28 06:04:00.689951+00:00",
+      "end": "2026-09-28 06:33:40.950857+00:00",
+      "wall": 1780.260906,
+      "pre": 1263.407,
+      "formation": 337.809467,
+      "post": null,
+      "findings": 68,
+      "latest": 68,
+      "narrative": false,
+      "modelCost": 5.408576,
+      "calls": 89,
+      "input": 8713627,
+      "cache": 7550592,
+      "output": 109892,
+      "modelSeconds": 1642.1177185818087,
+      "reads": 164,
+      "batches": 61,
+      "maxBatch": 8,
+      "readRepeats": 2,
+      "jobId": "c80f26cc-33e8-5529-b018-84f06ccbb325"
+    },
+    {
+      "id": "P4",
+      "name": "Todd Greer",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-28 06:30:44.205502+00:00",
+      "end": "2026-09-28 06:55:39.495599+00:00",
+      "wall": 1495.290097,
+      "pre": 823.687,
+      "formation": 228.945036,
+      "post": 249.805186,
+      "findings": 46,
+      "latest": 46,
+      "narrative": true,
+      "modelCost": 4.97593,
+      "calls": 82,
+      "input": 8506031,
+      "cache": 7564800,
+      "output": 92508,
+      "modelSeconds": 1335.2647574555594,
+      "reads": 128,
+      "batches": 44,
+      "maxBatch": 9,
+      "readRepeats": 1,
+      "jobId": "6bc03f41-fd75-5ce8-998d-6ec983efd86c"
+    },
+    {
+      "id": "P5",
+      "name": "Premier Gastroenterology",
+      "subject": "account",
+      "status": "completed",
+      "start": "2026-09-28 07:05:53.476805+00:00",
+      "end": "2026-09-28 07:13:24.925311+00:00",
+      "wall": 451.448506,
+      "pre": 305.912,
+      "formation": 73.775067,
+      "post": 40.023806,
+      "findings": 30,
+      "latest": 30,
+      "narrative": true,
+      "modelCost": 1.54478,
+      "calls": 66,
+      "input": 6774676,
+      "cache": 6408994,
+      "output": 29724,
+      "modelSeconds": 335.42108166147955,
+      "reads": 65,
+      "batches": 16,
+      "maxBatch": 5,
+      "readRepeats": 2,
+      "jobId": "c80f26cc-33e8-5529-b018-84f06ccbb325"
+    },
+    {
+      "id": "P5",
+      "name": "Todd Greer",
+      "subject": "person",
+      "status": "infrastructure_interrupted",
+      "start": "2026-09-28 07:12:15.160059+00:00",
+      "end": "2026-09-28 07:16:56.647219+00:00",
+      "wall": 281.48716,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 1.0585022,
+      "calls": 42,
+      "input": 3282972,
+      "cache": 2923560,
+      "output": 12707,
+      "modelSeconds": 162.78684287890792,
+      "reads": 51,
+      "batches": 13,
+      "maxBatch": 5,
+      "readRepeats": 0,
+      "jobId": "47c616df-95cf-5bff-8fc4-c91b26554e75"
+    },
+    {
+      "id": "Z1",
+      "name": "Zafran Security",
+      "subject": "account",
+      "status": "completed",
+      "start": "2026-09-28 08:40:34.761052+00:00",
+      "end": "2026-09-28 08:56:19.586920+00:00",
+      "wall": 944.825868,
+      "pre": 388.630535,
+      "formation": 266.297025,
+      "post": 230.401686,
+      "findings": 52,
+      "latest": 52,
+      "narrative": true,
+      "modelCost": 4.2804,
+      "calls": 61,
+      "input": 6346215,
+      "cache": 5812736,
+      "output": 51179,
+      "modelSeconds": 815.7651397546288,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+      "stageCost": 4.4234
+    },
+    {
+      "id": "Z1",
+      "name": "Vari Kaur",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-28 08:51:36.840620+00:00",
+      "end": "2026-09-28 09:05:00.956943+00:00",
+      "wall": 804.116323,
+      "pre": 358.888091,
+      "formation": 216.557223,
+      "post": 164.975851,
+      "findings": 38,
+      "latest": 38,
+      "narrative": true,
+      "modelCost": 3.13394,
+      "calls": 44,
+      "input": 4402831,
+      "cache": 3946112,
+      "output": 41241,
+      "modelSeconds": 648.9961318317801,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "04070cd2-53e0-510c-8373-2f6511f15052",
+      "stageCost": 3.21394
+    },
+    {
+      "id": "Z1",
+      "name": "Nick Fisher",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-28 08:51:37.197550+00:00",
+      "end": "2026-09-28 09:10:48.039663+00:00",
+      "wall": 1150.842113,
+      "pre": 583.250598,
+      "formation": 399.210199,
+      "post": 111.455307,
+      "findings": 49,
+      "latest": 49,
+      "narrative": true,
+      "modelCost": 4.688094,
+      "calls": 80,
+      "input": 6897840,
+      "cache": 6265344,
+      "output": 48405,
+      "modelSeconds": 902.2618086207658,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "05d4fa83-5d48-5d21-ab82-867e8af0819d",
+      "stageCost": 4.840259
+    },
+    {
+      "id": "Z2",
+      "name": "Vari Kaur",
+      "subject": "person",
+      "status": "not_started",
+      "start": null,
+      "end": null,
+      "wall": null,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 0,
+      "calls": 0,
+      "input": 0,
+      "cache": 0,
+      "output": 0,
+      "modelSeconds": 0,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "ea54ef0e-91b7-501e-996e-97ce42a15264",
+      "stageCost": 0
+    },
+    {
+      "id": "Z2",
+      "name": "Nick Fisher",
+      "subject": "person",
+      "status": "not_started",
+      "start": null,
+      "end": null,
+      "wall": null,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 0,
+      "calls": 0,
+      "input": 0,
+      "cache": 0,
+      "output": 0,
+      "modelSeconds": 0,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "5427e1bf-1da3-5af3-80c7-31100873f585",
+      "stageCost": 0
+    },
+    {
+      "id": "Z2",
+      "name": "Zafran Security",
+      "subject": "account",
+      "status": "needs_review",
+      "start": "2026-09-28 08:40:34.769424+00:00",
+      "end": "2026-09-28 09:07:11.875222+00:00",
+      "wall": 1597.105798,
+      "pre": 998.962468,
+      "formation": null,
+      "post": null,
+      "findings": 30,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 3.926011,
+      "calls": 68,
+      "input": 7125036,
+      "cache": 6447488,
+      "output": 54779,
+      "modelSeconds": 1453.570339748403,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+      "stageCost": 4.087286
+    },
+    {
+      "id": "Z3",
+      "name": "Tom Anthony",
+      "subject": "person",
+      "status": "not_started",
+      "start": null,
+      "end": null,
+      "wall": null,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 0,
+      "calls": 0,
+      "input": 0,
+      "cache": 0,
+      "output": 0,
+      "modelSeconds": 0,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "631ec33b-a46f-52f4-801e-9eab8cfc2efd",
+      "stageCost": 0
+    },
+    {
+      "id": "Z3",
+      "name": "Kelly W.",
+      "subject": "person",
+      "status": "not_started",
+      "start": null,
+      "end": null,
+      "wall": null,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 0,
+      "calls": 0,
+      "input": 0,
+      "cache": 0,
+      "output": 0,
+      "modelSeconds": 0,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "684b62dc-6ab1-5285-aded-984c4d580d49",
+      "stageCost": 0
+    },
+    {
+      "id": "Z3",
+      "name": "Zafran Security",
+      "subject": "account",
+      "status": "needs_review",
+      "start": "2026-09-28 08:40:34.768307+00:00",
+      "end": "2026-09-28 08:44:16.802453+00:00",
+      "wall": 222.034146,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 1.120041,
+      "calls": 50,
+      "input": 3276036,
+      "cache": 3098752,
+      "output": 15038,
+      "modelSeconds": 95.94271112116985,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+      "stageCost": 1.26155
+    },
+    {
+      "id": "Z4",
+      "name": "Zafran Security",
+      "subject": "account",
+      "status": "needs_review",
+      "start": "2026-09-28 08:51:41.330720+00:00",
+      "end": "2026-09-28 08:54:01.961840+00:00",
+      "wall": 140.63112,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 0.704624,
+      "calls": 26,
+      "input": 1456640,
+      "cache": 1249728,
+      "output": 20459,
+      "modelSeconds": 72.96080583333969,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+      "stageCost": 0.794624
+    },
+    {
+      "id": "Z5",
+      "name": "Vari Kaur",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-28 09:24:40.771232+00:00",
+      "end": "2026-09-28 09:27:03.977111+00:00",
+      "wall": 143.205879,
+      "pre": null,
+      "formation": null,
+      "post": null,
+      "findings": 0,
+      "latest": 0,
+      "narrative": false,
+      "modelCost": 0.736717,
+      "calls": 22,
+      "input": 1686303,
+      "cache": 1583872,
+      "output": 15198,
+      "modelSeconds": 128.14667353895493,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "a909b721-e744-59b8-89de-7668baec343b",
+      "stageCost": 0.788717
+    },
+    {
+      "id": "Z5",
+      "name": "Nick Fisher",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-28 09:24:40.394907+00:00",
+      "end": "2026-09-28 10:01:18.156493+00:00",
+      "wall": 2197.761586,
+      "pre": 1459.414884,
+      "formation": 426.324957,
+      "post": null,
+      "findings": 37,
+      "latest": 37,
+      "narrative": false,
+      "modelCost": 2.262775,
+      "calls": 89,
+      "input": 9294601,
+      "cache": 8012800,
+      "output": 70776,
+      "modelSeconds": 2062.881802630378,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "436cb01b-602f-52fd-a83e-e1f08f8708fe",
+      "stageCost": 2.323775
+    },
+    {
+      "id": "Z5",
+      "name": "Zafran Security",
+      "subject": "account",
+      "status": "needs_review",
+      "start": "2026-09-28 09:04:57.109224+00:00",
+      "end": "2026-09-28 09:25:48.355763+00:00",
+      "wall": 1251.246539,
+      "pre": 1016.97222,
+      "formation": 157.769949,
+      "post": null,
+      "findings": 64,
+      "latest": 64,
+      "narrative": false,
+      "modelCost": 4.954714,
+      "calls": 124,
+      "input": 11427762,
+      "cache": 10770176,
+      "output": 118748,
+      "modelSeconds": 1148.7198779995088,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+      "stageCost": 5.042714
+    },
+    {
+      "id": "Z6",
+      "name": "Zafran Security",
+      "subject": "account",
+      "status": "needs_review",
+      "start": "2026-09-28 09:48:00.853979+00:00",
+      "end": "2026-09-28 10:03:07.451574+00:00",
+      "wall": 906.597595,
+      "pre": 493.770856,
+      "formation": 172.567117,
+      "post": 186.263726,
+      "findings": 54,
+      "latest": 54,
+      "narrative": true,
+      "modelCost": 3.270071,
+      "calls": 79,
+      "input": 7091181,
+      "cache": 5410956,
+      "output": 84270,
+      "modelSeconds": 782.609895168338,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "59d4870e-2207-56ca-a50b-e76ab86f6a53",
+      "stageCost": 3.386071
+    },
+    {
+      "id": "Z6",
+      "name": "Nick Fisher",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-28 09:59:13.767991+00:00",
+      "end": "2026-09-28 10:14:59.900043+00:00",
+      "wall": 946.132052,
+      "pre": 610.057023,
+      "formation": 247.188899,
+      "post": null,
+      "findings": 68,
+      "latest": 68,
+      "narrative": false,
+      "modelCost": 4.16695,
+      "calls": 92,
+      "input": 9506277,
+      "cache": 7285675,
+      "output": 70199,
+      "modelSeconds": 768.5111135407351,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "41ba4d68-d1da-57fd-9163-a0ec041a44bd",
+      "stageCost": 4.27595
+    },
+    {
+      "id": "Z6",
+      "name": "Vari Kaur",
+      "subject": "person",
+      "status": "needs_review",
+      "start": "2026-09-28 09:59:14.123270+00:00",
+      "end": "2026-09-28 10:22:20.703231+00:00",
+      "wall": 1386.579961,
+      "pre": 780.426354,
+      "formation": 174.819827,
+      "post": null,
+      "findings": 56,
+      "latest": 56,
+      "narrative": false,
+      "modelCost": 4.962136,
+      "calls": 120,
+      "input": 10973017,
+      "cache": 8361253,
+      "output": 104293,
+      "modelSeconds": 1171.4271328230388,
+      "reads": null,
+      "batches": null,
+      "maxBatch": null,
+      "readRepeats": null,
+      "jobId": "92047fb7-01a5-5611-802e-c886da87eb6a",
+      "stageCost": 5.075136
+    }
+  ],
+  "failures": [
+    [
+      "P1",
+      "Todd Greer",
+      "Completion / infrastructure",
+      "Durable dossier/import/narrative survived; finalization referenced account-owned committee claim from person context (missing_finalize).",
+      "Observed; see run report",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/REPORT.md"
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Completion / infrastructure",
+      "Contact narrative repeatedly omitted required parent dossier version; misleading old feedback; no published narrative.",
+      "Observed; see run report",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/REPORT.md"
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Completion / infrastructure",
+      "No researcher narrative saved; finalization missing /outputs/research.json. Later account page written by Muse reconciliation.",
+      "Observed; see run report",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/REPORT.md"
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Completion / infrastructure",
+      "Durable dossier/import/narrative survived; finalization referenced account-owned committee claim from person context (missing_finalize).",
+      "Observed; see run report",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/REPORT.md"
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Completion / infrastructure",
+      "Postgres volume exhausted; no authored person dossier or narrative, despite retained Exa report.",
+      "Observed; see run report",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/XHIGH.md"
+    ],
+    [
+      "Z2",
+      "Grok 4.7 medium account",
+      "provider",
+      "Model call 68 returned 502 `provider_unavailable`, explicitly capacity/high demand. Agent stopped during dossier assembly; 30 draft findings survived, no import/narrative. Nick and Vari never started. This is not an Exa timeout or evidence of poor completed research.",
+      "Confirmed provider response and terminal job",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md"
+    ],
+    [
+      "Z3",
+      "GLM initial account committee nomination",
+      "model behavior",
+      "Four people nominated concurrently despite fixed Nick/Vari scope. Tom Anthony and Kelly W. acquired the two slots first. Nick/Vari cap retries did not repair the selection. This contributed to failure to complete the requested flow, but is not the final exception itself. No person research started.",
+      "Confirmed observable calls and retained jobs",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md"
+    ],
+    [
+      "Z3",
+      "Both GLM account attempts",
+      "backend",
+      "Required `/outputs/research.json` was absent. `stat_entry` raised WorkspaceSecurityError outside the ValueError repair handling. This does not establish a permission denial. Exa output and original acquisitions survived, but no researcher JSON dossier/import/narrative.",
+      "Confirmed missing file and exception; original attempt's model-stop cause not established",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md"
+    ],
+    [
+      "Z4",
+      "Both GLM account attempts",
+      "backend",
+      "Required `/outputs/research.json` was absent. `stat_entry` raised WorkspaceSecurityError outside the ValueError repair handling. This does not establish a permission denial. Exa output and original acquisitions survived, but no researcher JSON dossier/import/narrative.",
+      "Confirmed missing file and exception; original attempt's model-stop cause not established",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md"
+    ],
+    [
+      "Z4",
+      "GLM untouched-02 last ordinary model response",
+      "provider/model output limit",
+      "Last ordinary response had incomplete public output `[`; finalize-only recovery then failed on absent output file. Why the model produced this form is not proven. Fresh run was not interrupted.",
+      "Confirmed `finish_reason=length`, 16,384 output tokens",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/final-model-metadata.json"
+    ],
+    [
+      "Z3",
+      "Initial GLM worker",
+      "operator",
+      "Account ended 08:44:16.802 UTC; worker stopped around 08:44:44, then same queue restored after user said not to interrupt. No account restart or person spending resulted. Fresh untouched-02 was a separate user-authorized test.",
+      "Confirmed ordering; not the account-failure cause",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/operator-stop.json"
+    ],
+    [
+      "Z1",
+      "Grok 4.6 Nick and Vari completion",
+      "model behavior / ownership contract",
+      "Both included account-owned committee-selection IDs in person completion files. Finalizer rejected references outside person context; finalizer retry did not change the invalid file. Both person dossiers, imports and narratives survived. Account completed; generation settled partial.",
+      "Confirmed saved references and rejection",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/finalize-audit.json"
+    ],
+    [
+      "Z5",
+      "DeepSeek Nick parent-context read; Muse account completion and both person references",
+      "backend",
+      "`lookup_bound_person` replaced the stored input-reference object using the person job as `parent_job_id`. Nick's DeepSeek job subsequently could not read the completed account dossier; brief/generation references were lost. Both Muse person jobs point to themselves; account finalizer's child-parent query consequently rejects the correct Nick/Vari job IDs. Do not blame Muse for inventing those IDs.",
+      "Confirmed persisted self-parent IDs and code path; downstream impact demonstrated",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/nick-parent-reference-failure.json"
+    ],
+    [
+      "Z6",
+      "DeepSeek Nick parent-context read; Muse account completion and both person references",
+      "backend",
+      "`lookup_bound_person` replaced the stored input-reference object using the person job as `parent_job_id`. Nick's DeepSeek job subsequently could not read the completed account dossier; brief/generation references were lost. Both Muse person jobs point to themselves; account finalizer's child-parent query consequently rejects the correct Nick/Vari job IDs. Do not blame Muse for inventing those IDs.",
+      "Confirmed persisted self-parent IDs and code path; downstream impact demonstrated",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/nick-parent-reference-failure.json"
+    ],
+    [
+      "Z5",
+      "DeepSeek account and Vari early stops",
+      "unresolved provider/parser/runtime",
+      "Last metadata says `finish_reason=tool_calls` with empty public content, then no accepted finalizer. Token counts 9,945 and 3,618 do not establish truncation. Serialized snapshots omit typed tool calls in successful cases too, so missing serialized calls alone cannot diagnose a lost provider tool call. Account 64 findings imported; Vari stopped before deep research/dossier.",
+      "Stop metadata confirmed; exact responsible component unproven",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-stop-metadata.json"
+    ],
+    [
+      "Z5",
+      "DeepSeek Nick final call",
+      "provider / observability",
+      "Final response has `finish_reason=error`, 571 output tokens and empty public content, but model ledger labels the call completed. Job ends missing_finalize. The earlier parent-reference bug is a separate failure. Nick's 37 findings imported; no narrative.",
+      "Confirmed metadata; deeper provider cause unproven",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/model-stop-metadata.json"
+    ],
+    [
+      "Z5",
+      "DeepSeek's two common-Muse reconciliation calls",
+      "common reconciliation model/schema",
+      "First returned an object where `gaps[0]` required a string. Second returned missing/extra keys and malformed contact UUID containing prose. No account narrative was saved. These costs/failures belong to common Muse reconciliation, not DeepSeek research.",
+      "Confirmed validator rejection",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md"
+    ],
+    [
+      "Z6",
+      "Muse max account narrative writes",
+      "model behavior",
+      "JSON string passed where `pages` required structured tuple, then wrong owned-page shape. Later corrected and saved 11 account sections. Retries changed wording/quote presentation, so semantic quality still needs review.",
+      "Confirmed validation and eventual saved page",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md"
+    ],
+    [
+      "Z6",
+      "Muse max Nick person",
+      "model behavior",
+      "After importing 68 findings and reading narrative inputs/sources, agent wrote completion without saving a contact narrative. Ends `quality_unit_incomplete`. Parent-reference corruption is also present, but trace does not justify treating it as the sole cause of the missing write.",
+      "Confirmed no narrative-write call/page; causal reason not inferred",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md"
+    ],
+    [
+      "Z6",
+      "Muse max Vari narrative",
+      "model behavior / repair contract",
+      "Literal string `null` supplied for account dossier version, then retry_of pointed to wrong slot/tool. Repair rejected; a narrative payload/review note was saved locally but not published through narrative writer. 56 findings imported; ends `quality_unit_incomplete`.",
+      "Confirmed tool errors and draft only",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/narrative-payload.json"
+    ],
+    [
+      "Z6",
+      "Muse max common reconciliation, revisions 244/245",
+      "common reconciliation model/schema",
+      "Both calls fail `Each update needs page and section only`; generation settles needs_review 245/245. Existing account narrative survives unchanged. This was two distinct input snapshots, not a proven infinite self-trigger loop.",
+      "Confirmed parser rejection; response not retained as usable parsed artifact",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md"
+    ],
+    [
+      "Z1",
+      "Grok 4.6 formation; Grok 4.7 partial formation",
+      "model behavior",
+      "Missing `review` objects/unsupported review status in Grok4.6 were corrected before all 139 imports; navigation errors also occurred. Grok4.7 five save calls yielded four durable sections. Do not count failed attempts as completed sections.",
+      "Confirmed tool feedback; not root terminal failure",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md"
+    ],
+    [
+      "Z2",
+      "Grok 4.6 formation; Grok 4.7 partial formation",
+      "model behavior",
+      "Missing `review` objects/unsupported review status in Grok4.6 were corrected before all 139 imports; navigation errors also occurred. Grok4.7 five save calls yielded four durable sections. Do not count failed attempts as completed sections.",
+      "Confirmed tool feedback; not root terminal failure",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md"
+    ],
+    [
+      "P1",
+      "Account continuations",
+      "Backend lifecycle",
+      "Old reconciliation repeatedly continued the account and could not settle on stable inputs; $4.12588 in recorded extra model work. Worker stopped during a third continuation. Initial research and pages survived.",
+      "Observed; possible in-flight cost missing.",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/REPORT.md"
+    ],
+    [
+      "P2",
+      "Beth / Exa",
+      "Provider wait + user cancellation",
+      "Person deep request remained pending roughly 17 minutes; cancelled on user instruction. Eventual provider billing is unknown. No person dossier to grade.",
+      "Observed wait; provider-side root cause unproven.",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/REVIEW-IN-PROGRESS.md"
+    ],
+    [
+      "P3",
+      "Beth narrative",
+      "Tool contract + model call arguments",
+      "Missing parent dossier version repeatedly rejected narrative writes. Misleading error feedback described a changed parent rather than a missing argument.",
+      "Confirmed; corrected in later runtime.",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/REPORT.md"
+    ],
+    [
+      "P4",
+      "Account finalization",
+      "Backend recovery + incomplete final output",
+      "Grok did not save its own account narrative or required final output file. Final page was generated by separate Muse reconciliation.",
+      "Confirmed missing output; not a Grok narrative sample.",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/REPORT.md"
+    ],
+    [
+      "P4",
+      "Todd enrichment",
+      "Subject lock",
+      "AI Ark lookup refused for the locked subject; low AI Ark credits therefore do not establish cheaper successful enrichment.",
+      "Confirmed tool refusal.",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/REPORT.md"
+    ],
+    [
+      "P5",
+      "Todd / storage",
+      "Infrastructure",
+      "Postgres Docker volume filled. Two model calls were recorded only remotely and recovered for billing; person research stopped before JSON dossier.",
+      "Confirmed disk exhaustion; not a model-quality failure.",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/XHIGH.md"
+    ],
+    [
+      "P3 / P4",
+      "Research evidence",
+      "Shared filtering + model use",
+      "AI Ark summary.seo remained exposed in projected enrichment artifacts; Grok F034 used that prose. The boundary leak is shared even when not used.",
+      "Confirmed in retained artifacts.",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/REPORT.md"
+    ],
+    [
+      "P4",
+      "Trace export",
+      "Observability",
+      "Model-name parsing warnings and export timeout occurred. All 171 researcher model IDs and 27 provider attempt IDs were nevertheless found remotely.",
+      "Verified IDs do not prove every filesystem callback exported.",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/REPORT.md"
+    ],
+    [
+      "S1",
+      "Before research",
+      "Provider integration",
+      "Muse provider 403 age attestation prerequisite",
+      "No research tools executed",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run01"
+    ],
+    [
+      "S2",
+      "Before research",
+      "Provider integration",
+      "Provider accepts only auto tool_choice",
+      "No research tools executed",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run02"
+    ],
+    [
+      "S3",
+      "Before research",
+      "Provider integration",
+      "Nested narrative tool schema exceeds provider depth limit",
+      "No research tools executed",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run03"
+    ]
+  ],
+  "links": [
+    [
+      "P1",
+      "Premier Gastroenterology",
+      "Initial claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/account-initial/dossier.json",
+      ""
+    ],
+    [
+      "P1",
+      "Premier Gastroenterology",
+      "Latest claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/review/8e9c0c15-df34-5047-a1b6-c2a482b42a48/dossier.json",
+      ""
+    ],
+    [
+      "P1",
+      "Premier Gastroenterology",
+      "Readable dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/review/8e9c0c15-df34-5047-a1b6-c2a482b42a48/dossier.md",
+      ""
+    ],
+    [
+      "P1",
+      "Premier Gastroenterology",
+      "Researcher narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/account-initial/page.md",
+      ""
+    ],
+    [
+      "P1",
+      "Premier Gastroenterology",
+      "Final narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/account/page.md",
+      ""
+    ],
+    [
+      "P1",
+      "Premier Gastroenterology",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P1",
+      "Premier Gastroenterology",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/timing.json",
+      ""
+    ],
+    [
+      "P1",
+      "Premier Gastroenterology",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/9e0454353e33bcea1ae2c50ce19797e7",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P1",
+      "Todd Greer",
+      "Initial claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/review/51acdfbb-d6c1-5ce2-8c7b-74761f40dddd/dossier.json",
+      ""
+    ],
+    [
+      "P1",
+      "Todd Greer",
+      "Latest claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/review/51acdfbb-d6c1-5ce2-8c7b-74761f40dddd/dossier.json",
+      ""
+    ],
+    [
+      "P1",
+      "Todd Greer",
+      "Readable dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/review/51acdfbb-d6c1-5ce2-8c7b-74761f40dddd/dossier.md",
+      ""
+    ],
+    [
+      "P1",
+      "Todd Greer",
+      "Researcher narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/person/page.md",
+      ""
+    ],
+    [
+      "P1",
+      "Todd Greer",
+      "Final narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/person/page.md",
+      ""
+    ],
+    [
+      "P1",
+      "Todd Greer",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P1",
+      "Todd Greer",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/timing.json",
+      ""
+    ],
+    [
+      "P1",
+      "Todd Greer",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bc4e9a092da6554b2d329c61bab18e28",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P1",
+      "Run",
+      "Run report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/REPORT.md",
+      ""
+    ],
+    [
+      "P1",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/133c0f57d27ffe38dc748fc1a4f58e2a",
+      ""
+    ],
+    [
+      "P1",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/3d634e408ea7885a556b54dee59c4544",
+      ""
+    ],
+    [
+      "P1",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/87a46ec1f3a0818377209f99d3840737",
+      ""
+    ],
+    [
+      "P1",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/9e0454353e33bcea1ae2c50ce19797e7",
+      ""
+    ],
+    [
+      "P1",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bc4e9a092da6554b2d329c61bab18e28",
+      ""
+    ],
+    [
+      "P1",
+      "Run",
+      "all-raw/manifest.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "P1",
+      "Run",
+      "review/provider_call_ledger.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-20260928-r24/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "P2",
+      "Premier Gastroenterology",
+      "Initial claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json",
+      ""
+    ],
+    [
+      "P2",
+      "Premier Gastroenterology",
+      "Latest claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json",
+      ""
+    ],
+    [
+      "P2",
+      "Premier Gastroenterology",
+      "Readable dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.md",
+      ""
+    ],
+    [
+      "P2",
+      "Premier Gastroenterology",
+      "Researcher narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/account-initial/page.md",
+      ""
+    ],
+    [
+      "P2",
+      "Premier Gastroenterology",
+      "Final narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/account/page.md",
+      ""
+    ],
+    [
+      "P2",
+      "Premier Gastroenterology",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P2",
+      "Premier Gastroenterology",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/timing.json",
+      ""
+    ],
+    [
+      "P2",
+      "Premier Gastroenterology",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/09d6b7526fd695d6972b40d120e78840",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P2",
+      "Beth Smith",
+      "Initial claim JSON",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P2",
+      "Beth Smith",
+      "Latest claim JSON",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P2",
+      "Beth Smith",
+      "Readable dossier",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P2",
+      "Beth Smith",
+      "Researcher narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P2",
+      "Beth Smith",
+      "Final narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P2",
+      "Beth Smith",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P2",
+      "Beth Smith",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/timing.json",
+      ""
+    ],
+    [
+      "P2",
+      "Beth Smith",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/1573034d8e86eefb97ad0cc0811f9b8d",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P2",
+      "Run",
+      "Run report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/REVIEW-IN-PROGRESS.md",
+      ""
+    ],
+    [
+      "P2",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/09d6b7526fd695d6972b40d120e78840",
+      ""
+    ],
+    [
+      "P2",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/1573034d8e86eefb97ad0cc0811f9b8d",
+      ""
+    ],
+    [
+      "P2",
+      "Run",
+      "all-raw/manifest.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "P2",
+      "Run",
+      "review/provider_call_ledger.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run04/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "P3",
+      "Premier Gastroenterology",
+      "Initial claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json",
+      ""
+    ],
+    [
+      "P3",
+      "Premier Gastroenterology",
+      "Latest claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json",
+      ""
+    ],
+    [
+      "P3",
+      "Premier Gastroenterology",
+      "Readable dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.md",
+      ""
+    ],
+    [
+      "P3",
+      "Premier Gastroenterology",
+      "Researcher narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/account-initial/page.md",
+      ""
+    ],
+    [
+      "P3",
+      "Premier Gastroenterology",
+      "Final narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/account/page.md",
+      ""
+    ],
+    [
+      "P3",
+      "Premier Gastroenterology",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P3",
+      "Premier Gastroenterology",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/timing.json",
+      ""
+    ],
+    [
+      "P3",
+      "Premier Gastroenterology",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/763b1fb55671bf00929c86c4f747ccbb",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Initial claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/ce2ce4f1-ab74-5f41-b739-6dd5a201088e/dossier.json",
+      ""
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Latest claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/ce2ce4f1-ab74-5f41-b739-6dd5a201088e/dossier.json",
+      ""
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Readable dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/ce2ce4f1-ab74-5f41-b739-6dd5a201088e/dossier.md",
+      ""
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Researcher narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Final narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Unpublished draft",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/person/unpublished-narrative-draft.md",
+      ""
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/timing.json",
+      ""
+    ],
+    [
+      "P3",
+      "Beth Smith",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/b5b7bf75299d5fe23ad42a3f881c322d",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P3",
+      "Run",
+      "Run report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/REPORT.md",
+      ""
+    ],
+    [
+      "P3",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/763b1fb55671bf00929c86c4f747ccbb",
+      ""
+    ],
+    [
+      "P3",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/b5b7bf75299d5fe23ad42a3f881c322d",
+      ""
+    ],
+    [
+      "P3",
+      "Common Muse reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/1dad2e49b76d56685760a078906793b7",
+      ""
+    ],
+    [
+      "P3",
+      "Run",
+      "model-calls.csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-high/model-calls.csv",
+      ""
+    ],
+    [
+      "P3",
+      "Run",
+      "tool-activity.md",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-high/tool-activity.md",
+      ""
+    ],
+    [
+      "P3",
+      "Run",
+      "tool-activity.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-high/tool-activity.json",
+      ""
+    ],
+    [
+      "P3",
+      "Run",
+      "provider-attempts.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-high/provider-attempts.json",
+      ""
+    ],
+    [
+      "P3",
+      "Run",
+      "all-raw/manifest.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "P3",
+      "Run",
+      "trace-verification.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/trace-verification.json",
+      ""
+    ],
+    [
+      "P3",
+      "Run",
+      "review/provider_call_ledger.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-high-20260928-run05/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Initial claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json",
+      ""
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Latest claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json",
+      ""
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Readable dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.md",
+      ""
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Researcher narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Final narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/account/page.md",
+      "Written by common Muse reconciler, not Grok."
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/timing.json",
+      ""
+    ],
+    [
+      "P4",
+      "Premier Gastroenterology",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/2ceb395b6e16ab3d6234f31b99e250ec",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Initial claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/6bc03f41-fd75-5ce8-998d-6ec983efd86c/dossier.json",
+      ""
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Latest claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/6bc03f41-fd75-5ce8-998d-6ec983efd86c/dossier.json",
+      ""
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Readable dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/6bc03f41-fd75-5ce8-998d-6ec983efd86c/dossier.md",
+      ""
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Researcher narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/person/page.md",
+      ""
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Final narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/person/page.md",
+      ""
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/timing.json",
+      ""
+    ],
+    [
+      "P4",
+      "Todd Greer",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/6a3fba686d19cf48dcb3269535fa8325",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P4",
+      "Run",
+      "Run report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/REPORT.md",
+      ""
+    ],
+    [
+      "P4",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/2ceb395b6e16ab3d6234f31b99e250ec",
+      ""
+    ],
+    [
+      "P4",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/6a3fba686d19cf48dcb3269535fa8325",
+      ""
+    ],
+    [
+      "P4",
+      "Common Muse reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/67b24c401be993adce8c82581a7d4189",
+      ""
+    ],
+    [
+      "P4",
+      "Run",
+      "model-calls.csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/grok-high/model-calls.csv",
+      ""
+    ],
+    [
+      "P4",
+      "Run",
+      "tool-activity.md",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/grok-high/tool-activity.md",
+      ""
+    ],
+    [
+      "P4",
+      "Run",
+      "tool-activity.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/grok-high/tool-activity.json",
+      ""
+    ],
+    [
+      "P4",
+      "Run",
+      "provider-attempts.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/grok-high/provider-attempts.json",
+      ""
+    ],
+    [
+      "P4",
+      "Run",
+      "all-raw/manifest.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "P4",
+      "Run",
+      "trace-verification.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/trace-verification.json",
+      ""
+    ],
+    [
+      "P4",
+      "Run",
+      "review/provider_call_ledger.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-grok47-high-20260928-run06/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "P5",
+      "Premier Gastroenterology",
+      "Initial claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json",
+      ""
+    ],
+    [
+      "P5",
+      "Premier Gastroenterology",
+      "Latest claim JSON",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.json",
+      ""
+    ],
+    [
+      "P5",
+      "Premier Gastroenterology",
+      "Readable dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/review/c80f26cc-33e8-5529-b018-84f06ccbb325/dossier.md",
+      ""
+    ],
+    [
+      "P5",
+      "Premier Gastroenterology",
+      "Researcher narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/account-initial/page.md",
+      ""
+    ],
+    [
+      "P5",
+      "Premier Gastroenterology",
+      "Final narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/account/page.md",
+      ""
+    ],
+    [
+      "P5",
+      "Premier Gastroenterology",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P5",
+      "Premier Gastroenterology",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/timing.json",
+      ""
+    ],
+    [
+      "P5",
+      "Premier Gastroenterology",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/a482c413306719771392836e4fc118b1",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Initial claim JSON",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Latest claim JSON",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Readable dossier",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Researcher narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Final narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Unpublished draft",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Timing audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/timing.json",
+      ""
+    ],
+    [
+      "P5",
+      "Todd Greer",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bce5b184ae936c1b2f630ecd0b477137",
+      "Observable model/tool activity; effort is requested configuration."
+    ],
+    [
+      "P5",
+      "Run",
+      "Run report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/XHIGH.md",
+      ""
+    ],
+    [
+      "P5",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/a482c413306719771392836e4fc118b1",
+      ""
+    ],
+    [
+      "P5",
+      "Run / continuation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bce5b184ae936c1b2f630ecd0b477137",
+      ""
+    ],
+    [
+      "P5",
+      "Run",
+      "model-calls.csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-xhigh/model-calls.csv",
+      ""
+    ],
+    [
+      "P5",
+      "Run",
+      "tool-activity.md",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-xhigh/tool-activity.md",
+      ""
+    ],
+    [
+      "P5",
+      "Run",
+      "tool-activity.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-xhigh/tool-activity.json",
+      ""
+    ],
+    [
+      "P5",
+      "Run",
+      "provider-attempts.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-comparison-20260928/muse-xhigh/provider-attempts.json",
+      ""
+    ],
+    [
+      "P5",
+      "Run",
+      "all-raw/manifest.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "P5",
+      "Run",
+      "trace-verification.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/trace-verification.json",
+      ""
+    ],
+    [
+      "P5",
+      "Run",
+      "review/provider_call_ledger.json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-xhigh-20260928-run07/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Zafran Security",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Zafran Security",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Zafran Security",
+      "narrative markdown",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account/page.md",
+      "Current stored page; initial researcher page listed separately."
+    ],
+    [
+      "Z1",
+      "Zafran Security",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z1",
+      "Zafran Security",
+      "narrative blocks",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account/display-blocks.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Zafran Security",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z1",
+      "Zafran Security",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/290f554826fcc0c26b41fa5069c958fa",
+      ""
+    ],
+    [
+      "Z1",
+      "Vari Kaur",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/04070cd2-53e0-510c-8373-2f6511f15052/dossier.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Vari Kaur",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/04070cd2-53e0-510c-8373-2f6511f15052/dossier.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Vari Kaur",
+      "narrative markdown",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/person-3a15236a-f579-42f8-8c0a-070a67f30ff5/page.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Vari Kaur",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z1",
+      "Vari Kaur",
+      "narrative blocks",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/person-3a15236a-f579-42f8-8c0a-070a67f30ff5/display-blocks.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Vari Kaur",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z1",
+      "Vari Kaur",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/cc14f19bb38c4dc8231497ed7ab55bef",
+      ""
+    ],
+    [
+      "Z1",
+      "Nick Fisher",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/05d4fa83-5d48-5d21-ab82-867e8af0819d/dossier.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Nick Fisher",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/05d4fa83-5d48-5d21-ab82-867e8af0819d/dossier.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Nick Fisher",
+      "narrative markdown",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/person-c438c42b-ea48-4b3c-b71d-22cb216f32f7/page.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Nick Fisher",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z1",
+      "Nick Fisher",
+      "narrative blocks",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/person-c438c42b-ea48-4b3c-b71d-22cb216f32f7/display-blocks.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Nick Fisher",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z1",
+      "Nick Fisher",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/4f46c67e7b578484ecb051982de67bf7",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/REPORT.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "initial account dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account-initial/dossier.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "initial account dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account-initial/dossier.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "initial account narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account-initial/page.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "current account narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/account/page.md",
+      "May include common Muse reconciliation."
+    ],
+    [
+      "Z1",
+      "Run",
+      "intermediate exa dossier",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "raw sources manifest",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "model calls csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/grok46-model-calls.csv",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "tool activity",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/tool-activity.md",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "database audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/audit.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "job snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/arv2_research_job.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "provider ledger",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "reconciliation snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/review/arv2_narrative_reconciliation.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "timing",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/timing.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "trace verification",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/trace-verification.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "skill reads",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok46/skill-read-evidence.json",
+      ""
+    ],
+    [
+      "Z1",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/015093669e64fde931241f05264fe60a",
+      ""
+    ],
+    [
+      "Z1",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/290f554826fcc0c26b41fa5069c958fa",
+      ""
+    ],
+    [
+      "Z1",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/4f46c67e7b578484ecb051982de67bf7",
+      ""
+    ],
+    [
+      "Z1",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/cc14f19bb38c4dc8231497ed7ab55bef",
+      ""
+    ],
+    [
+      "Z1",
+      "Run",
+      "failure inventory",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md",
+      ""
+    ],
+    [
+      "Z2",
+      "Vari Kaur",
+      "dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Vari Kaur",
+      "dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Vari Kaur",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Vari Kaur",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Vari Kaur",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Vari Kaur",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Nick Fisher",
+      "dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Nick Fisher",
+      "dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Nick Fisher",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Nick Fisher",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Nick Fisher",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Nick Fisher",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Zafran Security",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Zafran Security",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md",
+      ""
+    ],
+    [
+      "Z2",
+      "Zafran Security",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      "Current stored page; initial researcher page listed separately."
+    ],
+    [
+      "Z2",
+      "Zafran Security",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Zafran Security",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Zafran Security",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Zafran Security",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/5ea4fb0ebeb9f545fc61f5c0bf534a3c",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/REPORT.md",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "initial account dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "initial account dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "initial account narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "current account narrative",
+      "Not produced / unavailable",
+      null,
+      "May include common Muse reconciliation."
+    ],
+    [
+      "Z2",
+      "Run",
+      "intermediate exa dossier",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "raw sources manifest",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "model calls csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/grok47-model-calls.csv",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "tool activity",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/tool-activity.md",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "database audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/audit.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "job snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/arv2_research_job.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "provider ledger",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "reconciliation snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/review/arv2_narrative_reconciliation.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "timing",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/timing.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "trace verification",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/trace-verification.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "skill reads",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/grok47/skill-read-evidence.json",
+      ""
+    ],
+    [
+      "Z2",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/5ea4fb0ebeb9f545fc61f5c0bf534a3c",
+      ""
+    ],
+    [
+      "Z2",
+      "Run",
+      "failure inventory",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md",
+      ""
+    ],
+    [
+      "Z3",
+      "Tom Anthony",
+      "dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Tom Anthony",
+      "dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Tom Anthony",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Tom Anthony",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Tom Anthony",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Tom Anthony",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Kelly W.",
+      "dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Kelly W.",
+      "dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Kelly W.",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Kelly W.",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Kelly W.",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Kelly W.",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Zafran Security",
+      "dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Zafran Security",
+      "dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Zafran Security",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      "Current stored page; initial researcher page listed separately."
+    ],
+    [
+      "Z3",
+      "Zafran Security",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Zafran Security",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Zafran Security",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Zafran Security",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/5f56c7dcbedbc8e6a34a6da394bed0e5",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/REPORT.md",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "initial account dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "initial account dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "initial account narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "current account narrative",
+      "Not produced / unavailable",
+      null,
+      "May include common Muse reconciliation."
+    ],
+    [
+      "Z3",
+      "Run",
+      "intermediate exa dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/account-exa-dossier.md",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "raw sources manifest",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "model calls csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/glm53-model-calls.csv",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "tool activity",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/activity-latest.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "database audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/audit.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "job snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/arv2_research_job.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "provider ledger",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "reconciliation snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/review/arv2_narrative_reconciliation.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "timing",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/timing.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "trace verification",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/trace-verification.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "skill reads",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53/skill-read-evidence.json",
+      ""
+    ],
+    [
+      "Z3",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/5f56c7dcbedbc8e6a34a6da394bed0e5",
+      ""
+    ],
+    [
+      "Z3",
+      "Run",
+      "failure inventory",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md",
+      ""
+    ],
+    [
+      "Z4",
+      "Zafran Security",
+      "dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z4",
+      "Zafran Security",
+      "dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z4",
+      "Zafran Security",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      "Current stored page; initial researcher page listed separately."
+    ],
+    [
+      "Z4",
+      "Zafran Security",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z4",
+      "Zafran Security",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z4",
+      "Zafran Security",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z4",
+      "Zafran Security",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/01059ef3685b2b8d3097412a482b762b",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/REPORT.md",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "initial account dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "initial account dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "initial account narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "current account narrative",
+      "Not produced / unavailable",
+      null,
+      "May include common Muse reconciliation."
+    ],
+    [
+      "Z4",
+      "Run",
+      "intermediate exa dossier",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/account-exa-dossier.md",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "raw sources manifest",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "model calls csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/glm53-untouched-02-model-calls.csv",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "tool activity",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/activity-latest.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "database audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/audit.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "job snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_research_job.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "provider ledger",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "reconciliation snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/review/arv2_narrative_reconciliation.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "timing",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/timing.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "trace verification",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/trace-verification.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "skill reads",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/glm53-untouched-02/skill-read-evidence.json",
+      ""
+    ],
+    [
+      "Z4",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/01059ef3685b2b8d3097412a482b762b",
+      ""
+    ],
+    [
+      "Z4",
+      "Run",
+      "failure inventory",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md",
+      ""
+    ],
+    [
+      "Z5",
+      "Vari Kaur",
+      "dossier json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Vari Kaur",
+      "dossier readable",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Vari Kaur",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Vari Kaur",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Vari Kaur",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Vari Kaur",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Vari Kaur",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bcdc2cb74109684e8563960111250742",
+      ""
+    ],
+    [
+      "Z5",
+      "Nick Fisher",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/436cb01b-602f-52fd-a83e-e1f08f8708fe/dossier.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Nick Fisher",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/436cb01b-602f-52fd-a83e-e1f08f8708fe/dossier.md",
+      ""
+    ],
+    [
+      "Z5",
+      "Nick Fisher",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Nick Fisher",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Nick Fisher",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Nick Fisher",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Nick Fisher",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/889dc8bf365e27725d163fd0668a34e7",
+      ""
+    ],
+    [
+      "Z5",
+      "Zafran Security",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Zafran Security",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md",
+      ""
+    ],
+    [
+      "Z5",
+      "Zafran Security",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      "Current stored page; initial researcher page listed separately."
+    ],
+    [
+      "Z5",
+      "Zafran Security",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Zafran Security",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Zafran Security",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Zafran Security",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/6b4da01eb07ef9a8ec57c0f15b288de0",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/REPORT.md",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "initial account dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/account-initial/dossier.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "initial account dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/account-initial/dossier.md",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "initial account narrative",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "current account narrative",
+      "Not produced / unavailable",
+      null,
+      "May include common Muse reconciliation."
+    ],
+    [
+      "Z5",
+      "Run",
+      "intermediate exa dossier",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "raw sources manifest",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "model calls csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/deepseek4pro-high-model-calls.csv",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "tool activity",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/final-tool-activity.md",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "database audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/audit.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "job snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/arv2_research_job.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "provider ledger",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "reconciliation snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/review/arv2_narrative_reconciliation.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "timing",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/timing.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "trace verification",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/trace-verification.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "skill reads",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/deepseek4pro-high/skill-read-evidence.json",
+      ""
+    ],
+    [
+      "Z5",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/6b4da01eb07ef9a8ec57c0f15b288de0",
+      ""
+    ],
+    [
+      "Z5",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/889dc8bf365e27725d163fd0668a34e7",
+      ""
+    ],
+    [
+      "Z5",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/bcdc2cb74109684e8563960111250742",
+      ""
+    ],
+    [
+      "Z5",
+      "Run",
+      "failure inventory",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md",
+      ""
+    ],
+    [
+      "Z6",
+      "Zafran Security",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Zafran Security",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/59d4870e-2207-56ca-a50b-e76ab86f6a53/dossier.md",
+      ""
+    ],
+    [
+      "Z6",
+      "Zafran Security",
+      "narrative markdown",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account/page.md",
+      "Current stored page; initial researcher page listed separately."
+    ],
+    [
+      "Z6",
+      "Zafran Security",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Zafran Security",
+      "narrative blocks",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account/display-blocks.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Zafran Security",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Zafran Security",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/2b1c6302815f8d74a85af0d774c1f599",
+      ""
+    ],
+    [
+      "Z6",
+      "Nick Fisher",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/41ba4d68-d1da-57fd-9163-a0ec041a44bd/dossier.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Nick Fisher",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/41ba4d68-d1da-57fd-9163-a0ec041a44bd/dossier.md",
+      ""
+    ],
+    [
+      "Z6",
+      "Nick Fisher",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Nick Fisher",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Nick Fisher",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Nick Fisher",
+      "uncommitted narrative json",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Nick Fisher",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/61b9dad798d5f67e468f2d9ef5d840c6",
+      ""
+    ],
+    [
+      "Z6",
+      "Vari Kaur",
+      "dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/dossier.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Vari Kaur",
+      "dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/dossier.md",
+      ""
+    ],
+    [
+      "Z6",
+      "Vari Kaur",
+      "narrative markdown",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Vari Kaur",
+      "narrative html",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Vari Kaur",
+      "narrative blocks",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Vari Kaur",
+      "uncommitted narrative json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/92047fb7-01a5-5611-802e-c886da87eb6a/narrative-payload.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Vari Kaur",
+      "Langfuse execution",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/a7b5aeb0b9b65ea305b4700b1981fe47",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "report",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/REPORT.md",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "initial account dossier json",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/dossier.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "initial account dossier readable",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/dossier.md",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "initial account narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account-initial/page.md",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "current account narrative",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/account/page.md",
+      "May include common Muse reconciliation."
+    ],
+    [
+      "Z6",
+      "Run",
+      "intermediate exa dossier",
+      "Not produced / unavailable",
+      null,
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "raw sources manifest",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/all-raw/manifest.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "model calls csv",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/muse-max-model-calls.csv",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "tool activity",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/tool-activity.md",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "database audit",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/audit.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "job snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_research_job.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "provider ledger",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/provider_call_ledger.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "reconciliation snapshot",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/review/arv2_narrative_reconciliation.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "timing",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/timing.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "trace verification",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/trace-verification.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "skill reads",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/zafran-three-model-medium-20260928/muse-max/skill-read-evidence.json",
+      ""
+    ],
+    [
+      "Z6",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/2b1c6302815f8d74a85af0d774c1f599",
+      ""
+    ],
+    [
+      "Z6",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/61b9dad798d5f67e468f2d9ef5d840c6",
+      ""
+    ],
+    [
+      "Z6",
+      "Run / reconciliation",
+      "Langfuse trace",
+      "Open",
+      "https://us.cloud.langfuse.com/project/cmu2j8vra0137ad0clp5vylx2/traces/a7b5aeb0b9b65ea305b4700b1981fe47",
+      ""
+    ],
+    [
+      "Z6",
+      "Run",
+      "failure inventory",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/research-model-evaluation-20260928/FAILURES-ZAFRAN.md",
+      ""
+    ],
+    [
+      "S1",
+      "Setup",
+      "Attempt folder",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run01",
+      "Setup only; no research output."
+    ],
+    [
+      "S2",
+      "Setup",
+      "Attempt folder",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run02",
+      "Setup only; no research output."
+    ],
+    [
+      "S3",
+      "Setup",
+      "Attempt folder",
+      "Open",
+      "/Users/aryankeshri/conductor/workspaces/research-and-data/jerusalem-v1/.artifacts/arv4-insight-premier-muse-20260928-run03",
+      "Setup only; no research output."
+    ]
+  ],
+  "checks": [
+    {
+      "run": "P1",
+      "costSum": 12.513690000000002,
+      "total": 12.51369
+    },
+    {
+      "run": "P2",
+      "costSum": 2.544894,
+      "total": 2.544894
+    },
+    {
+      "run": "P3",
+      "costSum": 4.18700375,
+      "total": 4.18700375
+    },
+    {
+      "run": "P4",
+      "costSum": 10.74761515,
+      "total": 10.74761515
+    },
+    {
+      "run": "P5",
+      "costSum": 2.7978114499999998,
+      "total": 2.79781145
+    },
+    {
+      "run": "Z1",
+      "costSum": 12.653226,
+      "total": 12.653226
+    },
+    {
+      "run": "Z2",
+      "costSum": 4.0881723999999995,
+      "total": 4.0881724
+    },
+    {
+      "run": "Z3",
+      "costSum": 1.2615870000000002,
+      "total": 1.261587
+    },
+    {
+      "run": "Z4",
+      "costSum": 0.794624,
+      "total": 0.794624
+    },
+    {
+      "run": "Z5",
+      "costSum": 8.4137567776,
+      "total": 8.4137567776
+    },
+    {
+      "run": "Z6",
+      "costSum": 13.141414,
+      "total": 13.141414
+    }
+  ],
+  "missing": []
+}

@@ -1,0 +1,670 @@
+{
+  "content": [
+    {
+      "id": "5669ed27-2388-effa-30a8-53bf21dee7d3",
+      "identifier": "nicholastfisher",
+      "profile": {
+        "first_name": "Nick",
+        "middle_name": null,
+        "last_name": "Fisher",
+        "full_name": "Nick Fisher",
+        "headline": "VP Marketing at Zafran Security",
+        "title": "VP of Marketing",
+        "picture": {
+          "source": "https://images.ai-ark.com/pmcJEuni_KehqJkILsktt3thHjSCzZfoMwX9ZM8vMMY/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/5669ed27-2388-effa-30a8-53bf21dee7d3.jpg"
+        },
+        "background": {
+          "source": "https://media.licdn.com/dms/image/v2/D5616AQHYj8M5P_ad6g/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1722732497848?e=1786579200&v=beta&t=6NTeM9fEEbWxK8o00e0E9ROOA5C0srqV8Rohvx__Guw"
+        },
+        "birth_date": null,
+        "summary": "Full-stack B2B marketing leader / storyteller with experience building teams for early stage growth and post-IPO scale"
+      },
+      "link": {
+        "linkedin": "https://www.linkedin.com/in/nicholastfisher",
+        "twitter": null,
+        "github": null,
+        "facebook": null
+      },
+      "location": {
+        "default": "New York, New York, United States, North America",
+        "short": "New York, New York",
+        "country": "United States",
+        "state": "New York",
+        "city": "New York",
+        "position": null
+      },
+      "languages": {
+        "primary_locale": {
+          "country": "US",
+          "language": "en"
+        },
+        "supported_locales": [
+          {
+            "country": "US",
+            "language": "en"
+          }
+        ],
+        "profile_languages": null
+      },
+      "industry": "Computer & Network Security",
+      "educations": [
+        {
+          "school": {
+            "id": "d4bb9bed-e086-9759-71e1-592f7c193e36",
+            "name": "Columbia Business School",
+            "logo": "https://images.ai-ark.com/in6Z6fdY_Of_CQxDl3ZpWSThk7DPI7QJN9bVnrPCYDM/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/d4bb9bed-e086-9759-71e1-592f7c193e36.jpg",
+            "url": "https://www.linkedin.com/school/columbia-business-school"
+          },
+          "degree_name": "MBA",
+          "field_of_study": null,
+          "grade": null,
+          "date": {
+            "start": "2011-01-01",
+            "end": "2013-12-31"
+          }
+        },
+        {
+          "school": {
+            "id": "281ff020-62f8-488f-b48f-80625103563a",
+            "name": "University of California, Berkeley, Haas School of Business",
+            "logo": "https://images.ai-ark.com/FDPrRDO-l_Jo_PJgYvtLsntlwVM7UTk5jsJkByYQBxo/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/281ff020-62f8-488f-b48f-80625103563a.jpg",
+            "url": "https://www.linkedin.com/school/berkeley-haas"
+          },
+          "degree_name": "MBA Exchange",
+          "field_of_study": null,
+          "grade": null,
+          "date": {
+            "start": "2012-01-01",
+            "end": "2012-12-31"
+          }
+        },
+        {
+          "school": {
+            "id": "7f113b14-2bd2-5bcb-2c16-b4b2fa643288",
+            "name": "Vassar College",
+            "logo": "https://images.ai-ark.com/emRi1dulwyIXyk1hHB5Ve4e9s3MMrXLZ88Ezjpx1Qa4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/7f113b14-2bd2-5bcb-2c16-b4b2fa643288.jpg",
+            "url": "https://www.linkedin.com/school/vassar-college"
+          },
+          "degree_name": "BA",
+          "field_of_study": "Economics",
+          "grade": null,
+          "date": {
+            "start": "2002-01-01",
+            "end": "2006-12-31"
+          }
+        }
+      ],
+      "awards": [
+        {
+          "title": "1st place - Columbia Venture Capital Investment Competition",
+          "description": "Placed 1st out of 22 teams for our evaluation of a startup business model, judged by top VC\u2019s. Placed 2nd in regionals",
+          "issuer": "Columbia Business School",
+          "date": "2013-02-01"
+        },
+        {
+          "title": "Economics Honor Society",
+          "description": "Admitted to economics honor society, Omicron Delta Epsilon",
+          "issuer": "Vassar College",
+          "date": "2005-05-01"
+        }
+      ],
+      "certifications": [
+        {
+          "name": "Learning Kubernetes",
+          "authority": "LinkedIn",
+          "url": "https://www.linkedin.com/learning/certificates/80757c8c20433a3f479372a43bf5769f80181f5c4bf643cda99f44f39b84d09f?trk=backfilled_certificate",
+          "license_number": null,
+          "display_source": "linkedin.com",
+          "company": {
+            "id": "60ecc6ff-f76b-b973-25ad-8528412a323b",
+            "name": "LinkedIn",
+            "logo": "https://images.ai-ark.com/icvyVa3BaD2Afb06VHJOakNGuBNuyYAEGiSerJI4RQU/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/60ecc6ff-f76b-b973-25ad-8528412a323b.jpg",
+            "url": "https://www.linkedin.com/company/linkedin"
+          },
+          "date": {
+            "start": "2021-09-01",
+            "end": null
+          }
+        }
+      ],
+      "projects": [
+        {
+          "title": "CocktailGPT",
+          "description": "Your personal cocktail assistant, trained on 1000s of classic cocktails and flavor pairings. Check it out at www.cocktailgpt.com",
+          "date": {
+            "start": "2023-10-01",
+            "end": "2023-10-31"
+          },
+          "contributors": [
+            {
+              "profile_id": "nicholastfisher",
+              "type": "StandardizedContributor",
+              "first_name": "Nick",
+              "last_name": "Fisher",
+              "sub_title": "VP Marketing at Zafran Security",
+              "headline": "VP Marketing at Zafran Security",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/C4D03AQH3CV6Ye-QKFA/profile-displayphoto-shrink_400_400/profile-displayphoto-shrink_400_400/0/1639519676211?e=1786579200&v=beta&t=XlJ61mnsuKIDh6dhS4gSPan1VHONTiECsq_MRmMhPjo"
+            }
+          ]
+        }
+      ],
+      "publications": [
+        {
+          "name": "Marketing to the Modern IT Professional",
+          "publisher": null,
+          "url": "http://www.slideshare.net/nfisher21/marketing-to-it-for-upload",
+          "date": "2014-04-22",
+          "authors": [
+            {
+              "profile_id": "nicholastfisher",
+              "type": "StandardizedContributor",
+              "first_name": "Nick",
+              "last_name": "Fisher",
+              "sub_title": "VP Marketing at Zafran Security",
+              "headline": "VP Marketing at Zafran Security",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/C4D03AQH3CV6Ye-QKFA/profile-displayphoto-shrink_400_400/profile-displayphoto-shrink_400_400/0/1639519676211?e=1786579200&v=beta&t=XlJ61mnsuKIDh6dhS4gSPan1VHONTiECsq_MRmMhPjo"
+            }
+          ]
+        },
+        {
+          "name": "Enterprise collaboration: you can do better, much better",
+          "publisher": null,
+          "url": "http://www.huddle.com/blog/effective-enterprise-collaboration/",
+          "date": "2014-01-23",
+          "authors": [
+            {
+              "profile_id": "nicholastfisher",
+              "type": "StandardizedContributor",
+              "first_name": "Nick",
+              "last_name": "Fisher",
+              "sub_title": "VP Marketing at Zafran Security",
+              "headline": "VP Marketing at Zafran Security",
+              "profile_picture": "https://media.licdn.com/dms/image/v2/C4D03AQH3CV6Ye-QKFA/profile-displayphoto-shrink_400_400/profile-displayphoto-shrink_400_400/0/1639519676211?e=1786579200&v=beta&t=XlJ61mnsuKIDh6dhS4gSPan1VHONTiECsq_MRmMhPjo"
+            }
+          ]
+        }
+      ],
+      "position_groups": [
+        {
+          "company": {
+            "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+            "name": "Zafran Security",
+            "logo": "https://images.ai-ark.com/3uLyRIuwaKLBcbjmX1dmxaJR3Qms6QgDhf__-a5n9O4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg",
+            "url": "https://www.linkedin.com/company/zafran-security",
+            "employees": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "date": {
+            "start": "2024-04-01",
+            "end": null
+          },
+          "profile_positions": [
+            {
+              "company": "Zafran Security",
+              "description": "Lead a world class marketing team across demand gen, product marketing, field marketing, brand, and BDRs",
+              "title": "VP of Marketing",
+              "employment_type": "Full-time",
+              "location": "New York, NY",
+              "date": {
+                "start": "2024-04-01",
+                "end": null
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "35e0a52c-d119-c26b-c7d5-adf722ad0ca4",
+            "name": "Sysdig",
+            "logo": "https://images.ai-ark.com/ttPCsP8xl4lz5GrrUtCLeE2Nfn7Fgn0FmpXBlRFKQBI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/35e0a52c-d119-c26b-c7d5-adf722ad0ca4.jpg",
+            "url": "https://www.linkedin.com/company/sysdig",
+            "employees": {
+              "start": 501,
+              "end": 1000
+            }
+          },
+          "date": {
+            "start": "2021-09-01",
+            "end": "2024-04-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Sysdig",
+              "description": "Lead product, tech, and alliance marketing across Sysdig\u2019s portfolio of cloud security and DevOps solutions",
+              "title": "Vice President Product Marketing",
+              "employment_type": "Full-time",
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2021-09-01",
+                "end": "2024-04-30"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "fa4969c7-1e2f-8722-5043-fd8dee1e93aa",
+            "name": "Okta",
+            "logo": "https://images.ai-ark.com/oYyTpJTIRVTdQvi0zePSPtcvDB7NyGlLDMTXz7AkqCc/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/fa4969c7-1e2f-8722-5043-fd8dee1e93aa.jpg",
+            "url": "https://www.linkedin.com/company/okta-inc-",
+            "employees": {
+              "start": 5001,
+              "end": 10000
+            }
+          },
+          "date": {
+            "start": "2018-02-01",
+            "end": "2021-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Okta, Inc.",
+              "description": "Lead a team focused on identity security, industry verticals, and business value",
+              "title": "Senior Director Product Marketing",
+              "employment_type": "Full-time",
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2018-02-01",
+                "end": "2021-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "fa86bd3d-99be-5a25-ef4a-581d65e9b93f",
+            "name": "Lookout",
+            "logo": "https://images.ai-ark.com/Hv1kZAvx03oXIgvhEg0ynqqXMrZLgQqUbsN0_2zjwRE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/fa86bd3d-99be-5a25-ef4a-581d65e9b93f.jpg",
+            "url": "https://www.linkedin.com/company/lookout",
+            "employees": {
+              "start": 201,
+              "end": 500
+            }
+          },
+          "date": {
+            "start": "2014-09-01",
+            "end": "2018-01-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Lookout",
+              "description": null,
+              "title": "Director, Enterprise Product Marketing",
+              "employment_type": "Full-time",
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2014-09-01",
+                "end": "2018-01-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "540522eb-49c8-7d33-320b-26cae569efb8",
+            "name": "Ideagen Huddle\u2122",
+            "logo": "https://images.ai-ark.com/oUMVCDUwyniAGvz3HU28D8FgjyrvcOhXzk59wtQoZB8/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/540522eb-49c8-7d33-320b-26cae569efb8.jpg",
+            "url": "https://www.linkedin.com/company/huddle",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2013-08-01",
+            "end": "2014-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Huddle",
+              "description": null,
+              "title": "Senior Product Marketing Manager",
+              "employment_type": "Full-time",
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2013-08-01",
+                "end": "2014-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "e4848e19-4845-371e-e465-f6dd09384101",
+            "name": "Zynga",
+            "logo": "https://images.ai-ark.com/N9VtGb8xO49A7iUPdNePiEQR-MygTWGLQWlFfysJfcI/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/e4848e19-4845-371e-e465-f6dd09384101.jpg",
+            "url": "https://www.linkedin.com/company/zynga",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2012-06-01",
+            "end": "2012-08-31"
+          },
+          "profile_positions": [
+            {
+              "company": "Zynga",
+              "description": null,
+              "title": "Product Manager MBA Intern",
+              "employment_type": "Internship",
+              "location": "San Francisco Bay Area",
+              "date": {
+                "start": "2012-06-01",
+                "end": "2012-08-31"
+              }
+            }
+          ]
+        },
+        {
+          "company": {
+            "id": "ab970bb7-4844-26a8-ee6c-2cfda0f25bfc",
+            "name": "Ipreo",
+            "logo": "https://images.ai-ark.com/-V4gRJ6t25LgZOIpO7khXqZk259jNddx0pf0PHMbl5g/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/ab970bb7-4844-26a8-ee6c-2cfda0f25bfc.jpg",
+            "url": "https://www.linkedin.com/company/ipreo",
+            "employees": {
+              "start": 1001,
+              "end": 5000
+            }
+          },
+          "date": {
+            "start": "2006-07-01",
+            "end": "2011-06-30"
+          },
+          "profile_positions": [
+            {
+              "company": "Ipreo",
+              "description": null,
+              "title": "Director - Product Marketing & Analytics, Capital Markets",
+              "employment_type": "Full-time",
+              "location": "Greater New York City Area",
+              "date": {
+                "start": "2006-07-01",
+                "end": "2011-06-30"
+              }
+            }
+          ]
+        }
+      ],
+      "skills": [
+        "ChatGPT",
+        "Generative AI",
+        "B2B Marketing",
+        "Cybersecurity",
+        "DevOps",
+        "DevSecOps",
+        "Cloud Security",
+        "Product Management",
+        "SQL",
+        "Data Analysis",
+        "Mobile Games",
+        "Mobile Applications",
+        "Enterprise Technology Sales",
+        "Analytics",
+        "Entrepreneurship",
+        "Mobile Devices",
+        "Valuation",
+        "Capital Markets",
+        "Sales",
+        "Public Speaking"
+      ],
+      "member_badges": {
+        "premium": true,
+        "creator": true,
+        "open_to_work": false,
+        "hiring": false,
+        "verified": true,
+        "influencer": false
+      },
+      "statistics": {
+        "network": {
+          "influencer": false,
+          "followable": null,
+          "followers_count": 6808,
+          "connections_count": 4776
+        },
+        "experience": {
+          "prev_job_titles": null,
+          "tenure": {
+            "company": "2024-04-01",
+            "start": "2008-05-01",
+            "title": "2024-04-01"
+          }
+        }
+      },
+      "company": {
+        "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+        "summary": {
+          "name": "Zafran Security",
+          "legal_name": "Zafran Security Ltd.",
+          "description": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe\u2019re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+          "overview": "Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability management lifecycle. With threat actors rapidly exploiting newly revealed security vulnerabilities through AI automation, Zafran's platform enables organizations to take action before these vulnerabilities result in incidents. The company\u2019s solutions work alongside current security tools, utilizing AI agents to pinpoint weaknesses, provide contextual information, and address these issues by linking them to controls and evaluating the potential for exploitation.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "computer and network security",
+          "staff": {
+            "total": 167,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/3uLyRIuwaKLBcbjmX1dmxaJR3Qms6QgDhf__-a5n9O4/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.zafran.io",
+          "domain": "zafran.io",
+          "domain_ltd": "zafran.io",
+          "linkedin": "https://www.linkedin.com/company/zafran-security",
+          "twitter": "https://x.com/Zafran_io",
+          "crunchbase": "https://www.crunchbase.com/organization/zafran"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_C",
+            "total_amount": 130500000,
+            "last_amount": 60000000,
+            "num_investor": 9,
+            "num_funding_rounds": 4,
+            "rounds": [
+              {
+                "announced_at": "2025-12-02",
+                "raised_amount": 60000000,
+                "type": "SERIES_C",
+                "investors": [
+                  "Vintage Investment Partners",
+                  "Cyberstarts",
+                  "Amex Ventures",
+                  "PSP Growth",
+                  "Knollwood Investment Advisory",
+                  "Sequoia Capital",
+                  "Menlo Ventures"
+                ]
+              },
+              {
+                "announced_at": "2024-09-08",
+                "raised_amount": 40000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "Penny Jar Capital",
+                  "Cerca Partners",
+                  "Cyberstarts"
+                ]
+              },
+              {
+                "announced_at": "2024-03-28",
+                "raised_amount": 25000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2024-03-28",
+                "raised_amount": 5500000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2025-12-02"
+          },
+          "aberdeen": {
+            "it_spend": 7626866
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "city": "New York, New York",
+            "raw_address": "New York, New York, United States, North America",
+            "position": {
+              "lng": -73.98556,
+              "lat": 40.748295
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "city": "New York, New York",
+              "raw_address": "New York, New York, United States, North America",
+              "position": {
+                "lng": -73.98556,
+                "lat": 40.748295
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon s3",
+            "category": "cdn"
+          },
+          {
+            "name": "envoy",
+            "category": "server"
+          },
+          {
+            "name": "floc opt-out",
+            "category": "ads"
+          },
+          {
+            "name": "cloudflare automatic challenge",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare challenge",
+            "category": "cdn"
+          },
+          {
+            "name": "hubspot hosted",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon oregon region",
+            "category": "hosting"
+          },
+          {
+            "name": "zendesk mail",
+            "category": "mx"
+          }
+        ],
+        "industries": [
+          "risk management",
+          "cyber security",
+          "information technology",
+          "network security",
+          "software",
+          "computer and network security"
+        ],
+        "languages": [
+          "english"
+        ],
+        "last_updated": "2026-08-22"
+      },
+      "department": {
+        "departments": [
+          "marketing"
+        ],
+        "sub_departments": [
+          "product_marketing"
+        ],
+        "functions": [
+          "marketing"
+        ],
+        "seniority": "vp"
+      },
+      "last_updated": "2026-08-22"
+    }
+  ],
+  "size": 3,
+  "totalElements": 1,
+  "pageable": {
+    "pageNumber": 0,
+    "pageSize": 3,
+    "sort": {
+      "sorted": true,
+      "unsorted": false,
+      "empty": false
+    },
+    "offset": 0,
+    "paged": true,
+    "unpaged": false
+  },
+  "last": true,
+  "totalPages": 1,
+  "sort": {
+    "sorted": true,
+    "unsorted": false,
+    "empty": false
+  },
+  "numberOfElements": 1,
+  "trackId": "68e4eb81-5413-444d-920c-3ffaef4b33b9",
+  "first": true,
+  "number": 0,
+  "empty": false,
+  "_http_status": 200,
+  "_elapsed_s": 0.65,
+  "_request": {
+    "contact": {
+      "fullName": {
+        "any": {
+          "include": {
+            "mode": "SMART",
+            "content": [
+              "Nick Fisher"
+            ]
+          }
+        }
+      }
+    },
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "zafran.io"
+          ]
+        }
+      }
+    },
+    "page": 0,
+    "size": 3
+  }
+}

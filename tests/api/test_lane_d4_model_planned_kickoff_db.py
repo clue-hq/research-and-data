@@ -13,9 +13,13 @@ model, whose only job is to author the plan, which the test authors instead.
 1. the agent **plans** ``open_directive_confirmation_gate@1``; plan validation admits it, the C5
    executor runs it, and the gate lands with the server-derived maximum spend;
 2. the human answers through the production turn route (the structured gate response);
-3. the agent — now woken on the **confirming** turn — **plans** ``launch_account_research@1``; the
-   ambient ``action_ref`` the C5 seam stamps is that turn's own receipt, so the launched run carries
-   exactly the ``approval_refs`` the launcher-driven acceptance asserts;
+3. the agent — now woken on the **confirming** turn — **cannot** plan ``launch_account_research@1``
+   any more: founder ruling 2 (2026-09-10) dropped the five old-research-lane tools from
+   ``head-of-abm@v44``, so the same validation that admits the gate refuses that launch on both
+   ceilings it has to clear (effective authority and effective profile). The launcher-driven
+   acceptance in ``test_lane_d4_option_b_acceptance_db`` still proves the ambient-``action_ref``
+   stamping this step used to prove here; what this step now pins is that no *conversational* path
+   to the retired lane survived the drop;
 4. and a plan proposing the human-only ``confirm_account_research_directive@2`` is still refused —
    structurally, by the same validation, with no execution and no confirmation.
 """
@@ -499,51 +503,48 @@ def test_the_deepagent_plans_the_whole_kickoff_through_the_c5_slot(tmp_path: Pat
             assert view is not None and view.answer is not None
             assert view.answer.decision == "approved"
 
-            # (3) The agent is woken on that confirming turn and plans the launch. The ambient
-            # action_ref the C5 seam stamps is the confirming turn's own receipt — the plan cannot
-            # name it, and does not.
+            # (3) The agent is woken on that confirming turn — and the old lane's launch is no
+            # longer plannable. Founder ruling 2 (2026-09-10) dropped it from `head-of-abm@v44`, so
+            # the two ceilings a conversational tool call must clear both refuse it: it is absent
+            # from the effective authority AND from the bound profile's effective tools. The
+            # refusal is structural (nothing executed, nothing spent), which is the whole point:
+            # retiring the lane from the model surface cannot leave a planning path open.
             launching = await _adapter(plane, scenario, turn_id=confirming_turn_id, label="confirm")
-            await _run(
-                launching,
-                PlanToolStep(
-                    node_key="launch",
-                    tool=_pin(plane, "launch_account_research", "1"),
-                    arguments={
-                        "project_run_id": str(scenario.fixture.project_run_id),
-                        "research_directive_id": str(scenario.directive_id),
-                        "account_entity_ids": [str(v) for v in scenario.account_ids],
-                        "approved_budget_cap_cents": str(2 * _PER_ACCOUNT_CAP),
-                        "expected_estimated_cost_cents": str(2 * _PER_ACCOUNT_CAP),
-                        "concurrency_limit": 4,
-                    },
-                    purpose="Launch the research the client just confirmed.",
-                ),
+            retired = PlanToolStep(
+                node_key="launch",
+                tool=_pin(plane, "launch_account_research", "1"),
+                arguments={
+                    "project_run_id": str(scenario.fixture.project_run_id),
+                    "research_directive_id": str(scenario.directive_id),
+                    "account_entity_ids": [str(v) for v in scenario.account_ids],
+                    "approved_budget_cap_cents": str(2 * _PER_ACCOUNT_CAP),
+                    "expected_estimated_cost_cents": str(2 * _PER_ACCOUNT_CAP),
+                    "concurrency_limit": 4,
+                },
+                purpose="Launch the research the client just confirmed.",
             )
-
-            launched = (
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT f.research_run_id, f.source_action_ref, "
-                            "r.lifecycle_json -> 'selection' ->> 'approval_refs' AS approval_refs, "
-                            "r.lifecycle_json -> 'selection' ->> 'confirmed_by' AS confirmed_by "
-                            "FROM entity_research_account_fleet f "
-                            "JOIN entity_research_run r "
-                            "  ON r.research_run_id = f.research_run_id "
-                            "WHERE f.workspace_id = :ws"
-                        ),
-                        {"ws": scenario.workspace_id},
-                    )
+            with pytest.raises(AgentPlanRejected) as rejected:
+                await launching.validate_plan(
+                    plan=_plan(launching, retired),
+                    constitution=launching._constitution,
                 )
-                .mappings()
-                .all()
-            )
-            assert len(launched) == 1
-            # The same assertion the launcher-driven acceptance makes — now reached the way the
-            # deepagent actually reaches it.
-            assert launched[0]["source_action_ref"] == confirming_ref
-            assert launched[0]["approval_refs"] == f'["{confirming_ref}"]'
-            assert launched[0]["confirmed_by"] == USER_ID
+            assert {issue.code for issue in rejected.value.review.issues} == {
+                "tool_not_allowed",
+                "tool_not_effective",
+            }
+            # The confirming turn's own receipt is still what a launch on the CURRENT lane would be
+            # stamped with; nothing here consumed it, and nothing was launched.
+            assert confirming_ref
+            launched = (
+                await conn.execute(
+                    text(
+                        "SELECT count(*) FROM entity_research_account_fleet "
+                        "WHERE workspace_id = :ws"
+                    ),
+                    {"ws": scenario.workspace_id},
+                )
+            ).scalar_one()
+            assert launched == 0
 
     run_async(scenario_body())
 
@@ -594,10 +595,10 @@ def test_a_plan_proposing_the_human_only_confirm_tool_is_refused(tmp_path: Path)
     run_async(scenario_body())
 
 
-def test_frozen_v2_remains_replayable_while_the_current_slot_uses_plan_safe_v3(
+def test_frozen_v2_remains_replayable_while_the_current_slot_uses_comprehensive_v4(
     tmp_path: Path,
 ) -> None:
-    """The historical schema is unchanged; only its immutable successor is newly promoted."""
+    """The historical schemas are unchanged; only their immutable successor is newly promoted."""
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
@@ -613,7 +614,9 @@ def test_frozen_v2_remains_replayable_while_the_current_slot_uses_plan_safe_v3(
                 node for node in definition.graph.nodes if node.node_key == "stage0_interactions"
             )
             assert "draft_account_research_directive@2" not in slot.dynamic_tool_allowlist
-            assert "draft_account_research_directive@3" in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@3" not in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@4" not in slot.dynamic_tool_allowlist
+            assert "draft_account_research_directive@5" in slot.dynamic_tool_allowlist
             assert (
                 "body"
                 in plane.tools.descriptor(
@@ -626,12 +629,23 @@ def test_frozen_v2_remains_replayable_while_the_current_slot_uses_plan_safe_v3(
                     "draft_account_research_directive", "3"
                 ).input_model.model_fields
             )
+            # The promoted contract adds the breadth declaration §3.3 row 1 needs.
+            assert (
+                "profile"
+                in plane.tools.descriptor(
+                    "draft_account_research_directive", "5"
+                ).input_model.model_fields
+            )
 
     run_async(scenario_body())
 
 
-def test_plan_safe_directive_v3_can_ride_the_current_conversation_plan(tmp_path: Path) -> None:
-    """The immutable successor renames only the graph-hostile field; its plan now validates."""
+def test_comprehensive_directive_v5_can_ride_the_current_conversation_plan(tmp_path: Path) -> None:
+    """The promoted successor keeps v3's plan-safe shape and adds the breadth declaration.
+
+    The scripted plan states an explicit field list, so it must declare ``profile="custom"`` —
+    exactly the narrower request §3.3 row 1 reserves for an explicit human ask.
+    """
 
     async def scenario_body() -> None:
         async with rollback_conn() as conn:
@@ -645,12 +659,13 @@ def test_plan_safe_directive_v3_can_ride_the_current_conversation_plan(tmp_path:
                 plan=_plan(
                     adapter,
                     PlanToolStep(
-                        node_key="draft_direction_v3",
-                        tool=_pin(plane, "draft_account_research_directive", "3"),
+                        node_key="draft_direction_v4",
+                        tool=_pin(plane, "draft_account_research_directive", "5"),
                         arguments={
                             "product_id": scenario.product_id,
                             "icp_key": scenario.fixture.deep_icp_key,
                             "icp_version": scenario.fixture.deep_icp_version,
+                            "profile": "custom",
                             "directive": scenario.directive_body,
                         },
                         purpose="Draft the selected-account research direction.",
@@ -659,7 +674,7 @@ def test_plan_safe_directive_v3_can_ride_the_current_conversation_plan(tmp_path:
                 constitution=adapter._constitution,
             )
 
-            assert validated.operations[0].address == "draft_account_research_directive@3"
+            assert validated.operations[0].address == "draft_account_research_directive@5"
 
     run_async(scenario_body())
 
@@ -687,10 +702,15 @@ def test_the_widened_slot_grants_the_trial_nothing(tmp_path: Path) -> None:
             for name in (
                 "draft_account_research_directive",
                 "open_directive_confirmation_gate",
-                "launch_account_research",
+                # Founder ruling 2 (2026-09-10) retired `launch_account_research` from the role;
+                # the ARV2 launch is what the production surface spends through now, and the same
+                # sentence still keeps it off the trial.
+                "launch_arv2_account_research",
             ):
                 assert name in production_names
             assert "open_directive_confirmation_gate" not in trial_names
+            assert "launch_arv2_account_research" not in trial_names
+            assert "launch_account_research" not in production_names
             assert "launch_account_research" not in trial_names
             # Drafting was always the trial's — it writes a non-spending draft and nothing else.
             # Without a gate to present it at and a launch to spend it, the widened revision leaves

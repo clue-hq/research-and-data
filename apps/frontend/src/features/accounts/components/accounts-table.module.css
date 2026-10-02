@@ -1,0 +1,73 @@
+.viewport {
+  container: accounts-table / inline-size;
+}
+
+.textRegular,
+.textMedium {
+  font-family: var(--clue-ds-typography-text-default-font-family);
+  font-size: var(--clue-ds-typography-text-default-font-size);
+  line-height: var(--clue-ds-typography-text-default-line-height);
+}
+
+.textRegular {
+  font-weight: var(--clue-ds-typography-text-default-font-weight);
+}
+
+.textMedium {
+  font-weight: var(--clue-ds-typography-text-default-medium-font-weight);
+}
+
+.cell {
+  align-items: center;
+  display: flex;
+  min-width: 0;
+  width: 100%;
+}
+
+/* Constrain content, not the header itself: resize handles straddle its edge. */
+.cell .badge {
+  flex: 0 1 auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.pinnedCompany {
+  left: 56px;
+  position: sticky;
+}
+
+/* A frozen company column must not consume the entire reading area on phones. */
+@container accounts-table (max-width: 600px) {
+  .pinnedCompany {
+    left: auto;
+    position: relative;
+    z-index: auto;
+  }
+}
+
+/* The bulk-action bar and its notice sit between the toolbar and the table.
+   Same 0.5px table rule and header inline padding as the toolbar above them,
+   so the three read as one stack. */
+.selectionBar {
+  align-items: center;
+  background: var(--clue-background-hover);
+  border-bottom: 0.5px solid var(--clue-border-table);
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 24px;
+}
+
+.selectionNotice {
+  align-items: center;
+  border-bottom: 0.5px solid var(--clue-border-table);
+  color: var(--clue-content-subtle);
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 36px;
+  padding: 6px 24px;
+}

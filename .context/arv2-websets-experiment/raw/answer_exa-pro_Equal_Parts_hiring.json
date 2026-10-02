@@ -1,0 +1,50 @@
+{
+  "requestId": "f1c1a3fe4246335ba3a8c82010960de2",
+  "error": "You have exceeded your credits limit. Please top up to keep using Exa at dashboard.exa.ai",
+  "tag": "NO_MORE_CREDITS",
+  "_http_status": 402,
+  "_elapsed_s": 0.52,
+  "_request": {
+    "query": "Company: Equal Parts (website https://equalparts.ai).\nTest to verify: Actively hiring now, with at least one open go-to-market role.\nHow it is tested: At least one requisition listed today on the company's own careers page or ATS board with a GTM title: sales, marketing, growth, ABM, demand generation, SDR or BDR, partnerships, revenue operations.\nDecide pass, fail or unclear for THIS company today, citing the freshest relevant source.",
+    "model": "exa-pro",
+    "text": true,
+    "systemPrompt": "Today is 2026-09-10. You are verifying one qualification test for one specific company. Use only what the sources say. The most recent dated announcement of an event is the authority on the company's current state; older announcements are history; company profile pages (LinkedIn, Crunchbase, CB Insights, Tracxn) are secondary to the company's own pages and to dated news. Never confuse the company with a same-name company on a different website. Answer pass only when a source states the fact; fail only when a source contradicts the test; otherwise unclear. The evidence_quote must be copied verbatim from the cited source.",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "verdict",
+        "reasoning",
+        "evidence_quote",
+        "evidence_url",
+        "evidence_date"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "unclear"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "One or two sentences: what the freshest relevant source says and how it decides the test."
+        },
+        "evidence_quote": {
+          "type": "string",
+          "description": "A verbatim sentence or fragment from the cited source that decides the verdict; empty if unclear."
+        },
+        "evidence_url": {
+          "type": "string",
+          "description": "The URL the quote comes from; empty if unclear."
+        },
+        "evidence_date": {
+          "type": "string",
+          "description": "The date of that source as shown on it (YYYY-MM-DD if known); empty if unknown."
+        }
+      }
+    }
+  }
+}

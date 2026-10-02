@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788505161-5ItxN5d9SxSxR0WbBNfP",
+ "object": "chat.completion",
+ "created": 1788505161,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"context_only\",\"empty\":false,\"items\":[{\"h2\":\"Cisco acquisition rumor was refuted in July 2026\",\"body\":[{\"text\":\"Status: refuted; the claim states that Cisco made a strategic investment and that Zafran was not being acquired. [zaf-135, zaf-169]\",\"claimIds\":[\"zaf-135\",\"zaf-169\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-135\",\"zaf-169\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"Third-party ARR and competitive-struggle claims remain unresolved\",\"body\":[{\"text\":\"Status: unresolved; third-party reporting cited roughly $20 million in ARR, questioned competitive advantage, and described cash burn as high. [zaf-138, zaf-170]\",\"claimIds\":[\"zaf-138\",\"zaf-170\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-138\",\"zaf-170\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"Amex Ventures investment amount was not disclosed precisely\",\"body\":[{\"text\":\"Status: unresolved; the strategic investment was announced on February 24, 2026, while the amount was reported only as estimated at several million dollars. [zaf-139]\",\"claimIds\":[\"zaf-139\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-139\"]}],\"contactRefs\":[],\"priority\":2},{\"h2\":\"Co-founder and CPO departure to NVIDIA was confirmed\",\"body\":[{\"text\":\"Status: confirmed; the claim states that co-founder and CPO Snir Havdala joined NVIDIA and that product leadership moved to Itay Nachum. [zaf-142, zaf-171]\",\"claimIds\":[\"zaf-142\",\"zaf-171\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-142\",\"zaf-171\"]}],\"contactRefs\":[{\"name\":\"Snir Havdala\"},{\"name\":\"Itay Nachum\"}],\"priority\":1},{\"h2\":\"Sanaz Yashar's prior background includes offensive cyber and IDF service\",\"body\":[{\"text\":\"Status: confirmed; the claim describes Sanaz Yashar as a former offensive cyber investigator and incident responder who worked at Mandiant, with biology and IDF background. [zaf-153]\",\"claimIds\":[\"zaf-153\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-153\"]}],\"contactRefs\":[{\"name\":\"Sanaz Yashar\"}],\"priority\":2},{\"h2\":\"Nick Fisher's cocktail-creator hobby was identified\",\"body\":[{\"text\":\"Status: confirmed; the claim describes Nick Fisher as a cocktail YouTuber who films in his kitchen, invests in liquor and equipment, and runs Patreon for support. [zaf-160]\",\"claimIds\":[\"zaf-160\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-160\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmxOUuKZNNVfQZqUtfh6TKmXVAYu6U52Kc8A3TE6C9VG7My5IgxWMwaINhvkjxUNyR_GFR8bjH5oyrWaN9GXhAwhLhCl5izPe0Rhdf0vcejJklmxu-Tn4O0f9TKlRHoXJHMGWA8FwCu69wmiaoZFERzdgOSPh9ZLqXX8s5KVvKgIZy8pKp9labaJnyf6j0qgTHXwIo2F63sB-GKhEzKu5kGqvO4uSSCiEM5JLMVX7Up61u0L1kglMzEI_HsSmIMQYA8_AeHkbgXgQa5R_O9kymZuzyu6DST2moWq5zXDBNX_AOz33xGKpVvX0eo7RlzUBDNyiVJKyFnoiFfjzUVOKKxBAeKR5Elkd9TKuKR1LFTYpjwwq6mKqgE8zBhEO3LNkEYM6ypWkwY0p604Zlv95CUOKPhQjxWyZMIjeGd1UswmatZ8TgBLLypiIJfOLHVj2QdN463O8QaMC5FyKaeBCL8d-hXLZlXBRmDOhn-FKFqh2nZ-OCEOTtma_b_gvVsctT7CBjNR8onKuzBlV96mXGXihVnyBSDCfkD1O05Q2GcVpG7UufHxUU74Q-Cc9yHvvgMZudkUAJIA7-jiw66FC8Z5tDeTRNORESSduB7lbN3_AcxHaoyvpEDd9dzplU7SqiDOMvHE8GBKvJm61EoShOgaQlOAcS7AyLI4x_YTVMxx5OA8h8LEXvP1Z4xWaFQXbMyJhhyqDKEYrRKU801xmzzLsIXpUxIEmGNOD_1M_O1SFAOiTUsP-W9L_mTSmTKWqM8r4qs8fgb_nvJQOuMAF_BltoENKw28M-25fgMqm-Jmj1SzAE71cOpMBWC7DKSf4C6RbVjePKg1Q7GqgTngkfXcEKfHS9kWuFtkYiXhMf_rItwiW9sQKdkgcKIStem5QUj84H6Swl8ViW9q2WsAFxW7schetFQN8ZAfWDTjeM3MP8G4xTuwIHUKfn7uM8xxf3YIK7-p-IvETur64bi9SiterIcgZiUxUkGThv7CDuLZ8DNDEZq2S6Tx2nslPG342WkMkfQDKLfBLFU2FLc2qNrLIquCxFDEm9byQoNhdJj6Ie_hf_0-a2tfBx2jxto-D2-lRSfTi5q66_8W06BgXvd0g_P3kGgtr5luzYXZQGc2QLoOErGLb5c-in_IN5upnP7Ikg3Uw-YyZ4VcD8EtClBX3nhCUf2ZQEO9yXf2cmCi1MgXOlrolUd9SXK5PlmbS9ClhgkqacXPeKrEsShDaXHHbawOsNSUE6qnsNAEmU-ATCaZfVH3ofqrXBQ8kBXCz5lFvytX-RqRnfgFwruDFORQgnzMUBtHu4LjUEkQWVrtlHEKOhEdvt-OZSI3AAzRuKrSGAJrWWdfL2GHS10_jeJHlbAfxnZZg09UdotYgHB09k1iB6fWlASNphv7joC6lJsphYvpINOujLH8JJoGjLpsRg-ijkCLyQYxuNE9GRPKIC2GZ3MeOahjhA94dCQJ0P-oI9i4YAdrU_s5EJxPMiMRhLAOKnVCrf5wgxcqUTVEkwyiW6ZahAPkbol6G3y35CQvhmyIAZbeqL9_CZB_D5k3QesgstveqZehhkY2s6pB8AAwvjt2tN5MQxj1sayEqtb8RZrxTpJLkp0kSsy5R4FI3-Mfug7UYtQIVvnkAZrNX01Kb8CoH8J5F0UKQDDez-dchuznAc3Yvjviyu_jpbXkm5sqtOSvXfyZPUdZM5GDlbtENYd8XZbPjIxvieYQeBQ02mIKg7U-bhDy0Mp0ItMM0OIk2OFxewbqII0BxtZxKmAY5EK-8HkSlet-Bs5wBdWho429mCCk0u1yIWsY9rcMFtz_Vs_i00tJ2-3JN_o9ovV_QIkhX_vh6Nz66VYv5KBupAOKoAtCtAX0eBjFVcLNZ0UcbKYd3pAMJ8s3gHRWgvChkAzFpOzpecGBOZL_FxJig3ZhpzExHBPBkQeawCuhlm-KuTC4FaJfIL1e6WfGypbsNG6dKsEGvgksd5VFeQNbiIOZfKNUImof2amZXvnVj9Z66AqSU-9_YqcwtPHEXk31l-3LQWqfi5I2dyhSkyUzaw3rfWKoLY-t3EBmrV0qU1QJmFQziRFxvbPhvKDu2z-PtXkMT4ub53c3leMoGmXIPCarY4KfGQ1Tmq7z3Zp9HqVbGjpe5H2-5czNaUYMMopfzrTww3VkAzaMjxVaAkP9ckYGbYmSWjeMd8c4QZWXKLSimsVebsvXBKc1cYE0yQn8sOhtq9I2w0sbCWfWpjzslX2fZMmRCIqydtftOIplFC6t8olOMpPjtBVZdUTvdUm_H3LkPAAj77tfAaIA_BcF3LR83QVDdBUSU4qzNsFl5YioHYeIBlhTTO5LfuVtRB6jeH2JufAWS_DMw5pM4OJRNDAm8CUgY2nw8ZBeVuIHYyj7hLBizhV9vIbxNAFGqnkeIIN1Grx-AWowO7mUhg-poByHkLQG-I8R-DePGzygFl2xjr41Xi-n9F-t_NWnB1qGQNb5zd8lDIiK23O_rb-9wrMPHyhirGQLw4AKnGuGsguXFL2P_Dsjj4FDdJ1_jQJDGL8WEE4vipQQ7FU3lBYQaQvUvXhtYZDf229bbnrYPcFxmA6QsZCYGEXE05sOUVU4xkqq9GIH4vxCF6izMmqDjPVdz2J1gmUvxkaA_tbqW_vcT74igfU8DsrWRIXh0s-bwP4wkAZnElyXsAnD9DYJzYAtofsIfCe_RDQvDKGc5vL8idF4AnPKcv83IUzDM2HN9qEkQb51Jn77kxKvInQpoRRCwrCGegn-EVjzzCxZ8WKEC2zvuQqmHy4wm3H4_4x20HD4JXcWdabTFAltGhLT5HIo0Hp99Qrmk2VlJgvlXVXcIfGHQZnF2Kb7puYWHdC5nbwDMEonMjx8qdzdBUEiVy_1FWq1FT5IPkU1Sa2HO17U6Ziw_ZChu97J17Z_caOzwHjV3CkQHzrNrOgBTlANLagxYfaMRGyti1JuAKNcP4-Rr6jg01Fd6rKNehiRpQeTNVLEwDxXAkdjzvS1y3-KuMYaeAHAUfqXg0mS_DkXJwpaiB36Nt1Meai2nAfihFXjxDH7-E7mWz4VYVLNPs1x5ydbFBulPH5dUoSSoJ2M6KShDozx_UKGClH3yJhckDbKthiAiWV8oQiJH3DlVAdw3hsQhY6txHCpTxQRTRB06wlEy3487UJO5KRv5mljCQ3YHQlZMuMxKjKFSbipI_LgSPrN-wTVFxeJ4d2OlldnQBHS14FjOUSC49J90XZJlMcdmpTzSsMsmS5M7H7512X7bZ49x4T45w5YtY_LKqv9-YhqYuD7Go-F42IwyXEgW0uQofP65ML57P1WZ9cN2my_P4pdBvWkG4en4EP-iNGqu7BZ8_i5cHu6mdEaZAHbGAt9ITA4wTkCawJLRWfeo8nLFrnHDsFmFGVopkz7opt4wp9HoPKjw928qxphllirbZuKoFuhsaUTxyUtlAkte-X6cVcfmEM_3h8sQ3ebYWD-5NneanMGs3lgGXiZ4mP40_4=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0f6bb51b24ee19e5016a9a6c4aacd487d0aaecd683a7c30a74",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25183,
+  "completion_tokens": 1009,
+  "total_tokens": 26192,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 25180,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.001715,
+   "upstream_inference_prompt_cost": 0.0005042,
+   "upstream_inference_completions_cost": 0.0012108
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 376,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 8.13,
+ "_attempt": 0
+}

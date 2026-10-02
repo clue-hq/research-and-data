@@ -30,6 +30,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_config import RecursionPolicy
@@ -115,13 +116,35 @@ VERIFICATION_GATE_ORDER: tuple[str, ...] = (
 )
 
 
+#: The one advisory-lock key every seeder takes (ledger A2). Any 64-bit constant works; this one
+#: is ``crc32("clue.research_pack_seed")`` so a ``pg_locks`` row can be traced back to this line.
+RESEARCH_PACK_SEED_LOCK_KEY = 2_794_525_886
+
+
 async def load_research_packs(conn: AsyncConnection) -> None:
     """Register every field pack + source manifest a deep-profiling run reads (idempotent).
 
     Iterates :data:`RESEARCH_PACK_LOADERS` (each milestone appends its loader from its own wiring
-    module — PF-7), then seeds the M4 source manifests last. Idempotent: ``register_field`` is a
-    read-then-conditional-insert, so re-loading on an already-seeded connection is a no-op.
+    module — PF-7), then seeds the M4 source manifests last. Idempotent: ``register_field`` and
+    ``register_source`` are read-then-conditional-inserts, so re-loading on an already-seeded
+    connection is a no-op.
+
+    **Serialised across processes (ledger A2, 2026-09-12).** Read-then-insert is not safe when two
+    workers boot together: both read "absent", both insert, and the loser dies on
+    ``field_definition_pkey`` — three of four fleet workers died that way on 2026-09-11. The seed
+    therefore takes a transaction-scoped advisory lock first, so concurrent boots queue on it and
+    the second seeder finds every row already committed. A transaction lock needs a transaction:
+    every caller runs this inside ``transaction()``, and a caller that does not is refused loudly
+    rather than handed a lock that releases the moment it is taken.
     """
+    if not conn.in_transaction():
+        raise RuntimeError(
+            "load_research_packs must run inside a transaction: its advisory lock is "
+            "transaction-scoped (call it under clue_db.transaction())"
+        )
+    await conn.execute(
+        text("SELECT pg_advisory_xact_lock(:key)"), {"key": RESEARCH_PACK_SEED_LOCK_KEY}
+    )
     for loader in RESEARCH_PACK_LOADERS:
         await loader(conn)
     await seed_source_manifests(conn)

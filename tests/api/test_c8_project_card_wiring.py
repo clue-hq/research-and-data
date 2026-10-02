@@ -829,6 +829,7 @@ def test_the_account_research_card_still_names_the_project_the_run_belongs_to() 
         name="Neurosurgery Q3",
         status="active",
         created_at=datetime(2026, 8, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 1, tzinfo=UTC),
     )
     payload = account_research_card_payload(
         workspace_id="ws-ac",

@@ -5,8 +5,10 @@
   "history": [],
   "message": "Actually, scrap this design for now - we'll come back to it after the pivot.",
   "judgment": {
-    "action": "finish",
-    "reason": "abandoned"
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "reasoning": "The user dropped this design work without accepting it."
   },
   "expected": {
     "action": "finish",

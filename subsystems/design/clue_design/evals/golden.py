@@ -19,8 +19,10 @@ Two scoring modes over one fixture set:
 
 The fixture kinds are the master plan's own taxonomy — clearly-design turns, clearly-strategy
 turns, the ambiguous middle ("will this ad resonate with CFOs?") — plus the lock-in/abandon
-exits and the fail-safe negatives (malformed judgments that must never close the leg). Each
-ambiguous fixture documents its ratified expected answer in ``why``.
+exits and the fail-safe negatives (malformed judgments that must never close the leg), and
+since v3 the ``addressing`` kind: which documents of a many-document leg a follow-up lands
+on, and the engine's ask when the judge gave nothing usable (spec §3.5). Each ambiguous,
+new-artifact and addressing fixture documents its ratified expected answer in ``why``.
 """
 
 from __future__ import annotations
@@ -42,7 +44,11 @@ FixtureKind = Literal[
     "ambiguous",
     "lock_in",
     "abandon",
+    "new_artifact",
     "fail_safe",
+    #: v3 (spec §3.5): which documents of a MULTI-document leg a follow-up addresses, and
+    #: the engine's ask when nothing usable came back.
+    "addressing",
 ]
 
 #: A judge maps a fixture's inputs to the model's verdict (or ``None`` for unparseable
@@ -57,6 +63,14 @@ class ExpectedDecision(BaseModel):
     action: Literal["continue", "finish"]
     reason: ExitReason | None = None
     fail_safe: bool = False
+    #: v3: the 1-based positions the decision dispatches to; ``None`` means the whole leg
+    #: (an ``"all"`` verdict, or any single-artifact session).
+    addressed: tuple[int, ...] | None = None
+    #: v3: the question the turn puts to the user instead of dispatching. Scored on
+    #: PRESENCE, not wording — the engine's fail-safe sentence and the judge's own question
+    #: are both "ask", and pinning the exact words here would make the fixtures a copy of
+    #: the implementation.
+    ask: str | None = None
 
 
 class ExitGoldenFixture(BaseModel):
@@ -64,6 +78,15 @@ class ExitGoldenFixture(BaseModel):
 
     name: str
     kind: FixtureKind
+    #: v2 judge inputs: the artifact this session is bound to and the message's resolved
+    #: tags, as the runner renders them. Absent on fixtures written before v2.
+    artifact: str | None = None
+    tags: tuple[str, ...] = ()
+    #: v3 judge inputs: the leg's numbered artifact lines, and how many the engine counted.
+    #: Absent on the pre-v3 fixtures, which are single-artifact sessions by construction —
+    #: which is exactly what the defaults say.
+    artifacts: tuple[str, ...] = ()
+    artifact_count: int = 1
     brief: str
     history: tuple[dict[str, str], ...] = ()
     message: str
@@ -108,19 +131,23 @@ def _score(
     for fixture in fixtures:
         tally = by_kind.setdefault(fixture.kind, [0, 0])
         tally[1] += 1
-        actual = decide_exit(verdict_for(fixture))
+        actual = decide_exit(verdict_for(fixture), artifact_count=fixture.artifact_count)
         expected = fixture.expected
         if (
             actual.action == expected.action
             and actual.reason == expected.reason
             and actual.fail_safe == expected.fail_safe
+            and actual.addressed == expected.addressed
+            and (actual.ask is not None) == (expected.ask is not None)
         ):
             tally[0] += 1
             continue
         failures.append(
             f"{fixture.name} [{fixture.kind}]: expected "
-            f"{expected.action}/{expected.reason} (fail_safe={expected.fail_safe}), got "
-            f"{actual.action}/{actual.reason} (fail_safe={actual.fail_safe})"
+            f"{expected.action}/{expected.reason} (fail_safe={expected.fail_safe}, "
+            f"addressed={expected.addressed}, ask={expected.ask is not None}), got "
+            f"{actual.action}/{actual.reason} (fail_safe={actual.fail_safe}, "
+            f"addressed={actual.addressed}, ask={actual.ask is not None})"
         )
     return GoldenReport(
         total=len(fixtures),
@@ -141,13 +168,20 @@ def score_judge(judge: ExitJudge, directory: Path = FIXTURES_DIR) -> GoldenRepor
 
     Fail-safe fixtures are scored on the ENVELOPE's behavior, not the judge's telepathy:
     their ``judgment`` (malformed by construction) stands in regardless of the judge, so a
-    live-model scoreboard is comparable to the decision baseline kind-for-kind.
+    live-model scoreboard is comparable to the decision baseline kind-for-kind. The same
+    stand-in covers any fixture whose expected decision IS the fail-safe — v3's
+    unusable-address negatives live under the ``addressing`` kind, and no judge can be
+    scored on producing a malformed answer on purpose.
     """
 
     fixtures = load_fixtures(directory)
     return _score(
         fixtures,
-        lambda fixture: fixture.judgment if fixture.kind == "fail_safe" else judge(fixture),
+        lambda fixture: (
+            fixture.judgment
+            if fixture.kind == "fail_safe" or fixture.expected.fail_safe
+            else judge(fixture)
+        ),
     )
 
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -45,21 +46,18 @@ from clue_api.agent_turn_fleet_wiring import (
     project_conversation_card_payload,
 )
 from clue_api.agent_turn_submission import AgentTurnSubmissionRow
-from clue_api.agent_turn_wiring import AgentPrivacyService, DurableAgentArtifactStore
-from clue_api.client_context_binding import bind_workspace_client
-from clue_api.stage0_card_dsar import (
-    STAGE0_CARD_QUOTE_BINDING_KIND,
-    Stage0StatementEraser,
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2.knowledge_frontmatter import parse_front_matter
+from clue_api.brand_knowledge_context import (
+    BrandKnowledgeIndexCard,
+    KnowledgeDocumentRef,
+    PinnedDocument,
+    confirmed_icp_for_project,
 )
+from clue_api.client_context_binding import bind_workspace_client
 from clue_core import EntityId, ExecutionId, OnboardingInputId, OnboardingInputKind
 from clue_db import ConnFactory
-from clue_projections import (
-    ClientKnowledgeCardV2,
-    ProductKnowledgeCard,
-    ProductProfileCard,
-    ProjectConversationCard,
-    Stage0ProjectStateCard,
-)
+from clue_projections import ProjectConversationCard
 from clue_research.stage0 import (
     CLIENT_KNOWLEDGE_FIELDS,
     PRODUCT_KNOWLEDGE_FIELDS,
@@ -81,6 +79,76 @@ pytestmark = pytest.mark.usefixtures("require_profiling_db")
 
 _NOW = datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
 _SHA = "a" * 64
+
+
+def _pinned_document(
+    *,
+    path: str,
+    kind: str,
+    version: int,
+    status: str,
+    body: str,
+) -> PinnedDocument:
+    """One pinned knowledge document, built without the durable row the pin normally holds.
+
+    Composition takes the pinned documents as an argument, so the compile path is exercisable
+    without re-seeding onboarding here; the pin/read/verify half is covered by
+    ``tests/api/test_brand_knowledge_context_db.py`` and end to end by
+    ``tests/api/test_o6_conversation_composition_db.py``.
+    """
+
+    front, rest = parse_front_matter(body)
+    return PinnedDocument(
+        ref=KnowledgeDocumentRef(
+            document_id=uuid4(),
+            path=path,
+            kind=kind,
+            version=version,
+            status=status,
+            artifact_key=f"knowledge/{path}",
+            artifact_sha256=hashlib.sha256(body.encode()).hexdigest(),
+            updated_at=_NOW,
+        ),
+        body=body.encode(),
+        front_matter=front,
+        body_text=rest,
+    )
+
+
+def _pinned_documents(*, project_id: str) -> tuple[PinnedDocument, ...]:
+    """A brand's overview plus the ICP a human confirmed for ``project_id``."""
+
+    return (
+        _pinned_document(
+            path="company/overview.md",
+            kind="company-overview",
+            version=1,
+            status="ready",
+            body=(
+                "---\nkind: company-overview\n---\n\n"
+                "Acme builds scheduling software for gastroenterology clinics.\n"
+            ),
+        ),
+        _pinned_document(
+            path="audience/icp-gi-groups.md",
+            kind="icp-definition",
+            version=2,
+            status="confirmed",
+            body=(
+                "---\nkind: icp-definition\nicp_key: gi-groups\nstatus: confirmed\n"
+                f"confirmed_for_project_id: {project_id}\n---\n\n"
+                "Independent GI groups with three to twelve physicians.\n"
+            ),
+        ),
+    )
+
+
+def _icp_document_id(documents: tuple[PinnedDocument, ...]) -> UUID:
+    """The ICP document id a project would have pinned when it confirmed this set."""
+
+    return next(
+        document.ref.document_id for document in documents if document.ref.kind == "icp-definition"
+    )
 
 
 def _profile() -> AgentProfile:
@@ -174,6 +242,7 @@ def _submission(*, workspace_id: str, project_id: str, suffix: str) -> AgentTurn
         message_sha256="0" * 64,
         idempotency_key=f"s3-{suffix}",
         agent_profile_id=None,
+        previous_turn_outcome=None,
         requested_at=_NOW,
     )
 
@@ -407,9 +476,18 @@ def test_pre_recon_composes_real_l2_and_honest_empty_l3(tmp_path: Path) -> None:
     run_async(scenario())
 
 
-def test_post_recon_projects_share_client_card_and_isolate_stage0(
+def test_post_recon_scope_composes_only_the_brand_knowledge_index(
     tmp_path: Path,
 ) -> None:
+    """Ruling D5: a fully post-recon scope composes the knowledge index and nothing else.
+
+    The workspace deliberately carries everything the retired compilers used to consume — a
+    published account-wide Client-KB, a product-scoped KB, a confirmed product and per-project
+    Stage-0 statements. None of it reaches L3 any more. What does is the brand's own knowledge,
+    pinned per turn, indexed per project: the same documents, but the *confirmation* is per
+    project, so two projects of one brand get two different index cards.
+    """
+
     async def scenario() -> None:
         async with rollback_conn() as conn:
             seeded = await _seed_post_recon(conn, suffix=uuid4().hex[:8])
@@ -427,14 +505,6 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
                 route_key="goal_a",
                 quote="Project A goal only",
             )
-            await _record_project_statement(
-                conn,
-                seeded=seeded,
-                project=seeded.project_b,
-                artifacts=artifacts,
-                route_key="goal_b",
-                quote="Project B goal only",
-            )
             runner = _runner(artifacts=artifacts, conn_factory=factory)
             submission_a = _submission(
                 workspace_id=seeded.workspace_id,
@@ -448,102 +518,71 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
             )
             scope_a = await runner._resolve_current_scope(conn, submission_a)
             scope_b = await runner._resolve_current_scope(conn, submission_b)
-            # Project A has a confirmed product, but its KB pin is still the account-wide marker.
+            # Everything the four retired compilers needed is present on scope A.
             assert scope_a.product_id == seeded.product.product_id
             assert scope_a.client_kb_version == seeded.client_kb_version
             assert scope_a.product_kb_version == seeded.product_kb_version
-            assert scope_b.client_kb_version == seeded.client_kb_version
-            assert scope_b.product_kb_version is None
 
+            # A brand whose knowledge pin holds no document composes honestly nothing — a pinned
+            # ``client_kb_version`` no longer conjures a Client-KB card.
+            empty = await runner._compose_project_context(submission=submission_a, scope=scope_a)
+            assert empty.artifacts == ()
+            assert empty.available is False
+
+            documents = _pinned_documents(project_id=seeded.project_a.project_id)
             bundle_a = await runner._compose_project_context(
                 submission=submission_a,
                 scope=scope_a,
+                documents=documents,
+                confirmed_icp=confirmed_icp_for_project(
+                    documents, pinned_document_id=_icp_document_id(documents)
+                ),
             )
             bundle_b = await runner._compose_project_context(
                 submission=submission_b,
                 scope=scope_b,
+                documents=documents,
+                # Project B pinned nothing, so nothing is its confirmed ICP.
+                confirmed_icp=confirmed_icp_for_project(documents, pinned_document_id=None),
             )
-            assert tuple(item.name for item in bundle_a.artifacts) == (
-                "client_knowledge",
-                "stage0_project_state",
-                "product_profile",
-                "product_knowledge",
+            assert tuple(item.name for item in bundle_a.artifacts) == ("brand_knowledge_index",)
+            assert tuple(item.name for item in bundle_b.artifacts) == ("brand_knowledge_index",)
+            index_a = bundle_a.artifacts[0]
+            index_b = bundle_b.artifacts[0]
+            assert index_a.domain_ref == DomainObjectRef(
+                workspace_id=seeded.workspace_id,
+                object_type="brand_knowledge_index",
+                object_id=seeded.brand.brand_id,
+                version=None,
             )
-            client_a, stage_a, profile_a, product_a = bundle_a.artifacts
-            client_b, stage_b = bundle_b.artifacts
-            assert client_a.artifact_ref == client_b.artifact_ref
-            assert client_a.domain_ref.object_id == str(seeded.client_entity_id)
-            assert client_a.domain_ref.version == seeded.client_kb_version
-            assert stage_a.domain_ref.object_id == seeded.project_a.project_id
-            assert stage_b.domain_ref.object_id == seeded.project_b.project_id
-            assert stage_a.artifact_ref != stage_b.artifact_ref
-            assert profile_a.domain_ref.object_id == seeded.product.product_id
-            assert product_a.domain_ref.object_id == seeded.product.product_id
-            assert product_a.domain_ref.version == seeded.product_kb_version
 
-            client_card = ClientKnowledgeCardV2.model_validate_json(
-                await artifacts.read(client_a.artifact_ref)
+            card_a = BrandKnowledgeIndexCard.model_validate_json(
+                await artifacts.read(index_a.artifact_ref)
             )
-            profile_card = ProductProfileCard.model_validate_json(
-                await artifacts.read(profile_a.artifact_ref)
+            card_b = BrandKnowledgeIndexCard.model_validate_json(
+                await artifacts.read(index_b.artifact_ref)
             )
-            product_card = ProductKnowledgeCard.model_validate_json(
-                await artifacts.read(product_a.artifact_ref)
-            )
-            card_a = Stage0ProjectStateCard.model_validate_json(
-                await artifacts.read(stage_a.artifact_ref)
-            )
-            card_b = Stage0ProjectStateCard.model_validate_json(
-                await artifacts.read(stage_b.artifact_ref)
-            )
-            assert client_card.company_client_kb_version == seeded.client_kb_version
-            assert profile_card.product_id == seeded.product.product_id
-            assert product_card.product_kb_version == seeded.product_kb_version
-            quotes_a = {item.quoted_text for item in card_a.interview.current_effective_statements}
-            quotes_b = {item.quoted_text for item in card_b.interview.current_effective_statements}
-            assert quotes_a == {"Project A goal only"}
-            assert quotes_b == {"Project B goal only"}
-            assert quotes_a.isdisjoint(quotes_b)
+            assert card_a.brand_id == seeded.brand.brand_id
+            assert [entry.path for entry in card_a.documents] == [
+                "company/overview.md",
+                "audience/icp-gi-groups.md",
+            ]
+            assert card_a.documents[0].workspace_path == "brand/knowledge/company/overview.md"
+            # The ICP was confirmed for project A, so only project A's index carries it.
+            assert card_a.confirmed_icp is not None
+            assert card_a.confirmed_icp.icp_key == "gi-groups"
+            assert card_b.confirmed_icp is None
+            assert index_a.artifact_ref != index_b.artifact_ref
+            # The persisted bytes are exactly the compiled card's canonical bytes.
+            assert index_a.artifact_ref.sha256 == card_a.content_sha256().removeprefix("sha256:")
 
-            # S3.1: the production persistence path reverse-binds each embedded quote to its exact
-            # statement. Client-level binding alone cannot answer a statement DSAR.
-            statement_a_id = (
-                await conn.execute(
-                    text(
-                        "SELECT id FROM volunteered_statement "
-                        "WHERE workspace_id=:workspace AND project_id=:project"
-                    ),
-                    {
-                        "workspace": seeded.workspace_id,
-                        "project": seeded.project_a.project_id,
-                    },
-                )
-            ).scalar_one()
-            stage_a_bindings = {
-                (UUID(str(row["subject_entity_id"])), str(row["binding_kind"]))
-                for row in (
-                    (
-                        await conn.execute(
-                            text(
-                                "SELECT subject_entity_id, binding_kind "
-                                "FROM agent_artifact_subject "
-                                "WHERE workspace_id=:workspace AND artifact_key=:key"
-                            ),
-                            {
-                                "workspace": seeded.workspace_id,
-                                "key": stage_a.artifact_ref.artifact_key,
-                            },
-                        )
-                    )
-                    .mappings()
-                    .all()
-                )
-            }
-            assert stage_a_bindings == {
-                (UUID(str(seeded.client_entity_id)), "context"),
-                (UUID(str(statement_a_id)), STAGE0_CARD_QUOTE_BINDING_KIND),
-            }
+            assert tuple(
+                (item.card_kind, item.schema_version, item.omitted_count)
+                for item in bundle_a.observations
+            ) == (("brand_knowledge_index", "1", 0),)
 
+            # ``bind_project=False``: the index describes the brand, not one project, so it is
+            # never bound to a project the way a Stage-0 card was.
             project_binding_count = int(
                 (
                     await conn.execute(
@@ -553,7 +592,7 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
                         ),
                         {
                             "workspace": seeded.workspace_id,
-                            "key": client_a.artifact_ref.artifact_key,
+                            "key": index_a.artifact_ref.artifact_key,
                         },
                     )
                 ).scalar_one()
@@ -574,37 +613,6 @@ def test_post_recon_projects_share_client_card_and_isolate_stage0(
                 ("brand", seeded.brand.brand_id),
                 ("product", seeded.product.product_id),
             }
-
-            # Execute the existing governed statement-erasure path against the artifact emitted by
-            # this production composer. It must discover A through the new reverse binding, purge
-            # A and its captured quote, and leave project B's independently scoped card readable.
-            erasure = await Stage0StatementEraser(
-                privacy=AgentPrivacyService(
-                    storage=storage,
-                    # This fixture has no journaled AgentTurn, so the workspace closure is empty.
-                    # Keep the production service while providing the unused port explicitly.
-                    workspaces=cast(
-                        Any,
-                        SimpleNamespace(erase_for_privacy=lambda **_kwargs: False),
-                    ),
-                    conn_factory=factory,
-                ),
-                conn_factory=factory,
-            ).erase_statement(
-                workspace_id=seeded.workspace_id,
-                statement_id=UUID(str(statement_a_id)),
-            )
-            assert stage_a.artifact_ref.artifact_key in erasure.card_artifact_keys
-            assert stage_b.artifact_ref.artifact_key not in erasure.card_artifact_keys
-            assert stage_a.artifact_ref.artifact_key in erasure.erase.tombstoned_artifact_keys
-            with pytest.raises(ArtifactNotFound):
-                await artifacts.read(stage_a.artifact_ref)
-            assert (
-                Stage0ProjectStateCard.model_validate_json(
-                    await artifacts.read(stage_b.artifact_ref)
-                )
-                == card_b
-            )
 
     run_async(scenario())
 
@@ -673,7 +681,15 @@ async def _context_request(
     )
 
 
-def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Path) -> None:
+def test_the_pinned_document_set_is_the_composition_authority(tmp_path: Path) -> None:
+    """The pin decides, and the assembled receipt points at exactly those bytes.
+
+    Re-composing a turn from its own pinned documents is byte-identical however much onboarding
+    published in between; only a *different* pinned set produces a different card. The L3 receipt
+    then carries the artifact identity of that exact card, and losing its bytes is a hard read
+    failure — never a recompiled guess.
+    """
+
     async def scenario() -> None:
         async with rollback_conn() as conn:
             seeded = await _seed_post_recon(conn, suffix=uuid4().hex[:8])
@@ -686,14 +702,20 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
                 project_id=seeded.project_a.project_id,
                 suffix="pin",
             )
-            pinned_v1 = await runner._resolve_current_scope(conn, submission)
-            bundle_v1 = await runner._compose_project_context(
+            scope = await runner._resolve_current_scope(conn, submission)
+            pinned = _pinned_documents(project_id=seeded.project_a.project_id)
+            confirmed = confirmed_icp_for_project(
+                pinned, pinned_document_id=_icp_document_id(pinned)
+            )
+            bundle = await runner._compose_project_context(
                 submission=submission,
-                scope=pinned_v1,
+                scope=scope,
+                documents=pinned,
+                confirmed_icp=confirmed,
             )
 
-            # Background recon publishes v2 after the turn pin. Reusing pinned_v1 remains v1;
-            # resolving the next turn observes v2.
+            # Background recon advances the account-wide KB mid-turn. The composed bundle is
+            # decided by the pinned documents alone, so it does not move.
             profiled_v2 = await reverse_profile(
                 conn,
                 ClientInput(
@@ -715,26 +737,38 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
                 budget_cap_cents=Decimal(0),
                 max_source_tier=0,
             )
-            assert profiled_v2.ref.client_entity_id == seeded.client_entity_id
             assert profiled_v2.ref.client_kb_version == seeded.client_kb_version + 1
-            pinned_again = await runner._compose_project_context(
+            again = await runner._compose_project_context(
                 submission=submission,
-                scope=pinned_v1,
+                scope=scope,
+                documents=pinned,
+                confirmed_icp=confirmed,
             )
-            assert pinned_again.artifacts == bundle_v1.artifacts
-            next_scope = await runner._resolve_current_scope(conn, submission)
-            assert next_scope.client_kb_version == profiled_v2.ref.client_kb_version
-            bundle_v2 = await runner._compose_project_context(
-                submission=submission,
-                scope=next_scope,
-            )
-            assert bundle_v2.artifacts[0].artifact_ref != bundle_v1.artifacts[0].artifact_ref
+            assert again.artifacts == bundle.artifacts
 
-            request_v1 = await _context_request(
+            # A newer pinned set — what the *next* turn would pin — is a different card.
+            newer = await runner._compose_project_context(
+                submission=submission,
+                scope=scope,
+                documents=(
+                    *pinned,
+                    _pinned_document(
+                        path="audience/persona-gi-groups.md",
+                        kind="audience-persona",
+                        version=1,
+                        status="ready",
+                        body="---\nkind: audience-persona\n---\n\nThe practice manager.\n",
+                    ),
+                ),
+                confirmed_icp=confirmed,
+            )
+            assert newer.artifacts[0].artifact_ref != bundle.artifacts[0].artifact_ref
+
+            request = await _context_request(
                 artifacts=artifacts,
                 submission=submission,
-                scope=pinned_v1,
-                bundle=bundle_v1.artifacts,
+                scope=scope,
+                bundle=bundle.artifacts,
             )
             receipts = _Receipts()
             l7 = _StaticLayer(
@@ -742,7 +776,7 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
                 (
                     ContextCandidate(
                         stable_key="current-user",
-                        ref=request_v1.user_message_artifact_ref,
+                        ref=request.user_message_artifact_ref,
                         body="Current user instruction",
                         role="user",
                         origin="current_user_instruction",
@@ -767,17 +801,14 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
                 clock=lambda: _NOW,
             )
             assembled = await assembler.assemble(
-                request=request_v1,
+                request=request,
                 profile=_profile(),
                 history=(),
             )
             assert assembled.manifest.layers[2].materialized_paths == (
+                "context/project/brand_knowledge_index.json",
                 "context/project/budget.json",
-                "context/project/client_knowledge.json",
-                "context/project/product_knowledge.json",
-                "context/project/product_profile.json",
                 "context/project/project_card.json",
-                "context/project/stage0_project_state.json",
             )
             l3_refs = tuple(
                 item for item in receipts.values[0].refs if item.layer is ContextLayer.L3_PROJECT
@@ -793,45 +824,13 @@ def test_kb_pin_receipt_and_missing_or_foreign_context_fail_closed(tmp_path: Pat
 
             # Required context bytes disappearing is a hard read failure before a model source can
             # be assembled; no guessed/recompiled replacement is admitted.
-            missing_ref = bundle_v1.artifacts[0].artifact_ref
+            missing_ref = bundle.artifacts[0].artifact_ref
             await storage.delete(missing_ref.artifact_key)
             with pytest.raises(ArtifactNotFound):
                 await ProjectLayerSource(artifacts=artifacts).load(
-                    request=request_v1,
+                    request=request,
                     profile=_profile(),
                     history=(),
-                )
-
-            foreign_workspace = f"s3-foreign-{uuid4().hex[:8]}"
-            await seed_workspace(conn, foreign_workspace)
-            foreign_brand = await create_brand(
-                conn,
-                workspace_id=foreign_workspace,
-                name="Foreign Brand",
-            )
-            foreign_project = await create_project(
-                conn,
-                workspace_id=foreign_workspace,
-                brand_id=foreign_brand.brand_id,
-                name="Foreign Project",
-            )
-            foreign_submission = _submission(
-                workspace_id=foreign_workspace,
-                project_id=foreign_project.project_id,
-                suffix="foreign",
-            )
-            foreign_scope = replace(
-                pinned_v1,
-                project_id=foreign_project.project_id,
-                name=foreign_project.name,
-                status=foreign_project.status,
-                brand_id=foreign_brand.brand_id,
-                product_id=None,
-            )
-            with pytest.raises(LookupError, match="unavailable in this workspace"):
-                await runner._compose_project_context(
-                    submission=foreign_submission,
-                    scope=foreign_scope,
                 )
 
     run_async(scenario())

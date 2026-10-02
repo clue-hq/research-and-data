@@ -1,4 +1,5 @@
 import type { PageId, Scene } from "../engine/scene/contracts";
+import { firstPageId } from "../engine/scene/sceneQueries";
 
 /**
  * genad2 Task 5 — the ZERO-PAGE lifecycle of a scene (ad) document.
@@ -81,4 +82,26 @@ export function scenePagelessNotice(
   // A pageless scene cannot have resolved a page id; if one is somehow present
   // the document is not the state this notice describes.
   return pageId === null ? PAGELESS_SCENE_NOTICE : null;
+}
+
+/**
+ * Editor Quality Plan 2, item D — the page the canvas should DRAW.
+ *
+ * `use-scene-document` picks `pageId = firstPageId(loaded.scene)` ONCE at
+ * load. A chat-born ad loads pageless (`open_design_leg@4` births `pages: {}`),
+ * so that id stays null even after the reveal pump has applied a streamed
+ * `add_page` — the engine has the page, the drawn scene has the page, and the
+ * stage kept showing the pageless notice until a checkpoint reload replaced
+ * the loaded scene. This is the one derivation both the artboard model and
+ * the notice read: the loaded id when there is one, else the first page of
+ * whatever scene is being drawn.
+ */
+export function effectiveScenePageId(
+  loadedPageId: PageId | null,
+  drawnScene: Scene | null,
+): PageId | null {
+  if (loadedPageId !== null) {
+    return loadedPageId;
+  }
+  return drawnScene ? firstPageId(drawnScene) : null;
 }

@@ -296,8 +296,9 @@ class DesignToolInvocations:
     ) -> None:
         self._host = host
         self._registry = ToolRegistry()
+        from .factory import is_default_design_tool
         for tool in build_design_tools(host):
-            self._registry.register(tool, make_default=True)
+            self._registry.register(tool, make_default=is_default_design_tool(tool))
         self._storage = storage
         self._idempotency_ttl_s = idempotency_ttl_s
         # D7: present on the worker path (a turn is driving), absent on the request path.
@@ -334,6 +335,11 @@ class DesignToolInvocations:
         idempotency_key: str | None = None,
     ) -> ToolResult:
         """Run one governed design tool. Synchronous — see the module docstring."""
+        if actor == "agent" and self._run_subject is not None:
+            if self._host.repository(workspace_id).cancellation_requested(self._run_subject.run_id):
+                from lumen_agent.cancellation import TurnCancelled
+
+                raise TurnCancelled()
         return _run_isolated(
             self._ainvoke(
                 name,

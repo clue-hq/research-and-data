@@ -17,6 +17,7 @@ from clue_agents import (
     AgentModelProvider,
     AgentProfileRegistry,
     AgentWorkspaceFactory,
+    AttachmentDescriber,
     CompiledContextCardReader,
     ContextAssemblyPolicy,
     DeterministicAgentContextAssembler,
@@ -41,6 +42,8 @@ from clue_api.agent_turn_wiring import (
 )
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
 from clue_api.deep import ProfileAccountFn
+from clue_api.project_library_refresh import ProjectLibraryRefresher
+from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.turn_binding import CapturedTurnBinder
 from clue_config import Secrets, Settings
 from clue_config.gateway import GatewayConfig
@@ -430,6 +433,23 @@ class AgentPlatformComponents:
     replay: DbAgentReplayReader
     privacy: AgentPrivacyService
     ownership: DbAgentOwnershipRouter
+    #: How many of a thread's past images the conversation layer may re-send (0 = no cap). The
+    #: default keeps the trial and test builders, which have no Settings, working unchanged.
+    history_images_max: int = 20
+    #: Head-of-ABM's turn limits are operator settings, not profile content (founder ruling
+    #: 2026-09-27), so changing one never mints a profile version. ``None`` = no timeout / no
+    #: long-turn alert. The defaults mirror the shipped settings for builders with no Settings.
+    head_of_abm_max_model_rounds: int = 350
+    #: Spec 2026-09-29 §3.1: continue the thread's saved conversation (the shipped default).
+    head_of_abm_continuation_enabled: bool = True
+    head_of_abm_turn_timeout_s: float | None = None
+    agent_long_turn_alert_s: float | None = 3600.0
+    #: Where the code sandbox looks up a turn's host directories and its remaining run budget
+    #: (spec 2026-09-19 §3.4). It is the **same object** the toolbelt's ``run_python@1`` was
+    #: built with, because a second registry would be a second, empty, truth. A process that
+    #: composed none — every HTTP root, and every deployment with the sandbox off — leaves it
+    #: ``None``, the conversation engine registers nothing, and the tool refuses by name.
+    sandbox_workspaces: SandboxWorkspaces | None = None
 
 
 def build_agent_platform_components(
@@ -440,12 +460,32 @@ def build_agent_platform_components(
     storage: StorageBackend,
     tools: ToolRegistry,
     conn_factory: ConnFactory = transaction,
+    sandbox_workspaces: SandboxWorkspaces | None = None,
 ) -> AgentPlatformComponents:
-    """Build every common C6 production adapter at the API root; fail before model spend."""
+    """Build every common C6 production adapter at the API root; fail before model spend.
+
+    ``sandbox_workspaces`` is *passed in*, never built here, and that is deliberate: the toolbelt
+    handed to ``run_python@1`` and the conversation engine that registers the turn must share one
+    registry instance, so the composition root that builds both owns it (the fleet worker does).
+    """
 
     artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=conn_factory)
     workspaces = build_agent_workspace_factory(storage=storage, settings=settings)
     profiles = build_agent_profile_registry(tools)
+    design_run_purger = None
+    if settings.design_runtime_enabled:
+        from lumen_api.runtime_privacy import build_runtime_workspace_purger
+
+        design_run_purger = build_runtime_workspace_purger()
+    # A DSAR erasure takes an interview quote out of the project library's ``decisions.md`` — a
+    # compiled rendering beside the threads, which no tombstone reaches — so the privacy service
+    # rewrites the library of every project it touched once the erasure has committed.
+    library = ProjectLibraryRefresher(
+        storage=storage,
+        artifacts=artifacts,
+        workspaces=workspaces,
+        conn_factory=conn_factory,
+    )
     return AgentPlatformComponents(
         profiles=profiles,
         models=build_agent_model_provider(config=gateway_config, secrets=secrets),
@@ -458,8 +498,16 @@ def build_agent_platform_components(
             storage=storage,
             workspaces=workspaces,
             conn_factory=conn_factory,
+            design_run_purger=design_run_purger,
+            library=library,
         ),
         ownership=DbAgentOwnershipRouter(settings=settings, conn_factory=conn_factory),
+        history_images_max=settings.chat_attachment_history_images_max,
+        head_of_abm_max_model_rounds=settings.head_of_abm_max_model_rounds,
+        head_of_abm_continuation_enabled=settings.head_of_abm_continuation_enabled,
+        head_of_abm_turn_timeout_s=settings.head_of_abm_turn_timeout_s or None,
+        agent_long_turn_alert_s=settings.agent_long_turn_alert_s or None,
+        sandbox_workspaces=sandbox_workspaces,
     )
 
 
@@ -473,6 +521,8 @@ def build_agent_context_assembler(
     requested_memory_types: tuple[MemoryType, ...],
     policy: ContextAssemblyPolicy,
     captured_turns: CapturedTurnBinder | None = None,
+    attachment_describer: AttachmentDescriber | None = None,
+    history_images_max: int = 20,
     conn_factory: ConnFactory = transaction,
 ) -> DeterministicAgentContextAssembler:
     """Compose the one exact L1-L7 production assembler for a resolved role/profile.
@@ -482,6 +532,13 @@ def build_agent_context_assembler(
     (the trial does); a caller with no execution seam of its own gets a private one. Either way the
     binding is derived from durable state, so two instances could only ever agree — sharing saves
     the second read and the second cache, not correctness.
+
+    ``attachment_describer`` is how L7 names the files on the turn. A surface whose submissions
+    carry no attachments passes none and keeps the pointer-only line, which is the honest thing to
+    say when nothing durable names the file.
+
+    ``history_images_max`` caps how many of the thread's earlier images L6 re-sends (0 = all); a
+    surface with no setting of its own keeps the default rather than deciding the budget itself.
     """
 
     return DeterministicAgentContextAssembler(
@@ -495,15 +552,21 @@ def build_agent_context_assembler(
                 requested_types=requested_memory_types,
             ),
             FocusLayerSource(cards),
-            HistoryLayerSource(artifacts),
+            # Ruling 2 (spec 2026-09-18): images the user already sent stay in the conversation,
+            # newest first, up to this many per thread.
+            HistoryLayerSource(artifacts, images_max=history_images_max),
             TurnLayerSource(
                 artifacts,
                 # PC-C8 §6b: L7 names the turn's capture so the model can reference it; a surface
                 # whose turn is not a captured onboarding input simply gets no envelope.
                 captured_turn=captured_turns
                 or CapturedTurnBinder(artifacts=artifacts, conn_factory=conn_factory),
+                attachments=attachment_describer,
             ),
         ),
         policy=policy,
         receipts=DbAgentContextReceiptStore(conn_factory=conn_factory),
+        # The assembler reads the turn's image bytes itself, at the one moment it builds the user
+        # message; the same durable store every layer source already reads through.
+        artifacts=artifacts,
     )

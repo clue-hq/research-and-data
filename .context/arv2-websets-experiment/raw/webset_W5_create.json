@@ -1,0 +1,96 @@
+{
+  "id": "webset_01m245khk2n469ryjtjw86e15m",
+  "object": "webset",
+  "status": "running",
+  "externalId": "arv2-r4-discovery-w5-2026-09-10",
+  "title": "ARV2 R4 discovery experiment W5 2026-09-10",
+  "searches": [
+    {
+      "id": "wsearch_01m245khvdwypycx2k729xnkc4",
+      "object": "webset_search",
+      "websetId": "webset_01m245khk2n469ryjtjw86e15m",
+      "status": "running",
+      "query": "US B2B vertical SaaS or AI startup that raised a Series A or Series A extension within the last 24 months (not seed, not Series B or later), selling software to independent small businesses in a fragmented vertical (dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants, trucking), actively hiring go-to-market roles now, and showing buying-intent signals for outbound or account-based prospecting.",
+      "entity": {
+        "type": "company"
+      },
+      "criteria": [
+        {
+          "description": "Company is headquartered in the United States",
+          "successRate": 0
+        },
+        {
+          "description": "Company announced a Series A or Series A extension funding round within the last 24 months (not seed, not Series B or later, not a growth round)",
+          "successRate": 0
+        },
+        {
+          "description": "Company sells B2B software or AI to independent small businesses in one fragmented vertical such as dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants or trucking",
+          "successRate": 0
+        },
+        {
+          "description": "Company currently lists at least one open go-to-market job (sales, marketing, growth, SDR or BDR, demand generation, partnerships) on its own careers page or ATS board",
+          "successRate": 0
+        },
+        {
+          "description": "Company shows a buying-intent signal for outbound or account-based prospecting: a GTM job description mentioning list-building or outbound, a founder stating founder-led sales is at its limit, or no ABM platform in use",
+          "successRate": 0
+        }
+      ],
+      "count": 25,
+      "maxPeoplePerCompany": null,
+      "behavior": "override",
+      "exclude": [],
+      "scope": [],
+      "progress": {
+        "found": 0,
+        "analyzed": 0,
+        "completion": 0,
+        "timeLeft": null
+      },
+      "recall": null,
+      "metadata": {},
+      "canceledAt": null,
+      "canceledReason": null,
+      "createdAt": "2026-09-09T22:46:20.269Z",
+      "updatedAt": "2026-09-09T22:46:20.498Z"
+    }
+  ],
+  "imports": [],
+  "enrichments": [],
+  "monitors": [],
+  "excludes": [],
+  "metadata": {},
+  "dashboardUrl": "https://websets.exa.ai/websets/webset_01m245khk2n469ryjtjw86e15m",
+  "createdAt": "2026-09-09T22:46:20.002Z",
+  "updatedAt": "2026-09-09T22:46:20.498Z",
+  "_http_status": 201,
+  "_elapsed_s": 1.99,
+  "_request": {
+    "title": "ARV2 R4 discovery experiment W5 2026-09-10",
+    "externalId": "arv2-r4-discovery-w5-2026-09-10",
+    "search": {
+      "query": "US B2B vertical SaaS or AI startup that raised a Series A or Series A extension within the last 24 months (not seed, not Series B or later), selling software to independent small businesses in a fragmented vertical (dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants, trucking), actively hiring go-to-market roles now, and showing buying-intent signals for outbound or account-based prospecting.",
+      "count": 25,
+      "entity": {
+        "type": "company"
+      },
+      "criteria": [
+        {
+          "description": "Company is headquartered in the United States"
+        },
+        {
+          "description": "Company announced a Series A or Series A extension funding round within the last 24 months (not seed, not Series B or later, not a growth round)"
+        },
+        {
+          "description": "Company sells B2B software or AI to independent small businesses in one fragmented vertical such as dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants or trucking"
+        },
+        {
+          "description": "Company currently lists at least one open go-to-market job (sales, marketing, growth, SDR or BDR, demand generation, partnerships) on its own careers page or ATS board"
+        },
+        {
+          "description": "Company shows a buying-intent signal for outbound or account-based prospecting: a GTM job description mentioning list-building or outbound, a founder stating founder-led sales is at its limit, or no ABM platform in use"
+        }
+      ]
+    }
+  }
+}

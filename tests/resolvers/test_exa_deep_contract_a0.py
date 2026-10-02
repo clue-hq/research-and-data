@@ -10,14 +10,22 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from clue_research.resolvers.exa import deep_contract, normalize_exa_deep_snapshot
 from clue_research.resolvers.exa.deep_contract import (
+    EXA_FIELD_ALIAS_CHARACTERS,
     ExaDeepFailureClass,
     ExaDeepSearchRequest,
     ExaDeepSearchResponse,
     classify_exa_deep_http_failure,
     exa_field_alias,
+    exa_field_aliases,
+    field_key_from_exa_alias,
+    legacy_exa_field_alias,
     validate_exa_deep_exchange,
+    validate_exa_field_alias,
 )
+
+_SHORT_ALIAS = deep_contract._SHORT_FIELD_ALIAS
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures" / "providers" / "exa" / "search"
 
@@ -173,3 +181,142 @@ def test_post_dispatch_ambiguous_failures_never_claim_zero_spend() -> None:
     assert classify_exa_deep_http_failure(429, dispatched=True) is ExaDeepFailureClass.SPEND_UNKNOWN
     assert classify_exa_deep_http_failure(402, dispatched=True) is ExaDeepFailureClass.BUDGET
     assert classify_exa_deep_http_failure(401, dispatched=True) is ExaDeepFailureClass.HARD
+
+
+def test_short_field_aliases_are_deterministic_bounded_and_collision_free() -> None:
+    """Alias length no longer tracks the field name, and a bundle assignment is reproducible.
+
+    The provider must copy the property name into its answer verbatim. Under the v1 encoding the
+    live resonance bundle asked it to copy 52, 66 and 74 characters of hex and it lost characters
+    out of two of them, so the paid exchange could not be settled at all. Ten characters is the
+    whole fix; determinism is what lets a persisted request be revalidated later.
+    """
+
+    keys = (
+        "account.resonance.buying_culture",
+        "account.resonance.culture",
+        "account.resonance.employee_sentiment",
+    )
+    assert [len(legacy_exa_field_alias(key)) for key in keys] == [66, 52, 74]
+
+    aliases = exa_field_aliases(keys)
+    assert set(aliases) == set(keys)
+    assert all(len(alias) == EXA_FIELD_ALIAS_CHARACTERS == 10 for alias in aliases.values())
+    assert len(set(aliases.values())) == len(keys)
+    assert all(_SHORT_ALIAS.fullmatch(alias) for alias in aliases.values())
+    # Membership decides the table, never the caller's ordering, and never the process.
+    assert exa_field_aliases(reversed(keys)) == aliases
+    assert {key: exa_field_alias(key) for key in keys} == aliases
+
+    with pytest.raises(ValueError, match="unique"):
+        exa_field_aliases((*keys, keys[0]))
+    with pytest.raises(ValueError, match="at least one field key"):
+        exa_field_aliases(())
+
+
+def test_a_bundle_digest_collision_is_resolved_deterministically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A same-digest draw bumps a salt instead of failing; sorted order decides who moves."""
+
+    collide = {"account.alpha_field", "account.beta_field"}
+    original = deep_contract._short_field_alias
+
+    def _colliding(field_key: str, *, salt: int) -> str:
+        if field_key in collide and salt == 0:
+            return "k_00000000"
+        return original(field_key, salt=salt)
+
+    monkeypatch.setattr(deep_contract, "_short_field_alias", _colliding)
+    aliases = exa_field_aliases(sorted(collide))
+
+    assert aliases["account.alpha_field"] == "k_00000000"
+    assert aliases["account.beta_field"] == original("account.beta_field", salt=1)
+    assert exa_field_aliases(sorted(collide, reverse=True)) == aliases
+
+
+def test_a_legacy_alias_request_and_response_still_parse_after_the_cutover() -> None:
+    """The pre-cutover wire pair is retained byte-identically and must keep resolving.
+
+    Retained responses, snapshot replay and the quarantined-response recovery path all read a
+    *stored* request, so resolution follows the generation that request actually asked for rather
+    than the one the compiler emits today.
+    """
+
+    checksums = _json("checksums.json")
+    assert _sha256("legacy_alias_deep_request.json") == checksums["legacy_alias_deep_request.json"]
+    assert (
+        _sha256("legacy_alias_deep_response.json") == checksums["legacy_alias_deep_response.json"]
+    )
+
+    request = ExaDeepSearchRequest.model_validate(_json("legacy_alias_deep_request.json"))
+    properties = request.output_schema["properties"]
+    assert isinstance(properties, dict)
+    assert set(properties) == {
+        legacy_exa_field_alias("account.operational_pain"),
+        legacy_exa_field_alias("account.strategic_moves"),
+    }
+    assert set(request.field_key_by_alias.values()) == {
+        "account.operational_pain",
+        "account.strategic_moves",
+    }
+    assert all(len(alias) > EXA_FIELD_ALIAS_CHARACTERS for alias in properties)
+
+    response = ExaDeepSearchResponse.model_validate(_json("legacy_alias_deep_response.json"))
+    validate_exa_deep_exchange(request, response)
+    normalized = normalize_exa_deep_snapshot(request, response)
+    assert {field.field_key for field in normalized.synthesis.fields} == {
+        "account.operational_pain",
+        "account.strategic_moves",
+    }
+
+
+def test_the_two_alias_generations_cannot_be_mixed_or_cross_resolved() -> None:
+    legacy = legacy_exa_field_alias("account.operational_pain")
+    short = exa_field_alias("account.operational_pain")
+
+    assert field_key_from_exa_alias(legacy) == "account.operational_pain"
+    with pytest.raises(ValueError, match="short bundle alias"):
+        field_key_from_exa_alias(short)
+    validate_exa_field_alias(legacy)
+    validate_exa_field_alias(short)
+    with pytest.raises(ValueError, match="field alias"):
+        validate_exa_field_alias("account.operational_pain")
+
+    # A schema-and-prompt-consistent third member in the *other* generation is still refused: one
+    # request states one generation, so nothing has to guess which decoder a property belongs to.
+    third = legacy_exa_field_alias("account.total_funding")
+    raw = _json("deep_request.json")
+    schema = raw["outputSchema"]
+    assert isinstance(schema, dict)
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    schema["properties"] = {third: {"type": ["string", "null"]}, **properties}
+    schema["required"] = list(schema["properties"])
+    prompt = raw["systemPrompt"]
+    assert isinstance(prompt, str)
+    raw["systemPrompt"] = f"{prompt} {third}=account.total_funding."
+    with pytest.raises(ValidationError, match="mix provider alias generations"):
+        ExaDeepSearchRequest.model_validate(raw)
+
+
+def test_a_repeated_prompt_pin_is_tolerated_but_a_conflicting_one_is_not() -> None:
+    """The frozen v1 validator compared a *set* of pins; that acceptance is preserved exactly.
+
+    A contact prompt embeds untrusted prior research context, so the same ``alias=field.key`` text
+    can legitimately appear twice. Only a second field key for one alias is a real contradiction.
+    """
+
+    raw = _json("deep_request.json")
+    prompt = raw["systemPrompt"]
+    assert isinstance(prompt, str)
+    pain = exa_field_alias("account.operational_pain")
+
+    repeated = dict(raw)
+    repeated["systemPrompt"] = f"{prompt} Repeated pin: {pain}=account.operational_pain."
+    ExaDeepSearchRequest.model_validate(repeated)
+
+    conflicting = dict(raw)
+    conflicting["systemPrompt"] = f"{prompt} Conflicting pin: {pain}=account.strategic_moves."
+    with pytest.raises(ValidationError, match="two field keys"):
+        ExaDeepSearchRequest.model_validate(conflicting)

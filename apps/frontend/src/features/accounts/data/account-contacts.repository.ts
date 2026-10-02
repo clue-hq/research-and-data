@@ -1,56 +1,108 @@
+import { withResearchContext, type ResearchContextQuery } from "../model/research-context";
 import {
-  AccountContactDetailSchema,
+  AccountContactDetailResponseSchema,
   AccountContactsResponseSchema,
   type AccountContactDetail,
   type AccountContactSummary,
 } from "../model/account-contact";
+import {
+  deniseDresserFixture,
+  openAiContactsFixture,
+} from "./account-contacts.fixture";
+import {
+  zafranContactDetails,
+  zafranContactsFixture,
+} from "./zafran/contacts";
 import { fetchRead } from "./frontend-api";
+import { accountsFixtureMode } from "./repository-mode";
 
 export interface AccountContactsRepository {
-  list(accountId: string): Promise<AccountContactSummary[]>;
+  /** `null` means "no such account" — an account with no committee is `[]`. */
+  list(accountId: string, context?: ResearchContextQuery): Promise<AccountContactSummary[] | null>;
   get(
     accountId: string,
     contactId: string,
+    context?: ResearchContextQuery,
   ): Promise<AccountContactDetail | null>;
 }
 
+export const fixtureAccountContactsRepository: AccountContactsRepository = {
+  async list(accountId) {
+    const contacts =
+      accountId === "openai"
+        ? openAiContactsFixture
+        : accountId === "zafran-security"
+          ? zafranContactsFixture
+          : null;
+    if (!contacts) return null;
+    return AccountContactsResponseSchema.parse({
+      data: contacts,
+    }).data;
+  },
+  async get(accountId, contactId) {
+    const contact =
+      accountId === "openai" && contactId === deniseDresserFixture.id
+        ? deniseDresserFixture
+        : accountId === "zafran-security"
+          ? zafranContactDetails[contactId]
+          : null;
+    if (!contact) return null;
+    return AccountContactDetailResponseSchema.parse({
+      data: contact,
+    }).data;
+  },
+};
+
 /**
- * Both contact endpoints follow a merged account silently and serve the
- * survivor's committee. An empty committee is a `200` with an empty list, not a
- * `404` — the governed committee reads M8D research references whose production
- * writer can legitimately produce no eligible members, so live data may be
- * empty and is proven through backend contract tests rather than UI fixtures.
+ * The live contacts reads.
+ *
+ * E4 `GET /accounts/{id}/contacts` serves `{data, meta: {total}}`; the rows are
+ * the whole committee, so `meta.total` is redundant here and is not read (the
+ * schema is non-strict, so parsing the envelope with `{data}` is enough).
+ * E5 `GET /accounts/{id}/contacts/{contactId}` serves `{data}`.
  */
 export function createHttpAccountContactsRepository(
   read: typeof fetchRead = fetchRead,
 ): AccountContactsRepository {
   return {
-    async list(accountId) {
-      // The contacts list has no domain 404 either: an account with no
-      // committee is a 200 with an empty list. An unknown account id is the one
-      // record-level case, so it is allowed to resolve to an empty table.
+    async list(accountId, context) {
       const body = await read(
-        `/accounts/${encodeURIComponent(accountId)}/contacts`,
+        withResearchContext(`/accounts/${encodeURIComponent(accountId)}/contacts`, context),
         { recordNotFoundAllowed: true },
       );
-      if (body === null) return [];
+      if (body === null) return null;
       return AccountContactsResponseSchema.parse(body).data;
     },
-    async get(accountId, contactId) {
+    async get(accountId, contactId, context) {
       const body = await read(
-        `/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`,
+        withResearchContext(`/accounts/${encodeURIComponent(accountId)}/contacts/${encodeURIComponent(contactId)}`, context),
         { recordNotFoundAllowed: true },
       );
-      // A single resource: the profile object itself, no `data` wrapper.
-      return body === null ? null : AccountContactDetailSchema.parse(body);
+      if (body === null) return null;
+      return AccountContactDetailResponseSchema.parse(body).data;
     },
   };
 }
 
-export function getAccountContacts(accountId: string) {
-  return createHttpAccountContactsRepository().list(accountId);
+function repository(read: typeof fetchRead): AccountContactsRepository {
+  return accountsFixtureMode()
+    ? fixtureAccountContactsRepository
+    : createHttpAccountContactsRepository(read);
 }
 
-export function getAccountContact(accountId: string, contactId: string) {
-  return createHttpAccountContactsRepository().get(accountId, contactId);
+export function getAccountContacts(
+  accountId: string,
+  read: typeof fetchRead = fetchRead,
+  context?: ResearchContextQuery,
+) {
+  return repository(read).list(accountId, context);
+}
+
+export function getAccountContact(
+  accountId: string,
+  contactId: string,
+  read: typeof fetchRead = fetchRead,
+  context?: ResearchContextQuery,
+) {
+  return repository(read).get(accountId, contactId, context);
 }

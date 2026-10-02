@@ -302,6 +302,10 @@ def test_out_of_scope_re_delivers_the_users_own_message(
             assert redelivered.message_artifact_key == closing.message_artifact_key
             assert redelivered.submitted_by_user_id == closing.submitted_by_user_id
             assert redelivered.turn_id != closing.turn_id
+            assert redelivered.derivation == "design_leg_redelivery"
+            assert redelivered.derived_from_turn_id == closing.turn_id
+            # The user's own submission is not derived from anything.
+            assert closing.derivation is None and closing.derived_from_turn_id is None
             # The leg is closed, so the redelivered turn routes to head-of-abm.
             assert (
                 await design_legs.get_open_leg_for_thread(
@@ -591,5 +595,98 @@ def test_reopen_refuses_what_it_must(
                     idempotency_ttl_s=60,
                 )
             assert "design_leg_reopen_not_found" in str(unknown.value)
+
+    run_async(scenario())
+
+
+def test_closing_a_two_document_leg_journals_every_documents_version(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Spec §3.2: the close records the version of EVERY document the leg worked on.
+
+    ``document_id``/``document_version`` keep meaning position 0 — every single-document
+    reader of the journal is unchanged — and ``document_versions`` carries the whole set,
+    so a two-artboard leg's lock-in is a complete record instead of one artboard's.
+
+    The documents are attached after the turn: what this test owns is the close journal,
+    not the runner's fan-out (pinned by the multi-artifact engine suite).
+    """
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="versions")
+            with hermetic_flag_env():
+                catalog = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            closing = await _one_design_turn(
+                conn, seeds, catalog, label="versions-t1", message="Two artboards, bolder."
+            )
+
+            workspace_id = seeds["workspace_id"]
+            leg_id = seeds["leg"]["id"]
+            for position, (document_id, version) in enumerate(
+                (("doc_versions_a", 2), ("doc_versions_b", 5))
+            ):
+                await conn.execute(
+                    text(
+                        "INSERT INTO design_document (id, workspace_id, title, status, doc_kind,"
+                        " current_scene_json, current_version)"
+                        " VALUES (:id, :ws, :title, 'draft', 'scene', CAST('{}' AS jsonb), :v)"
+                    ),
+                    {
+                        "id": document_id,
+                        "ws": workspace_id,
+                        "title": f"Artboard {position}",
+                        "v": version,
+                    },
+                )
+            await design_legs.add_leg_documents(
+                conn,
+                workspace_id=workspace_id,
+                leg_id=leg_id,
+                documents=[
+                    design_legs.LegDocumentSpec(document_id="doc_versions_a", position=0),
+                    design_legs.LegDocumentSpec(document_id="doc_versions_b", position=1),
+                ],
+            )
+            # The shipped tool pins position 0 on the leg itself; the DAL seed opens a
+            # document-less leg, so this reproduces the shape the close reads.
+            await conn.execute(
+                text(
+                    "UPDATE design_leg SET document_id = 'doc_versions_a'"
+                    " WHERE id = :leg AND workspace_id = :ws"
+                ),
+                {"leg": leg_id, "ws": workspace_id},
+            )
+
+            await invoke_tool(
+                _finish_registry(seeds),
+                "finish_design_leg",
+                {
+                    "source_turn_ref": derive_turn_action_ref(closing.turn_id),
+                    "reason": "locked",
+                    "summary": "Locked both artboards.",
+                },
+                _context(seeds),
+                idempotency_ttl_s=60,
+            )
+
+            summary_refs = (
+                await conn.execute(
+                    text("SELECT summary_refs FROM design_leg_exit_journal WHERE leg_id = :leg"),
+                    {"leg": leg_id},
+                )
+            ).scalar_one()
+            if isinstance(summary_refs, str):  # driver-dependent jsonb decode
+                summary_refs = json.loads(summary_refs)
+            assert summary_refs["document_id"] == "doc_versions_a"
+            assert summary_refs["document_version"] == 2
+            assert summary_refs["document_versions"] == {
+                "doc_versions_a": 2,
+                "doc_versions_b": 5,
+            }
 
     run_async(scenario())

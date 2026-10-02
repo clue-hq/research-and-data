@@ -30,7 +30,7 @@ from clue_auth import (
     provision_self_serve_workspace,
     provision_workspace_owner,
 )
-from clue_auth.errors import IdentityConflictError
+from clue_auth.errors import IdentityConflictError, ProvisioningValidationError
 from clue_auth.providers import ClerkAuthenticator, ClerkJwtConfig
 from clue_auth.store import suspend_platform_user, suspend_workspace_membership
 
@@ -181,6 +181,71 @@ def test_replay_updates_the_company_website_and_refuses_inactive_membership() ->
                     provider_key="clerk",
                     provider_subject="website-fix-subject",
                     **PROFILE,
+                )
+
+    run_async(scenario())
+
+
+def test_a_typed_company_name_wins_over_the_website() -> None:
+    """Precedence: what the human typed names the workspace, even when a website could."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            result = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject="typed-name-subject",
+                **{**PROFILE, "company_name": "Insight Health", "company_website": "acme.com"},
+            )
+            assert result.workspace.name == "Insight Health"
+            assert result.brand.name == "Insight Health"
+
+    run_async(scenario())
+
+
+def test_a_blank_company_name_is_named_from_the_website() -> None:
+    """No name typed: the shared canonical rule names the workspace AND its first brand."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            result = await provision_self_serve_workspace(
+                conn,
+                provider_key="clerk",
+                provider_subject="website-name-subject",
+                **{
+                    **PROFILE,
+                    "company_name": "   ",
+                    "company_website": "https://www.acme-health.com",
+                },
+            )
+            assert result.workspace.name == "Acme Health"
+            assert result.brand.name == "Acme Health"
+
+    run_async(scenario())
+
+
+def test_neither_a_name_nor_a_nameable_website_is_refused() -> None:
+    """A workspace is never provisioned nameless — and never named after its id."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            with pytest.raises(ProvisioningValidationError) as refused:
+                await provision_self_serve_workspace(
+                    conn,
+                    provider_key="clerk",
+                    provider_subject="nameless-subject",
+                    **{**PROFILE, "company_name": None, "company_website": None},
+                )
+            assert refused.value.code == "COMPANY_NAME_REQUIRED"
+            assert refused.value.status_code == 422
+
+            # A website that names nothing (an IP literal) is no better than no website.
+            with pytest.raises(ProvisioningValidationError):
+                await provision_self_serve_workspace(
+                    conn,
+                    provider_key="clerk",
+                    provider_subject="nameless-subject-2",
+                    **{**PROFILE, "company_name": "", "company_website": "https://192.168.1.1"},
                 )
 
     run_async(scenario())
@@ -393,31 +458,42 @@ def test_provision_route_end_to_end_with_replay_and_errors() -> None:
                 assert third["company_name"] == "Insight Health"
                 assert third["company_name_ignored"] is True
 
-                # The freshly provisioned identity now serves a normal session read.
+                # A blank company name is no longer a validation error: the website names the
+                # workspace. (This subject already owns one, so the call replays and the
+                # recorded name stands — nothing was submitted to ignore.)
+                blank = await client.post(
+                    "/auth/v1/provision",
+                    json={**body, "company_name": "   "},
+                    headers=headers,
+                )
+                assert blank.status_code == 200
+                assert blank.json()["company_name"] == "Insight Health"
+                assert blank.json()["company_name_ignored"] is False
+
+                # Neither a typed name nor a nameable website: refused on the wire with the
+                # code, before the replay read — a workspace is never provisioned nameless.
+                nameless = await client.post(
+                    "/auth/v1/provision",
+                    json={**body, "company_name": "", "company_website": None},
+                    headers=headers,
+                )
+                assert nameless.status_code == 422
+                assert nameless.json()["error"]["code"] == "COMPANY_NAME_REQUIRED"
+                assert nameless.json()["error"]["requestId"] == nameless.headers["X-Request-Id"]
+
+                # The freshly provisioned identity now serves a normal session read, and the
+                # session names every workspace it offers.
                 session = await client.get("/auth/v1/session", headers=headers)
                 assert session.status_code == 200
                 memberships = session.json()["memberships"]
                 assert [m["workspace_id"] for m in memberships] == [first["workspace_id"]]
                 assert memberships[0]["role_key"] == "owner"
+                assert memberships[0]["workspace_name"] == "Insight Health"
 
                 await suspend_platform_user(conn, first["user_id"])
                 conflicted = await client.post("/auth/v1/provision", json=body, headers=headers)
                 assert conflicted.status_code == 409
                 assert conflicted.json()["error"]["code"] == "PROVISIONING_CONFLICT"
-
-                invalid = await client.post(
-                    "/auth/v1/provision",
-                    json={**body, "company_name": ""},
-                    headers=headers,
-                )
-                assert invalid.status_code == 422
-
-                whitespace = await client.post(
-                    "/auth/v1/provision",
-                    json={**body, "company_name": "   "},
-                    headers=headers,
-                )
-                assert whitespace.status_code == 422
 
                 bad_website = await client.post(
                     "/auth/v1/provision",

@@ -1,0 +1,107 @@
+schema_version: '1'
+kind: profile
+name: quality-account-research
+version: v14
+status: active
+role: account_research
+prompt:
+  name: quality-account-research
+  version: v14
+  sha256: 6ec4e86709dfb6684837d8a059568e5c63c2e0f54b3f7c3ccd26d76d54058e2f
+skills:
+- name: governed-evidence
+  version: v3
+  sha256: 8a7395a71f1c85e29b6519604c36819f8da553747cea45957211edebf787de22
+- name: account-dossier
+  version: v5
+  sha256: 3eaf64041c62df447db8c9ce5c39446a08583b6bdd27a2609919fa80e01fb430
+- name: person-research-briefing
+  version: v3
+  sha256: 75c1250c28373c715e00f5f17f41c4c4889c3f32e0cae3986f4c70d8882f7aa1
+tools:
+- &id001
+  name: record_research_finding
+  version: '2'
+  input_schema_sha256: 502e43eeaef9a277b03fa5ab6445473e6d0587b873807166aac43013e0e5b5e5
+  output_schema_sha256: d743d5ffed3f779f5f06ab262d0932265b130cbcf72650e872be37ded5aa7b4b
+- &id002
+  name: search_evidence
+  version: '2'
+  input_schema_sha256: d6eee650044a263b8d59f276ce887ccdd314816cb7f736ccc360e7760107ab4d
+  output_schema_sha256: 12fd588d01efc14d760126a4eb485c56458f25bc3841408cdc4668422f677be3
+- &id003
+  name: record_research_disposition
+  version: '2'
+  input_schema_sha256: ab84cc6ece3a67ba0f3c6076915bbdf6f48a3256a7ed15053a0975c42caea6ed
+  output_schema_sha256: d5458cf618b731af3058bd1bacf7100d2993c66a59d478b96d1ee01685f2d913
+- name: acquire_research_evidence
+  version: '1'
+  input_schema_sha256: 4d59ef67b3685e3e36d93ced1d21eb4b295b87413928127614c1f8ff13698d08
+  output_schema_sha256: ac4bbc57d23e215e824f5367bdc625284e4d06fb9ac11d7b56056f0accca2901
+- name: nominate_committee_candidate
+  version: '3'
+  input_schema_sha256: bbdeb168892bdb150046b244387abe470be8d5afd0165d8a9910ded301901e40
+  output_schema_sha256: 8562ad1929f0bfc870ee5f6e8008a85bea0f3e2dbd150e65a05d41d0b3085ac9
+- name: nominate_web_committee_candidate
+  version: '3'
+  input_schema_sha256: ef617834b216510968399c0cb039025f8b3b1ec61637a9d316cb2dd07e73a5f8
+  output_schema_sha256: 8562ad1929f0bfc870ee5f6e8008a85bea0f3e2dbd150e65a05d41d0b3085ac9
+model:
+  model_id: x-ai/grok-4.6
+  timeout_s: 120.0
+  max_retries: 2
+  max_output_tokens: 16384
+  temperature: 0.0
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 10485760
+  max_file_bytes: 1048576
+  max_file_count: 200
+  allowed_extensions:
+  - .json
+  - .md
+  - .txt
+  - .yaml
+  readable_prefixes:
+  - .deepagent
+  - inputs
+  - context
+  - work
+  - outputs
+  - research
+  - evidence
+  writable_prefixes:
+  - work
+  - outputs
+  retention_class: agent-ephemeral-v1
+delegation_roles:
+- research_claims
+- research_narrative
+delegation_tool_grants:
+  research_claims:
+  - *id001
+  - *id002
+  - *id003
+  research_narrative:
+  - name: record_research_finding
+    version: '2'
+    input_schema_sha256: 502e43eeaef9a277b03fa5ab6445473e6d0587b873807166aac43013e0e5b5e5
+    output_schema_sha256: d743d5ffed3f779f5f06ab262d0932265b130cbcf72650e872be37ded5aa7b4b
+  - name: search_evidence
+    version: '2'
+    input_schema_sha256: d6eee650044a263b8d59f276ce887ccdd314816cb7f736ccc360e7760107ab4d
+    output_schema_sha256: 12fd588d01efc14d760126a4eb485c56458f25bc3841408cdc4668422f677be3
+  - name: read_research_page_inputs
+    version: '1'
+    input_schema_sha256: 3d8bd52d3e95c7c5afa914340a6cc2e11880857dc9aba5bf69e92d7966fb6896
+    output_schema_sha256: 0d5abd113f8012cbe41c456f4f1534849116722305757b63fd4f5a53cfe74c72
+  - name: publish_research_page
+    version: '2'
+    input_schema_sha256: 143a1a716b07efb5319c8178c4ee3caa4de45cfa08f540f5128e00697bcfc929
+    output_schema_sha256: ec85e7c58685359238c152dfeb0699aeaf26395a32345a3ce8c448bdc10053cd
+max_delegation_depth: 1
+max_delegations: 16
+max_plan_nodes: 64
+turn_timeout_s: 1800.0
+max_model_rounds: 100

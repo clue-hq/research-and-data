@@ -1,0 +1,1556 @@
+{
+  "run": "arv2-smoke-cluehq / Agent A",
+  "date": "2026-08-31",
+  "client": {
+    "name": "Clue",
+    "domain": "cluehq.ai",
+    "product": "Agentic ABM for modern GTM teams"
+  },
+  "rubric_source": "icp.md \u00a75",
+  "hard_gates": {
+    "H1": "US HQ",
+    "H2": "Series A or above",
+    "H3": "quantifiable pain"
+  },
+  "exclusions_applied": [
+    "probook.ai",
+    "lassie.ai",
+    "avoca",
+    "Insight Health",
+    "Clue/cluehq.ai"
+  ],
+  "counts": {
+    "scored": 10,
+    "dropped_at_gate": 21,
+    "selected": 5
+  },
+  "ranking": [
+    {
+      "name": "Zafran Security",
+      "fit_score": 81.0,
+      "band": "select"
+    },
+    {
+      "name": "Cogent Security, Inc.",
+      "fit_score": 80.0,
+      "band": "select"
+    },
+    {
+      "name": "Harmonic Security, Inc.",
+      "fit_score": 79.5,
+      "band": "select"
+    },
+    {
+      "name": "Uptiq (UPTIQ, Inc.)",
+      "fit_score": 67.5,
+      "band": "strong_bench"
+    },
+    {
+      "name": "Vendelux",
+      "fit_score": 66.5,
+      "band": "strong_bench"
+    },
+    {
+      "name": "RevenueCat",
+      "fit_score": 61.8,
+      "band": "strong_bench"
+    },
+    {
+      "name": "Arintra",
+      "fit_score": 55.5,
+      "band": "watch"
+    },
+    {
+      "name": "Translucent (Translucent AI)",
+      "fit_score": 54.2,
+      "band": "watch"
+    },
+    {
+      "name": "Alloy",
+      "fit_score": 52.5,
+      "band": "watch"
+    },
+    {
+      "name": "Glia",
+      "fit_score": 44.0,
+      "band": "drop"
+    }
+  ],
+  "selected_5": [
+    "Cogent Security, Inc.",
+    "Harmonic Security, Inc.",
+    "Zafran Security",
+    "Vendelux",
+    "Uptiq (UPTIQ, Inc.)"
+  ],
+  "alternate": "Arintra",
+  "candidates": [
+    {
+      "name": "Cogent Security, Inc.",
+      "domain": "cogent.com",
+      "vertical": "V1 B2B SaaS \u2014 cybersecurity (AI vulnerability mgmt)",
+      "hq": "San Francisco, CA, USA",
+      "funding_stage": "Series A \u2014 $42M (Feb 18, 2026)",
+      "gates": {
+        "H1_us": "PASS",
+        "H2_series_a_plus": "PASS",
+        "H3_quantifiable_pain": "PASS (Q1 + Q4)"
+      },
+      "notes": "Freshest money + an empty marketing org + a named GTM leader to report to. The textbook shape.",
+      "disposition": "scored",
+      "fit_score": 80.0,
+      "band": "select",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 15.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "Head of Demand Generation req: 'lead all pipeline-generating functions across marketing, including digital, partner, and field, and sales development' \u2026 'start building your team across field/channel and digital/content so Cogent can scale pipeline with far more leverage'",
+          "source_url": "https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 5.0,
+          "max": 10,
+          "inferred": true,
+          "evidence": "49 employees, enterprise-security buyer universe is large and enumerable (named CISO accounts); marketing org is being built from scratch under a Head of Growth",
+          "source_url": "https://linkedin.com/company/cogentsecurity"
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "no founder/leader public complaint about outbound cost found in cheap discovery",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'Six months after launch, Cogent raises $42M led by Bain Capital Ventures to scale the first AI taskforce for vulnerability management.'",
+          "source_url": "https://www.cogent.com/blog/cogent-security-raises-42m-series-a"
+        },
+        "B_named_account": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'AI systems for enterprise cybersecurity teams' \u2014 enterprise CISO motion; role explicitly owns 'field' and 'partner' channels",
+          "source_url": "https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "enterprise vulnerability-management platforms sell at six figures; role is a senior player-coach with an FY27 demand model",
+          "source_url": null
+        },
+        "B_outbound_language": {
+          "points_awarded": 7.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "'owns the front end of the revenue engine: creating, converting, and scaling qualified pipeline' + owns sales development",
+          "source_url": "https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d"
+        },
+        "C_stage": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "Series A, $42M, Bain Capital Ventures + Greylock + Definition, announced 2026-02-18",
+          "source_url": "https://www.prnewswire.com/news-releases/cogent-security-raises-42m-series-a-to-arm-security-teams-with-autonomous-ai-agents-302691566.html"
+        },
+        "C_headcount": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'Cogent employs 49 people, founded in 2024. Headquartered in San Francisco, California, United States.'",
+          "source_url": "https://linkedin.com/company/cogentsecurity"
+        },
+        "C_mktteam": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": true,
+          "evidence": "at 49 total headcount the marketing team is necessarily <10; the Head of Demand Gen is being hired to build it",
+          "source_url": null
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "no ABM/personalization platform named anywhere in the req's tool expectations or on the site",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "Head of Growth already in seat (the req reports to them); Head of Demand Gen req published 2026-08-14",
+          "source_url": "https://jobs.ashbyhq.com/cogent-security/8ed749ff-cf21-47ec-815d-36af19ab389d"
+        },
+        "D_recent_round": {
+          "points_awarded": 3.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "Series A closed 2026-02-18, ~6 months ago",
+          "source_url": "https://www.securityweek.com/cogent-security-raises-42-million-for-ai-driven-vulnerability-management/"
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "CISOs and security leaders are densely reachable on LinkedIn; a physical executive report on an org's own vulnerability posture is a natural direct-mail artifact",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Harmonic Security, Inc.",
+      "domain": "harmonic.security",
+      "vertical": "V1 B2B SaaS \u2014 cybersecurity (AI governance)",
+      "hq": "San Francisco, CA, USA (US + UK workforce; the ABM role is New York, NY - Remote)",
+      "funding_stage": "Series A \u2014 $17.5M (Apr 2025), $25.96M total",
+      "gates": {
+        "H1_us": "PASS",
+        "H2_series_a_plus": "PASS",
+        "H3_quantifiable_pain": "PASS (Q1, strongest form)"
+      },
+      "notes": "The purest possible Q1: they are hiring the exact role Clue replaces, at a modest salary band.",
+      "disposition": "scored",
+      "fit_score": 79.5,
+      "band": "select",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 15.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "An open req titled 'Account-Based Marketing Manager, Strategic Accounts' \u2014 department 'Go to Market Corporate Marketing', $93K\u2013$108K + equity + bonus. This is literally the seat Clue automates.",
+          "source_url": "https://jobs.ashbyhq.com/harmonic-security-inc/f568f331-f4ea-4328-a690-03772941f561"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'Harmonic Security employs 56 people and has an annual revenue of $1M, founded in 2023' \u2014 a 56-person company opening a dedicated strategic-accounts ABM seat has far more target accounts than capacity",
+          "source_url": "https://linkedin.com/company/harmonic-security"
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": true,
+          "evidence": "'Harmonic Security Raises $17.5 Million Series A to Accelerate Zero-Touch Data Protection to Market' \u2014 market-expansion earmark, but Apr 2025 (>12 months old)",
+          "source_url": "https://www.harmonic.security/resources/harmonic-security-raises-17-5-million-series-a-to-accelerate-zero-touch-data-protection-to-market"
+        },
+        "B_named_account": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "the req is scoped to 'Strategic Accounts'; 'Security teams get full visibility and control across every AI surface' \u2014 enterprise motion, backed by In-Q-Tel and Ten Eleven Ventures",
+          "source_url": "https://jobs.ashbyhq.com/harmonic-security-inc/f568f331-f4ea-4328-a690-03772941f561"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "enterprise AI-governance platform sold to security teams; In-Q-Tel backing implies government/large-enterprise deals",
+          "source_url": null
+        },
+        "B_outbound_language": {
+          "points_awarded": 7.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "a dedicated ABM function inside 'Go to Market Corporate Marketing' is by definition an account-based outbound motion",
+          "source_url": "https://jobs.ashbyhq.com/harmonic-security-inc/f568f331-f4ea-4328-a690-03772941f561"
+        },
+        "C_stage": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'Stage Series A | Alive \u00b7 Total Raised $25.96M \u00b7 Last Raised $17.5M'",
+          "source_url": "https://www.cbinsights.com/company/harmonic-security"
+        },
+        "C_headcount": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "56 employees",
+          "source_url": "https://linkedin.com/company/harmonic-security"
+        },
+        "C_mktteam": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": true,
+          "evidence": "56 total headcount \u21d2 a marketing team in the low single digits",
+          "source_url": null
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "no ABM platform named in the req; a company hiring its FIRST ABM manager is unlikely to have an enterprise ABM platform installed",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "the ABM req itself is the open GTM seat; timeline page shows continuous GTM build-out ('2026 \u2022 January \u2014 Upscaled Brand Launched')",
+          "source_url": "https://www.harmonic.security/about"
+        },
+        "D_recent_round": {
+          "points_awarded": 0.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "last confirmed round Apr 2025 \u2014 outside the 12-month window",
+          "source_url": null
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "CISO/security-leader audience is LinkedIn-dense; the $93\u2013108K band signals a budget that a platform beats on cost",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Vendelux",
+      "domain": "vendelux.com",
+      "vertical": "V1-adjacent \u2014 martech (B2B event intelligence)",
+      "hq": "New York, NY, USA",
+      "funding_stage": "Series B \u2014 $50M (Jul 2026), $66.4M total",
+      "gates": {
+        "H1_us": "PASS",
+        "H2_series_a_plus": "PASS",
+        "H3_quantifiable_pain": "PASS (Q4 + Q7)"
+      },
+      "notes": "Fresh $50M, four open GTM reqs, and a buyer persona identical to Clue's own. Hiring its way out of the bottleneck right now.",
+      "disposition": "scored",
+      "fit_score": 66.5,
+      "band": "strong_bench",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 6.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "'Outreach Campaign Operations Manager' (Customer Success, $80K\u2013$120K) and 'Growth Marketing Lead' ($160K\u2013$230K OTE, published 2026-04-16) \u2014 campaign assembly done by hand, but neither req is explicitly account-research-shaped",
+          "source_url": "https://jobs.ashbyhq.com/vendelux/7dfeabd3-7595-490b-af19-dff052216d67"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 5.0,
+          "max": 10,
+          "inferred": true,
+          "evidence": "their buyer universe (B2B companies that spend on events) is large and enumerable; they are staffing it with individual hires",
+          "source_url": null
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'Vendelux, a live events information platform, has raised $50 million to help marketers capitalize on that. Tribeca Venture Partners led the company's Series B raise' (2026-07-08)",
+          "source_url": "https://www.businessinsider.com/vendelux-just-raised-50-million-to-capitalize-live-b2b-events-2026-7"
+        },
+        "B_named_account": {
+          "points_awarded": 8.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "sells a high-consideration platform to enterprise event/field-marketing orgs; hiring a Revenue Operations Lead ($150K\u2013$185K) to industrialize the motion",
+          "source_url": "https://jobs.ashbyhq.com/vendelux/b5ea116c-95dc-47ad-adb0-3cdfa97a7620"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "event-intelligence platforms sell to enterprise marketing budgets; $66.4M raised against a NYC cost base implies a mid-five-figure+ ACV",
+          "source_url": null
+        },
+        "B_outbound_language": {
+          "points_awarded": 7.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "an entire req named 'Outreach Campaign Operations Manager' \u2014 outbound is a staffed function",
+          "source_url": "https://jobs.ashbyhq.com/vendelux/7dfeabd3-7595-490b-af19-dff052216d67"
+        },
+        "C_stage": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'Founded Year 2021 \u00b7 Stage Series B | Alive \u00b7 Total Raised $66.4M \u00b7 Last Raised $50M | 2 mos ago'",
+          "source_url": "https://www.cbinsights.com/company/vendelux"
+        },
+        "C_headcount": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": true,
+          "evidence": "Series B, NYC, 4+ concurrent GTM reqs \u2014 headcount consistent with the 30\u2013300 band",
+          "source_url": null
+        },
+        "C_mktteam": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": true,
+          "evidence": "hiring both a Growth Marketing Lead and a Product Marketing Lead \u21d2 the marketing team today is small",
+          "source_url": "https://jobs.ashbyhq.com/vendelux/634ef70b-e32c-409c-bcb1-f8ac69e8d18c"
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "no ABM platform detected",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "FOUR concurrent GTM/marketing reqs found on one board \u2014 Growth Marketing Lead, Product Marketing Lead, Revenue Operations Lead, Outreach Campaign Operations Manager. Q7 satisfied outright.",
+          "source_url": "https://jobs.ashbyhq.com/vendelux/ad171a33-af7d-42b3-86fb-4e3dbb30116a"
+        },
+        "D_recent_round": {
+          "points_awarded": 3.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "$50M Series B, July 2026 \u2014 two months old",
+          "source_url": "https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/"
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "their buyers ARE B2B marketers \u2014 the most LinkedIn-native audience that exists \u2014 and an events company is structurally a high-touch, physical-artifact buyer (Q10 by definition)",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Zafran Security",
+      "domain": "zafran.io",
+      "vertical": "V1 B2B SaaS \u2014 cybersecurity (exposure management)",
+      "hq": "New York City, USA (workforce US / Israel / Germany)",
+      "funding_stage": "Series C \u2014 $60M (Dec 2025) + Cisco Investments strategic (Jul 2026); ~$130\u2013136M total",
+      "gates": {
+        "H1_us": "PASS (Tracxn: 'based in New York City (United States)')",
+        "H2_series_a_plus": "PASS (Series C \u2014 scored down per rubric)",
+        "H3_quantifiable_pain": "PASS (Q1 + Q2-style quote)"
+      },
+      "notes": "Best single quote in the whole run ('If you need a large team and a large budget\u2026'). Down-weighted only for Series C.",
+      "disposition": "scored",
+      "fit_score": 81.0,
+      "band": "select",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 15.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "'Senior Manager, ABM & Integrated Campaigns' (USA, published 2026-06-17): 'you will [own] the marketing programs that move our highest priority accounts \u2026 design and execute coordinated, multi-channel campaigns'",
+          "source_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "the req says the quiet part out loud: 'If you need a large team and a large budget to do great work, this role is probably not for you.' \u2014 small team, big account list, stated by them",
+          "source_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf"
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI' \u2014 Series C led by Menlo Ventures (2025-12-02); Cisco Investments strategic investment added 2026-07-22",
+          "source_url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai"
+        },
+        "B_named_account": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'the marketing programs that move our highest priority accounts' \u2014 an explicit tiered named-account list",
+          "source_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "enterprise exposure-management platform, Sequoia/Menlo/Cisco-backed, $130M raised \u2014 large enterprise ACVs",
+          "source_url": null
+        },
+        "B_outbound_language": {
+          "points_awarded": 7.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "'translating commercial priorities into focused account-based motions with measurable business impact'",
+          "source_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf"
+        },
+        "C_stage": {
+          "points_awarded": 6.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'Zafran is a series C company based in New York City (United States), founded in 2022 \u2026 has raised $130M' \u2014 Series C scores 6/10 per rubric \u00a75",
+          "source_url": "https://tracxn.com/d/companies/zafran/__WnETF18DrQMZWAzVpBz7ZMYUDkaMGQwiNkucwmFp6j8"
+        },
+        "C_headcount": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": true,
+          "evidence": "Tracxn/LinkedIn place Zafran in the ~100\u2013250 band \u2014 inside 30\u2013300",
+          "source_url": null
+        },
+        "C_mktteam": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "the req's own 'no large team, no large budget' line",
+          "source_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf"
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "no ABM platform named; they are hiring the human instead",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'Reporting to the Head of Growth Marketing' \u2014 a GTM leader in seat with a budget",
+          "source_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf"
+        },
+        "D_recent_round": {
+          "points_awarded": 3.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "Cisco Investments strategic investment announced 2026-07-22",
+          "source_url": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments"
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "CISO audience, LinkedIn-dense; Cisco relationship implies large-enterprise committees that reward physical executive artifacts",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Uptiq (UPTIQ, Inc.)",
+      "domain": "uptiq.ai",
+      "vertical": "V3 fintech \u2014 AI agents for banks & credit unions",
+      "hq": "Dallas, TX, USA",
+      "funding_stage": "Series B \u2014 $25M (Feb 2026), $55M total equity",
+      "gates": {
+        "H1_us": "PASS",
+        "H2_series_a_plus": "PASS",
+        "H3_quantifiable_pain": "PASS (Q4 + Q6)"
+      },
+      "notes": "The only candidate with PROVEN ABM spend (a $400K-pipeline agency case study). Buys the category already; the question is platform-vs-agency, not whether.",
+      "disposition": "scored",
+      "fit_score": 67.5,
+      "band": "strong_bench",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 0.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "NOT FOUND \u2014 a targeted job-board search for Uptiq marketing/demand-gen reqs returned zero Uptiq postings (it surfaced Glia, MX, Alloy, Relay instead). Absence of evidence, recorded as such.",
+          "source_url": "https://api.exa.ai/search#t_jobs_uptiq"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'150+ Financial Institutions Trust Us' against a US universe of ~4,500 banks + ~4,600 credit unions \u2014 a finite, enumerable named-account market with ~3% penetration",
+          "source_url": "https://www.uptiq.ai/about-us"
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'Uptiq Raises $25 Million Series B to Scale Industry-Ready AI Solutions and Launch Qore for Builders' (DALLAS, 2026-02-13)",
+          "source_url": "https://www.businesswire.com/news/home/20260212072104/en/Uptiq-Raises-%2425-Million-Series-B-to-Scale-Industry-Ready-AI-Solutions-and-Launch-Qore-for-Builders"
+        },
+        "B_named_account": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "sells into named financial institutions ('TransPecos Banks' named as a customer); an ABM case study documents a named-account program",
+          "source_url": "https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "'over $10 billion in transactions processed' across 150+ FIs \u2014 core-banking-adjacent contracts, six figures",
+          "source_url": "https://www.uptiq.ai/about-us"
+        },
+        "B_outbound_language": {
+          "points_awarded": 7.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "a published third-party case study titled 'Uptiq.ai ABM Case Study: $400K+ Pipeline' \u2014 they already run, and measure, an ABM motion",
+          "source_url": "https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders"
+        },
+        "C_stage": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'Latest Deal Type Series B \u00b7 Latest Deal Amount $25M \u00b7 Employees 129 \u00b7 Year Founded 2022'",
+          "source_url": "https://pitchbook.com/profiles/company/489650-77"
+        },
+        "C_headcount": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "129 employees",
+          "source_url": "https://pitchbook.com/profiles/company/489650-77"
+        },
+        "C_mktteam": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "they outsourced their ABM engine to an agency (GrowthSpree) rather than staffing it \u2014 the clearest possible evidence the in-house team is small",
+          "source_url": "https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders"
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "an ABM AGENCY is engaged, but no ABM PLATFORM is detected \u2014 agency \u2260 D3 disqualifier; it is a displaceable line item",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "no open GTM req found and no recent GTM-leader hire confirmed",
+          "source_url": null
+        },
+        "D_recent_round": {
+          "points_awarded": 3.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "Series B, Feb 2026 \u2014 ~6 months old",
+          "source_url": "https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows"
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "bank/credit-union executives are a conservative, senior, finite audience where physical mail materially outperforms email \u2014 Clue's most differentiated agent aimed at its best-fit audience",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Arintra",
+      "domain": "arintra.com",
+      "vertical": "V2 healthcare \u2014 autonomous medical coding / revenue assurance",
+      "hq": "Texas, USA (press release datelined San Francisco, CA)",
+      "funding_stage": "Series B \u2014 $25M (Aug 26, 2026), ~$46.5\u201351M total",
+      "gates": {
+        "H1_us": "PASS",
+        "H2_series_a_plus": "PASS",
+        "H3_quantifiable_pain": "PASS (Q4 + Q6)"
+      },
+      "notes": "Best TIMING in the set (round 5 days old) but zero hiring signal \u2014 the fresh-money bet, not the hiring bet. Deliberately selected as the falsification test of my own Q1>Q4 assumption.",
+      "disposition": "scored",
+      "fit_score": 55.5,
+      "band": "watch",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 0.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "NOT FOUND \u2014 a targeted job-board search returned zero Arintra postings",
+          "source_url": null
+        },
+        "A_Q2Q6": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'revenue assurance for America's Health Systems' \u2014 a US universe of roughly 6,000 hospitals / ~1,000 health systems: finite, named, enumerable",
+          "source_url": "https://www.arintra.com/resources/press-release/arintra-raises-25m-to-pioneer-revenue-assurance-for-americas-health-systems"
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'$25 million Series B funding round, bringing the company's total funding to $51 million. The round is led by Define Ventures' \u2014 dated 2026-08-26, FIVE DAYS before this run",
+          "source_url": "https://www.arintra.com/resources/press-release/arintra-raises-25m-to-pioneer-revenue-assurance-for-americas-health-systems"
+        },
+        "B_named_account": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'the first and only enterprise AI platform for revenue assurance in healthcare' \u2014 health-system enterprise sales is named-account by construction",
+          "source_url": "https://www.arintra.com/resources/press-release/arintra-raises-25m-to-pioneer-revenue-assurance-for-americas-health-systems"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "health-system revenue-cycle contracts are six-to-seven figures",
+          "source_url": null
+        },
+        "B_outbound_language": {
+          "points_awarded": 0.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "no outbound/ABM language found in cheap discovery",
+          "source_url": null
+        },
+        "C_stage": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'Stage Series B | Alive \u00b7 Total Raised $46.5M \u00b7 Last Raised $25M | 5 days ago'",
+          "source_url": "https://www.cbinsights.com/company/arintra"
+        },
+        "C_headcount": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": true,
+          "evidence": "Series B with a Bengaluru engineering base; US GTM headcount consistent with the band",
+          "source_url": null
+        },
+        "C_mktteam": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": true,
+          "evidence": "no marketing leadership surfaced in any cheap probe \u2014 consistent with a very small team",
+          "source_url": null
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "no ABM platform detected",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "no GTM reqs or new GTM leader found",
+          "source_url": null
+        },
+        "D_recent_round": {
+          "points_awarded": 3.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "round is 5 days old \u2014 the freshest timing signal in the entire candidate set",
+          "source_url": "https://www.fiercehealthcare.com/finance/arintra-banks-25m-series-b-funding-round-ai-driven-revenue-assurance-platform"
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "health-system CFO/CIO/rev-cycle committees are exactly the multi-role buying committee Clue maps; printed executive reports are native to hospital finance",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "RevenueCat",
+      "domain": "revenuecat.com",
+      "vertical": "V1 B2B SaaS \u2014 mobile subscription infrastructure",
+      "hq": "San Francisco, CA, USA (remote-first, 25+ countries)",
+      "funding_stage": "Series C \u2014 $50M (May 2025)",
+      "gates": {
+        "H1_us": "PASS",
+        "H2_series_a_plus": "PASS",
+        "H3_quantifiable_pain": "PASS (Q1)"
+      },
+      "notes": "Real Q1, but PLG-hybrid economics and the weakest artifact fit in the set. Bench, not select.",
+      "disposition": "scored",
+      "fit_score": 61.8,
+      "band": "strong_bench",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 15.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "'Senior Account Based Marketing Manager' ($189K + equity): 'We're hiring a Senior ABM Manager to help RevenueCat speak to, engage, and build pipeline with established consumer apps. This is not your standard \"own the funnel\" demand gen role.'",
+          "source_url": "https://jobs.ashbyhq.com/revenuecat/12fc97f3-d173-4e3a-a652-9afff63a9b56"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 2.5,
+          "max": 10,
+          "inferred": true,
+          "evidence": "'a remote-first crew of 150+' with a very large addressable market, but the marketing org is no longer tiny",
+          "source_url": null
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "Series C was May 2025, not GTM-earmarked",
+          "source_url": null
+        },
+        "B_named_account": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'established consumer apps' is an explicit named-account upmarket motion",
+          "source_url": "https://jobs.ashbyhq.com/revenuecat/12fc97f3-d173-4e3a-a652-9afff63a9b56"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "'we process $12B+ in annual purchase volume' and serve 'the OpenAI mobile team' \u2014 enterprise tier exists",
+          "source_url": "https://jobs.ashbyhq.com/revenuecat/12fc97f3-d173-4e3a-a652-9afff63a9b56"
+        },
+        "B_outbound_language": {
+          "points_awarded": 7.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "the req exists to 'build pipeline with established consumer apps'",
+          "source_url": "https://jobs.ashbyhq.com/revenuecat/12fc97f3-d173-4e3a-a652-9afff63a9b56"
+        },
+        "C_stage": {
+          "points_awarded": 6.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'$50.0M Series C May 2025' \u2014 Series C scores 6/10",
+          "source_url": "https://www.vcbacked.co/company/revenuecat"
+        },
+        "C_headcount": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'remote-first crew of 150+'",
+          "source_url": "https://jobs.ashbyhq.com/revenuecat/12fc97f3-d173-4e3a-a652-9afff63a9b56"
+        },
+        "C_mktteam": {
+          "points_awarded": 1.25,
+          "max": 5,
+          "inferred": true,
+          "evidence": "at 150+ headcount with a $189K ABM hire, the marketing org is mid-sized, not tiny",
+          "source_url": null
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "no ABM platform named",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "open Senior ABM Manager req in GrowthMarketing",
+          "source_url": "https://jobs.ashbyhq.com/revenuecat/12fc97f3-d173-4e3a-a652-9afff63a9b56"
+        },
+        "D_recent_round": {
+          "points_awarded": 0.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "May 2025, >12 months",
+          "source_url": null
+        },
+        "E_channel_fit": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": false,
+          "evidence": "consumer-app growth leads are LinkedIn-reachable but direct mail and 'executive report' artifacts land far less naturally than with banks/hospitals",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Translucent (Translucent AI)",
+      "domain": "translucent.ai",
+      "vertical": "V2 healthcare \u2014 AI-native healthcare finance",
+      "hq": "New York, NY, USA (Union Square; 4 days/week in office)",
+      "funding_stage": "Series A \u2014 $27M led by GV (Mar 11, 2026), $34M total",
+      "gates": {
+        "H1_us": "PASS",
+        "H2_series_a_plus": "PASS",
+        "H3_quantifiable_pain": "PASS (Q4 + Q6)"
+      },
+      "notes": "Great money, wrong moment: hiring engineers and forward-deployed staff, not marketers. Revisit in two quarters.",
+      "disposition": "scored",
+      "fit_score": 54.2,
+      "band": "watch",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 0.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "NOT FOUND \u2014 of 18 open roles on their board the visible ones are Delivery, Design, Domain Intelligence, Product and Engineering. No marketing/GTM req surfaced.",
+          "source_url": "https://job-boards.greenhouse.io/translucent/jobs/4038826009"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'Healthcare providers drive $2.5 trillion in medical expenditures annually \u2014 and operate on razor-thin 2\u20135% margins' against 24 employees",
+          "source_url": "https://job-boards.greenhouse.io/translucent/jobs/4368978009"
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'Translucent Announces $27M Series A Led by GV to Tackle Healthcare's Existential Financial Crisis' (2026-03-11)",
+          "source_url": "https://www.businesswire.com/news/home/20260311059455/en/Translucent-Announces-%2427M-Series-A-Led-by-GV-to-Tackle-Healthcares-Existential-Financial-Crisis"
+        },
+        "B_named_account": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "sells to hospital and health-system finance teams \u2014 enumerable named accounts",
+          "source_url": "https://job-boards.greenhouse.io/translucent/jobs/4369098009"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "health-system finance platform",
+          "source_url": null
+        },
+        "B_outbound_language": {
+          "points_awarded": 0.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "C_stage": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "$27M Series A led by GV, Mar 2026",
+          "source_url": "https://fortune.com/2026/03/11/exclusive-translucent-ai-native-healthcare-finance-startup-raises-27-million-series-a/"
+        },
+        "C_headcount": {
+          "points_awarded": 2.5,
+          "max": 5,
+          "inferred": false,
+          "evidence": "'Translucent AI employs 24 people (+357.1% YoY)' \u2014 below the 30\u2013300 target band, though growing violently",
+          "source_url": "https://linkedin.com/company/translucentai"
+        },
+        "C_mktteam": {
+          "points_awarded": 1.25,
+          "max": 5,
+          "inferred": true,
+          "evidence": "at 24 people and hiring engineers/FDEs, marketing is likely 0\u20131 people \u2014 arguably too early to buy",
+          "source_url": null
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "no ABM platform detected",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "no GTM req found; the 18 open roles are technical and delivery",
+          "source_url": null
+        },
+        "D_recent_round": {
+          "points_awarded": 3.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "Series A Mar 2026, ~6 months",
+          "source_url": "https://www.gv.com/news/translucent-ai-healthcare"
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "hospital CFO committees; printed artifacts land",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Alloy",
+      "domain": "alloy.com",
+      "vertical": "V3 fintech \u2014 identity/fraud decisioning for banks & fintechs",
+      "hq": "New York City, USA",
+      "funding_stage": "Series C (2021) \u2014 stage confirmation NOT re-verified this run",
+      "gates": {
+        "H1_us": "PASS",
+        "H2_series_a_plus": "PASS (unverified this run \u2014 Series C on record)",
+        "H3_quantifiable_pain": "PASS (Q1)"
+      },
+      "notes": "SERENDIPITOUS FIND \u2014 surfaced by a tie-break probe aimed at Uptiq, not by a discovery query. Under-verified, hence under-scored; worth a proper look in a future pass.",
+      "disposition": "scored",
+      "fit_score": 52.5,
+      "band": "watch",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 15.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "'Demand Generation Manager - Mid-Market Banking' ($124k\u2013$146k, New York City) \u2014 a demand-gen seat scoped to ONE named vertical is the purest ABM-shaped req there is",
+          "source_url": "https://wellfound.com/jobs/4480918-demand-generation-manager-mid-market-banking"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 5.0,
+          "max": 10,
+          "inferred": true,
+          "evidence": "mid-market banking in the US is a finite named universe (~4,500 banks) and they are assigning it to a single hire",
+          "source_url": null
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "no recent round found this run",
+          "source_url": null
+        },
+        "B_named_account": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "the role is defined by an account segment, not a funnel stage",
+          "source_url": "https://wellfound.com/jobs/4480918-demand-generation-manager-mid-market-banking"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "'Identity verification APIs that make KYC/AML effective and simple' sold to banks \u2014 six-figure contracts",
+          "source_url": null
+        },
+        "B_outbound_language": {
+          "points_awarded": 3.5,
+          "max": 7,
+          "inferred": true,
+          "evidence": "a vertical demand-gen seat implies a target list and outbound programs",
+          "source_url": null
+        },
+        "C_stage": {
+          "points_awarded": 2.5,
+          "max": 10,
+          "inferred": true,
+          "evidence": "Series C on record (2021) \u2014 NOT re-verified in this run; scored conservatively and flagged",
+          "source_url": null
+        },
+        "C_headcount": {
+          "points_awarded": 1.25,
+          "max": 5,
+          "inferred": true,
+          "evidence": "not verified this run",
+          "source_url": null
+        },
+        "C_mktteam": {
+          "points_awarded": 1.25,
+          "max": 5,
+          "inferred": true,
+          "evidence": "not verified this run",
+          "source_url": null
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 0.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "not checked \u2014 a company of Alloy's maturity may well have one",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "open vertical demand-gen req, posted ~3 weeks before this run",
+          "source_url": "https://wellfound.com/jobs/4475795-demand-generation-manager-mid-market-banking"
+        },
+        "D_recent_round": {
+          "points_awarded": 0.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "none found",
+          "source_url": null
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "bank buyers; direct mail native",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Glia",
+      "domain": "glia.com",
+      "vertical": "V3 fintech \u2014 'Banking AI platform' for community/regional FIs",
+      "hq": "US (US-Remote req posted); HQ not verified this run",
+      "funding_stage": "not verified this run",
+      "gates": {
+        "H1_us": "UNVERIFIED",
+        "H2_series_a_plus": "UNVERIFIED",
+        "H3_quantifiable_pain": "PARTIAL (Q1 only)"
+      },
+      "notes": "SERENDIPITOUS FIND. Score is artificially depressed by unverified gates \u2014 deliberately NOT laundered into a clean number.",
+      "disposition": "scored",
+      "fit_score": 44.0,
+      "band": "drop",
+      "rubric": {
+        "A_Q1": {
+          "points_awarded": 15.0,
+          "max": 15,
+          "inferred": false,
+          "evidence": "'Growth Marketing Manager @ Glia', US-Remote, Marketing dept",
+          "source_url": "https://jobs.ashbyhq.com/glia/4cdacf7f-a3c1-45fc-8997-eb180c4de7b1"
+        },
+        "A_Q2Q6": {
+          "points_awarded": 10.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "'empowering community and regional financial institutions' \u2014 the same finite ~9,000-institution universe as Uptiq",
+          "source_url": "https://jobs.ashbyhq.com/glia/4cdacf7f-a3c1-45fc-8997-eb180c4de7b1"
+        },
+        "A_Q3": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "none",
+          "source_url": null
+        },
+        "A_Q4": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "not checked",
+          "source_url": null
+        },
+        "B_named_account": {
+          "points_awarded": 5.0,
+          "max": 10,
+          "inferred": true,
+          "evidence": "'the #1 Banking AI platform' selling to named FIs",
+          "source_url": "https://jobs.ashbyhq.com/glia/4cdacf7f-a3c1-45fc-8997-eb180c4de7b1"
+        },
+        "B_acv": {
+          "points_awarded": 4.0,
+          "max": 8,
+          "inferred": true,
+          "evidence": "banking platform contracts",
+          "source_url": null
+        },
+        "B_outbound_language": {
+          "points_awarded": 0.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "not established",
+          "source_url": null
+        },
+        "C_stage": {
+          "points_awarded": 0.0,
+          "max": 10,
+          "inferred": false,
+          "evidence": "H2 NOT VERIFIED \u2014 cannot award stage points without a confirmed round",
+          "source_url": null
+        },
+        "C_headcount": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "not verified",
+          "source_url": null
+        },
+        "C_mktteam": {
+          "points_awarded": 0.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "not verified",
+          "source_url": null
+        },
+        "D_no_abm_tool": {
+          "points_awarded": 0.0,
+          "max": 7,
+          "inferred": false,
+          "evidence": "not checked",
+          "source_url": null
+        },
+        "D_leader_or_reqs": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "open Growth Marketing Manager req",
+          "source_url": "https://jobs.ashbyhq.com/glia/4cdacf7f-a3c1-45fc-8997-eb180c4de7b1"
+        },
+        "D_recent_round": {
+          "points_awarded": 0.0,
+          "max": 3,
+          "inferred": false,
+          "evidence": "not checked",
+          "source_url": null
+        },
+        "E_channel_fit": {
+          "points_awarded": 5.0,
+          "max": 5,
+          "inferred": false,
+          "evidence": "community-bank executives \u2014 direct mail native",
+          "source_url": null
+        }
+      }
+    },
+    {
+      "name": "Oscilar",
+      "domain": "oscilar.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "H2 AMBIGUOUS \u2192 excluded. Strongest non-selected candidate. Palo Alto CA (PASS H1), 150\u2013200 employees (+130% YoY), open 'Outbound Marketing Manager' req at $155K\u2013$184K (a Tier-1 Q1), sells to banks/fintechs (finite market). BUT: 'Oscilar is entirely self-funded, backed by $20 million that Narkhede and the company's other co-founder, Sachin Kulkarni, themselves contributed' (TechCrunch 2023-03-30) and a targeted 2024+ search found NO external priced round. CB Insights/aVenture label it 'Series A' on the strength of that self-funding. Under H2 as written ('a named priced round with a date and at least one named investor') it fails. Recorded as a rule blind-spot, not a judgement about the company.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Ideals (iDeals)",
+      "domain": "idealsvdr.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "H1 \u2014 global company; parallel ABM reqs posted for United States AND Brazil, HQ not US; also no venture round (H2).",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Filigran",
+      "domain": "filigran.io",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "H1 \u2014 'Location: France' on the ABM req.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Airwallex",
+      "domain": "airwallex.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "H1 \u2014 Australia/Hong Kong HQ; role is 'Global ABM'.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Xero",
+      "domain": "xero.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "H1 + D7 \u2014 New Zealand, publicly listed.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Smarsh",
+      "domain": "smarsh.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D7 \u2014 PE-owned, >1,000 headcount.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Ncontracts",
+      "domain": "ncontracts.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D7 \u2014 PE-backed, 5,000+ customers, Nashville; strong Q1 (open ABM Manager req, $100\u2013120K) but wrong stage.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "CentralReach",
+      "domain": "centralreach.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D7 \u2014 PE-owned healthcare software, 200,000+ users.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "ConnectWise",
+      "domain": "connectwise.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D7 \u2014 PE-owned.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Auctane",
+      "domain": "auctane.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D7 \u2014 PE-owned.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "CI&T",
+      "domain": "ciandt.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "H1 + D7 \u2014 Brazilian, publicly listed.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Demandbase",
+      "domain": "demandbase.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D6 \u2014 a direct competitor (enterprise ABM platform).",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Sprouts.ai",
+      "domain": "sprouts.ai",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D6 \u2014 'revenue agents \u2026 for B2B enterprises'; also pre-Series-A ($9M pre-Series A, 2026-05).",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Directive / Seer Interactive / Ignitium / Revvgrowth / Forefront ABM / Trevon / PrecisionPoint / Khronos",
+      "domain": "various",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D6+H2 \u2014 agencies selling ABM services; not venture-funded (H2) and mostly competitors-by-substitution (D6). Confirms icp.md \u00a72's ruling that V4 rarely survives the gates.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Factors.ai / Abmatic / Octave / Clearcue / GR0 / Amy / The Smarketers / UserGems",
+      "domain": "various",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "D6 \u2014 surfaced by the A1 search for Clue itself; all sell ABM/GTM-agent tooling.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Sift Healthcare",
+      "domain": "sifthealthcare.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "Stale \u2014 last confirmed round $20M Series B (2024-05); outside the 24-month freshness preference. Watch.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "CertifyOS",
+      "domain": "certifyos.com",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "Stale \u2014 $14.5M Series A (2022-09).",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Prosper AI",
+      "domain": "getprosper.ai",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "Not dropped on a gate \u2014 $30M Series A led by a16z (2026-06-22) is a clean H2 pass and the pain quote is excellent ('the workforce in US hospitals and physician offices is administrative staff, a cost that tops $450 billion annually'). US HQ NOT verified this run, and no GTM hiring signal found. Strong bench; ran out of verification budget before it could be scored.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Aligned / Actively / LetterAI / Dust / InstaLILY / Genspark",
+      "domain": "various",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "Deferred \u2014 all surfaced by the funding-signal query with real Series B rounds, but each needs an H1 (US HQ) check and a D6 competitor check (several sell revenue/GTM AI) before scoring. Not enough evidence for an honest score in Agent A's budget.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Naehas / adapfin / Candescent / glide / fuse / vikar / spiral / akuvo / linker finance",
+      "domain": "various",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "Deferred \u2014 fintech vendors surfaced by d7; most results were LinkedIn stubs with no funding or HQ evidence in the returned text. Insufficient evidence to score honestly.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    },
+    {
+      "name": "Zania / Optro / Builder Prime / Softr / Apera / MX Technologies / Relay",
+      "domain": "various",
+      "vertical": "\u2014",
+      "hq": "\u2014",
+      "funding_stage": "\u2014",
+      "gates": {},
+      "notes": "",
+      "disposition": "dropped",
+      "drop_reason": "Deferred/dropped \u2014 surfaced incidentally by tie-break probes. Apera (Vancouver) and Relay (Toronto) fail H1; MX and Optro are later-stage; Zania, Builder Prime and Softr are plausible but unverified.",
+      "fit_score": null,
+      "band": "dropped_at_gate"
+    }
+  ],
+  "predicted_intent_ranking": [
+    {
+      "rank": 1,
+      "name": "Cogent Security, Inc.",
+      "predicted_intent": 85,
+      "reason": "$42M Series A 6 months ago + Head of Demand Gen req posted 17 days pre-run, reporting to a Head of Growth in seat; nothing installed."
+    },
+    {
+      "rank": 2,
+      "name": "Harmonic Security, Inc.",
+      "predicted_intent": 78,
+      "reason": "Open req literally named 'ABM Manager, Strategic Accounts' at $93-108K \u2014 the seat Clue fills is advertised."
+    },
+    {
+      "rank": 3,
+      "name": "Vendelux",
+      "predicted_intent": 72,
+      "reason": "$50M Series B 8 weeks ago + 4 concurrent GTM reqs; their own buyers are B2B marketers."
+    },
+    {
+      "rank": 4,
+      "name": "Zafran Security",
+      "predicted_intent": 65,
+      "reason": "Highest fit but the ABM req is 75 days old \u2014 if filled, greenfield becomes displacement; Series C adds procurement."
+    },
+    {
+      "rank": 5,
+      "name": "Uptiq (UPTIQ, Inc.)",
+      "predicted_intent": 55,
+      "reason": "Highest category belief ($400K-pipeline ABM case study) but an incumbent agency already delivers it."
+    }
+  ],
+  "fit_vs_intent_divergence": "Deliberate: Zafran is #1 on fit and #4 on intent. Fit measures 'should they buy'; intent measures 'will they engage now'. The divergence is the falsifiable claim.",
+  "selection_honesty_note": "Only 3 of 5 cleared the >=75 'select' band (81.0 / 80.0 / 79.5). Slots 4 and 5 are the top of the strong-bench band (67.5 / 66.5). The bar was NOT moved to manufacture five selections."
+}

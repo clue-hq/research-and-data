@@ -842,9 +842,19 @@ export type OptionalFieldPatch<T> =
       kind: "clear";
     };
 
+/** Token channels explicitly addressed by a text-kind update, even when unchanged. */
+export interface ExplicitTextTokens {
+  style?: boolean;
+  font_size?: boolean;
+  line_height?: boolean;
+  letter_spacing?: boolean;
+}
+
 export interface NodePatch {
   name: OptionalFieldPatch<string>;
   kind: FieldPatch<NodeKind>;
+  /** Absent on raw inspector edits, which detach stale bindings. */
+  explicit_text_tokens?: ExplicitTextTokens | null;
   transform: FieldPatch<Transform>;
   size: FieldPatch<SizeSpec>;
   fills: FieldPatch<Fill[]>;

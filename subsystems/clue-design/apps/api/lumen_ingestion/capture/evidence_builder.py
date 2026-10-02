@@ -29,6 +29,7 @@ from ..evidence import (
     TypeSample,
 )
 from .budget import MAX_NAMED_DROPS, short_url
+from .font_instances import plan_font_instances
 from .geometry import parse_geometry
 from .parse import ParsedSite, parse_color_value, parse_site
 
@@ -43,6 +44,9 @@ class _AssetJob:
     kind: str  # "font" | "image" (ingest kind hint; images/logos left to sniff)
     filename: str
     content_type: str | None
+    #: A provenance note for a DERIVED asset (a static instance of a variable font); None for a
+    #: plain rehost.
+    note: str | None = None
 
 
 def _pointer(locator: str) -> EvidencePointer:
@@ -186,6 +190,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     fonts: list[FontEvidence] = []
     uncustodied_faces: list[str] = []
     face_failures: list[dict] = []
+    instance_diagnostics: list[dict] = []
     for font in parsed.fonts:
         faces: list[FontFaceEvidence] = []
         for face in font.faces:
@@ -239,6 +244,83 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                 # — LUMI0230 only fires when a family has NO faces at all, not
                 # when every face is byte-less — so say it plainly instead.
                 uncustodied_faces.append(f"{font.family} ({short_url(face.source_url)})")
+            # Plan 1 item B (2026-09-04): a variable source becomes one static face per named
+            # weight. The variable file itself stays rehosted (the downloads loop below queues
+            # every captured byte), but it is NOT a kit face — a kit face is something both
+            # renderers can match by weight, and a variable file is matched at its default only.
+            if face_sha and asset_id is not None and face.style in ("normal", "italic"):
+                plan = plan_font_instances(
+                    font.family, sha_bytes[face_sha], italic=(face.style == "italic")
+                )
+                if plan.variable and plan.instances:
+                    declared_weight = face.weight or 400
+                    first_instance_index = len(faces)
+                    for instance in plan.instances:
+                        if instance.sha256 not in jobs:
+                            sha_bytes[instance.sha256] = instance.data
+                            sha_ct[instance.sha256] = "font/ttf"
+                            suffix = "-italic" if instance.italic else ""
+                            jobs[instance.sha256] = _AssetJob(
+                                url=face.source_url,
+                                sha256=instance.sha256,
+                                body=instance.data,
+                                kind="font",
+                                filename=(
+                                    f"instance-{instance.sha256[:_SLURP_SHA_CHARS]}-"
+                                    f"{font.family.replace(' ', '')}-{instance.weight}{suffix}.ttf"
+                                ),
+                                content_type="font/ttf",
+                                note=(
+                                    f"static instance wght={instance.weight}"
+                                    f"{' italic' if instance.italic else ''} of variable font "
+                                    f"{short_url(face.source_url)} (sha256 {face_sha[:12]})"
+                                ),
+                            )
+                        faces.append(
+                            FontFaceEvidence(
+                                weight=instance.weight,
+                                style=face.style,
+                                asset_id=f"asset_ing_{instance.sha256[:16]}",
+                                source_url=(
+                                    face.source_url
+                                    if instance.weight == declared_weight
+                                    else None
+                                ),
+                                format="ttf",
+                            )
+                        )
+                    # No instance carries the declared weight (the axis starts above it): the
+                    # kit's `source.url` must still survive, so it rides the first instance.
+                    if not any(f.source_url for f in faces[first_instance_index:]):
+                        faces[first_instance_index] = faces[first_instance_index].model_copy(
+                            update={"source_url": face.source_url}
+                        )
+                    lo, hi = plan.wght_range or (0.0, 0.0)
+                    instance_diagnostics.append(
+                        {
+                            "code": "LUMI0234",
+                            "severity": "info",
+                            "message": (
+                                f"instanced {font.family} into static faces "
+                                f"{[i.weight for i in plan.instances]} from its variable source "
+                                f"(wght {lo:g}–{hi:g})"
+                            ),
+                            "family": font.family,
+                        }
+                    )
+                    continue
+                if plan.variable and plan.error:
+                    instance_diagnostics.append(
+                        {
+                            "code": "LUMI0235",
+                            "severity": "warning",
+                            "message": (
+                                f"could not instance variable font {font.family}: {plan.error}; "
+                                f"the kit keeps its single face"
+                            ),
+                            "family": font.family,
+                        }
+                    )
             faces.append(
                 FontFaceEvidence(
                     weight=face.weight,
@@ -285,6 +367,14 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
                 width=asset.width,
                 height=asset.height,
                 kind_hint=asset.kind_hint,  # type: ignore[arg-type]
+                source_occurrences=[{
+                    "occurrence_id": hashlib.sha256(
+                        f"{snapshot.final_url}|{asset.locator}|{asset.source_url}".encode()
+                    ).hexdigest(),
+                    "source": "website", "page_url": snapshot.final_url,
+                    "locator": asset.locator, "alt": asset.alt,
+                    "surrounding_text": asset.surrounding_text, "placement": asset.placement,
+                }],
                 pointer=_pointer(asset.locator),
             )
         )
@@ -329,6 +419,8 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     outcome_diagnostics = getattr(outcome, "diagnostics", None)
     if geometry.diagnostics and isinstance(outcome_diagnostics, list):
         outcome_diagnostics.extend(geometry.diagnostics)
+    if instance_diagnostics and isinstance(outcome_diagnostics, list):
+        outcome_diagnostics.extend(instance_diagnostics)
     # Whatever `parse_site` skipped — an unreadable color, a font file with no
     # bytes — is only useful if a human sees it, and `ParsedSite.diagnostics`
     # has no other reader. Forward it onto the outcome, which the pipeline
@@ -710,7 +802,7 @@ def _call_ingest(job: _AssetJob, core, store_root: str, snapshot, asset_id: str)
             "created_at": snapshot.fetched_at,
             "source_label": "website",
             "confidence": 0.7,
-            "notes": [],
+            "notes": [job.note] if job.note else [],
         },
         source={"kind": "website", "url": job.url, "captured_at": snapshot.fetched_at}
         if job.url

@@ -146,6 +146,11 @@ export type GateDecisionInput =
       kind: "product_selection";
       decision: "approved";
       selectedProductId: string;
+    }
+  | {
+      kind: "product_set_selection";
+      decision: "approved";
+      selectedProductIds: readonly string[];
     };
 
 function toGate(wire: z.infer<typeof GateWireSchema>): ChatGate {
@@ -254,6 +259,26 @@ export interface GateCardModel {
   productOptions: readonly ProductSelectionOption[];
   selectedProductId: string | null;
   selectedProductName: string | null;
+  /**
+   * Non-null only for the set-valued `product_set_selection` gate (O6/D10).
+   *
+   * A project sells *products*, plural, so the card checks a set rather than
+   * picking one. Everything here is read out of the immutable subject snapshot
+   * — the catalog it shows, the boxes it pre-checks, and (once answered) the
+   * ids the human actually chose — so the card can never drift from the
+   * subject the decision was recorded against.
+   */
+  productSet: GateProductSet | null;
+}
+
+export interface GateProductSet {
+  options: readonly ProductSelectionOption[];
+  /** The boxes checked when the card opens: the saved selection, else the suggestion. */
+  preselectedIds: readonly string[];
+  /** The version of the project's saved selection, when it already has one. */
+  currentSelectionVersion: number | null;
+  /** The durable answer's chosen ids; empty while the gate is open. */
+  selectedIds: readonly string[];
 }
 
 export interface ProductSelectionOption {
@@ -262,6 +287,14 @@ export interface ProductSelectionOption {
   shortDescription: string;
   aliases: readonly string[];
   status: string;
+  /** Catalog front-matter members; null when the catalog does not state one. */
+  offeringKind: string | null;
+  family: string | null;
+  lifecycle: string | null;
+  officialUrl: string | null;
+  /** Onboarding reconciliation was unsure this row is distinct from another. */
+  possibleDuplicate: boolean;
+  duplicateReason: string | null;
 }
 
 function decisionOf(value: string | null): GateDecision | null {
@@ -273,6 +306,7 @@ const GATE_TITLES: Record<string, string> = {
   directive_confirmation: "Review the research plan",
   icp_confirmation: "Review your ideal customer profile",
   product_selection: "Choose this project's product",
+  product_set_selection: "Choose this project's products",
   plan_approval: "Review the plan",
   budget_approval: "Review the budget",
 };
@@ -281,6 +315,7 @@ const SUPPORTED_GATE_KINDS: ReadonlySet<string> = new Set([
   "directive_confirmation",
   "icp_confirmation",
   "product_selection",
+  "product_set_selection",
 ]);
 
 const RETRY_GATE_READ: GateRecoveryAction = {
@@ -345,6 +380,24 @@ function durableGateSummary(gate: ChatGate): string {
       ? scope
       : `${scope} · Catalog version ${gate.subjectRevision}`;
   }
+  if (gate.kind === "product_set_selection") {
+    const options = productSelectionOptions(gate.subjectSnapshot);
+    const chosen = answeredProductIds(gate);
+    // Once answered, the summary is the receipt: the names the human chose,
+    // read back out of the same immutable snapshot the decision was made on.
+    if (chosen.length > 0) {
+      return chosen
+        .map(
+          (productId) =>
+            options.find((option) => option.productId === productId)?.name ??
+            productId,
+        )
+        .join(", ");
+    }
+    const preselected = preselectedProductIds(gate.subjectSnapshot).length;
+    const noun = options.length === 1 ? "product" : "products";
+    return `${options.length} ${noun} available · ${preselected} pre-checked`;
+  }
   return "A decision is needed before work can continue.";
 }
 
@@ -382,6 +435,7 @@ function notice({
     productOptions: [],
     selectedProductId: null,
     selectedProductName: null,
+    productSet: null,
   };
 }
 
@@ -500,7 +554,12 @@ export function gateCardModel({
 
   const decision = decisionOf(gate.answer?.decision ?? null);
   const productOptions = productSelectionOptions(gate.subjectSnapshot);
-  if (gate.kind === "product_selection" && productOptions.length === 0) {
+  const productSet =
+    gate.kind === "product_set_selection" ? productSetOf(gate) : null;
+  if (
+    (gate.kind === "product_selection" || gate.kind === "product_set_selection") &&
+    productOptions.length === 0
+  ) {
     return notice({
       gate,
       part,
@@ -548,6 +607,27 @@ export function gateCardModel({
         recovery: null,
       });
     }
+    // The set-valued receipt is trusted only when every recorded id is still a
+    // product of the immutable snapshot, and only an approval may carry any.
+    if (
+      productSet !== null &&
+      ((decision === "approved" &&
+        (productSet.selectedIds.length === 0 ||
+          !productSet.selectedIds.every((productId) =>
+            productSet.options.some((option) => option.productId === productId),
+          ))) ||
+        (decision !== "approved" &&
+          (gate.answer?.selectedOptionRef !== null ||
+            stringList(gate.answer?.decisionPayload.selected_option_refs).length >
+              0)))
+    ) {
+      return notice({
+        gate,
+        part,
+        reason: "We couldn't confirm the saved product selection.",
+        recovery: null,
+      });
+    }
     return {
       gateId: gate.gateId,
       state: decision === "approved" ? "responded" : "denied",
@@ -578,6 +658,7 @@ export function gateCardModel({
       productOptions,
       selectedProductId: gate.answer?.selectedOptionRef ?? null,
       selectedProductName: selectedProduct?.name ?? null,
+      productSet,
     };
   }
   if (authorityFailure !== null) {
@@ -637,6 +718,7 @@ export function gateCardModel({
     productOptions,
     selectedProductId: null,
     selectedProductName: null,
+    productSet,
   };
 }
 
@@ -721,6 +803,18 @@ const PRODUCT_DECISION_RECORDED: Readonly<Record<GateDecision, string>> = {
   revised: "Changes requested",
 };
 
+const PRODUCT_SET_DECISION_COPY: Readonly<Record<GateDecision, string>> = {
+  approved: "Use these products",
+  rejected: "Not now",
+  revised: "Request changes",
+};
+
+const PRODUCT_SET_DECISION_RECORDED: Readonly<Record<GateDecision, string>> = {
+  approved: "Products selected",
+  rejected: "Product selection declined",
+  revised: "Changes requested",
+};
+
 export function gateDecisionCopy(
   kind: string,
   decision: GateDecision,
@@ -728,6 +822,11 @@ export function gateDecisionCopy(
 ): string {
   if (kind === "icp_confirmation") {
     return recorded ? ICP_DECISION_RECORDED[decision] : ICP_DECISION_COPY[decision];
+  }
+  if (kind === "product_set_selection") {
+    return recorded
+      ? PRODUCT_SET_DECISION_RECORDED[decision]
+      : PRODUCT_SET_DECISION_COPY[decision];
   }
   if (kind === "product_selection") {
     return recorded
@@ -747,16 +846,27 @@ export function gateAnswerDisplay(gate: ChatGate): GateAnswerDisplay | null {
     return { detail: null, label: "Decision recorded" };
   }
   const revisionRequest = gate.answer.decisionPayload.revision_request;
-  const selectedProduct = productSelectionOptions(gate.subjectSnapshot).find(
+  const options = productSelectionOptions(gate.subjectSnapshot);
+  const selectedProduct = options.find(
     (product) => product.productId === gate.answer?.selectedOptionRef,
   );
+  // The set-valued receipt names every product the human chose, read back out
+  // of the snapshot that was on screen when they chose it.
+  const selectedNames = answeredProductIds(gate)
+    .map(
+      (productId) =>
+        options.find((option) => option.productId === productId)?.name ?? productId,
+    )
+    .join(", ");
   return {
     detail:
       decision === "revised" && typeof revisionRequest === "string"
         ? revisionRequest.trim() || null
         : decision === "approved" && gate.kind === "product_selection"
           ? selectedProduct?.name ?? null
-          : null,
+          : decision === "approved" && gate.kind === "product_set_selection"
+            ? selectedNames || null
+            : null,
     label: gateDecisionCopy(gate.kind, decision, true),
   };
 }
@@ -806,6 +916,28 @@ export function gateAnswerResponse(
   } else if (input.kind === "product_selection") {
     throw new Error("A product can only be selected when approving this choice.");
   }
+  if (card.kind === "product_set_selection" && input.decision === "approved") {
+    if (input.kind !== "product_set_selection" || input.selectedProductIds.length === 0) {
+      throw new Error(
+        "Choose at least one of the products shown before continuing.",
+      );
+    }
+    // An archived row is on the card so the human can see it exists; it is
+    // never a thing this project can be pointed at.
+    const selectable = new Set(
+      (card.productSet?.options ?? [])
+        .filter((option) => option.status !== "archived")
+        .map((option) => option.productId),
+    );
+    if (
+      new Set(input.selectedProductIds).size !== input.selectedProductIds.length ||
+      !input.selectedProductIds.every((productId) => selectable.has(productId))
+    ) {
+      throw new Error("That product is no longer available for this proposal.");
+    }
+  } else if (input.kind === "product_set_selection") {
+    throw new Error("Products can only be chosen when approving this proposal.");
+  }
   return {
     gateId: card.gateId,
     decision: input.decision,
@@ -815,6 +947,9 @@ export function gateAnswerResponse(
     ...(trimmedRevision ? { revisionRequest: trimmedRevision } : {}),
     ...(input.kind === "product_selection"
       ? { selectedProductId: input.selectedProductId }
+      : {}),
+    ...(input.kind === "product_set_selection"
+      ? { selectedProductIds: [...input.selectedProductIds] }
       : {}),
   };
 }
@@ -843,9 +978,72 @@ function productSelectionOptions(
           ? item.aliases.filter((alias): alias is string => typeof alias === "string")
           : [],
         status: typeof item.status === "string" ? item.status : "active",
+        offeringKind: optionalText(item.offering_kind),
+        family: optionalText(item.family),
+        lifecycle: optionalText(item.lifecycle),
+        officialUrl: optionalText(item.official_url),
+        // Only `model_unsure` is a doubt worth showing a human; every other
+        // resolution state is a settled row and gets no chip at all.
+        possibleDuplicate: item.resolution_state === "model_unsure",
+        duplicateReason:
+          item.resolution_state === "model_unsure"
+            ? optionalText(item.reconcile_reason)
+            : null,
       },
     ];
   });
+}
+
+function optionalText(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function stringList(value: unknown): readonly string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+/** The saved project selection when there is one, else the agent's suggestion. */
+function preselectedProductIds(
+  snapshot: Record<string, unknown> | undefined,
+): readonly string[] {
+  const selection = snapshot?.current_selection;
+  if (selection && typeof selection === "object") {
+    return stringList((selection as Record<string, unknown>).product_ids);
+  }
+  return stringList(snapshot?.suggested_product_ids);
+}
+
+function currentSelectionVersion(
+  snapshot: Record<string, unknown> | undefined,
+): number | null {
+  const selection = snapshot?.current_selection;
+  if (!selection || typeof selection !== "object") return null;
+  const version = (selection as Record<string, unknown>).selection_version;
+  return typeof version === "number" ? version : null;
+}
+
+/**
+ * The ids a set-valued gate's durable answer recorded.
+ *
+ * The route writes them to `decision_payload.selected_option_refs` and leaves
+ * the single-valued `selected_option_ref` null, so this is the only place the
+ * chosen set can be read from.
+ */
+function answeredProductIds(gate: ChatGate): readonly string[] {
+  if (gate.answer === null || gate.answer.decision !== "approved") return [];
+  return stringList(gate.answer.decisionPayload.selected_option_refs);
+}
+
+function productSetOf(gate: ChatGate): GateProductSet {
+  return {
+    options: productSelectionOptions(gate.subjectSnapshot),
+    preselectedIds: preselectedProductIds(gate.subjectSnapshot),
+    currentSelectionVersion: currentSelectionVersion(gate.subjectSnapshot),
+    selectedIds: answeredProductIds(gate),
+  };
 }
 
 /** Money is formatted by the client (D-5); the backend never sends a string. */

@@ -13,8 +13,10 @@ from enum import StrEnum
 from typing import Protocol, cast
 
 from clue_core import ExecutionAttemptId, ExecutionId, ExecutionNodeId
+from clue_obs.langfuse import ObservationLike, observation
 from clue_toolbelt.envelope import (
     PreconditionFailure,
+    Tool,
     ToolContext,
     ToolDescriptor,
     ToolEffectClass,
@@ -183,6 +185,47 @@ class ToolInvoker:
         tool = self._registry.get(name, version)
         descriptor = tool.descriptor
         inputs = tool.input_model.model_validate(body)
+        # Lane 3 slice 3: the platform's side of a governed call — what the LangChain handler's
+        # own tool observation cannot see: the disposition (completed / replayed / blocked /
+        # awaiting input / failed) and the durable references. READ tools are retrievers.
+        with observation(
+            f"governed.{descriptor.name}@{descriptor.version}",
+            as_type="retriever" if descriptor.effect_class is ToolEffectClass.READ else "tool",
+            input={
+                "operation_id": str(context.operation_id),
+                "actor": context.actor,
+                "workspace_id": context.workspace_id,
+                "inputs": inputs.model_dump(mode="json"),
+            },
+            metadata={
+                "tool": descriptor.name,
+                "version": descriptor.version,
+                "effect_class": descriptor.effect_class.value,
+            },
+        ) as current:
+            return await self._invoke_observed(
+                tool,
+                descriptor,
+                inputs,
+                name,
+                body,
+                context,
+                idempotency_key=idempotency_key,
+                current=current,
+            )
+
+    async def _invoke_observed(
+        self,
+        tool: Tool,
+        descriptor: ToolDescriptor,
+        inputs: ToolInput,
+        name: str,
+        body: dict[str, object],
+        context: ToolContext,
+        *,
+        idempotency_key: str | None,
+        current: ObservationLike,
+    ) -> ToolResult:
         snapshot = await self._snapshotter.snapshot(
             descriptor=descriptor,
             inputs=inputs,
@@ -195,8 +238,17 @@ class ToolInvoker:
         )
         if start.disposition is JournalDisposition.COMPLETED:
             assert start.result is not None
+            current.update(
+                output={"replayed": True, "references": start.result.references},
+                metadata={"disposition": "replayed"},
+            )
             return validate_tool_result(tool, start.result).model_copy(update={"replayed": True})
         if start.disposition is JournalDisposition.BLOCKED:
+            current.update(
+                level="WARNING",
+                status_message=", ".join(start.blocked_reason_codes),
+                metadata={"disposition": "blocked"},
+            )
             raise PreconditionFailed(
                 tuple(
                     PreconditionFailure(
@@ -251,12 +303,18 @@ class ToolInvoker:
         except asyncio.CancelledError:
             # Worker fencing and SIGTERM cancellation are not tool failures. The started attempt
             # remains visibly abandoned and the next lease owner recovers it.
+            current.update(metadata={"disposition": "cancelled"})
             raise
         except PreconditionFailed as exc:
             await self._journal.blocked(
                 start=start,
                 context=effective_context,
                 reason_codes=exc.reason_codes,
+            )
+            current.update(
+                level="WARNING",
+                status_message=", ".join(exc.reason_codes),
+                metadata={"disposition": "blocked"},
             )
             raise
         except ToolAwaitingInput as exc:
@@ -265,6 +323,10 @@ class ToolInvoker:
                 context=effective_context,
                 reason_code=exc.reason_code,
             )
+            current.update(
+                status_message=exc.reason_code,
+                metadata={"disposition": "awaiting_input"},
+            )
             raise
         except BaseException as exc:
             await self._journal.failed(
@@ -272,11 +334,24 @@ class ToolInvoker:
                 context=effective_context,
                 error_code=_error_code(exc),
             )
+            current.update(
+                level="ERROR",
+                status_message=_error_code(exc),
+                metadata={"disposition": "failed"},
+            )
             raise
         completed = await self._journal.completed(
             start=start,
             context=effective_context,
             result=result,
+        )
+        current.update(
+            output={
+                "references": completed.references,
+                "meta": completed.meta,
+                "replayed": completed.replayed,
+            },
+            metadata={"disposition": "completed"},
         )
         await self._crash_hook("after_completion_event", context=effective_context, start=start)
         return completed

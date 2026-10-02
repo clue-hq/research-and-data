@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { getProtectedSession } from "@/features/session/data/session-dal";
 import { backendDesignArtifactRepository } from "@/features/design-editor/data/artifact.repository.server";
 import { loadGalleryFeed } from "@/features/design-editor/data/gallery-feed";
 import { ProjectWorkspaceShell } from "@/features/projects/components/project-workspace-shell";
@@ -13,6 +14,9 @@ interface ProjectChatPageProps {
   searchParams: Promise<{
     edit?: string;
     handoff?: string;
+    // `?open=<artifactId>` (ratified 2026-09-15): the artifacts library's hand-off. The chat
+    // surface reads it once from `useSearchParams` and strips it; the server passes nothing on.
+    open?: string;
     selection?: string;
     surface?: string;
   }>;
@@ -36,14 +40,16 @@ export default async function ProjectChatPage({
   // artifact→document map (the canvas mount consumes it next slice). The
   // feed rides its own props, never the workspace schema
   // (workspace.artifacts stays the schema-hard empty tuple).
-  const [workspace, feed] = await Promise.all([
+  const [workspace, feed, session] = await Promise.all([
     getProjectWorkspace(projectId),
     loadGalleryFeed(backendDesignArtifactRepository(), projectId),
+    getProtectedSession(),
   ]);
 
   return (
     <ProjectWorkspaceShell
       artifacts={feed.cards}
+      canEditDocuments={session?.principal.permissions.includes("project.write") ?? false}
       documentIds={feed.documentIds}
       initial={{
         edit: query.edit,

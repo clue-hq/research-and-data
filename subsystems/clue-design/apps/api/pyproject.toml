@@ -34,6 +34,9 @@ dependencies = [
     "python-multipart>=0.0.9,<1",
     "httpx>=0.27,<1",
     "fonttools>=4.53,<5",
+    # WOFF/WOFF2 decode + encode at ingestion / web export (option A, 2026-09-02). fontTools
+    # needs this at runtime for `flavor="woff2"`; it was only ever present by accident before.
+    "brotli>=1.1,<2",
     "pillow>=10,<12",
     "playwright>=1.45,<2",
     # Stealth render backend (brand-color capture): bot-walled and WebGL-hero
@@ -51,6 +54,21 @@ dependencies = [
     # libs/clue-db's own entry, so the workspace keeps one asyncpg version story.
     "asyncpg",
     "clue-design",
+    "clue-spine",
+    "clue-config",
+    # Lane 3 slice 5: this app's root installs the platform's OTel/Sentry/Langfuse composition
+    # (`clue_obs.production`) from `clue_config`'s settings, and the design run/turn paths meter
+    # provider spend through `clue_spend`. `clue_gateway` is the one LLM caller behind them.
+    # They resolved transitively through clue-design until now; direct imports get direct
+    # declarations.
+    "clue-obs",
+    "clue-gateway",
+    "clue-spend",
+    "clue-locks",
+    # The ingestion capture parser names a brand from its host through the one shared rule
+    # (`clue_core.normalize.canonical_workspace_name`), so the platform and the design lane
+    # cannot drift on what a domain is called. Also resolved transitively until now.
+    "clue-core",
     # D5 Round B: the two design-tree shims, now installed packages rather than PYTHONPATH.
     "py-lumen-obs",
     "py-lumen-config",
@@ -65,5 +83,12 @@ packages = ["lumen_api", "lumen_ingestion"]
 
 [tool.uv.sources]
 clue-design = { workspace = true }
+clue-spine = { workspace = true }
+clue-config = { workspace = true }
+clue-locks = { workspace = true }
+clue-obs = { workspace = true }
+clue-gateway = { workspace = true }
+clue-spend = { workspace = true }
+clue-core = { workspace = true }
 py-lumen-obs = { workspace = true }
 py-lumen-config = { workspace = true }

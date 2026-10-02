@@ -1,11 +1,10 @@
 "use client";
 
-import Image from "next/image";
+import { Attachments } from "@/components/ai-elements/attachments";
 import { MessageResponse } from "@/components/ai-elements/message-response";
 import { unavailableMessageBody } from "../model/chat-message";
 import type { GateAnswerDisplay } from "../model/chat-gate";
 import {
-  designReferenceThumbnailUrl,
   gateResponseBodyDisplay,
   humanizeMessageBody,
 } from "../model/chat-message-presentation";
@@ -16,8 +15,27 @@ import {
 } from "../model/design-leg";
 import type { ProjectEntity } from "../model/project-workspace";
 import { ChatMessagePartView, type ChatPartActions } from "./chat-message-part";
+import { ChatReasoning } from "./chat-reasoning";
+import { ChatMessageReference } from "./chat-message-reference";
 import { ProjectIcon } from "./project-icon";
 import styles from "./project-flow.module.css";
+
+/**
+ * The parts a message actually renders inline.
+ *
+ * One rule, and only one: the turn whose questions the clarification card is
+ * asking right now does not ALSO print them read-only in its own bubble (spec
+ * 2026-09-20 §2.5 scopes the inline record to turns that are not the latest).
+ * Every other part of every other turn is rendered exactly as it arrived.
+ */
+function visibleParts(
+  message: TranscriptMessage,
+  actions: ChatPartActions,
+): readonly TranscriptMessage["parts"][number][] {
+  if (!actions.openClarificationTurnId) return message.parts;
+  if (message.turnId !== actions.openClarificationTurnId) return message.parts;
+  return message.parts.filter((part) => part.kind !== "clarification");
+}
 
 /**
  * The transcript: durable messages and live projections, in one ordered log.
@@ -33,7 +51,6 @@ export function ChatTranscript({
   contextEntities = [],
   gateAnswerForTurn,
   messages,
-  onInspectTurn,
 }: {
   activeUserMessageId?: string | null;
   actions: ChatPartActions;
@@ -41,16 +58,6 @@ export function ChatTranscript({
   contextEntities?: readonly ProjectEntity[];
   gateAnswerForTurn?: (turnId: string) => GateAnswerDisplay | null;
   messages: readonly TranscriptMessage[];
-  /**
-   * The dev-lens affordance, or absent.
-   *
-   * `undefined` is the production shape and the default: the capability probe
-   * 404s against any deployment that did not register the inspector routes, so
-   * the caller passes nothing and no button is rendered. No component here reads
-   * an environment variable to decide — a client flag could disagree with the
-   * server's, and asking cannot.
-   */
-  onInspectTurn?: (turnId: string) => void;
 }) {
   return (
     <div className={styles.transcript} role="log">
@@ -71,6 +78,9 @@ export function ChatTranscript({
           data-active-message={
             message.id === activeUserMessageId ? "true" : undefined
           }
+          // The scrollback anchor (C5): re-anchoring after an older page
+          // prepends needs each message findable by its durable identity.
+          data-message-id={message.id}
           data-optimistic={message.optimistic || undefined}
           data-role={message.role}
           data-state={message.state}
@@ -80,68 +90,29 @@ export function ChatTranscript({
             <div className={styles.assistantAttribution}>
               <ProjectIcon name="clue" size={13} />
               {assistantName}
-              {onInspectTurn && !message.optimistic ? (
-                <button
-                  aria-label="Inspect response details"
-                  className={styles.turnLensTrigger}
-                  onClick={() => onInspectTurn(message.turnId)}
-                  type="button"
-                >
-                  Inspect
-                </button>
-              ) : null}
             </div>
           ) : null}
           <div className={styles.messageParts}>
-            {message.refs.some((ref) => ref.flavor === "context") ? (
-              <div aria-label="Message context" className={styles.messageContextRefs}>
+            {message.refs.some(
+              (ref) => ref.flavor === "context" || ref.flavor === "attachment",
+            ) ? (
+              <Attachments aria-label="Message context" className={styles.messageContextRefs} variant="inline">
                 {message.refs
-                  .filter((ref) => ref.flavor === "context")
+                  .filter(
+                    (ref) =>
+                      ref.flavor === "context" || ref.flavor === "attachment",
+                  )
                   .sort((left, right) => left.ordinal - right.ordinal)
-                  .map((ref) => {
-                    const entity = contextEntities.find(
-                      (candidate) =>
-                        candidate.id === ref.objectId &&
-                        candidate.type === ref.objectType,
-                    );
-                    const fallbackLabel =
-                      ref.objectType === "contact"
-                        ? "Selected contact"
-                        : ref.objectType === "account"
-                          ? "Selected account"
-                          : ref.objectType === "design_node"
-                            ? "Selected design element"
-                            : ref.objectType === "design_document"
-                              ? "Design"
-                              : "Reference image";
-                    const label = entity?.label ?? ref.label ?? fallbackLabel;
-                    return (
-                      <span
-                        className={
-                          ref.objectType === "design_asset"
-                            ? styles.messageReferenceImage
-                            : undefined
-                        }
-                        key={`${ref.ordinal}:${ref.objectType}:${ref.objectId}`}
-                        title={label}
-                      >
-                        {ref.objectType === "design_asset" && ref.thumbnailDigest ? (
-                          <Image
-                            alt=""
-                            className={styles.messageReferenceThumbnail}
-                            height={18}
-                            src={designReferenceThumbnailUrl(ref.thumbnailDigest)}
-                            unoptimized
-                            width={18}
-                          />
-                        ) : null}
-                        {ref.objectType === "account" || ref.objectType === "contact"
-                          ? `@${label}`
-                          : label}
-                      </span>
-                    );
-                  })}
-              </div>
+                  .map((ref) => (
+                    <ChatMessageReference
+                      entity={contextEntities.find(
+                        (candidate) => candidate.id === ref.objectId && candidate.type === ref.objectType,
+                      )}
+                      key={`${ref.ordinal}:${ref.flavor}:${ref.objectType}:${ref.objectId}`}
+                      reference={ref}
+                    />
+                  ))}
+              </Attachments>
             ) : null}
             {gateAnswer !== null ? (
               <div className={styles.gateAnswerReceipt} role="status">
@@ -151,6 +122,9 @@ export function ChatTranscript({
                   <small>{`Requested changes: ${gateAnswer.detail}`}</small>
                 ) : null}
               </div>
+            ) : null}
+            {message.role === "assistant" ? (
+              <ChatReasoning parts={message.parts} turnState={message.state} />
             ) : null}
             {displayBody !== null ? (
               <div className={styles.messageText}>
@@ -166,12 +140,11 @@ export function ChatTranscript({
                 {unavailableMessageBody(message.bodyUnavailableReason)}
               </p>
             ) : null}
-            {message.parts.map((part) => (
+            {visibleParts(message, actions).map((part) => (
               <ChatMessagePartView
                 actions={actions}
                 key={part.partId}
                 part={part}
-                turnState={message.state}
               />
             ))}
             {message.role === "assistant" &&
@@ -185,18 +158,6 @@ export function ChatTranscript({
               </p>
             ) : null}
             {message.role === "assistant" &&
-            message.state === "cancelled" &&
-            message.body === null &&
-            !message.parts.some(
-              (part) =>
-                part.kind === "reasoning" ||
-                (part.kind === "text" && part.failed),
-            ) ? (
-              <p className={styles.reasoningStatus} role="status">
-                Stopped
-              </p>
-            ) : null}
-            {message.role === "assistant" &&
             message.state === "failed" &&
             message.body === null &&
             // A typed failure now renders its own sentence below, so the
@@ -205,7 +166,6 @@ export function ChatTranscript({
             message.failureCode === null &&
             !message.parts.some(
               (part) =>
-                part.kind === "reasoning" ||
                 (part.kind === "text" && part.failed),
             ) ? (
               <p className={styles.reasoningStatus} role="status">

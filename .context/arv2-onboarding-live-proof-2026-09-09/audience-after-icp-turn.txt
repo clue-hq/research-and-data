@@ -1,0 +1,7 @@
+                         path                         | version |  status  | registered 
+------------------------------------------------------+---------+----------+------------
+ audience/icp-athenahealth-specialty-organizations.md |       3 | proposed | 19:38:58
+ audience/icp-hospital-affiliated-clinics.md          |       3 | proposed | 19:38:58
+ audience/icp-independent-specialty-groups.md         |       3 | proposed | 19:38:59
+(3 rows)
+

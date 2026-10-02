@@ -8,13 +8,47 @@
 use crate::derive::{web_slot_key_is_valid, when_gate_key};
 use crate::doc::{
     calendly_url_is_valid, custom_component_artifact_id_is_valid, custom_component_props_issue,
-    custom_component_slug_is_valid, fragment_id_is_valid, fragment_slots_issue, ButtonAction,
-    ComponentSpec, EmbedProvider, FragmentSlotValue, WebDoc, WebNodeKind, MAX_TREE_DEPTH,
-    WEB_SCHEMA_VERSION,
+    custom_component_slug_is_valid, fragment_id_is_valid, fragment_override_path_is_valid,
+    fragment_slots_issue, ButtonAction, ComponentSpec, EmbedProvider, FragmentSlotValue, WebDoc,
+    WebNodeKind, MAX_FRAGMENT_OVERRIDE_SIZE, MAX_FRAGMENT_SLOT_VALUE_BYTES,
+    MAX_FRAGMENT_TEXT_OVERRIDES, MAX_TREE_DEPTH, MIN_FRAGMENT_OVERRIDE_SIZE, WEB_SCHEMA_VERSION,
 };
 use crate::util::{href_is_allowed, quoted_id};
 use lumen_core::{AssetId, Diagnostic, DiagnosticSubject, NodeId, Phase};
 use std::collections::{BTreeMap, BTreeSet};
+
+/// The publish-surface route grammar (F5, Task 1). `/` or `/seg(/seg)*` where a segment is
+/// `[a-z0-9]+(-[a-z0-9]+)*`; no trailing slash; ≤128 chars; `manifest.json` is never a
+/// segment and `p-assets` / `asset-store` are never the first one (both are served beside
+/// a published site and would shadow it).
+pub fn route_is_valid(route: &str) -> bool {
+    if route == "/" {
+        return true;
+    }
+    if route.len() > 128 || !route.starts_with('/') || route.ends_with('/') {
+        return false;
+    }
+    let mut segments = route[1..].split('/');
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    if first == "p-assets" || first == "asset-store" {
+        return false;
+    }
+    std::iter::once(first).chain(segments).all(segment_is_valid)
+}
+
+fn segment_is_valid(segment: &str) -> bool {
+    if segment.is_empty() || segment == "manifest.json" {
+        return false;
+    }
+    segment.split('-').all(|run| {
+        !run.is_empty()
+            && run
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+    })
+}
 
 pub fn validate_web_doc(doc: &WebDoc) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -56,6 +90,22 @@ pub fn validate_web_doc(doc: &WebDoc) -> Vec<Diagnostic> {
                 format!("duplicate route `{}`", page.route),
                 Some(DiagnosticSubject::Page(page.id.clone())),
             ));
+        }
+        if !route_is_valid(&page.route) {
+            diagnostics.push(
+                Diagnostic::error(
+                    Phase::Web,
+                    "LUMW0036",
+                    format!(
+                        "page `{}` route `{}` is not a valid site route",
+                        page.id, page.route
+                    ),
+                    Some(DiagnosticSubject::Page(page.id.clone())),
+                )
+                .with_hint(
+                    "Routes are `/` or `/lowercase-segments/like-this`; no trailing slash, ≤128 chars.",
+                ),
+            );
         }
         validate_page(doc, page, &mut diagnostics);
     }
@@ -494,7 +544,11 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                     ));
                 }
             }
-            WebNodeKind::Fragment { fragment_id, slots } => {
+            WebNodeKind::Fragment {
+                fragment_id,
+                slots,
+                text_overrides,
+            } => {
                 if !fragment_id_is_valid(fragment_id) {
                     diagnostics.push(
                         Diagnostic::error(
@@ -542,6 +596,86 @@ fn validate_page(doc: &WebDoc, page: &crate::doc::WebPage, diagnostics: &mut Vec
                                 .with_hint(
                                     "Register the asset on the document before binding it to a \
                                      fragment slot (derive upserts the account's own record).",
+                                ),
+                            );
+                        }
+                    }
+                }
+                // R-A6 text overrides. Bounded exactly like slots are: every
+                // breach is an Error the write path refuses, never something
+                // truncated or escaped downstream.
+                if text_overrides.len() > MAX_FRAGMENT_TEXT_OVERRIDES {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0441",
+                            format!(
+                                "fragment `{}` has {} text overrides; maximum is \
+                                 {MAX_FRAGMENT_TEXT_OVERRIDES}",
+                                node.id,
+                                text_overrides.len()
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        )
+                        .with_hint(
+                            "A clone offers a nudge, not a rewrite: clear overrides you no \
+                             longer need instead of accumulating them.",
+                        ),
+                    );
+                }
+                for (path, over) in text_overrides {
+                    if !fragment_override_path_is_valid(path) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                Phase::Web,
+                                "LUMW0440",
+                                format!(
+                                    "fragment `{}` text override path `{}` is not a structural \
+                                     path",
+                                    node.id,
+                                    quoted_id(path)
+                                ),
+                                Some(DiagnosticSubject::Node(node.id.clone())),
+                            )
+                            .with_hint(
+                                "Override paths are `:nth-child(n)` steps joined by ` > `, every \
+                                 n at least 1 — positions only, never element names or classes.",
+                            ),
+                        );
+                    }
+                    if over.text.len() > MAX_FRAGMENT_SLOT_VALUE_BYTES {
+                        diagnostics.push(Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0442",
+                            format!(
+                                "fragment `{}` text override `{}` exceeds \
+                                 {MAX_FRAGMENT_SLOT_VALUE_BYTES} bytes",
+                                node.id,
+                                quoted_id(path)
+                            ),
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        ));
+                    }
+                    if let Some(size) = over.size {
+                        if !(MIN_FRAGMENT_OVERRIDE_SIZE..=MAX_FRAGMENT_OVERRIDE_SIZE)
+                            .contains(&size)
+                        {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    Phase::Web,
+                                    "LUMW0443",
+                                    format!(
+                                        "fragment `{}` text override `{}` has size step {size}, \
+                                         outside {MIN_FRAGMENT_OVERRIDE_SIZE}..\
+                                         ={MAX_FRAGMENT_OVERRIDE_SIZE}",
+                                        node.id,
+                                        quoted_id(path)
+                                    ),
+                                    Some(DiagnosticSubject::Node(node.id.clone())),
+                                )
+                                .with_hint(
+                                    "`size` is a relative step on the artifact's own scale, not \
+                                     a font size.",
                                 ),
                             );
                         }
@@ -842,6 +976,7 @@ mod tests {
                         "headline".to_owned(),
                         crate::doc::FragmentSlotValue::Text("Book a call".to_owned()),
                     )]),
+                    text_overrides: BTreeMap::new(),
                 },
                 classes: "w-full".to_owned(),
                 children: Vec::new(),
@@ -872,7 +1007,10 @@ mod tests {
             .nodes
             .get_mut(&lumen_core::NodeId::from("frg_hero"))
             .expect("fragment");
-        let WebNodeKind::Fragment { fragment_id, slots } = &mut node.kind else {
+        let WebNodeKind::Fragment {
+            fragment_id, slots, ..
+        } = &mut node.kind
+        else {
             panic!("fragment");
         };
         // An id shaped for CSS-class injection is refused, not escaped later.
@@ -890,6 +1028,121 @@ mod tests {
         assert!(codes.contains(&"LUMW0007".to_owned()), "{codes:?}");
         assert!(codes.contains(&"LUMW0033".to_owned()), "{codes:?}");
         assert!(codes.contains(&"LUMW0034".to_owned()), "{codes:?}");
+    }
+
+    #[test]
+    fn fragment_text_override_bounds_are_validated() {
+        // Each breach has its own code so the editor can say which rule the
+        // human's edit broke, not merely that "something is out of bounds".
+        for (over, path, expected) in [
+            (
+                crate::doc::FragmentTextOverride {
+                    text: "x".to_owned(),
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                    size: None,
+                },
+                ":nth-child(0)".to_owned(),
+                "LUMW0440",
+            ),
+            (
+                crate::doc::FragmentTextOverride {
+                    text: "x".repeat(crate::doc::MAX_FRAGMENT_SLOT_VALUE_BYTES + 1),
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                    size: None,
+                },
+                ":nth-child(1)".to_owned(),
+                "LUMW0442",
+            ),
+            (
+                crate::doc::FragmentTextOverride {
+                    text: "x".to_owned(),
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                    size: Some(4),
+                },
+                ":nth-child(1)".to_owned(),
+                "LUMW0443",
+            ),
+        ] {
+            let mut doc = clean_doc();
+            add_fragment(&mut doc);
+            let node = doc.pages[0]
+                .nodes
+                .get_mut(&lumen_core::NodeId::from("frg_hero"))
+                .expect("fragment");
+            let WebNodeKind::Fragment { text_overrides, .. } = &mut node.kind else {
+                panic!("fragment");
+            };
+            text_overrides.insert(path.clone(), over);
+            let codes: Vec<String> = validate_web_doc(&doc)
+                .iter()
+                .map(|diagnostic| diagnostic.code.clone())
+                .collect();
+            assert!(codes.contains(&expected.to_owned()), "{path}: {codes:?}");
+        }
+
+        // 65 overrides is one past the ceiling; 64 validates.
+        let mut doc = clean_doc();
+        add_fragment(&mut doc);
+        let node = doc.pages[0]
+            .nodes
+            .get_mut(&lumen_core::NodeId::from("frg_hero"))
+            .expect("fragment");
+        let WebNodeKind::Fragment { text_overrides, .. } = &mut node.kind else {
+            panic!("fragment");
+        };
+        for index in 1..=(crate::doc::MAX_FRAGMENT_TEXT_OVERRIDES + 1) {
+            text_overrides.insert(
+                format!(":nth-child({index})"),
+                crate::doc::FragmentTextOverride {
+                    text: "x".to_owned(),
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                    size: None,
+                },
+            );
+        }
+        let codes: Vec<String> = validate_web_doc(&doc)
+            .iter()
+            .map(|diagnostic| diagnostic.code.clone())
+            .collect();
+        assert!(codes.contains(&"LUMW0441".to_owned()), "{codes:?}");
+    }
+
+    #[test]
+    fn a_fragment_within_its_text_override_bounds_validates() {
+        let mut doc = clean_doc();
+        add_fragment(&mut doc);
+        let node = doc.pages[0]
+            .nodes
+            .get_mut(&lumen_core::NodeId::from("frg_hero"))
+            .expect("fragment");
+        let WebNodeKind::Fragment { text_overrides, .. } = &mut node.kind else {
+            panic!("fragment");
+        };
+        text_overrides.insert(
+            ":nth-child(2) > :nth-child(1)".to_owned(),
+            crate::doc::FragmentTextOverride {
+                text: "x".repeat(crate::doc::MAX_FRAGMENT_SLOT_VALUE_BYTES),
+                bold: true,
+                italic: true,
+                underline: true,
+                size: Some(crate::doc::MIN_FRAGMENT_OVERRIDE_SIZE),
+            },
+        );
+        let diagnostics = validate_web_doc(&doc);
+        assert!(
+            diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.severity != DiagnosticSeverity::Error),
+            "{diagnostics:#?}"
+        );
     }
 
     #[test]
@@ -1169,5 +1422,43 @@ mod tests {
             .map(|diagnostic| diagnostic.code.clone())
             .collect();
         assert!(codes.contains(&"LUMW0016".to_owned()), "{codes:?}");
+    }
+
+    #[test]
+    fn route_grammar_accepts_root_and_kebab_paths() {
+        assert!(route_is_valid("/"));
+        assert!(route_is_valid("/pricing"));
+        assert!(route_is_valid("/pricing/enterprise-2026"));
+    }
+
+    #[test]
+    fn route_grammar_refuses_bad_shapes() {
+        for bad in [
+            "",
+            "pricing",
+            "/Pricing",
+            "/pricing/",
+            "//a",
+            "/a b",
+            "/a_b",
+            "/manifest.json",
+            "/p-assets/x",
+            "/asset-store/x",
+            "/x/manifest.json",
+        ] {
+            assert!(!route_is_valid(bad), "{bad:?} should be refused");
+        }
+        assert!(!route_is_valid(&format!("/{}", "a".repeat(128))));
+    }
+
+    #[test]
+    fn a_page_with_an_invalid_route_is_an_error_diagnostic() {
+        let mut doc = WebDoc::new("d", "Site", None);
+        doc.pages[0].route = "/Bad Route".to_owned();
+        let diagnostics = validate_web_doc(&doc);
+        assert!(
+            diagnostics.iter().any(|d| d.code == "LUMW0036"),
+            "{diagnostics:#?}"
+        );
     }
 }

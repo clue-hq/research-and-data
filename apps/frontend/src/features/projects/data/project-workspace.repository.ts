@@ -1,5 +1,7 @@
 import {
   ProjectHomeSchema,
+  ProjectRenameResponseSchema,
+  type RenamedProject,
   ProjectWorkspaceResponseSchema,
   ProjectWorkspaceSchema,
   type ProjectHome,
@@ -17,9 +19,13 @@ import {
 
 export interface ProjectWorkspaceRepository {
   get(projectId: string): Promise<ProjectWorkspace>;
+  rename(projectId: string, title: string): Promise<RenamedProject>;
 }
 
 export const fixtureProjectWorkspaceRepository: ProjectWorkspaceRepository = {
+  async rename() {
+    throw new Error("Project renaming requires a connected workspace.");
+  },
   async get(projectId) {
     return ProjectWorkspaceSchema.parse({
       ...projectWorkspaceFixture,
@@ -32,6 +38,14 @@ export function createHttpProjectWorkspaceRepository(
   transport: Extract<ChatTransport, { mode: "http" }>,
 ): ProjectWorkspaceRepository {
   return {
+    async rename(projectId, title) {
+      return ProjectRenameResponseSchema.parse(
+        await chatRequest(transport, `/projects/${encodeURIComponent(projectId)}`, {
+          method: "PATCH",
+          body: { title },
+        }),
+      );
+    },
     async get(projectId) {
       return ProjectWorkspaceResponseSchema.parse(
         await chatRequest(

@@ -97,15 +97,27 @@ class GatewayConfig(BaseModel):
     # P3.2 (PD-part3 delta 6) — OpenRouter economics knobs, policy as data. ``provider.sort``
     # pins routing to one replica ordering, which is what makes a stable prompt-cache prefix
     # actually HIT (the design runtime's ~95% cached-prefill invariant); ``usage.include``
-    # asks OpenRouter for the usage-accounting block (cached/reasoning token detail). Defaults
-    # OFF: existing call sites keep their exact wire shape.
+    # asks OpenRouter for the usage-accounting block — cached/reasoning token detail *and* the
+    # credits the call actually cost.
+    #
+    # ``usage.include`` defaults ON since the ARV2 R2-close (2026-09-08). It was OFF, so no call
+    # site ever asked OpenRouter to meter and the R2 live run booked ``cost_cents = 0`` for all
+    # twenty-nine of its Grok rounds. Founder ruling, 2026-09-08: a model's cost comes from
+    # OpenRouter and from nowhere else — either this accounting block, or (when a path does not
+    # carry it back) OpenRouter's ``/generation`` endpoint. We do not maintain a price table of
+    # our own; ``prices`` below survives only for the roles that already populate it.
     openrouter_provider_sort: Literal["price", "throughput", "latency"] | None = None
-    openrouter_usage_include: bool = False
+    openrouter_usage_include: bool = True
     timeout_s: float = Field(default=30.0, gt=0)
     max_retries: int = Field(default=2, ge=0)
     # Force the deterministic stub (no live call). The factory ALSO stubs when no key is present.
     stub: bool = False
     # Per-model pricing (model id -> rates). Missing model -> cost 0 (measured-or-zero).
+    # PRE-EXISTING MECHANISM, NOT A DEFAULT: nothing in this repo populates it, and per the
+    # founder ruling of 2026-09-08 nothing new may — a governed agent call's cost is OpenRouter's
+    # number (``usage.cost``, else the ``/generation`` lookup), never one we derive from rates we
+    # would have to keep current. A model that happens to be listed here by a deployment still
+    # reports its computed cost, labelled ``estimate`` so it can never be mistaken for a meter.
     # NOTE: like every config sub-tree, the gateway block is overlaid by *whole-subtree replace*
     # (ConfigOverlay semantics) — an overlay that swaps only ``judge_model`` must re-supply
     # ``prices`` too, or the inherited price table is dropped and costs read as 0. Carry the full
@@ -162,11 +174,13 @@ def default_gateway_config() -> GatewayConfig:
         return GatewayConfig(
             synthesis_model=settings.synthesis_model,
             judge_model=settings.judge_model,
+            timeout_s=settings.gateway_timeout_s,
             agent_reasoning=reasoning,
             openrouter_chat_completions_fallback=True,
         )
     return GatewayConfig(
         synthesis_model=settings.synthesis_model,
+        timeout_s=settings.gateway_timeout_s,
         agent_reasoning=reasoning,
         openrouter_chat_completions_fallback=True,
     )

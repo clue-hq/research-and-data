@@ -30,6 +30,7 @@ class PlatformUser(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     job_role: str | None = None
+    email: str | None = None
     status: UserStatus
     created_at: UtcDatetime
     suspended_at: UtcDatetime | None = None
@@ -63,6 +64,9 @@ class WorkspaceMembership(BaseModel):
     created_at: UtcDatetime
     activated_at: UtcDatetime | None = None
     revoked_at: UtcDatetime | None = None
+    # The workspace's display name, filled by the database loader's join; None only for loaders
+    # that do not read the workspace row. Users are shown a name, never a workspace id.
+    workspace_name: str | None = None
 
 
 class WorkspaceInvitation(BaseModel):
@@ -71,6 +75,7 @@ class WorkspaceInvitation(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     invitation_id: str
+    provider_invitation_id: str | None = None
     workspace_id: str
     invited_address: str
     role_key: RoleKey
@@ -118,3 +123,4 @@ class IdentityErasureResult(BaseModel):
     memberships_revoked: int
     invitation_addresses_erased: int
     provisioning_websites_erased: int = 0
+    artifact_marks_deleted: int = 0

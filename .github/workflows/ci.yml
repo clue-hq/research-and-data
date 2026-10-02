@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, research-streaming]
   pull_request:
 
 # The full M0 gate (M0.6). Runs on every PR with a Postgres+pgvector service and NO live provider
@@ -55,3 +55,17 @@ jobs:
 
       - name: Eval harness against the stub gold set (regression-on-swap demo)
         run: make eval
+
+  engine-handshake:
+    # Seconds, not minutes: hashes the lumen-core sources and reads the committed browser wasm's
+    # stamp. Catches an engine change merged without a rebuilt wasm (first deployment spec §9.5).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Committed editor wasm matches the engine sources
+        env:
+          WASM_PREFLIGHT_STRICT: "1"
+        run: node subsystems/clue-design/scripts/preflight_editor_wasm.mjs

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "component": "Chat",
+  "source": {
+    "method": "Founder-approved composer and transcript parity",
+    "capturedAt": "2026-09-20",
+    "reference": "apps/frontend/docs/figma/projects-chat-flow.md"
+  },
+  "tokens": [
+    { "name": "component/chat/body-font-size", "unit": "px", "value": 14 },
+    { "name": "component/chat/body-line-height", "unit": "px", "value": 22 },
+    { "name": "component/chat/user-message-background", "kind": "raw", "value": "#eff0f3" }
+  ]
+}

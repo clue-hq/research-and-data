@@ -1,0 +1,13 @@
+{
+  "type": "deep-reasoning",
+  "numResults": 40,
+  "outputSchema": {
+    "type": "text"
+  },
+  "contents": {
+    "highlights": true,
+    "extras": {
+      "links": 1
+    }
+  }
+}

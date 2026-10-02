@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import make_client
+from conftest import is_served, make_client
 
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app, new_id
@@ -93,12 +93,13 @@ def test_batch_publishes_all_accounts(client: TestClient, workspace_id: str) -> 
     for row in manifest:
         assert row["status"] == "published"
         assert row["document_id"]
-        assert row["url"] == f"/w/{workspace_id}/p/{row['slug']}"
+        assert row["url"].endswith(f"/{row['slug']}")
         assert row["error"] is None
         slugs.add(row["slug"])
-        # Each published page actually serves.
-        page = client.get(row["url"])
-        assert page.status_code == 200, row["url"]
+        # Each published page is really live at its slug. (The design API no longer SERVES
+        # published pages — the page origin does, and `row["url"]` is that origin's absolute
+        # URL — so liveness is read off the publish row.)
+        assert is_served(workspace_id, row["slug"]), row["url"]
     assert len(slugs) == 3  # distinct slugs
 
 

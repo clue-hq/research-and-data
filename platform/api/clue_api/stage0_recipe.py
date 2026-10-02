@@ -118,13 +118,54 @@ class Stage0StepPinProvider:
             digest=pin.digest,
         )
 
-    async def _design_leg_project_pin(
+    async def _execution_project_pin(self, ctx: ToolContext) -> PinRequest:
+        """Resolve a tool's project pin from the execution this step is running under (D9).
+
+        For a tool whose body names no project *and* carries no presenting-turn ref, the execution
+        row is the trusted coordinate: the run was started against one project and cannot move. An
+        execution with no project is pinned explicitly absent, so the tool's own preconditions
+        refuse it rather than the plan failing to validate.
+
+        Used by the ARV2 lane's tools (``launch_arv2_account_research@1`` /
+        ``launch_arv2_person_research@1`` / ``read_arv2_account_research_run@1``) — wired in
+        Task 5 of the O6 lane, and extended to the person launch when v44 granted it.
+        """
+
+        absent = PinRequest(
+            kind="project",
+            key="__not_supplied__",
+            version="missing",
+            required=False,
+        )
+        if ctx.execution_id is None:
+            return absent
+        async with self._conn_factory() as conn:
+            project_id = (
+                await conn.execute(
+                    text(
+                        "SELECT project_id FROM execution "
+                        "WHERE id = :execution_id AND workspace_id = :workspace_id"
+                    ),
+                    {"execution_id": ctx.execution_id, "workspace_id": ctx.workspace_id},
+                )
+            ).scalar_one_or_none()
+        if not isinstance(project_id, str) or not project_id:
+            return absent
+        return await self._current(kind="project", key=project_id, ctx=ctx)
+
+    async def _presenting_turn_project_pin(
         self,
         body: dict[str, JsonValue],
         *,
         ctx: ToolContext,
     ) -> PinRequest:
-        """Resolve ``open_design_leg``'s project pin from the injected presenting-turn ref."""
+        """Resolve a tool's project pin from the presenting-turn ref the engine injected.
+
+        Shared by every tool whose only trusted input is that ref (``open_design_leg``, the
+        product-set gate, the artifact-shaped ICP gate): the project is never a body field, so the
+        pin is derived from the turn instead. A ref that does not resolve is pinned explicitly
+        absent and the tool's own preconditions refuse it, with a reason a model can act on.
+        """
 
         from clue_api.turn_action import (
             TurnActionUnresolvable,
@@ -385,8 +426,67 @@ class Stage0StepPinProvider:
         # presenting turn), so the pin is resolved through the turn ref the engine injected. A
         # ref that does not resolve is pinned explicitly absent (the launch tool's idiom) — the
         # tool's own preconditions are what refuse it, with a reason a model can act on.
-        if step.tool_name == "open_design_leg":
-            requested.append(await self._design_leg_project_pin(body, ctx=ctx))
+        # ARV2 context and authoring: the ICP-authoring pair derives its project the same way and
+        # for the same reason — each carries only the trusted `source_turn_ref`, never a
+        # model-authored project, so the presenting turn is the coordinate the pin resolves from.
+        # The project plan derives its project the same way and for the same reason: the tool
+        # carries only the trusted `source_turn_ref` and never a model-authored project.
+        # `author_icp_document`, `request_persona_synthesis` and `write_project_document` are
+        # ungranted from `head-of-abm@v55` and out of the slot at recipe0-stage0@27, but they stay
+        # named here: an execution pinned to an earlier revision still plans them, and it still
+        # needs this pin resolved to replay.
+        # ``configure_project_targeting@1`` (head-of-abm@v61+) replaced the product-set and ICP
+        # gates and carries the same trusted ``source_turn_ref`` only, so it resolves the same way.
+        if step.tool_name in {
+            "author_icp_document",
+            "configure_project_targeting",
+            "open_design_leg",
+            "open_product_set_selection_gate",
+            "request_persona_synthesis",
+            "write_project_document",
+        }:
+            requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
+        # The artifact-shaped ICP gate (``@2``) derives its project the same way. ``@1`` keeps the
+        # Stage-0 scope path above, so the version is part of the condition.
+        if step.tool_name == "open_icp_confirmation_gate" and step.tool_version == "2":
+            requested.append(await self._presenting_turn_project_pin(body, ctx=ctx))
+        # --- ARV2 onboarding O6: the new-lane launches and their read --------------------------
+        # None of the three carries a presenting-turn ref, so the execution row is the trusted
+        # coordinate for their ``project`` pin. The account launch is authorized by its ICP
+        # artifact digest and product-selection version and the read names only a run id; the
+        # person launch names a project in its body, but a body field is model-authored and the
+        # execution's own project is not, so it is pinned from the same trusted coordinate as its
+        # siblings. An execution with no project pins explicitly absent and each tool's own
+        # preconditions refuse it, rather than the plan failing to validate.
+        # ARV2 Track R, R4 adds the discovery launch on exactly the person launch's terms.
+        # The three ARV2 reads join them for the same reason: two name a `project_id` in their
+        # body and the third names no project at all (it is keyed on an account), and a body field
+        # is model-authored, so the execution's own project — which is not — is the coordinate
+        # their ``project`` pin resolves from.
+        # ``read_claims`` and ``read_artifact`` join them at recipe0-stage0@28 on the same terms:
+        # the claims query is keyed on an entity and the gallery read on an artifact id, so
+        # neither names a project it could be trusted about. This set is keyed by tool NAME, so
+        # the paged ``@2`` of the two reads resolves its ``project`` pin exactly as its ``@1``
+        # does, and an execution pinned to an older revision still plans the ``@1``.
+        if step.tool_name in {
+            "launch_arv2_account_research",
+            "launch_arv2_discovery",
+            "launch_arv2_person_research",
+            "read_account_research",
+            "read_artifact",
+            "read_arv2_account_research_run",
+            "read_claims",
+            "read_discovery_run",
+            "read_project_accounts",
+            # ``run_python`` joins them at recipe0-stage0@29 for the same reason: its body is a
+            # script, so it names no project either, and the project it must be bound to — the
+            # one whose ``attachments/`` the container can see — is the execution's own.
+            "run_python",
+            # ``web_search`` joins at recipe0-stage0@31: its body names no project either; the
+            # pin is the execution's own.
+            "web_search",
+        }:
+            requested.append(await self._execution_project_pin(ctx))
 
         if step.tool_name in {
             "open_directive_confirmation_gate",
@@ -403,6 +503,27 @@ class Stage0StepPinProvider:
                 requested.append(
                     await self._current(kind="research_directive", key=directive_id, ctx=ctx)
                 )
+        # --- Slice B browser-gate repair (founder ruling 2026-08-19): the research-view read ---
+        # ``get_research_view@1`` has been granted to the conversation slot since FI-2, but no
+        # case here ever REQUESTED its three declared pin kinds, so plan validation refused every
+        # call (``missing_tool_requirement``) and the grant was dead — the agent could never read
+        # run state and needed identifiers spoon-fed in chat.
+        if step.tool_name == "get_research_view":
+            view_run_id = body.get("project_run_id")
+            if isinstance(view_run_id, str):
+                requested.append(await self._current(kind="project_run", key=view_run_id, ctx=ctx))
+            requested.append(
+                await self._current(kind="field_registry", key="__all_active__", ctx=ctx)
+            )
+            # Verification may be disabled (the integration-pilot posture): the policy resource
+            # is then absent from the catalog, and the read must still be possible — the pin is
+            # requested not-required, so it resolves when the policy exists and records an
+            # explicit absence when verification is off, never failing the plan.
+            requested.append(
+                await self._current(
+                    kind="verification_policy", key="default", ctx=ctx, required=False
+                )
+            )
         if step.tool_name in {
             "launch_account_research",
             "launch_selected_account_research",

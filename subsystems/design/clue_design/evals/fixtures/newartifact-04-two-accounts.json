@@ -1,0 +1,24 @@
+{
+  "name": "newartifact-04-two-accounts",
+  "kind": "new_artifact",
+  "artifact": "design \"Generic GI front-door ad\" (scene ad)",
+  "tags": [
+    "account \"Apollo Clinics\"",
+    "account \"Mercy Health\""
+  ],
+  "brief": "A generic 1:1 ad for the GI front-door bundle, no account yet.",
+  "history": [],
+  "message": "Make versions of this for @Apollo Clinics and @Mercy Health.",
+  "judgment": {
+    "close_this_session": true,
+    "hand_message_to_strategy_agent": true,
+    "current_artifact_accepted": false,
+    "reasoning": "Two accounts are asked to be designed for; each is its own artifact, opened by the strategy agent one at a time."
+  },
+  "expected": {
+    "action": "finish",
+    "reason": "out_of_scope",
+    "fail_safe": false
+  },
+  "why": "Two or more tagged accounts asked to be designed for are new artifacts; the current one is their reference."
+}

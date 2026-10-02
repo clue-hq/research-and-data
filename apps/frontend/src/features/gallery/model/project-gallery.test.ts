@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { galleryFixtureArtifacts } from "./project-gallery.test.fixture";
 import {
+  countActiveGalleryFilters,
   DEFAULT_GALLERY_FILTERS,
   filterGalleryArtifacts,
   groupGalleryArtifacts,
   normalizeGalleryArtifact,
   sortGalleryArtifacts,
+  type GalleryArtifact,
 } from "./project-gallery";
 
 const artifacts = galleryFixtureArtifacts.map(normalizeGalleryArtifact);
@@ -100,4 +102,30 @@ test("search tolerates a missing account name", () => {
     query: "insight health",
   });
   assert.deepEqual(results.map((artifact) => artifact.id), ["doc_real_web"]);
+});
+
+const withProject = (artifact: GalleryArtifact, id: string, title: string): GalleryArtifact => ({
+  ...artifact, project: { id, title },
+});
+
+test("library: project filter, project group and the three extra sorts", () => {
+  const [first, second, third] = artifacts;
+  const rows = [withProject(first, "p1", "Beta"), withProject(second, "p2", "Alpha"), withProject(third, "p1", "Beta")];
+  const filtered = filterGalleryArtifacts({
+    artifacts: rows, query: "", filters: { ...DEFAULT_GALLERY_FILTERS, projectIds: ["p2"] },
+  });
+  assert.deepEqual(filtered.map((row) => row.project?.id), ["p2"]);
+  assert.equal(countActiveGalleryFilters({ ...DEFAULT_GALLERY_FILTERS, projectIds: ["p2"] }), 1);
+  const groups = groupGalleryArtifacts(rows, "project");
+  assert.deepEqual(groups.map((group) => [group.id, group.label, group.artifacts.length]), [["p1", "Beta", 2], ["p2", "Alpha", 1]]);
+  assert.deepEqual(sortGalleryArtifacts(rows, "project-asc").map((row) => row.project?.title), ["Alpha", "Beta", "Beta"]);
+  const byType = sortGalleryArtifacts(rows, "type-asc");
+  assert.ok(byType.every((row, index) => index === 0 || byType[index - 1].collateralTypeLabel.localeCompare(row.collateralTypeLabel) <= 0));
+  const byAccount = sortGalleryArtifacts(rows, "account-asc");
+  assert.ok(byAccount.every((row, index) => index === 0 || (byAccount[index - 1].account?.name ?? "").localeCompare(row.account?.name ?? "") <= 0));
+});
+
+test("library: a project title is searchable", () => {
+  const rows = [withProject(artifacts[0], "p1", "Northwind launch")];
+  assert.equal(filterGalleryArtifacts({ artifacts: rows, query: "northwind", filters: DEFAULT_GALLERY_FILTERS }).length, 1);
 });

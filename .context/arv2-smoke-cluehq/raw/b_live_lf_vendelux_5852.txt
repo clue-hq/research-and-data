@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en-US">
+
+<head>
+  <meta charset="utf-8">
+      <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-EJN0QNKHYE"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+
+      gtag('config', 'G-EJN0QNKHYE');
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vendelux Raises $50M Series B to Bring AI-led Intelligence to B2B Events - FirstMark</title>
+
+<!-- The SEO Framework by Sybre Waaijer -->
+<meta name="robots" content="max-snippet:-1,max-image-preview:large,max-video-preview:-1" />
+<link rel="canonical" href="https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/" />
+<meta name="description" content="Vendelux now tracks 250,000+ global B2B events, powering billions of dollars in event spend as it becomes the AI-led intelligence layer for B2B go-to-market." />
+<meta property="og:type" content="article" />
+<meta property="og:locale" content="en_US" />
+<meta property="og:site_name" content="FirstMark" />
+<meta property="og:title" content="Vendelux Raises $50M Series B to Bring AI-led Intelligence to B2B Events" />
+<meta property="og:description" content="Vendelux now tracks 250,000+ global B2B events, powering billions of dollars in event spend as it becomes the AI-led intelligence layer for B2B go-to-market." />
+<meta property="og:url" content="https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/" />
+<meta property="og:image" content="https://firstmark.com/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1-768x576.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="900" />
+<meta property="article:published_time" content="2026-07-08T14:16:53+00:00" />
+<meta property="article:modified_time" content="2026-07-22T15:35:52+00:00" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Vendelux Raises $50M Series B to Bring AI-led Intelligence to B2B Events" />
+<meta name="twitter:description" content="Vendelux now tracks 250,000+ global B2B events, powering billions of dollars in event spend as it becomes the AI-led intelligence layer for B2B go-to-market." />
+<meta name="twitter:image" content="https://firstmark.com/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1-768x576.png" />
+<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://firstmark.com/#/schema/WebSite","url":"https://firstmark.com/","name":"FirstMark","inLanguage":"en-US","potentialAction":{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://firstmark.com/search/{search_term_string}/"},"query-input":"required name=search_term_string"},"publisher":{"@type":"Organization","@id":"https://firstmark.com/#/schema/Organization","name":"FirstMark","url":"https://firstmark.com/","logo":{"@type":"ImageObject","url":"https://firstmark.com/app/uploads/2024/04/cropped-123.png","contentUrl":"https://firstmark.com/app/uploads/2024/04/cropped-123.png","width":512,"height":512,"contentSize":"43120"}}},{"@type":"WebPage","@id":"https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/","url":"https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/","name":"Vendelux Raises $50M Series B to Bring AI-led Intelligence to B2B Events - FirstMark","description":"Vendelux now tracks 250,000+ global B2B events, powering billions of dollars in event spend as it becomes the AI-led intelligence layer for B2B go-to-market.","inLanguage":"en-US","isPartOf":{"@id":"https://firstmark.com/#/schema/WebSite"},"breadcrumb":{"@type":"BreadcrumbList","@id":"https://firstmark.com/#/schema/BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"item":"https://firstmark.com/","name":"FirstMark"},{"@type":"ListItem","position":2,"name":"Vendelux Raises $50M Series B to Bring AI-led Intelligence to B2B Events"}]},"potentialAction":{"@type":"ReadAction","target":"https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/"},"datePublished":"2026-07-08T14:16:53+00:00","dateModified":"2026-07-22T15:35:52+00:00"}]}</script>
+<!-- / The SEO Framework by Sybre Waaijer | 8.26ms meta | 1.17ms boot -->
+
+<style id='wp-img-auto-sizes-contain-inline-css'>
+img:is([sizes=auto i],[sizes^="auto," i]){contain-intrinsic-size:3000px 1500px}
+/*# sourceURL=wp-img-auto-sizes-contain-inline-css */
+</style>
+<link rel="stylesheet" href="/app/themes/sage/public/css/app.3e6c67.css">    <link rel="apple-touch-icon" sizes="180x180" href="https://firstmark.com/app/themes/sage/resources/images/favicons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="https://firstmark.com/app/themes/sage/resources/images/favicons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="https://firstmark.com/app/themes/sage/resources/images/favicons/favicon-16x16.png">
+    <link rel="manifest" href="https://firstmark.com/app/themes/sage/resources/images/favicons/site.webmanifest">
+    <link rel="mask-icon" href="https://firstmark.com/app/themes/sage/resources/images/favicons/safari-pinned-tab.svg" color="#0011aa">
+    <meta name="msapplication-TileColor" content="#0011aa">
+    <meta name="theme-color" content="#0011aa">
+<link rel="icon" href="/app/uploads/2024/04/cropped-123-32x32.png" sizes="32x32">
+<link rel="icon" href="/app/uploads/2024/04/cropped-123-192x192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="/app/uploads/2024/04/cropped-123-180x180.png">
+<meta name="msapplication-TileImage" content="/app/uploads/2024/04/cropped-123-270x270.png">
+</head>
+
+<body class="wp-singular story-template-default single single-story postid-8306 wp-embed-responsive wp-theme-sage vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events bg-global">
+    
+  <div id="app">
+    <a class="sr-only focus:not-sr-only" href="#main">
+  Skip to content
+</a>
+
+
+<header
+    class="header fixed top-0 inset-x-0 z-50"
+    data-behavior="GlobalHeader"
+>
+    <div class="container">
+        <div class="flex w-12-cols   justify-between items-center h-56 lg:h-80">
+            <div>
+                <a
+                    class="block"
+                    href="https://firstmark.com/"
+                >
+                    <span class="sr-only">FirstMark</span>
+                    <svg
+    width="206"
+    height="18"
+    fill="none"
+            class="w-206 h-18"
+        viewBox="0 0 206 18"
+            aria-hidden="true"
+    >
+    <use xlink:href="#firstmark_logo_206"></use>
+</svg>
+                </a>
+            </div>
+
+            <nav class="">
+                <h2 id="headerPrimaryNavLabel" class="sr-only">
+    fe.primary_nav
+</h2>
+
+                <ul id="menu-main-nav" class="hidden lg:flex flex-row gap-24" aria-labelledby="headerPrimaryNavLabel"><li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/portfolio/"><span class="text-inherit">Portfolio</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/team/"><span class="text-inherit">Team</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/communities/"><span class="text-inherit">Communities</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://guilds.firstmark.com/"><span class="text-inherit">Guilds</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/platform/"><span class="text-inherit">Platform</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/perspectives/"><span class="text-inherit">Perspectives</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://jobs.firstmark.com/jobs"><span class="text-inherit">Jobs</span></a></li>
+</ul>
+
+
+                <button
+    class="inline-flex items-center justify-center disabled:cursor-default group transition-all duration-500 ease-in-out lg:hidden f-ui-1 border-none" aria-label="Open navigation" data-modal-target="#mobileNav"
+        >
+    
+    
+            <svg
+    width="24"
+    height="24"
+    fill="none"
+            class=""
+        viewBox="0 0 24 24"
+            aria-hidden="true"
+    >
+    <use xlink:href="#menu-24"></use>
+</svg>
+    </button>
+            </nav>
+        </div>
+    </div>
+</header>
+
+
+
+<div id="pjax-wrapper">
+  <style>
+    :root {
+      --header-bg-color: #002828;
+      --global-header-bg-color: #002828;
+
+          }
+  </style>
+
+  <main class="main">
+          <style>
+  :root {
+      --header-text: white
+  }
+
+  @media (min-width: 600px){
+    :root {
+      --header-text: white
+    }
+  }
+</style>
+<div class="relative w-screen" data-globalheader-transparent>
+      <div class="relative w-full aspect-1/1 md:h-screen">
+      <div class="h-full"
+    
+    >
+
+    
+        
+          
+
+            <img
+              src="https://firstmark.imgix.net/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1.png"
+              alt=""
+               srcset="https://firstmark.imgix.net/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=16:9&amp;fit=crop&amp;w=400 400w, https://firstmark.imgix.net/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=16:9&amp;fit=crop&amp;w=800 800w, https://firstmark.imgix.net/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=16:9&amp;fit=crop&amp;w=1200 1200w, https://firstmark.imgix.net/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=16:9&amp;fit=crop&amp;w=1600 1600w, https://firstmark.imgix.net/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=16:9&amp;fit=crop&amp;w=2000 2000w, https://firstmark.imgix.net/app/uploads/2026/07/6a4d083e965805a2c542d8c2-1.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=16:9&amp;fit=crop&amp;w=2400 2400w"                sizes="100vw"               class="w-full h-full object-cover "
+                          />
+
+                  
+        
+
+        
+    </div>
+     <div class="absolute top-0 left-0 w-screen h-full bg-black opacity-30"></div>
+    </div>
+    <div class="text-primary md:text-primary-inverse mt-48 mb-0 md:mb-32 md:absolute w-full left-0 bottom-0">
+    <div class="container">
+      <div class="flex flex-col w-12-cols md:w-6-cols">
+                  <span class="f-ui-1">
+            
+          </span>
+                          <h1 id="content" class="f-heading-4 mt-16">
+    Vendelux Raises $50M Series B to Bring AI-led Intelligence to B2B Events
+</h1>
+                <div class="mt-16 md:mt-32">
+    <h3 id="SocialSharingdZ6" class="sr-only">
+    Social Sharing
+</h3>
+
+    <ul class="relative flex flex-r0w" aria-labelledby="SocialSharingdZ6"  data-behavior="SocialSharing">
+
+        <li class="-ml-1">
+            <button
+    class="inline-flex items-center justify-center disabled:cursor-default group transition-all duration-500 ease-in-out p-12 rounded-full border-secondary text-primary md:text-primary-inverse md:border-tertiary hover:bg-primary hover:text-primary border mr-4 transition-all duration-200 ease-in-out" aria-label="fe.social.linkedin" data-SocialSharing-linkedin="data-SocialSharing-linkedin"
+        >
+    
+    
+            <svg
+    width="20"
+    height="20"
+    fill="none"
+            class=""
+        viewBox="0 0 20 20"
+            aria-hidden="true"
+    >
+    <use xlink:href="#linkedin-20"></use>
+</svg>
+    </button>
+        </li>
+
+        <li class="-ml-1">
+            <button
+    class="inline-flex items-center justify-center disabled:cursor-default group transition-all duration-500 ease-in-out p-12 rounded-full border-secondary text-primary md:text-primary-inverse md:border-tertiary hover:bg-primary hover:text-primary border mr-4 transition-all duration-200 ease-in-out" aria-label="fe.social.linkedin" data-SocialSharing-copy="data-SocialSharing-copy"
+        >
+    
+            <span class="text-inherit "><svg
+    width="20"
+    height="20"
+    fill="none"
+            class="" aria-hidden="true" data-SocialSharing-copy-icon="data-SocialSharing-copy-icon"
+        viewBox="0 0 20 20"
+            aria-hidden="true"
+    >
+    <use xlink:href="#link-20"></use>
+</svg>
+
+              <svg
+    width="20"
+    height="20"
+    fill="none"
+            class="hidden" aria-hidden="true" data-SocialSharing-copy-checkmark="data-SocialSharing-copy-checkmark"
+        viewBox="0 0 20 20"
+            aria-hidden="true"
+    >
+    <use xlink:href="#checkmark-20"></use>
+</svg></span>
+    
+    </button>
+        </li>
+
+        <li class="-ml-1">
+          <button
+    class="inline-flex items-center justify-center disabled:cursor-default group transition-all duration-500 ease-in-out p-12 rounded-full border-secondary text-primary md:text-primary-inverse md:border-tertiary hover:bg-primary hover:text-primary border mr-4 transition-all duration-200 ease-in-out" aria-label="fe.social.twitter" data-SocialSharing-twitter="data-SocialSharing-twitter"
+        >
+    
+    
+            <svg
+    width="20"
+    height="20"
+    fill="none"
+            class=""
+        viewBox="0 0 20 20"
+            aria-hidden="true"
+    >
+    <use xlink:href="#twitter-20"></use>
+</svg>
+    </button>
+      </li>
+    </ul>
+</div>
+      </div>
+    </div>
+  </div>
+</div>
+    <div class="container mb-48 md:mb-96">
+    <div class="container pt-half-gutter mt-48 md:mt-96 mb-32 md:mb-48 border-t border-primary">
+        <h2 class="f-ui-1">
+    07.08.2026
+</h2>
+      </div>
+    <div class="flex flex-col md:flex-row gap-32 md:gap-gutter">
+      <div class="w-12-cols md:w-3-cols lg:w-2-cols flex flex-col gap-24">
+        <div>
+      <a
+        href="https://firstmark.com/team/amish-jani/"
+        target=""
+    >
+            <span class="f-ui-3">
+    Amish Jani
+</span>
+          </a>
+        <p class="f-ui-1 mt-8">
+      Partner, FirstMark
+    </p>
+  </div>
+      </div>
+      <div class="w-12-cols md:w-9-cols lg:w-8-cols">
+        <div  class="md:mb-96 mb-48 mt-48 md:mt-96 first:mt-0">
+        <div class="wysiwyg">
+    <p><p>When we led Vendelux’s Series A back in 2023, our conviction was simple: in-person events remain one of the highest-ROI channels in B2B go-to-market, and in a world of increasing digital noise, they would only increase in value.</p>
+<p>Alex and Stefan had already built something remarkable: one of the largest event intelligence data repositories in existence, with tens of millions of data points spanning the world’s B2B events.</p>
+<p>In the time since, the team has done something even more impressive: they’ve used AI to turn that data asset into something genuinely actionable, at a scale that simply wasn’t possible before.</p>
+<p>What used to be a large dataset to support event marketers is now an intelligence and automation layer that helps marketing and sales teams identify the right events, find the right people to meet, and book meetings automatically and at scale. That shift, from data to an AI-native decision and matching engine, is the story of the last 18 months and has profoundly moved Vendelux into a “must own” in the AI-GTM stack.</p>
+<p>The results speak for themselves. Vendelux now tracks more than 250,000 global B2B events, and thousands of marketing professionals rely on the platform to run programs that have influenced billions of dollars in event spend.</p>
+<p>Customers across every stage, from fast-growing AI-native companies to global enterprises, are using Vendelux to bring the same visibility, ROI accountability, and predictability to their event budgets that they’ve long demanded from every other marketing channel. That’s a hard problem to solve, and Vendelux has become the category-defining platform for it.</p>
+<p><strong>Today, we’re thrilled to share that Vendelux has raised a $50M Series B, led by our friends at Tribeca Venture Partners, with continued participation from FirstMark and others.</strong></p>
+<p>As AI reshapes so much of how companies find and engage buyers, we believe human connection, and the events where it happens, only becomes more valuable, not less.</p>
+<p>We expect this trend to keep compounding, and we couldn’t be more proud to keep backing Alex, Stefan, and the entire Vendelux team as they build the infrastructure for the next era of B2B events.</p>
+<p><a href="https://www.businessinsider.com/vendelux-just-raised-50-million-to-capitalize-live-b2b-events-2026-7">Click here to read the full Series B announcement in Business Insider</a></p>
+</p>
+</div>
+  </div>
+      </div>
+    </div>
+    <div class="w-12-cols">
+      <div class="container pt-half-gutter mt-48 md:mt-96 mb-32 md:mb-48 border-t border-primary">
+        <h2 class="f-ui-1">
+    You may also like
+</h2>
+      </div>
+<div class="container mb-16 md:mb-96">
+  <div
+        class="border-t border-secondary pt-half-gutter"
+>
+    <div class="">
+        <ul
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-gutter grid-line-xfull grid-line-y grid-line-y-secondary grid-line-x-secondary gap-y-gutter"
+            
+            data-list
+        >
+                                                <li
+                        class=""
+                        
+                        
+                        data-list-item
+                    >
+                                                                                          <div
+    
+>
+          <a
+          href="https://firstmark.com/story/securing-the-agentic-workforce-our-investment-in-onyx-security/"
+          target=""
+          class="block group"
+      >
+        <div class="flex flex-col w-full text-primary pb-48">
+      <div class="aspect-16/9 w-full"
+    
+    >
+
+    
+        
+          
+
+            <img
+              src="https://firstmark.imgix.net/app/uploads/2026/07/af4bf7cc-96d8-4c1b-960a-6f5c869e3ddf.jpg"
+              alt=""
+               srcset="https://firstmark.imgix.net/app/uploads/2026/07/af4bf7cc-96d8-4c1b-960a-6f5c869e3ddf.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=400 400w, https://firstmark.imgix.net/app/uploads/2026/07/af4bf7cc-96d8-4c1b-960a-6f5c869e3ddf.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=800 800w, https://firstmark.imgix.net/app/uploads/2026/07/af4bf7cc-96d8-4c1b-960a-6f5c869e3ddf.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=1200 1200w, https://firstmark.imgix.net/app/uploads/2026/07/af4bf7cc-96d8-4c1b-960a-6f5c869e3ddf.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=1600 1600w, https://firstmark.imgix.net/app/uploads/2026/07/af4bf7cc-96d8-4c1b-960a-6f5c869e3ddf.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=2000 2000w, https://firstmark.imgix.net/app/uploads/2026/07/af4bf7cc-96d8-4c1b-960a-6f5c869e3ddf.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=2400 2400w, https://firstmark.imgix.net/app/uploads/2026/07/af4bf7cc-96d8-4c1b-960a-6f5c869e3ddf.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=3200 3200w"                sizes="(max-width: 599px) calc((((100vw - 164px) / 12) * 12) + 132px), (min-width: 600px) and (max-width: 899px) calc((((100vw - 224px) / 12) * 6) + 80px), (min-width: 900px) and (max-width: 1199px) calc((((100vw - 224px) / 12) * 4) + 48px), (min-width: 1200px) and (max-width: 1499px) calc((((100vw - 328px) / 12) * 4) + 72px), (min-width: 1500px) and (max-width: 1799px) calc((((100vw - 328px) / 12) * 4) + 72px), 579px"               class="w-full h-full object-cover object-center "
+                          />
+
+                  
+        
+
+        
+    </div>
+                        <button
+    class="inline-flex items-center justify-center disabled:cursor-default group transition-all duration-500 ease-in-out w-fit h-fit py-5 px-8 f-ui-1 border-black border rounded transition-color duration-150 ease-in-out bg-transparent text-primary mt-12"
+        >
+    
+            <span class="text-inherit ">AI / ML</span>
+    
+    </button>
+                            <h3 class="f-heading-1 mt-8 underline-transparent group-hover:underline-inherit transition-all duration-200 ease-in-out">
+    Securing the Agentic Workforce: Our Investment in Onyx Security
+</h3>
+      
+              <p class="f-body-1 mt-8" style="font-size: 1em;">
+            Every company will soon manage more AI agents than employees. Onyx is building the infrastructure that will make that future secure.
+        </p>
+      
+      
+    </div>
+            </a>
+    </div>
+                                                                                </li>
+                                    <li
+                        class=""
+                        
+                        
+                        data-list-item
+                    >
+                                                                                          <div
+    
+>
+          <a
+          href="https://firstmark.com/story/from-busywork-to-business-why-we-led-henrys-series-a/"
+          target=""
+          class="block group"
+      >
+        <div class="flex flex-col w-full text-primary pb-48">
+      <div class="aspect-16/9 w-full"
+    
+    >
+
+    
+        
+          
+
+            <img
+              src="https://firstmark.imgix.net/app/uploads/2026/07/todd-quackenbush-GMTx7uC6lNc-unsplash-1-scaled.jpg"
+              alt=""
+               srcset="https://firstmark.imgix.net/app/uploads/2026/07/todd-quackenbush-GMTx7uC6lNc-unsplash-1-scaled.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=400 400w, https://firstmark.imgix.net/app/uploads/2026/07/todd-quackenbush-GMTx7uC6lNc-unsplash-1-scaled.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=800 800w, https://firstmark.imgix.net/app/uploads/2026/07/todd-quackenbush-GMTx7uC6lNc-unsplash-1-scaled.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=1200 1200w, https://firstmark.imgix.net/app/uploads/2026/07/todd-quackenbush-GMTx7uC6lNc-unsplash-1-scaled.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=1600 1600w, https://firstmark.imgix.net/app/uploads/2026/07/todd-quackenbush-GMTx7uC6lNc-unsplash-1-scaled.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=2000 2000w, https://firstmark.imgix.net/app/uploads/2026/07/todd-quackenbush-GMTx7uC6lNc-unsplash-1-scaled.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=2400 2400w, https://firstmark.imgix.net/app/uploads/2026/07/todd-quackenbush-GMTx7uC6lNc-unsplash-1-scaled.jpg?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=3200 3200w"                sizes="(max-width: 599px) calc((((100vw - 164px) / 12) * 12) + 132px), (min-width: 600px) and (max-width: 899px) calc((((100vw - 224px) / 12) * 6) + 80px), (min-width: 900px) and (max-width: 1199px) calc((((100vw - 224px) / 12) * 4) + 48px), (min-width: 1200px) and (max-width: 1499px) calc((((100vw - 328px) / 12) * 4) + 72px), (min-width: 1500px) and (max-width: 1799px) calc((((100vw - 328px) / 12) * 4) + 72px), 579px"               class="w-full h-full object-cover object-center "
+                          />
+
+                  
+        
+
+        
+    </div>
+                        <button
+    class="inline-flex items-center justify-center disabled:cursor-default group transition-all duration-500 ease-in-out w-fit h-fit py-5 px-8 f-ui-1 border-black border rounded transition-color duration-150 ease-in-out bg-transparent text-primary mt-12"
+        >
+    
+            <span class="text-inherit ">Enterprise</span>
+    
+    </button>
+                            <h3 class="f-heading-1 mt-8 underline-transparent group-hover:underline-inherit transition-all duration-200 ease-in-out">
+    From Busywork to Business: Why We Led Henry&#8217;s Series A
+</h3>
+      
+              <p class="f-body-1 mt-8" style="font-size: 1em;">
+            I told Henry&#039;s founder not to build this company. I was wrong. Here&#039;s why AI changed one of the toughest software markets, and why we&#039;re excited to lead Henry&#039;s Series A.
+        </p>
+      
+      
+    </div>
+            </a>
+    </div>
+                                                                                </li>
+                                    <li
+                        class=""
+                        
+                        
+                        data-list-item
+                    >
+                                                                                          <div
+    
+>
+          <a
+          href="https://firstmark.com/story/synthesia-launches-ai-roleplay-for-workplace-training/"
+          target=""
+          class="block group"
+      >
+        <div class="flex flex-col w-full text-primary pb-48">
+      <div class="aspect-16/9 w-full"
+    
+    >
+
+    
+        
+          
+
+            <img
+              src="https://firstmark.imgix.net/app/uploads/2026/07/Screenshot-2026-07-22-at-4.58.06-PM-e1784754391642.png"
+              alt=""
+               srcset="https://firstmark.imgix.net/app/uploads/2026/07/Screenshot-2026-07-22-at-4.58.06-PM-e1784754391642.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=400 400w, https://firstmark.imgix.net/app/uploads/2026/07/Screenshot-2026-07-22-at-4.58.06-PM-e1784754391642.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=800 800w, https://firstmark.imgix.net/app/uploads/2026/07/Screenshot-2026-07-22-at-4.58.06-PM-e1784754391642.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=1200 1200w, https://firstmark.imgix.net/app/uploads/2026/07/Screenshot-2026-07-22-at-4.58.06-PM-e1784754391642.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=1600 1600w, https://firstmark.imgix.net/app/uploads/2026/07/Screenshot-2026-07-22-at-4.58.06-PM-e1784754391642.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=2000 2000w, https://firstmark.imgix.net/app/uploads/2026/07/Screenshot-2026-07-22-at-4.58.06-PM-e1784754391642.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=2400 2400w, https://firstmark.imgix.net/app/uploads/2026/07/Screenshot-2026-07-22-at-4.58.06-PM-e1784754391642.png?auto=format&amp;q=80&amp;crop=faces,entropy&amp;ar=3:2&amp;fit=crop&amp;w=3200 3200w"                sizes="(max-width: 599px) calc((((100vw - 164px) / 12) * 12) + 132px), (min-width: 600px) and (max-width: 899px) calc((((100vw - 224px) / 12) * 6) + 80px), (min-width: 900px) and (max-width: 1199px) calc((((100vw - 224px) / 12) * 4) + 48px), (min-width: 1200px) and (max-width: 1499px) calc((((100vw - 328px) / 12) * 4) + 72px), (min-width: 1500px) and (max-width: 1799px) calc((((100vw - 328px) / 12) * 4) + 72px), 579px"               class="w-full h-full object-cover object-center "
+                          />
+
+                  
+        
+
+        
+    </div>
+                        <button
+    class="inline-flex items-center justify-center disabled:cursor-default group transition-all duration-500 ease-in-out w-fit h-fit py-5 px-8 f-ui-1 border-black border rounded transition-color duration-150 ease-in-out bg-transparent text-primary mt-12"
+        >
+    
+            <span class="text-inherit ">AI / ML</span>
+    
+    </button>
+                            <h3 class="f-heading-1 mt-8 underline-transparent group-hover:underline-inherit transition-all duration-200 ease-in-out">
+    Synthesia Launches AI Roleplay for Workplace Training
+</h3>
+      
+              <p class="f-body-1 mt-8" style="font-size: 1em;">
+            Synthesia is redefining workplace learning with Roleplay Sessions, a new AI-powered platform for practicing high-stakes conversations in a safe, interactive environment.
+        </p>
+      
+      
+    </div>
+            </a>
+    </div>
+                                                                                </li>
+                                    </ul>
+    </div>
+</div>
+</div>
+    </div>
+</div>
+
+  </main>
+
+  
+<div
+    id="mobileNav"
+    role="dialog"
+    aria-labelledby="mobileNav_title"
+    aria-modal="true"
+    data-behavior="Modal"
+    
+    class="o-modal bg-tertiary w-screen h-screen fixed top-0 left-0" aria-label="fe.mobile_navigation_overlay"
+>
+    <div
+        class="o-modal-wrapper"
+        data-Modal-focus-trap
+        tabindex="-1"
+    >
+                    <button
+    class="inline-flex items-center justify-center disabled:cursor-default group transition-all duration-500 ease-in-out o-modal-close lg:hidden f-ui-1 border-none absolute" aria-label="fe.close_modal" data-Modal-close-trigger="data-Modal-close-trigger"
+        >
+    
+            <span class="text-inherit ">Close</span>
+    
+    </button>
+        
+                    <h1 id="mobileNav_title" class="sr-only" tabindex="-1" data-Modal-initial-focus="data-Modal-initial-focus">
+    fe.primary_nav
+</h1>
+        
+        <div class="px-outer-gutter text-primary-inverse bg-tertiary">
+      <div class="flex w-full justify-between items-center h-80">
+              <a
+                  
+                  class="inline-flex items-center"
+              >
+                  <svg
+    width="206"
+    height="18"
+    fill="none"
+            class="w-206 h-18"
+        viewBox="0 0 206 18"
+            aria-hidden="true"
+    >
+    <use xlink:href="#firstmark_logo_206"></use>
+</svg>
+              </a>
+               
+      </div>
+
+      <ul id="menu-main-nav-1" class="grid grid-cols-1 grid-line-x grid-line-x-tertiary gap-y-gutter mt-64 lg:hidden flex-col" aria-labelledby="headerPrimaryNavLabel"><li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/portfolio/"><span class="text-inherit">Portfolio</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/team/"><span class="text-inherit">Team</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/communities/"><span class="text-inherit">Communities</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://guilds.firstmark.com/"><span class="text-inherit">Guilds</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/platform/"><span class="text-inherit">Platform</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://firstmark.com/perspectives/"><span class="text-inherit">Perspectives</span></a></li>
+<li><a class="inline-flex items-center justify-center disabled:cursor-default group transition-all f-ui-2 f-ui-2  disabled:opacity-30 text-left text-inherit ml-24 f-ui-2" href="https://jobs.firstmark.com/jobs"><span class="text-inherit">Jobs</span></a></li>
+</ul>
+    </div>
+    <h2 id="headerMobilePrimaryNavLabel" class="sr-only">
+    fe.mobile_navigation
+</h2>
+    </div>
+</div>
+
+</div>
+
+<div id="icon-sprite">
+  <svg xmlns="http://www.w3.org/2000/svg" class="hidden">
+    <defs>
+            <g id="linkedin-20">
+        <g clip-path="url(#clip0_4579_43900)">
+            <path d="M2 3.146C2 2.513 2.526 2 3.175 2H16.825C17.474 2 18 2.513 18 3.146V16.854C18 17.487 17.474 18 16.825 18H3.175C2.526 18 2 17.487 2 16.854V3.146ZM6.943 15.394V8.169H4.542V15.394H6.943ZM5.743 7.182C6.58 7.182 7.101 6.628 7.101 5.934C7.086 5.225 6.581 4.686 5.759 4.686C4.937 4.686 4.4 5.226 4.4 5.934C4.4 6.628 4.921 7.182 5.727 7.182H5.743ZM10.651 15.394V11.359C10.651 11.143 10.667 10.927 10.731 10.773C10.904 10.342 11.299 9.895 11.963 9.895C12.832 9.895 13.179 10.557 13.179 11.529V15.394H15.58V11.25C15.58 9.03 14.396 7.998 12.816 7.998C11.542 7.998 10.971 8.698 10.651 9.191V9.216H10.635C10.6403 9.20765 10.6456 9.19932 10.651 9.191V8.169H8.251C8.281 8.847 8.251 15.394 8.251 15.394H10.651Z"
+                  fill="currentColor" />
+        </g>
+        <defs>
+            <clipPath id="clip0_4579_43900">
+                <rect width="16"
+                      height="16"
+                      fill="white"
+                      transform="translate(2 2)" />
+            </clipPath>
+        </defs>
+    </g>
+
+<g id="twitter-20" fill="none" >
+  <path d="M11.5237 8.77569L17.4811 2H16.0699L10.8949 7.88203L6.7648 2H2L8.24693 10.8955L2 18H3.4112L8.87253 11.787L13.2352 18H18M3.92053 3.04127H6.08853L16.0688 17.0099H13.9003" fill="currentColor"/>
+</g>
+
+
+<g id="menu-24" fill="none" >
+  <path d="M0 7H24M0 12H24M0 17H24" stroke="currentColor" stroke-width="2"/>
+</g>
+
+
+<g id="link-20" fill="none" >
+  <path d="M7 13L13 7" stroke="currentColor" stroke-linecap="square" stroke-linejoin="round"/>
+  <path d="M11 13.9264L8.94672 15.9797C8.62325 16.3032 8.23923 16.5598 7.81659 16.7348C7.39395 16.9099 6.94097 17 6.48351 17C5.55962 17 4.67358 16.633 4.0203 15.9797C3.36701 15.3264 3 14.4404 3 13.5165C3 12.5926 3.36701 11.7066 4.0203 11.0533L6.07358 9" stroke="currentColor" stroke-linecap="square" stroke-linejoin="round"/>
+  <path d="M13.9264 11L15.9797 8.94672C16.633 8.29343 17 7.40739 17 6.48351C17 5.55962 16.633 4.67358 15.9797 4.0203C15.3264 3.36701 14.4404 3 13.5165 3C12.5926 3 11.7066 3.36701 11.0533 4.0203L9 6.07358" stroke="currentColor" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+
+
+<g id="checkmark-20">
+    <path d="M4 10L8 14L16 6" stroke="currentColor" stroke-linecap="square"/>
+</g>
+
+
+<g id="firstmark_logo_206" fill="none" >
+    <path d="M187.322 17.1192V0.903076H189.99V9.30229L201.264 0.903076H205.11L196.883 7.0401L206 17.1192H202.576L194.838 8.58555L189.99 12.1916V17.1192H187.322Z" fill="currentColor"/>
+    <path d="M161.578 0.903076H174.274C175.386 0.903076 176.35 1.11212 177.165 1.53022C177.98 1.93338 178.603 2.52319 179.033 3.29965C179.477 4.06118 179.7 4.96456 179.7 6.0098C179.7 7.38353 179.322 8.47357 178.566 9.27989C177.81 10.0862 176.794 10.5939 175.52 10.8029L179.833 17.1192H176.743L172.384 10.9373H164.246V17.1192H161.578V0.903076ZM173.874 8.49596C174.867 8.49596 175.631 8.27945 176.164 7.84642C176.698 7.4134 176.965 6.80119 176.965 6.0098C176.965 5.11388 176.691 4.44941 176.142 4.01638C175.594 3.56843 174.756 3.34445 173.63 3.34445H164.246V8.49596H173.874Z" fill="currentColor"/>
+    <path d="M134.824 17.1192L143.34 0.903076H146.697L155.213 17.1192H152.301L150.433 13.4907H139.604L137.737 17.1192H134.824ZM140.916 11.0493H149.121L145.03 3.21006L140.916 11.0493Z" fill="currentColor"/>
+    <path d="M106.333 17.1192V0.903076H109.647L117.384 10.7134L125.144 0.903076H128.457V17.1192H125.789V3.8596H125.723L117.362 14.4314L109.068 3.8596H109.002V17.1192H106.333Z" fill="currentColor"/>
+    <path d="M89.5112 17.1192V3.34445H81.8179V0.903076H99.8728V3.34445H92.1795V17.1192H89.5112Z" fill="currentColor"/>
+    <path d="M67.7552 17.5C65.6948 17.5 63.8715 17.276 62.2854 16.8281C60.6993 16.3801 59.3281 15.6932 58.1719 14.7675L59.6394 12.8188C60.929 13.6102 62.2409 14.2 63.575 14.5883C64.9091 14.9616 66.3099 15.1482 67.7775 15.1482C69.0375 15.1482 70.1047 15.0362 70.9793 14.8123C71.8539 14.5733 72.5136 14.2374 72.9583 13.8043C73.4178 13.3713 73.6475 12.8636 73.6475 12.2813C73.6475 11.5944 73.403 11.0867 72.9138 10.7582C72.4394 10.4148 71.7872 10.1834 70.9571 10.0639C70.1418 9.94444 68.867 9.83246 67.1326 9.72793L66.1765 9.66074C64.3977 9.54128 62.9821 9.34717 61.9296 9.07839C60.8772 8.80962 60.0767 8.39152 59.5282 7.82411C58.9946 7.24177 58.7278 6.44291 58.7278 5.42754C58.7278 4.41217 59.039 3.53865 59.6616 2.80698C60.299 2.06039 61.2255 1.49297 62.441 1.10474C63.6565 0.701581 65.1241 0.5 66.8436 0.5C70.3123 0.5 73.2177 1.29886 75.5598 2.89657L73.9366 4.7108C72.7359 4.09859 71.5352 3.64317 70.3345 3.34453C69.1338 3.03096 67.9035 2.87418 66.6435 2.87418C65.5465 2.87418 64.6127 2.96377 63.8418 3.14295C63.0858 3.32213 62.5151 3.57598 62.1297 3.90448C61.7443 4.23298 61.5516 4.62121 61.5516 5.06917C61.5516 5.42754 61.6628 5.74111 61.8851 6.00988C62.1223 6.26372 62.4781 6.47277 62.9524 6.63702C63.412 6.80127 63.9308 6.92073 64.5089 6.99539C65.1018 7.05512 65.9319 7.11484 66.9992 7.17457C67.5625 7.20444 68.1629 7.24923 68.8003 7.30896C69.4377 7.35375 70.0454 7.41348 70.6236 7.48814C72.6396 7.74199 74.1293 8.24221 75.0928 8.9888C76.0564 9.72047 76.5381 10.7582 76.5381 12.1021C76.5381 13.2369 76.1972 14.2075 75.5153 15.0138C74.8482 15.8202 73.8551 16.4398 72.5358 16.8729C71.2313 17.291 69.6378 17.5 67.7552 17.5Z" fill="currentColor"/>
+    <path d="M34.0952 0.903076H46.7915C47.9032 0.903076 48.8668 1.11212 49.6821 1.53022C50.4973 1.93338 51.1199 2.52319 51.5498 3.29965C51.9945 4.06118 52.2169 4.96456 52.2169 6.0098C52.2169 7.38353 51.8389 8.47357 51.0829 9.27989C50.3269 10.0862 49.3115 10.5939 48.0367 10.8029L52.3503 17.1192H49.2596L44.9015 10.9373H36.7634V17.1192H34.0952V0.903076ZM46.3913 8.49596C47.3844 8.49596 48.1478 8.27945 48.6815 7.84642C49.2151 7.4134 49.4819 6.80119 49.4819 6.0098C49.4819 5.11388 49.2077 4.44941 48.6592 4.01638C48.1108 3.56843 47.2732 3.34445 46.1467 3.34445H36.7634V8.49596H46.3913Z" fill="currentColor"/>
+    <path d="M22.7041 17.1192V0.903076H25.3723V17.1192H22.7041Z" fill="currentColor"/>
+    <path d="M0 17.1192V0.903076H16.2317V3.34445H2.66822V7.48806H12.0959V9.92943H2.66822V17.1192H0Z" fill="currentColor"/>
+</g>
+
+    </defs>
+</svg>
+</div>
+
+
+<div class="footer w-screen bg-tertiary">
+  <div class="container">
+    <div class="cols-container text-primary-inverse">
+      <div class=" justify-center w-12-cols md:py-96 my-48">
+        <span class="f-heading-4 w-12-cols md:w-6-cols">
+    Join our mailing list
+</span>
+        <div class="mt-48 w-12-cols ">
+          <div class="gform_wrapper w-12-cols"
+            id="gform_wrapper_1">
+            <form
+              action="https://firstmarkcap.us7.list-manage.com/subscribe/post?u=bef1ee93f6f3552f43730b33e&id=cab2230834"
+              method="post" id="mc-embedded-subscribe-form" name="mc-embedded-subscribe-form" class="validate" target="_blank" novalidate="">
+              <div class="mc-field-group input-wrapper flex flex-col md:flex-row align-center">
+                <input
+                  type="email"
+                  value=""
+                  name="EMAIL"
+                  placeholder="Email Address"
+                  class="required email f-newsletter-input border border-white rounded px-24 py-12 w-12-cols md:w-4-cols bg-transparent mr-8 md:mr-0 h-48"
+                  id="mce-EMAIL" />
+
+                <div style="position: absolute; left: -5000px;" aria-hidden="true"><input type="text" name="b_bef1ee93f6f3552f43730b33e_cab2230834" tabindex="-1" value=""></div>
+                <span class="submit">
+                  <input
+                    type="submit"
+                    value="Subscribe"
+                    name="subscribe"
+                    id="mc-embedded-subscribe"
+                    class="button f-ui-1 px-48 h-48 mt-8 md:mt-0 ml-0 md:ml-8 bg-transparent text-primary-inverse hover:text-primary hover:bg-white border border-white rounded  w-12-cols md:w-fit" />
+                </span>
+              </div>
+              <div id="mce-responses" class="clear">
+                <div class="response" id="mce-error-response" style="display:none"></div>
+                <div class="response" id="mce-success-response" style="display:none"></div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="grid-layout py-64 md:py-96 w-12-cols mt-8 border-t border-tertiary">
+        <div class="grid-col-span-12 md:grid-col-span-8 py-64 md:py-0">
+          <svg
+    width="206"
+    height="18"
+    fill="none"
+            class="w-206 h-18"
+        viewBox="0 0 206 18"
+            aria-hidden="true"
+    >
+    <use xlink:href="#firstmark_logo_206"></use>
+</svg>
+        </div>
+        <ul id="menu-footer-nav" class="grid grid-cols-1 md:border-l border-primary gap-8 f-ui-1 -ml-half-gutter pl-half-gutter grid-col-span-6 md:grid-col-span-2 h-fit"><li class="menu-item menu-platform"><a href="https://firstmark.com/platform/">Platform</a></li>
+<li class="menu-item menu-portfolio"><a href="https://firstmark.com/portfolio/">Portfolio</a></li>
+<li class="active menu-item menu-perspectives"><a href="https://firstmark.com/perspectives/" aria-current="page">Perspectives</a></li>
+<li class="menu-item menu-communities"><a href="https://firstmark.com/communities/">Communities</a></li>
+<li class="menu-item menu-team"><a href="https://firstmark.com/team/">Team</a></li>
+<li class="menu-item menu-privacy-policy"><a href="https://firstmark.com/privacy-policy/">Privacy Policy</a></li>
+<li class="menu-item menu-terms-of-service"><a href="https://firstmark.com/tos/">Terms of Service</a></li>
+</ul><ul id="menu-logins-nav" class="grid grid-cols-1 md:border-l border-primary gap-8 f-ui-1 -ml-half-gutter pl-half-gutter grid-col-span-6 md:grid-col-span-2 h-fit"><li class="menu-item menu-lp-login"><a href="https://icx.efrontcloud.com/FirstMarkCapital/login.aspx">LP Login</a></li>
+<li class="menu-item menu-guilds-login"><a target="_blank" href="https://guilds.firstmark.com/">Guilds Login</a></li>
+</ul>      </div>
+    </div>
+  </div>
+</div>
+  </div>
+
+    <script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/wp/wp-*.php","/wp/wp-admin/*","/app/uploads/*","/app/*","/app/plugins/*","/app/themes/sage/*","/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+<script>
+!function(){"use strict";var e,r={},n={};function o(e){var t=n[e];if(void 0!==t)return t.exports;var u=n[e]={exports:{}};return r[e].call(u.exports,u,u.exports,o),u.exports}o.m=r,e=[],o.O=function(r,n,t,u){if(!n){var i=1/0;for(l=0;l<e.length;l++){n=e[l][0],t=e[l][1],u=e[l][2];for(var f=!0,a=0;a<n.length;a++)(!1&u||i>=u)&&Object.keys(o.O).every((function(e){return o.O[e](n[a])}))?n.splice(a--,1):(f=!1,u<i&&(i=u));if(f){e.splice(l--,1);var c=t();void 0!==c&&(r=c)}}return r}u=u||0;for(var l=e.length;l>0&&e[l-1][2]>u;l--)e[l]=e[l-1];e[l]=[n,t,u]},o.d=function(e,r){for(var n in r)o.o(r,n)&&!o.o(e,n)&&Object.defineProperty(e,n,{enumerable:!0,get:r[n]})},o.e=function(){return Promise.resolve()},o.o=function(e,r){return Object.prototype.hasOwnProperty.call(e,r)},o.r=function(e){"undefined"!=typeof Symbol&&Symbol.toStringTag&&Object.defineProperty(e,Symbol.toStringTag,{value:"Module"}),Object.defineProperty(e,"__esModule",{value:!0})},function(){var e={666:0};o.O.j=function(r){return 0===e[r]};var r=function(r,n){var t,u,i=n[0],f=n[1],a=n[2],c=0;if(i.some((function(r){return 0!==e[r]}))){for(t in f)o.o(f,t)&&(o.m[t]=f[t]);if(a)var l=a(o)}for(r&&r(n);c<i.length;c++)u=i[c],o.o(e,u)&&e[u]&&e[u][0](),e[u]=0;return o.O(l)},n=self.webpackChunk_roots_bud_sage=self.webpackChunk_roots_bud_sage||[];n.forEach(r.bind(null,0)),n.push=r.bind(null,n.push.bind(n))}()}();
+//# sourceURL=app%2F0-js-before
+</script><script src="/app/themes/sage/public/js/app.d21355.js"></script></body>
+
+</html>

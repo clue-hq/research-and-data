@@ -1,10 +1,10 @@
 """Structured message tracing via a LangChain callback (L3 of the tracing plan).
 
 A per-role ``TraceCallbackHandler`` is attached to each of the three role model
-instances in the harness — exactly like ``usage_capture.attach_usage_capture``
-appends its handler to a model's own instance-level ``.callbacks`` field (see
-``usage_capture.py`` for the full rationale on why instance-level attachment is
-required for per-role attribution and why ``.with_config`` is forbidden). Every
+instances in the harness by appending it to that model's own instance-level
+``.callbacks`` field (see ``attach_trace_callback`` for the full rationale on why
+instance-level attachment is required for per-role attribution and why
+``.with_config`` is forbidden). Every
 event this handler emits carries the ``role`` it was constructed with, so the
 ``python -m lumen_agent.trace`` viewer can colour and filter the timeline by
 role without any cross-attribution.
@@ -14,7 +14,7 @@ they land on the console (mode-aware) AND in the per-run ``logs/run.jsonl``
 (always full detail — the substrate the viewer renders). This module NEVER
 configures logging; it only acquires a logger via ``obs.get_logger``.
 
-Robustness: like usage_capture, a callback must NEVER break a run. Every handler
+Robustness: a callback must NEVER break a run. Every handler
 method body is wrapped; the first failure is reported once as a single
 ``trace_callback_warning`` event and thereafter the handler degrades silently to
 "no trace", never to a crashed turn.
@@ -97,8 +97,8 @@ warn-once "no trace" path as any other callback failure. ``metrics=None`` (the
 default) leaves every emitted event byte-identical to before.
 
 ────────────────────────────────────────────────────────────────────────────
-Subagent boundaries. These handlers are attached to the MODEL instances only
-(mirroring usage_capture), so in practice LangChain delivers `on_llm_*` events
+Subagent boundaries. These handlers are attached to the MODEL instances only,
+so in practice LangChain delivers `on_llm_*` events
 to them but generally NOT sibling `on_tool_*`/`on_chain_*` events (those fire on
 the graph's config-level callbacks, not a model instance). Therefore the primary
 way the viewer derives subagent boundaries is the ``role`` field alone: the
@@ -112,6 +112,7 @@ rather than a generic ``tool_*`` event.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Optional
 
@@ -119,15 +120,99 @@ from langchain_core.callbacks import BaseCallbackHandler
 
 from py_lumen_obs import get_logger
 
-# Reuse the exact usage extraction usage_capture already trusts (DRY): same
-# LLMResult shapes, same provider-normalization preference order.
-from .usage_capture import _extract_usage
-
 # The name of deepagents' subagent-delegation tool. When a tool/chain event for
 # this tool reaches a handler we translate it into subagent-boundary events.
 _TASK_TOOL_NAMES = frozenset({"task"})
 
 _log = get_logger("lumen_agent.trace")
+
+
+# --------------------------------------------------------------------------- #
+# Usage extraction (moved here from the retired `usage_capture` module)
+# --------------------------------------------------------------------------- #
+def extract_usage(response: Any) -> Optional[dict]:
+    """Pull an `{input_tokens, output_tokens, total_tokens}` dict from an
+    `LLMResult`, tolerating the shapes LangChain emits.
+
+    Preference order:
+      1. `usage_metadata` on the generation's message (the modern, provider-
+         normalized field — present for OpenAI-compatible chat models, which is
+         what our OpenRouter gateway builds).
+      2. `llm_output["token_usage"]` / `["usage"]` (older aggregate shape).
+
+    L0 (latency trace enrichment): when the provider reports them, the dict also
+    carries `cached_input_tokens` (cached-prefill prompt tokens) and
+    `reasoning_output_tokens` (extended-thinking output tokens). These are ADDED
+    only when present — absent ⇒ the key is omitted, never a fabricated zero, so
+    the `model_call_usage` payload keeps its "omit rather than null" shape.
+
+    Lane 3 slice 5: the same cached-prefill count is ALSO published under the
+    ledger's own name, `cache_read_input_tokens`, so `usage_collector` can copy
+    it onto a receipt without knowing this module's historical key. Both names
+    describe the one number the provider reported; neither is computed here.
+
+    Returns None when no usage is present (a run must not fabricate zeros)."""
+    for generations in getattr(response, "generations", None) or []:
+        for generation in generations:
+            message = getattr(generation, "message", None)
+            usage = getattr(message, "usage_metadata", None)
+            if isinstance(usage, dict) and usage:
+                inp = usage.get("input_tokens")
+                out = usage.get("output_tokens")
+                total = usage.get("total_tokens")
+                if total is None and (inp is not None or out is not None):
+                    total = (inp or 0) + (out or 0)
+                result = {
+                    "input_tokens": inp,
+                    "output_tokens": out,
+                    "total_tokens": total,
+                }
+                # LangChain's provider-normalized detail sub-dicts (present for
+                # OpenAI-compatible clients when the provider caches / reasons).
+                input_details = usage.get("input_token_details")
+                if isinstance(input_details, dict):
+                    cached = input_details.get("cache_read")
+                    if cached is not None:
+                        result["cached_input_tokens"] = cached
+                        result["cache_read_input_tokens"] = cached
+                output_details = usage.get("output_token_details")
+                if isinstance(output_details, dict):
+                    reasoning = output_details.get("reasoning")
+                    if reasoning is not None:
+                        result["reasoning_output_tokens"] = reasoning
+                return result
+
+    llm_output = getattr(response, "llm_output", None)
+    if isinstance(llm_output, dict):
+        token_usage = llm_output.get("token_usage") or llm_output.get("usage")
+        if isinstance(token_usage, dict) and token_usage:
+            inp = token_usage.get("prompt_tokens") or token_usage.get("input_tokens")
+            out = token_usage.get("completion_tokens") or token_usage.get(
+                "output_tokens"
+            )
+            total = token_usage.get("total_tokens")
+            if total is None and (inp is not None or out is not None):
+                total = (inp or 0) + (out or 0)
+            result = {
+                "input_tokens": inp,
+                "output_tokens": out,
+                "total_tokens": total,
+            }
+            # OpenRouter/OpenAI raw usage nests the cache + reasoning breakdowns
+            # under `*_tokens_details` (the pre-normalization shape).
+            prompt_details = token_usage.get("prompt_tokens_details")
+            if isinstance(prompt_details, dict):
+                cached = prompt_details.get("cached_tokens")
+                if cached is not None:
+                    result["cached_input_tokens"] = cached
+                    result["cache_read_input_tokens"] = cached
+            completion_details = token_usage.get("completion_tokens_details")
+            if isinstance(completion_details, dict):
+                reasoning = completion_details.get("reasoning_tokens")
+                if reasoning is not None:
+                    result["reasoning_output_tokens"] = reasoning
+            return result
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -255,6 +340,30 @@ def _sanitize_content(content: Any) -> Any:
 def _message_to_dict(message: Any) -> dict:
     out: dict[str, Any] = {"role": getattr(message, "type", "unknown")}
     out["content"] = _sanitize_content(getattr(message, "content", ""))
+    reasoning = (getattr(message, "additional_kwargs", None) or {}).get("reasoning_content")
+    if isinstance(reasoning, str) and reasoning.strip():
+        # Founder ruling 2026-09-18: the model's own reasoning is part of the session RECORD.
+        # It is recorded here (trace.jsonl / run.jsonl); re-sending it as context is a
+        # per-provider decision the gateway owns (clue_gateway.openrouter_chat._retain_reasoning).
+        out["reasoning_content"] = reasoning
+    if out["role"] == "system":
+        # Ephemeral advice must not become a second memory store through DEBUG
+        # model-input logging. Keep ordinary guidance; only omit this data block.
+        def redact_preferences(value):
+            if isinstance(value, str):
+                return re.sub(
+                    r"<scoped_preference_data>.*?(?:</scoped_preference_data>|$)",
+                    "<scoped_preference_data>[omitted; see scoped selection receipt]"
+                    "</scoped_preference_data>",
+                    value, flags=re.DOTALL,
+                )
+            if isinstance(value, list):
+                return [redact_preferences(item) for item in value]
+            if isinstance(value, dict):
+                return {key: redact_preferences(item) for key, item in value.items()}
+            return value
+
+        out["content"] = redact_preferences(out["content"])
     name = getattr(message, "name", None)
     if name:
         out["name"] = name
@@ -414,7 +523,7 @@ class TraceCallbackHandler(BaseCallbackHandler):
 
     def on_llm_end(self, response: Any, *, run_id: Any = None, **kwargs: Any) -> None:
         try:
-            usage = _extract_usage(response) or {}
+            usage = extract_usage(response) or {}
             duration_ms = self._duration_ms(self._llm_started.pop(run_id, None))
             _log.info(
                 "llm_call_completed",
@@ -558,11 +667,19 @@ class TraceCallbackHandler(BaseCallbackHandler):
 
 def attach_trace_callback(model: Any, role: str, metrics: Any = None) -> Any:
     """Append a ``TraceCallbackHandler`` to ``model``'s own ``.callbacks`` field
-    IN PLACE and return the SAME object — identical mechanism and constraints as
-    ``usage_capture.attach_usage_capture`` (see that module for the full
-    rationale: ``.with_config`` breaks deepagents' ``resolve_model``; a test
-    sentinel without a writable ``callbacks`` field is left untouched; existing
-    callbacks are appended to, never replaced).
+    IN PLACE and return the SAME object.
+
+    We append to the model's own declared ``callbacks`` field rather than wrapping
+    it via ``.with_config(...)``: ``.with_config`` produces a ``RunnableBinding``,
+    which is NOT a ``BaseChatModel``, and deepagents' ``resolve_model`` then routes
+    it down a string-spec path that dies with
+    ``AttributeError('ChatOpenAI' object has no attribute 'count')``, killing
+    construction of every turn (probe-r9). ``callbacks`` is a declared pydantic
+    field on ``BaseLanguageModel``, and ``BaseChatModel.generate`` passes it as
+    ``local_callbacks``, so an instance-level handler fires on every invoke of THAT
+    instance — which is why per-role attribution needs one instance per role (the
+    harness builds three). A test sentinel without a writable ``callbacks`` field is
+    left untouched; existing callbacks are appended to, never replaced.
 
     ``metrics`` is the run's optional ``run_metrics.RunMetrics`` accumulator,
     shared across the three role handlers so the run-end summary sees every

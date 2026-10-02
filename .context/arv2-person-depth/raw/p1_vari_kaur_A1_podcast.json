@@ -1,0 +1,279 @@
+{
+  "requestId": "02b218f663dc7152bdf1bdb9b86966cc",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/k8v7k1nq9rk",
+      "title": "Vari Kaur",
+      "url": "https://www.linkedin.com/in/varinderkaur",
+      "publishedDate": "2026-08-22T05:43:02.000Z",
+      "text": "# Vari Kaur\n\nDemand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth\n\nEaston, Pennsylvania, United States (US)\n\n500 connections \u2022 2,553 followers\n\n## About\n\nResults-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs for B2B SaaS companies across industries, including cybersecurity, healthcare, enterprise software, and AI. Strong track record in aligning marketing with sales to drive pipeline, revenue growth, and customer acquisition. I specialize in full-funnel strategy development\u2014from top-of-funnel lead acquisition to pipeline acceleration and sales enablement. Skilled in managing paid media (LinkedIn, Google, programmatic), email nurture, lead scoring, lifecycle marketing, and intent-based targeting. Hands-on experience with tools like Marketo, HubSpot, Salesforce, 6sense, Demandbase, ZoomInfo, Google Ads, LinkedIn Campaign Manager, and more. Passionate about using AI and automation to optimize performance, enhance personalization, and improve campaign ROI.\n\nTotal Experience: 20 years and 1 month\n\n## Experience\n\n### Head of Growth Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)\n\nMay 2025 - Present (1 year and 3 months) in New York, United States\n\nDepartment: Research\n\nZafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management P",
+      "image": "https://media.licdn.com/dms/image/v2/D4D03AQGz4bKms87erA/profile-displayphoto-scale_200_200/B4DZzTH0kzKYAc-/0/1773068569609?e=2147483647&v=beta&t=WNZOGn9BIQgmMJFT81R3j4OAeH-qcq9IRj46ytsSeHQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/k8v7k1nq9rk",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Vari Kaur",
+            "firstName": "Vari",
+            "lastName": "Kaur",
+            "location": "Easton, Pennsylvania, United States",
+            "workHistory": [
+              {
+                "title": "Head of Growth Marketing",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2025-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h5w450p0h1f",
+                  "name": "Zafran Security"
+                }
+              },
+              {
+                "title": "Director, Demand Generation & Technology",
+                "location": null,
+                "dates": {
+                  "from": "2022-06-01",
+                  "to": "2025-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/sjv34jtkp38",
+                  "name": "Secureworks"
+                }
+              },
+              {
+                "title": "Director Demand Generation",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2021-04-01",
+                  "to": "2022-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wk8smddfsny",
+                  "name": "ReSource Pro"
+                }
+              },
+              {
+                "title": "Director Demand Generation and Technology",
+                "location": "New York",
+                "dates": {
+                  "from": "2019-01-01",
+                  "to": "2021-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dw23h2b0f43",
+                  "name": "Axiom"
+                }
+              },
+              {
+                "title": "Director Digital Marketing",
+                "location": "Parsippany, NJ",
+                "dates": {
+                  "from": "2018-03-01",
+                  "to": "2019-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3lpyggky4c8",
+                  "name": "Tangoe"
+                }
+              },
+              {
+                "title": "Senior Manager, Global Marketing Operations",
+                "location": "Salt Lake City Metropolitan Area",
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Senior Manager, Global Marketing Operations",
+                "location": "Greater Philadelphia",
+                "dates": {
+                  "from": "2015-03-01",
+                  "to": "2017-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Manager, Global Marketing",
+                "location": "Greater Philadelphia",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": "2015-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Online Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2011-02-01",
+                  "to": "2013-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Online Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2011-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Grazitti"
+                }
+              },
+              {
+                "title": "SEO Analyst and Content Writer",
+                "location": null,
+                "dates": {
+                  "from": "2006-01-01",
+                  "to": "2008-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yq7klqngdfs",
+                  "name": "Milestone Global Solutions"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master of Business Administration (M.B.A) Marketing",
+                "dates": {
+                  "from": "2008",
+                  "to": "2010"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y2f9xxsbx1p",
+                  "name": "Punjab Technical University"
+                }
+              },
+              {
+                "degree": "Master of Computer Application (M.C.A)",
+                "dates": {
+                  "from": "2001",
+                  "to": "2004"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y2f9xxsbx1p",
+                  "name": "Punjab Technical University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "title": "Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. | Vari Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "publishedDate": "2026-05-18T00:00:00.000Z",
+      "author": "Vari Kaur",
+      "text": "# Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. | Vari Kaur \u00b7 LinkedIn \u00b7 2026-05-18\n\n**Vari Kaur**: Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nOur marketing team at [Zafran Security](https://linkedin.com/company/zafran-security) is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns.\n\nLooking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\nIf that's you, let's talk.\n\nExcellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.\nhttps://lnkd.in/eWYbq_Mw\n\n## Comments\n\n**[Jaime Oliver](https://linkedin.com/in/jmwheeler11)** \u00b7 2026-05-18\n> Exciting times Vari!!! Sounds like everything is going well!!\n\n**[CyberExecConnect](https://linkedin.com/company/cyberexecconnect)** \u00b7 2026-05-27\n> Exciting growth at Zafran Security. The alignment between ABM, integrated campaigns, and sales execution continues to become increasingly important for cybersecuri"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_ben-seri-on-cnbc-activity-7407416128987299840-4LMA",
+      "title": "Zafran Security on CNBC this week. Our Co-Founder & CTO, Ben Seri, shares why security teams must keep pace with AI-powered exploitation by adopting AI-driven defenses that automate and accelerate security operations. | Varinder Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_ben-seri-on-cnbc-activity-7407416128987299840-4LMA",
+      "publishedDate": "2025-12-18T00:00:00.000Z",
+      "author": "Varinder Kaur",
+      "text": "# Zafran Security on CNBC this week. Our Co-Founder & CTO, Ben Seri, shares why security teams must keep pace with AI-powered exploitation by adopting AI-driven defenses that automate and accelerate security operations. | Varinder Kaur \u00b7 LinkedIn \u00b7 2025-12-18\n\n**Varinder Kaur**: Vari Kaur currently works as Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\n[Zafran Security](https://linkedin.com/company/zafran-security) on CNBC this week. Our Co-Founder & CTO,\u00a0[Ben Seri](https://linkedin.com/in/ben-seri), shares why security teams must keep pace with\u00a0AI-powered exploitation\u00a0by adopting\u00a0AI-driven defenses\u00a0that automate and accelerate security operations.\n\n**Reshared from [Zafran Security](https://linkedin.com/company/zafran-security):**\n> \ud83e\udd29 Zafran is back on CNBC this week!\n>\n> Co-Founder and CTO [Ben Seri](https://linkedin.com/in/ben-seri) explains why defenders must keep pace with AI-powered exploitation by adopting AI-driven tools that automate and accelerate security operations.\n>\n> \ud83d\udc47 Watch the full video in the comments.\n>\n> Thank you for the thoughtful discussion Dan Murphy!\n>\n> Sanaz Yashar Snir Havdala\n\n## Engagement\n\n- Reactions: 9"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G",
+      "title": "Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this \u2026 | Varinder Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G",
+      "publishedDate": "2025-12-02T00:00:00.000Z",
+      "author": "Varinder Kaur",
+      "text": "# Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this \u2026 | Varinder Kaur \u00b7 LinkedIn \u00b7 2025-12-02\n\n**Varinder Kaur**: Vari Kaur currently works as Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nThrilled to share that [Zafran Security](https://linkedin.com/company/zafran-security) has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\n#AgenticAI #ExposureManagement #VulnerabilityManagement #CTEM\n\n**Reshared from [Zafran Security](https://linkedin.com/company/zafran-security):**\n> \ud83d\ude80 [Zafran Security](https://linkedin.com/company/zafran-security) just hit a huge milestone in our mission to stop vulnerability exploitation everywhere. \ud835\udde7\ud835\uddfc\ud835\uddf1\ud835\uddee\ud835\ude06 \ud835\ude04\ud835\uddf2 \ud835\uddee\ud835\uddff\ud835\uddf2 \ud835\uddee\ud835\uddfb\ud835\uddfb\ud835\uddfc\ud835\ude02\ud835\uddfb\ud835\uddf0\ud835\uddf6\ud835\uddfb\ud835\uddf4 \ud835\ude01\ud835\uddf5\ud835\uddee\ud835\ude01 \ud835\udded\ud835\uddee\ud835\uddf3\ud835\uddff\ud835\uddee\ud835\uddfb \ud835\uddf5\ud835\uddee\ud835\ude00 \ud835\ude01\ud835\uddff\ud835\uddf6\ud835\uddfd\ud835\uddf9\ud835\uddf2\ud835\uddf1 \ud835\uddd4\ud835\udde5\ud835\udde5 \ud835\uddee\ud835\uddfb\ud835\uddf1 \ud835\uddff\ud835\uddee\ud835\uddf6\ud835\ude00\ud835\uddf2\ud835\uddf1 $\ud835\udff2\ud835\udfec\ud835\udde0 \ud835\ude01\ud835\uddfc \ud835\uddf9\ud835\uddf2\ud835\uddee\ud835\uddf1 \ud835\uddf2\ud835\ude05\ud835\uddfd\ud835\uddfc\ud835\ude00\ud835\ude02\ud835\uddff\ud835\uddf2 \ud835\uddfa\ud835\uddee\ud835\uddfb\ud835\uddee\ud835\uddf4\ud835\uddf2\ud835\uddfa\ud835\uddf2\ud835\uddfb\ud835\ude01 \ud835\uddf6\ud835\uddfb\ud835\ude01\ud835\uddfc \ud835\ude01\ud835\uddf5\ud835\uddf2 \ud835\uddd4\ud835\udddc \ud835\uddd8\ud835\uddff\ud835\uddee.\n>\n> \ud83d\udca1 We are also unveiling \ud835\uddd4\ud835\uddf4\ud835\uddf2\ud835\uddfb\ud835\ude01\ud835\uddf6\ud835\uddf0 \ud835\uddd8\ud835\ude05\ud835\uddfd\ud835\uddfc\ud835\ude00\ud835\ude02\ud835\uddff\ud835\uddf2 \ud835\udde0\ud835\uddee\ud835\uddfb\ud835\uddee\ud835\uddf4\ud835\uddf2\ud835\uddfa\ud835\uddf2\ud835\uddfb\ud835\ude01, the next evolution of #CTEM. These are autonomous AI "
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_great-opportunity-for-aes-looking-to-join-activity-7341868030299127808-Z2ln",
+      "title": "Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to \u2026 | Varinder Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_great-opportunity-for-aes-looking-to-join-activity-7341868030299127808-Z2ln",
+      "publishedDate": "2025-06-20T00:00:00.000Z",
+      "author": "Varinder Kaur",
+      "text": "# Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to \u2026 | Varinder Kaur \u00b7 LinkedIn \u00b7 2025-06-20\n\n**Varinder Kaur**: Vari Kaur currently works as Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nGreat opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to make an intro.\n\ud83d\udca5 Zafran Security is hiring Account Executives!\ud83d\udca5\n\nNYC \u2022 Pacific Northwest \u2022 SoCal \u2022 TOLA \u2022 Georgia/Alabama\n\nLooking to join a company with real leadership, real momentum, and real opportunity?\n\nZafran is building something special: a category-defining cybersecurity platform\u00a0and team where AEs can thrive. Here\u2019s what you can expect:\n\n\ud83d\udcbc Seasoned leadership that invests in your growth\n\ud83d\udcc8 Clear path to success, in a high-growth market\n\ud83e\udd1d A supportive, no-ego sales culture that wins as a team\n\ud83d\ude80 A product that cuts through security noise and solves real customer pain\n\nWe\u2019re growing fast and hiring top talent who want to grow with us. If you\u2019re hungry, curious, and ready to win, let\u2019s talk.\n\nAda",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQHHOhr4FlHbmQ/feedshare-shrink_800/B56ZeK.TuFGoAk-/0/1750383281594?e=2147483647&v=beta&t=tfgyL_5ogTZHqN6xfD0g1wmoqqBD3D8SqbdPT4Bq9KU"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/gailunverferth_sales-enablement-specialist-at-zafran-activity-7419499615244324864-uAl-",
+      "title": "I'm hiring! Please spread the word! | Gail Unverferth",
+      "url": "https://www.linkedin.com/posts/gailunverferth_sales-enablement-specialist-at-zafran-activity-7419499615244324864-uAl-",
+      "publishedDate": "2026-01-20T00:00:00.000Z",
+      "author": "Gail Unverferth",
+      "text": "# I'm hiring! Please spread the word! | Gail Unverferth \u00b7 LinkedIn \u00b7 2026-01-20\n\n**Gail Unverferth**: Director, Revenue Enablement at Zafran Security for 1 year 7 months with 19 years 5 months of total professional experience. Previous roles include Fractional Revenue Enablement at LevelUp Enablement, Head of Revenue Enablement at Craft.co, and Director, Go-to-Market Enablement at Intercom. Based in Los Angeles Metropolitan Area [US].\n\n---\n\nI'm hiring! Please spread the word!\n\n## Comments\n\n**[Vari Kaur](https://linkedin.com/in/varinderkaur)** \u00b7 2026-01-21 \u00b7 1 reaction\n> Commenting for reach!\n\n**[Rick Savage](https://linkedin.com/in/savagerick)** \u00b7 2026-01-21 \u00b7 1 reaction\n> Hi Gail - I reposted this to my network for you - Good Luck!\n\n**[Greg Steward \ud83e\udd38\u2642\ufe0f](https://linkedin.com/in/stewardgreg)** \u00b7 2026-01-21 \u00b7 4 reactions\n> Commenting for reach! or maybe you know someone?\n\n## Engagement\n\n- Reactions: 55"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/sidraberman_so-excited-to-present-to-top-notch-higher-activity-7467526646309519361-tWRE",
+      "title": "So excited to present to top notch higher ed leaders today!!!! | Sidra Berman",
+      "url": "https://www.linkedin.com/posts/sidraberman_so-excited-to-present-to-top-notch-higher-activity-7467526646309519361-tWRE",
+      "publishedDate": "2026-06-02T00:00:00.000Z",
+      "author": "Sidra Berman",
+      "text": "# So excited to present to top notch higher ed leaders today!!!! | Sidra Berman \u00b7 LinkedIn \u00b7 2026-06-02\n\n**Sidra Berman**: Vice President, Marketing & Product Marketing at 3 Enrollment Marketing, Inc. for 3 months with 26 years of total professional experience. Previous roles include Chief Marketing Officer at Calero, Chief Marketing Officer at parcelLab, and Chief Marketing Officer & Head of Product at Engageware. Based in New York City Metropolitan Area [US].\n\n---\n\nSo excited to present to top notch higher ed leaders today!!!!\n\n![So excited to present to top notch higher ed leaders today!!!! | Sidra Berman image](https://media.licdn.com/dms/image/v2/D4E22AQEx33PCDgrYYg/feedshare-image-high-res/B4EZ6H76pxIkAY-/0/1780397091676?e=2147483647&v=beta&t=iEnF2q4KQG0jKocvwgNt3_xvrON1auUfESanpArzDOM)\n\n## Comments\n\n**[Melissa Farmer Richards, MPA, APR, CPC](https://linkedin.com/in/melissafarmerrichards)** \u00b7 2026-06-02\n> \ud83d\udc4f\n\n**[Vari Kaur](https://linkedin.com/in/varinderkaur)** \u00b7 2026-06-02\n> Awesome \ud83d\udc4f Always a fan of your speaking sessions!!!\n\n**[The Institute for Higher Education](https://linkedin.com/company/the-institute-for-higher-education)** \u00b7 2026-06-02\n> Exciting.\n\n**[Patricia Maben](https://linkedin.com/in/patriciamaben)** \u00b7 2026-06-02\n> Was awesome\n\n**[Tara McAlister , SHRM-CP, RCC](https://linkedin.com/in/tara-mcalister)** \u00b7 2026-06-02\n> Congratulations\n\n**[Maribel Lopez](https://linkedin.com/in/maribellopez)** \u00b7 2026-06-02\n> Congrats\n\n**[Emily McNeil-Muldoon](https://link",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQEx33PCDgrYYg/feedshare-image-high-res/B4EZ6H76pxIkAY-/0/1780397091676?e=2147483647&v=beta&t=iEnF2q4KQG0jKocvwgNt3_xvrON1auUfESanpArzDOM"
+    },
+    {
+      "id": "https://exa.ai/library/person/d2tzrwhw4c5",
+      "title": "John Zaremba",
+      "url": "https://www.linkedin.com/in/john-zaremba-6709701",
+      "publishedDate": "2026-08-06T18:35:34.000Z",
+      "text": "# John Zaremba\n\nNapa, California, United States (US)\n\n500 connections \u2022 1,899 followers\n\n## Recommendations\n\n[Laurie Krisman](https://www.linkedin.com/in/lauriekrisman)\n\n\u201cAs my Leadlander Account Manager, John was both patient and informative. He is very able to translate technical information in a way that makes it easy to understand and execute against. His responses were always timely, pleasant and helpful. I highly recommend John if you are looking for someone who puts the customer first and can bring the human element to technology and other products. \u201d\n\n[Vari Kaur](https://www.linkedin.com/in/varinderkaur)\n\n\u201cJohn Zaremba was our account manager at Leadlander and he is the best example of someone who provides fanatical customer support to his clients. Something that sets him apart from other sales guy is that he is a very good listener and always paid attention to customer problems. Whenever we had any issue or needed any training, he would jump on it right away and get it resolved. He is a client advocate in true sense. I highly recommend John Zaremba for his exemplary dedication to his work.\u201d\n\n## Social\n\n### Linkedin\n\n- [2026-07-29 \u00b7 John Zaremba shared this] [Cartesian's a cool word. And in warehouse environments, it also...](https://www.linkedin.com/posts/john-zaremba-6709701_cartesians-a-cool-word-and-in-warehouse-activity-7488285042658537472-oTJu): Cartesian's a cool word. And in warehouse environments, it also implies a lot of benefits... Choosing a palletizer, bu",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/d2tzrwhw4c5",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "John Zaremba",
+            "firstName": "John",
+            "lastName": "Zaremba",
+            "location": "Napa, California, United States",
+            "workHistory": [],
+            "educationHistory": [],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 8.7,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 0.11,
+  "_request": {
+    "query": "\"Vari Kaur\" podcast interview guest episode Zafran Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

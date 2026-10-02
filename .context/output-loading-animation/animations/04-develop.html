@@ -1,0 +1,81 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Option 4 — Develop · Clue output loading</title>
+<link rel="stylesheet" href="shell.css">
+<style>
+/* Option 4 — DEVELOP. The artifact appears under the veil like a photograph
+   developing: heavily blurred and desaturated at first, sharpening a notch as
+   each generation step completes, until Finish snaps it into focus. In the
+   centre, the Clue mark sits inside a crescent progress arc that grows with
+   the steps. Progress-aware, so the marketer feels the model getting closer. */
+.veil{background:rgba(255,255,255,.12);display:grid;place-items:center}
+.ghost{position:absolute;inset:0;opacity:1;transform:none;transition:filter 1.2s cubic-bezier(.2,.7,.2,1),opacity 1.2s}
+.ghost[data-stage="0"]{filter:blur(28px) saturate(.2) brightness(1.04);opacity:.5}
+.ghost[data-stage="1"]{filter:blur(20px) saturate(.35);opacity:.6}
+.ghost[data-stage="2"]{filter:blur(13px) saturate(.5);opacity:.7}
+.ghost[data-stage="3"]{filter:blur(7px) saturate(.7);opacity:.8}
+.ghost[data-stage="4"]{filter:blur(3px) saturate(.85);opacity:.9}
+.stage{position:relative;width:140px;height:140px;display:grid;place-items:center}
+.stage .mark{width:48px;color:var(--olive-950);position:relative;z-index:1;animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+.ring{position:absolute;inset:0;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:5;stroke-linecap:round}
+.ring .track{stroke:var(--brand-200)}
+.ring .arc{stroke:var(--olive-800);stroke-dasharray:377;stroke-dashoffset:377;transition:stroke-dashoffset 1.2s cubic-bezier(.2,.7,.2,1)}
+.ring .tip{stroke:var(--sage-500);stroke-dasharray:34 343;animation:orbit 2.2s linear infinite;opacity:.9}
+@keyframes orbit{to{stroke-dashoffset:-377}}
+.halo{position:absolute;inset:-30px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,255,255,.95),rgba(255,255,255,.7) 60%,transparent);z-index:0}
+.text{position:absolute;top:calc(50% + 96px);left:0;right:0;text-align:center}
+.status{margin-top:0}
+.pct{font-size:12px;color:var(--muted);margin-top:6px;font-variant-numeric:tabular-nums}
+</style></head><body>
+<div class="app">
+ <aside class="chat">
+  <header><span>Untitled</span><span class="dots">···</span></header>
+  <div class="thread">
+   <div class="msg user">Make a LinkedIn ad for Zafran's revenue team from the account research.</div>
+   <div class="msg agent">On it. Using the Zafran claims and the confirmed product positioning.<span class="pill"><i></i>Drafting revenue ad</span></div>
+  </div>
+  <div class="composer"><div class="row"><span>+</span><span>@</span><span class="spacer"></span><span>GPT 5.5 ⌄</span><span class="send"></span></div></div>
+ </aside>
+ <main class="output">
+  <div class="tabs"><span>▦ Gallery</span><span>target accounts</span><span class="active">revenue ad</span></div>
+  <div class="toolbar"><span>revenue ad</span><span class="dots">···</span><span class="spacer"></span><span class="zoom">23% ⌄</span><button>Edit</button><button class="dark">Export</button></div>
+  <div class="canvas"><div class="card">
+   <div class="artifact ghost" data-stage="0">
+    <div class="who"><div class="av"></div><div><b>Clue</b><small>Promoted</small></div></div>
+    <div class="copy">Zafran's revenue team is covering 40 target accounts with three SDRs. Here's what changes when the platform already knows each account.</div>
+    <div class="hero">Stop guessing which accounts are ready. Start knowing.</div>
+    <div class="cta"><b>See the accounts that are ready to buy</b><span>Learn more</span></div>
+   </div>
+   <div class="artifact">
+    <div class="who"><div class="av"><svg viewBox="249 264 659 629"><path fill="#F8F5DC" d="M647.703 391.49C647.703 354.354 646.825 326.848 636.444 292.53C627.871 264 573.591 264 573.591 264C400.007 264 251.937 404.756 249.045 576.91C247.547 666.906 283.751 748.501 342.99 807.252C361.789 825.896 382.964 842.287 405.946 855.81C414.571 860.881 425.469 860.112 433.061 853.658C564.449 742.15 647.703 576.449 647.703 391.49Z"/><path fill="#F8F5DC" d="M907.999 486.146V286.947C907.999 274.295 897.67 264 884.862 264H691.911C676.727 264 665.829 278.188 669.445 292.838C695.32 396.509 775.681 478.873 878.716 508.274C893.383 512.474 907.948 501.308 907.948 486.146H907.999Z"/><path fill="#F8F5DC" d="M907.999 869.64V579.882C907.999 565.642 895.088 554.886 880.936 557.293C703.376 587.002 562.536 711.725 509.289 862.162C504.021 877.016 515.28 892.587 531.135 892.587H884.862C897.618 892.587 907.999 882.343 907.999 869.691V869.64Z"/></svg></div><div><b>Clue</b><small>Promoted</small></div></div>
+    <div class="copy">Zafran's revenue team is covering 40 target accounts with three SDRs. Here's what changes when the platform already knows each account.</div>
+    <div class="hero">Stop guessing which accounts are ready. Start knowing.</div>
+    <div class="cta"><b>See the accounts that are ready to buy</b><span>Learn more</span></div>
+   </div>
+   <div class="veil">
+    <div class="stage">
+     <div class="halo"></div>
+     <svg class="ring" viewBox="0 0 140 140"><circle class="track" cx="70" cy="70" r="60"/><circle class="tip" cx="70" cy="70" r="60"/><circle class="arc" cx="70" cy="70" r="60"/></svg>
+     <svg class="mark" viewBox="249 264 659 629">
+      <path d="M647.703 391.49C647.703 354.354 646.825 326.848 636.444 292.53C627.871 264 573.591 264 573.591 264C400.007 264 251.937 404.756 249.045 576.91C247.547 666.906 283.751 748.501 342.99 807.252C361.789 825.896 382.964 842.287 405.946 855.81C414.571 860.881 425.469 860.112 433.061 853.658C564.449 742.15 647.703 576.449 647.703 391.49Z"/>
+      <path d="M907.999 486.146V286.947C907.999 274.295 897.67 264 884.862 264H691.911C676.727 264 665.829 278.188 669.445 292.838C695.32 396.509 775.681 478.873 878.716 508.274C893.383 512.474 907.948 501.308 907.948 486.146H907.999Z"/>
+      <path d="M907.999 869.64V579.882C907.999 565.642 895.088 554.886 880.936 557.293C703.376 587.002 562.536 711.725 509.289 862.162C504.021 877.016 515.28 892.587 531.135 892.587H884.862C897.618 892.587 907.999 882.343 907.999 869.691V869.64Z"/>
+     </svg>
+    </div>
+    <div class="text"><div class="status" id="status">Reading Zafran's account research</div><div class="pct" id="pct">Step 1 of 4</div></div>
+   </div>
+  </div></div>
+ </main>
+</div>
+<div class="controls"><span class="label">Option 4 · Develop</span><button id="replay">Replay</button><button id="finish">Finish generation</button></div>
+<script>
+const STEPS=["Reading Zafran's account research","Picking the angle for the revenue team","Writing the headline and copy","Laying out the ad"];
+const STEP_MS=1900;const C=377;let i,timer;
+const ghost=document.querySelector('.ghost'),arc=document.querySelector('.arc'),st=document.getElementById('status'),pct=document.getElementById('pct');
+function render(){ghost.dataset.stage=i;arc.style.strokeDashoffset=C-(C*i/STEPS.length);
+  if(i<STEPS.length){st.textContent=STEPS[i];pct.textContent=`Step ${i+1} of ${STEPS.length}`;}else{st.textContent='Finishing up';pct.textContent='';}}
+function start(){clearInterval(timer);i=0;render();timer=setInterval(()=>{i=(i+1)%STEPS.length;render();},STEP_MS);}
+document.getElementById('finish').onclick=()=>{clearInterval(timer);i=STEPS.length;render();setTimeout(()=>document.body.classList.add('done'),500);};
+document.getElementById('replay').onclick=()=>{document.body.classList.remove('done');start();};
+start();
+</script></body></html>

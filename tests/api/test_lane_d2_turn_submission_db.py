@@ -63,6 +63,7 @@ from clue_api.agent_turn_submission import (
     agent_turn_dedup_key,
     dispatch_next_thread_turn,
     get_submission,
+    insert_submission,
     submission_context_refs,
     thread_work_id,
     turn_id_for_submission,
@@ -399,6 +400,7 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                         **request,
                         "attachment_refs": [
                             {
+                                "upload_id": str(uuid4()),
                                 "artifact_key": "browser-local://not-durable",
                                 "sha256": "a" * 64,
                                 "media_type": "text/plain",
@@ -442,9 +444,10 @@ def test_message_submission_persists_ordered_context_and_the_real_terra_profile(
                 unavailable_profile.status_code,
                 unavailable_profile.json()["error"]["code"],
             ) == (409, "AGENT_PROFILE_UNAVAILABLE")
+            # A receipt naming an upload this workspace never made is refused fail-closed.
             assert (attachment.status_code, attachment.json()["error"]["code"]) == (
-                409,
-                "CAPABILITY_UNAVAILABLE",
+                404,
+                "ATTACHMENT_NOT_FOUND",
             )
 
     run_async(scenario())
@@ -504,13 +507,25 @@ def test_design_targets_are_validated_snapshotted_and_replay_after_the_scene_adv
                     "hash": "0" * 64,
                 },
             )
-            await design_legs.open_leg(
+            leg = await design_legs.open_leg(
                 conn,
                 workspace_id=project.workspace_id,
                 thread_id=thread_id,
                 parent_execution_id=parent_execution_id,
                 document_id=document["id"],
                 document_version_guard=4,
+            )
+            # Spec §3.2: project containment is derived from the leg's document SET, and the
+            # shipped tool writes the position-0 child row for every leg it opens. The DAL
+            # writes only the column, so the seed adds what production guarantees — without
+            # it the document belongs to no project and the ref is refused.
+            await design_legs.add_leg_documents(
+                conn,
+                workspace_id=project.workspace_id,
+                leg_id=str(leg["id"]),
+                documents=[
+                    design_legs.LegDocumentSpec(document_id=str(document["id"]), position=0)
+                ],
             )
             refs = [
                 {
@@ -636,6 +651,90 @@ def test_duplicate_submission_replays_one_turn_and_enqueues_nothing_new(tmp_path
                 )
             ).scalar_one()
             assert int(count) == 1
+
+    run_async(scenario())
+
+
+def test_a_derived_submission_names_both_halves_or_neither(tmp_path: Path) -> None:
+    """Spec 2026-09-20 §2.1: ``derivation`` and ``derived_from_turn_id`` travel together."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d2-derived", name="D2 derived")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="derived",
+            )
+            app = _app(conn, settings=_settings(), storage=FsStorage(tmp_path / "artifacts"))
+            async with _client(app) as client:
+                accepted = await _submit(
+                    client,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    message="Which accounts should get this campaign?",
+                    key="key-derived-source",
+                )
+            assert accepted.status_code == 202, accepted.text
+            source = await get_submission(
+                conn,
+                workspace_id=project.workspace_id,
+                turn_id=UUID(accepted.json()["data"]["turn_id"]),
+            )
+            assert source is not None
+
+            # Half a derivation is not a derivation: the row model refuses before the CHECK does.
+            with pytest.raises(ValueError, match="both its derivation"):
+                await insert_submission(
+                    conn,
+                    turn_id=uuid4(),
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    submitted_by_user_id=USER_ID,
+                    submitted_via_membership_id=source.submitted_via_membership_id,
+                    onboarding_input_id=source.onboarding_input_id,
+                    message_artifact_key=source.message_artifact_key,
+                    message_sha256=source.message_sha256,
+                    idempotency_key=None,
+                    derivation="design_leg_first_turn",
+                )
+
+            derived_turn_id = turn_id_for_submission(
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                idempotency_key="derived:1",
+            )
+            derived, created = await insert_submission(
+                conn,
+                turn_id=derived_turn_id,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                thread_id=thread_id,
+                submitted_by_user_id=USER_ID,
+                submitted_via_membership_id=source.submitted_via_membership_id,
+                onboarding_input_id=source.onboarding_input_id,
+                message_artifact_key=source.message_artifact_key,
+                message_sha256=source.message_sha256,
+                idempotency_key="derived:1",
+                derivation="design_leg_first_turn",
+                derived_from_turn_id=source.turn_id,
+            )
+            assert created is True
+            assert derived.derivation == "design_leg_first_turn"
+            assert derived.derived_from_turn_id == source.turn_id
+            # And it reads back the same way the worker will read it.
+            again = await get_submission(
+                conn,
+                workspace_id=project.workspace_id,
+                turn_id=derived.turn_id,
+            )
+            assert again is not None and again.derivation == "design_leg_first_turn"
+            assert again.derived_from_turn_id == source.turn_id
+            # The human's own submission is derived from nothing.
+            assert source.derivation is None and source.derived_from_turn_id is None
 
     run_async(scenario())
 
@@ -1232,7 +1331,10 @@ class _ReplayBeforeCompositionRunner(ProjectConversationTurnRunner):
         del args, kwargs
         raise AssertionError("committed replay must happen before current scope/card composition")
 
-    async def _complete_recipe(self, execution_id: ExecutionId) -> None:
+    async def _complete_recipe(
+        self, execution_id: ExecutionId, *, turn_id: Any, actor_id: str | None
+    ) -> None:
+        del turn_id, actor_id
         self.completed.append(execution_id)
 
 
@@ -1276,6 +1378,72 @@ def test_worker_replays_before_recipe_or_current_context_composition(tmp_path: P
             assert runner.completed == [
                 ExecutionId(operation_id_from_key(str(turn_id), "project-conversation@1"))
             ]
+
+    run_async(scenario())
+
+
+def test_the_turn_that_opened_a_leg_replays_as_head_of_abm(tmp_path: Path) -> None:
+    """Incident 2026-09-29: the head-of-abm turn that OPENED a design leg was re-claimed after
+    its worker died, saw the leg open on its thread, and was routed to the leg — where it
+    collided with its own durable rows and failed. Its retry must replay as head-of-abm."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            project = await _seed(conn, "ws-d2-leg-opener", name="D2 leg opener")
+            thread_id = await _thread(
+                conn,
+                workspace_id=project.workspace_id,
+                project_id=project.project_id,
+                label="leg-opener",
+            )
+            storage = FsStorage(tmp_path / "artifacts")
+            app = _app(conn, settings=_settings(), storage=storage)
+            async with _client(app) as client:
+                accepted = await _submit(
+                    client,
+                    workspace_id=project.workspace_id,
+                    project_id=project.project_id,
+                    thread_id=thread_id,
+                    message="Make a LinkedIn ad for this account.",
+                    key="leg-opener",
+                )
+            turn_id = UUID(accepted.json()["data"]["turn_id"])
+            parent_execution_id = uuid4()
+            await conn.execute(
+                text(
+                    "INSERT INTO execution "
+                    "(id, workspace_id, project_id, started_by, parameter_manifest_hash, "
+                    " pin_manifest_hash) "
+                    "VALUES (:id, :workspace, :project, 'human', :hash, :hash)"
+                ),
+                {
+                    "id": parent_execution_id,
+                    "workspace": project.workspace_id,
+                    "project": project.project_id,
+                    "hash": "0" * 64,
+                },
+            )
+            await design_legs.open_leg(
+                conn,
+                workspace_id=project.workspace_id,
+                thread_id=thread_id,
+                parent_execution_id=parent_execution_id,
+                opened_by_turn_id=turn_id,
+            )
+            engine = _ReplayBeforeCompositionEngine()
+            runner = _ReplayBeforeCompositionRunner(
+                engine=engine,
+                executor=None,
+                recipes=None,
+                starter=None,
+                parameters=None,
+                conn_factory=conn_session_factory(conn),
+                streaming=False,
+            )
+            # No design-leg runner is composed: routing this turn to the leg would raise.
+            result = await runner.run(turn_id=turn_id, workspace_id=project.workspace_id)
+            assert result.replayed is True
+            assert engine.calls == [(turn_id, project.workspace_id, thread_id)]
 
     run_async(scenario())
 

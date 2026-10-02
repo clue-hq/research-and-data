@@ -1,0 +1,12 @@
+# Arm C/D inputs for Conduit's hotel-operators ICP, written from the ICP document's own text.
+# company_query: what the company IS ("a hotel or multi-property hospitality operator"), with none of
+# the need vocabulary (guest communication, PMS, guest-experience suite) its vendors describe
+# themselves with.
+company_query: >-
+  Hotel groups, hotel management companies and multi-property hospitality operators that own
+  or operate hotels, resorts or serviced accommodation.
+# exclusion_criterion: the ICP's competitive set (HiJiffy, Asksuite, Canary, Duve) and its
+# "generic customer-support organizations with no rooms or stays" exclusion, as one criterion.
+exclusion_criterion: >-
+  The company is not a software, SaaS or technology vendor that sells products to hotels or
+  hospitality businesses.

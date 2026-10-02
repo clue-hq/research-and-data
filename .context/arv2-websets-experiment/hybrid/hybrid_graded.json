@@ -1,0 +1,663 @@
+[
+  {
+    "name": "Patientdesk.ai (YC W26)",
+    "url": "https://patientdesk.ai",
+    "domain": "patientdesk.ai",
+    "hq": "San Francisco California US",
+    "employees": 6,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "fail",
+        "reason": "most recent labelled round 'pre-seed' on 2026-08-24 \u2014 before Series A",
+        "references": [
+          "https://vctavern.com/patientdesk-ai-raises-3-8-million-to-expand-ai-powered-dental-practice-operations-platform/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters San Francisco, California, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a careers page exists for the human to read",
+        "references": [
+          "https://patientdesk.ai/careers"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.5,
+    "band": "Medium",
+    "disposition": "partial",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": "page:patientdesk.ai"
+  },
+  {
+    "name": "1Fort AI",
+    "url": "https://1fort.ai",
+    "domain": "1fort.ai",
+    "hq": "New York New York US",
+    "employees": 9,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "fail",
+        "reason": "most recent labelled round 'pre-seed' on 2025-04-21 \u2014 before Series A",
+        "references": [
+          "https://www.citybiz.co/article/684406/bonfire-ventures-leads-7-5m-round-for-cybersecurity-insurance-enabler-1fort/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters New York, New York, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a careers page exists for the human to read",
+        "references": [
+          "https://1fort.ai/careers",
+          "https://1fort.ai/careers/"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.5,
+    "band": "Medium",
+    "disposition": "partial",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": "page:1fort.ai"
+  },
+  {
+    "name": "Snout",
+    "url": "https://snout.com",
+    "domain": "snout.com",
+    "hq": "Troy Michigan US",
+    "employees": 33,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-02-04 (7 months ago; votes {'series a': 5})",
+        "references": [
+          "https://www.crowdfundinsider.com/2026/02/259184-pet-care-financing-startup-snout-lands-100m-facility-raises-10m-series-a/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters Troy, Michigan, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a linked job host exists for the human to read",
+        "references": [
+          "https://jobs.gem.com/snout",
+          "https://jobs.gem.com/snout"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.75,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": "page:jobs.gem.com"
+  },
+  {
+    "name": "Lasso MD",
+    "url": "https://lassomd.com",
+    "domain": "lassomd.com",
+    "hq": "San Diego California US",
+    "employees": 32,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "fail",
+        "reason": "most recent labelled round 'seed' on 2025-03-17 \u2014 before Series A",
+        "references": [
+          "https://linkedin.com/company/lassomd"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters San Diego, California, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a careers page exists for the human to read",
+        "references": [
+          "https://lassomd.com/work-with-us/careers"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.5,
+    "band": "Medium",
+    "disposition": "partial",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": "page:lassomd.com"
+  },
+  {
+    "name": "&AI",
+    "url": "https://tryandai.com",
+    "domain": "tryandai.com",
+    "hq": "San Francisco California US",
+    "employees": 9,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "fail",
+        "reason": "most recent labelled round 'seed' on 2025-02-07 \u2014 before Series A",
+        "references": [
+          "https://www.finsmes.com/2025/02/ai-raises-6-5m-in-seed-funding.html"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters San Francisco, California, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no ATS board and no reachable careers page",
+        "references": []
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no page to read",
+        "references": []
+      }
+    ],
+    "fit": 0.5,
+    "band": "Medium",
+    "disposition": "partial",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": null
+  },
+  {
+    "name": "DentalHQ",
+    "url": "https://dentalhq.com",
+    "domain": "dentalhq.com",
+    "hq": "Raleigh North Carolina US",
+    "employees": 10,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "fail",
+        "reason": "most recent labelled round 'pre-seed' on 2025-04-24 \u2014 before Series A",
+        "references": [
+          "https://www.cbinsights.com/company/dentalhq/financials"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters Raleigh, North Carolina, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no ATS board and no reachable careers page",
+        "references": []
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no page to read",
+        "references": []
+      }
+    ],
+    "fit": 0.5,
+    "band": "Medium",
+    "disposition": "partial",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": null
+  },
+  {
+    "name": "Probook",
+    "url": "https://probook.com",
+    "domain": "probook.com",
+    "hq": "",
+    "employees": null,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-06-23 (3 months ago; votes {'series a': 17, 'seed': 12})",
+        "references": [
+          "https://a16z.com/announcement/investing-in-probook/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "unclear",
+        "reason": "no headquarters in the snapshot",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a careers page exists for the human to read",
+        "references": [
+          "https://probook.com/company",
+          "https://probook.com/careers"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.625,
+    "band": "Medium",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": "page:probook.com"
+  },
+  {
+    "name": "Digs",
+    "url": "https://digs.com",
+    "domain": "digs.com",
+    "hq": "",
+    "employees": null,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-09-02 (0 months ago; votes {'series a': 3})",
+        "references": [
+          "https://www.constructionindustry.ai/funding/digs-25-3m-series-a-builders-firstsource/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "unclear",
+        "reason": "no headquarters in the snapshot",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "fail",
+        "reason": "0 open roles on greenhouse:digs, none with a GTM title",
+        "references": [
+          "https://boards-api.greenhouse.io/v1/boards/digs/jobs?content=true"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no GTM posting to read",
+        "references": []
+      }
+    ],
+    "fit": 0.5,
+    "band": "Medium",
+    "disposition": "partial",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": "greenhouse:digs"
+  },
+  {
+    "name": "Lassie",
+    "url": "https://lassie.ai",
+    "domain": "lassie.ai",
+    "hq": "San Francisco  US",
+    "employees": 23,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-06-04 (3 months ago; votes {'series a': 8})",
+        "references": [
+          "https://techfundingnews.com/ex-robinhood-and-superhuman-alums-raise-35m-in-a16z-led-round-to-let-ai-run-small-businesses-end-to-end/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters San Francisco, None, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "pass",
+        "reason": "4 GTM of 16 open roles on ashby:lassie: Account Executive, GTM Associate, Head of Marketing, Software Engineer, Growth",
+        "references": [
+          "https://api.ashbyhq.com/posting-api/job-board/lassie?includeCompensation=true"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "Q7 only (4 concurrent GTM openings); one Tier-2 signal is not enough on its own",
+        "references": []
+      }
+    ],
+    "fit": 0.875,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 4,
+    "board": "ashby:lassie"
+  },
+  {
+    "name": "Levanta",
+    "url": "https://levanta.io",
+    "domain": "levanta.io",
+    "hq": "",
+    "employees": null,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "fail",
+        "reason": "most recent labelled round 'series b' on 2026-08-27 \u2014 past Series A",
+        "references": [
+          "https://levanta.io/press-release/levanta-raises-22m-series-b-from-volition-capital-to-deploy-the-infrastructure-for-creator-commerce-media/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "unclear",
+        "reason": "no headquarters in the snapshot",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "pass",
+        "reason": "3 GTM of 3 open roles on greenhouse:levanta: Manager, Business Development (China Based), Manager, Product Marketing, Sales Development Representative",
+        "references": [
+          "https://boards-api.greenhouse.io/v1/boards/levanta/jobs?content=true"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "pass",
+        "reason": "Q1 in a GTM posting: \u201c\u2026ng the growth of Levanta by identifying and generating new business opportunities through outbound and inbound sales efforts. This position is ideal for an ambitious individual looking to\u2026\u201d",
+        "references": [
+          "https://job-boards.greenhouse.io/levanta/jobs/5194522008"
+        ]
+      }
+    ],
+    "fit": 0.625,
+    "band": "Medium",
+    "disposition": "partial",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 3,
+    "board": "greenhouse:levanta"
+  },
+  {
+    "name": "INFI",
+    "url": "https://infi.us",
+    "domain": "infi.us",
+    "hq": "Chicago Illinois US",
+    "employees": 40,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2025-03-26 (18 months ago; votes {'series a': 6})",
+        "references": [
+          "https://www.mkcapital.com/infi-newdeal/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters Chicago, Illinois, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no ATS board and no reachable careers page",
+        "references": []
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no page to read",
+        "references": []
+      }
+    ],
+    "fit": 0.75,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": null
+  },
+  {
+    "name": "Superorder",
+    "url": "https://superorder.com",
+    "domain": "superorder.com",
+    "hq": "New York City  US",
+    "employees": 11,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2024-11-03 (22 months ago; votes {'series a': 5, 'seed': 1})",
+        "references": [
+          "https://www.superorder.com/press/superorder-raises-10m-series-a-funding-round-to-fuel-new-generative-ai-order-management-tools-for-restaurants"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters New York City, None, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a careers page exists for the human to read",
+        "references": [
+          "https://superorder.com/careers",
+          "https://superorder.com/careers/"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.75,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": "page:superorder.com"
+  },
+  {
+    "name": "BeyondTrucks",
+    "url": "https://beyondtrucks.com",
+    "domain": "beyondtrucks.com",
+    "hq": "San Francisco California US",
+    "employees": 25,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2024-10-24 (23 months ago; votes {'series a': 9})",
+        "references": [
+          "https://www.trysignalbase.com/news/funding/revolutionizing-transportation-management-beyondtrucks-secures-10.35-million-in-series-a-funding"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters San Francisco, California, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no ATS board and no reachable careers page",
+        "references": []
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no page to read",
+        "references": []
+      }
+    ],
+    "fit": 0.75,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": null
+  },
+  {
+    "name": "Equal Parts",
+    "url": "https://equalparts.ai",
+    "domain": "equalparts.ai",
+    "hq": "Austin Texas US",
+    "employees": 16,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-02-11 (7 months ago; votes {'series a': 13, 'series b': 1, 'seed': 3})",
+        "references": [
+          "https://www.insurancejournal.com/news/southcentral/2026/02/11/857764.htm"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters Austin, Texas, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a careers page exists for the human to read",
+        "references": [
+          "https://equalparts.ai/careers",
+          "https://equalparts.ai/careers/"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.75,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 0,
+    "board": "page:equalparts.ai"
+  },
+  {
+    "name": "Boostly",
+    "url": "https://boostly.com",
+    "domain": "boostly.com",
+    "hq": "Orem Utah US",
+    "employees": 39,
+    "websets_says": "yes, yes, yes",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2025-02-12 (19 months ago; votes {'series a': 6})",
+        "references": [
+          "https://www.citybiz.co/article/660293/boostly-raises-22m-series-a/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters Orem, Utah, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "pass",
+        "reason": "1 GTM of 2 open roles on ashby:boostly: Sales Development Representative",
+        "references": [
+          "https://api.ashbyhq.com/posting-api/job-board/boostly?includeCompensation=true"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "pass",
+        "reason": "Q1 in a GTM posting: \u201c\u2026we want to meet you!     WHAT YOU'LL DO:   - Generate restaurant leads through strategic outbound prospecting via phone, email, and social selling to restaurant owners, managers, and deci\u2026\u201d",
+        "references": [
+          "https://jobs.ashbyhq.com/boostly/3984ce9f-a067-4ed4-bab6-18611e0fc185"
+        ]
+      }
+    ],
+    "fit": 1.0,
+    "band": "High",
+    "disposition": "pass",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 1,
+    "board": "ashby:boostly"
+  }
+]

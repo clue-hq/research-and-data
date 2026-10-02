@@ -94,7 +94,8 @@ class OpenRouterPdfVision:
         )
 
     def _invoke(self, pages: list[PageForVision]) -> dict | None:
-        import httpx  # lazy: only the real network path needs it
+        from clue_spend import ProviderHalted
+        from lumen_api import spend  # lazy: only the real network path needs it
 
         # OpenRouter/OpenAI multimodal message uses "text"/"image_url" parts.
         parts: list[dict] = [{"type": "text", "text": _USER_PREAMBLE}]
@@ -123,21 +124,26 @@ class OpenRouterPdfVision:
                 "json_schema": {"name": "pdf_vision", "strict": True, "schema": _RESPONSE_SCHEMA},
             },
         }
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        url = self.base_url.rstrip("/") + "/chat/completions"
-        for _ in range(2):
-            try:
-                response = httpx.post(url, json=body, headers=headers, timeout=DEFAULT_TIMEOUT_S)
-                if response.status_code >= 400:
-                    continue
-                message = response.json()["choices"][0]["message"]["content"]
-                return json.loads(message)
-            except Exception:
-                continue
-        return None
+        # Two attempts, now the provider caller's, with the money row and the raw body recorded
+        # per attempt. ``ProviderHalted`` propagates so an out-of-credit key fails the job loud.
+        try:
+            response = spend.openrouter_call(
+                operation="design.ingestion.vision",
+                body=body,
+                label=f"vision:{len(pages)} pages",
+                timeout_s=DEFAULT_TIMEOUT_S,
+                api_key=self.api_key,
+                base_url=self.base_url,
+                max_attempts=2,
+            )
+            if response.status >= 400:
+                return None
+            message = json.loads(response.body)["choices"][0]["message"]["content"]
+            return json.loads(message)
+        except ProviderHalted:
+            raise
+        except Exception:
+            return None
 
 
 _SYSTEM_PROMPT = (

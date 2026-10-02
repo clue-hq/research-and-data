@@ -5,8 +5,10 @@
   "history": [],
   "message": "Will this ad resonate with CFOs?",
   "judgment": {
-    "action": "continue",
-    "reason": null
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "reasoning": "This asks for a change to the current artifact."
   },
   "expected": {
     "action": "continue",

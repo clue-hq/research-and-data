@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330090-qxH3QosHg2mNJeEDn58A",
+  "object": "chat.completion",
+  "created": 1788330090,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"Vari Kaur publicly announced she is hiring a Senior Manager, ABM & Integrated Campaigns for Zafran Security and described the company as \\\"one of the fastest-growing companies in cybersecurity.\\\" This hiring post is a first-person signal of her active hands-on role building the ABM function at Zafran.\",\n    \"evidence_quote\": \"Our marketing team at Zafran Security is expanding! \\u001f\ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns.\",\n    \"source_url\": \"https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X\",\n    \"why_generic_tools_miss_it\": \"Enrichment tools typically index job titles and company data but do not surface specific first-person hiring posts or real-time statements about building a particular function.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.recent_post\",\n      \"value\": \"Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\",\n      \"evidence_quote\": \"Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\",\n      \"source_url\": \"https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G\",\n      \"charter_category\": \"professional_identity\",\n      \"priority\": \"P2\",\n      \"use_class\": \"professional-public\",\n      \"outreach_safe\": true\n    },\n    {\n      \"field_key\": \"contact.facet.recent_post\",\n      \"value\": \"Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader.\",\n      \"evidence_quote\": \"Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader.\",\n      \"source_url\": \"https://www.linkedin.com/posts/varinderkaur_great-opportunity-for-aes-looking-to-join-activity-7341868030299127808-Z2ln\",\n      \"charter_category\": \"professional_identity\",\n      \"priority\": \"P3\",\n      \"use_class\": \"professional-public\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8BrsdXAdS9ynKEojaNQZkxVM3Ga4v8H78DsmjmETX73kzycvHE8umdd0ceoWpqT69oslvNQMttTRGsAJ1-sw1TWZH1TmraD3biYIAPBQZrcZNvHYki0hVS-9X__O5hGPBUzIWwQthhEiROamOJpqgTtkTRI7OQhqQe7hf2L9NPuWdpYl_dPFm_PmFZDZuuPTsVSqmweloU6D6Kmuq1yMbHyIL4p9YKy5duxOoKkwcWLqLbvGGzXx8kxfKxYd9FqnqT5I_BjTdjI2mQu7g931eeVjFTxLPihL3tnyOwrUYd7SsuSaW9f2GybNuFYAee4Re2_QEtBs62tCjoctzE4HlW13Qeyns1S_Lm1U1Uq4OgJG4sxYoKiRWiDOoFgl5SZq3kI4xCNdImxZFm4CL0_tz8vtHc--hkwyJo6Qt2M7nxCdp6gL6OUMAiOYfnQKmkG8hFUvUr3Kfkw3xu_jFrcEOOir2LGxulitOMnuiImLfI5ivWtl7YBg6H9la0psE2uk2WMtgykSjR-Ea_hPWPaOnJQgj2tpBGA6ndPRhSX0lb-ccxwH3RrwTevSoX88IuVummWlUiOMUurpcUtp1D9X9c82iXffnIobHtG_-ZkaMwEGMLbX2nS0lz2kTU0kGMYzL1jSDlKPHPB4dzQDdIHLX-QnDHCbRcvZ4g47c4Mp9pzX17EhBKV5OtFT8CyDKpGLZVeBXEoCKsJpS6ikFIrSJseJSEL8yLNd_7mR0kgamhlLURng5iFU_Gof2Qd7xmu4FXoaC3REsYZIg2tvhEKPe62BL120a2V3z4ga7bpMy-k4gm2d1w73NAk6h25xlmGvocbaD1_5lljBJpI2IyqyEPmN4F-FZaT4WcXpUBGNuGPs7pMSpgDrdm9R9qKdrtWlyAkvSssrIUdVu9sE2qgdI46uVU2lb0ibFzUd6xxJKRq-C0SWSWoMqUwY9oe__gzj9HrlkQcM2X3uFtsYCnceSA0KXm_uHag-gqEFHmfeJG98wspkwBvpgrStJ7yOtkrxDKaIET2_Dg6hNGHFfqYxfBKxeLBv5ZETH17QUTeiiwh-QZZxaoAAPmemfGCVAxPPMFUiH0hs8nkUGjqsAKDF-45kWIRe8QPuxZtL8m69h7p-X9Y5G_sKXvIeaY5t8X9EMqP_m5JNMKg6l1krVW2IzTWDF8qrISGD41TM3czvcc6UqW-e8qvexxVi2l1_QbRkL__HLbVwlTh1Rzz0S_AJRWVOMyrPnsUhlxqcc2AT-oKNqIDZU4WGE-3e6NroRle1r7BaIt01q191VfNBmEetuM7DOyULKguy_Om2t7AecItmxWqSEt2pBbFk9VB2VXoWmSXHWiEMF8jcECYxn5A5TUbFymu5t-AAy5kVX99F7wpHhQ_KZOPki_qiaTan-puj3mV.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_02c93b637b437d6c016a97c06b55f887d0b93ca055a3986042",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3210,
+    "completion_tokens": 568,
+    "total_tokens": 3778,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0019385,
+      "upstream_inference_prompt_cost": 0.0008025,
+      "upstream_inference_completions_cost": 0.001136
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 4.78
+}

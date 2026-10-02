@@ -62,27 +62,28 @@ pub use brand::{
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticSubject, Phase};
 pub use dsl::{
     compile_dsl, compile_dsl_into_scene, compile_dsl_into_scene_with_session,
-    compile_dsl_into_scene_with_session_and_protected, normalize_dsl,
-    parse_dsl, slot_id_for_key, DslCompileOutput, DslCompileSession, DslCompileSessionSnapshot,
-    DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement, DslElementKind, DslFill,
-    DslFont, DslHalt, DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis, DslLine, DslLineKind,
-    DslModification, DslPage, DslPagePreset, DslParentFrameSnapshot, DslParentPlacement,
-    DslParseOutput, DslProperty, DslScalar, DslSceneCompileOutput, DslShadow, DslStroke,
-    SourceSpan,
+    compile_dsl_into_scene_with_session_and_protected, compile_dsl_into_scene_with_text_context,
+    normalize_dsl, parse_dsl, slot_id_for_key, DslCompileOutput, DslCompileSession,
+    DslCompileSessionSnapshot, DslDiagnostic, DslDimension, DslDirective, DslDocument, DslElement,
+    DslElementKind, DslFill, DslFont, DslHalt, DslHistoryAdapter, DslLayoutAnchor, DslLayoutAxis,
+    DslLine, DslLineKind, DslModification, DslPage, DslPagePreset, DslParentFrameSnapshot,
+    DslParentPlacement, DslParseOutput, DslProperty, DslScalar, DslSceneCompileOutput, DslShadow,
+    DslStroke, SourceSpan,
 };
 pub use editing::{
     batch_scope_violations, build_archive_asset, build_asset_modify, build_clone_subtree,
     build_convert_container_layout, build_delete_export_profile, build_detach_to_freehand,
     build_document_modify, build_export_profile_modify, build_freeze_layout, build_group,
-    build_hard_delete_asset, build_modify_operations, build_move_after, build_move_before,
-    build_move_to_parent, build_node_modify, build_page_modify, build_reattach_to_layout,
-    build_replace_node, build_safe_delete, build_safe_delete_page, build_safe_delete_slot,
-    build_slot_modify, build_structured_edit_batch, build_ungroup, resolve_edit_target,
+    build_hard_delete_asset, build_modify_operations, build_modify_operations_with_text_context,
+    build_move_after, build_move_before, build_move_to_parent, build_node_modify,
+    build_page_modify, build_reattach_to_layout, build_replace_node, build_safe_delete,
+    build_safe_delete_page, build_safe_delete_slot, build_slot_modify, build_structured_edit_batch,
+    build_structured_edit_batch_with_text_context, build_ungroup, resolve_edit_target,
     AssetEditPatch, CloneLineage, CloneSlotPolicy, CloneSubtreeRequest, ComputedClonePolicy,
     EditBatch, EditError, EditErrorKind, EditPatch, EditScope, EditScopeMode, EditTargetRef,
     ExportProfileEditPatch, NodeEditPatch, PageEditPatch, RelativePlacement, ReplaceNodeRequest,
     ReplaceSlotPolicy, ResolvedEditTarget, ScopeViolation, SlotEditPatch, StackEntryEdit,
-    StructuredEditInstruction, TextEditPatch,
+    StructuredEditInstruction, TextEditContext, TextEditPatch,
 };
 pub use export_contract::{
     ExportAdapter, ExportArtifact, ExportError, ExportFormat, ExportProfile, ExportPurpose,
@@ -98,7 +99,10 @@ pub use instance::{
     InstanceAuditKind, InstanceFitReport, InstanceFitStatus, SlotFitEntry, SlotFitVerdict,
     TemplateRepairRequest,
 };
-pub use layout::{layout_operations, layout_scene, validate_layout, LayoutOptions, LayoutResult};
+pub use layout::{
+    layout_operations, layout_scene, painted_text_lines, validate_layout, LayoutOptions,
+    LayoutResult,
+};
 pub use operations::{
     DocumentPatch, FieldPatch, NodePatch, Operation, OperationError, OperationReport,
     OperationResult, OptionalFieldPatch, PagePatch,
@@ -141,8 +145,8 @@ pub use slots::{
 pub use snapshot::{SnapshotError, SnapshotResult};
 pub use text_measure::{
     estimate_text_width, heuristic_measurement_diagnostic, line_height_px, measure_key,
-    measure_text, HeuristicTextMeasurer, ProvidedTextMeasurer, SharedTextMeasurer, TextLineBox,
-    TextMeasureInput, TextMeasureOutput, TextMeasurer, TextRunBox,
+    measure_text, HeuristicTextMeasurer, ProvidedLine, ProvidedMetrics, ProvidedTextMeasurer,
+    SharedTextMeasurer, TextLineBox, TextMeasureInput, TextMeasureOutput, TextMeasurer, TextRunBox,
 };
 
 pub const SCHEMA_VERSION: u32 = 1;

@@ -15,8 +15,8 @@
 
 use crate::fonts::FontManager;
 use crate::measure::{
-    build_paragraph, default_foreground, font_diagnostics, normalize_content, ParagraphRequest,
-    ParagraphSegment, UNBOUNDED_LAYOUT_WIDTH,
+    build_paragraph, default_foreground, font_diagnostics, glyph_diagnostics, normalize_content,
+    ParagraphRequest, ParagraphSegment, UNBOUNDED_LAYOUT_WIDTH,
 };
 use lumen_core::{
     normalize_content_mapped, page_geometry, paints_out_of_tree, pinned_paint_pass,
@@ -32,7 +32,7 @@ use lumen_export::{
 use skia_safe::canvas::SaveLayerRec;
 use skia_safe::textlayout::TextAlign as SkTextAlign;
 use skia_safe::{
-    gradient, image_filters, surfaces, Canvas, Color4f, Data, EncodedImageFormat, FontMgr, Image,
+    gradient, image_filters, surfaces, Canvas, Color4f, Data, EncodedImageFormat, Image,
     ImageFilter, Matrix, Paint as SkPaint, PaintCap, PaintJoin, PaintStyle, PathEffect, Point,
     RRect, Rect as SkRect, SamplingOptions, Shader, TileMode,
 };
@@ -717,15 +717,13 @@ impl<'a> PagePainter<'a> {
             .text_transform
             .apply(&normalize_content(&text.content))
             .into_owned();
-        // Whole-family fallback (LUMS0100), per-glyph substitution (LUMS0103),
-        // and weight substitution (LUMS0104), from the same font set + helper
-        // the measurer uses, so preflight and this raster path report identically.
+        // Family/style resolution is independent of layout. Glyph outcomes are
+        // collected below from the actual scalar or segmented paint paragraph.
         for diagnostic in font_diagnostics(
             self.fonts,
             &text.font_family,
             text.font_weight as i32,
             text.italic,
-            &content,
             Some(DiagnosticSubject::Node(node.id.clone())),
         ) {
             if !self.diagnostics.contains(&diagnostic) {
@@ -836,6 +834,7 @@ impl<'a> PagePainter<'a> {
                 // already folded into the seeded `cursor_y`.
                 let (para_height, _) = self.paint_text_paragraph(
                     canvas,
+                    &node.id,
                     para_text,
                     &resolution.family,
                     text,
@@ -853,6 +852,7 @@ impl<'a> PagePainter<'a> {
         } else {
             self.paint_text_paragraph(
                 canvas,
+                &node.id,
                 &content,
                 &resolution.family,
                 text,
@@ -957,8 +957,9 @@ impl<'a> PagePainter<'a> {
     /// can advance its cursor and spend its line budget.
     #[allow(clippy::too_many_arguments)]
     fn paint_text_paragraph(
-        &self,
+        &mut self,
         canvas: &Canvas,
+        node_id: &NodeId,
         para: &str,
         family: &str,
         text: &TextNode,
@@ -993,7 +994,8 @@ impl<'a> PagePainter<'a> {
         // single-paragraph path did (Wrap: box width at x=0; NoWrap: natural
         // width placed per alignment), with the A6a NoWrap+truncate case laid
         // out at the box width so SkParagraph's "…" fires.
-        let mut fill = build_paragraph(&make_request(fill_foreground.clone()), self.fonts);
+        let request = make_request(fill_foreground.clone());
+        let mut fill = build_paragraph(&request, self.fonts);
         let (layout_width, x) = match text.wrap {
             TextWrap::Wrap => (box_width.max(0.0) as f32, 0.0f32),
             TextWrap::NoWrap if text.truncate => {
@@ -1018,6 +1020,13 @@ impl<'a> PagePainter<'a> {
             }
         };
         fill.layout(layout_width);
+
+        self.diagnostics.extend(glyph_diagnostics(
+            self.fonts,
+            &request,
+            &mut fill,
+            Some(DiagnosticSubject::Node(node_id.clone())),
+        ));
 
         // A7a: shift within the box's vertical slack. `valign` is `Top` on the
         // stacked path (the stack seeds `cursor_y` with the offset instead), so
@@ -1130,7 +1139,8 @@ impl<'a> PagePainter<'a> {
             segments: Some(segments),
         };
 
-        let mut fill = build_paragraph(&make_request(fill_segments), self.fonts);
+        let request = make_request(fill_segments);
+        let mut fill = build_paragraph(&request, self.fonts);
         let (layout_width, x) = match text.wrap {
             TextWrap::Wrap => (box_width.max(0.0) as f32, 0.0f32),
             TextWrap::NoWrap if text.truncate => {
@@ -1155,6 +1165,13 @@ impl<'a> PagePainter<'a> {
             }
         };
         fill.layout(layout_width);
+
+        self.diagnostics.extend(glyph_diagnostics(
+            self.fonts,
+            &request,
+            &mut fill,
+            Some(DiagnosticSubject::Node(node.id.clone())),
+        ));
 
         // A7a: shift the segmented paragraph within the box's vertical slack.
         let voff = valign_offset(box_height, fill.height() as f64, text.valign) as f32;
@@ -1321,8 +1338,7 @@ impl<'a> PagePainter<'a> {
         dest: SkRect,
     ) {
         if resolved.mime_type == "image/svg+xml" {
-            let font_mgr: FontMgr = FontMgr::new();
-            match skia_safe::svg::Dom::from_bytes(&resolved.bytes, font_mgr) {
+            match crate::svg_dom::parse(&resolved.bytes) {
                 Ok(mut dom) => {
                     canvas.save();
                     canvas.translate((dest.left, dest.top));

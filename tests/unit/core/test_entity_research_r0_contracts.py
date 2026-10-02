@@ -199,6 +199,10 @@ def test_canonical_r0_contract_fixture_is_fully_valid(
     EntityResearchJobStatus.model_validate(resolve("terminal_job_status"))
 
     assert account_selection.channel_permissions == ()
+    # The receipt was added compatibly: pre-receipt selections remain exact historical replay
+    # inputs, while every new Account launch pins one in the launcher transaction.
+    assert account_selection.discovery_receipt is None
+    assert contact_selection.discovery_receipt is None
     assert {subject.basis for subject in contact_selection.subjects} == {
         ResearchSelectionBasis.COMMITTEE_MEMBER,
         ResearchSelectionBasis.USER_SELECTED_ASSOCIATED_CONTACT,
@@ -225,6 +229,39 @@ def test_account_profile_run_can_exclude_committee_discovery(
 
     assert tuple(item.value for item in lifecycle.operations) == ("account_profile",)
     assert lifecycle.selection.committee_source_keys == ()
+
+
+def test_an_admitted_field_may_carry_no_authorized_source_at_all(
+    canonical_fixture: dict[str, Any],
+) -> None:
+    """A field no source can *request* is admitted with an empty authority, not omitted.
+
+    Settlement F3: source ownership and wire-requestability are different facts, so a launcher can
+    legitimately compile a profile row whose every owning source structurally cannot ask for it.
+    Representing that as an empty authority keeps the field on the coverage axis (it settles as an
+    honest gap) while authorizing exactly nothing — the engine refuses any request naming it, and
+    the run-wide admitted sources gain nothing on its behalf. Dropping the field instead would
+    make the row vanish; inventing a source for it would authorize an impossible dispatch.
+    """
+
+    payload = cast(
+        dict[str, Any],
+        _resolve_fixture_refs(
+            copy.deepcopy(canonical_fixture["account_selection"]), canonical_fixture
+        ),
+    )
+    unbuyable = payload["field_source_authority"][0]["field_key"]
+    payload["field_source_authority"][0]["source_keys"] = []
+    payload["admitted_source_keys"] = sorted(
+        {source for item in payload["field_source_authority"] for source in item["source_keys"]}
+        | set(payload["committee_source_keys"])
+    )
+
+    selection = EntityResearchSelection.model_validate(payload)
+
+    authority = {item.field_key: item.source_keys for item in selection.field_source_authority}
+    assert authority[unbuyable] == ()
+    assert unbuyable in selection.admitted_field_keys
 
 
 def test_account_result_can_losslessly_project_multiple_grounded_committee_contacts(
@@ -298,7 +335,7 @@ def test_forbidden_flow_fixture_is_complete_and_unique(
 
 def test_public_r0_contract_schemas_match_frozen_fingerprints() -> None:
     fixture = _read_json("r0_schema_fingerprints.json")
-    assert fixture["contract_version"] == "m8d-r0-v5"
+    assert fixture["contract_version"] == "m8d-r0-v7"
     actual = {
         name: hashlib.sha256(
             json.dumps(

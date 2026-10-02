@@ -1,0 +1,71 @@
+{
+ "id": "gen-1788505061-x8OAn4aUOxOO7Am11wkE",
+ "object": "chat.completion",
+ "created": 1788505061,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"money_momentum\",\"empty\":false,\"items\":[{\"h2\":\"Dec 2, 2025: $60M Series C funds global expansion\",\"body\":[{\"text\":\"Zafran Security raised a $60M Series C on December 2, 2025, led by Menlo Ventures.\",\"claimIds\":[\"zaf-018\",\"zaf-125\"]},{\"text\":\"What it means for us: Zafran’s stated focus on global expansion gives us a timely reason to position Clue around scaling account-based outreach.\",\"claimIds\":[\"zaf-144\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"$130.5M raised across four rounds\",\"body\":[{\"text\":\"Zafran Security’s funding record lists $130.5M raised across four rounds and nine investors.\",\"claimIds\":[\"zaf-017\"]},{\"text\":\"What it means for us: This level of reported funding makes Zafran a strong candidate for a focused ABM motion.\",\"claimIds\":[\"zaf-017\",\"zaf-124\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"167 employees and estimated $10M–$25M annual revenue\",\"body\":[{\"text\":\"Zafran Security has 167 employees, with estimated annual revenue of $10M–$25M as of August 22, 2026.\",\"claimIds\":[\"zaf-005\",\"zaf-015\"]},{\"text\":\"What it means for us: The combination of team size and estimated revenue supports prioritising a tailored buying-committee campaign.\",\"claimIds\":[\"zaf-005\",\"zaf-015\",\"zaf-016\"]}],\"contactRefs\":[],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmvqJPtBBNbjeuRFyTfYKHoUq8cXwidMob7BG-uOrNTf9x9GyoT3sYVY7Yf4ObRRvSnjj6V1OXZx3serIC-88veINviK37sJjj23HWAoTbvXZHXXY9X116jQVjXGVGION5JYIidWYzMJ8cIGwiOKw1L3HyfE3nvzI9D_nEne0b1eCU5XFlE9w47q1271kp6q3hIuuP4MWx40Skr6k4q6OINdlPPLFJ88sY_V-qNMGp7qVDIWPpBBG4F7p22veKLEIJYESl6g_utTmnkhYOxLz3F4jjcJGXddA-Gsw-4ceajqxT-0abgSztVVsBaOzrOg9M_s5FxHXANA56gJEpZ76JyHBHySxsY9y2HeIXk6QH8nATRJlS5mM-CtieEontym-Oj4VoXobmbTQws5tyeu-q9IJIPi1ZTLJq4sN7qg4xCPQFrLwrjaRclpWUQ7XdKmBgfDJ2iBHlIP8BktDsJOPanq_oYViQ2NK-QMiPA_QDCxrcO8_WsJ7ltrcGLQFhuxkEeKEwiColo0FuF8Gas9xDULvLtyC7fiYTcr23P0VoLgfhEcNKFN1DVKyTIopjavUFK87kxY9KhYqP5roQJgTX7pOM17h79J6ieFyLaqM3TskBkojJduupxcJ17frcUnyx8yZqyMV-RJPcGvZ16wIkA_QZJfR1bW0eRGRxVsFh0dTcoV9p9ES7EHfNJrODIQ7EHx9ddmQ4XyHT04onIPXXm3QqfJhLNScy69A4K8O7o6NpJx3CaFkQVdsU5o_0Vn7jMD0ewf-lkI7Hzl_nWRAY7Pby9-kI9ZOKtHxin1xxihLiUurz2SKh-icPP3DGj1jRsULT1yv8VqdkIenp6CjcBy5r-U-y-pQonRFXhPpsEsxQ_wx7iMCRBE0xSFoLQuo1Uk4jMdY8mApFgMeNoblVAFx1_PsbGY72gCGy8qXIGvuuYgPMJX9yxDKvdOu-fnWaDyeJchHhMetoRJEoP6bZD-ZKqGiZOfKNc1OtzoEqsxPoziqRuykODnMHRG3IafZR7AtvV7Yqo6Iw0BlqfwaYHk7CUzf3udA6eAIcVmg71jWzLhckfHou7lqjEW-KozmZMz9yTOugtn93g9KOJlqc4bv7DkgCwpR76WNwNn2hW0qYvG_NFcX00hNJO3Lk5oxtRq0xWe4KzuUNyY_wW2TiEDUvuq3IEyiMCp-HrGCBopb2v7pAgfyCdeUTSl0AguZNAmgTkR7bMEawerTuAp3IQzFM5_PbZWuwfgjw9fW_e2Ukbc5DhzYZ9RYdPlJ71H5SkXnC-yVhizBmFzbbtbVt2uYiI9kEP2_m-fAfnX1g8enoZNNVT2XkwQWZHcfwudGm3nwo62Z-YQ1WO4SyHUSp8eHfHO32PaIMZBjzOVfPYqA3GNXTi0ejvgROk3mZVUqnWQtnvXacfzcIrFd1bvDU00FXMt659XMKCyPwD_yaEl2kF8bqjwZDYT08naKIuT1FhZQIC6J26T637ZCXtr3Z4QPz7BrOYvZNUvNJVWp_l8UKKIrnfxjASb8kZ3zGjW9ciDC-yBVY1mPRGLm7MnUJV3v6qqkI3OU0Uq3Ct1v1uJzKAgbSJAD-3G4BTLz1jeEKg_c3D9jWWlIAtpCXbjBHOcLOkTDdyKDiZFj1iBHOtzrBcdhP-ZzaPfTAkJfpWGtb5lenF__fZzDps2m5b0jG01NCvnrj2lERtT1Mjsq7hu9hD2zOvOO9njAbB5wxnfXGwBbZ54gZ0kXxO4WR6pkZ-16fxIQvCbwqnMynUvCeJm9kzy6XjIN2ey-gm3zOqn5ryjQ6jzA91Mtfcuthc-PqscAsTD7oFfXO-ZOOXY2NHXRpcNWchWGB4aIDoFI1iSRFAfgXtVtlSB_5U1RckE3BBxHeto31QdRoPQmjNaZoGwgHcAzpU9-SgxV8-Fr24yM_BAsXhI0ldz9TQHRHFfth8hdYxTPfObr_A32FUMEeQXh9LT7SF6us9qfUP_C-r-eSES4SMTlil5p8Vmb8oPcIXHtVTOe6fX8WcwSUSHj0_I6ibV8VxeGwzef8smD5iWB8nrzSe-hOiyP_8MGlJ6QfpO_35eK0PImfyXNbPxVCpOk2CF17xvHB9GO0aku6XnoDc2N1rROFxFP7CjlZgzKV2uJN7xtNZC835nEarMYScDQT4b9rS9S7qK3CQqIog551LiIKVncbp6C0GVzKJKhRwnZEEDCI1xhPB2m7yo0w45WgwvVh1ApmAIg_6o5wzbYhxgjC5EuOaW0MGEDmf5YiThKn2aP7zaPyKxf-wAeOsIframgKRLXTE1PcTdNdAFhvNyk0mwlBpVWEYeEADtdFRpjNBTiuqIPm48Tkk6R9Lj3pnQGYQan6CGr7DPZtcfwo9J5AXTbb2UIBaoBfrCfSCNgXdhp5g90TCjR175zs8dM0FD_MmXCq_9HqdbGba8NlOUIaAzOBl5I0Z9PAeVHjBhwIvg1SyMoUi7tfIbI_ZmGPQU635UYNgqYBpJm6RQJTu4R6teN0aZso_2qpgAwzCI7gLrSVXnVaBrXaXe_9I8WzwYD_eVwtMkGv9sUo1MToPGsbysiAmZEcrT3RygnKtuUs7LWBhrc4uHeAFP_T15OMs43xUL2VEYXzLZuH40KhLVYT7TD7BI16EuEMIaruYrw99X9OzCyjPCjDmR2HdflcyiF-coOb7XN4x-jpVgRRlUMs0Vv-YOOVDrJ8Pqrqvp6_K_pHspKl5bXqo-TV8Tup1ac8jzpMDIJfSoxNVKT8XQW4GU57UkqIFeqyG4noLgHRi4vGIQrLnOn4rjZzE5tSJ89YPfy18drzVibudsLacadRdp_nqD7moF7g0DpH1w_lEBOlr9I9HnGHU4J48U8XAh1at_fvcCAJDFQteSJC_-FQ0oSKVxYtd06gJHjtZ2ff_aIDqpCndgPZUV-adxGIrpC8XzhifJUS1Ir91YsILea6IADVO08d8DH6gxSC68aQAtz-88Gt51NH32Xe8WKuCIPR_npLUuFggeitQ4wKMidc3qnC7Jc_LXAWcx4kLeLVMQCsIvEDGaKcsUmrMci7CZECLHjLvJ_Hx6RDEaGFVx3AGYeFW5nxuudk14gzWWvSo3NIjqK40_zTgOpPF3sf2i0ck0RXRGGLWfN2whka3ZWQsRYk4DP9e3T_2v5LHZ1zntECvQlq8S4ZbaOiqDCiYrJ0mHwxH_ks5GLngRDcRrLUbbO4nr88LnWhn9O6c5wdHQIsndxSX5OiacVychW_lslzim9mdMWD74JGqX3AeV0WlxCUFdd4o0gOktW1_igUcjNBHirx3peHD7qqUfUDItESjrapcI_PEdtBYfLhX6zlV2t8uEbt9gpU5fi_hKVWbxYBBylMducZSCTEXUVHoqWi7rvC46c822foDuQf4ouekPUSXsQaSYUW_BvzwdjBWDg3fguHOaCc0N9UBUhpuzpsfshTV_GZDEqfgZd8af0plNAlBvj0C_1ZT4K13cNacgaGBGdTI4rRFo2y0w2W_vETn07VW8xg0bEIDQx8wv37f41P1j3Hs_y472o5aBBWP7w6hiN_-c6kg4NAiehrjE84WETd8VvYV4Hys6KhQI0HogyG8sY7giQBmZ9KflKGIkSCOhmsDgRrzzYjQ3p6-4dRQnKHtnV-gZu-FUw5gsb9hVEVpFL1PhWCcIS1OKITvHLcH0Nt_eUy01EGzBg4raSi1Jxogz6AKvhLTKVfMyqLzJUaB6r1QaQ7ZFaSZ7NzI6BGhkiJIaJSjzE8BT11bJGvFhSoD7GBDmwitGbBuswzTRCQYNAvMjPqwmWS0foz1MwPIVKdFEq4hNsECVO_40Cx0TjzKWAnuwRBvH8Qwo832QFamjHgYCcVZsWk1A34XWR_yi6M9kcD9EvKWyB9QcqpWePFIESFOQ2pApMoppsH7lnnsTv4sj2bWCNeVaWrQYFfzhAPhMV18WyfsDyuhTlrSRENaphsNaE7C6ocw64592aWPsMZZK9AZOpLmudCjDRwtQoleHHKmYlTzs7zWoAMCLoUIijGqXT2JH_1IRHMSMzkQC-UY501nKuHUnVe1Jsim0G3L6yflZ9I4-KrO-LpN8aN2GpWmureuHchRWwb0Cy26zFNQWvr1Yzc8gLQ6K0Zk35h10fMIxSyZCy9wsZA_1SMywJQ_8E4lAHp-I6IF5OIFjZLi-MbfXhd5WWC2dvSVFAhL9iO6XTPSINCChP9dfz-vm4Pi8FfKF7W06NPVwHtpJR_kAEsw3eJNhfZ4UOIYXcCchQ52-A258T3oRr3Ef5Lsm8M5p4yojk8uLaHQcH83BhAiRPtDyqd7Y32I4MrfmK9N5p8sfUcoEXcM=.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0f40c6b0668f0f0f016a9a6be6a3c887d0807459bb3f5d43b1",
+      "index": 0
+     },
+     {
+      "type": "reasoning.summary",
+      "summary": "**Analyzing ABM Strategy**\n\nI’m considering the phrase \"Scale supports a focused ABM motion.\" It seems to imply that having around 167 employees and an estimated revenue of $10M–$25M identifies a specific account to target. This feels like a marketing inference that creates a clear direction for account-based marketing efforts. It’s interesting how revenue and employee size can define target accounts. Let's explore the implications of this approach further!",
+      "format": "openai-responses-v1",
+      "index": 1
+     },
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmvu-g7yj9EtsAEDHfIwSwNaDBiXOX6CZLBgKxlMnnarmCkxB9lFZjVy2qAHeXeAHTQJFXLhMNO5IO4abLMrAW_WgdCI1ACktMV-iOKOAth-zVnZPFk8XBoxzQwOmvE55S_3g7nq5Y1d6Gps3GGwEmeEExQRUpUsSZ8v_11vzGtHQFPZd2GlWbNb4fDMczIGcBu4qw8XaAgXE5fnlb7LLoIKmoVkHhBdoSNTYXzJBGA8LPDhbSY4jsZsuj3QZkfQngUPYRvta1A-cMuD412qbQzhZHyqNl1AOf3ZmfdKCLDuuuFVL3yTstom63gvVLdN4_nMeTzPfHNCd7MDuyqk6ClIXKLO-h0F8E_4rjqrES6G1gzEVTGIqlwrY3V5HMCgZKmToIfNiVT4WjsRrPEVTGK8IsGuByGZTRXSaTOFQr71YDISzmX9_6oTvpS2y-zDOdL8HTyECba-DYprX2yGAKsKiniqJ2eaavvpAoO1w5ei14ppWMO1CSpoYhtexY8n_0Ov7HWVBa-qpe3f7orWzKPiGzoqrmOj1LLO2BckRSX7gfnZFCQf08VLCxle1Zn5jWjs-eW9ahyRLwxLyWuUZ78hRQGHTJj25j9T4KM8UzQ1hDdiI5BBu6SniCQ_YJRr__AqxJXzaCaHQNoVK_xiFuvi_NKBZpPiTxX9kaUNOSHgZu7h_zdeyPo76lLCAPaZhEwy6o4Bodi4NHdwLCHT9M_w-PClvN05Z9REz9-hOIXG6lZRcnHqVDJuFsYyM-BxwRT124dC9Hcr6zFTDYPw0Jy8xSZ9qMkXkou_nTHPRdqBORRkSB44KPnHijtZeqORFBsjpGzfXu6Mhv0Tbgpra8wwC0yAFPTQdKCosgcFRf396f0BqoCDQmCCUipZ5eZ29hA2Ha2yAeFKY_ST020CNCyDHcuXFiNlXeV2nHPnX3h6GkX-ayZeFkOtJW4PLSDfrL1DTBWbQlZsn35WZMy8_HZssZ9-lNH-freREpMlAMPOKlzDAkRoxJZ59uVMCpcs58mA0AgSyAgBPawDBe1zcXOJG7AZafx-mjb42gITj3nEmSArxDkTUgV03tbRRzWT1wfVSLE2_zYXkO0O7k_G0jFQQUVQWQpUV4UlFrecon1SkaUgFW-8jDLv1t4SvFizBlagHep1T9EhbFf1tOe8Czr9vGafdPQNa6WIFJmd9KlcZunomowEqYdfcqE2uX16IcqjVRzyCS4UeUifwh91suYZSUmIAakcHsA_hLUXungVWCD17_L40maxvLGAEwHIrY7V4U2Vpli5PfQmWzl9ZcxKhijsH8FprF73sZ1WjmOO2O3a3Mg2x0JW0zdM2T6JxyuwyTMLw0GYFy4Fn_Y32cJAtmrW1pZXe4o2f6MSJ0QEDTcFfuf6GoFiKuNn50UIuJIVC-5etjXaPD6giwTFmQ7EJh5Edoco4a5lXaTPKBxzh6ywhXvZL2fyfywSFcjbyTAWmfhDrluYNOa4FIbf9Zr8HK5fwZFy5GUDz1eq5A5g5xD8119AxDsHZL2GzYZRv1-wSxhBUf0J_Qn04qiCXY1Zh2x1C3ZqdGDmLom1RwHTx0VP2NrclYhx34X_3MjY7JBHKjdnlFdNxeEs6AtLjFIhDNTR1Tv9-5UXcmadDgORMikT52nYFBRARtZ4pFCFPydyHN803t3gl6vxWIkL2yx_toAmwcUf7L3TyNTMwcH9URFuSpgJXNbfO23CxyR_kWz7KBtG3k4Qbzdvoz9_Daj6tnLHxDHPtPl_wga1jETE6SKaiF-6JaG2QKRgMF7QKZ5zf_6D4NsQgUztdS1yJos5zc8HaaJvkXaNrHU-i6hpURWY_do_5hwPG1ZU99qVjfzxddwgfHnLbsqdgBVBHvFv-LXN5Jv2v09I5jOdIfTf6pf1ceywUPPiWnwJpixS1ie5W9hPCqKEDJD45nH-oLCd2pVXtHpbuVPwapEV02_5N0J96wcI9xdvfChZa4MPBKNuhQJ4qz91Y9LAlkcX5E2g6iDrm94M7r2KVsGqrCag33A1LYrnPAfzoJ5LRKXWzvCDiF8tq67-noZbRTBUDsnGpiR02AHxvWRehm1RY2mGpZw28S8umOuqtGy3nDIBjfUx5327vIxWpBgqbwXzCRCTBToyPy9SiauG6N9s9d4nRjkX5Ixm9PzAwtJUWnMgICeJ1TBx3U7xNFCv7_GorN199oivNFj7DN5TtcAFBP-ocQF5aTZuSubPbOQvAuseYQJUhCBmpsiaifyfun9TtpKBTafu13lPgHpV1QODb7WlJKsNMwD12W__VXC7e1SyxsFeuC8UJZlPaPQNiOciKYq_kUbWCvH9ohDikNhbT2_KFjz5qkoeq3-BagFcNB1t_nUce1Zc5zPrJFjkRnTMrj9mAUNtkrGhX0UFldkWHymy203ceRtC_5qAksgOt2LS2GGunfL5OSugQHUP177HqSA7_MZGig5L1NIRGj5L7CQZZCl8NnnRNhHHRpk2yGU0-R7J5WcBcUJ-S098oqxkg1M1SvdKAdWXISihgkgebFQrHRYybwWRQh_1fSwMNl8bXmCsx55ZnLK8NBdMzgJ0sE5PEWP4Kof9zCmt4MOHWTu9NAFiz4mLJNH1lPesHJEsUKaSqXqOXA6dkDzKkcSJP-tRsdKHvFYrKv7BLKg-pbncF03bXrDT36HwZ_U93CIxKtpEwM71Lu1Ol-Xbiv8uHO0fHyAVJzsf_TtFcX-pzqIdEKO3UqSe4cRR9CoeOhqxpzq8Nx6cR2W4Ys6hKjjHJNO9hhsb1bLG2Ytl9QRvv5Pk_HtZLetJpetEYaTleD4gJ1jDNjNcRVY8YFvH33V3e6b7J1C8XQNS468155D-EuEj1OHuZQ1KhZadyW9ylfPMLvR0iSeujPaU2WbsA3OOA04f9Z8wlQ0pJ3ICCSOskiJZNxDvG9d0BeKy7uGguY2XbizwWKke02bbgyRWx2NLK4TkkCIH7fYZAHham5QfEjvc4OSSfPyC3UHquvqBi2yVZgsGJJVmamDNpmHWQ-_8b5FG-VcJGwKCVSmNt_IGUHVOOmkuCqKdt2hSAnceMoIoGWqRH04Xkh86homjf-R7hjY8-rhMpx6nex_FjNmhLvGbgHV-yXQ1C8_tC9pqIq76JFrEZ2lRvCw-RYk7gtlPl7QyPn1EEYDSf5ivNRRqBo62av1N61BwJbVvnBTKznIGiVbOEX2xeJQyZRze4_IGXSOVYNKuWRpclAgsFej9UcKlKBI8ZDaIOaVU6XHX2pcak_vyDzO5n-vz5hwdgo1QMD86aXo28ZreteahEYlEeyyoFHhuPUB1cOl4Vdbax-9Qs_zRyi6V0wotVZcV9RrDFxt8a3cGIWFonOf_xAPE42L6cWnuaQdiS3zEtdVXUZy_C0UA3kY0ovRzeZYENt81W1BqUYJMZL2Gt5OsEL6UgcnC4Ow7JCAkCQavBDX1kihalEiaYW0Y6jUJqKEGfnJEPX0UqBUD3LW2NkYV8ratT0M-tknpWJWEzpXGj-i4JQ1BSlYaGlH5RciTrwKAYiO8cTWfkkRs1JTufTtVQ3o7Ol8jg_hwPCyAT4kiS3-iLdR_Jy3oHVjJ5n-wBsYPzI94ZGu_zrS0H25b8c7ukgvlxrDPPg2DnjysPqsQ23ZnN1cV0fLIOmjHYBVL7ZFnLRZYmf4hYmCpQlKJxfeasnyg9qJTbJ24YMbGOGQuFpNQyNAkoFKcHRfxgbDE4wrpeim3lgcjYocqfbrO_A46PromWLnR3vuFUJOdj5Sibs2v-38hqJ1F-h-3BLD2aHvmIw3ZRV7CJi5zVvnhoN_CsGqDEzdbs2YfuyzvOlfbeCDKeVCB5XC0CUaHtBAdGoutyRGFN8giwLDWa5mD9Gd-4hyoJx7SSBnj-lhEJKwF0f7q3YNOfrrVXrzW2JefW3aw5v1FLrhJ_M6nndiWcckGpZ71hZ9EMr8v8RqS9gHcQSxxVN0LWH12FG9n7onpijFWcB3JlIQfa2q4IjWGRiX_du_uU0K5AkKKgkxZfRMybzqkctFIsVACDtDnjkImi-amz7FCQoyv5_6xpmEKoC-AdS5pPdEPkWBMoHv6Ff77ue8WsH33VCvt.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_0f40c6b0668f0f0f016a9a6beacfe887d08abb34dea1ea6368",
+      "index": 2
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 2125,
+  "completion_tokens": 1396,
+  "total_tokens": 3521,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 2122,
+   "cache_write_tokens": 0,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.00171824,
+   "upstream_inference_prompt_cost": 4.304e-05,
+   "upstream_inference_completions_cost": 0.0016752
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 1034,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 10.36,
+ "_attempt": 0
+}

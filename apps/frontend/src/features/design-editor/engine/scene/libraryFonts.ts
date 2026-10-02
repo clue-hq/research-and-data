@@ -63,6 +63,8 @@ interface LibraryFontFaceRef {
 export interface FontLibraryOptions {
   apiBaseUrl: string;
   fetchImpl?: typeof fetch;
+  /** Fence async font registration to the load/context that requested it. */
+  isCurrent?: () => boolean;
   /** Renderer-diagnostic sink for a referenced face that cannot load. */
   onFaceDiagnostic?: (diagnostic: Diagnostic) => void;
 }
@@ -213,13 +215,15 @@ const persistentFaceDiagnostics = new Map<string, Diagnostic>();
  * `loadKitFontFaces`). */
 export async function loadLibraryFontFaces(
   scene: unknown,
-  { apiBaseUrl, fetchImpl, onFaceDiagnostic }: FontLibraryOptions
+  { apiBaseUrl, fetchImpl, onFaceDiagnostic, isCurrent = () => true }: FontLibraryOptions
 ): Promise<boolean> {
+  if (!isCurrent()) return false;
   const library = await fetchFontLibrary({
     apiBaseUrl,
     fetchImpl,
     onFaceDiagnostic,
   });
+  if (!isCurrent()) return false;
   // Session-permanent registration failures are re-reported on EVERY run —
   // including the early returns below — the same way the manifest diagnostic
   // is, so the caller's replace-not-merge diagnostic state cannot silently
@@ -268,21 +272,19 @@ export async function loadLibraryFontFaces(
       }
     })
   );
+  if (!isCurrent()) return false;
   const loaded = faces.filter((face): face is NonNullable<typeof face> => face !== null);
   if (loaded.length === 0) {
     return false;
-  }
-  // Mark only successfully-fetched faces as loaded, so a face that failed its
-  // fetch is retried on the next scene that references it.
-  for (const face of loaded) {
-    loadedLibraryFaceKeys.add(face.key);
   }
   // DOM leg: register the same bytes into document.fonts under the declared
   // family so DOM-rendered surfaces (e.g. the Export Preview SVG, which
   // references the family by NAME) render library type instead of a default
   // serif. Purely local display of already-fetched bytes; failures are
   // swallowed so the canvas leg is unaffected.
-  await registerLibraryFontFacesInDom(loaded, onFaceDiagnostic);
+  await registerLibraryFontFacesInDom(loaded, onFaceDiagnostic, isCurrent);
+  if (!isCurrent()) return false;
+  for (const face of loaded) loadedLibraryFaceKeys.add(face.key);
   try {
     return registerKitFontFaces(loaded);
   } catch (error) {
@@ -323,7 +325,8 @@ export function resetFontLibraryForTests(): void {
  * FontFace/document.fonts are unavailable (jsdom/tests). */
 async function registerLibraryFontFacesInDom(
   faces: { key: string; family: string; bytes: ArrayBuffer; weight?: number; style?: string }[],
-  onFaceDiagnostic?: (diagnostic: Diagnostic) => void
+  onFaceDiagnostic?: (diagnostic: Diagnostic) => void,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
     return;
@@ -333,7 +336,7 @@ async function registerLibraryFontFacesInDom(
       if (registeredDomFaceKeys.has(face.key)) {
         return;
       }
-      registeredDomFaceKeys.add(face.key);
+      if (!isCurrent()) return;
       try {
         // A7b (D5): pass the weight/style descriptors so italic and upright
         // faces of one family register as distinct DOM faces instead of
@@ -347,13 +350,15 @@ async function registerLibraryFontFacesInDom(
           fontFaceDescriptors({ weight: meta.weight, style: meta.italic ? "italic" : "normal" })
         );
         await fontFace.load();
+        if (!isCurrent() || registeredDomFaceKeys.has(face.key)) return;
         document.fonts.add(fontFace);
+        registeredDomFaceKeys.add(face.key);
       } catch (error) {
         // A DOM font registration failure must not affect the canvas leg. The
         // face never re-enters this function (its fetch succeeded, so it is in
         // `loadedLibraryFaceKeys`), making the failure session-permanent —
         // persist the diagnostic under its own leg-scoped key.
-        registeredDomFaceKeys.delete(face.key);
+        if (!isCurrent()) return;
         const diagnostic = libraryDomFontFaceDiagnostic(
           face,
           error instanceof Error ? error.message : "registration failed"

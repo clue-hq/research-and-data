@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Final
 
 from pydantic import TypeAdapter
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_core import (
@@ -29,6 +32,10 @@ from clue_research.durable.provider_spend import (
     ProviderSpendGuardError,
     require_provider_spend_capacity,
 )
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20).
+_SITE_GAP_RESERVATION: Final = "sumble_account_gap_reservation"
 
 
 class AccountGapRepositoryError(RuntimeError):
@@ -45,6 +52,46 @@ class AccountGapReplayConflict(AccountGapRepositoryError):
 
 class AccountGapBudgetExceeded(AccountGapRepositoryError):
     pass
+
+
+class AccountGapFieldWindowConflict(AccountGapRepositoryError):
+    """This account's field was already acquired by another operation in the same window.
+
+    The S1 ``account_gap_field_no_overlap`` trigger is the anti-double-spend authority: one
+    ``(workspace, account, field)`` may be bought once per observation window, and the window is
+    per *project run*, not per job, deliberately. Callers pre-check
+    :func:`account_gap_window_field_owners` and refuse before compiling anything, so reaching
+    this class means two creates raced past that read — and it is still a statement about the
+    *request* ("that field is already bought; read the operation that owns it"), never about
+    money or truth. It is therefore typed and model-repairable rather than a raw ``DBAPIError``
+    escaping as a job-killing ``execution_failed``, which is exactly what live job ``3cc0a4f2``
+    did on 2026-08-20.
+    """
+
+    def __init__(self, message: str, *, fields: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.fields = fields
+
+
+#: The exact ``RAISE EXCEPTION`` text of ``account_gap_reject_overlapping_field`` (migration
+#: ``bd0b7e62a2b4``). Matched verbatim, together with the plpgsql ``raise_exception`` SQLSTATE, so
+#: the conversion below stays narrow: every other database error on the same statement — an
+#: integrity violation, a lineage mismatch, unknown spend — must keep propagating and suspending.
+_FIELD_WINDOW_ACQUIRED_MESSAGE: Final = (
+    "account-gap field already acquired in this observation window"
+)
+_RAISE_EXCEPTION_SQLSTATE: Final = "P0001"
+
+
+def _is_field_window_conflict(error: DBAPIError) -> bool:
+    original = error.orig
+    if original is None:
+        return False
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    if sqlstate is None:
+        cause = getattr(original, "__cause__", None)
+        sqlstate = getattr(cause, "sqlstate", None)
+    return sqlstate == _RAISE_EXCEPTION_SQLSTATE and _FIELD_WINDOW_ACQUIRED_MESSAGE in str(original)
 
 
 _REQUEST_ADAPTER = TypeAdapter(AccountGapRequest)
@@ -161,6 +208,53 @@ async def find_account_gap_operation_for_fields(
     return matches[0] if matches else None
 
 
+async def account_gap_window_field_owners(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    account_id: object,
+    observation_window: str,
+    field_keys: Sequence[str],
+) -> tuple[tuple[str, ...], ...]:
+    """The exact field set of every operation in this window that owns a requested field.
+
+    The pre-check in front of the ``account_gap_field_no_overlap`` trigger. The trigger stays the
+    authority (this read can be raced); it exists so the ordinary, entirely expected case — a
+    later job in the same project run asking again for a field an earlier job already bought —
+    is refused as a plain, zero-state request refusal instead of a raw database error.
+
+    It returns the owning operations' **whole** field sets, not just the overlap, because the
+    caller's refusal has to name them: re-asking an owning set *exactly* is what
+    :func:`find_account_gap_operation_for_fields` rejoins and replays zero-spend, and that replay
+    is the only way a later job makes an already-bought pair terminal for its own coverage. A
+    refusal that named only the overlap left the live agent (job ``3cc0a4f2``) with no discoverable
+    legal move: it re-read state, tried subsets, and wedged.
+    """
+
+    requested = set(field_keys)
+    if not requested:
+        return ()
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT result.operation_id, result.field_key FROM account_gap_field_result result "
+                "JOIN account_gap_operation op ON op.id = result.operation_id "
+                "WHERE result.workspace_id=:workspace_id AND result.account_id=:account_id "
+                "AND op.observation_window=:window"
+            ),
+            {
+                "workspace_id": workspace_id,
+                "account_id": account_id,
+                "window": observation_window,
+            },
+        )
+    ).all()
+    owned: dict[object, set[str]] = {}
+    for operation_id, field_key in rows:
+        owned.setdefault(operation_id, set()).add(field_key)
+    return tuple(sorted(tuple(sorted(fields)) for fields in owned.values() if fields & requested))
+
+
 async def get_account_gap_operation(
     conn: AsyncConnection,
     *,
@@ -202,17 +296,50 @@ async def reserve_account_gap_operation(
 ) -> tuple[AccountGapOperation, bool]:
     """Reserve one bounded account-gap enrichment operation.
 
-    ``enforce_budget`` is the FI pilot budget-controls switch; it gates only the project-run
-    money check. This operation's own reserved-vs-cap invariants are consistency guards on
-    its immutable plan, not spend-vs-budget stops, so they hold in both modes.
+    ``enforce_budget`` is the FI pilot budget-controls switch. It gates the project-run money check
+    **and** — since the 2026-08-20 ruling that our own spend caps are record-only in the pilot
+    posture — this operation's three reserved-vs-cap comparisons. Each one is still computed and
+    announced (:mod:`clue_research.durable.spend_posture`); only the refusal goes inert. The
+    ledger's own invariants (``charged <= reserved``, the CHECKs) are untouched in both modes: an
+    operation that may be charged more reserves more, it does not compare less.
     """
 
     request = operation.request
-    if operation.provider_units_reserved > Decimal(request.provider_credit_cap):
+    if operation.provider_units_reserved > Decimal(
+        request.provider_credit_cap
+    ) and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_RESERVATION,
+        reason="reserved_units_above_cap",
+        amounts={
+            "provider_units_reserved": operation.provider_units_reserved,
+            "provider_credit_cap": request.provider_credit_cap,
+        },
+    ):
         raise AccountGapBudgetExceeded("account-gap provider cap exceeded")
-    if operation.cost_cents_reserved > Decimal(request.money_budget_cap_cents):
+    if operation.cost_cents_reserved > Decimal(
+        request.money_budget_cap_cents
+    ) and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_RESERVATION,
+        reason="reserved_cost_above_cap",
+        amounts={
+            "cost_cents_reserved": operation.cost_cents_reserved,
+            "money_budget_cap_cents": request.money_budget_cap_cents,
+        },
+    ):
         raise AccountGapBudgetExceeded("account-gap money cap exceeded")
-    if request.expected_value_credits < operation.provider_units_reserved:
+    if request.expected_value_credits < operation.provider_units_reserved and (
+        cap_refusal_is_enforced(
+            enforce_budget,
+            site=_SITE_GAP_RESERVATION,
+            reason="value_below_reserved_units",
+            amounts={
+                "expected_value_credits": request.expected_value_credits,
+                "provider_units_reserved": operation.provider_units_reserved,
+            },
+        )
+    ):
         raise AccountGapBudgetExceeded(
             "account-gap expected value does not justify the bounded credit reservation"
         )
@@ -329,25 +456,40 @@ async def reserve_account_gap_operation(
             },
         )
     for plan in request.fields:
-        await conn.execute(
-            text(
-                "INSERT INTO account_gap_field_result (operation_id, workspace_id, account_id, "
-                "field_key, source_key, selection_reason, expected_value_credits, basis_claim_ids, "
-                "state, reason_code) VALUES (:operation_id, :workspace_id, :account_id, "
-                ":field_key, :source_key, :reason, :expected, CAST(:basis AS jsonb), 'pending', "
-                "'awaiting_sumble_snapshot')"
-            ),
-            {
-                "operation_id": stored.operation_id,
-                "workspace_id": request.workspace_id,
-                "account_id": request.account_id,
-                "field_key": str(plan.field_key),
-                "source_key": plan.source_key,
-                "reason": plan.reason.value,
-                "expected": plan.expected_value_credits,
-                "basis": serialize_value_json([str(value) for value in plan.basis_claim_ids]),
-            },
-        )
+        try:
+            await conn.execute(
+                text(
+                    "INSERT INTO account_gap_field_result (operation_id, workspace_id, "
+                    "account_id, field_key, source_key, selection_reason, expected_value_credits, "
+                    "basis_claim_ids, state, reason_code) VALUES (:operation_id, :workspace_id, "
+                    ":account_id, :field_key, :source_key, :reason, :expected, "
+                    "CAST(:basis AS jsonb), 'pending', 'awaiting_sumble_snapshot')"
+                ),
+                {
+                    "operation_id": stored.operation_id,
+                    "workspace_id": request.workspace_id,
+                    "account_id": request.account_id,
+                    "field_key": str(plan.field_key),
+                    "source_key": plan.source_key,
+                    "reason": plan.reason.value,
+                    "expected": plan.expected_value_credits,
+                    "basis": serialize_value_json([str(value) for value in plan.basis_claim_ids]),
+                },
+            )
+        except DBAPIError as error:
+            # Narrow on purpose: only ``account_gap_field_no_overlap``'s own raise becomes the
+            # typed, model-repairable conflict. Anything else — a lineage mismatch, an integrity
+            # violation — keeps propagating, because that boundary is what stops a real
+            # money-or-truth failure from being talked past as an ordinary refused turn. The
+            # caller owns the transaction, so raising here rolls the whole reservation back:
+            # zero operation row, zero snapshots, zero spend.
+            if not _is_field_window_conflict(error):
+                raise
+            raise AccountGapFieldWindowConflict(
+                f"{plan.field_key} was already acquired for this account in observation window "
+                f"{request.observation_window}",
+                fields=(str(plan.field_key),),
+            ) from error
     return stored, True
 
 
@@ -771,9 +913,11 @@ def terminal_now() -> datetime:
 
 __all__ = [
     "AccountGapBudgetExceeded",
+    "AccountGapFieldWindowConflict",
     "AccountGapNotFound",
     "AccountGapReplayConflict",
     "AccountGapRepositoryError",
+    "account_gap_window_field_owners",
     "claim_account_gap_operation",
     "claim_account_gap_snapshot",
     "find_account_gap_operation",

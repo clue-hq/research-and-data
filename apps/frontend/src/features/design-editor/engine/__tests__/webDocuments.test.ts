@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "./vitest-shim";
 
 import {
+  addPageOp,
   buildInsertCustomComponentOp,
   buildInsertNodeOp,
   buildWebRichTextVariableCatalog,
@@ -25,9 +26,12 @@ import {
   planCanvasNodeMove,
   planCanvasNodeResize,
   publishWebDocument,
+  removePageOp,
   resumeWebBatch,
   rollbackWebPublish,
+  routeIsValid,
   saveWebTemplate,
+  setPageMetaOp,
   setSlotKeyOp,
   slotKeyParts,
   startWebTurn,
@@ -771,6 +775,9 @@ describe("fetchWebPublishInfo", () => {
         published: true,
         slug: "acme",
         url: "/p/acme",
+        custom_url: null,
+        public_origin: "https://acme.pages.test",
+        custom_origin: null,
         doc_version: 7,
         status: "published",
         previous_available: true,
@@ -789,6 +796,9 @@ describe("fetchWebPublishInfo", () => {
       published: true,
       slug: "acme",
       url: "/p/acme",
+      customUrl: null,
+      publicOrigin: "https://acme.pages.test",
+      customOrigin: null,
       docVersion: 7,
       status: "published",
       previousAvailable: true,
@@ -796,7 +806,75 @@ describe("fetchWebPublishInfo", () => {
       publishId: "webpub_abc",
       manifestDigest: "manifest-abc",
       packageDigest: "package-abc",
-      htmlDigest: "html-abc"
+      htmlDigest: "html-abc",
+      pages: [],
+      pageUrls: {},
+      customPageUrls: {}
+    });
+  });
+
+  it("maps the custom hostname's url and page urls", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        published: true,
+        slug: "acme",
+        url: "https://acme.pages.test/acme",
+        custom_url: "https://go.acme.com/acme",
+        public_origin: "https://acme.pages.test",
+        custom_origin: "https://go.acme.com",
+        status: "active",
+        page_urls: { "/": "https://acme.pages.test/acme" },
+        custom_page_urls: {
+          "/": "https://go.acme.com/acme",
+          "/pricing": "https://go.acme.com/acme/pricing",
+          "/broken": 7
+        }
+      })
+    );
+    const info = await fetchWebPublishInfo(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123"
+    );
+    expect(info.customUrl).toBe("https://go.acme.com/acme");
+    expect(info.customOrigin).toBe("https://go.acme.com");
+    // The non-string entry is dropped, exactly as for `page_urls`.
+    expect(info.customPageUrls).toEqual({
+      "/": "https://go.acme.com/acme",
+      "/pricing": "https://go.acme.com/acme/pricing"
+    });
+  });
+
+  it("maps the F5 route index and its absolute page urls", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        published: true,
+        slug: "acme",
+        url: "https://sites.example/w/ws_1/p/acme",
+        status: "active",
+        previous_available: false,
+        pages: [
+          { route: "/", page_id: "page_home", html_digest: "aaa" },
+          { route: "/pricing", page_id: "page_pricing", html_digest: "bbb" },
+          "not-a-page"
+        ],
+        page_urls: {
+          "/": "https://sites.example/w/ws_1/p/acme",
+          "/pricing": "https://sites.example/w/ws_1/p/acme/pricing",
+          "/broken": 7
+        }
+      })
+    );
+    const info = await fetchWebPublishInfo(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123"
+    );
+    expect(info.pages).toEqual([
+      { route: "/", pageId: "page_home", htmlDigest: "aaa" },
+      { route: "/pricing", pageId: "page_pricing", htmlDigest: "bbb" }
+    ]);
+    expect(info.pageUrls).toEqual({
+      "/": "https://sites.example/w/ws_1/p/acme",
+      "/pricing": "https://sites.example/w/ws_1/p/acme/pricing"
     });
   });
 
@@ -817,6 +895,9 @@ describe("publishWebDocument", () => {
         schema_version: 3,
         slug: "acme",
         url: "/p/acme",
+        custom_url: null,
+        public_origin: "https://acme.pages.test",
+        custom_origin: null,
         doc_version: 2,
         runtime_version: 2,
         previous_available: false,
@@ -835,18 +916,86 @@ describe("publishWebDocument", () => {
       schemaVersion: 3,
       slug: "acme",
       url: "/p/acme",
+      customUrl: null,
+      publicOrigin: "https://acme.pages.test",
+      customOrigin: null,
       docVersion: 2,
       runtimeVersion: "2",
       previousAvailable: false,
       publishId: "webpub_abc",
       manifestDigest: "manifest-abc",
       packageDigest: "package-abc",
-      htmlDigest: "html-abc"
+      htmlDigest: "html-abc",
+      routes: [],
+      // A response carrying neither `routes` nor `page_urls` (a server older
+      // than F5) maps to empty for both — the caller falls back to joining.
+      pageUrls: {},
+      customPageUrls: {}
     });
     const [url, init] = fetchImpl.mock.calls[0];
     expect(String(url)).toBe("http://localhost:8002/documents/doc_abc123/web/publish");
     expect(init?.method).toBe("POST");
     expect(JSON.parse(String(init?.body))).toEqual({ slug: "acme" });
+  });
+
+  it("reads the absolute address the server gives every route", async () => {
+    // F5 task 14: once a workspace handle and a host suffix exist, the site is
+    // served from an origin the client cannot derive — so the publish response
+    // carries the addresses and this parses them rather than rebuilding them.
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        slug: "launch",
+        url: "https://acme.pages.cluehq.ai/launch",
+        routes: ["/", "/pricing"],
+        page_urls: {
+          "/": "https://acme.pages.cluehq.ai/launch",
+          "/pricing": "https://acme.pages.cluehq.ai/launch/pricing",
+          "/bad": 7
+        }
+      })
+    );
+    const result = await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "launch"
+    );
+    // The non-string entry is dropped, not coerced into a URL nobody can open.
+    expect(result.pageUrls).toEqual({
+      "/": "https://acme.pages.cluehq.ai/launch",
+      "/pricing": "https://acme.pages.cluehq.ai/launch/pricing"
+    });
+    expect(result.customPageUrls).toEqual({});
+  });
+
+  it("reads the custom hostname's addresses off the publish response", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, {
+        slug: "launch",
+        url: "https://acme.pages.cluehq.ai/launch",
+        custom_url: "https://go.acme.com/launch",
+        custom_origin: "https://go.acme.com",
+        routes: ["/", "/pricing"],
+        page_urls: {
+          "/": "https://acme.pages.cluehq.ai/launch",
+          "/pricing": "https://acme.pages.cluehq.ai/launch/pricing"
+        },
+        custom_page_urls: {
+          "/": "https://go.acme.com/launch",
+          "/pricing": "https://go.acme.com/launch/pricing"
+        }
+      })
+    );
+    const result = await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "launch"
+    );
+    expect(result.customUrl).toBe("https://go.acme.com/launch");
+    expect(result.customOrigin).toBe("https://go.acme.com");
+    expect(result.customPageUrls).toEqual({
+      "/": "https://go.acme.com/launch",
+      "/pricing": "https://go.acme.com/launch/pricing"
+    });
   });
 
   it("omits the slug from the body when none is passed", async () => {
@@ -855,6 +1004,33 @@ describe("publishWebDocument", () => {
       .mockResolvedValue(jsonResponse(200, { slug: "acme", url: "/p/acme" }));
     await publishWebDocument({ apiBaseUrl: "http://localhost:8002", fetchImpl }, "doc_abc123");
     expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({});
+  });
+
+  it("sends noindex only when the caller asks for it, and maps the routes", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(200, { slug: "acme", url: "/p/acme", routes: ["/", "/pricing", 3] })
+    );
+    const result = await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl },
+      "doc_abc123",
+      "acme",
+      { noindex: true }
+    );
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))).toEqual({
+      slug: "acme",
+      noindex: true
+    });
+    expect(result.routes).toEqual(["/", "/pricing"]);
+
+    const withoutOption = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200, { slug: "acme", url: "/p/acme" }));
+    await publishWebDocument(
+      { apiBaseUrl: "http://localhost:8002", fetchImpl: withoutOption },
+      "doc_abc123",
+      "acme"
+    );
+    expect(JSON.parse(String(withoutOption.mock.calls[0][1]?.body))).toEqual({ slug: "acme" });
   });
 
   it("surfaces the 422 bad-slug message", async () => {
@@ -1368,5 +1544,98 @@ describe("resumeWebBatch", () => {
     const [url, init] = fetchImpl.mock.calls[0];
     expect(String(url)).toBe("http://localhost:8002/web/batches/b/resume");
     expect(init?.method).toBe("POST");
+  });
+});
+
+describe("page operation builders", () => {
+  it("setPageMetaOp emits only the keys it was given", () => {
+    expect(setPageMetaOp("home", { route: "/x" })).toEqual({
+      kind: "set_page_meta",
+      page_id: "home",
+      route: "/x"
+    });
+    // The wire payload must carry no `name` key at all — a `name: undefined`
+    // property would still be an own key, and Rust's Option<String> field is
+    // skip_serializing_if = "Option::is_none".
+    const op = setPageMetaOp("home", { route: "/x" });
+    expect(Object.keys(op).includes("name")).toBe(false);
+    expect(JSON.stringify(op)).toBe('{"kind":"set_page_meta","page_id":"home","route":"/x"}');
+  });
+
+  it("setPageMetaOp carries a name-only edit, and both together", () => {
+    expect(setPageMetaOp("home", { name: "Home" })).toEqual({
+      kind: "set_page_meta",
+      page_id: "home",
+      name: "Home"
+    });
+    expect(Object.keys(setPageMetaOp("home", { name: "Home" })).includes("route")).toBe(false);
+    expect(setPageMetaOp("home", { name: "Home", route: "/" })).toEqual({
+      kind: "set_page_meta",
+      page_id: "home",
+      name: "Home",
+      route: "/"
+    });
+    // No meta at all is still a well-formed (no-op) payload with no null keys.
+    expect(setPageMetaOp("home", {})).toEqual({ kind: "set_page_meta", page_id: "home" });
+  });
+
+  it("addPageOp builds an empty page whose root container is in its nodes", () => {
+    const op = addPageOp({ id: "pricing", name: "Pricing", route: "/pricing" });
+    expect(op.kind).toBe("add_page");
+    if (op.kind !== "add_page") {
+      throw new Error("expected an add_page op");
+    }
+    expect(op.page.id).toBe("pricing");
+    expect(op.page.name).toBe("Pricing");
+    expect(op.page.route).toBe("/pricing");
+    expect(op.page.root).toBe("root_pricing");
+    expect(op.page.nodes.root_pricing).toEqual({
+      id: "root_pricing",
+      kind: "container",
+      classes: "",
+      children: []
+    });
+    // `index` omitted means "append" to the engine; the key must be absent.
+    expect(Object.keys(op).includes("index")).toBe(false);
+  });
+
+  it("addPageOp carries an explicit index when one is given", () => {
+    const op = addPageOp({ id: "about", name: "About", route: "/about" }, 0);
+    if (op.kind !== "add_page") {
+      throw new Error("expected an add_page op");
+    }
+    expect(op.index).toBe(0);
+  });
+
+  it("removePageOp names the page", () => {
+    expect(removePageOp("pricing")).toEqual({ kind: "remove_page", page_id: "pricing" });
+  });
+});
+
+describe("routeIsValid", () => {
+  it("accepts the engine's good routes", () => {
+    for (const good of ["/", "/pricing", "/pricing/enterprise-2026"]) {
+      expect(routeIsValid(good)).toBe(true);
+    }
+  });
+
+  it("refuses the engine's bad routes", () => {
+    const bad = [
+      "",
+      "pricing",
+      "/Pricing",
+      "/pricing/",
+      "//a",
+      "/a b",
+      "/a_b",
+      "/manifest.json",
+      "/p-assets/x",
+      "/asset-store/x",
+      "/x/manifest.json",
+      `/${"a".repeat(128)}`
+    ];
+    for (const route of bad) {
+      expect(routeIsValid(route)).toBe(false);
+    }
   });
 });

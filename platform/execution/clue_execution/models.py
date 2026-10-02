@@ -57,6 +57,7 @@ class ExecutionEventType(StrEnum):
     NODE_BLOCKED = "node.blocked"
     NODE_COMPLETED = "node.completed"
     NODE_FAILED = "node.failed"
+    NODE_RECOVERED = "node.recovered"
     NODE_ABANDONED = "node.abandoned"
     GATE_OPENED = "gate.opened"
     GATE_DECIDED = "gate.decided"

@@ -1,0 +1,34 @@
+.viewport {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  flex: 0 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.track {
+  display: flex;
+  width: max-content;
+  gap: var(--marquee-gap);
+}
+
+.track > span {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .viewport[data-overflow="true"]:hover .track,
+  :global(button:focus-visible) > .viewport[data-overflow="true"] .track,
+  :global(a:focus-visible) > .viewport[data-overflow="true"] .track {
+    animation: label-rollover var(--marquee-duration) linear 400ms 1;
+  }
+}
+
+@keyframes label-rollover {
+  to {
+    /* The duplicate reaches the original's starting point. With no fill mode,
+       the original then takes its place without a reverse scroll or a jump. */
+    transform: translateX(calc(-1 * var(--marquee-distance)));
+  }
+}

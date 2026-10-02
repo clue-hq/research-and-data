@@ -1,0 +1,264 @@
+[
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "gi.ehr_vendor",
+    "value_json": "Digestive Healthcare of Georgia, P.C. uses Epic as its electronic health record, with Piedmont\u2019s MyChart patient portal. Public evidence also indicates an Epic Community Connect arrangement involving Piedmont; the public pages do not establish whether the instance is hosted directly by Piedmont or otherwise. No evidence was found that this practice uses gGastro or Modernizing Medicine.",
+    "evidence_span": "\u201cWith the change to Epic, our patients have access to a new patient portal ... MyChart.\u201d (DHC website) \u201cDHC may make your PHI available electronically through our EPIC electronic health record ... To opt out, you will need to submit a written request to the Practice that will be forwarded to Piedmont Healthcare...\u201d (DHC Notice of Privacy Practices) \u201cServed as practice team leader/super user during",
+    "source_url": "https://digestivehealthcare.net/patient-information/about-mychart/; https://digestivehealthcare.net/wp-content/uploads/2026/02/Current-DHC-Notice-Of-Privacy-Practices.pdf; https://linkedin.com/in/smithtl68",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "account.ownership_structure",
+    "value_json": "The exact account, Digestive Healthcare of Georgia, P.C., is publicly described as physician-owned and independent, not as a hospital-owned or private-equity-owned practice. Its legal form is a professional corporation. I found no public evidence tying this exact practice to a PE firm or MSO. Do not conflate it with United Digestive: United Digestive is a separate Atlanta GI platform whose 2023 announcement explicitly describes Kohlberg & Company\u2019s investment and Frazier Healthcare Partners\u2019 prior ownership involvement. The available public evidence does not identify the individual physician owners.",
+    "evidence_span": "DHC CEO Erika Noll\u2019s public profile describes it as \u201ca physician-owned independent GI practice.\u201d The EIN listing identifies the entity as \u201cDIGESTIVE HEALTHCARE OF GEORGIA, P.C.\u201d and classifies it as \u201cOffices of Physicians.\u201d A business directory labels the exact company \u201cPrivately Funded,\u201d but does not establish PE ownership. By contrast, the United Digestive announcement says Kohlberg made \u201ca grow",
+    "source_url": "https://linkedin.com/in/erika-a-noll; http://www.w9ein.com/FEIN/company_overview.php/EIN/582352829/CompanyName/DIGESTIVE+HEALTHCARE+OF+GEORGIA%2C+P.C.; https://projects.constructconnect.com/companies/2264016-digestive-healthcare-of-georgia&find_loc=GA-30309; https://www.businesswire.com/news/home/20230330005698/en/United-Digestive-Announces-Partnership-With-Kohlberg-Company",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "account.locations",
+    "value_json": "The practice has 23 board-certified physicians and 8 clinic locations. Clinic locations identified include Atlanta, Fayetteville, Jasper, Newnan, Woodstock, Cascade, Canton, Marietta, and Ellijay.",
+    "evidence_span": "I currently serve as Chief Executive Officer of Digestive Healthcare of Georgia, a physician-owned independent GI practice with 23 board-certified physicians, 8 clinic locations, and 4 endoscopy centers across metro Atlanta and North Georgia.",
+    "source_url": "https://linkedin.com/in/erika-a-noll",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "gi.owned_endoscopy_centers",
+    "value_json": "Digestive Healthcare of Georgia operates 4 endoscopy centers across metro Atlanta and North Georgia. The Digestive Healthcare of Georgia Endoscopy Center in Atlanta is co-owned and operated by the practice's physicians.",
+    "evidence_span": "I currently serve as Chief Executive Officer of Digestive Healthcare of Georgia, a physician-owned independent GI practice with 23 board-certified physicians, 8 clinic locations, and 4 endoscopy centers across metro Atlanta and North Georgia.",
+    "source_url": "https://linkedin.com/in/erika-a-noll",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "gi.prior_auth_workload",
+    "value_json": "The practice maintains a precertification department that assists in obtaining prior authorization for medically necessary outpatient services. They advise patients that their managed care plan may require this, and direct questions about precertification to their business office at 404-603-3543.",
+    "evidence_span": "Our precertification department will assist in obtaining prior authorization for outpatient services that are considered medically necessary.",
+    "source_url": "https://digestivehealthcare.net/wp-content/uploads/2024/08/New-Patient-Packet-With-Logo.pdf",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "gi.referral_intake_mode",
+    "value_json": "The practice provides an online Referring Physician Appointment Request form on their website. No specific fax number is listed for intake or general referrals on that form or the primary locations page.",
+    "evidence_span": "Referring Physician Appointment Request",
+    "source_url": "https://digestivehealthcare.net/referring-physician-appointment-request/",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "account.timing_signals",
+    "value_json": "CEO transition: Gaye Pennington retired in June 2026.",
+    "evidence_span": "As we close out the month of June we want to celebrate the remarkable 26-year career of our CEO Gaye Pennington, who is embarking on a well- deserved retirement from Digestive Healthcare of Georgia.",
+    "source_url": "https://www.facebook.com/DigestiveHealthcareOfGeorgia/videos/-as-we-close-out-the-month-of-june-we-want-to-celebrate-the-remarkable-26-year-c/997236103080859/",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "committee.member",
+    "value_json": {
+      "name": "Erika Noll",
+      "title": "Chief Executive Officer"
+    },
+    "evidence_span": "",
+    "source_url": "https://linkedin.com/in/erika-a-noll",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "committee.member",
+    "value_json": {
+      "name": "Gaye Pennington",
+      "title": "Former Chief Executive Officer (retired June 2026)"
+    },
+    "evidence_span": "",
+    "source_url": "https://www.facebook.com/DigestiveHealthcareOfGeorgia/videos/-as-we-close-out-the-month-of-june-we-want-to-celebrate-the-remarkable-26-year-c/997236103080859/",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "committee.member",
+    "value_json": {
+      "name": "Tracy Lynn Smith",
+      "title": "Privacy Officer"
+    },
+    "evidence_span": "",
+    "source_url": "https://digestivehealthcare.net/wp-content/uploads/2026/02/Current-DHC-Notice-Of-Privacy-Practices.pdf",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "account:digestive-healthcare-of-georgia",
+    "field_key": "committee.member",
+    "value_json": {
+      "name": "Gaye Pennington",
+      "title": "Practice Administrator (historical)"
+    },
+    "evidence_span": "",
+    "source_url": "https://digestivehealthcare.net/terms-of-use/",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private"
+  },
+  {
+    "entity": "contact:gaye-pennington",
+    "field_key": "contact.identity_confirmation",
+    "value_json": "Gaye Pennington served as CEO/Executive Director of Digestive Healthcare of Georgia, P.C.",
+    "evidence_span": "celebrate the remarkable 26-year career of our beloved CEO Gaye Pennington, who is embarking on a well- deserved retirement",
+    "source_url": "https://linkedin.com/in/gaye-pennington-35750887",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private",
+    "identity_binding": "strong",
+    "use_class": "professional-public"
+  },
+  {
+    "entity": "contact:gaye-pennington",
+    "field_key": "contact.facet.career_history",
+    "value_json": "Chief Executive Officer (Executive Director) at Digestive Healthcare of Georgia (2000\u20132026)",
+    "evidence_span": "celebrate the remarkable 26-year career of our beloved CEO Gaye Pennington",
+    "source_url": "https://linkedin.com/in/gaye-pennington-35750887",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private",
+    "identity_binding": "strong",
+    "use_class": "personal-public-non-sensitive"
+  },
+  {
+    "entity": "contact:gaye-pennington",
+    "field_key": "contact.facet.alma_mater",
+    "value_json": "Bachelor's Degree in Psychology from Kennesaw State University. Verbatim: 'Bachelor's Degree, Psychology at Kennesaw State University'",
+    "evidence_span": "Bachelor's Degree, Psychology at Kennesaw State University",
+    "source_url": "https://linkedin.com/in/gaye-pennington-35750887",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private",
+    "identity_binding": "strong",
+    "use_class": "personal-public-non-sensitive"
+  },
+  {
+    "entity": "contact:gaye-pennington",
+    "field_key": "contact.facet.alma_mater",
+    "value_json": "Master of Science in Health Care Administration from Central Michigan University. Verbatim: 'Masters of Science - Health Care Admimistration, Health/Health Care Administration/Management at Central Michigan University'",
+    "evidence_span": "Masters of Science - Health Care Admimistration, Health/Health Care Administration/Management at Central Michigan University",
+    "source_url": "https://linkedin.com/in/gaye-pennington-35750887",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private",
+    "identity_binding": "strong",
+    "use_class": "personal-public-non-sensitive"
+  },
+  {
+    "entity": "contact:gaye-pennington",
+    "field_key": "contact.facet.awards",
+    "value_json": "Digestive Healthcare of Georgia honored Gaye Pennington for 25 years of service. Verbatim: 'Today, we proudly honor our CEO, Gaye Pennington, for an incredible 25 years of dedicated service at Digestive Healthcare of Georgia.'",
+    "evidence_span": "Today, we proudly honor our CEO, Gaye Pennington, for an incredible 25 years of dedicated service at Digestive Healthcare of Georgia.",
+    "source_url": "https://www.instagram.com/p/DS8B0_NiCM4/",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private",
+    "identity_binding": "strong",
+    "use_class": "personal-public-non-sensitive"
+  },
+  {
+    "entity": "contact:gaye-pennington",
+    "field_key": "contact.facet.stated_interests",
+    "value_json": {
+      "category": "Alma Mater",
+      "fact": "Gaye Pennington holds a Bachelor's Degree in Psychology from Kennesaw State University and a Master of Science in Health Care Administration from Central Michigan University."
+    },
+    "evidence_span": "",
+    "source_url": "https://linkedin.com/in/gaye-pennington-35750887",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private",
+    "identity_binding": "strong",
+    "use_class": "personal-public-non-sensitive"
+  },
+  {
+    "entity": "contact:gaye-pennington",
+    "field_key": "contact.facet.stated_interests",
+    "value_json": {
+      "category": "Anniversary Celebration",
+      "fact": "In January 2026, Digestive Healthcare of Georgia celebrated Gaye Pennington's 25 years of service."
+    },
+    "evidence_span": "Today, we proudly honor our CEO, Gaye Pennington, for an incredible 25 years of dedicated service at Digestive Healthcare of Georgia.",
+    "source_url": "https://www.instagram.com/p/DS8B0_NiCM4/",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private",
+    "identity_binding": "strong",
+    "use_class": "personal-public-non-sensitive"
+  },
+  {
+    "entity": "contact:gaye-pennington",
+    "field_key": "contact.facet.openers",
+    "value_json": "It has been an incredible journey reaching your 25-year milestone with Digestive Healthcare of Georgia\u2014what an inspiring legacy of leadership you have built.",
+    "evidence_span": "",
+    "source_url": "https://www.instagram.com/p/DS8B0_NiCM4/",
+    "source_key": "exa_research",
+    "source_tier": 4,
+    "extraction_method": "llm_synthesis",
+    "verification_status": "unverified",
+    "reuse_scope": "tenant_private",
+    "identity_binding": "strong",
+    "use_class": "personal-public-non-sensitive"
+  }
+]

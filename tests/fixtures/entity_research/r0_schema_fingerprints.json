@@ -1,18 +1,18 @@
 {
-  "contract_version": "m8d-r0-v5",
+  "contract_version": "m8d-r0-v7",
   "sha256": {
     "EntityResearchAuthorityContract": "b6b1eaf3d10a3dc29cd780c17c7567d55955692d750958ad57ba69a558a211d6",
-    "EntityResearchJobAuthorization": "440d59958ed6445e2482bb15d8219f47a7f37f2c930461fcd0c436c87990cae8",
+    "EntityResearchJobAuthorization": "1037b3d18548997016d28f6d74f0ba36c6eb6365ea8c90cab2a67d37194d5960",
     "EntityResearchJobStatus": "38f3ba107bda52cb754c4e8fb1841d1db06fc04f956f85b81695d1edee9f7686",
-    "EntityResearchSelection": "64cb9553b57ce2156ad2558f8b3325ea30768fc13a6e7a33ab604e34282f82a8",
+    "EntityResearchSelection": "906d911cc9400ae3fae6720db99cabf1d2af8acf126a08696be577327aa4d45b",
     "FacetDelegationContract": "a29ef6c5af41ae4a2a79039b219c14243afa7699e719fd5eb06c9d2335a3cdbb",
     "FieldResearchSourcePlan": "00df02e257242456a0bd7193bbf52aaabbbb8dbf2505fad80f8483aff1dcdf90",
-    "GovernedResearchToolRequest": "22a3bd0212a83f89cd7eafd36df579b8e7e537bea7f5103774f872a29ae70377",
+    "GovernedResearchToolRequest": "4c1d712322ffd98615174e25585ea186523eb0764aeef30fb4aa1d8e2342005d",
     "ParallelToolExecutionContract": "86f4e74608324f0e7b0eab347abcabb2e834afa9f8fae7b4486dae58dd92bcd2",
     "PersistedResearchToolResult": "70563c598334cc605c83b7962c9bd361f3b63c8d7a0dafd28b1b952693e4aca8",
     "ProviderOperationCausation": "6344cf0a9e504fb0f6a83139948cee2c619eeb5433f0a7b47c0ed9489b23ebba",
     "ResearchFinalizationProposal": "6227d39808e0e4a66e207ff00c9ab2c935150267defc3084eef6129d423e5070",
     "ResearchFinalizationReceipt": "ddcc04f6dda3de53ccd7a271e7cb614499529756d06b0b7a1e0403572dcb728d",
-    "ResearchRunLifecycleContract": "96b94ef0b7098d1020554d2d89026b1fbccdd34ab6ba062035906ff9ecebd05f"
+    "ResearchRunLifecycleContract": "b0a08483e851d2d0e806d5dd6fd49e0ae3daef06b2ffa068b55a85bfe6f6a8c2"
   }
 }

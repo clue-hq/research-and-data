@@ -1,13 +1,19 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { useCallback } from "react";
+import { useArtifactRename } from "../hooks/use-artifact-rename";
 import {
   useEditorShellController,
   type EditorShellInitialState,
 } from "../hooks/use-editor-shell-controller";
+import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import { useDocumentAgentRun } from "@/features/design-editor/hooks/use-document-agent-run";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
 import { ArtifactStage } from "./artifact-stage";
+import { AssetLibraryPanel } from "./asset-library-panel";
 import { ImageInspector } from "./image-inspector";
 import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
@@ -79,8 +85,25 @@ export function EditorSurface({
     documentIds,
     enabled: controller.artifactKind === "web",
   });
+  // The recorded follow-up, now built (2026-09-03): the lock on this route comes
+  // from the DOCUMENT-scoped agent-busy read (`useDocumentAgentRun` polling
+  // `GET /documents/{id}/agent-run`), which answers from the same predicate the
+  // manual-write routes' 409 uses — ruling R1 of the standalone-artifact-lock
+  // plan, so no thread-shaped source is invented for a route with no turn stream.
+  const sceneDocumentId =
+    controller.artifactKind === "ad" && controller.activeArtifactId
+      ? (documentIds?.[controller.activeArtifactId] ?? null)
+      : null;
+  const agentRun = useDocumentAgentRun({
+    documentId: sceneDocumentId,
+    enabled: controller.artifactKind === "ad",
+  });
+  const sceneLocked = agentRun.active;
   const sceneSession = useSceneEditingSession({
     activeArtifactId: controller.activeArtifactId,
+    // Task 4 (scene live-streaming rung A), closed here: the lock is the
+    // document-scoped agent-busy read above, not a turn stream this route lacks.
+    agentRunLocked: sceneLocked,
     documentIds,
     enabled: controller.artifactKind === "ad",
   });
@@ -88,6 +111,29 @@ export function EditorSurface({
   // — the canvas branch inside the stage picks the surface by kind.
   const activeDocumentId =
     session.activeDocumentId ?? sceneSession.activeDocumentId;
+
+  // The header's rename is a document write (the design API stores it and
+  // advances the version), so the tab takes the title the backend stored and
+  // both lanes reload through the SAME seam an inspector write uses. The page
+  // also fetches this route's gallery feed server-side, so `router.refresh()`
+  // is what re-reads it — without it the gallery card would keep the old name.
+  const router = useRouter();
+  const setArtifactTitleFor = controller.setArtifactTitleFor;
+  const reloadWebCanvas = session.onWriteReload;
+  const reloadSceneCanvas = sceneSession.onWriteReload;
+  const onArtifactRenamed = useCallback(
+    (artifactId: string, persisted: string) => {
+      setArtifactTitleFor(artifactId, persisted);
+      reloadWebCanvas();
+      reloadSceneCanvas();
+      router.refresh();
+    },
+    [reloadSceneCanvas, reloadWebCanvas, router, setArtifactTitleFor],
+  );
+  const renameArtifact = useArtifactRename({
+    documentIds,
+    onRenamed: onArtifactRenamed,
+  });
 
   // W2.3 (completing the W2 exit gate): while EDITING a real document, the
   // inspector docks beside the canvas — the dummy's own editing arrangement
@@ -152,12 +198,19 @@ export function EditorSurface({
               // belongs to selection changes alone. (Known, accepted drift:
               // an engine-snapped value — padding 7→6 — displays as typed
               // until the node is reselected.)
-              key={session.webSelection.selection?.node.id ?? "canvas"}
+              // The canvas key carries the theme's page surface, so the one time the
+                // theme lands after mount the canvas inspector re-seeds from it
+                // (the web lane hydrates at mount, not live).
+                key={session.webSelection.selection?.node.id ?? `canvas:${session.canvasHydrated?.backgroundColor ?? ""}`}
               customComponentForm={session.customComponentForm}
               error={session.inspectorError}
               note={session.writes.note}
               addressing={session.addressing}
-              hydrated={session.webSelection.selection?.hydrated}
+              // R-A6 (slice 3): the human's own text edits inside the selected
+              // cloned band, each with its Clear (the session decides whether
+              // the selection owns a list at all).
+              cloneTextEdits={session.cloneTextEdits}
+              hydrated={session.webSelection.selection?.hydrated ?? session.canvasHydrated}
               layers={session.layerRows}
               // W5.1 (§5): the mapper's fallback flag — embeds (item 32) and
               // the interactive components (item 33) land on the container
@@ -166,6 +219,9 @@ export function EditorSurface({
               onReplaceImage={session.onReplaceImage}
               onSelectLayer={session.onSelectLayer}
               onSelectionChange={controller.selectInspectorElement}
+              // F5 task 19 (FLAGGED): the page/route controls, present only while
+              // no node is selected (the session decides).
+              pageSection={session.pageSection}
               richTextRange={session.richTextRange}
               selection={inspectorSelection}
               themeColors={session.themeColors}
@@ -178,18 +234,10 @@ export function EditorSurface({
           {/* AD2.7 (F2): the SAME dock the web branch above uses — same
               wrapper, same class, same grid column. Only the panel differs. */}
           <div className={styles.inspectorDock}>
-            {/* AD4.R-10 / GATE G-H: `inspectorDisabled` is deliberately NOT
-                passed here, so this route behaves exactly as it did. The ruled
-                in-flight gate reads the chat controller's `threadBusy`, and the
-                artifact route has no live turn stream to read — it is the
-                document open on its own, with no thread beside it. Its net
-                against an agent write landing under the user's hands stays the
-                D10 CAS reconciliation (the document version moves, the write is
-                refused, the panel reloads and says so — proven at T8). RECORDED
-                FOLLOW-UP: a DOCUMENT-scoped agent-busy signal (plausibly off the
-                run_event SSE, which this route already has a reason to watch)
-                would close the gap; inventing a second, thread-shaped source
-                here would not. */}
+            {/* AD4.R-10 / GATE G-H: the in-flight gate now holds on this route
+                too. Its source is the document-scoped agent-busy read polled
+                above (`useDocumentAgentRun`), not the chat controller's
+                `threadBusy` — ruling R1 of the standalone-artifact-lock plan. */}
             <ImageInspector
               // Keyed on the SELECTED NODE only, exactly as the web branch is.
               // Values need no remount to resynchronize — every bound field
@@ -199,10 +247,12 @@ export function EditorSurface({
               key={sceneSession.primaryNodeId ?? "canvas"}
               addressing={sceneSession.addressing}
               arrange={sceneSession.arrange}
+              assetLibrary={sceneSession.assetLibrary}
               error={sceneSession.inspectorError}
               fontOptions={sceneSession.fontOptions}
               hydrated={sceneSession.hydrated}
               imageAi={sceneSession.imageAi}
+              inspectorDisabled={sceneLocked}
               layers={sceneSession.layerRows}
               note={sceneSession.note}
               onReplaceImage={sceneSession.onReplaceImage}
@@ -221,15 +271,27 @@ export function EditorSurface({
         </div>
       ) : null}
       <ArtifactStage
+        annotations={session.canvasAnnotations}
         activeArtifactId={controller.activeArtifactId}
         activeDocumentId={activeDocumentId}
+        // F5 task 18: the header's page switcher and the canvas read ONE
+        // value — the web editing session's active page.
+        activePageId={session.activePageId}
+        onPageChange={session.setActivePageId}
+        pages={session.pages}
         artifacts={artifacts ?? []}
         canvasControlsRef={session.canvasControls}
-        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
+        canvasReloadToken={
+          session.reloadNonce + sceneSession.reloadNonce + agentRun.reloadNonce
+        }
         exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
         onRequestExportPreview={sceneSession.requestExportPreview}
         onSceneChange={sceneSession.onSceneChange}
+        // Clipboard Task 8, the artifact route's half: the same drop binding
+        // the chat surface passes, so a picture dragged onto the canvas lands
+        // the same way on both surfaces.
+        onSceneDropImageFiles={sceneSession.onSceneDropImageFiles}
         onSceneFitZoom={sceneSession.onFitZoom}
         onSceneGestureZoom={sceneSession.onGestureZoom}
         onSceneHistoryChange={sceneSession.onHistoryChange}
@@ -240,13 +302,15 @@ export function EditorSurface({
         onSceneSelect={sceneSession.onSelectCanvas}
         onSceneZoomChange={sceneSession.onZoomChange}
         sceneCanvasControlsRef={sceneSession.canvasControls}
-        // AD4.C / GATE G-H: `sceneGestureDisabled` is deliberately NOT passed
-        // here, for exactly the reason `inspectorDisabled` is not (above) — the
-        // ruled in-flight gate reads the chat controller's `threadBusy`, and
-        // this route has no live turn stream to read. Its net stays the D10 CAS
-        // reconciliation, and the recorded follow-up (a document-scoped
-        // agent-busy signal off the run_event SSE) would close this gap and
-        // that one together.
+        // AD4.C / GATE G-H: the canvas half of the same lock `inspectorDisabled`
+        // implements above, off the same fact — the document-scoped agent-busy
+        // read polled at the top of this component (ruling R1), not a turn
+        // stream this route does not have.
+        sceneGestureDisabled={sceneLocked}
+        onSceneLockedEdit={sceneSession.onLockedEdit}
+        // Rung C / §1.6: one document, one brand palette — the caret
+        // session's colour control offers exactly what the inspector's do.
+        scenePalette={sceneSession.palette}
         sceneSelectedNodeId={sceneSession.primaryNodeId}
         sceneZoomLabel={sceneSession.zoom}
         sceneZoomOverride={sceneSession.zoomOverride}
@@ -258,6 +322,7 @@ export function EditorSurface({
         onCanvasSelect={session.webSelection.onSelect}
         onCloseArtifact={controller.closeArtifact}
         onOpenGallery={controller.openGallery}
+        onCloneTextCommit={session.onCloneTextCommit}
         onRichTextCommit={session.onRichTextCommit}
         onRichTextSessionChange={session.onRichTextSessionChange}
         richTextBusy={session.writes.busy}
@@ -270,20 +335,40 @@ export function EditorSurface({
         onOpenGalleryArtifact={(artifact) =>
           controller.openArtifact({
             id: artifact.id,
-            kind: artifact.source.type === "website" ? "web" : "ad",
+            kind: artifact.source?.type === "website" ? "web" : "ad",
             title: artifact.title,
           })
         }
         onRenameArtifact={(title) => {
           if (controller.activeArtifactId) {
-            controller.setArtifactTitleFor(controller.activeArtifactId, title);
+            renameArtifact(controller.activeArtifactId, title);
           }
         }}
+        // The tab strip's rename of a NON-active tab is unchanged local state
+        // (it carries no document handle of its own here).
         onRenameArtifactFor={controller.setArtifactTitleFor}
         onToggleMaximized={controller.toggleArtifactMaximized}
         onTogglePanel={() => undefined}
         onToggleEditing={() => controller.setEditing(!controller.editing)}
+        // Task 4: the Edit affordance itself. Entering edit mode is refused
+        // while the lock holds — an editor whose every control is inert is not
+        // an editor — but LEAVING it never is, or a lock engaging mid-edit would
+        // trap the user in a dock they cannot close.
+        editDisabled={sceneLocked && !controller.editing}
+        editDisabledReason={AGENT_RUN_LOCK_NOTE}
         openArtifacts={controller.openArtifacts}
+        // Replace-image Task 6: the asset-library picker floats over the stage,
+        // rendered by the surface (the stage is pass-through chrome). The Task-4
+        // binding derives `isOpen` from the armed document, so switching
+        // artifacts closes it by construction.
+        overlay={
+          sceneSession.assetLibrary?.isOpen ? (
+            <AssetLibraryPanel
+              library={sceneSession.assetLibrary}
+              onUploadFile={sceneSession.onReplaceImage}
+            />
+          ) : null
+        }
         // AD3.3: one pair of history-row disables in the header, so the artifact
         // on screen picks the lane whose stacks they describe (the same kind
         // switch that gates the two sessions above).

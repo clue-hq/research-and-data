@@ -34,7 +34,9 @@ from fastapi.testclient import TestClient
 
 from lumen_api.main import create_app
 
-# The O4 exemptions, ratified at D2.5A (three) + D7's token-gated stream.
+# The O4 exemptions, ratified at D2.5A (three) + D7's token-gated stream. The O6b public
+# serving group was a fourth entry until custom-domain publishing S1 deleted those routes —
+# the page origin serves published pages, and this app has no public surface left.
 # Every entry names WHY it may answer a headerless request.
 ALLOWLIST: dict[Tuple[str, str], str] = {
     # Process-wide engine stamp, read by the editor's version handshake
@@ -44,14 +46,12 @@ ALLOWLIST: dict[Tuple[str, str], str] = {
     # srcdoc preview iframe cannot send a header; the unguessable sha256 is
     # the gate (ruling R-D4-7).
     ("GET", "/asset-store/{digest}"): "public content-addressed bytes",
-    # O6b public serving group: the tenant is named in the PATH, resolved
-    # fail-closed (unknown tenant 404s; existence never leaks).
-    ("GET", "/w/{workspace_id}/p-assets/{asset_name}"): "public publish serving (path tenant)",
-    ("GET", "/w/{workspace_id}/p/{slug}/manifest.json"): "public publish serving (path tenant)",
-    ("GET", "/w/{workspace_id}/p/{slug}"): "public publish serving (path tenant)",
     # D7 run-event stream: EventSource-style consumers cannot send headers;
     # authenticated by a single-use stream token whose MINT is header-gated.
     ("GET", "/agent/runs/{run_id}/events"): "single-use stream token carries tenancy",
+    # Liveness for Railway's health check, the uptime monitors and the CI boot smoke test
+    # (first deployment spec §9.5): answers before any workspace exists and touches no tenant state.
+    ("GET", "/healthz"): "process liveness, no tenant state",
 }
 
 _PARAM = re.compile(r"{[^}]+}")

@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatToolPart } from "./chat-parts";
 import {
-  activityStepLabel,
   profileDisplayName,
   toolPresentation,
 } from "./chat-tool-presentation";
@@ -108,6 +107,111 @@ test("profile synthesis names the proposal but withholds tenant and decision ids
   assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039|90f10d1e/);
 });
 
+test("ICP authoring and persona requests read as operator work, not tool names", () => {
+  const authoring = toolPresentation(
+    part("author_icp_document", {
+      reference_values: {
+        icp_key: "independent_multisite_neurosurgery_spine_practices",
+        icp_version: 2,
+        workspace_id: WORKSPACE_ID,
+        document_id: GATE_ID,
+      },
+    }),
+  );
+  assert.equal(authoring.label, "Draft an ideal customer profile");
+  assert.deepEqual(authoring.rows, []);
+  assert.doesNotMatch(visibleText(authoring), /ws_fixture|6fae9039/);
+
+  const personas = toolPresentation(
+    part("request_persona_synthesis", {
+      reference_values: { run_id: GATE_ID, kind: "personas", status: "queued" },
+    }),
+  );
+  assert.equal(personas.label, "Write the buyer personas");
+  assert.deepEqual(personas.rows, []);
+  assert.doesNotMatch(visibleText(personas), /6fae9039|queued/);
+});
+
+test("writing the project plan reads as operator work, not a tool name", () => {
+  const presentation = toolPresentation(
+    part("write_project_document", {
+      reference_values: {
+        document_id: GATE_ID,
+        document: "plan",
+        version: 2,
+        workspace_id: WORKSPACE_ID,
+      },
+    }),
+  );
+
+  assert.equal(presentation.label, "Write the project plan");
+  assert.deepEqual(presentation.rows, []);
+  assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039/);
+});
+
+test("the five reads read as reviewing work, not tool names", () => {
+  const accounts = toolPresentation(
+    part("read_project_accounts", {
+      project_id: GATE_ID,
+      total: 12,
+      accounts: [{ account_entity_id: GATE_ID, name: "Goodman Campbell" }],
+    }),
+  );
+  assert.equal(accounts.label, "Review the project's accounts");
+
+  const research = toolPresentation(
+    part("read_account_research", {
+      account_entity_id: GATE_ID,
+      account_name: "Goodman Campbell",
+      section: "overview",
+      overview: [],
+      claims: [],
+      truncated: false,
+    }),
+  );
+  assert.equal(research.label, "Review an account's research");
+
+  const discovery = toolPresentation(
+    part("read_discovery_run", {
+      run_id: GATE_ID,
+      status: "completed",
+      asked: 20,
+      found: 13,
+      candidates: [],
+    }),
+  );
+  assert.equal(discovery.label, "Review the discovery run");
+
+  const claims = toolPresentation(
+    part("read_claims", {
+      entity_id: GATE_ID,
+      entity_kind: "account",
+      claims: [],
+      total: 0,
+      next_offset: null,
+      prefixes: [],
+    }),
+  );
+  assert.equal(claims.label, "Query the claims");
+
+  const artifact = toolPresentation(
+    part("read_artifact", {
+      artifact_id: "doc_matrix",
+      kind: "web",
+      title: "Matrix",
+      status: "ready",
+      body_text: "",
+      body_truncated: false,
+    }),
+  );
+  assert.equal(artifact.label, "Open an artifact");
+
+  for (const presentation of [accounts, research, discovery, claims, artifact]) {
+    assert.deepEqual(presentation.rows, []);
+    assert.doesNotMatch(visibleText(presentation), /ws_fixture|6fae9039/);
+  }
+});
+
 test("gate preparation never exposes gate, user, workspace, ref, or digest values", () => {
   const presentation = toolPresentation(
     part("open_icp_confirmation_gate", {
@@ -178,16 +282,4 @@ test("opaque values never become profile names", () => {
   assert.equal(profileDisplayName(GATE_ID), "Ideal customer profile");
   assert.equal(profileDisplayName(DIGEST), "Ideal customer profile");
   assert.equal(profileDisplayName(WORKSPACE_ID), "Ideal customer profile");
-});
-
-test("activity steps hide model-round and versioned tool vocabulary", () => {
-  assert.equal(activityStepLabel("model_round", "Model round 4"), "Think through the next step");
-  assert.equal(
-    activityStepLabel("tool_call", "open_icp_confirmation_gate@1"),
-    "Prepare the profile for your review",
-  );
-  assert.equal(
-    activityStepLabel("future_kind", `${GATE_ID}@99`),
-    "Work on the project",
-  );
 });

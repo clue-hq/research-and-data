@@ -73,6 +73,13 @@ export async function handleDesignProxyRequest(
     throw error;
   }
 
+  // A background upload selected in one workspace must never follow a changed cookie.
+  // This is a precondition only: it cannot select or authorize a workspace.
+  const expectedWorkspace = request.headers.get("X-Expected-Workspace-Id");
+  if (expectedWorkspace && expectedWorkspace !== workspaceId) {
+    return errorResponse(409, "WORKSPACE_CHANGED", "Workspace changed. Return to the original workspace to retry this upload.");
+  }
+
   const outgoing = new Headers({ "X-Workspace-Id": workspaceId });
   for (const name of FORWARDED_REQUEST_HEADERS) {
     const value = request.headers.get(name);

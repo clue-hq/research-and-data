@@ -96,6 +96,7 @@ export const projectHomeFixture: ProjectHome = {
  * repository and masquerade as server state.
  */
 export const projectWorkspaceFixture: ProjectWorkspace = {
+  archivedAt: null,
   artifacts: [],
   brandId: "brand-clue-demo",
   composerCapabilities: {
@@ -105,10 +106,13 @@ export const projectWorkspaceFixture: ProjectWorkspace = {
   },
   createdAt: "2026-08-01T00:00:00Z",
   defaultAgentProfileId: null,
+  description: "",
   entities: [],
   id: "10m-landing-page-campaign",
   models: [],
+  pinned: false,
   productId: null,
   status: "active",
   title: "10m+ landing page campaign",
+  updatedAt: "2026-08-18T12:00:00Z",
 };

@@ -1,0 +1,436 @@
+{
+ "http": 200,
+ "elapsed": 0.6,
+ "body": {
+  "content": [
+   {
+    "id": "fd2a24bc-0fac-d634-20bc-5cdb9e2704f8",
+    "identifier": "mark-hoffman-582a5741",
+    "profile": {
+     "first_name": "Mark",
+     "middle_name": null,
+     "last_name": "Hoffman",
+     "full_name": "Mark Hoffman",
+     "headline": "Chief Revenue Officer (CRO)",
+     "title": "Chief Revenue Officer",
+     "picture": {
+      "source": "https://images.ai-ark.com/YlMdASUUK8LOHSiZ-GUr1vmUG_cexBWk5vuwtECccqM/exp:1788307199/rs:fill:80:80/plain/s3://ark-person/images/fd2a24bc-0fac-d634-20bc-5cdb9e2704f8.jpg"
+     },
+     "background": {
+      "source": "https://media.licdn.com/dms/image/v2/D5616AQHiz3cRkAHv3A/profile-displaybackgroundimage-shrink_350_1400/B56Z70m46gGoAU-/0/1782220296127?e=1786579200&v=beta&t=Abob26Ar2A09UMcOAWrblY8uPemmfaJPaspgfiunv2M"
+     },
+     "birth_date": null,
+     "summary": null
+    },
+    "link": {
+     "linkedin": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+     "twitter": null,
+     "github": null,
+     "facebook": "https://www.facebook.com/mark.hoffman.370515"
+    },
+    "location": {
+     "default": "New York City Metropolitan Area, United States, North America",
+     "short": "New York City Metropolitan Area",
+     "country": "United States",
+     "state": null,
+     "city": "New York City Metropolitan Area",
+     "position": null
+    },
+    "languages": {
+     "primary_locale": {
+      "country": "US",
+      "language": "en"
+     },
+     "supported_locales": [
+      {
+       "country": "US",
+       "language": "en"
+      }
+     ],
+     "profile_languages": [
+      {
+       "name": "Russian",
+       "proficiency": null
+      }
+     ]
+    },
+    "industry": "Internet",
+    "educations": [
+     {
+      "school": {
+       "id": "2e8b83e5-e347-e260-93d4-500f71d5febf",
+       "name": "Binghamton University",
+       "logo": "https://images.ai-ark.com/Tx65oiO7rCx6AdjA17QpZ44LKgHFt2Xx7rb_7x_w3xQ/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/2e8b83e5-e347-e260-93d4-500f71d5febf.jpg",
+       "url": "https://www.linkedin.com/school/binghamton-university"
+      },
+      "degree_name": "BA",
+      "field_of_study": "Political Science",
+      "grade": null,
+      "date": null
+     }
+    ],
+    "position_groups": [
+     {
+      "company": {
+       "id": "05108578-3649-f40c-a81b-22fe1965b0cd",
+       "name": "Probook",
+       "logo": "https://images.ai-ark.com/E-sI5Kv4lg4jwUeSq_nPQ6Yz9ehTAQBsg0Jo7gYFzoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05108578-3649-f40c-a81b-22fe1965b0cd.jpg",
+       "url": "https://www.linkedin.com/company/probook-ai",
+       "employees": {
+        "start": 51,
+        "end": 200
+       }
+      },
+      "date": {
+       "start": "2026-02-01",
+       "end": null
+      },
+      "profile_positions": [
+       {
+        "company": "Probook",
+        "description": "The AI Operating System for Home Services. Backed by Sequoia and a16z.\n\nDispatch makes or breaks the customer experience, Probook is the only AI platform built around it.\nAmerica's leading home services companies trust Probook to drive revenue growth, improve operational efficiency, and add points to their EBITDA.",
+        "title": "Chief Revenue Officer",
+        "employment_type": "Full-time",
+        "location": "New York City Metropolitan Area",
+        "date": {
+         "start": "2026-02-01",
+         "end": null
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "e057a231-6702-7f62-22f2-4b7a7dcf9b79",
+       "name": "Tennr",
+       "logo": "https://images.ai-ark.com/xmPuBvw5dYKziD-VA_mtGMYAxGeH35HObnUO6jSneHE/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/e057a231-6702-7f62-22f2-4b7a7dcf9b79.jpg",
+       "url": "https://www.linkedin.com/company/tennrai",
+       "employees": {
+        "start": 201,
+        "end": 500
+       }
+      },
+      "date": {
+       "start": "2024-12-01",
+       "end": "2026-02-28"
+      },
+      "profile_positions": [
+       {
+        "company": "Tennr",
+        "description": null,
+        "title": "Chief Sales Officer (CSO)",
+        "employment_type": "Full-time",
+        "location": "New York City Metropolitan Area",
+        "date": {
+         "start": "2024-12-01",
+         "end": "2026-02-28"
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "1ffabdcc-9aec-7b88-0b57-06d00108ded6",
+       "name": "VTS",
+       "logo": "https://images.ai-ark.com/aQQA2M9cHT3FHQC2Lm7IPnx4gb5ObSqA-Zw3_5GXvis/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/1ffabdcc-9aec-7b88-0b57-06d00108ded6.jpg",
+       "url": "https://www.linkedin.com/company/we-are-vts",
+       "employees": {
+        "start": 501,
+        "end": 1000
+       }
+      },
+      "date": {
+       "start": "2017-01-01",
+       "end": "2024-12-31"
+      },
+      "profile_positions": [
+       {
+        "company": "VTS",
+        "description": null,
+        "title": "Senior Vice President of Sales",
+        "employment_type": "Full-time",
+        "location": "New York City Metropolitan Area",
+        "date": {
+         "start": "2021-08-01",
+         "end": "2024-12-31"
+        }
+       },
+       {
+        "company": "VTS, Inc.",
+        "description": null,
+        "title": "Vice President of Sales",
+        "employment_type": null,
+        "location": null,
+        "date": {
+         "start": "2019-07-01",
+         "end": "2021-08-31"
+        }
+       },
+       {
+        "company": "VTS, Inc.",
+        "description": "VTS is a SaaS platform that enables commercial real estate owners/operators/investors/brokers to measurably increase revenue, efficiency and reduce risk across their assets and portfolios. Our solution and services provide end-to-end management for leasing, tenancy, inventory, reporting and analytics. In addition, we have created integrations with leading marketing, data, accounting and financial platforms in the industry.",
+        "title": "Director of Sales",
+        "employment_type": null,
+        "location": "Greater New York City Area",
+        "date": {
+         "start": "2017-01-01",
+         "end": "2019-07-31"
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "f49a781b-374e-1858-4a8f-c4b8753f953b",
+       "name": "Hightower Inc.",
+       "logo": "https://images.ai-ark.com/8xYGI2_ZG1SylKNzsYAoDXO4B4dDDx3y5fK3ixJynOg/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/f49a781b-374e-1858-4a8f-c4b8753f953b.jpg",
+       "url": "https://www.linkedin.com/company/hightower-inc-",
+       "employees": {
+        "start": 51,
+        "end": 200
+       }
+      },
+      "date": {
+       "start": "2016-06-01",
+       "end": "2016-12-31"
+      },
+      "profile_positions": [
+       {
+        "company": "Hightower Inc.",
+        "description": "Hightower is transforming commercial real estate through end-to-end leasing and asset management technology. Our real-time deal-tracking and analytics platform is built for investors, owners, brokers and landlords. \n\nWe are hiring! SaaS, B2B, and Real Estate backgrounds desired. https://jobs.lever.co/hightower",
+        "title": "Director of Inside Sales",
+        "employment_type": null,
+        "location": "Greater New York City Area",
+        "date": {
+         "start": "2016-06-01",
+         "end": "2016-12-31"
+        }
+       }
+      ]
+     },
+     {
+      "company": {
+       "id": "741be127-7e06-9258-01b1-3d307f25e2f7",
+       "name": "Zocdoc",
+       "logo": "https://images.ai-ark.com/svjXbSbVzlEXu7qcgh9FEKhWQU9h8F62YE3NLTxQmpo/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/741be127-7e06-9258-01b1-3d307f25e2f7.jpg",
+       "url": "https://www.linkedin.com/company/zocdoc",
+       "employees": {
+        "start": 501,
+        "end": 1000
+       }
+      },
+      "date": {
+       "start": "2012-06-01",
+       "end": "2016-04-30"
+      },
+      "profile_positions": [
+       {
+        "company": "ZocDoc",
+        "description": null,
+        "title": "Inside Sales Manager",
+        "employment_type": null,
+        "location": null,
+        "date": {
+         "start": "2014-05-01",
+         "end": "2016-04-30"
+        }
+       },
+       {
+        "company": "ZocDoc",
+        "description": "Responsible for working with medical practices to help increase patient flow, streamline healthcare accessibility, & decrease empty appointment slots. Also work on new hire development, progression, and functionality across various sales teams.",
+        "title": "Senior Sales Executive",
+        "employment_type": null,
+        "location": null,
+        "date": {
+         "start": "2014-02-01",
+         "end": "2014-05-31"
+        }
+       },
+       {
+        "company": "ZocDoc",
+        "description": "Responsible for working with medical practices to help increase patient flow, streamline healthcare accessibility, & decrease empty appointment slots.",
+        "title": "Inside Sales Executive",
+        "employment_type": null,
+        "location": "New York",
+        "date": {
+         "start": "2013-01-01",
+         "end": "2014-02-28"
+        }
+       },
+       {
+        "company": "ZocDoc",
+        "description": "Responsible for a high volume sales process across multiple markets including but not limited to: Washington DC, Maryland, New York City, Long Island & Metro North.",
+        "title": "Business Origination Associate",
+        "employment_type": null,
+        "location": null,
+        "date": {
+         "start": "2012-06-01",
+         "end": "2013-01-31"
+        }
+       }
+      ]
+     }
+    ],
+    "skills": [
+     "Salesforce.com",
+     "Sales",
+     "Account Management",
+     "Direct Sales",
+     "Sales Process",
+     "Lead Generation",
+     "B2B",
+     "SaaS",
+     "Social Networking",
+     "Applicant Tracking Systems",
+     "Technical Recruiting",
+     "Start-ups",
+     "Business Development",
+     "Sales Presentations",
+     "Strategic Partnerships",
+     "Selling",
+     "Entrepreneurship",
+     "Team Leadership",
+     "Leadership",
+     "Social Media"
+    ],
+    "member_badges": {
+     "premium": false,
+     "creator": false,
+     "open_to_work": false,
+     "hiring": false,
+     "verified": true,
+     "influencer": false
+    },
+    "statistics": {
+     "network": {
+      "influencer": false,
+      "followable": null,
+      "followers_count": 3465,
+      "connections_count": 3385
+     },
+     "experience": {
+      "prev_job_titles": null,
+      "tenure": {
+       "company": "2026-02-01",
+       "start": "2012-07-02",
+       "title": "2026-02-01"
+      }
+     }
+    },
+    "company": {
+     "id": "05108578-3649-f40c-a81b-22fe1965b0cd",
+     "summary": {
+      "name": "Probook",
+      "description": "Increase flip rates, boost ticket sizes, and reduce windshield time\u2014 all without scaling your dispatch department. \n\nProbook learns from your historical sales data and sends your technicians to the right calls every time. \n\nOur dispatcher-friendly interface overlays your dispatch board so you never have to leave ServiceTitan. \n\nDispatchers can now focus on higher-value tasks like verifying job info and keeping customers updated. \n\nSee why top operators nationwide trust Probook!",
+      "founded_year": 2022,
+      "type": "PRIVATELY_HELD",
+      "industry": "software development",
+      "staff": {
+       "total": 30,
+       "range": {
+        "start": 2,
+        "end": 10
+       }
+      },
+      "logo": {
+       "source": "https://images.ai-ark.com/E-sI5Kv4lg4jwUeSq_nPQ6Yz9ehTAQBsg0Jo7gYFzoY/exp:1788307199/rs:fill:80:80/plain/s3://ark-company/images/05108578-3649-f40c-a81b-22fe1965b0cd.jpg"
+      }
+     },
+     "link": {
+      "website": "https://www.probook.ai",
+      "domain": "probook.ai",
+      "linkedin": "https://www.linkedin.com/company/probook-ai"
+     },
+     "financial": {
+      "revenue": {
+       "annual": {
+        "start": 1000000,
+        "end": 5000000,
+        "amount": "1000000-5000000"
+       }
+      }
+     },
+     "location": {
+      "headquarter": {
+       "continent": "North America",
+       "country": "United States",
+       "state": "New York",
+       "city": "New York",
+       "postal_code": "10022",
+       "raw_address": "New York, New York, United States, North America",
+       "position": {
+        "lng": -73.98556,
+        "lat": 40.748295
+       }
+      },
+      "locations": [
+       {
+        "continent": "North America",
+        "country": "United States",
+        "state": "New York",
+        "city": "New York",
+        "postal_code": "10022",
+        "raw_address": "New York, New York, United States, North America",
+        "position": {
+         "lng": -73.98556,
+         "lat": 40.748295
+        }
+       }
+      ]
+     },
+     "industries": [
+      "software development"
+     ],
+     "hashtags": [
+      "airconditioning",
+      "heating",
+      "hvac"
+     ],
+     "languages": [
+      "english"
+     ],
+     "last_updated": "2026-08-22"
+    },
+    "department": {
+     "departments": [
+      "sales"
+     ],
+     "sub_departments": [
+      "revenue_operations"
+     ],
+     "functions": [
+      "sales"
+     ],
+     "seniority": "c_suite"
+    },
+    "last_updated": "2026-08-22"
+   }
+  ],
+  "size": 5,
+  "totalElements": 1,
+  "pageable": {
+   "pageNumber": 0,
+   "pageSize": 5,
+   "sort": {
+    "sorted": true,
+    "empty": false,
+    "unsorted": false
+   },
+   "offset": 0,
+   "paged": true,
+   "unpaged": false
+  },
+  "last": true,
+  "totalPages": 1,
+  "sort": {
+   "sorted": true,
+   "empty": false,
+   "unsorted": false
+  },
+  "numberOfElements": 1,
+  "trackId": "387e5263-c1ac-42e4-a918-47c1bfecbf3c",
+  "first": true,
+  "number": 0,
+  "empty": false
+ }
+}

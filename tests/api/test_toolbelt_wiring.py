@@ -192,6 +192,13 @@ _MATRIX: dict[str, tuple[str, object]] = {
     # refusal, never a 500 and never a silent write into somebody else's tenant.
     "create_thread": ("precondition", ("project_not_found",)),
     "rename_thread": ("precondition", ("thread_not_found",)),
+    "rename_project": ("precondition", ("project_not_found",)),
+    # Projects directory (2026-09-19). Same shape: the subject that does not exist in this
+    # workspace — a brand for the creator, a project for the three mutators.
+    "create_project": ("precondition", ("brand_not_found",)),
+    "update_project_details": ("precondition", ("project_not_found",)),
+    "set_project_pinned": ("precondition", ("project_not_found",)),
+    "set_project_archived": ("precondition", ("project_not_found",)),
     "set_thread_pinned": ("precondition", ("thread_not_found",)),
     "archive_thread": ("precondition", ("thread_not_found",)),
     # FI Lane D D4 / §3-P5(a). The gate tool's first prerequisite is the *turn* it would address the
@@ -203,10 +210,15 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "finish_design_leg": ("precondition", ("design_leg_runtime_not_configured",)),
     "open_design_leg": ("precondition", ("design_leg_runtime_not_configured",)),
     "open_directive_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
-    # Stage-0 hardening: ICP confirmation resolves the execution-bound project before it accepts a
-    # draft or a presenting turn. This matrix has no governed execution, so trusted scope is the
-    # first fail-closed boundary.
-    "open_icp_confirmation_gate": ("precondition", ("stage0_scope_not_found",)),
+    # ARV2 onboarding O6: the default ICP gate is `@2`, whose subject is a brand-knowledge document
+    # named by `icp_key`. It resolves the presenting turn before anything else, so with a random
+    # turn ref the first fail-closed boundary is the turn lookup — the same one the directive
+    # gate hits. (`@1` resolved the execution-bound Stage-0 scope first; it stays registered,
+    # non-default, for replay.)
+    "open_icp_confirmation_gate": ("precondition", ("gate_turn_not_found",)),
+    # Automatic project targeting (head-of-abm@v61, base): the matrix composes no turn, so the
+    # turn the body names is its first fail-closed boundary.
+    "configure_project_targeting": ("precondition", ("targeting_turn_unavailable",)),
     "open_discovery_configuration_gate": (
         "precondition",
         ("stage0_turn_scope_not_found",),
@@ -215,15 +227,75 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("product_selection_scope_unavailable",),
     ),
+    # ARV2 onboarding O6: the set-valued sibling derives everything from the presenting turn, so an
+    # unresolvable turn ref is its first fail-closed boundary (it reads no Client-KB scope at all).
+    "open_product_set_selection_gate": (
+        "precondition",
+        ("product_set_turn_not_found",),
+    ),
     "submit_onboarding_input": ("precondition", ("artifact_not_found",)),
     "start_recon": ("precondition", ("onboarding_input_not_found",)),
     "record_interview_answer": ("precondition", ("onboarding_input_not_found",)),
     "confirm_project_product": ("precondition", ("project_product_not_found",)),
     "evaluate_stage0_readiness": ("precondition", ("stage0_scope_not_found",)),
+    # ARV2 O4: the default composition is handed no provider credentials (`build_toolbelt`'s
+    # `secrets` defaults to None, fail-closed), so this SPEND tool's Exa path is never reached here.
+    "exa_search_evidence": ("precondition", ("exa_not_configured",)),
+    # web_search@1: no credentials are handed to the default composition, so the SPEND tool's Exa
+    # path is never reached here.
+    "web_search": ("precondition", ("exa_not_configured",)),
+    # ARV2 R2/R3 (seam 1): the two account tools and R3's on-demand person launch register in
+    # EVERY process — the C6 authority audit is a strict set equality — but this matrix composes
+    # no `Arv2LaunchService`, so each refuses on composition before it reads a row.
+    "launch_arv2_account_research": (
+        "precondition",
+        ("arv2_account_research_not_composed",),
+    ),
+    "launch_arv2_person_research": (
+        "precondition",
+        ("arv2_account_research_not_composed",),
+    ),
+    "read_arv2_account_research_run": (
+        "precondition",
+        ("arv2_account_research_not_composed",),
+    ),
+    # ARV2 R4: the discovery launch registers in every process for the same reason and, with
+    # no ``Arv2DiscoveryService`` composed here, refuses before it reads a row.
+    "launch_arv2_discovery": (
+        "precondition",
+        ("arv2_discovery_not_composed",),
+    ),
+    # ICP authoring registers in every process for the same reason as its ARV2 neighbours and,
+    # with no ``IcpAuthoringService`` composed here, refuses before it reads a row.
+    "author_icp_document": ("precondition", ("icp_authoring_not_composed",)),
+    # Its sibling: the matrix composes no persona-request service, so the request refuses before
+    # it reads the project's pin.
+    "request_persona_synthesis": ("precondition", ("persona_synthesis_not_composed",)),
+    # The project plan writes through storage the matrix does not compose, so the tool refuses
+    # before it resolves the presenting turn.
+    "write_project_document": ("precondition", ("project_documents_not_composed",)),
+    # The three ARV2 reads register in every process too; with no ``Arv2ReadService`` composed
+    # here each refuses before it touches a row.
+    "read_project_accounts": ("precondition", ("arv2_reads_not_composed",)),
+    "read_account_research": ("precondition", ("arv2_reads_not_composed",)),
+    "read_discovery_run": ("precondition", ("arv2_reads_not_composed",)),
+    # Its ungranted fourth sibling refuses on the same uncomposed service, before it resolves the
+    # entity id it was handed.
+    "read_claims": ("precondition", ("arv2_reads_not_composed",)),
+    # The gallery read needs no service, so its first fail-closed boundary is the project: the
+    # matrix's context carries no execution, and the project is ambient rather than a body field.
+    "read_artifact": ("precondition", ("project_not_found",)),
+    # The sandbox is registered everywhere and composed only where turns are driven, so the
+    # matrix — which passes no ``sandbox_workspaces`` — refuses at its first boundary,
+    # whatever ``CLUE_SANDBOX_ENABLED`` says on the machine running this.
+    "run_python": ("precondition", ("sandbox_unavailable",)),
     "override_stage0_readiness": ("precondition", ("readiness_not_found",)),
+    # The matrix composes no durable discovery execution router, and the tool checks for it
+    # before it reads the Stage-0 turn scope, so the router is its first fail-closed boundary
+    # here. (Old lane; ungranted on every model surface since head-of-abm@v44.)
     "start_confirmed_project_run": (
         "precondition",
-        ("stage0_turn_scope_not_found",),
+        ("confirmed_discovery_router_unavailable",),
     ),
     "draft_account_research_directive": (
         "precondition",
@@ -271,6 +343,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
         "precondition",
         ("design_runtime_not_configured",),
     ),
+    "design_set_web_noindex": ("precondition", ("design_runtime_not_configured",)),
+    "design_rename_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_set_document_archived": ("precondition", ("design_runtime_not_configured",)),
     "design_start_agent_turn": ("precondition", ("design_runtime_not_configured",)),
     "design_start_web_turn": ("precondition", ("design_runtime_not_configured",)),
     "design_undo_document": ("precondition", ("design_runtime_not_configured",)),
@@ -291,6 +366,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "design_delete_binding_set": ("precondition", ("design_runtime_not_configured",)),
     "design_derive_instance": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_ad_assets": ("precondition", ("design_runtime_not_configured",)),
+    "design_enrich_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_assets": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_pdf": ("precondition", ("design_runtime_not_configured",)),
     "design_ingest_website": ("precondition", ("design_runtime_not_configured",)),
@@ -509,6 +585,20 @@ def _bodies() -> dict[str, dict[str, object]]:
         "retry_ingestion": {"ingestion_job_id": _UUID()},
         "create_thread": {"project_id": "prj_absent_from_this_workspace"},
         "rename_thread": {"thread_id": "thr_absent", "title": "renamed"},
+        "rename_project": {"project_id": "project_missing", "title": "renamed"},
+        "create_project": {
+            "project_id": "prj_new",
+            "brand_id": "brand_missing",
+            "title": "t",
+            "description": "",
+        },
+        "update_project_details": {
+            "project_id": "project_missing",
+            "title": "t",
+            "description": "",
+        },
+        "set_project_pinned": {"project_id": "project_missing", "pinned": True},
+        "set_project_archived": {"project_id": "project_missing", "archived": True},
         "set_thread_pinned": {"thread_id": "thr_absent", "pinned": True},
         "archive_thread": {"thread_id": "thr_absent"},
         "finish_design_leg": {
@@ -528,10 +618,16 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "open_icp_confirmation_gate": {
             "icp_key": "matrix",
-            "icp_version": 1,
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "configure_project_targeting": {
+            "icp_key": "matrix",
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "open_product_selection_gate": {
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "open_product_set_selection_gate": {
             "source_turn_ref": f"turn-action:{_UUID()}",
         },
         "submit_onboarding_input": {
@@ -561,6 +657,59 @@ def _bodies() -> dict[str, dict[str, object]]:
         # The current @2 readiness contract accepts only the gate. Scope and metrics are trusted
         # backend inputs, so stale v1 fields must not be smuggled into this audit fixture.
         "evaluate_stage0_readiness": {"gate": "icp_synthesis"},
+        "exa_search_evidence": {"query": "how practice managers describe referral fax pain"},
+        "web_search": {"query": "acme summit 2026"},
+        # ARV2 R2/R3 seam 1. The workspace and the requesting human are AMBIENT authority, so
+        # neither launch body carries them; the account launch names the exact account set and the
+        # pinned ICP artifact it was signed off against, and R3's person launch names contacts that
+        # already exist plus the committee seat each one is given.
+        "launch_arv2_account_research": {
+            "project_id": "prj_matrix",
+            "account_entity_ids": (_UUID(),),
+            "icp_artifact_key": "icp/matrix.md",
+            "icp_artifact_sha256": "0" * 64,
+            "product_selection_version": 1,
+        },
+        "launch_arv2_person_research": {
+            "project_id": "prj_matrix",
+            "contact_entity_ids": (_UUID(),),
+        },
+        # ARV2 R4: the workspace and the requesting human are AMBIENT here too. The name-only
+        # alias is `@2` (2026-09-30), whose body carries the brief the Head of ABM wrote.
+        "launch_arv2_discovery": {
+            "project_id": "prj_matrix",
+            "target_count": 20,
+            "source": "websets",
+            "query": "Companies of <kind> that run <activity>.",
+            "criteria": ["The company runs <activity>."],
+            "gates": [
+                {"key": "is_buyer", "rule": "Runs it.", "test": "Its site.", "role": "must"},
+                {"key": "sells_it", "rule": "Sells it.", "test": "Its pages.", "role": "must_not"},
+            ],
+        },
+        "author_icp_document": {
+            "icp_key": "matrix",
+            "document": "---\nkind: icp-definition\nicp_key: matrix\n---\n\nBody.\n",
+            "scope": "project",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "request_persona_synthesis": {
+            "icp_key": "matrix",
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "write_project_document": {
+            "document": "plan",
+            "body": "# Plan\n\nOutcome.\n",
+            "expected_version": 1,
+            "source_turn_ref": f"turn-action:{_UUID()}",
+        },
+        "read_project_accounts": {"project_id": "prj_matrix"},
+        "read_account_research": {"account_entity_id": _UUID()},
+        "read_discovery_run": {"project_id": "prj_matrix"},
+        "read_claims": {"entity_id": _UUID()},
+        "read_artifact": {"artifact_id": "doc_matrix"},
+        "run_python": {"code": "print(1)"},
+        "read_arv2_account_research_run": {"run_id": _UUID()},
         "override_stage0_readiness": {
             "readiness_decision_id": _UUID(),
             "gate": "icp_synthesis",
@@ -580,7 +729,10 @@ def _bodies() -> dict[str, dict[str, object]]:
             "product_id": "product_missing",
             "icp_key": "matrix",
             "icp_version": 1,
-            "body": {
+            # The promoted @4 contract renames v2's ``body`` to ``directive`` and declares the
+            # field breadth; an explicit field list is the ``custom`` request.
+            "profile": "custom",
+            "directive": {
                 "account_scope": {"explicit_account_ids": [_UUID()]},
                 "field_keys": ["account.strategic_moves"],
                 "committee_plan": {},
@@ -607,7 +759,6 @@ def _bodies() -> dict[str, dict[str, object]]:
         "synthesize_value_narrative": {"job_id": _UUID()},
         "design_publish_web": {
             "document_id": "doc_matrix",
-            "public_base": "https://design.example",
             "slug": "matrix-page",
         },
         "design_unpublish_web": {"slug": "matrix-page"},
@@ -643,6 +794,14 @@ def _bodies() -> dict[str, dict[str, object]]:
             "document_id": "doc_matrix",
             "enabled": True,
         },
+        # `enabled` has no default by ruling R-F1: a caller who does not name a value cannot
+        # reach the tool at all, so the matrix body names it too.
+        "design_set_web_noindex": {
+            "document_id": "doc_matrix",
+            "enabled": True,
+        },
+        "design_rename_document": {"document_id": "doc_matrix", "title": "Renamed"},
+        "design_set_document_archived": {"document_id": "doc_matrix", "enabled": True},
         "design_replace_scene": {
             "document_id": "doc_matrix",
             "scene": {"meta": {"id": "doc_matrix", "title": "Matrix"}},
@@ -793,6 +952,12 @@ def _bodies() -> dict[str, dict[str, object]]:
             "work_id": _UUID(),
             "request": {"company_domain": "matrix.example"},
             "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_ad_assets"},
+        },
+        "design_enrich_assets": {
+            "job_id": "ingest_matrix_enrich",
+            "work_id": _UUID(),
+            "request": {"company_domain": "matrix.example"},
+            "envelope": {"kind": "ingestion", "job_id": "ingest_matrix_enrich"},
         },
         "design_record_ad_creatives": {
             "creatives": [
@@ -1280,7 +1445,31 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The part-iii merge registers the 49 design_* write envelopes and the two design-leg tools
     # in every composition (63 + 51 = 114). Brand Ad Assets v1 W2 adds the ad-assets lane's
     # four design_* envelopes — one ingestion enqueue and three lane writes (114 → 118).
-    assert len(registry.names()) == 118
+    # Track R (2026-09-09): the design subsystem's `design_set_web_noindex` (ruling R-F1) and
+    # the ARV2 lane's three seam-1 envelopes — `launch_arv2_account_research`,
+    # `read_arv2_account_research_run` (R2) and `launch_arv2_person_research` (R3) — register
+    # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
+    # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
+    # Human project-label rename adds one governed tool (125 -> 126).
+    # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127), and its sibling
+    # `request_persona_synthesis@1` the same way (127 -> 128).
+    # The project plan's `write_project_document@1` registers ungranted (128 -> 129), and the
+    # three ARV2 reads register on the same terms (129 -> 132). The general claims query
+    # `read_claims@1` joins them the same way (132 -> 133): a new NAME, holding the name-only
+    # alias because it is the only version of itself, and granted to nobody until a reviewed
+    # profile version pins it. The gallery read `read_artifact@1` is the next such name
+    # (133 -> 134), composed on nothing but the ambient connection factory.
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (134 -> 136 / 154 -> 156).
+    # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
+    # The project directory adds four human-only tools: create_project,
+    # update_project_details, set_project_pinned and set_project_archived.
+    # Together these additions yield 141 names and 161 versioned addresses.
+    # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
+    # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
+    # 144 / 166 (2026-09-22).
+    assert len(registry.names()) == 144
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1289,7 +1478,43 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # The part-iii merge adds the design write envelopes and leg tools to the address
     # inventory as well (77 + 52 = 129). Brand Ad Assets v1 W2 adds four more, each at @1
     # only — the lane is new, so it has no historical contract to retain (129 → 133).
-    assert len(registry) == 133
+    # Slice B wave 2 registers draft_account_research_directive@4 — the comprehensive-profile
+    # directive contract — beside its replayable @1/@2/@3 predecessors.
+    # The Slice B live-gate repair then registers draft_account_research_directive@5 — @4's
+    # advertised input schema made ``directive.field_keys`` required, so a schema-honouring model
+    # could never draft the comprehensive profile the steering skill asks for; @5 makes the key
+    # omittable and inherits @4's expansion/ambiguity semantics unchanged, beside its replayable
+    # @1/@2/@3/@4 predecessors (still no new name).
+    # The ARV2-R0 merge unions both lines' registrations; 136 is measured off the merged tree,
+    # not derived from either side's arithmetic.
+    # The four names Track R and the noindex ruling added each register at @1 only — they are
+    # new, so they retain no historical contract (136 -> 140).
+    # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
+    # at @2 beside its replayable @1 (140 -> 142).
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
+    # The project rename tool has one version and no agent grant (143 -> 144).
+    # ICP authoring's `author_icp_document@1` is new, so it retains no historical contract
+    # (144 -> 145), and `request_persona_synthesis@1` likewise (145 -> 146).
+    # `write_project_document@1` is new, so it retains no historical contract (146 -> 147), and
+    # neither do the three ARV2 reads (147 -> 150).
+    # The paged reads add two ADDRESSES and no name (150 -> 152): `read_account_research@2` takes
+    # a `limit` and `read_discovery_run@2` takes `offset`/`limit`, and a changed input schema at
+    # the same address is exactly what a profile's digest pin exists to catch — so the paging
+    # arrived beside the frozen `@1`s. `head-of-abm@v56` pins the `@2`s, so the name-only alias
+    # moved to them with the grant; the `@1`s stay registered, aliasless, for replay.
+    # `read_claims@1` is a new name at one address (152 -> 153), and `read_artifact@1` is the
+    # next (153 -> 154).
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (134 -> 136 / 154 -> 156).
+    # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
+    # The project directory adds four human-only tools: create_project,
+    # update_project_details, set_project_pinned and set_project_archived.
+    # Together these additions yield 141 names and 161 versioned addresses.
+    # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` beside the retired
+    # `@1`, which stays for replay: one more address, no new name (166 -> 167).
+    # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
+    assert len(registry) == 168
+    assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
     assert registry.descriptor("start_confirmed_project_run").version == "3"
@@ -1309,10 +1534,62 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # (103 -> 104). The part-iii integration merge unions this branch's own additions since the
     # common base (104 + 10 = 114 names). Brand Ad Assets v1 W2 adds the ad-assets lane's four
     # envelopes: one ingestion enqueue and three lane writes (114 -> 118).
-    assert len(registry.names()) == 118
+    # Track R (2026-09-09): the design subsystem's `design_set_web_noindex` (ruling R-F1) and
+    # the ARV2 lane's three seam-1 envelopes — `launch_arv2_account_research`,
+    # `read_arv2_account_research_run` (R2) and `launch_arv2_person_research` (R3) — register
+    # in every process alongside the rest (118 -> 123). ARV2 onboarding O6 registers the
+    # set-valued product gate `open_product_set_selection_gate` (123 -> 124).
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (124 -> 125).
+    # Human project-label rename adds one governed tool (125 -> 126).
+    # ICP authoring registers `author_icp_document@1`, ungranted (126 -> 127), and its sibling
+    # `request_persona_synthesis@1` the same way (127 -> 128).
+    # The project plan's `write_project_document@1` registers ungranted (128 -> 129), and the
+    # three ARV2 reads register on the same terms (129 -> 132). The general claims query
+    # `read_claims@1` joins them the same way (132 -> 133): a new NAME, holding the name-only
+    # alias because it is the only version of itself, and granted to nobody until a reviewed
+    # profile version pins it. The gallery read `read_artifact@1` is the next such name
+    # (133 -> 134), composed on nothing but the ambient connection factory.
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (134 -> 136 / 154 -> 156).
+    # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
+    # The project directory adds four human-only tools: create_project,
+    # update_project_details, set_project_pinned and set_project_archived.
+    # Together these additions yield 141 names and 161 versioned addresses.
+    # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
+    # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
+    # 144 / 166 (2026-09-22).
+    assert len(registry.names()) == 144
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
-    # project-run-scoped profile_contact@2 as the name-only default.
-    assert len(registry) == 133
+    # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
+    # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
+    # no name. 136 is measured off the merged tree (see the note at the first count above).
+    # The four names Track R and the noindex ruling added each register at @1 only — they are
+    # new, so they retain no historical contract (136 -> 140).
+    # ARV2 onboarding O6 adds the set-valued product gate at @1 and the artifact-ref ICP gate
+    # at @2 beside its replayable @1 (140 -> 142).
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted, at @1 only (142 -> 143).
+    # The project rename tool has one version and no agent grant (143 -> 144).
+    # ICP authoring's `author_icp_document@1` is new, so it retains no historical contract
+    # (144 -> 145), and `request_persona_synthesis@1` likewise (145 -> 146).
+    # `write_project_document@1` is new, so it retains no historical contract (146 -> 147), and
+    # neither do the three ARV2 reads (147 -> 150).
+    # The paged reads add two ADDRESSES and no name (150 -> 152): `read_account_research@2` takes
+    # a `limit` and `read_discovery_run@2` takes `offset`/`limit`, and a changed input schema at
+    # the same address is exactly what a profile's digest pin exists to catch — so the paging
+    # arrived beside the frozen `@1`s. `head-of-abm@v56` pins the `@2`s, so the name-only alias
+    # moved to them with the grant; the `@1`s stay registered, aliasless, for replay.
+    # `read_claims@1` is a new name at one address (152 -> 153), and `read_artifact@1` is the
+    # next (153 -> 154).
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (134 -> 136 / 154 -> 156).
+    # The code sandbox adds `run_python@1`, granted to head-of-abm@v58.
+    # The project directory adds four human-only tools: create_project,
+    # update_project_details, set_project_pinned and set_project_archived.
+    # Together these additions yield 141 names and 161 versioned addresses.
+    # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` beside the retired
+    # `@1`, which stays for replay: one more address, no new name (166 -> 167).
+    # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
+    assert len(registry) == 168
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {
@@ -1321,9 +1598,22 @@ def test_build_toolbelt_registers_the_full_set() -> None:
         "research_account_gaps@1",
         "research_account_gaps@2",
     }
-    # Slice 5 promoted presentation-bearing draft @3 as the default; confirm stays @2.
-    assert registry.descriptor("draft_account_research_directive").version == "3"
+    # Slice 5 promoted presentation-bearing draft @3 as the default; Slice B wave 2 promoted the
+    # comprehensive-profile @4, and the live-gate repair promoted the satisfiable-schema @5.
+    # Confirm stays @2.
+    assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("confirm_account_research_directive").version == "2"
+    # The alias never disagrees with the promoted profile's pin: `head-of-abm@v56` pins the paged
+    # `@2` of both reads, so an unversioned caller gets `@2` and the frozen `@1`s stay resolvable
+    # only by exact address.
+    assert registry.descriptor("read_account_research").version == "2"
+    assert registry.descriptor("read_account_research", "1").version == "1"
+    # Agent-authored discovery (2026-09-30): `read_discovery_run@3` owns the name-only alias, as
+    # `launch_arv2_discovery@2` does; `@2` stays resolvable by exact address for replay, and
+    # `head-of-abm@v70` grants `@3`.
+    assert registry.descriptor("read_discovery_run").version == "3"
+    assert registry.descriptor("read_discovery_run", "2").version == "2"
+    assert registry.descriptor("read_discovery_run", "1").version == "1"
 
 
 def test_default_composition_gives_start_recon_an_autonomous_progress_factory() -> None:

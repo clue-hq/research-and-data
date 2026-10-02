@@ -14,8 +14,10 @@
   ],
   "message": "Now try the whole thing on a navy background.",
   "judgment": {
-    "action": "continue",
-    "reason": null
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "reasoning": "This asks for a change to the current artifact."
   },
   "expected": {
     "action": "continue",

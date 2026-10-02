@@ -1,32 +1,55 @@
+import { withResearchContext, type ResearchContextQuery } from "../model/research-context";
 import {
   AccountWorkspaceResponseSchema,
   type AccountWorkspace,
 } from "../model/account-workspace";
+import { openAiWorkspaceFixture } from "./account-workspace.fixture";
+import { zafranWorkspaceFixture } from "./zafran/insights";
+import { fetchRead } from "./frontend-api";
+import { accountsFixtureMode } from "./repository-mode";
 
-/**
- * The remaining legacy Insights workspace payload.
- *
- * Slice 1 serves no Insights-workspace endpoint; Account insights arrive on
- * the Overview detail contract. Activity has its own live repository, while
- * Artifacts has an explicit capability-unavailable state in its route. Both
- * are intentionally absent here. Until the Insights contract lands, every
- * real account receives an explicit empty model with no demo data or guessed
- * request.
- */
 export interface AccountWorkspaceRepository {
-  get(accountId: string): Promise<AccountWorkspace | null>;
+  get(accountId: string, context?: ResearchContextQuery): Promise<AccountWorkspace | null>;
 }
 
-export const emptyAccountWorkspaceRepository: AccountWorkspaceRepository = {
+export const fixtureAccountWorkspaceRepository: AccountWorkspaceRepository = {
   async get(accountId) {
+    const workspace = [openAiWorkspaceFixture, zafranWorkspaceFixture].find(
+      (candidate) => candidate.accountId === accountId,
+    );
+    if (!workspace) return null;
     return AccountWorkspaceResponseSchema.parse({
-      data: { accountId, insights: [] },
+      data: workspace,
     }).data;
   },
 };
 
+/**
+ * The live account workspace: `GET /frontend/v1/accounts/{id}/workspace` → `{data}`.
+ *
+ */
+export function createHttpAccountWorkspaceRepository(
+  read: typeof fetchRead = fetchRead,
+): AccountWorkspaceRepository {
+  return {
+    async get(accountId, context) {
+      const body = await read(
+        withResearchContext(`/accounts/${encodeURIComponent(accountId)}/workspace`, context),
+        { recordNotFoundAllowed: true },
+      );
+      if (body === null) return null;
+      return AccountWorkspaceResponseSchema.parse(body).data;
+    },
+  };
+}
+
 export async function getAccountWorkspace(
   accountId: string,
+  read: typeof fetchRead = fetchRead,
+  context?: ResearchContextQuery,
 ): Promise<AccountWorkspace | null> {
-  return emptyAccountWorkspaceRepository.get(accountId);
+  const repository = accountsFixtureMode()
+    ? fixtureAccountWorkspaceRepository
+    : createHttpAccountWorkspaceRepository(read);
+  return repository.get(accountId, context);
 }

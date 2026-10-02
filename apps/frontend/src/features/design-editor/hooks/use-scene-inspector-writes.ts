@@ -12,6 +12,7 @@ import { panelWriteIntent } from "../adapter/scene-panel-freeze";
 import type { SceneCanvasControls } from "../components/scene-artifact-canvas";
 import type { Node, PageId, Scene } from "../engine/scene/contracts";
 import { getPage } from "../engine/scene/sceneQueries";
+import type { KitTokenMaps } from "../engine/scene/tokenColors";
 import { freezeLayoutEdit } from "../engine/scene/structuredEdits";
 import {
   useSceneManualEdits,
@@ -220,9 +221,12 @@ export function useSceneInspectorWrites({
   canvasControls,
   documentId,
   loadGeneration,
+  lockNote,
+  locked,
   onReload,
   pageId,
   palette,
+  tokenMaps,
   primaryNodeId,
   redoDepth,
   scene,
@@ -239,6 +243,11 @@ export function useSceneInspectorWrites({
   /** AD3.3: the loaded document's history, mirrored up by the canvas — the
    * base the controller's step count is added to. */
   loadGeneration?: number;
+  /** Task 4: the copy a lock refusal shows, or null when there is none. */
+  lockNote?: string | null;
+  /** Task 4: a design turn is running on this document — the lane is view-only.
+   * Passed straight through; the whole policy lives in the write controller. */
+  locked?: boolean;
   /** The session's reload nonce bump. */
   onReload: () => void;
   /** AD4.0: the page the canvas is rendering (§5: one artboard), the very one
@@ -249,6 +258,7 @@ export function useSceneInspectorWrites({
    * kit still in flight) means no token write can be validated, so none
    * happens; the hex rows are untouched by it. */
   palette: ScenePalette | null;
+  tokenMaps?: KitTokenMaps | null;
   /** The session's primary selection — `selectedIds[0]`, already resolved
    * against the live scene. */
   primaryNodeId: string | null;
@@ -261,6 +271,8 @@ export function useSceneInspectorWrites({
     controlsRef: canvasControls,
     documentId,
     loadGeneration,
+    lockNote,
+    locked,
     onReload,
     redoDepth,
     undoDepth,
@@ -269,10 +281,12 @@ export function useSceneInspectorWrites({
   // Latest-value refs so the one listener reads current state without
   // re-arming (written passively, per this repo's react-hooks rules).
   const applyOpsRef = useRef(edits.applyOps);
+  const reportNoteRef = useRef(edits.reportNote);
   const artifactIdRef = useRef(artifactId);
   const controlsRef = useRef(canvasControls);
   const pageIdRef = useRef(pageId);
   const paletteRef = useRef(palette);
+  const tokenMapsRef = useRef(tokenMaps);
   // C-9 panel parity: the persist-ONLY seam, for the freeze the panel fires.
   // It is `applyOps` minus the apply, because `applyStructuredEdit` has already
   // applied the freeze to the engine — routing its batch through `applyOps`
@@ -282,10 +296,12 @@ export function useSceneInspectorWrites({
   const sceneRef = useRef(scene);
   useEffect(() => {
     applyOpsRef.current = edits.applyOps;
+    reportNoteRef.current = edits.reportNote;
     artifactIdRef.current = artifactId;
     controlsRef.current = canvasControls;
     pageIdRef.current = pageId;
     paletteRef.current = palette;
+    tokenMapsRef.current = tokenMaps;
     persistAppliedOpsRef.current = edits.persistAppliedOps;
     primaryNodeIdRef.current = primaryNodeId;
     sceneRef.current = scene;
@@ -340,7 +356,7 @@ export function useSceneInspectorWrites({
       // event's selectionId is a web node id, which is never the ad session's
       // primary selection.
       if (primaryNodeIdRef.current !== detail.selectionId) return;
-      const live = sceneRef.current;
+      const live = controlsRef.current.current?.sceneSnapshot() ?? sceneRef.current;
       if (!live) return;
       // The scene the engine is holding must really carry that node — the
       // adapter needs the Node itself, and a miss means the selection and the
@@ -423,6 +439,7 @@ export function useSceneInspectorWrites({
         writeScene = post;
       }
 
+      const effectiveNode = controls.presentationSnapshot?.()?.nodes[writeNode.id] ?? null;
       const operation = sceneChangeToOperation(
         {
           property: detail.property,
@@ -432,10 +449,17 @@ export function useSceneInspectorWrites({
         writeNode,
         writeScene,
         paletteRef.current,
+        tokenMapsRef.current,
+        effectiveNode,
       );
       // The AD3.1 null contract: an unmapped property, an unparseable value or
       // a locked node produces no operation, and no operation is no write.
-      if (!operation) return;
+      if (!operation) {
+        if (detail.property.startsWith("padding.") && writeNode.layout?.padding_token && !effectiveNode?.layout) {
+          reportNoteRef.current("Padding is bound to an unavailable Brand Kit value. Restore the exact kit or reload before editing one side.");
+        }
+        return;
+      }
       applyOpsRef.current([operation], `inspector: ${detail.property}`);
     };
     window.addEventListener("clue:inspector-property-change", onChange);

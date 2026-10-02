@@ -43,6 +43,8 @@ license = { text = "Proprietary" }
 dependencies = [
     # The version treaty: the platform's exact deepagents pin, not the design tree's old floor.
     "deepagents==0.6.12",
+    # Preserve DeepAgents glob semantics when constraining scene searches to one run.
+    "wcmatch>=11,<12",
     "langchain>=1.3,<2",
     "langchain-core>=1.5,<2",
     # Provider packages `langchain.chat_models.init_chat_model` resolves at runtime.
@@ -59,6 +61,12 @@ dependencies = [
     "rich>=15,<16",
     # A real import edge: lumen_agent imports lumen_api.core and lumen_ingestion.
     "lumen-api",
+    # Real import edges too: `lumen_agent.llm` has imported clue_gateway since P3.2 without
+    # declaring it, and lane 3 slice 5 meters the design agent's provider spend through
+    # `clue_spend` / reports through `clue_obs`.
+    "clue-gateway",
+    "clue-obs",
+    "clue-spend",
     # Real import edges too (module scope): lumen_agent.harness -> py_lumen_obs,
     # lumen_agent.config -> py_lumen_config.
     "py-lumen-obs",
@@ -74,5 +82,8 @@ packages = ["lumen_agent"]
 
 [tool.uv.sources]
 lumen-api = { workspace = true }
+clue-gateway = { workspace = true }
+clue-obs = { workspace = true }
+clue-spend = { workspace = true }
 py-lumen-obs = { workspace = true }
 py-lumen-config = { workspace = true }

@@ -156,6 +156,22 @@ class FakeRegistry:
             "derived_reason": f"repair rung {rung}: {note}",
         }
 
+    def read_source(self, fragment_id):
+        section = self.sections.get(fragment_id)
+        if section is None:
+            raise KeyError(f"fragment {fragment_id!r} was not found in this workspace")
+        return {
+            "fragment_id": fragment_id,
+            "section_role": section.get("section_role") or section.get("role"),
+            "label": section.get("label"),
+            "source_url": section.get("source_url"),
+            "status": section.get("status"),
+            "derived_from": section.get("derived_from"),
+            "slots": section.get("slots") or [],
+            "html": section.get("html") or "",
+            "css": section.get("css") or "",
+        }
+
     def resolve_insertable(self, fragment_id):
         section = self.sections.get(fragment_id)
         if section is None:
@@ -1207,3 +1223,143 @@ def test_a_raw_repair_swaps_the_pinned_band_in_place(
     ]
     assert new_fragment_id in pins
     assert HERO_ID not in pins
+
+
+# --- inspect_cloned_section: the raw lane's missing read (third solo Ramp run, 2026-09-04) ---
+
+
+def test_inspect_cloned_section_shows_the_real_html_and_css(tmp_path: Path) -> None:
+    """Every raw-lane instruction says "remix the original's actual CSS", and until this tool
+    existed nothing showed the agent those bytes — search lists slots, view shows a picture —
+    so the third solo run grepped the filesystem for clone markup and then composed from
+    memory. The read returns the captured html + scoped css + slots, truncating honestly."""
+    registry = FakeRegistry(tmp_path)
+    registry.add(
+        fragment_id="frag_inspect_me",
+        role="hero",
+        label="Homepage hero",
+        html='<section class="hp-hero"><h1 data-slot="headline">Real</h1></section>',
+        css=".hp-hero { padding: 96px 0; background: linear-gradient(#a960ee, #ffcb57); }",
+        slots=[{"key": "headline", "kind": "text"}],
+    )
+    tools = _tools(tmp_path, registry)
+    result = json.loads(tools.inspect_cloned_section("frag_inspect_me"))
+    assert result["status"] == "ok"
+    assert result["label"] == "Homepage hero"
+    assert 'class="hp-hero"' in result["html"]
+    assert "linear-gradient(#a960ee, #ffcb57)" in result["css"]
+    assert result["html_truncated"] is False and result["css_truncated"] is False
+    assert result["slots"] == [{"key": "headline", "kind": "text"}]
+    missing = json.loads(tools.inspect_cloned_section("frag_nope"))
+    assert missing["status"] == "error" and missing["error_code"] == "cloned_section.not_found"
+
+
+# --------------------------------------------------------------------------- #
+# A pin is born with a human name (R-A5)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_pin_stamps_a_human_name_on_both_nodes(tmp_path: Path) -> None:
+    """A page the agent pinned and the same page opened by a human must agree on what each
+    band is called. The editor derives `"{Role} — {label}"` for an unnamed clone; the pin
+    stamps exactly those words, so the layers panel reads the same either way — and the name
+    rides INSIDE the `insert_node` payload, so the commit gate's replay reproduces it."""
+    named_hero_id = "frag_00000000000000aa"
+    registry = FakeRegistry(tmp_path)
+    registry.add(
+        fragment_id=named_hero_id,
+        role="hero",
+        label="Stripe homepage hero",
+        html='<section class="sh-hero"><h1>Real</h1></section>',
+    )
+    tools = _tools(tmp_path, registry)
+
+    result = json.loads(tools.insert_cloned_section(named_hero_id, slot_values_json="{}"))
+
+    assert result["status"] == "ok"
+    page = _page(tools)
+    section = page["nodes"][result["section_node_id"]]
+    fragment = page["nodes"][result["node_id"]]
+    assert section["kind"] == "section" and fragment["kind"] == "fragment"
+    assert section["name"] == "Hero — Stripe homepage hero"
+    assert fragment["name"] == "Hero — Stripe homepage hero"
+    # No second operation to keep in step: the name is part of the one insert that replays.
+    assert [op["kind"] for op in tools.operations_ledger] == ["insert_node"]
+    assert {node["name"] for node in tools.operations_ledger[0]["nodes"]} == {
+        "Hero — Stripe homepage hero"
+    }
+
+
+def test_pin_display_name_degrades_honestly() -> None:
+    from lumen_agent.tools.web_substrate import pin_display_name
+
+    assert (
+        pin_display_name({"section_role": "footer", "label": "Stripe footer"})
+        == "Footer — Stripe footer"
+    )
+    assert pin_display_name({"section_role": "cta", "label": ""}) == "Cta"
+    assert pin_display_name({"label": "Only a label"}) == "Only a label"
+    assert pin_display_name({}) == "Cloned section"
+
+
+# --------------------------------------------------------------------------- #
+# A human's interior text edits are visible to the agent (R-A6, slice 3)
+# --------------------------------------------------------------------------- #
+
+
+def test_inspect_lists_the_human_text_overrides_on_every_pin_of_that_clone(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    """An override is the ONE interior edit a human may make to a clone, and the agent has to
+    be able to see it — otherwise the next turn rewrites the band and silently argues with the
+    marketer about their own headline. `inspect_cloned_section` reads them off the DOCUMENT
+    (the artifact is immutable; an override is per-instance), so the list is per pinned node."""
+    tools = _tools(tmp_path, registry)
+    pin = json.loads(tools.insert_cloned_section(HERO_ID))
+    node_id = pin["node_id"]
+
+    applied = json.loads(
+        tools.web_ops(
+            json.dumps(
+                [
+                    {
+                        "kind": "set_fragment_text_override",
+                        "page_id": "home",
+                        "id": node_id,
+                        "path": ":nth-child(1)",
+                        "override": {
+                            "text": "Care, your way",
+                            "bold": True,
+                            "italic": False,
+                            "underline": False,
+                            "size": 1,
+                        },
+                    }
+                ]
+            )
+        )
+    )
+    assert applied["status"] == "ok", applied
+
+    result = json.loads(tools.inspect_cloned_section(HERO_ID))
+    assert result["status"] == "ok"
+    assert result["text_overrides"] == [
+        {
+            "page_id": "home",
+            "node_id": node_id,
+            "path": ":nth-child(1)",
+            "text": "Care, your way",
+            "bold": True,
+            "italic": False,
+            "underline": False,
+            "size": 1,
+        }
+    ]
+
+
+def test_a_clone_nobody_has_edited_lists_no_overrides(
+    tmp_path: Path, registry: FakeRegistry
+) -> None:
+    tools = _tools(tmp_path, registry)
+    tools.insert_cloned_section(HERO_ID)
+    assert json.loads(tools.inspect_cloned_section(HERO_ID))["text_overrides"] == []

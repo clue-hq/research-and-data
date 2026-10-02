@@ -39,8 +39,11 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api import projections_app, projections_main, run_composition
 from clue_api.brand_kit_ingestion import (
     INGEST_WEBSITE_PATH,
+    ONBOARD_AD_ASSETS_PATH,
+    AdHarvestConfig,
     BrandKitWebsiteIngestion,
     build_brand_kit_ingestion_trigger,
+    company_domain,
 )
 from clue_api.stage0_setup import create_stage0_setup_router
 from clue_auth import provision_self_serve_workspace
@@ -151,6 +154,7 @@ def _setup_app(
     conn_factory: Any,
     design: _DesignApiDouble,
     recon: _CaptureEnqueuer,
+    ad_harvest: AdHarvestConfig | None = None,
 ) -> FastAPI:
     app = FastAPI()
     app.include_router(
@@ -163,6 +167,7 @@ def _setup_app(
                 base_url=DESIGN_BASE_URL,
                 conn_factory=conn_factory,
                 client_factory=design.client,
+                ad_harvest=ad_harvest,
             ),
         )
     )
@@ -496,6 +501,8 @@ def test_the_http_root_composes_the_trigger_exactly_when_configured(
             _env_file=None,
             storage_fs_root=str(tmp_path / "artifacts"),
             self_serve_provisioning_enabled=True,
+            # The setup router rides the legacy-recon flag since 2026-09-12 (ledger A4).
+            legacy_stage0_recon_enabled=True,
             design_api_base_url=(DESIGN_BASE_URL if configured else None),
         ),
         secrets=Secrets(_env_file=None),
@@ -630,3 +637,175 @@ def test_setup_current_carries_the_field_in_the_unavailable_branch_too() -> None
             assert body["brand_kit_ingestion"] is None
 
     run_async(scenario())
+
+
+# --- 9. the ad harvest rides the same trigger (auto ad ingestion, 2026-09-28) -----------------
+#
+# Onboarding also offers ONE ad-assets harvest for the company's own LinkedIn ads, in parallel with
+# the website ingestion. The harvest needs no brand kit (the card step that does runs later, on
+# the design side), so it is offered at the same moment, independently fail-soft, once per kind.
+
+AD_HARVEST = AdHarvestConfig(max_creatives=50, max_pages=8)
+
+
+def test_first_time_setup_also_offers_the_ad_harvest() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_factory = _shared_conn_factory(conn)
+            provisioned = await _provision(conn, "adharvest-once")
+            workspace_id = provisioned.workspace.workspace_id
+            design = _DesignApiDouble()
+            app = _setup_app(
+                conn_factory=conn_factory,
+                design=design,
+                recon=_CaptureEnqueuer(),
+                ad_harvest=AD_HARVEST,
+            )
+            async with httpx.AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                started = await client.post(
+                    "/stage0/setup", headers={"X-Workspace-Id": workspace_id}
+                )
+            assert started.status_code == 202
+
+            assert [request.url.path for request in design.requests] == [
+                INGEST_WEBSITE_PATH,
+                ONBOARD_AD_ASSETS_PATH,
+            ]
+            ad = design.requests[1]
+            assert ad.headers["X-Workspace-Id"] == workspace_id
+            assert json.loads(ad.content) == {
+                "phase": "harvest",
+                "company_domain": "insight.health",
+                "max_creatives": 50,
+                "max_pages": 8,
+            }
+
+    run_async(scenario())
+
+
+def test_an_ad_harvest_failure_leaves_the_website_ingestion_alone() -> None:
+    async def scenario() -> None:
+        workspace_id = f"ws_adharvest_failsoft_{uuid4().hex[:10]}"
+
+        def responder(index: int) -> httpx.Response:
+            if index == 1:
+                raise httpx.ConnectError("the ad route is down")
+            return _accepted(index)
+
+        design = _DesignApiDouble(responder)
+        async with db_lifespan() as engine:
+            trigger = BrandKitWebsiteIngestion(
+                base_url=DESIGN_BASE_URL,
+                conn_factory=lambda: engine.begin(),
+                client_factory=design.client,
+                ad_harvest=AD_HARVEST,
+            )
+            website_job = await trigger.ensure(
+                workspace_id=workspace_id, website="https://insight.health"
+            )
+        assert website_job is not None
+        assert len(design.requests) == 2
+
+    run_async(scenario())
+
+
+def test_each_kind_is_offered_once_and_independently() -> None:
+    """An ad job never stands in for a kit ingestion, and a kit ingestion never for an ad job."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_factory = _shared_conn_factory(conn)
+
+            had_ads = await _provision(conn, "adharvest-had-ads")
+            await design_ingestion.create_job(
+                conn,
+                workspace_id=had_ads.workspace.workspace_id,
+                kind="ad_assets",
+                request={"phase": "harvest", "company_domain": "insight.health"},
+            )
+            design = _DesignApiDouble()
+            await BrandKitWebsiteIngestion(
+                base_url=DESIGN_BASE_URL,
+                conn_factory=conn_factory,
+                client_factory=design.client,
+                ad_harvest=AD_HARVEST,
+            ).ensure(workspace_id=had_ads.workspace.workspace_id, website="https://insight.health")
+            assert [r.url.path for r in design.requests] == [INGEST_WEBSITE_PATH]
+
+            had_kit = await _provision(conn, "adharvest-had-kit")
+            await design_ingestion.create_job(
+                conn,
+                workspace_id=had_kit.workspace.workspace_id,
+                kind="website",
+                request={"url": PROFILE["company_website"]},
+            )
+            design = _DesignApiDouble()
+            await BrandKitWebsiteIngestion(
+                base_url=DESIGN_BASE_URL,
+                conn_factory=conn_factory,
+                client_factory=design.client,
+                ad_harvest=AD_HARVEST,
+            ).ensure(workspace_id=had_kit.workspace.workspace_id, website="https://insight.health")
+            assert [r.url.path for r in design.requests] == [ONBOARD_AD_ASSETS_PATH]
+
+    run_async(scenario())
+
+
+def test_setup_current_reports_the_kit_ingestion_not_the_ad_harvest() -> None:
+    """The checklist row is "Creating brand kit"; an ad harvest builds no kit."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            conn_factory = _shared_conn_factory(conn)
+            provisioned = await _provision(conn, "adharvest-checklist")
+            workspace_id = provisioned.workspace.workspace_id
+            website = await design_ingestion.create_job(
+                conn,
+                workspace_id=workspace_id,
+                kind="website",
+                request={"url": PROFILE["company_website"]},
+            )
+            await design_ingestion.create_job(
+                conn,
+                workspace_id=workspace_id,
+                kind="ad_assets",
+                request={"phase": "harvest", "company_domain": "insight.health"},
+            )
+            body = await _current(conn_factory, workspace_id)
+            assert body["brand_kit_ingestion"]["job_id"] == str(website["job_id"])
+
+    run_async(scenario())
+
+
+@pytest.mark.parametrize(
+    ("enabled", "expected"),
+    [(True, AdHarvestConfig(max_creatives=50, max_pages=8)), (False, None)],
+)
+def test_the_builder_reads_the_ad_harvest_settings(
+    enabled: bool, expected: AdHarvestConfig | None
+) -> None:
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        design_api_base_url=DESIGN_BASE_URL,
+        brand_ad_assets_auto_onboard=enabled,
+    )
+    trigger = build_brand_kit_ingestion_trigger(settings=settings, conn_factory=transaction)
+    assert trigger is not None
+    assert trigger._ad_harvest == expected  # noqa: SLF001 — the composed config is the contract
+
+
+@pytest.mark.parametrize(
+    ("website", "domain"),
+    [
+        ("https://insight.health", "insight.health"),
+        ("https://www.Ramp.com/pricing?x=1", "ramp.com"),
+        ("apollo.io", "apollo.io"),
+        ("http://sub.example.co.uk:8080/", "sub.example.co.uk"),
+        ("", None),
+        ("   ", None),
+    ],
+)
+def test_company_domain_is_the_bare_host(website: str, domain: str | None) -> None:
+    assert company_domain(website) == domain

@@ -1,0 +1,58 @@
+/*
+ * Rung C: the scene formatting toolbar's ONE new rule.
+ *
+ * Standing constraint 2 / founder-visible item 2: this toolbar reuses the web
+ * rich-text toolbar's visual language rather than commissioning a new one — so
+ * every control here wears `web-rich-text-toolbar.module.css`'s own classes,
+ * imported by the component beside this file. The button row, the pressed and
+ * mixed treatments, the popover, the swatch grid and the inline error are that
+ * file's rules, unchanged and unduplicated; re-authoring them here is how two
+ * formatting toolbars over one design language drift apart.
+ *
+ * What could NOT be reused is the frame. That toolbar is `position: fixed`,
+ * floating over an iframe in VIEWPORT coordinates. This one is an absolutely
+ * positioned sibling of the canvas inside `.stage`, in the same STAGE px the
+ * caret overlay (`.textEditOverlay`, z-index 41) and the selection outline are
+ * placed in — so it must be `absolute`, and it must sit just above the caret it
+ * belongs to.
+ *
+ * ── ABOVE THE BANNERS, NOT UNDER THEM (D3b, live walk 2026-08-24) ─────────
+ * This rule used to be 31, deliberately UNDER the G-D banners (z-index 40),
+ * and that was the wrong call. The seeded ad always shows the non-dismissible
+ * brand-font fallback banner; the bar placed itself over a top-of-artboard
+ * headline, landed in the banner's band, and `elementFromPoint` at the Bold
+ * button returned the banner's span — a real mouse sequence there did nothing,
+ * so rung C was mouse-unreachable on that ad.
+ *
+ * The ordering rule is now the plain one: INTERACTIVE surfaces sit above
+ * INFORMATIONAL ones. 42 keeps the bar above the caret (41) exactly as it was
+ * above it before, and puts both over the banners (40). No banner is hidden or
+ * made inert: `sceneTextToolbarPosition`'s `topInset` is what keeps the two
+ * apart in the normal case, and this is the guarantee for when they overlap
+ * anyway.
+ *
+ * The layout/typography of the bar itself is the source `.toolbar`'s, restated
+ * for this one class because a CSS-module `composes` cannot reliably override
+ * the `position` it would be inheriting.
+ */
+
+.anchor {
+  position: absolute;
+  z-index: 42;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(620px, 100%);
+  color: var(--clue-ds-color-content-neutral);
+  font-family: var(--clue-ds-product-typography-ui-regular-font-family);
+  font-size: 13px;
+  line-height: 18px;
+  /* Hidden until it has been measured and placed — the source toolbar's own
+   * "no floating bar pointing at nothing" rule. */
+  visibility: hidden;
+}
+
+.placed {
+  visibility: visible;
+}

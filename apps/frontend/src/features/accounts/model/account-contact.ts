@@ -1,17 +1,20 @@
+import { AccountCustomFieldSchema } from "./account";
 import { z } from "zod";
 import {
-  IsoTimestampSchema,
-  JsonValueSchema,
-  PersonaSchema,
-  type Persona,
-} from "./vocabulary";
-import { ProseReadSchema } from "./prose";
-import { EvidenceReferenceSchema } from "./evidence";
+  HttpUrlSchema,
+  ResearchContactReferenceSchema,
+  ResearchDisplayBlockSchema,
+  ResearchEvidenceSchema,
+} from "./research-display";
 
-/**
- * Presentation-only persona tone. It is a frontend display decision (D-5) and
- * never leaves or enters the wire.
- */
+export const ContactSocialSchema = z.enum([
+  "linkedin",
+  "x",
+  "facebook",
+  "instagram",
+  "whatsapp",
+]);
+
 export const ContactPersonaToneSchema = z.enum([
   "olive",
   "orange",
@@ -22,148 +25,82 @@ export const ContactPersonaToneSchema = z.enum([
   "red",
 ]);
 
-export type ContactPersonaTone = z.infer<typeof ContactPersonaToneSchema>;
-
-const personaTones: Record<Persona, ContactPersonaTone> = {
-  champion: "green",
-  economic_buyer: "orange",
-  technical_evaluator: "blue",
-  blocker: "red",
-};
-
-const personaLabels: Record<Persona, string> = {
-  champion: "Champion",
-  economic_buyer: "Economic buyer",
-  technical_evaluator: "Technical evaluator",
-  blocker: "Blocker",
-};
-
-export function contactPersonaTone(persona: Persona): ContactPersonaTone {
-  return personaTones[persona] ?? "olive";
-}
-
-export function contactPersonaLabel(persona: Persona): string {
-  return personaLabels[persona] ?? persona;
-}
-
-/**
- * The committee role with the confidence behind it — the real signal that the
- * fixture-era `influence` band was standing in for.
- */
-export const RoleOnCommitteeSchema = z.object({
-  value: z.string(),
-  confidence: z.number().nullable().default(null),
-});
-
-/**
- * How many signal TYPES currently hold a display-eligible statement.
- *
- * Bounded by a two-family whitelist, so a list-valued field with five items
- * still counts 1. Label it as signal types, never as a count of items.
- */
-export const ContactSignalsSchema = z.object({
-  typeCount: z.number().int().nonnegative().default(0),
-});
-
-export const EmailLookupStateSchema = z.enum([
-  "pending",
-  "available",
-  "not_found",
-  "withheld",
-  "unavailable",
-  "failed",
-]);
-
-export const ContactEmailLookupSchema = z.object({
-  lookupId: z.string(),
-  state: EmailLookupStateSchema,
-  // Retained machine metadata; the UI does not add verification/corroboration badges.
-  resolution: z.enum([
-    "pending",
-    "matched",
-    "single_source",
-    "conflict",
-    "none",
-    "withheld",
-    "unavailable",
-    "failed",
-  ]),
-  emails: z
-    .array(
-      z.object({
-        value: z.string().email(),
-        sources: z.array(
-          z.object({ key: z.string(), label: z.string() }),
-        ),
-      }),
-    )
-    .default([]),
-  retryable: z.boolean().default(false),
-});
-
-/**
- * One contacts-table row.
- *
- * `titleRestricted` marks a display-denied value: the field is served absent
- * with the marker and with no provenance, while a field the backend simply does
- * not hold is absent and unmarked. Absence and redaction are different answers.
- */
 export const AccountContactSummarySchema = z.object({
-  id: z.string(),
-  name: z.string().nullable().default(null),
-  title: z.string().nullable().default(null),
-  titleRestricted: z.boolean().default(false),
-  persona: PersonaSchema,
-  roleOnCommittee: RoleOnCommitteeSchema,
-  linkedinUrl: z.string().nullable().default(null),
-  projectIds: z.array(z.string()).default([]),
-  signals: ContactSignalsSchema.default({ typeCount: 0 }),
-  emailLookup: ContactEmailLookupSchema.nullable().default(null),
+  id: z.string().min(1),
+  name: z.string().min(1),
+  title: z.string().min(1).nullable(), // D0 ruling S7
+  persona: z.string().min(1),
+  membershipState: z.enum(["candidate", "supported", "needs_verification", "excluded"]).nullish(),
+  outreachEligible: z.boolean().optional(),
+  membershipGaps: z.array(z.string()).optional(),
+  personaTone: ContactPersonaToneSchema,
+  influence: z.enum(["High", "Medium", "Low"]).nullable(),
+  avatarUrl: z
+    .string()
+    .refine(
+      (value) => value.startsWith("/") || URL.canParse(value),
+      "Expected an absolute URL or a public asset path",
+    )
+    .optional(),
+  emailStatus: z.enum(["available", "lookup"]),
+  emailLabel: z.string().email().optional(),
+  socials: z.array(ContactSocialSchema),
+  profileAction: z.enum(["none", "preview", "page"]).default("none"),
 });
 
-/** A professional fact on the contact profile, with the same redaction marker. */
-export const GovernedFactSchema = z.object({
-  fieldKey: z.string(),
-  claimId: z.string().nullable().default(null),
-  value: JsonValueSchema.nullable().default(null),
-  observedAt: IsoTimestampSchema.nullable().default(null),
-  provider: z.string().nullable().default(null),
-  restricted: z.boolean().default(false),
+export const ContactEvidenceSchema = z.object({
+  id: z.string().min(1),
+  source: z.enum(["link", "linkedin", "x"]),
+  title: z.string().min(1),
+  dateLabel: z.string().min(1),
+  url: HttpUrlSchema,
 });
 
-export const ContactEvidenceSchema = EvidenceReferenceSchema;
-
-/**
- * `GET /frontend/v1/accounts/{accountId}/contacts/{contactId}` — the object
- * itself, no `data` wrapper.
- *
- * `redirectedFrom` tracks a merged **contact** only. A merged account id is
- * followed silently, so a client that wants to correct a stale account link
- * must compare `accountId` with the id it asked for.
- */
 export const AccountContactDetailSchema = AccountContactSummarySchema.extend({
-  accountId: z.string(),
-  accountName: z.string().nullable().default(null),
-  overview: ProseReadSchema.default({
-    state: "not_composed",
-    paragraphs: [],
-    researchOutcome: null,
-  }),
-  professionalFacts: z.array(GovernedFactSchema).default([]),
-  evidence: z.array(ContactEvidenceSchema).default([]),
-  redirectedFrom: z.string().nullable().default(null),
+  accountId: z.string().min(1),
+  accountName: z.string().min(1),
+  // A rooted path to the platform's logo route (a stored LinkedIn mark), or Brandfetch's Logo
+  // API URL the browser embeds directly (that CDN is embed-only). Founder ruling 2026-09-11,
+  // superseding D0 ruling S2's "always null".
+  accountLogoPath: z
+    .string()
+    .refine((value) => value.startsWith("/") || value.startsWith("https://cdn.brandfetch.io/"))
+    .nullable(),
+  recentSignalsLabel: z.string().min(1),
+  linkedinLabel: z.string().min(1),
+  linkedinUrl: HttpUrlSchema,
+  xLabel: z.string().min(1).optional(),
+  xUrl: HttpUrlSchema.optional(),
+  emailVerifiedAt: z.string().date().optional(),
+  emailClaimId: z.string().min(1).nullable().default(null), // D0 ruling R5
+  locationLabel: z.string().min(1).optional(),
+  bestFirstChannelLabel: z.string().min(1).optional(),
+  educationLabel: z.string().min(1).optional(),
+  tenureLabel: z.string().min(1).optional(),
+  employmentStartedAt: z.string().date().optional(),
+  linkedinFollowers: z.number().int().nonnegative().optional(),
+  linkedinCreator: z.boolean().optional(),
+  locationClaimId: z.string().optional(),
+  reports: z.array(ResearchContactReferenceSchema).default([]),
+  overviewParagraphs: z.array(z.string().min(1)).default([]), // D0 ruling S5
+  evidence: z.array(ContactEvidenceSchema),
+  researchEvidence: z.array(ResearchEvidenceSchema).default([]),
+  customFields: z.array(AccountCustomFieldSchema).default([]),
+  contactDisplay: ResearchDisplayBlockSchema.optional(),
+  lastModifiedAt: z.string().datetime(), // D0 ruling R8 (the contact's own latest verifiedAt)
 });
 
 export const AccountContactsResponseSchema = z.object({
   data: z.array(AccountContactSummarySchema),
-  meta: z
-    .object({ total: z.number().int().nonnegative() })
-    .default({ total: 0 }),
 });
 
+export const AccountContactDetailResponseSchema = z.object({
+  data: AccountContactDetailSchema,
+});
+
+export type AccountContactSummary = z.infer<
+  typeof AccountContactSummarySchema
+>;
 export type AccountContactDetail = z.infer<typeof AccountContactDetailSchema>;
-export type AccountContactSummary = z.infer<typeof AccountContactSummarySchema>;
-export type ContactEvidence = z.infer<typeof ContactEvidenceSchema>;
-export type ContactEmailLookup = z.infer<typeof ContactEmailLookupSchema>;
-export type GovernedFact = z.infer<typeof GovernedFactSchema>;
-export type RoleOnCommittee = z.infer<typeof RoleOnCommitteeSchema>;
+export type ContactPersonaTone = z.infer<typeof ContactPersonaToneSchema>;
+export type ContactSocial = z.infer<typeof ContactSocialSchema>;

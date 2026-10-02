@@ -1,98 +1,92 @@
 import { z } from "zod";
-import {
-  AddedViaSchema,
-  IsoTimestampSchema,
-  ResearchStatusSchema,
-} from "./vocabulary";
+import { HttpUrlSchema } from "./research-display";
 
-export { ResearchStatusSchema } from "./vocabulary";
-export type { ResearchStatus } from "./vocabulary";
+// D0 ruling S11: adopt the backend's five values; drop "fully_enriched" / "failed".
+export const ResearchStatusSchema = z.enum([
+  "not_started",
+  "in_progress",
+  "needs_review",
+  "completed",
+  "suspended",
+]);
 
-/**
- * One project that targets this account, and how/when it joined.
- *
- * `name` is the project record's own name, resolved by a read-layer join, and
- * is nullable: `null` for the unattributed section and for any section whose
- * project id this workspace holds no `project` row for. Never render the id as
- * a fallback name — an unnamed project is the honest rendering.
- */
+export const AccountFitSchema = z.enum(["High", "Medium", "Low"]);
+
 export const AccountProjectSchema = z.object({
-  projectId: z.string(),
-  name: z.string().nullable().default(null),
-  addedVia: AddedViaSchema.nullable().default(null),
-  addedAt: IsoTimestampSchema.nullable().default(null),
+  id: z.string().min(1),
+  name: z.string().min(1),
 });
 
-/**
- * A Pass-A score under one ICP, carrying the project it belongs to.
- *
- * `fit`/`intent` are unit-interval (0–1) and independently nullable: a project
- * may have scored fit and not intent, and reporting the missing half as `0`
- * would be a fabrication. The list is keyed by `(projectId, icpKey,
- * icpVersion)` — one project can score an account under several ICPs and
- * versions, so no representative run is chosen.
- */
-export const AccountProjectScoreSchema = z.object({
-  projectId: z.string(),
-  fit: z.number().nullable().default(null),
-  intent: z.number().nullable().default(null),
-  icpKey: z.string().nullable().default(null),
-  icpVersion: z.number().int().nullable().default(null),
-  scoredAt: IsoTimestampSchema.nullable().default(null),
+export const AccountOwnerSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  avatarUrl: z
+    .string()
+    .refine(
+      (value) => value.startsWith("/") || URL.canParse(value),
+      "Expected an absolute URL or a public asset path",
+    )
+    .optional(),
 });
 
-/**
- * The research status of this account *within* one project.
- *
- * An entry may name a project the account has no membership row for (research
- * was launched for a project that no longer targets it); that is reported
- * rather than hidden, so `projectId` is not always a member of `projects[]`.
- */
-export const AccountResearchStatusSchema = z.object({
-  projectId: z.string(),
-  status: ResearchStatusSchema,
+export const AccountSocialSchema = z.object({
+  id: z.string().min(1),
+  label: z.enum(["LinkedIn", "Twitter", "Facebook", "Instagram"]),
+  url: HttpUrlSchema,
+});
+
+export const AccountCustomFieldSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  value: z.string().min(1),
+  presentation: z.enum(["text", "badge", "score"]).default("text"),
+  primary: z.boolean().default(false),
+  claimId: z.string().nullish(),
 });
 
 export const AccountSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  domain: z.string().nullable().default(null),
-  /** A headcount claim, not a band — banding is a display decision the frontend owns. */
-  employeeCount: z.number().int().nullable().default(null),
-  /**
-   * The backend claim vocabulary (for example `100m_500m`), not a display
-   * string, and not a guaranteed closed enum: the value is whatever the
-   * field's writer produced. Rendered through a lookup with a fallback.
-   */
-  revenueBand: z.string().nullable().default(null),
-  /** Always `null` today — no logo pipeline exists; the initials fallback renders. */
-  logoUrl: z.string().nullable().default(null),
+  id: z.string().min(1),
+  name: z.string().min(1),
+  // A rooted path to the platform's logo route (a stored LinkedIn mark), or Brandfetch's Logo
+  // API URL the browser embeds directly (that CDN is embed-only). Founder ruling 2026-09-11,
+  // superseding D0 ruling S2's "always null".
+  logoPath: z
+    .string()
+    .refine((value) => value.startsWith("/") || value.startsWith("https://cdn.brandfetch.io/"))
+    .nullable(),
+  websiteUrl: HttpUrlSchema.nullable(), // D3 ruling (source map: null when no primary_domain)
+  researchStatus: ResearchStatusSchema,
+  researchStatusLabel: z.string().min(1).optional(),
+  researchIsRefreshing: z.boolean().default(false),
+  overallFit: AccountFitSchema.nullable(), // D0 ruling R7
+  fitScore: z.number().int().min(0).max(100).nullable(),
+  revenueBand: z.string().min(1),
+  employeeBand: z.string().min(1),
+  locationCount: z.number().int().nonnegative(),
+  locationsLabel: z.string().min(1).optional(),
+  owner: AccountOwnerSchema.nullish(),
+  createdBy: AccountOwnerSchema.nullish(),
+  industryLabels: z.array(z.string().min(1)).default([]),
+  socials: z.array(AccountSocialSchema).default([]),
+  createdAt: z.string().datetime().optional(),
+  lastModifiedAt: z.string().datetime().optional(),
+  primaryProjectId: z.string().min(1).nullable().default(null),
   projects: z.array(AccountProjectSchema).default([]),
-  primaryProjectId: z.string().nullable().default(null),
-  scores: z.array(AccountProjectScoreSchema).default([]),
-  researchStatus: z.array(AccountResearchStatusSchema).default([]),
-  /**
-   * The `account_entity` row's update time — NOT research or claim recency. It
-   * does not move when a new claim, score, or narrative lands.
-   */
-  updatedAt: IsoTimestampSchema.nullable().default(null),
+  customFields: z.array(AccountCustomFieldSchema).default([]),
 });
 
 export const AccountsResponseSchema = z.object({
   data: z.array(AccountSchema),
   meta: z.object({
     total: z.number().int().nonnegative(),
-    nextCursor: z.string().nullable().default(null),
-    page: z.number().int().positive().nullable().default(null),
-    pageSize: z.number().int().positive().nullable().default(null),
-    totalPages: z.number().int().positive().nullable().default(null),
+    nextCursor: z.string().nullable(),
   }),
 });
 
 export type Account = z.infer<typeof AccountSchema>;
 export type AccountProject = z.infer<typeof AccountProjectSchema>;
-export type AccountProjectScore = z.infer<typeof AccountProjectScoreSchema>;
-export type AccountResearchStatusEntry = z.infer<
-  typeof AccountResearchStatusSchema
->;
+export type AccountOwner = z.infer<typeof AccountOwnerSchema>;
+export type AccountSocial = z.infer<typeof AccountSocialSchema>;
+export type AccountCustomField = z.infer<typeof AccountCustomFieldSchema>;
 export type AccountsResponse = z.infer<typeof AccountsResponseSchema>;
+export type ResearchStatus = z.infer<typeof ResearchStatusSchema>;

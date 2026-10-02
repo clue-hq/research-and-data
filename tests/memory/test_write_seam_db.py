@@ -21,6 +21,7 @@ from clue_core import (
 from clue_memory import (
     WriteSeam,
     _store,  # test setup/inspection only — see conftest docstring
+    retire,
 )
 
 from .conftest import (
@@ -346,5 +347,81 @@ def test_cross_tenant_fuzz_zero_leakage() -> None:
                 assert len(rows) == 2
                 assert all(m.workspace_id == spine.workspace_id for m in rows)
                 assert all(f"Workspace {i} " in m.body for m in rows)
+
+    run_async(scenario())
+
+
+# --- source thread + the human retire verb -----------------------------------
+
+
+def test_a_project_note_carries_its_source_thread_and_can_be_retired() -> None:
+    """The project home writes a note from a thread and removes it: the row remembers which
+    thread said it, and *Remove memory* invalidates (never deletes) — fail-closed per workspace."""
+    from clue_api.thread_store import create_thread
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            spine = await seed_spine(conn, "-src")
+            thread = await create_thread(
+                conn,
+                thread_id="thr_memory_src",
+                workspace_id=spine.workspace_id,
+                project_id=spine.project_id,
+            )
+            seam = WriteSeam(
+                conn,
+                add_judge(),  # type: ignore[arg-type]
+                settings=make_settings(memory_enabled=True),
+                caps=make_caps(),
+            )
+            outcome = await seam.submit(
+                submission(
+                    spine.workspace_id,
+                    scope_type=MemoryScopeType.PROJECT,
+                    scope_id=spine.project_id,
+                    body="Keep outreach under 120 words.",
+                ).model_copy(update={"source_thread_id": thread.id})
+            )
+            assert isinstance(outcome, MemoryAccepted)
+            memory = await _store.get_memory(conn, outcome.memory_id)
+            assert memory is not None and memory.source_thread_id == "thr_memory_src"
+            assert memory.status is MemoryStatus.ACTIVE
+
+            assert (
+                await retire(
+                    conn,
+                    memory_id=memory.memory_id,
+                    workspace_id=spine.workspace_id,
+                    actor="usr_home",
+                    cause="removed on project home",
+                )
+                is True
+            )
+            retired = await _store.get_memory(conn, memory.memory_id)
+            assert retired is not None and retired.status is MemoryStatus.INVALIDATED
+            events = await _store.list_events(conn, memory.memory_id)
+            assert events[-1]["event_type"] == "invalidated"
+            assert events[-1]["actor"] == "usr_home"
+            # Already retired, and another workspace's caller: both refused, not re-journaled.
+            assert (
+                await retire(
+                    conn,
+                    memory_id=memory.memory_id,
+                    workspace_id=spine.workspace_id,
+                    actor="usr_home",
+                    cause="again",
+                )
+                is False
+            )
+            assert (
+                await retire(
+                    conn,
+                    memory_id=memory.memory_id,
+                    workspace_id="ws_other",
+                    actor="usr_home",
+                    cause="x",
+                )
+                is False
+            )
 
     run_async(scenario())

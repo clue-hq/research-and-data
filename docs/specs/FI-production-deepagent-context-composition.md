@@ -7,6 +7,14 @@ live fast-lane latency exception recorded in the S6 acceptance
 **Authority:** contract delta to Doc A Part III and PC-C8 for this production composition. Where
 this document conflicts with the provisional note in root `CLAUDE.md`, this document wins.
 
+**Founder supersession (2026-08-19):** the S5.0
+`selected_without_product_knowledge` state is historical-only. Product confirmation now
+atomically bootstraps an empty 0/N Product-KB v1, and new turn pins use
+`company-and-selected-product-required-v3`, which requires an exact Product-KB version whenever a
+product is selected. The empty lineage admits the bounded ProductKnowledgeCard and its governed
+tools without fabricating facts or requiring a verification judge; later product research fills
+the registered open gaps. See the child contract callout for replay and repair semantics.
+
 **Implementation checkpoint (2026-08-15):** S0-S5 are implemented. S4-A's version-aware reader,
 S4-B's immutable contract freeze, S4-C's trusted `@2` implementations, S4-D's production
 composition, and S4-E's privacy/injection/replay hardening all pass their gates. The previously

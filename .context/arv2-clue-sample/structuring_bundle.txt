@@ -1,0 +1,501 @@
+=== A. ACCOUNT DEEP-RESEARCH REPORT (Exa deep-reasoning; origin=exa_deep) ===
+
+--- ehr_technology_and_ggastro_verdict ---
+The public site identifies the portal only as “My GI Patient Portal” and says “Existing patients should use the secure My GI Patient Portal for confidential communications.” URL: https://charlestongi.com/doctors&staff/r-sidney-g-smith/ . The patient-forms page also says “We now offer online bill pay” and gives billing-office phone 843-793-5182. URL: https://charlestongi.com/for-patients/patient-forms/ . The publicly indexed evidence reviewed does not name the EHR/practice-management vendor, portal hostname, or an EHR go-live/change. NOT FOUND. gGastro/Modernizing Medicine: NOT FOUND — no reviewed public source names gGastro or Modernizing Medicine.
+
+--- identity_and_disambiguation ---
+Operating/public name: Charleston GI Specialists / Charleston GI; the official site is https://charlestongi.com. The practice describes itself as “the first and largest independent group of GI specialists in Charleston” and says it has “eleven outstanding board-certified gastroenterologists” and “four convenient locations and two state-of-the-art endoscopy centers.” URL: https://charlestongi.com/ . Public NPI-directory evidence identifies “Charleston Gastroenterology Specialists” as an organization at “1962 Charlie Hall Blvd, Charleston, SC 29414-5837”; the same result names Sherry M. Searson as “BUSINESS SERVICES MANAGER.” URL: https://opengovus.com/npi/1205835865 . Apollo-supplied firmographics report founded 2002, 76 employees, HQ 1962 Charlie Hall Blvd, and phone +1 843-722-8000, but those supplied firmographics were not independently verified in the indexed public sources. Legal entity type, SC Secretary of State filing, EIN, organizational NPI details beyond the directory result, and official LinkedIn URL are NOT FOUND in the reviewed public evidence. DISAMBIGUATION: This dossier is limited to the entity operating https://charlestongi.com. It must not be confused with MUSC Health/Medical University of South Carolina GI, Roper St. Francis GI, Lowcountry Gastroenterology, Trident/Summerville hospital GI, or national platforms. A Roper page is explicitly labeled “Roper St. Francis Healthcare” even though it lists Charleston Gastroenterology Specialists locations; it is not treated as ownership evidence for Charleston GI. URL: https://datamanager-roperstfrancis.consumerism.pressganey.com/default/details/495?Practices=601%2C906%2C607%2C961%2C869%2C1152%2C1704%2C1705%2C1490%2C685&SetSize=48&SortBy=FamilyName&SortDirection=Asc&tab=2&tab=2&view=tiled .
+
+--- leadership_and_buying_committee ---
+| Full name | Exact title | Source URL | Verbatim line naming them |
+|---|---|---|---|
+| Wanda W. Punteney | Chief Executive Officer | https://theorg.com/org/charleston-gastroenterology-specialist | “Chief Executive Officer Wanda W. Punteney” |
+| Sherry M. Searson | Business Services Manager | https://opengovus.com/npi/1205835865 | “Official Title BUSINESS SERVICES MANAGER” |
+| Stephanie Andrews | Director of Nursing, Lowcountry Endoscopy Center; Director of Nursing, Summerville Endoscopy Center | https://linkedin.com/in/stephanie-andrews-5454a946 | “Director of Nursing Lowcountry Endoscopy Center” and “Director of Nursing Summerville Endoscopy Center” |
+| John Corless, MD | Former practicing physician partner; former medical director; emeritus physician | https://linkedin.com/in/john-corless-226a6b35 | “Practicing Physician Partner” and “Medical Director” and “emeritus physician” | Physician officers/managing partners, practice administrator, billing/revenue-cycle manager, compliance officer, privacy officer, IT leader, and complete current administrative roster: NOT FOUND. The Corless evidence is historical: the profile says he “completed my tenure at Charleston GI” on “6/30/18.” URL: https://linkedin.com/in/john-corless-226a6b35 .
+
+--- owned_endoscopy_capacity ---
+The official site lists Charleston Endoscopy Center at “1962 Charlie Hall Boulevard Charleston, SC 29414” and Summerville Endoscopy Center at “328 Midland Parkway Summerville, SC 29485,” and separately lists “LOWCOUNTRY ENDOSCOPY CENTER 207 McBride Ln. Summerville SC 29486.” URL: https://charlestongi.com/contact-us/ . Its FAQ likewise calls the first two “CHARLESTON ENDOSCOPY CENTER” and “SUMMERVILLE ENDOSCOPY CENTER.” URL: https://charlestongi.com/for-patients/faq/endoscopy-faqs/ . A construction-industry project page says the Summerville facility was “operated by Charleston Gastroenterology Specialists,” was “an office-based center with two procedure rooms,” and was built for “a private physicians group.” URL: https://www.gmka.com/charleston-gastro-specialists . This supports practice-operated capacity, but does not by itself establish legal ownership. The official site does not publicly state physician ownership, AAAHC/AAAASF accreditation, state licensure, CMS certification, or NPI for each center: NOT FOUND. John Corless’s profile says he was “Medical Director of the Charleston Endoscopy Center” and that it was recognized by the “ASGE Endoscopy Unit Recognition Program.” URL: https://linkedin.com/in/john-corless-226a6b35 . Hospital privileges are not evidence of ownership and none are attributed here.
+
+--- ownership_and_independence ---
+Charleston GI publicly self-identifies as independent: “the first and largest independent group of GI specialists in Charleston.” URL: https://charlestongi.com/ . Its December 29, 2025 article says, “At Charleston GI, we’re proud to maintain a local, patient-centered focus” and “Charleston GI remains committed to being a trusted, independent resource.” URL: https://charlestongi.com/news&events/navigating-the-changing-gi-investment-landscape-what-it-means-for-you/ . The Summerville project source describes the group as “a private physicians group.” URL: https://www.gmka.com/charleston-gastro-specialists . INFERENCE: The public evidence supports a locally independent/private physician-group posture, but does not prove the exact equity holders or legal ownership chain. No acquisition or partnership announcement involving GI Alliance, United Digestive, One GI, Gastro Health, or a PE/MSO parent was found in the reviewed sources; therefore PE/MSO affiliation: NOT FOUND, not a definitive negative.
+
+--- prior_auth_recall_and_screening ---
+(a) Referral/authorization evidence: the insurance page states, “Your insurance plan may require you to have a referral from your primary care physician” and warns that treatment without it “may result in denial of payment.” URL: https://charlestongi.com/for-patients/insurance-information/ . A public statement explicitly assigning prior-authorization/pre-certification work to named staff or a job posting: NOT FOUND. (b) Open/direct access: the appointment page states “No referral needed!” and “While we don’t require patients to be referred by another physician.” URL: https://charlestongi.com/for-patients/ . The doctors page says “Schedule an appointment 5 days a week, no referral needed!” URL: https://charlestongi.com/doctors-and-staff/ . A colorectal-screening-specific open-access/direct-access colonoscopy program is NOT FOUND in the reviewed evidence. An automated screening-recall or surveillance-reminder program is NOT FOUND.
+
+--- providers_staff_and_locations ---
+The official doctors page publicly indexes at least Jeffrey M. Basile, MD; William F. Marsteller IV, MD; Marc D. Noble, MD; Lee M. Royall, MD; and John K. Corless, MD (marked “Retired”). URL: https://charlestongi.com/doctors-and-staff/ . The site’s FAQ says “Our team includes 12 incredible board-certified physicians.” URL: https://charlestongi.com/for-patients/faq/endoscopy-faqs/ . A complete current physician/NP/PA roster and credentials is NOT FOUND in the indexed evidence; therefore a reliable current provider count cannot be supplied. Locations publicly listed:
+1. West Ashley: “1962 Charlie Hall Boulevard Charleston, SC 29414.”
+2. Summerville: “328 Midland Parkway Summerville, SC 29485.”
+3. Carnes Crossroads: “Windmill Station 2001 2nd Avenue, Suite 101 Summerville, SC 29486.”
+4. Mount Pleasant: “180 Wingo Way, Ste. 305 Mount Pleasant, SC 29464.”
+Source for the first three and endoscopy listings: https://charlestongi.com/contact-us/ . The Roper directory reproduces all four addresses and lists phone “(843) 722-8000” and fax “(843) 723-7850.” URL: https://datamanager-roperstfrancis.consumerism.pressganey.com/default/details/495?Practices=601%2C906%2C607%2C961%2C869%2C1152%2C1704%2C1705%2C1490%2C685&SetSize=48&SortBy=FamilyName&SortDirection=Asc&tab=2&tab=2&view=tiled . The official-site-wide contact result instead publishes fax “843-647-6066.” URL: https://charlestongi.com/contact-us/ . Thus total offices: four; fax discrepancy requires confirmation.
+
+--- referral_intake_and_fax_numbers ---
+Referring-physician page: https://charlestongi.com/referring-physicians/ . It says, “For referring physicians only, this form enables you to schedule an appointment with Charleston GI for your patient.” The page publishes PHONE “843-722-8000” and FAX “843-647-6066.” The indexed result does not expose the downloadable form URL or its field list; referral-form URL and exact fields: NOT FOUND. Published fax numbers found: 843-647-6066, published on the official contact/referring pages, purpose apparently general practice/referral contact; URL: https://charlestongi.com/referring-physicians/ . 843-723-7850, listed by the Roper directory for all four Charleston Gastroenterology Specialists locations; URL: https://datamanager-roperstfrancis.consumerism.pressganey.com/default/details/495?Practices=601%2C906%2C607%2C961%2C869%2C1152%2C1704%2C1705%2C1490%2C685&SetSize=48&SortBy=FamilyName&SortDirection=Asc&tab=2&tab=2&view=tiled . No distinct medical-records, prior-auth, or per-office fax was found. The site says the referral form enables appointment scheduling, while the patient appointment page says “No referral needed!” URL: https://charlestongi.com/for-patients/ . INFERENCE: the public evidence indicates fax/phone referral intake is available and likely staff-mediated, but does not explicitly document re-keying or an electronic integration. Intake mode beyond fax/phone: NOT FOUND.
+
+--- timing_signals_dated ---
+- 2025-12-29: Charleston GI published “Navigating the Changing GI Investment Landscape: What It Means for You” and wrote, “At Charleston GI, we’re proud to maintain a local, patient-centered focus” and “Charleston GI remains committed to being a trusted, independent resource.” URL: https://charlestongi.com/news&events/navigating-the-changing-gi-investment-landscape-what-it-means-for-you/
+- 2025-04-18: Charleston GI published an InterStim article stating, “Charleston GI's open-access InterStim program allows patients to schedule an appointment easily – no referral needed.” URL: https://charlestongi.com/procedures/interstim/
+- 2024-03-21: Charleston GI published a stomach-cancer page stating, “no referral is needed” and listing “West Ashley,” “Summerville,” “Carnes Crossroads,” and “Mt Pleasant.” URL: https://charlestongi.com/conditions/stomach-cancer/
+- 2023-06-29: Charleston GI published that it had “four convenient Charleston area locations” and that “There’s no referral needed.” URL: https://charlestongi.com/news&events/understanding-the-low-fodmap-diet/ New location opening, EHR go-live/system change, leadership hire/retirement, merger/affiliation, new physician joining, hiring surge, or award in roughly the last 36 months: NOT FOUND in the reviewed public evidence.
+
+
+=== B. CONTACT DEEP-RESEARCH REPORT — Wanda W. Punteney (Exa deep-reasoning; origin=exa_deep) ===
+
+--- awards_and_service_milestones ---
+- Service milestone: Charleston GI’s official bio states, “Member of Charleston GI since 1989.” As of August 26, 2026, that is approximately 37 years of service (calendar-year calculation; the source does not give a specific start date). URL: https://charlestongi.com/doctors&staff/wanda-w-punteney/
+- Awards and other recognitions: NOT FOUND in the reviewed employer, LinkedIn, SCMGMA, news, and conference/publication searches.
+- The practice’s public bio does not show a separately dated anniversary announcement.
+
+--- career_history ---
+- Current: Charleston GI / Charleston Gastroenterology Specialists — Chief Executive Officer; LinkedIn identifies her as “Administrator, CEO at Charleston GI.” URLs: https://charlestongi.com/doctors&staff/wanda-w-punteney/ and https://www.linkedin.com/in/wanda-punteney-5a503a6
+- Charleston GI tenure: The employer bio says, “Member of Charleston GI since 1989.” No earlier employer or prior title is publicly documented in the sources located. URL: https://charlestongi.com/doctors&staff/wanda-w-punteney/
+- Related organizational service documented in South Carolina regulatory records: “Summerville Endoscopy Center, LLC by Wanda W Punteney, its CEO” and “Charleston Endoscopy Center, LLC by Wanda W. Punteney, its CEO.” These records establish CEO involvement in those entities, but do not state dates of employment or whether the role was separate from her Charleston GI position. URLs: https://dph.sc.gov/sites/scdph/files/2025-04/2025_March_Archived_CON_Applications.pdf; https://dph.sc.gov/sites/scdph/files/2024-08/2024_August_Archived_CON_Applications.pdf; https://dph.sc.gov/sites/scdph/files/2026-01/2025_December_Archived_CON_Applications.pdf
+- Earlier career history before Charleston GI in 1989: NOT FOUND.
+
+--- current_role_and_tenure ---
+- Exact current title: “Chief Executive Officer” on the Charleston GI employer bio; LinkedIn says “Administrator, CEO at Charleston GI.” URLs: https://charlestongi.com/doctors&staff/wanda-w-punteney/ and https://www.linkedin.com/in/wanda-punteney-5a503a6
+- Tenure: The employer states, “Member of Charleston GI since 1989.” On August 26, 2026, this supports approximately 37 years with the practice. URL: https://charlestongi.com/doctors&staff/wanda-w-punteney/
+- Public evidence of operational scope: a 2017 news report identifies her as “CEO of Charleston GI” while quoting her about the practice’s participation in the Carnes Crossroads/Windmill Station development: “With the continued growth in Berkeley County, we recognize the need to be here and we’re thrilled to find a home in Carnes Crossroads.” URL: https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html
+- Specific responsibility list and documented title progression: NOT FOUND. The available sources do not establish when she became CEO or how her title changed over time.
+
+--- education_and_credentials ---
+- Schools, degrees, fields of study, and graduation years: NOT FOUND in the Charleston GI bio, the accessible LinkedIn result, or the reviewed SCMGMA material.
+- CMPE/FACMPE certification: NOT FOUND.
+- MGMA membership beyond the association role described below: NOT FOUND.
+- Do not merge education or credentials from other same-name LinkedIn profiles; those profiles are not confirmed as this Charleston GI executive.
+
+--- gaps_not_found ---
+- Detailed education, degrees, fields, and graduation years — searched Charleston GI bio, LinkedIn profile, and general web results.
+- CMPE and FACMPE — searched exact-name web queries and MGMA/SCMGMA-related results.
+- Complete pre-1989 and internal Charleston GI career history — searched employer bio, LinkedIn, regulatory records, and exact-name web results.
+- Specific current CEO responsibilities and title-change chronology — searched employer bio, LinkedIn, news, and regulatory records.
+- Conference presentations, speaking engagements, podcasts, webinars, and bylined articles — searched exact-name queries with conference, speaking, presentation, article, interview, and quote terms.
+- Awards and recognitions — searched exact-name queries, employer site, LinkedIn, news, and professional-association results.
+- A dated service-anniversary announcement — searched Charleston GI and exact-name results.
+- A fuller publicly accessible LinkedIn career/education history — the indexed profile confirms the current role but exposes no dates or education.
+
+--- identity_confirmation ---
+- Employer anchor: Charleston GI’s official staff page is titled “Wanda W. Punteney” and states, “Chief Executive Officer Member of Charleston GI since 1989.” The same page lists Charleston Gastroenterology Specialists and affiliated endoscopy centers in the Charleston/Summerville area. URL: https://charlestongi.com/doctors&staff/wanda-w-punteney/
+- LinkedIn anchor: the identified profile is located in “Charleston, South Carolina, United States” and says, “Administrator, CEO at Charleston GI.” URL: https://www.linkedin.com/in/wanda-punteney-5a503a6
+- Independent press anchor: The Post and Courier identifies “Wanda Punteney, CEO of Charleston GI” and attributes a direct quote to her concerning the practice’s Carnes Crossroads development. URL: https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html
+- Regulatory anchor: South Carolina Department of Health and Environmental Control records refer to “Wanda W. Punteney” as CEO of Charleston Endoscopy Center, LLC and to “Wanda W Punteney” as CEO of Summerville Endoscopy Center, LLC. URLs: https://dph.sc.gov/sites/scdph/files/2024-08/2024_August_Archived_CON_Applications.pdf and https://dph.sc.gov/sites/scdph/files/2025-04/2025_March_Archived_CON_Applications.pdf
+- Identity: CONFIRMED — the employer bio, LinkedIn role/location, independent press coverage, and South Carolina regulatory records converge on the Charleston GI executive. Same-name individuals were not used; search results containing other Wandas or unrelated people were excluded as not confirmed.
+
+--- personalization_hooks_non_sensitive ---
+- Long tenure: Charleston GI states, “Member of Charleston GI since 1989.” URL: https://charlestongi.com/doctors&staff/wanda-w-punteney/
+- Professional leadership: South Carolina MGMA’s Council of Governors page lists “2005 Governor SCMGMA - Wanda Punteney.” URL: https://www.southcarolinamgma.org/about/cog
+- Regional practice development: In coverage of the Windmill Station groundbreaking, she said, “With the continued growth in Berkeley County, we recognize the need to be here and we’re thrilled to find a home in Carnes Crossroads.” URL: https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html
+- Project-related testimonial: Cypress Engineering attributes this statement to her: “Exceptional experience in every way. Professional and customer focused. Attention to details; rapid response time; courteous and warm.” URL: https://www.cypresseng.com/project/lowcountry-endoscopy-center/
+- Alma mater, professional interests beyond the documented development work, and community involvement: NOT FOUND. Excluded by policy: health, faith, politics, family, and other sensitive personal material.
+
+--- professional_associations_and_board_roles ---
+- South Carolina Medical Group Management Association (SCMGMA): the organization’s Council of Governors page states, “2005 Governor SCMGMA - Wanda Punteney.” This supports a 2005 governor/leadership role, but the page does not provide additional committee or board dates. URL: https://www.southcarolinamgma.org/about/cog
+- Other industry-association memberships, boards, committees, ASC/GI management groups, or civic-professional roles: NOT FOUND in the reviewed sources.
+
+--- public_appearances_publications_and_quotes ---
+- Post and Courier / Berkeley Independent, April 30, 2017: The article identifies her as “Wanda Punteney, CEO of Charleston GI” and quotes her: “With the continued growth in Berkeley County, we recognize the need to be here and we’re thrilled to find a home in Carnes Crossroads.” It also reports that she said breaking ground was “beyond exciting.” URL: https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html
+- Cypress Engineering project page, published March 7, 2023: It attributes this testimonial to “Wanda Punteney” with the title “CEO, Charleston GI”: “Exceptional experience in every way. Professional and customer focused. Attention to details; rapid response time; courteous and warm. Truly can say our total experience was beyond our expectations from your stellar team.” URL: https://www.cypresseng.com/project/lowcountry-endoscopy-center/
+- Conference talks, panels, podcasts, webinars, bylined articles, and additional interviews: NOT FOUND.
+
+--- suggested_openers ---
+- “Your nearly four decades with Charleston GI—‘Member of Charleston GI since 1989’—stand out as a substantial record of continuity and leadership.” https://charlestongi.com/doctors&staff/wanda-w-punteney/
+- “I noticed your 2005 leadership service as Governor of the South Carolina Medical Group Management Association.” https://www.southcarolinamgma.org/about/cog
+- “Your comments on Charleston GI’s Carnes Crossroads expansion—‘we recognize the need to be here’—capture a clear connection between practice growth and regional access.” https://www.postandcourier.com/journal-scene/news/officials-break-ground-on-windmill-station/article_2adba5d9-8c5d-5db5-b641-44fbc3a76b94.html
+
+
+=== C. APOLLO ORGANIZATION ENRICHMENT (origin=apollo; tier 1) ===
+Apollo record URL for provenance: http://www.linkedin.com/company/charleston-gastroenterology
+{
+  "id": "5500af3d7369642de9450100",
+  "name": "Charleston GI Specialists",
+  "website_url": "http://www.charlestongi.com",
+  "primary_domain": "charlestongi.com",
+  "linkedin_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+  "founded_year": 2002,
+  "industry": "hospital & health care",
+  "industries": [
+    "hospital & health care",
+    "medical practice",
+    "health, wellness & fitness"
+  ],
+  "estimated_num_employees": 76,
+  "annual_revenue_printed": "34.9M",
+  "raw_address": "1962 Charlie Hall Blvd, Charleston, South Carolina 29414, US",
+  "street_address": "1962 Charlie Hall Blvd",
+  "city": "Charleston",
+  "state": "South Carolina",
+  "postal_code": "29414",
+  "country": "United States",
+  "phone": "+1 843-722-8000",
+  "retail_location_count": 1,
+  "short_description": "As the first and largest independent group of GI specialists in Charleston, our qualified team includes eleven outstanding board-certified gastroenterologists. With combined experience of over 100 years, our staff is wholeheartedly committed to providing the highest standard of care \u2013 close to home! With four convenient locations and two state-of-the-art endoscopy centers, relief is never far away.",
+  "technology_names": [
+    "Amazon AWS",
+    "Amazon S3",
+    "Amazon S3",
+    "Apple iOS",
+    "Bootstrap",
+    "Clarity SDM",
+    "CloudFlare",
+    "Cloudflare Rocket Loader",
+    "Contact Form 7",
+    "Font Awesome",
+    "Google Analytics",
+    "Google Analytics 4",
+    "Google Cloud Hosting",
+    "Google Font API",
+    "Google Maps",
+    "Google Maps (Non Paid Users)",
+    "Google Maps Platform",
+    "Google Tag Manager",
+    "Google Tag Manager for WordPress",
+    "Klara",
+    "Microsoft 365",
+    "Microsoft 365 Apps & Services",
+    "Microsoft Clarity",
+    "Microsoft Email Providers",
+    "Microsoft Exchange",
+    "Microsoft Exchange Online",
+    "Mobile Friendly",
+    "MonsterInsights",
+    "MySQL",
+    "Network Solutions",
+    "Nginx",
+    "OWL Carousel",
+    "Open Graph",
+    "Outlook",
+    "PHP",
+    "PrimeNG",
+    "Priority Hints",
+    "RSS",
+    "SiteGround",
+    "Underscore.js",
+    "Understrap",
+    "Viewport Meta",
+    "WPMU DEV Smush",
+    "WordPress.org",
+    "Wordpress",
+    "Yoast",
+    "Yoast SEO",
+    "YouTube",
+    "cdnjs",
+    "jQuery",
+    "jQuery Migrate"
+  ],
+  "departmental_head_count": {
+    "human_resources": 1,
+    "operations": 3,
+    "information_technology": 5,
+    "accounting": 1,
+    "sales": 0,
+    "finance": 0,
+    "marketing": 0,
+    "legal": 0,
+    "engineering": 0,
+    "business_development": 0,
+    "product_management": 0,
+    "consulting": 0,
+    "education": 0,
+    "administrative": 0,
+    "media_and_commmunication": 0,
+    "arts_and_design": 0,
+    "entrepreneurship": 0,
+    "support": 0,
+    "data_science": 0
+  },
+  "organization_headcount_six_month_growth": -0.06451612903225806,
+  "organization_headcount_twelve_month_growth": -0.09375,
+  "keywords": [
+    "gastroenterology",
+    "hospitals & health care",
+    "medical services",
+    "regional healthcare provider",
+    "procedures and conditions",
+    "lowcountry south carolina",
+    "comprehensive digestive care",
+    "medical expertise",
+    "hemorrhoid banding",
+    "offices of physicians",
+    "services",
+    "gastrointestinal diseases",
+    "patient care",
+    "patient experience",
+    "diagnostic testing",
+    "capsule endoscopy",
+    "medical staff",
+    "b2c",
+    "medical team",
+    "diagnostic and therapeutic procedures",
+    "digestive health",
+    "patient testimonials",
+    "board-certified gastroenterologists",
+    "gastrointestinal conditions",
+    "state-licensed endoscopy centers",
+    "digestive health management",
+    "eus",
+    "gastroenterology practice",
+    "endoscopy centers",
+    "patient portal",
+    "patient-centered care",
+    "gastroenterologist",
+    "medical centers",
+    "healthcare services",
+    "healthcare",
+    "gastroenterologists",
+    "digestive diseases",
+    "diagnostic procedures",
+    "colonoscopy",
+    "specialized gi procedures",
+    "diagnosis and treatment",
+    "endoscopy",
+    "digestive system",
+    "hospital & health care",
+    "health care",
+    "health, wellness & fitness",
+    "doctors",
+    "health & medical",
+    "pediatricians"
+  ]
+}
+
+
+=== D. APOLLO PEOPLE SEARCH ROSTER (origin=apollo, DEGRADED shortlist: last names obfuscated, 0 credits). Treat the TITLES as evidence of staffing/workload; do NOT emit per-person contact claims from this list (the people are not identity-resolved). Apollo record URL: http://www.linkedin.com/company/charleston-gastroenterology ===
+[
+  {
+    "first_name": "Julie",
+    "last_name_obfuscated": "Du***e",
+    "title": "Clinical Manager",
+    "has_email": true
+  },
+  {
+    "first_name": "Stephanie",
+    "last_name_obfuscated": "An***s",
+    "title": "Director of Nursing Summerville Endoscopy Center",
+    "has_email": true
+  },
+  {
+    "first_name": "Jessica",
+    "last_name_obfuscated": "Ha***y",
+    "title": "HR Coordinator/Carnes Office Manager",
+    "has_email": true
+  },
+  {
+    "first_name": "Heather",
+    "last_name_obfuscated": "Ha***n",
+    "title": "Physician Assistant",
+    "has_email": true
+  },
+  {
+    "first_name": "Christopher",
+    "last_name_obfuscated": "La***e",
+    "title": "Physician",
+    "has_email": true
+  },
+  {
+    "first_name": "Natalie",
+    "last_name_obfuscated": "In***t",
+    "title": "Physician Assistant",
+    "has_email": true
+  },
+  {
+    "first_name": "Grace",
+    "last_name_obfuscated": "Ha***s",
+    "title": "Prior Authorization Specialist",
+    "has_email": true
+  },
+  {
+    "first_name": "Mollie",
+    "last_name_obfuscated": "Ar***m",
+    "title": "Patient Care Technician",
+    "has_email": true
+  },
+  {
+    "first_name": "Abrah",
+    "last_name_obfuscated": "To***y",
+    "title": "Endoscopy Technician",
+    "has_email": true
+  },
+  {
+    "first_name": "Karen",
+    "last_name_obfuscated": "Bo***s",
+    "title": "Medical Records Clerk",
+    "has_email": true
+  },
+  {
+    "first_name": "Ashton",
+    "last_name_obfuscated": "Ed***e",
+    "title": "Registered Nurse",
+    "has_email": true
+  },
+  {
+    "first_name": "Barbara",
+    "last_name_obfuscated": "Es***z",
+    "title": "Endoscopy Technician",
+    "has_email": true
+  },
+  {
+    "first_name": "Chelsey",
+    "last_name_obfuscated": "Ke***y",
+    "title": "Team Scheduler",
+    "has_email": true
+  },
+  {
+    "first_name": "Alice",
+    "last_name_obfuscated": "Di***i",
+    "title": "Registered Nurse",
+    "has_email": false
+  },
+  {
+    "first_name": "Moriah",
+    "last_name_obfuscated": "Ad***s",
+    "title": "Endoscopy Technician",
+    "has_email": true
+  },
+  {
+    "first_name": "Josephine",
+    "last_name_obfuscated": "St***y",
+    "title": "CMA",
+    "has_email": true
+  },
+  {
+    "first_name": "Lacy",
+    "last_name_obfuscated": "Ar***d",
+    "title": "Medical Specialist",
+    "has_email": false
+  },
+  {
+    "first_name": "Leanna",
+    "last_name_obfuscated": "Li***s",
+    "title": "Front Office Specialist",
+    "has_email": true
+  },
+  {
+    "first_name": "Katelyn",
+    "last_name_obfuscated": "Lu***s",
+    "title": "Referral Coordinator",
+    "has_email": true
+  },
+  {
+    "first_name": "Amanda",
+    "last_name_obfuscated": "Wa***n",
+    "title": "Medical Records Clerk",
+    "has_email": true
+  },
+  {
+    "first_name": "Rachel",
+    "last_name_obfuscated": "To***g",
+    "title": "Licensed Practical Nurse",
+    "has_email": true
+  },
+  {
+    "first_name": "Jessica",
+    "last_name_obfuscated": "Ke***y",
+    "title": "Registered Nurse",
+    "has_email": true
+  },
+  {
+    "first_name": "Jerri",
+    "last_name_obfuscated": "Mc***l",
+    "title": "Recall Specialist",
+    "has_email": false
+  },
+  {
+    "first_name": "Shelby",
+    "last_name_obfuscated": "Bu***e",
+    "title": "Registered Nurse",
+    "has_email": false
+  },
+  {
+    "first_name": "Michayla",
+    "last_name_obfuscated": "Ev***s",
+    "title": "Endoscopy Nurse",
+    "has_email": false
+  }
+]
+
+
+=== E. APOLLO PEOPLE/MATCH — enriched contacts (origin=apollo; tier 1). Provenance URL: the person's linkedin_url when present, else https://app.apollo.io/#/people/<id> ===
+{
+  "step6a_match_tpunteney": {
+    "id": "6a8e800333952b00141258ca",
+    "name": "Thomas Punteney",
+    "first_name": "Thomas",
+    "last_name": "Punteney",
+    "email": "tommy.punteney@charlestongi.com",
+    "email_status": "verified",
+    "city": "Charleston",
+    "state": "South Carolina",
+    "country": "United States",
+    "organization_name": "Charleston GI Specialists",
+    "employment_history": [
+      {
+        "title": null,
+        "organization_name": null,
+        "start_date": null,
+        "end_date": null,
+        "current": true
+      }
+    ]
+  },
+  "step6b_match_wpunteney": {
+    "id": "66f54fcc962ce60001a2a3f3",
+    "name": "Wanda Punteney",
+    "first_name": "Wanda",
+    "last_name": "Punteney",
+    "title": "Administrator, CEO",
+    "seniority": "c_suite",
+    "headline": "Administrator, CEO at Charleston GI",
+    "email": "wanda.punteney@charlestongi.com",
+    "email_status": "verified",
+    "linkedin_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+    "city": "Charleston",
+    "state": "South Carolina",
+    "country": "United States",
+    "departments": [
+      "c_suite"
+    ],
+    "subdepartments": [
+      "executive"
+    ],
+    "organization_name": "Charleston GI",
+    "employment_history": [
+      {
+        "title": "Administrator, CEO",
+        "organization_name": "Charleston GI",
+        "start_date": null,
+        "end_date": null,
+        "current": true
+      }
+    ]
+  }
+}
+
+
+=== F. CHEAP GAP-FILL FINDINGS (origin=exa_cheap; these OVERRIDE the deep report's 'NOT FOUND' where they conflict) ===
+F1. THE HARD DISQUALIFIER — the practice runs gGastro (Modernizing Medicine).
+  Quote: "Thomas D. Punteney, Chief Operating Officer of Charleston (S.C.) GI Specialists, manages operations for three offices and two surgery centers with 11 providers on staff. Charleston GI Specialists implemented gGastro and its practice management system, gPM, in 2013."
+  URL: https://www.modmed.com/resources/blog/experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists  (published 2022-10-05)
+  Same passage independently at URL: https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/ (published 2018-07-03)
+F2. The ModMed relationship is CURRENT (2025), not historical.
+  Quote: "Charleston GI increased patient payments with ModMed solutions"
+  URL: https://www.modmed.com/resources/success-stories/charleston-gi-increased-patient-payments-with-modmed-solutions  (published 2025-08-12)
+F3. Klara (a ModMed product) is the patient-communication platform — and Apollo's independent technographics also list 'Klara'.
+  Quote: "gGastro Patient Collaboration Success Story Gastroenterology Charleston GI improves the patient experience and operational efficiency with Klara"
+  URL: https://www.modmed.com/resources/educational-guides/one-gi-practice-improves-the-patient-experience-with-klara
+F4. Facility scale, accreditation and daily patient volume.
+  Quote: "Charleston GI, the first and largest gastroenterology practice in the Lowcountry, consists of three physician practices and two nationally certified and state-licensed endoscopy centers. Its 11 physicians provide the highest level of medical care in the field of gastroenterology for up to 200 patients a day."
+  URL: https://www.mindwareconnections.com/hubfs/PDF's/Case%20Studies/DMO%20Case%20Studies/cs-charleston-gi-cloud-based-speech-recognition-en-us.pdf
+F5. Speech recognition / dictation in use.
+  Quote: "Nuance Dragon Medical One PowerMic"
+  URL: https://www.mindwareconnections.com/hubfs/PDF's/Case%20Studies/DMO%20Case%20Studies/cs-charleston-gi-cloud-based-speech-recognition-en-us.pdf
+F6. Thomas D. Punteney is Chief Operating Officer (title source for the contact entity).
+  Quote: "Thomas D. Punteney, Chief Operating Officer of Charleston (S.C.) GI Specialists"
+  URL: https://www.beckersasc.com/gastroenterology-and-endoscopy/3-experts-share-their-thoughts-on-the-right-ehr-for-gastroenterologists/
+F7. Practice-wide fax and phone, from the practice's own site footer.
+  Quote: "PHONE 843-722-8000 (8437228000) • FAX 843-647-6066 (8436476066)"
+  URL: https://charlestongi.com/careers-portal/
+F8. Self-description on the homepage.
+  Quote: "As the largest independent gastroenterology practice in the Lowcountry"
+  URL: https://charlestongi.com/

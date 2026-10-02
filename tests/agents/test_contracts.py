@@ -296,14 +296,17 @@ def test_validated_plan_requires_stable_unique_operation_ids_and_budget() -> Non
         validated_at=NOW,
     )
     assert plan.operations[0].operation_id == operation.operation_id
+    over_estimate = {
+        **plan.model_dump(),
+        "operations": (operation.model_copy(update={"estimated_cost_millicents": 101}),),
+        "estimated_cost_millicents": 101,
+    }
     with pytest.raises(ValidationError, match="estimate exceeds"):
-        ValidatedPlan.model_validate(
-            {
-                **plan.model_dump(),
-                "operations": (operation.model_copy(update={"estimated_cost_millicents": 101}),),
-                "estimated_cost_millicents": 101,
-            }
-        )
+        ValidatedPlan.model_validate(over_estimate)
+    record_only = ValidatedPlan.model_validate({**over_estimate, "budget_mode": "record_only"})
+    assert record_only.estimated_cost_millicents == 101
+    assert record_only.budget_limit_millicents == 100
+    assert plan.budget_mode == "enforced"
 
 
 def test_delegation_contract_is_fresh_scoped_and_reference_only() -> None:
@@ -409,27 +412,67 @@ def test_frozen_contract_json_schema_digests() -> None:
     # Contract revision P3.1 (PD-part3 §3 delta 1, ratified 2026-08-14): AgentRole gains
     # 'design' — the composite design deepagent's platform-facing role. Every digest that
     # moved embeds the role enum; the DB CHECKs widened in the same commit (549de68ae3b9).
+    # Contract revision ARV2-O4 (ONBOARDING-PLAN §5, this lane): AgentRole gains
+    # 'onboarding_synthesis' — the brand-scoped synthesis agent's role. Exactly the same class of
+    # delta as P3.1 above, and exactly the same five digests move (the ones whose schema embeds the
+    # role enum: AgentProfile, AgentConstitution, AgentTurnRequest, AgentPlan, DelegationRequest);
+    # the other six are byte-identical to the values frozen before this lane. Proven by recomputing
+    # the digests with the new member removed — every one then matches the pre-lane value. The DB
+    # CHECKs widened in the same lane (migrations 000b9d8bb17b + dfb9fa040b13). The digests were
+    # not updated when the role landed, so this is that commit's missed ritual, performed here.
+    # Contract revision "the versioned project root" (plan 4 Task 7, commit f2b3667f0):
+    # ``DomainObjectRef`` gains ``title`` — what the referenced object calls itself, so a surface
+    # can name the card it draws without reading the object back — and the class docstring that
+    # explains it. Pydantic puts a model's docstring in its schema ``description``, so BOTH edits
+    # move a digest, and every frozen type whose schema embeds ``DomainObjectRef`` moved: ten of
+    # the eleven, all but ``ValidatedPlan``. Proven by recomputing each digest with the field
+    # removed and the old one-line docstring restored — every one then matches the value frozen
+    # above it. The field is optional and defaulted, so a finalization recorded before it existed
+    # still validates on replay. The ritual is performed here, in the `head-of-abm@v56` mint,
+    # because Task 7 landed the delta without it.
+    # Contract revision 2026-09-04 (web-editor annotations): ``DomainObjectRef`` gains an
+    # optional, bounded ``note`` — the marketer's own words about that one reference, written
+    # onto an element in the web editor. Every digest below except ``ValidatedPlan`` moved,
+    # because every one of these shapes embeds a domain ref somewhere; ``ValidatedPlan`` does
+    # not. The durable column landed in the same change (migration 4cbfa56e52a8), and the
+    # default keeps every existing construction valid.
+    # Merge 2026-09-17 (codex/design-agent-v1 into research-streaming): both ``note`` and
+    # ``title`` now sit on ``DomainObjectRef``; the digests below are recomputed over the union.
+    # Research quality Q4: admit two specialist roles and explicit trusted budget mode.
+    # Existing plans decode to enforced; new roles are admitted by f4b30cb3d088.
+    # 2026-09-25: AgentPlan tool steps gain explicit retry_of failed-node references.
+    # Absent/empty retry_of is omitted on serialization, preserving historical proposal bytes.
     assert actual == {
-        "AgentProfile": "bdcad179c2b9b5d5f9dbf41434e0de74801c0ce85e028aec1d515ebf77ff7653",
-        "SkillBundle": "ddbffd59d074ffd70880fd0398b7bc0a9aab2163e55aa8527c930f5866b24521",
+        "AgentProfile": "f4480edc18fd37250f861018a7448c38c36355d8cf087b59c4a037a7e0b8507e",
+        "SkillBundle": "57ff6798fd736619f9f1c7f4eeb551d1feaae2e7d97e3ae5d2db086a1577a8ad",
         # S3 composes the frozen snake_case Client-KB/Stage-0 artifact names. Project-context
         # identifiers therefore accept both that vocabulary and the older kebab-case directive
         # names without widening folder-backed ``ResourceName`` contracts. The part-iii merge
         # unions that S3 shape with P3.1's 'design' role, so these three digests moved again in
         # the merge commit (the in-commit contract-delta ritual).
-        "AgentConstitution": ("147c1806971d9c0b187c6e51ba1999cee0dae5a8e42d138e1b31eea12e31a323"),
-        "AgentTurnRequest": ("f136b8fbb6fa070aa76fe021e829855d4e8df6f38b61b2c4119f95fe4b2889d2"),
-        "AgentPlan": "4323376df8c263abd7d6ff607e370f1d4786646dfcc0ff39632ce74761ca8f61",
-        "ValidatedPlan": ("4708b42a3a98619f52056ed93dad842852955bd82551a974b788969274de2026"),
-        "DelegationRequest": ("7ef04260a02bd382b7fcd321e4c6b15674cba452e577703568d991c140276b2f"),
-        "DelegationResult": ("956ec6033fa560ba7704031a0df4b5aa3aa98ebbb0702bc137018ab3adafb36c"),
+        "AgentConstitution": ("45ab9cf133eedcc2c6d9eff6409da1b186c7d99286d101278d72eb1185fbf0ee"),
+        "AgentTurnRequest": ("cd432d8372524ce2a2aa9e8977dfadfa3fa60eeb52a9bd5590b241d6a38161ac"),
+        "AgentPlan": "86b4deb6954a986879f257a8b0e3197f4880761b330e87c0e4bbc028a02d54c0",
+        "ValidatedPlan": ("cc19a5139945377d7a50fdde0ea8dba06de1882dcdd2215227379b5f94105fc1"),
+        "DelegationRequest": ("50953fc74274f844c3af26eab94d5897f759ffb6d8a8bf365b459664acbfae95"),
+        "DelegationResult": ("a1717bf80c275badd6487699822067623bc09f29a18cd96c99bc2414cba67f7d"),
         "SpecialistTaskEnvelope": (
-            "57396348bc7f3d8f7616c38bb8ea3203cd939879cf4a56af4f6b0a46be45b113"
+            "32a0b5d93d5ca52221d564eea1914b16425a1a9bb68f172799b364287eec48e3"
         ),
         "ContextBundleManifest": (
-            "1d2f8ce14873a9413ac525d022a48de1fc72c9061bc28130ce0c12da3344a488"
+            "3d4bcf33bedda5d6d88a90b4c86917561d27c7d542c2b9c953b4991b739ca0ea"
         ),
         "AgentFinalizeEnvelope": (
-            "ee5a8ac990a3329fce7f1d6acd5160cfdb6eb243bcdcc4dc4f647a9188030dae"
+            "9c946fd10396d7dd002acc638a2e27f8729b62bd3b52a5bf188babe787c8dabe"
         ),
     }
+
+
+def test_tool_repair_metadata_is_explicit_and_absent_from_historical_plan_bytes():
+    from clue_agents.contracts import PlanToolStep
+
+    step = PlanToolStep(node_key="write", tool=tool_pin(), purpose="Write finding")
+    assert "retry_of" not in step.model_dump(mode="json")
+    repaired = step.model_copy(update={"retry_of": ("earlier-failure",)})
+    assert repaired.model_dump(mode="json")["retry_of"] == ["earlier-failure"]
+    assert repaired.arguments == {}

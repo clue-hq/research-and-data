@@ -14,12 +14,14 @@
 //! - an id only in the live subtree → `RemoveNode` if agent-born, or KEPT
 //!   with a note if protected (the human-content protection rule).
 //!
-//! Op ordering: removals first, then updates/moves top-down, then inserts
-//! top-down — so indices are computed against a deterministic intermediate
-//! state and the whole batch applies through the session's checked path.
+//! Op ordering: removals first, then updates/moves/inserts together in intended
+//! top-down order. A new parent must be inserted before an existing child moves
+//! into it. Move decisions use a private cursor with each planned operation
+//! applied, so earlier structural changes cannot leave stale sibling indices.
+//! The whole batch applies through the session's checked path.
 
 use crate::operations::{FieldPatch, NodePatch, OptionalFieldPatch};
-use crate::scene::{Node, NodeKind, ParentRef, Scene};
+use crate::scene::{ExplicitTextTokens, Node, NodeKind, ParentRef, Scene};
 use crate::{NodeId, Operation};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -128,74 +130,77 @@ pub fn reconcile_subtree(
         }
     }
 
-    // ---- Updates / moves (top-down) ---------------------------------------
-    // A node present in both trees may need a field-level UpdateNode and/or a
-    // MoveNode (parent or index changed). Top-down keeps parents in place
-    // before their children move.
+    // One disposable clone tracks the actual intermediate placements. Use the
+    // engine's own in-place operation implementation instead of duplicating its
+    // parent/index rules or cloning the whole scene again for every operation.
+    let mut cursor = scene.clone();
+    for operation in &operations {
+        if cursor.apply_operation_in_place(operation.clone()).is_err() {
+            // Keep the failing operation for the checked caller to diagnose.
+            return (operations, notes);
+        }
+    }
+
+    // ---- Updates / moves / inserts (top-down) -----------------------------
+    // Keep structural changes in ONE traversal: an existing child can move
+    // into a newly declared parent only after that parent's insertion.
     let mut updated_count = 0usize;
     let mut moved_count = 0usize;
+    let mut inserted_count = 0usize;
     let ordered_common = intended_topological_order(container_id, intended);
     for id in &ordered_common {
+        let Some(intended_node) = intended.nodes.get(id) else {
+            continue;
+        };
         if !live_descendants.contains(id) {
-            continue; // insert, handled below
+            let Some((parent, index)) = intended_placement.get(id) else {
+                continue;
+            };
+            // Insert childless; each later child's insert/move populates it.
+            let mut node = intended_node.clone();
+            node.children = Vec::new();
+            let operation = Operation::InsertNode {
+                parent: parent.clone(),
+                index: *index,
+                node,
+            };
+            inserted_count += 1;
+            if !plan_operation(&mut cursor, &mut operations, operation) {
+                break;
+            }
+            continue;
         }
         let Some(live) = scene.nodes.get(id) else {
             continue;
         };
-        let Some(intended_node) = intended.nodes.get(id) else {
-            continue;
-        };
         if let Some(patch) = diff_node(live, intended_node) {
-            operations.push(Operation::UpdateNode {
+            let operation = Operation::UpdateNode {
                 node_id: id.clone(),
                 patch,
-            });
+            };
             updated_count += 1;
+            if !plan_operation(&mut cursor, &mut operations, operation) {
+                break;
+            }
         }
-        // Move if the intended (parent, index) differs from live.
+        // Compare with the intermediate scene, not the original live indices.
         if let Some((intended_parent, intended_index)) = intended_placement.get(id) {
-            let live_parent = scene.parent_of(id);
-            let live_index = live_child_index(scene, id);
+            let live_parent = cursor.parent_of(id);
+            let live_index = live_child_index(&cursor, id);
             let parent_changed = live_parent.as_ref() != Some(intended_parent);
             let index_changed = live_index != Some(*intended_index);
             if parent_changed || index_changed {
-                operations.push(Operation::MoveNode {
+                let operation = Operation::MoveNode {
                     node_id: id.clone(),
                     new_parent: intended_parent.clone(),
                     index: *intended_index,
-                });
+                };
                 moved_count += 1;
+                if !plan_operation(&mut cursor, &mut operations, operation) {
+                    break;
+                }
             }
         }
-    }
-
-    // ---- Inserts (top-down) -----------------------------------------------
-    // A node only in the intended tree is inserted. InsertNode requires the
-    // node's children to already exist and be unparented, so we insert each
-    // new node with an EMPTY child list (top-down), then the child's own
-    // InsertNode/MoveNode places it under its parent — exactly how the
-    // fresh-authoring path builds a subtree one node at a time.
-    let mut inserted_count = 0usize;
-    for id in &ordered_common {
-        if live_descendants.contains(id) {
-            continue; // already exists (update/move path)
-        }
-        let Some(intended_node) = intended.nodes.get(id) else {
-            continue;
-        };
-        let Some((parent, index)) = intended_placement.get(id) else {
-            continue;
-        };
-        let mut node = intended_node.clone();
-        // Children are inserted separately (each as its own InsertNode into
-        // this node's child list) — a fresh node inserts childless.
-        node.children = Vec::new();
-        operations.push(Operation::InsertNode {
-            parent: parent.clone(),
-            index: *index,
-            node,
-        });
-        inserted_count += 1;
     }
 
     notes.push(ReconcileNote::Summary {
@@ -208,6 +213,15 @@ pub fn reconcile_subtree(
     });
 
     (operations, notes)
+}
+
+/// Keep even a failing operation in the plan so the caller's checked apply
+/// reports the real engine error. The disposable cursor is never used again
+/// after an error, and no partial cursor state is returned or persisted.
+fn plan_operation(cursor: &mut Scene, operations: &mut Vec<Operation>, operation: Operation) -> bool {
+    let applied = cursor.apply_operation_in_place(operation.clone()).is_ok();
+    operations.push(operation);
+    applied
 }
 
 /// Field-level diff of a live node against its intended counterpart. Returns
@@ -227,6 +241,16 @@ fn diff_node(live: &Node, intended: &Node) -> Option<NodePatch> {
     }
     if !node_kind_eq(&live.kind, &intended.kind) {
         patch.kind = FieldPatch::Set(intended.kind.clone());
+        // A declarative text kind is the complete intended state, including
+        // identical bindings and explicit absence, not an inspector spread.
+        if matches!(&intended.kind, NodeKind::Text(_)) {
+            patch.explicit_text_tokens = Some(ExplicitTextTokens {
+                style: true,
+                font_size: true,
+                line_height: true,
+                letter_spacing: true,
+            });
+        }
         changed = true;
     }
     if live.transform != intended.transform {

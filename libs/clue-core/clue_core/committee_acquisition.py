@@ -79,7 +79,7 @@ class CommitteeAcquisitionRequest(BaseModel):
     discovery_batch_id: DiscoveryBatchId
     discovery_seal_sha256: Sha256Hex
     account_id: EntityId
-    tier_claim_id: ClaimId
+    tier_claim_id: ClaimId | None = None
     committee_plan_ref: NonEmptyStr
     research_direction_ref: NonEmptyStr
     research_directive: ResearchDirectivePin
@@ -105,6 +105,8 @@ class CommitteeAcquisitionRequest(BaseModel):
             raise ValueError("committee request directive ref and exact pin must agree")
         if self.account_id != self.research_directive.account_id:
             raise ValueError("committee request directive pin belongs to another account")
+        if self.entity_research_job_id is None and self.tier_claim_id is None:
+            raise ValueError("historical committee request requires an exact tier claim")
         if self.provider_filter_expression is not None:
             if self.provider_filter_expression != self.provider_filter_expression.strip():
                 raise ValueError("committee provider filter must be pre-normalized")

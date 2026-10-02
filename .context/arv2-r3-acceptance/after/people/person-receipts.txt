@@ -1,0 +1,11 @@
+   job    |  reason   | insight | openers | hooks | compliance_rows | not_found | lookalikes | model_usd | prompt_tokens 
+----------+-----------+---------+---------+-------+-----------------+-----------+------------+-----------+---------------
+ 2d3f74ca | finalized | true    | 3       | 1     |               4 |         6 |          4 | 0.513942  | 600054
+ 2e3803bb | finalized | true    | 3       | 1     |               2 |         9 |          2 | 0.491154  | 558402
+ 2fc8981d | finalized | true    | 3       | 1     |               1 |         7 |          1 | 0.583002  | 623481
+ 4443097f | finalized | true    | 3       | 1     |               4 |         9 |          3 | 0.752442  | 832467
+ c013f842 | finalized | false   | 3       | 1     |              10 |        10 |          6 | 0.644668  | 816344
+ c6fabe0f |           |         |         |       |               0 |         0 |          0 |           | 
+ d91556be | finalized | true    | 3       | 1     |               3 |         8 |          3 | 0.808364  | 1041793
+(7 rows)
+

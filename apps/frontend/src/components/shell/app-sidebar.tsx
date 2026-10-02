@@ -12,6 +12,8 @@ import styles from "./app-sidebar.module.css";
 import { EditProjectDialog } from "./edit-project-dialog";
 import { ProjectSidebarTree } from "./project-sidebar-tree";
 import { SidebarIcon } from "./sidebar-icon";
+import { SidebarProfileMenu } from "./sidebar-profile-menu";
+import { useLocalWorkspaceLabel } from "@/features/session/components/local-workspace-provider";
 
 function NavigationGroup({
   activeHref,
@@ -65,6 +67,7 @@ export function AppSidebar({
   toggleLabel?: string;
 }) {
   const projectsController = useSidebarProjectsController();
+  const localWorkspace = useLocalWorkspaceLabel();
 
   return (
     <>
@@ -100,6 +103,17 @@ export function AppSidebar({
           </button>
         </div>
 
+        {localWorkspace ? (
+          <div
+            aria-label={`Workspace: ${localWorkspace.name}`}
+            className="mx-2 mb-3 shrink-0 rounded-md border border-[var(--clue-border-neutral)] bg-[var(--clue-background-page)] px-2 py-2"
+            title={`${localWorkspace.name} · localhost:${localWorkspace.port}`}
+          >
+            <p className="truncate text-sm font-medium">{collapsed ? localWorkspace.name.slice(0, 1) : localWorkspace.name}</p>
+            {!collapsed ? <p className="text-xs text-[var(--clue-content-subtle)]">Local · {localWorkspace.port}</p> : null}
+          </div>
+        ) : null}
+
         <div className="clue-scrollbar-hidden min-h-0 flex-1 overflow-y-auto px-2">
           <NavigationGroup activeHref={activeHref} collapsed={collapsed} items={primaryNavigation} />
           <div className="h-3" />
@@ -107,27 +121,18 @@ export function AppSidebar({
           {!collapsed ? <ProjectSidebarTree controller={projectsController} /> : null}
         </div>
 
-        <button
-          aria-label="Open profile menu"
-          className={`flex h-[var(--clue-ds-product-dimension-sidebar-profile-height)] shrink-0 items-center border-t-[0.5px] border-[var(--clue-ds-color-border-subtle)] text-left ${collapsed ? "justify-center px-0" : "px-2"}`}
-          type="button"
-        >
-          <span className="flex size-6 items-center justify-center rounded-full border-[0.5px] border-[var(--clue-border-neutral)] text-[11px] leading-4">
-            A
-          </span>
-          <span className={`${styles.sidebarRegular} ml-2 truncate ${collapsed ? "sr-only" : ""}`}>
-            Aakash Shrivastava
-          </span>
-          {!collapsed ? <DesignIcon className="ml-auto" name="chevron-down" size={12} /> : null}
-        </button>
+        <SidebarProfileMenu collapsed={collapsed} />
       </aside>
 
       {projectsController.editProject ? (
         <EditProjectDialog
+          canSave={projectsController.canSaveProject}
+          error={projectsController.editProjectError}
+          saving={projectsController.savingProject}
           name={projectsController.editProjectName}
           onCancel={projectsController.cancelEditProject}
           onChangeName={projectsController.setEditProjectName}
-          onRemove={projectsController.removeProject}
+          onRemove={projectsController.archiveProject}
           onSave={projectsController.saveEditProject}
         />
       ) : null}

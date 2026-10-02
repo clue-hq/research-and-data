@@ -16,6 +16,7 @@ from clue_core import (
     ResearchMode,
     UseClass,
     VerificationStatus,
+    can_be_promoted,
     new_entity_id,
     new_run_id,
 )
@@ -105,12 +106,26 @@ def test_tier4_and_llm_synthesis_must_agree(make_account: Callable[..., Claim]) 
 @pytest.mark.parametrize(
     "method", [ExtractionMethod.API, ExtractionMethod.SCRAPE, ExtractionMethod.LLM_SYNTHESIS]
 )
-def test_web_and_synthesis_methods_require_source_url(
+def test_web_and_synthesis_methods_need_a_source_url_to_be_promotable(
     make_account: Callable[..., Claim], method: ExtractionMethod
 ) -> None:
+    """ARV2 D1 moved this from construction to promotion: a web/synthesis claim with no
+    ``source_url`` may *exist* (the lenient write gate keeps the honest observation) but stays
+    ``UNVERIFIED`` forever — same shape as the span-less tier-4 rule above it."""
     tier = 4 if method is ExtractionMethod.LLM_SYNTHESIS else 2
-    with pytest.raises(ValidationError):
-        make_account(extraction_method=method, source_tier=tier, source_url=None)
+    span = "raised $5M Series A" if method is ExtractionMethod.LLM_SYNTHESIS else None
+    claim = make_account(
+        extraction_method=method, source_tier=tier, source_url=None, evidence_span=span
+    )
+    assert claim.source_url is None
+    assert can_be_promoted(claim) is False
+    cited = make_account(
+        extraction_method=method,
+        source_tier=tier,
+        source_url="https://example.com",
+        evidence_span=span,
+    )
+    assert can_be_promoted(cited) is True
 
 
 @pytest.mark.parametrize("method", [ExtractionMethod.HUMAN, ExtractionMethod.CRM_IMPORT])
@@ -119,6 +134,7 @@ def test_human_and_crm_claims_may_omit_source_url(
 ) -> None:
     claim = make_account(extraction_method=method, source_url=None)
     assert claim.source_url is None
+    assert can_be_promoted(claim) is True
 
 
 def test_claim_is_frozen_append_only(make_account: Callable[..., Claim]) -> None:

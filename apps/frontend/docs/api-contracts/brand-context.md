@@ -326,39 +326,35 @@ This section supersedes Slice 1's "Mutations — unchanged" paragraph for the tw
 mutations named here only. Rename/delete/upload/knowledge edits remain proposed
 and client-local.
 
-### Founder-ratified surface
+### Current surface (founder revision, 2026-09-21)
 
-- **Option A** is binding: the page header shows a status chip, secondary
-  **↻ Re-extract**, and primary **Approve**, immediately left of the existing
-  Light/Dark control. The row remains available in the Colors, Typography,
-  Assets, and Knowledge headers.
-- The chip reports the store without reinterpretation:
-  `draft → Draft`, `generated_unreviewed → Generated — unreviewed`, and
-  `approved → Approved`. With no kit there is no chip. After approval, Approve
-  disappears; Re-extract remains.
-- Empty Colors/Typography panels say **"Extracting your brand from your
-  website…"** while any listed job is `queued` or `running`. Otherwise they say
-  **"No colors yet."** / **"No text styles yet."** Data-bearing panels are
-  unchanged.
+The Assets header contains **Upload assets** only. Re-extract, the approval
+badge/action, and the Assets copy-link button have been removed. Its Type,
+Used as and Source filters use the shared branded SelectField; the grid/list
+control aligns with the fields, below their labels. Upload and asset-details
+selectors use the same component.
 
-### Approval
+Colors, Typography and Knowledge retain Re-extract for recovery. No Brand
+context header offers approval or rejection. Empty Colors/Typography panels
+still show extraction progress while a job is queued/running.
 
-```text
-POST /api/clue/design/brand-kits/{brand_kit_id}/approval
-{"approval_status":"approved"}
-```
+### Automatic approval
 
-The browser calls the authenticated design BFF only. On success it refreshes
-the Server Component and renders the approval state returned by the store; it
-does not optimistically claim approval. There is no un-approve affordance.
-The design API updates only the lineage's latest version and mirrors the value
-into both the row and `brand_kit_json.approval_status`.
+Successful website, PDF and asset-kit ingestion publishes an **approved**
+brand-kit version. This happens in the ingestion worker after structural
+validation, through the existing governed create/publish tool. No browser
+approval request is needed. The authoring summary is computed with the approved
+status so product-readiness diagnostics remain independent of approval.
 
-Approval and extraction share one client single-flight guard. Both controls
-remain disabled until the ingestion-job read succeeds, and Approve is disabled
-while a job is active. This is required because the approval endpoint targets
-the latest version: racing a publish could otherwise approve a newly extracted
-draft the person has not reviewed.
+Captured original website sections inherit their exact source kit version's
+approval when registered, including sections arriving after publication. The
+existing cascade continues to exclude dormant sections, deprecated sections
+and individually reviewed repairs. Existing historical kit versions are not
+rewritten. The low-level approval API remains available for compatibility.
+
+The founder explicitly extended automatic approval to ICP/product targeting in
+project chats. That flow is documented in `projects.md`: the agent applies the
+selection through `configure_project_targeting@1` without an approval card.
 
 ### Re-extract
 
@@ -372,7 +368,7 @@ POST /api/clue/design/brand-kits/ingest/website
 - `brand_kit_id` names the current lineage. If it already exists, the ingestion
   pipeline uses `design_publish_brand_kit_version` with the latest version as
   `expected_base_version`; the next number is allocated under the lineage lock
-  and the resulting version is always `draft`.
+  and the resulting version is automatically `approved`.
 - The manual wire does not accept a free-floating browser-authored `brand_id`.
   The exact join is stronger: the design DAL reads the lineage head under the
   same locked write and explicitly inherits its stored `brand_id`. A workspace
@@ -403,10 +399,9 @@ exposed and report `website_url: null`.
 A client-supplied lineage's published kit currently carries no durable
 producing-ingestion-job identifier. If a leased worker dies after publishing
 the next version but before terminalizing its job, the reaper's re-offer can
-publish one additional identical **draft** version. This is accepted for Slice
-4: nothing auto-approves, the page selects the latest version, and the human
-gate remains authoritative. Closing it later requires a durable job-to-version
-receipt (not inference from payload equality).
+publish one additional identical version. With automatic approval, this version
+is approved too. The page selects the latest version. Closing this existing
+recovery gap requires a durable job-to-version receipt (not payload equality).
 
 ---
 
@@ -505,3 +500,237 @@ The dummy's other knowledge folders (Company, Product, Audience, Proof, Memories
 nothing in the store fills them, and an empty folder tree is the honest report. A real
 markdown-document store behind the section, and persistence for the lifted edits, remain
 unbuilt.
+
+## Resolution (2026-09-08, ARV2 O5) — the Knowledge folders serve the onboarding documents
+
+This supersedes "Still future work" above for the Company, Product, Audience and Proof
+folders. They are served from the platform's `brand_knowledge_document` store — the artifacts the
+ARV2 onboarding run (`POST /onboarding`, O3) and the synthesis agent (O4) publish. Design keeps
+riding the brand-kit read. Memories stays absent.
+
+### Endpoints (platform API, `/frontend/v1`, `X-Workspace-Id` via the BFF / server seam)
+
+`ARV2-ONBOARDING-PLAN.md` §7 wrote these under `/api/v1/brand-context/...`; they live on the
+existing flag-gated read surface instead (same auth, tenant scoping, envelope and CORS as the
+accounts screens):
+
+| Read | Endpoint | Purpose |
+| --- | --- | --- |
+| Tree | `GET /frontend/v1/brand-context/knowledge[?brandId=]` | `{ brandId, folders: [{ key, label, documents: [{ id, path, title, kind, version, status, updatedAt, productId, icpKey }] }] }` |
+| Document | `GET /frontend/v1/brand-context/knowledge/documents/{id}` | `{ …tree fields, markdown, frontMatter, sources: [{ section, url, title, confidence }] }` — 404 `KNOWLEDGE_DOCUMENT_NOT_FOUND`; 503 `KNOWLEDGE_STORAGE_UNAVAILABLE` |
+| Onboarding status | `GET /frontend/v1/brand-context/onboarding/current` | `{ runId, status, steps: [{ kind, subjectRef, phase, status, startedAt, finishedAt, costUsd, failureCode }], costUsd }`; `status: "none"` when no run |
+
+- **Which brand:** `brandId` when given and owned by the workspace; else the brand of the
+  workspace's newest onboarding run; else the workspace's only brand; else an empty tree.
+- **Servable only (founder ruling 2026-09-08):** `ready`, `proposed`, `confirmed`, highest such
+  version per path. Running, empty, failed and superseded versions are not listed. The dummy has
+  no status chip, so none is rendered; `status` rides the wire for a future slot.
+- **Progressive fill:** the page polls the onboarding status while a run is `queued`/`running`
+  and re-reads the tree when a step lands. No progress UI.
+
+### What the page does with it
+
+- Folders map onto the lifted `BrandKnowledgeFolderSchema` in the dummy's order — Company,
+  Product, Audience, Proof, then Design (kit). `updatedLabel` is derived from `updatedAt` and
+  not rendered. `title` is the document name.
+- Bodies are read per document (parallel), like the asset registry reads.
+- **Edit is gone (founder ruling 2026-09-08):** the Preview/Edit control is removed from the
+  page for every document, Design.md included; the `mode` query parameter is ignored.
+- Configured and refused → the four folders are honest empties; the fixture never serves a
+  configured deployment.
+
+The proposed mutation endpoints remain proposals.
+
+## Resolution (2026-09-12) — Brand Context presentation repairs
+
+The Knowledge tree uses fixed 32 px rows and non-shrinking 16 px document icons.
+Long titles clip to the column and scroll once on hover or keyboard focus, returning
+to the start; reduced-motion disables the animation and the full name remains
+available as the button's accessible name and tooltip.
+
+Knowledge bodies pass directly to `react-markdown` with `remark-gfm`. The custom
+block parser and inline renderer are removed. CSS supplies the existing typography
+for the library's semantic HTML, including tables, quotes, lists, links and code.
+The page remains read-only: CodeMirror is the agreed library for future editing;
+no document mutation endpoint or local editor is introduced by this repair.
+
+The frontend font wire schema now retains the existing kit's `faces[]` fields:
+`asset_id`, `source_url`, `weight`, and `style`. The typeface model adds optional
+`faces: [{url, weight, style}]` and `previewFamily`. Stored faces use
+`/api/clue/design/assets/{asset_id}/bytes`; when no stored asset exists, a recorded
+HTTP(S) `source_url` is loaded by the browser (subject to that host's CORS policy).
+Malformed faces and unusable URLs are omitted individually. The browser's `FontFace`
+API registers the actual bytes under a kit/version-specific family, so two kits
+cannot replace each other's sample. The sample waits for a successful font load;
+missing or invalid files show “Font preview unavailable” instead of fallback glyphs.
+An upright face closest to 400 is preferred, with its actual weight and style applied
+without synthetic bold or italics. Every captured file for that variant is retained
+so script subsets can load together. Unsourced library names must resolve to an
+already registered or locally installed font. Replaced or unmounted previews release
+their own registrations. Refreshed kit props update the typefaces without retaining
+the initial font list; local additions and removals remain separate UI state.
+No backend endpoint or stored brand-kit format changes.
+
+Asset-detail images use the available preview width and height with `object-fit:
+contain`; the 280 px cap and fixture-specific exception are removed. Description
+and metadata remain alongside the preview on desktop and below it on narrow screens.
+
+### Follow-up (2026-09-12) — Markdown Edit/Preview toggle
+
+The founder subsequently requested a Markdown editing toggle. Knowledge now has
+Preview and Edit controls. Edit lazy-loads CodeMirror with `@codemirror/lang-markdown`;
+Preview passes the current draft directly to react-markdown + remark-gfm.
+Discard changes restores the document read from the server. Drafts stay separate
+per document path and survive switches between documents or Brand Context sections.
+Switching Preview/Edit retains the current editor's undo history.
+
+The founder subsequently authorized persistent edits (2026-09-12). **Save changes**
+now calls `PUT /frontend/v1/brand-context/knowledge/documents/:documentId` through
+the existing `/api/clue` BFF with `{ body, expectedRevision }`. It returns the same
+detail shape as GET, with the new version and document ID. Selection stays anchored
+to the document path. The repository owns transport and response validation.
+
+Saving requires the workspace's authenticated `project.write` permission (or the
+existing explicit local-header development mode). The backend records new immutable
+artifact bytes, the editing user and source revision, and appends a document version.
+It keeps original bytes and provenance. Stale revisions receive 409 and keep the
+draft in the editor. An unchanged body creates no extra version. Failed reads and
+the generated Design brief cannot be saved through this endpoint.
+
+Editing a confirmed ICP creates a proposed version, clears the new version's old
+approval fields, and retains the previously confirmed row for pinned projects.
+Other replaced versions become superseded. No schema migration or new runtime
+flag is required. Save failures preserve the draft; only a successful response
+marks it Saved. Editing pauses during an in-flight save to keep its snapshot stable.
+A browser unload warning applies while unsaved drafts exist.
+
+CodeMirror uses its minimal setup and neutral design-token syntax styles: monospace
+text, no line numbers, no folding gutter, no active-line color. The temporary-edit
+banner is removed. The older O5 removal of Preview/Edit is superseded by this follow-up.
+
+### ENG-182 asset preview follow-up (2026-09-12)
+
+The asset dialog uses the available viewport up to 1440 × 960 px. The image fills
+its display region with proportional `contain` sizing, preserving all artwork.
+Desktop reserves 340–420 px for the details; at 820 px and below, the preview and
+details stack. The details column spans the dialog height, with a fixed heading
+and close control above independently scrolling content. Long names, descriptions
+and source URLs wrap within the pane.
+This is presentation-only and does not change the asset write contract above.
+
+
+### Lane 2 shared Markdown editor (2026-09-14)
+
+The approved MDXEditor replaces the Knowledge-specific CodeMirror editor. Preview is
+shared `MarkdownArticle` (react-markdown + remark-gfm); editing is shared `MarkdownEditor`
+with a client-only import of MDXEditor and native plugins. The PUT contract above is unchanged.
+The frontend gates Edit on the authenticated workspace's `project.write` permission plus
+a loaded, versioned document; the server remains the write authority.
+
+Feature-owned sessions are keyed by workspace and document path, retaining raw saved body,
+draft, base revision and returned immutable document ID. Initial Markdown normalization
+and undo to the initial value do not create false drafts. Preview/Edit retains editor history.
+Document switches retain drafts; clean external content and Discard explicitly reset the
+editor. Dirty external refreshes keep the original save base, allowing the backend's 409
+check to protect against overwrites. Failed saves keep the draft; editing is inert while saving.
+
+Source uses the library's recovery UI. Import errors never substitute empty bytes. Source
+drafts must return to valid Rich text before Save; editing itself may normalize Markdown.
+Code blocks stay monospaced without a language picker or line numbers and retain their
+fence metadata. Typography, colors and radii use Clue tokens; DM Mono is loaded locally.
+Long inline code, URLs and source wrap; wide tables scroll inside the document.
+
+> **Merge note (2026-09-17, PR #62 ← `research-streaming`).** The backport below was
+> written while this branch lacked the ARV2 backend. After the merge the sections above
+> govern: the Knowledge folders are served from the platform document store, and the
+> Lane 2 shared Markdown editor replaces the read-only `react-markdown` panel. The
+> asset-registry union and typeface `faces` handling from the backport remain in use.
+
+## Local backport (2026-09-13) — Brand Context presentation
+
+Adapted Aryan's `3903ae73`, `769b4994` and `79330214` changes from
+`origin/brand-context-polish` onto Design Agent V1. The existing authenticated
+brand-kit and asset read contracts remain in use; no onboarding API is added.
+
+- Asset dialogs contain the full image within a larger responsive preview and
+  keep long names/descriptions readable in the details column.
+- Typeface mapping preserves the kit's `faces` (weight, style, asset ID and source
+  URL). Stored faces use `/api/clue/design/assets/{id}/bytes`; remote fallback
+  accepts HTTP(S) only. Font-family registration is namespaced by kit/version/role.
+  A sample appears after the actual font loads, with explicit loading/unavailable
+  states instead of a silent fallback. Refreshing the kit refreshes its typefaces.
+- Knowledge uses `react-markdown` and `remark-gfm` for headings, lists, tables,
+  links and code. Existing client-local drafts are still previewable. This does
+  **not** persist edits or change the structured Design brief.
+
+The newer onboarding Knowledge tree, polling and version-checked Markdown saves
+(`2c100e8a`) depend on the upstream ARV2 backend/document store, absent on this
+branch. They are not part of this backport. Importing the full upstream branch is
+a separate contract and migration integration, not a presentation update.
+
+Presentation changes do not rerun ingestion or increase source coverage. Current
+website capture visits the entry URL plus explicitly supplied `page_urls`; it
+does not discover linked pages. Ad-library harvesting remains a separate job.
+
+## Asset context and bulk upload (ratified 2026-09-21)
+
+Implementation follows the founder-authorized
+[asset-context design](../../../../docs/superpowers/specs/2026-09-21-asset-context-and-bulk-upload-design.md).
+The engine's asset record remains authoritative for custody, licensing and placement.
+`design_asset_description` owns one generated analysis and field-level human overrides.
+
+- `GET /assets/upload-capabilities` returns `max_bytes` and supported `formats`.
+  The dialog reads the configured server limit. Advertised formats are PNG, JPEG,
+  WebP, SVG and GIF. AVIF is not advertised. Animated originals are retained;
+  visual analysis inspects the first frame and records that transformation.
+- Multipart `POST /assets` accepts `Idempotency-Key`, `creative_type`, JSON-array
+  `usage_roles`, `user_note`, and optional `brand_kit_id`. Brand association is
+  explicit and workspace-validated. Registration, overrides, enrichment job and
+  fleet offer commit together after byte custody. An identical replay returns
+  the same asset/job; changed content or metadata under that key returns 409.
+  The existing response adds `enrichment`, the effective metadata/status row.
+- `GET /assets/descriptions?asset_ids=...` adds generated `analysis`, effective
+  human-reference fields, `creative_type`, `usage_roles`, `classification_origin`,
+  `overrides`, `source_occurrences`, `agent_context`, `revision`, `status`, and
+  optional `diagnostic`. Reads batch up to 100 IDs. Legacy four-field readers remain valid.
+- `PUT /assets/{id}/description` accepts partial title/description/usage/tags,
+  type/roles, avoid/placement guidance and user note. Omitted fields survive.
+  `reset_fields` removes named overrides; unknown fields or simultaneous assign/reset
+  are rejected with 422. Changing a note marks prior analysis stale; a subsequent
+  analysis receives the updated note. Human wording/classification never blocks
+  refresh of other generated fields.
+- `POST /assets/{id}/analysis/retry` returns the durable ingestion job. Active work
+  returns 409; failed/stale assets reuse their stored originals and source history.
+  `queued`, `analyzing`, `ready`, `failed`, `unsupported` and legacy `stale` are
+  description states, independent of whether an asset's bytes are usable.
+- Browser mutations use the authenticated design BFF. `X-Expected-Workspace-Id`
+  is a precondition compared with the server-authorized workspace, never an
+  authorization selector or forwarded credential. A workspace switch returns 409
+  for pending requests selected in the previous workspace.
+
+The repository reads every registry page independently of brand-kit existence,
+joins metadata in batches, and supplies separate Type / Used as / Source filters.
+The screen owns a three-transfer queue outside the floating dialog. Closing it
+keeps transfers alive; per-file retries retain their idempotency key. Successful
+files survive another file's failure. Server analysis continues through fleet
+jobs after upload, independently of the browser. Reload reads persisted metadata.
+Fixture and HTTP adapters implement the same operations; fixtures do not simulate
+successful provider analysis.
+
+### Asset inspector refinement (2026-09-22)
+
+The inspector exposes **When to use** directly below the description, followed by
+placement/composition and avoidance guidance when present. Pending or absent usage
+guidance has an explicit empty state. Source evidence and agent interpretations
+remain separate disclosures. Type and usage-role controls use the shared brand
+controls; usage roles are native semantic checkboxes in one readable column.
+
+Title, description and user context save automatically after 500 ms without an
+edit and flush on blur. Type and role changes save immediately. There are no Save
+buttons. A workspace-owned queue serializes writes per asset, keeps newer edits
+visible while a write is pending, and preserves failed drafts with a Retry action.
+Closing the inspector (button, backdrop or Escape) flushes pending edits first;
+a failed save keeps the inspector open. Successful responses refresh effective
+metadata, and older polling responses cannot overwrite a newer revision. This
+does not add an API endpoint or change the write payload. Drafts are in-memory;
+browser/process termination is not an offline persistence mechanism.

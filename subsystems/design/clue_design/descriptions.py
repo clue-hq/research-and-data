@@ -28,22 +28,42 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_design._codec import JsonObject, dump_json, iso, load_json_opt
+from clue_design.asset_context import (
+    OVERRIDE_FIELDS,
+    AssetAnalysis,
+    AssetOverrides,
+    effective_context,
+    fingerprint,
+    merge_occurrences,
+    validate_analysis,
+)
 
 _UPSERT_COLUMNS = "asset_id, workspace_id, title, description, usage, tags_json, origin, model"
 
 
 def _description_from_row(row: Any) -> JsonObject:
-    return {
-        "asset_id": row.asset_id,
-        "title": row.title,
-        "description": row.description,
-        "usage": row.usage,
-        "tags": load_json_opt(row.tags_json) or [],
-        "origin": row.origin,
-        "model": row.model,
-        "created_at": iso(row.created_at),
-        "updated_at": iso(row.updated_at),
-    }
+    return effective_context(
+        {
+            "asset_id": row.asset_id,
+            "title": row.title,
+            "description": row.description,
+            "usage": row.usage,
+            "tags": load_json_opt(row.tags_json) or [],
+            "origin": row.origin,
+            "model": row.model,
+            "created_at": iso(row.created_at),
+            "updated_at": iso(row.updated_at),
+            "analysis": load_json_opt(row.analysis_json) or {},
+            "overrides": load_json_opt(row.overrides_json) or {},
+            "analysis_input": load_json_opt(row.analysis_input_json) or {},
+            "analyzed_input": load_json_opt(row.analyzed_input_json) or {},
+            "input_fingerprint": row.input_fingerprint,
+            "revision": row.revision,
+            "status": row.analysis_status,
+            "diagnostic": load_json_opt(row.analysis_diagnostic_json),
+            "job_id": row.analysis_job_id,
+        }
+    )
 
 
 async def get_many(
@@ -117,48 +137,20 @@ async def merge_human(
     usage: str | None,
     tags: list[str] | None,
 ) -> None:
-    """Patch one human-authored description: ``None`` means *keep whatever is stored*.
-
-    Part II slice D6 Round C. ``PUT /assets/{id}/description`` is a PARTIAL patch, and it used to
-    perform the merge in Python — read the row through :func:`get_many`, substitute the caller's
-    non-``None`` fields, then call :func:`put_human` with the whole record. That is a
-    read-modify-write with no lock across two separate transactions (the O5 bridge is one
-    transaction per store call), so two concurrent patches of *different* fields each wrote the
-    view they had read and the later writer silently reverted the earlier one's field.
-
-    The merge is one statement now: the ``COALESCE(:field, <existing column>)`` in the
-    ``ON CONFLICT DO UPDATE`` is evaluated against the conflicting row under the upsert's own row
-    lock, so interleaved patches compose instead of clobbering. The semantics are exactly the
-    ported ones — a supplied field wins, an omitted field is preserved, and on a first write
-    (no existing row) an omitted field is stored NULL / an omitted tag list is stored ``[]``.
-
-    :func:`put_human` remains the unconditional whole-record write (the shape the describe
-    pipeline and any future full replace want); this is the patch shape.
-    """
-    await conn.execute(
-        text(
-            f"""
-            INSERT INTO design_asset_description ({_UPSERT_COLUMNS})
-            VALUES (:a, :w, :title, :description, :usage,
-                    COALESCE(CAST(:tags AS jsonb), '[]'::jsonb),
-                    CAST('human' AS design_description_origin), NULL)
-            ON CONFLICT (asset_id, workspace_id) DO UPDATE SET
-              title = COALESCE(:title, design_asset_description.title),
-              description = COALESCE(:description, design_asset_description.description),
-              usage = COALESCE(:usage, design_asset_description.usage),
-              tags_json = COALESCE(CAST(:tags AS jsonb), design_asset_description.tags_json),
-              origin = CAST('human' AS design_description_origin),
-              model = NULL,
-              updated_at = now()
-            """  # noqa: S608 - the column list is a module constant, never caller input
-        ),
-        {
-            "a": asset_id,
-            "w": workspace_id,
-            "title": title,
-            "description": description,
-            "usage": usage,
-            "tags": None if tags is None else dump_json(list(tags)),
+    """Legacy patch with field-level protection; omitted fields retain their suggestions."""
+    await patch_overrides(
+        conn,
+        workspace_id=workspace_id,
+        asset_id=asset_id,
+        values={
+            key: value
+            for key, value in {
+                "title": title,
+                "description": description,
+                "usage": usage,
+                "tags": tags,
+            }.items()
+            if value is not None
         },
     )
 
@@ -173,29 +165,241 @@ async def put_human(
     usage: str | None,
     tags: list[str],
 ) -> None:
-    """Persist one human-authored description — unconditional, and it clears ``model``."""
+    """Legacy whole-record curation protects exactly the four supplied fields."""
+    await patch_overrides(
+        conn,
+        workspace_id=workspace_id,
+        asset_id=asset_id,
+        values={"title": title, "description": description, "usage": usage, "tags": tags},
+    )
+
+
+async def _locked(conn: AsyncConnection, workspace_id: str, asset_id: str) -> Any:
+    # The registry FK enforces tenancy even on a first write. Creating a placeholder before
+    # locking serializes concurrent first edits as well as edits racing an analysis save.
     await conn.execute(
-        text(
-            f"""
-            INSERT INTO design_asset_description ({_UPSERT_COLUMNS})
-            VALUES (:a, :w, :title, :description, :usage, CAST(:tags AS jsonb),
-                    CAST('human' AS design_description_origin), NULL)
-            ON CONFLICT (asset_id, workspace_id) DO UPDATE SET
-              title = excluded.title,
-              description = excluded.description,
-              usage = excluded.usage,
-              tags_json = excluded.tags_json,
-              origin = CAST('human' AS design_description_origin),
-              model = NULL,
-              updated_at = now()
-            """  # noqa: S608 - the column list is a module constant, never caller input
-        ),
+        text("""
+        INSERT INTO design_asset_description (workspace_id, asset_id, origin)
+        VALUES (:w, :a, 'human') ON CONFLICT (asset_id, workspace_id) DO NOTHING
+    """),
+        {"w": workspace_id, "a": asset_id},
+    )
+    return (
+        await conn.execute(
+            text("""
+        SELECT * FROM design_asset_description
+        WHERE workspace_id = :w AND asset_id = :a FOR UPDATE
+    """),
+            {"w": workspace_id, "a": asset_id},
+        )
+    ).one()
+
+
+async def patch_overrides(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    asset_id: str,
+    values: JsonObject,
+    reset_fields: list[str] | None = None,
+) -> None:
+    validated = AssetOverrides.model_validate(values).model_dump(exclude_unset=True)
+    resets = set(reset_fields or [])
+    if not resets <= OVERRIDE_FIELDS or resets & validated.keys():
+        raise ValueError("reset fields must be known and cannot also be assigned")
+    row = await _locked(conn, workspace_id, asset_id)
+    overrides = load_json_opt(row.overrides_json) or {}
+    overrides = {key: value for key, value in overrides.items() if key not in resets}
+    overrides.update(validated)
+    generated = load_json_opt(row.analysis_json) or {}
+    effective = {**generated, **overrides}
+    note_changed = "user_note" in (resets | validated.keys())
+    # Untouched legacy values remain readable before a first structured analysis.
+    for key, old in (
+        ("title", row.title),
+        ("description", row.description),
+        ("usage", row.usage),
+        ("tags", load_json_opt(row.tags_json)),
+    ):
+        if key not in effective and key not in resets:
+            effective[key] = old
+    await conn.execute(
+        text("""
+        UPDATE design_asset_description SET overrides_json = CAST(:overrides AS jsonb),
+          title = :title, description = :description, usage = :usage,
+          tags_json = CAST(:tags AS jsonb),
+          origin = CAST(:origin AS design_description_origin),
+          model = CASE WHEN :has_overrides THEN NULL ELSE COALESCE(model, :analysis_model) END,
+          analysis_status = CASE WHEN :note_changed THEN 'stale' ELSE analysis_status END,
+          analysis_token = CASE WHEN :note_changed THEN NULL ELSE analysis_token END,
+          revision = revision + 1, updated_at = now()
+        WHERE workspace_id = :w AND asset_id = :a
+    """),
         {
-            "a": asset_id,
             "w": workspace_id,
-            "title": title,
-            "description": description,
-            "usage": usage,
-            "tags": dump_json(list(tags)),
+            "a": asset_id,
+            "overrides": dump_json(overrides),
+            "title": effective.get("title"),
+            "description": effective.get("description"),
+            "usage": effective.get("usage"),
+            "tags": dump_json(effective.get("tags") or []),
+            "origin": "human" if overrides or not generated else "ai",
+            "has_overrides": bool(overrides),
+            "note_changed": note_changed,
+            "analysis_model": (load_json_opt(row.analyzed_input_json) or {}).get("model"),
+        },
+    )
+
+
+async def prepare_analysis(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    asset_id: str,
+    analysis_input: JsonObject,
+    job_id: str | None = None,
+) -> JsonObject:
+    """Merge placements under the row lock; changed evidence invalidates only AI work."""
+    row = await _locked(conn, workspace_id, asset_id)
+    previous = load_json_opt(row.analysis_input_json) or {}
+    inputs = dict(analysis_input)
+    inputs["human_context"] = {
+        "user_note": (load_json_opt(row.overrides_json) or {}).get("user_note")
+    }
+    inputs["source_occurrences"] = merge_occurrences(
+        previous.get("source_occurrences", []),
+        inputs.get("source_occurrences", []),
+    )
+    digest = fingerprint(inputs)
+    if digest != row.input_fingerprint:
+        await conn.execute(
+            text("""
+            UPDATE design_asset_description SET analysis_input_json = CAST(:inputs AS jsonb),
+              input_fingerprint = :digest, analysis_status = 'queued', analysis_token = NULL,
+              analysis_job_id = :job, analysis_diagnostic_json = NULL, updated_at = now()
+            WHERE workspace_id = :w AND asset_id = :a
+        """),
+            {
+                "w": workspace_id,
+                "a": asset_id,
+                "inputs": dump_json(inputs),
+                "digest": digest,
+                "job": job_id,
+            },
+        )
+    return (await get_many(conn, workspace_id=workspace_id, asset_ids=[asset_id]))[asset_id]
+
+
+async def begin_analysis(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    asset_id: str,
+    input_fingerprint: str,
+    token: str,
+    job_id: str | None = None,
+) -> bool:
+    result = await conn.execute(
+        text("""
+        UPDATE design_asset_description SET analysis_status = 'analyzing',
+          analysis_token = :token, analysis_job_id = :job, updated_at = now()
+        WHERE workspace_id = :w AND asset_id = :a AND input_fingerprint = :digest
+          AND analysis_status != 'ready'
+          AND (analysis_status != 'analyzing' OR analysis_job_id = :job
+               OR updated_at < now() - interval '5 minutes')
+        RETURNING asset_id
+    """),
+        {
+            "w": workspace_id,
+            "a": asset_id,
+            "digest": input_fingerprint,
+            "token": token,
+            "job": job_id,
+        },
+    )
+    return result.first() is not None
+
+
+async def finish_analysis(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    asset_id: str,
+    token: str,
+    analysis: JsonObject | None = None,
+    diagnostic: JsonObject | None = None,
+    status: str = "ready",
+) -> bool:
+    if status not in {"ready", "failed", "unsupported"} or (status == "ready" and analysis is None):
+        raise ValueError("analysis completion requires a valid terminal result")
+    generated = (
+        AssetAnalysis.model_validate(analysis).model_dump() if analysis is not None else None
+    )
+    row = await _locked(conn, workspace_id, asset_id)
+    if row.analysis_token != token:
+        return False  # Superseded inputs or a takeover cannot be overwritten by a late call.
+    inputs = load_json_opt(row.analysis_input_json) or {}
+    if generated is not None:
+        generated = validate_analysis(generated, inputs.get("source_occurrences", []))
+    effective = {
+        **(generated or load_json_opt(row.analysis_json) or {}),
+        **(load_json_opt(row.overrides_json) or {}),
+    }
+    await conn.execute(
+        text("""
+        UPDATE design_asset_description SET
+          analysis_json = COALESCE(CAST(:analysis AS jsonb), analysis_json),
+          analyzed_input_json = CASE WHEN :has_analysis
+            THEN analysis_input_json ELSE analyzed_input_json END,
+          analysis_token = NULL,
+          analysis_status = :status, analysis_diagnostic_json = CAST(:diagnostic AS jsonb),
+          title = :title, description = :description, usage = :usage,
+          tags_json = CAST(:tags AS jsonb),
+          model = :model, origin = CAST(:origin AS design_description_origin),
+          revision = revision + 1, updated_at = now()
+        WHERE workspace_id = :w AND asset_id = :a AND analysis_token = :token
+    """),
+        {
+            "w": workspace_id,
+            "a": asset_id,
+            "token": token,
+            "analysis": dump_json(generated) if generated is not None else None,
+            "has_analysis": generated is not None,
+            "status": status,
+            "diagnostic": dump_json(diagnostic) if diagnostic else None,
+            "title": effective.get("title", row.title),
+            "description": effective.get("description", row.description),
+            "usage": effective.get("usage", row.usage),
+            "tags": dump_json(effective.get("tags", load_json_opt(row.tags_json)) or []),
+            "model": inputs.get("model", "unknown"),
+            "origin": "human" if load_json_opt(row.overrides_json) else "ai",
+        },
+    )
+    return True
+
+
+async def fail_queued_analysis(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    asset_ids: list[str] | None,
+    job_id: str,
+    reason: str,
+) -> None:
+    await conn.execute(
+        text("""
+        UPDATE design_asset_description SET analysis_status = 'failed', analysis_token = NULL,
+          analysis_diagnostic_json = CAST(:diagnostic AS jsonb), updated_at = now()
+        WHERE workspace_id = :w AND (:all_assets OR asset_id = ANY(:ids))
+          AND analysis_job_id = :job AND analysis_status IN ('queued', 'analyzing')
+    """),
+        {
+            "w": workspace_id,
+            "ids": asset_ids or [],
+            "all_assets": asset_ids is None,
+            "job": job_id,
+            "diagnostic": dump_json(
+                {"code": "analysis_unavailable", "message": reason, "retryable": True}
+            ),
         },
     )

@@ -1,0 +1,312 @@
+[
+  {
+    "field": "as_of",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI"
+      },
+      {
+        "url": "https://www.zafran.io/",
+        "title": "Zafran | AI-Native Threat Exposure Management Platform"
+      },
+      {
+        "url": "https://www.zafran.io/about",
+        "title": "Zafran Security | About Zafran Security"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "1_identity_and_disambiguation",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI"
+      },
+      {
+        "url": "https://www.zafran.io/resources/zafran-emerges-from-stealth-with-over-30m-as-the-first-risk-and-mitigation-platform-to-fight-threat-exploitation",
+        "title": "Zafran Emerges from Stealth with Over $30M as the First Risk and Mitigation Platform to Fight Threat Exploitation"
+      },
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/s1e1gw3zbl",
+        "title": "Zafran raises $60 million and doubles valuation as it chooses independence over takeo | Ctech"
+      },
+      {
+        "url": "https://www.zafran.io/about",
+        "title": "Zafran Security | About Zafran Security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/246ae954-d395-45ab-82c9-28b15d1fb6c4",
+        "title": "Security Researcher at Zafran-security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/7cbbfdb7-be93-4c15-9948-7da17048bad8",
+        "title": "Data Infra Team Lead at Zafran-security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/684e5591-fcab-4a45-92f1-3348a56b6b8f",
+        "title": "Software Engineer \u2013 Data Collection Team at Zafran-security"
+      }
+    ],
+    "confidence": "medium"
+  },
+  {
+    "field": "2_product_and_buyers",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI"
+      },
+      {
+        "url": "https://www.zafran.io/case-studies/fortune-1000-manufacturing-company-uses-agentic-ai-to-cut-mttr",
+        "title": "Fortune 1000 Manufacturing Company Uses Agentic AI to Cut MTTR"
+      },
+      {
+        "url": "https://www.zafran.io/customer-reviews",
+        "title": "Customer Reviews"
+      },
+      {
+        "url": "https://www.zafran.io/resources/openai-selects-zafran-for-trusted-access-for-cyber",
+        "title": "OpenAI Selects Zafran for Trusted Access for Cyber"
+      },
+      {
+        "url": "https://www.zafran.io/case-studies/outgrowing-kenna-financial-services-company-replaces-kenna-with-zafran",
+        "title": "Outgrowing Kenna: Financial Services Company Replaces Kenna with Zafran"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "3_traction_and_named_customers",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI"
+      },
+      {
+        "url": "https://pulse2.com/zafran-security-60-million-series-c/",
+        "title": "Zafran: $60 Million Closed To Advance AI-Native Exposure Management As Adoption Surges"
+      },
+      {
+        "url": "https://www.zafran.io/customer-reviews",
+        "title": "Customer Reviews"
+      },
+      {
+        "url": "https://www.zafran.io/case-studies/how-lumen-used-zafran-to-prioritize-detect-and-mitigate-real-risk",
+        "title": "How Lumen Used Zafran to Prioritize, Detect, and Mitigate Real Risk"
+      },
+      {
+        "url": "https://www.zafran.io/resources/openai-selects-zafran-for-trusted-access-for-cyber",
+        "title": "OpenAI Selects Zafran for Trusted Access for Cyber"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "4_financing_and_valuation",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI"
+      },
+      {
+        "url": "https://menlovc.com/perspective/ushering-in-the-new-guard-of-vulnerability-management/",
+        "title": "Ushering in the New Guard of Vulnerability Management"
+      },
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/s1e1gw3zbl",
+        "title": "Zafran raises $60 million and doubles valuation as it chooses independence over takeo | Ctech"
+      },
+      {
+        "url": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+        "title": "Zafran Announces Strategic Investment from Cisco Investments"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "5_revenue_and_growth",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI"
+      },
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/by11gqei4zx",
+        "title": "Cisco in talks to buy Israeli cyber startup Zafran at steep discount | Ctech"
+      },
+      {
+        "url": "https://www.zafran.io/",
+        "title": "Zafran | AI-Native Threat Exposure Management Platform"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "6_go_to_market_and_hiring",
+    "citations": [
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/246ae954-d395-45ab-82c9-28b15d1fb6c4",
+        "title": "Security Researcher at Zafran-security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/7cbbfdb7-be93-4c15-9948-7da17048bad8",
+        "title": "Data Infra Team Lead at Zafran-security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/684e5591-fcab-4a45-92f1-3348a56b6b8f",
+        "title": "Software Engineer \u2013 Data Collection Team at Zafran-security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/9b7a9e8e-56ac-4358-b312-848dbdfe7e13",
+        "title": "Business Development Representative at Zafran-security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/86dd03e1-ec13-4919-b54f-f9775afefade",
+        "title": "Sales Engineer, Majors at Zafran-security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/9142e12b-83c0-4a76-bdd4-2d9b1d8fef7f",
+        "title": "Regional Sales Manager, Majors (N. TOLA) at Zafran-security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/c0e29a3e-a9e6-40c5-8602-8c79d1d1982e",
+        "title": "Technical Account Manager at Zafran-security"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "7_technology_and_integrations",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/case-studies/fortune-1000-manufacturing-company-uses-agentic-ai-to-cut-mttr",
+        "title": "Fortune 1000 Manufacturing Company Uses Agentic AI to Cut MTTR"
+      },
+      {
+        "url": "https://www.zafran.io/customer-reviews",
+        "title": "Customer Reviews"
+      },
+      {
+        "url": "https://www.zafran.io/resources/openai-selects-zafran-for-trusted-access-for-cyber",
+        "title": "OpenAI Selects Zafran for Trusted Access for Cyber"
+      },
+      {
+        "url": "https://www.zafran.io/case-studies/outgrowing-kenna-financial-services-company-replaces-kenna-with-zafran",
+        "title": "Outgrowing Kenna: Financial Services Company Replaces Kenna with Zafran"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "8_leadership_and_board",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/about",
+        "title": "Zafran Security | About Zafran Security"
+      },
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/by11gqei4zx",
+        "title": "Cisco in talks to buy Israeli cyber startup Zafran at steep discount | Ctech"
+      },
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/a6lm0ykz3",
+        "title": "After founder departure, Cisco invests in Zafran Security | Ctech"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "9_partnerships_and_ecosystem",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+        "title": "Zafran Announces Strategic Investment from Cisco Investments"
+      },
+      {
+        "url": "https://www.zafran.io/resources/openai-selects-zafran-for-trusted-access-for-cyber",
+        "title": "OpenAI Selects Zafran for Trusted Access for Cyber"
+      },
+      {
+        "url": "https://www.linkedin.com/posts/zafran-security_openai-has-selected-zafran-security-for-its-activity-7469728915931033600-FgUb",
+        "title": "OpenAI has selected Zafran Security for its Trusted Access for Cyber (TAC) program. | Zafran Security"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "10_contested_acquisition_item",
+    "citations": [
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/by11gqei4zx",
+        "title": "Cisco in talks to buy Israeli cyber startup Zafran at steep discount | Ctech"
+      },
+      {
+        "url": "https://en.globes.co.il/en/article-cisco-investing-in-not-acquiring-zafran-security-1001550210",
+        "title": "Cisco investing in, not acquiring Zafran Security - Globes English"
+      },
+      {
+        "url": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+        "title": "Zafran Announces Strategic Investment from Cisco Investments"
+      },
+      {
+        "url": "https://www.sdxcentral.com/news/cisco-buying-bargain-israeli-startup-for-150m-report/",
+        "title": "Cisco buying bargain Israeli startup for $150M+: report - SDxCentral"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "11_people_and_reputation_risks",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI"
+      },
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/by11gqei4zx",
+        "title": "Cisco in talks to buy Israeli cyber startup Zafran at steep discount | Ctech"
+      },
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/a6lm0ykz3",
+        "title": "After founder departure, Cisco invests in Zafran Security | Ctech"
+      }
+    ],
+    "confidence": "high"
+  },
+  {
+    "field": "12_information_gaps_and_bottom_line",
+    "citations": [
+      {
+        "url": "https://www.zafran.io/resources/zafran-triples-arr-in-60m-round-to-reinvent-exposure-management-with-agentic-ai",
+        "title": "Zafran Triples ARR in $60M Round to Reinvent Exposure Management with Agentic AI"
+      },
+      {
+        "url": "https://www.zafran.io/resources/zafran-emerges-from-stealth-with-over-30m-as-the-first-risk-and-mitigation-platform-to-fight-threat-exploitation",
+        "title": "Zafran Emerges from Stealth with Over $30M as the First Risk and Mitigation Platform to Fight Threat Exploitation"
+      },
+      {
+        "url": "https://www.calcalistech.com/ctechnews/article/s1e1gw3zbl",
+        "title": "Zafran raises $60 million and doubles valuation as it chooses independence over takeo | Ctech"
+      },
+      {
+        "url": "https://www.zafran.io/resources/zafran-announces-strategic-investment-from-cisco-investments",
+        "title": "Zafran Announces Strategic Investment from Cisco Investments"
+      },
+      {
+        "url": "https://www.zafran.io/customer-reviews",
+        "title": "Customer Reviews"
+      },
+      {
+        "url": "https://www.zafran.io/about",
+        "title": "Zafran Security | About Zafran Security"
+      },
+      {
+        "url": "https://jobs.ashbyhq.com/zafran-security/246ae954-d395-45ab-82c9-28b15d1fb6c4",
+        "title": "Security Researcher at Zafran-security"
+      }
+    ],
+    "confidence": "high"
+  }
+]

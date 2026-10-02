@@ -1,0 +1,36 @@
+{
+  "name": "addressing-01-tagged-one",
+  "kind": "addressing",
+  "artifacts": [
+    "1. \"Apollo ad\" (scene ad) [account: Apollo Clinics]",
+    "2. \"Mercy ad\" (scene ad) [account: Mercy Health]",
+    "3. \"Premier ad\" (scene ad) [account: Premier Gastro]"
+  ],
+  "artifact_count": 3,
+  "tags": [
+    "design \"Apollo ad\" (scene ad) (artifact 1)"
+  ],
+  "brief": "Three launch ads for the Q3 clinic campaign, one per account.",
+  "history": [],
+  "message": "@Apollo ad bigger logo",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "addressed_artifacts": [
+      1
+    ],
+    "clarifying_question": null,
+    "reasoning": "An edit to the tagged Apollo ad and nothing else."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false,
+    "addressed": [
+      1
+    ],
+    "ask": null
+  },
+  "why": "A tagged artifact of this session is the strongest address: the message edits it and says nothing about the others, so only Apollo's run is dispatched."
+}

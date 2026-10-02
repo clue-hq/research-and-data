@@ -1,0 +1,5 @@
+EXACT|on_page|190
+fetch_failed|page_empty|2
+NOT_FOUND|not_on_page|24
+NOT_FOUND|quoted_context|1
+PARTIAL|partial_on_page|29

@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { ProjectsScreen } from "@/features/projects/components/projects-screen";
 import { ProjectWorkspaceShell } from "@/features/projects/components/project-workspace-shell";
 import { getProjectWorkspace } from "@/features/projects/data/project-workspace.repository";
 import { projectChatHref } from "@/features/chat-shell/model/chat-shell-routes";
 
 export const metadata: Metadata = {
-  title: "Project workspace",
+  title: "Project",
 };
 
 interface ProjectPageProps {
@@ -25,6 +26,10 @@ interface ProjectPageProps {
 // rewrites the URL to /chats/{resolved} client-side — carrying the full
 // query (including `surface=gallery`, the threadless-gallery intent per the
 // R-4 amendment) through threadRouteHref.
+//
+// A plain visit — no thread, no workspace-surface intent — is the project
+// HOME: the lifted overview screen, not the chat workspace. The absorber is
+// what the deep-link query asks for, so it still answers every one of those.
 export default async function ProjectPage({
   params,
   searchParams,
@@ -42,18 +47,22 @@ export default async function ProjectPage({
     );
   }
 
-  const workspace = await getProjectWorkspace(projectId);
+  if (query.surface || query.edit || query.selection || query.handoff) {
+    const workspace = await getProjectWorkspace(projectId);
 
-  return (
-    <ProjectWorkspaceShell
-      initial={{
-        edit: query.edit,
-        handoffId: query.handoff,
-        selection: query.selection,
-        surface: query.surface,
-      }}
-      projectId={projectId}
-      workspace={workspace}
-    />
-  );
+    return (
+      <ProjectWorkspaceShell
+        initial={{
+          edit: query.edit,
+          handoffId: query.handoff,
+          selection: query.selection,
+          surface: query.surface,
+        }}
+        projectId={projectId}
+        workspace={workspace}
+      />
+    );
+  }
+
+  return <ProjectsScreen projectId={projectId} />;
 }

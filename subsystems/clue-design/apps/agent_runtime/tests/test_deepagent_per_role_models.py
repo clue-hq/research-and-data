@@ -10,9 +10,9 @@ Covers:
 - AgentRuntimeConfig.from_env threading + resolved role accessors.
 - harness builds EXACTLY THREE init_model instances — one per role, NEVER deduped
   (per-role usage attribution rides instance-level callbacks, so a shared
-  instance would cross-attribute; see usage_capture.attach_usage_capture) — wires
+  instance would cross-attribute; see trace_callbacks.attach_trace_callback) — wires
   the right id to each role, tags each role's model with a role-labelled
-  UsageCaptureHandler on `.callbacks`, and threads max_tokens on every call.
+  the role-tagged trace handler on `.callbacks`, and threads max_tokens on every call.
 - .env.example documents all four new vars.
 """
 
@@ -160,7 +160,7 @@ def _install_harness_stubs(monkeypatch, capture: dict):
     """Stub deepagents + init_model, capturing create_deep_agent kwargs and every
     init_model call. init_model returns a FRESH sentinel per call carrying a
     writable `callbacks` field (like a real BaseChatModel), so per-instance role
-    tagging by attach_usage_capture is observable and per-call identity is
+    tagging by attach_trace_callback is observable and per-call identity is
     distinct (there is no dedupe to observe anymore — three roles → three
     instances, always)."""
 
@@ -189,7 +189,7 @@ def _install_harness_stubs(monkeypatch, capture: dict):
     def fake_init_model(model, **kwargs):
         calls.append({"model": model, **kwargs})
         # FRESH sentinel per call with a `callbacks` field (declared on real
-        # BaseChatModel) so attach_usage_capture appends its role-tagged handler.
+        # BaseChatModel) so attach_trace_callback appends its role-tagged handler.
         return types.SimpleNamespace(
             _role_model_id=model, _kwargs=kwargs, callbacks=None
         )
@@ -210,7 +210,7 @@ def _subagent(create_kwargs, name):
 
 def _role_labels(capture):
     """The gateway role label of every init_model call, in build order. P3.2: the
-    design-local UsageCaptureHandler is retired — per-role attribution rides
+    design-local usage-capture handler is retired — per-role attribution rides
     provider.build(role=...) on each instance (the ONE usage authority)."""
     return [call.get("role") for call in capture["init_calls"]]
 

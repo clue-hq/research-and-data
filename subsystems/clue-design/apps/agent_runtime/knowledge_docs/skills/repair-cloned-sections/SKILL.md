@@ -100,8 +100,13 @@ The variant's contract differs from a repair's in what may change:
 - **The lineage note names the intent**: "campaign variant: …" (what
   changed and for which purpose), not a defect description. `derived_from`
   still points at the original, which survives untouched.
-- **Released at mint like any raw-lane mint** — report the lineage-wide
-  effect unprompted, exactly as the two-lanes section requires.
+- **Released at mint like any raw-lane mint — but a variant NEVER replaces
+  the original.** A repair becomes what future pins of the original resolve
+  to; a campaign variant does not: it starts its own lineage, pins of the
+  original keep resolving to the original, and later pages pin the variant
+  by its own id. So derive freely from the client's canonical bands — the
+  homepage hero with one CTA and an eyebrow is the textbook case — and say
+  in your report that the original is untouched for every other page.
 
 One more inheritance: the variant's own texts and links come back as
 detected slots, so a well-made variant is itself a parameterized,

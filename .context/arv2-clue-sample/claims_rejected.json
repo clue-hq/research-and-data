@@ -1,0 +1,44 @@
+[
+  {
+    "row": {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.current_title",
+      "is_proposed_field": false,
+      "value_": "Chief Executive Officer",
+      "evidence_span": "Chief Executive Officer",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_cheap",
+      "value_json": "Chief Executive Officer"
+    },
+    "reason": "duplicate (entity, field, value, url)"
+  },
+  {
+    "row": {
+      "entity": "contact:wanda-punteney",
+      "field_key": "contact.facet.career_history",
+      "is_proposed_field": false,
+      "value_": [
+        {
+          "org": "Charleston GI",
+          "role": "Member",
+          "start": "1989",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "Member of Charleston GI since 1989",
+      "source_url": "https://charlestongi.com/doctors&staff/wanda-w-punteney/",
+      "origin": "exa_cheap",
+      "identity_binding": "contact:wanda-punteney",
+      "use_class": "public_profile",
+      "value_json": [
+        {
+          "org": "Charleston GI",
+          "role": "Member",
+          "start": "1989",
+          "end": "present"
+        }
+      ]
+    },
+    "reason": "contact.facet.* requires identity_binding + use_class (claim_contact_field_requires_governance)"
+  }
+]

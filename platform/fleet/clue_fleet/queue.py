@@ -43,6 +43,7 @@ from clue_core import ProjectRunId, UtcDatetime, parse_value_json, serialize_val
 from clue_db import transaction
 from clue_fleet.enums import FleetTaskKind, FleetTaskStatus
 from clue_fleet.lease import WorkId
+from clue_obs.otel import carrier_from_current_span
 
 # A ``CLAIMED`` task older than this is presumed orphaned by a killed worker and is re-owned by
 # the next claimant. Sized to outlive the driver lease TTL (takeover is lease-gated first; the
@@ -54,8 +55,8 @@ class TaskCapability(BaseModel):
     """One claim-time capability constraint a worker applies to a kind's payloads (R3-B).
 
     Reads: *if this task's payload carries* ``field``, *its value must be one this worker*
-    ``supported``. A payload that does not carry the field is unconstrained, so one fleet kind
-    can carry several payload shapes and only the constrained shape is filtered.
+    ``supported``. With ``required=True``, a missing field is also refused. Otherwise a payload
+    without the field is unconstrained, preserving optional capability hints.
 
     It exists because a :class:`~clue_fleet.enums.FleetTaskKind` is not always fine-grained
     enough to answer "can this process run this task?". ``design_job`` is the proven case: ONE
@@ -80,6 +81,8 @@ class TaskCapability(BaseModel):
     #: The values of that key this worker can execute. Empty means "none" — the field's mere
     #: presence disqualifies the task.
     supported: frozenset[str]
+    # Routing boundaries require a discriminant; optional capability hints do not.
+    required: bool = False
 
     def as_json(self) -> dict[str, JsonValue]:
         """The jsonb shape the claim statement's capability predicate iterates (sorted, so the
@@ -88,7 +91,11 @@ class TaskCapability(BaseModel):
         # ``list[str]`` is not a ``list[JsonValue]`` however obviously every element is one.
         supported: list[JsonValue] = []
         supported.extend(sorted(self.supported))
-        return {"field": self.field, "supported": supported}
+        return {
+            "field": self.field,
+            "supported": supported,
+            **({"required": True} if self.required else {}),
+        }
 
     def permits(self, payload: Mapping[str, JsonValue]) -> bool:
         """Whether this constraint admits ``payload`` — the Python mirror of the SQL predicate.
@@ -100,8 +107,8 @@ class TaskCapability(BaseModel):
         not this worker's to run.
         """
         if self.field not in payload:
-            return True
-        return payload[self.field] in self.supported
+            return not self.required
+        return isinstance(payload[self.field], str) and payload[self.field] in self.supported
 
 
 class FleetTaskRow(BaseModel):
@@ -205,7 +212,9 @@ _ENQUEUE_REOPEN_SQL = text(
     """
 )
 
-# Atomic claim-next. The inner SELECT picks the single best runnable row — ``queued``, or
+# Atomic claim-next. A MATERIALIZED candidate prevents planner rescans of the locking SELECT
+# from selecting more rows as SKIP LOCKED changes under concurrent updates.
+# The inner SELECT picks the single best runnable row — ``queued``, or
 # ``claimed`` past the staleness window — in ``(priority, enqueue_seq)`` order, locking it with
 # SKIP LOCKED so concurrent claimants (in-process drainers or a second worker process) fall
 # through to the next row instead of blocking or double-claiming. ``enqueue_seq`` (not
@@ -223,13 +232,7 @@ _ENQUEUE_REOPEN_SQL = text(
 # it stays ``queued``, with its position intact, for a worker that can run it.
 _CLAIM_NEXT_SQL = text(
     f"""
-    UPDATE fleet_task
-    SET status = 'claimed',
-        claimed_by = :worker_id,
-        claimed_at = now(),
-        attempts = attempts + 1,
-        updated_at = now()
-    FROM (
+    WITH candidate AS MATERIALIZED (
         SELECT task_id
         FROM fleet_task
         WHERE kind = CAST(:kind AS fleet_task_kind)
@@ -241,15 +244,24 @@ _CLAIM_NEXT_SQL = text(
           AND NOT EXISTS (
                 SELECT 1
                 FROM jsonb_array_elements(CAST(:capabilities AS jsonb)) AS cap
-                WHERE payload_json ? (cap->>'field')
+                WHERE (COALESCE((cap->>'required')::boolean, false)
+                       AND NOT payload_json ? (cap->>'field'))
+                  OR (payload_json ? (cap->>'field')
                   AND NOT cap->'supported' @> jsonb_build_array(
                         payload_json->(cap->>'field')
-                      )
+                      ))
               )
         ORDER BY priority, enqueue_seq
         LIMIT 1
         FOR UPDATE SKIP LOCKED
-    ) AS candidate
+    )
+    UPDATE fleet_task
+    SET status = 'claimed',
+        claimed_by = :worker_id,
+        claimed_at = now(),
+        attempts = attempts + 1,
+        updated_at = now()
+    FROM candidate
     WHERE fleet_task.task_id = candidate.task_id
     RETURNING {_QUALIFIED_COLUMNS}
     """
@@ -381,6 +393,18 @@ def _row_to_task(row: dict[str, object]) -> FleetTaskRow:
     )
 
 
+def _with_trace_carrier(payload: dict[str, JsonValue] | None) -> dict[str, JsonValue]:
+    """The payload plus the current span's W3C carrier (lane 3 slice 2, D1).
+
+    Stamped only when a valid span is current, and never over a key the caller set, so an enqueue
+    outside any trace writes exactly the payload it was given.
+    """
+    stamped: dict[str, JsonValue] = dict(payload) if payload is not None else {}
+    for key, value in carrier_from_current_span().items():
+        stamped.setdefault(key, value)
+    return stamped
+
+
 async def enqueue_task(
     conn: AsyncConnection,
     *,
@@ -411,7 +435,7 @@ async def enqueue_task(
                 "project_run_id": project_run_id,
                 "dedup_key": dedup_key,
                 "priority": priority,
-                "payload": serialize_value_json(payload if payload is not None else {}),
+                "payload": serialize_value_json(_with_trace_carrier(payload)),
             },
         )
     ).first()

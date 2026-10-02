@@ -10,13 +10,13 @@
   ],
   "output": {
     "content": {
-      "f_636f6e746163742e66616365742e7075626c69636174696f6e73": [
+      "k_ajnrphif": [
         {"title": "Reducing Referral Friction", "venue": "Northstar Health"}
       ]
     },
     "grounding": [
       {
-        "field": "f_636f6e746163742e66616365742e7075626c69636174696f6e73",
+        "field": "k_ajnrphif",
         "confidence": "high",
         "citations": [
           {

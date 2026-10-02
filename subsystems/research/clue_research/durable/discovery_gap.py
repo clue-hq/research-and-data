@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Final
 
 from pydantic import TypeAdapter
 from sqlalchemy import text
@@ -25,6 +26,10 @@ from clue_research.durable.provider_spend import (
     ProviderSpendGuardError,
     require_provider_spend_capacity,
 )
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20).
+_SITE_GAP_RESERVATION: Final = "discovery_gap_reservation"
 
 
 class DiscoveryGapRepositoryError(RuntimeError):
@@ -177,15 +182,37 @@ async def reserve_discovery_gap_operation(
 ) -> tuple[DiscoveryGapOperation, bool]:
     """Reserve one bounded discovery-gap operation.
 
-    ``enforce_budget`` is the FI pilot budget-controls switch; it gates only the project-run
-    money check. This operation's own reserved-vs-cap invariants are consistency guards on
-    its immutable plan, not spend-vs-budget stops, so they hold in both modes.
+    ``enforce_budget`` is the FI pilot budget-controls switch. It gates the project-run money
+    check **and** — since the 2026-08-20 ruling that our own spend caps are record-only in the
+    pilot posture — this operation's two reserved-vs-cap comparisons. Each is still computed and
+    announced (:mod:`clue_research.durable.spend_posture`); only the refusal goes inert. The
+    ledger's own invariants are untouched in both modes.
     """
 
     request = operation.request
-    if operation.provider_units_reserved > Decimal(request.provider_credit_cap):
+    if operation.provider_units_reserved > Decimal(
+        request.provider_credit_cap
+    ) and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_RESERVATION,
+        reason="reserved_units_above_cap",
+        amounts={
+            "provider_units_reserved": operation.provider_units_reserved,
+            "provider_credit_cap": request.provider_credit_cap,
+        },
+    ):
         raise DiscoveryGapBudgetExceeded("discovery-gap provider cap exceeded")
-    if operation.cost_cents_reserved > Decimal(request.money_budget_cap_cents):
+    if operation.cost_cents_reserved > Decimal(
+        request.money_budget_cap_cents
+    ) and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_GAP_RESERVATION,
+        reason="reserved_cost_above_cap",
+        amounts={
+            "cost_cents_reserved": operation.cost_cents_reserved,
+            "money_budget_cap_cents": request.money_budget_cap_cents,
+        },
+    ):
         raise DiscoveryGapBudgetExceeded("discovery-gap money cap exceeded")
     existing = await find_discovery_gap_operation(
         conn,

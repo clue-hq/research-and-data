@@ -19,7 +19,8 @@ import sqlite3
 import time
 import zipfile
 import contextlib
-from contextlib import asynccontextmanager
+from collections.abc import Sequence
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -38,13 +39,19 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
-    HTMLResponse,
     JSONResponse,
     Response,
     StreamingResponse,
 )
 
-from . import ad_runtime, document_thumbnails, image_cache, image_provider, web_export
+from . import (
+    ad_runtime,
+    document_thumbnails,
+    image_cache,
+    image_provider,
+    web_export,
+    web_pdf,
+)
 from .asset_custody import (
     ensure_materialized,
     materialize_scene_assets,
@@ -62,11 +69,13 @@ from .custom_component_compiler import (
     default_compiler_worker_path,
 )
 from .export_policy import (
+    draft_verification_note,
     export_warning_views,
     has_blocking_export_diagnostics,
     partition_export_diagnostics,
 )
 from .agent_account_logos import DurableAgentAccountLogoBinder
+from .agent_logo_family_cache import DurableLogoFamilyCache
 from .agent_cloned_sections import DurableAgentClonedSectionRegistry
 from .agent_custom_components import DurableAgentCustomComponentRegistry
 from .custom_component_runtime import (
@@ -74,12 +83,15 @@ from .custom_component_runtime import (
     default_runtime_host_path,
     web_doc_uses_custom_components,
 )
+from .fragments.paths import resolve_structural_path
 from .fragments.render import (
     build_fragment_render_package,
+    build_fragment_render_package_for_document,
     empty_fragment_render_package,
     fragment_collision_diagnostics,
     fragment_css_sheet,
     fragment_render_map,
+    web_doc_all_fragment_ids,
     web_doc_fragment_ids,
 )
 from .fragments import (
@@ -112,16 +124,20 @@ from .database import (
     NotFoundError,
     WebDocumentVersionConflict,
     WebPublishRevisionConflict,
+    fragment_references,
     utc_now,
 )
 from . import run_stream
+from .spend import drain_safely as _drain_spend
 from .design_store import (
     DesignBlobStore,
     HybridRepository,
+    api_engine_cache_root,
     read_public_design_blob,
     resolve_workspace_id,
 )
 from .font_library import manifest as font_library_manifest
+from .font_library import shared_library_font_bytes
 from .dto import (
     brand_compatibility_dto,
     brand_governance_dto,
@@ -143,13 +159,21 @@ from .dto import (
     scene_replaced_dto,
     snapshot_summary,
 )
+from .public_pages import (
+    custom_public_origin,
+    custom_site_address,
+    site_address,
+    system_public_origin,
+)
 from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
     WebTurnRequest,
     WebOperationsRequest,
     WebPublishRequest,
+    RenameDocumentRequest,
     SetAgentInstructionsRequest,
+    SetDocumentArchivedRequest,
     SetLayoutManagedEditingRequest,
     SetWebNoindexRequest,
     AttachBrandKitRequest,
@@ -200,13 +224,24 @@ from lumen_ingestion.pipeline import (
     run_pdf_ingestion,
     run_website_ingestion,
 )
+from opentelemetry import trace as otel_trace
+from opentelemetry.sdk.trace import TracerProvider as SdkTracerProvider
+
+from clue_config import Secrets, load_settings
 from clue_db import db_lifespan, get_engine
+from clue_obs.production import (
+    install_production_langfuse,
+    install_production_sentry,
+    install_production_tracing,
+    production_tracing_lifespan,
+)
 from clue_design import storage as design_storage
 from clue_design.envelopes import DesignIngestionEnvelope, DesignTurnEnvelope
 from clue_design.enums import DesignIngestionKind
 from clue_design.errors import DesignFragmentActivationError, DesignFragmentPreviewError
 from clue_design.leg_context import render_leg_turn_prompt
 from clue_design.runs import work_id_for_run as design_work_id_for_run
+from clue_design.sessions import design_session_id, render_document_drift_note
 from clue_design.storage import location_digest
 from clue_storage import StorageBackend, storage_from_settings
 
@@ -569,6 +604,11 @@ def _build_embedded_fleet_worker(app: FastAPI) -> Any:
             # into the SAME place the request paths read (a suite that builds the app with an
             # explicit root would otherwise have its worker writing into the settings default).
             engine_cache_root=app.state.engine_cache_root,
+            preference_resolver_factory=getattr(app.state, "preference_resolver_factory", None),
+            # Design note 2026-09-19: composed by the PLATFORM's composition root, which this
+            # app is not — so the design API's own embedded worker normally has none, and its
+            # leg turns simply design without the platform's reads.
+            platform_reads_factory=getattr(app.state, "platform_reads_factory", None),
         )
 
     worker = LeasedWorkWorker(
@@ -595,6 +635,7 @@ _INGESTION_TOOLS = {
     "pdf": "design_ingest_pdf",
     "asset_upload": "design_ingest_assets",
     "ad_assets": "design_ingest_ad_assets",
+    "asset_enrichment": "design_enrich_assets",
 }
 
 
@@ -635,6 +676,30 @@ def _ingestion_offer_payload(
     }
 
 
+def resolve_web_page_id(web_doc: JsonObject, requested: Optional[str]) -> str:
+    """The page a web read targets: the caller's page when it exists, else the first page.
+
+    Multi-page (F5) retires the assumption that a WebDoc's page is called ``home``: a
+    document's pages are an ORDERED list, so "no page named" means the first one, not a
+    literal id that a real multi-page site may not even contain. A caller that DID name a
+    page and got it wrong is told so — a silent fallback to page one would render the
+    wrong page under the right URL.
+    """
+    pages = [p for p in (web_doc.get("pages") or []) if isinstance(p, dict)]
+    if requested:
+        if any(p.get("id") == requested for p in pages):
+            return requested
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "web_render.page_missing",
+                "message": f"page {requested!r} is not in this document",
+            },
+        )
+    first = pages[0].get("id") if pages else None
+    return first if isinstance(first, str) and first else "home"
+
+
 def create_app(
     engine_cache_root: Optional[Path] = None,
     *,
@@ -663,6 +728,14 @@ def create_app(
         # traffic. Cancelled on shutdown and awaited, so nothing outlives the app.
         worker = _build_embedded_fleet_worker(_app)
         async with contextlib.AsyncExitStack() as stack:
+            # Lane 3 slice 5: OUTERMOST, so the provider is flushed and stopped only after the
+            # embedded worker and the reaper are done producing spans. Entered only when THIS
+            # app owns a runtime — an app built by `create_app()` directly (a test, or a host
+            # embedding it) installed nothing, and `production_tracing_lifespan`'s exit calls the
+            # PROCESS-GLOBAL `shutdown_langfuse()`, which such an app must not do to its host.
+            _tracing_runtime = getattr(_app.state, "tracing_runtime", None)
+            if _tracing_runtime is not None:
+                await stack.enter_async_context(production_tracing_lifespan(_tracing_runtime))
             task = None
             reaper = None
             if worker is not None:
@@ -701,6 +774,12 @@ def create_app(
                         await task
 
     app = FastAPI(title="ABM Design Engine Persistence API", lifespan=lifespan)
+
+    @app.get("/healthz", include_in_schema=False)
+    async def healthz() -> dict[str, str]:
+        """Liveness for Railway's health check, the uptime monitors and the boot smoke test
+        (first deployment spec §9.5). Touches no database or Redis; needs no auth or workspace."""
+        return {"status": "ok"}
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins(),
@@ -1009,34 +1088,19 @@ def create_app(
         """
         return DesignBlobStore(app.state.storage, repo.workspace_id)
 
-    def public_blob_store(workspace_id: str) -> DesignBlobStore:
-        """The O6b analogue of ``public_repository``: an anonymous publish-asset GET names its
-        tenant in the PATH and must never create a workspace row."""
-        return DesignBlobStore(
-            app.state.storage, workspace_id, ensure_workspace=False
-        )
-
     def repository(request: Request) -> HybridRepository:
         # D2.5B: SQLite is deleted; every store domain is Postgres via clue_design. The O4 seam is
         # STRICT — resolve_workspace_id 401s when X-Workspace-Id is absent instead of falling
-        # back to the dev workspace. Three routes are exempt because they cannot receive a
-        # header and take no tenant state: /build-info (engine handshake), /asset-store/{digest}
+        # back to the dev workspace. Two routes are exempt because they cannot receive a
+        # header and take no tenant state: /build-info (engine handshake) and /asset-store/{digest}
         # (content-addressed public bytes the PUBLISHED page and the origin-"null" preview
-        # iframe load — a custom header there would fail CORS preflight), and the
-        # /w/{workspace_id}/... public serving group, which names its tenant in the path (O6b).
+        # iframe load — a custom header there would fail CORS preflight). A third — the
+        # /w/{workspace_id}/... O6b public serving group — is GONE: custom-domain publishing S1
+        # deleted it, and the page origin serves published pages now.
         # The run-event SSE stream WAS a fourth ("?workspace_id=", because EventSource cannot send
         # headers); D7 closed it — the stream is opened with a single-use token minted through this
         # very dependency, and its workspace is read off the token row.
         return HybridRepository(workspace_id=resolve_workspace_id(request))
-
-    def public_repository(workspace_id: str) -> HybridRepository:
-        # O6b (RATIFIED 2026-08-08, option (a); PD-part2-design-substrate §6). The public
-        # publish routes serve anonymous visitors, who send no X-Workspace-Id header — so the
-        # tenant comes from the PATH instead. `ensure_workspace=False`: an anonymous GET must
-        # never create a workspace row, so an unknown tenant reads nothing and 404s through the
-        # fail-closed workspace-scoped reads. INTERIM AND DISPOSABLE: Part-IV item 5 owns real
-        # public routing and DELETES this whole surface.
-        return HybridRepository(workspace_id=workspace_id, ensure_workspace=False)
 
     # --- D6: the ONE shim from a design route to the governed write path ------------------- #
 
@@ -1543,7 +1607,8 @@ def create_app(
         return repo.require_asset_record(asset_id)
 
     def _register_asset_record(
-        repo: HybridRepository, record: JsonObject, *, tool: str = "design_register_asset_record"
+        repo: HybridRepository, record: JsonObject, *, tool: str = "design_register_asset_record",
+        enrichment: JsonObject | None = None
     ) -> JsonObject:
         """The ONE 'persist an engine-produced asset record' call shape.
 
@@ -1552,7 +1617,7 @@ def create_app(
         """
         ref = run_design_tool(
             tool,
-            {"record": record},
+            {"record": record, **({"enrichment": enrichment} if enrichment is not None else {})},
             workspace_id=store_workspace_id(repo),
         )
         return repo.require_asset_record(ref["asset_id"])
@@ -2031,6 +2096,17 @@ def create_app(
             Own ads only (D2): exactly one of ``company_domain`` / ``page_id``, both naming the
             CLIENT's own advertiser. There is no competitor input in v1.
             """
+            if payload.phase == "card":
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "ad_assets.card_phase_is_internal",
+                        "message": (
+                            "the card phase is offered by the worker once a harvest and a brand "
+                            "kit both exist; request phase 'full' to run everything at once"
+                        ),
+                    },
+                )
             domain = (payload.company_domain or "").strip()
             page = (payload.page_id or "").strip()
             if bool(domain) == bool(page):
@@ -2052,9 +2128,21 @@ def create_app(
                         "message": "max_pages and max_creatives must both be at least 1",
                     },
                 )
-            # Fail here rather than in the worker: an unknown kit would only surface as a
-            # foreign-key error at the very end, after the harvest had already been paid for.
-            repo.require_brand_kit(payload.brand_kit_id, payload.brand_kit_version)
+            if payload.phase == "full":
+                if payload.brand_kit_id is None or payload.brand_kit_version is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "code": "ad_assets.brand_kit_required",
+                            "message": (
+                                "a full run pins its card to a brand kit; name one, or request "
+                                "phase 'harvest' to collect the ads before any kit exists"
+                            ),
+                        },
+                    )
+                # Fail here rather than in the worker: an unknown kit would only surface as a
+                # foreign-key error at the very end, after the harvest had already been paid for.
+                repo.require_brand_kit(payload.brand_kit_id, payload.brand_kit_version)
 
             job = _offer_ingestion(repo, "ad_assets", payload.model_dump())
             return {"schema_version": 1, "job": ingestion_job_dto(job)}
@@ -2484,7 +2572,45 @@ def create_app(
     def get_document(
         document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
-        return public_document(require_document(repo, document_id))
+        document = require_document(repo, document_id)
+        result = public_document(document)
+        # Only the READ route carries it. A create response and an operations response
+        # both describe a document the caller is holding, and this map is a snapshot of a
+        # registry that moves independently of it — served where it is read, not echoed
+        # where it is written. ``list_web_fragments`` is workspace-scoped through ``repo``,
+        # which is exactly the scoping a label needs — and it is read ONLY for a web
+        # document, so a scene GET does not pay for a registry scan whose answer it throws
+        # away.
+        is_web = document.get("doc_kind") == "web"
+        if not is_web:
+            result["render_context"] = document_render_context(app.state.core, repo, document)
+        rows = repo.list_web_fragments() if is_web else ()
+        meta = fragment_meta_for_document(document, rows)
+        if meta is not None:
+            result["fragment_meta"] = meta
+        return result
+
+    @app.get("/documents/{document_id}/agent-run")
+    def get_document_agent_run(
+        document_id: str, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """The document-scoped agent-busy signal (scene live-streaming rung A follow-up).
+
+        The standalone artifact route has no turn stream to derive the editor lock from, so it
+        asks HERE — the same ``active_design_run_for_document`` predicate the manual-write routes'
+        409 reads, so the page's lock and the server's refusal cannot disagree. ``current_version``
+        rides along so a poller can reload the canvas when the run's commits move the document,
+        without a second request.
+        """
+        document = require_document(repo, document_id)
+        run_id = repo.active_design_run_for_document(document_id)
+        return {
+            "schema_version": 1,
+            "document_id": document_id,
+            "active": run_id is not None,
+            "run_id": run_id,
+            "current_version": document["current_version"],
+        }
 
     @app.put("/documents/{document_id}/agent-instructions")
     def set_agent_instructions(
@@ -2560,6 +2686,46 @@ def create_app(
             "web_noindex": written["value"],
         }
 
+    @app.put("/documents/{document_id}/title")
+    def rename_document(
+        document_id: str,
+        payload: RenameDocumentRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """Artifacts page (2026-09-15): rename from the library preview or the editor header."""
+        require_document(repo, document_id)
+        written = run_design_tool(
+            "design_rename_document",
+            {"document_id": document_id, "title": payload.title},
+            workspace_id=store_workspace_id(repo),
+            refusals={
+                **_document_refusals(document_id),
+                # A blank title is refused by the tool gate, BEFORE the DAL's own ValueError, so
+                # the caller gets this typed 422 rather than a 500 out of the store.
+                "design_document_title_blank": lambda message: HTTPException(
+                    status_code=422,
+                    detail={"code": "document.title_blank", "message": message},
+                ),
+            },
+        )
+        return {"schema_version": 1, "document_id": document_id, "title": written["value"]}
+
+    @app.put("/documents/{document_id}/archived")
+    def set_document_archived(
+        document_id: str,
+        payload: SetDocumentArchivedRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """Artifacts page (2026-09-15): archive/restore; publish is independent by ruling."""
+        require_document(repo, document_id)
+        written = run_design_tool(
+            "design_set_document_archived",
+            {"document_id": document_id, "enabled": payload.archived},
+            workspace_id=store_workspace_id(repo),
+            refusals=_document_refusals(document_id),
+        )
+        return {"schema_version": 1, "document_id": document_id, "archived_at": written["value"]}
+
     @app.put("/documents/{document_id}/scene")
     def replace_scene(
         document_id: str,
@@ -2569,6 +2735,7 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "replace the current scene")
+        _refuse_if_agent_running(document_id, repo)
         try:
             validation = app.state.core.validate_scene(payload.scene)
         except CoreError as error:
@@ -2642,6 +2809,10 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "apply operations")
+        # Before the base-version check on purpose: a document a run is driving has almost
+        # certainly moved under the caller, and "an agent is working on this" is the honest
+        # answer to that, not "your base version is stale".
+        _refuse_if_agent_running(document_id, repo)
         require_base_version(document, payload.base_version)
         try:
             result = app.state.core.apply_operations(
@@ -2814,6 +2985,12 @@ def create_app(
     def undo_document(
         document_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
+        # On the ROUTE rather than inside `perform_undo_step`, which `/revert` also drives: each
+        # guarded route states its own lock, so no route inherits one by accident from a shared
+        # helper (`/revert` states its own, right after its draft gate). The document gates
+        # therefore run one step later here than in the neighbouring routes — they live inside
+        # the step.
+        _refuse_if_agent_running(document_id, repo)
         reverted = perform_undo_step(repo, document_id)
         document = require_document(repo, document_id)
         log_event(
@@ -2839,6 +3016,7 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "redo")
+        _refuse_if_agent_running(document_id, repo)
         redo_stack = list(document.get("redo_stack") or [])
         if not redo_stack:
             raise HTTPException(
@@ -2902,6 +3080,7 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "revert")
+        _refuse_if_agent_running(document_id, repo)
         envelopes = repo.list_envelopes(document_id, newest_first=False)
         anchor = next(
             (
@@ -2985,12 +3164,24 @@ def create_app(
         document = require_document(repo, document_id)
         require_scene_document(document)
         require_draft_document(document, "apply structured edit")
+        # Before the base-version check, for the reason stated at the /operations call site.
+        _refuse_if_agent_running(document_id, repo)
         require_base_version(document, payload.base_version)
         try:
+            # Preserve the same pinned typography the editor's preview resolves.
+            # A missing pin must not silently become the platform default.
+            has_brand_pin = (document["scene"].get("meta") or {}).get("brand_kit") is not None
+            _, brand_kit = choose_effective_brand(
+                app.state.core, repo, document,
+                PreflightRequest(strict_no_fallback=has_brand_pin),
+            )
+            mode = choose_effective_brand_mode(document, brand_kit, None)
             result = app.state.core.apply_structured_edit(
                 document["scene"],
                 payload.edit,
                 scope=payload.scope.model_dump() if payload.scope else None,
+                brand_kit=brand_kit,
+                mode=mode,
             )
         except CoreError as error:
             raise core_http_error(error) from error
@@ -3569,6 +3760,7 @@ def create_app(
         runtime_src: Optional[str] = None,
         bridge: int = 0,
         nonce: Optional[str] = None,
+        page_id: Optional[str] = None,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         # Render the stored WebDoc to HTML for the editor iframe (editor mode,
@@ -3581,6 +3773,9 @@ def create_app(
         document = require_document(repo, document_id)
         require_web_document(document)
         web_doc = document["scene"]
+        # F5: every page-shaped read below targets THIS page — `?page_id=` when the
+        # caller named one, else the document's first page. Unknown page => typed 404.
+        page = resolve_web_page_id(web_doc, page_id)
         brand_kit, _source, _assets, brand_fonts = resolve_web_turn_brand_kit(
             web_doc, blob_store(repo)
         )
@@ -3591,7 +3786,7 @@ def create_app(
             brand_fonts, str(request.base_url).rstrip("/")
         )
         runtime_frames: Dict[str, JsonObject] = {}
-        if web_doc_uses_custom_components(web_doc, "home"):
+        if web_doc_uses_custom_components(web_doc, page):
             try:
                 theme_response = app.state.core.web_validate(web_doc, brand_kit)
             except CoreError as error:
@@ -3616,7 +3811,7 @@ def create_app(
                 blob_store(repo),
                 account_id=account_id if isinstance(account_id, str) else None,
                 web_doc=web_doc,
-                page_id="home",
+                page_id=page,
                 theme=theme_response.get("web_theme"),
                 override_variables=override_variables,
                 runtime_host_path=Path(app.state.custom_component_runtime_host),
@@ -3632,7 +3827,18 @@ def create_app(
                     },
                 )
             try:
-                bridge_script = render_bridge_script(nonce or "", web_doc, "home")
+                # R-A5: the same registry facts the GET route serves as `fragment_meta`,
+                # so the hover chip inside the iframe names a cloned band with the exact
+                # words the layers panel does. Read only for a bridge render — a
+                # delivery snapshot has no chip to name.
+                bridge_script = render_bridge_script(
+                    nonce or "",
+                    web_doc,
+                    page,
+                    fragment_meta=fragment_meta_for_document(
+                        document, repo.list_web_fragments()
+                    ),
+                )
             except ValueError as error:
                 raise HTTPException(
                     status_code=422,
@@ -3643,13 +3849,13 @@ def create_app(
         # engine the markup map + the concatenated scoped CSS. An id that will not resolve is
         # left OUT of the map on purpose — the engine renders its placeholder and says so
         # (LUMW0412), which is what keeps a document with a dead pin editable.
-        fragment_ids = web_doc_fragment_ids(web_doc, "home")
+        fragment_ids = web_doc_fragment_ids(web_doc, page)
         fragment_package = (
             build_fragment_render_package(
                 app.state.storage,
                 workspace_id=store_workspace_id(repo),
                 web_doc=web_doc,
-                page_id="home",
+                page_id=page,
             )
             if fragment_ids
             else empty_fragment_render_package()
@@ -3657,7 +3863,7 @@ def create_app(
         try:
             response = app.state.core.web_render(
                 web_doc,
-                "home",
+                page,
                 mode=mode,
                 asset_base_url=asset_base_url,
                 tailwind_runtime_src=runtime_src,
@@ -3683,7 +3889,7 @@ def create_app(
         # The ledgered cascade risk, reported not refused: compiled utilities land after fragment
         # CSS, so a cloned class the document also authors is overruled.
         diagnostics.extend(
-            fragment_collision_diagnostics(fragment_package, web_doc, "home")
+            fragment_collision_diagnostics(fragment_package, web_doc, page)
         )
         return {
             "schema_version": 1,
@@ -3748,14 +3954,52 @@ def create_app(
                     scene = document["scene"]
                     cache_dir = request_cache_dir(repo)
                     materialize_scene_assets(blobs, cache_dir, [scene])
+                    # 2026-09-06: render what the editor and the export show, not the
+                    # raw stored scene. Agent-authored ads carry brand TOKENS and
+                    # hug/fill sizes with no stored geometry; exported raw they fail
+                    # LUME0209 / LUME0205 on every node and the PNG came back white
+                    # — a 200 with nothing in it. So: the document's effective brand
+                    # (the export route's own chooser, default request = the pinned
+                    # kit, platform default as the last resort), its mode and fonts,
+                    # one preflight, and the PREFLIGHTED scene goes to the renderer.
+                    # Best-effort by contract — preflight diagnostics are logged,
+                    # never a refusal (a card is a preview, not a deliverable) — and
+                    # READ-ONLY: nothing here persists (no `_persist_preflight`),
+                    # keeping the route's never-in-the-write-path rule.
+                    source, brand_kit = choose_effective_brand(
+                        app.state.core,
+                        repo,
+                        document,
+                        PreflightRequest(persist_effective_brand=False),
+                    )
+                    mode = choose_effective_brand_mode(document, brand_kit, None)
+                    brand_fonts = (
+                        brand_kit_font_spec(repo, brand_kit, blobs, cache_dir)
+                        if brand_kit is not None
+                        else scene_brand_fonts(repo, scene, blobs, cache_dir)
+                    )
+                    preflight_result = app.state.core.preflight_scene(
+                        scene, brand_kit, mode, brand_fonts=brand_fonts
+                    )
+                    preflight_diagnostics = preflight_result.get("diagnostics", [])
+                    log_event(
+                        api_logger,
+                        logging.INFO,
+                        "document_thumbnail_preflight",
+                        document_id=document_id,
+                        version=version,
+                        effective_brand_source=source,
+                        **diagnostic_summary(preflight_diagnostics),
+                    )
+                    export_scene = preflight_result.get("scene") or scene
                     result = app.state.core.export_preview(
-                        scene,
+                        export_scene,
                         "png",
-                        document_thumbnails.first_page_ids(scene),
+                        document_thumbnails.first_page_ids(export_scene),
                         default_export_profile("png"),
                         raise_on_error=False,
                         asset_store_root=cache_dir,
-                        brand_fonts=scene_brand_fonts(repo, scene, blobs, cache_dir),
+                        brand_fonts=brand_fonts,
                     )
                     data = document_thumbnails.downscale_png(
                         document_thumbnails.png_from_export_result(result)
@@ -3765,13 +4009,17 @@ def create_app(
                     status_code=502,
                     detail={"code": error.code, "message": str(error)},
                 ) from error
-            except CoreError as error:
+            except (CoreError, NotFoundError) as error:
                 # The helper can fail BEFORE `raise_on_error` is consulted (a dead
                 # subprocess, an unparseable response), so `raise_on_error=False`
                 # above does not make this unreachable — `/export-preview` catches
                 # CoreError for the same reason. A thumbnail's contract is 502
                 # `thumbnail.*`, so it is normalized here rather than left to
                 # `core_http_error`'s 422.
+                # `NotFoundError` (a KeyError, NOT a CoreError) joins it because the
+                # scene branch's `choose_effective_brand` reads the brand-kit library:
+                # a document pinned to a kit version that is gone would otherwise
+                # escape as an untyped 500.
                 raise HTTPException(
                     status_code=502,
                     detail={
@@ -3833,6 +4081,92 @@ def create_app(
             },
         )
 
+    def _refuse_dead_override_paths(
+        repo: HybridRepository, web_doc: JsonObject, operations: List[JsonObject]
+    ) -> None:
+        """Spec §3.6: "a path that does not resolve in the fragment's HTML at apply time is
+        refused".
+
+        The ENGINE checks only that an override's path is a *structural* address
+        (`op.override_path_invalid`); whether it lands on anything is a question about the
+        artifact's markup, which the op arena has never read. Nobody else asks it either — the
+        render pass keeps the clone's own words and warns — so an override stored against a
+        dead path is a human edit that silently does nothing. This is where it is caught.
+
+        Only a SET is checked. A clear (`override` absent or null) is the human taking their
+        edit back, and refusing that because the address has since died would trap the override
+        in the document with no way out. Anything else the op names wrongly — a missing node, a
+        node that is not a clone, a fragment this workspace cannot read — is left to the
+        engine's own refusal codes rather than pre-empted here in different words.
+        """
+        pages = web_doc.get("pages") if isinstance(web_doc, dict) else None
+        if not isinstance(pages, list):
+            return
+        sources: Dict[str, Optional[JsonObject]] = {}
+        for operation in operations:
+            if not isinstance(operation, dict):
+                continue
+            if operation.get("kind") != "set_fragment_text_override":
+                continue
+            if operation.get("override") is None:
+                continue
+            path = operation.get("path")
+            node_id = operation.get("id")
+            page_id = operation.get("page_id")
+            if not isinstance(path, str) or not isinstance(node_id, str):
+                continue
+            page = next(
+                (
+                    candidate
+                    for candidate in pages
+                    if isinstance(candidate, dict) and candidate.get("id") == page_id
+                ),
+                None,
+            )
+            nodes = page.get("nodes") if isinstance(page, dict) else None
+            node = nodes.get(node_id) if isinstance(nodes, dict) else None
+            if not isinstance(node, dict) or node.get("kind") != "fragment":
+                continue
+            fragment_id = node.get("fragment_id")
+            if not isinstance(fragment_id, str) or not fragment_id:
+                continue
+            if fragment_id not in sources:
+                try:
+                    loaded = read_web_fragment(
+                        app.state.storage,
+                        workspace_id=store_workspace_id(repo),
+                        fragment_id=fragment_id,
+                    )
+                    sources[fragment_id] = loaded.payload
+                except Exception:
+                    # An unreadable artifact is not this check's refusal to make: the pin may be
+                    # one the gate already tolerates (an existing dead reference), and the write
+                    # path will say so in its own words.
+                    sources[fragment_id] = None
+            payload = sources[fragment_id]
+            if payload is None:
+                continue
+            resolved = resolve_structural_path(
+                str(payload.get("html") or ""),
+                path,
+                hidden_slot_keys=_fragment_hidden_slot_keys(node),
+            )
+            if resolved is not None:
+                continue
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "web_operations.invalid",
+                    "engine_code": "op.override_path_unresolved",
+                    "message": (
+                        f"the text override path `{path}` does not resolve to an element in "
+                        f"the cloned section pinned at node `{node_id}` — the band was probably "
+                        "regenerated after the edit was made"
+                    ),
+                    "diagnostics": [],
+                },
+            )
+
     @app.post("/documents/{document_id}/web/operations")
     def apply_web_operations(
         document_id: str,
@@ -3856,6 +4190,7 @@ def create_app(
         require_draft_document(document, "apply operations")
         require_base_version(document, payload.base_version)
         web_doc = document["scene"]
+        _refuse_dead_override_paths(repo, web_doc, payload.operations)
         try:
             result = app.state.core.web_apply_ops(
                 web_doc, payload.operations, raise_on_error=False
@@ -3869,6 +4204,11 @@ def create_app(
                 status_code=422,
                 detail={
                     "code": "web_operations.invalid",
+                    # The envelope code stays the one flattened code every existing
+                    # client branches on; the engine's OWN refusal code (e.g.
+                    # `op.route_invalid`, `op.route_exists`) rides alongside it so a
+                    # caller can tell WHICH refusal this was without parsing prose.
+                    "engine_code": error.get("code"),
                     "message": error.get("message")
                     or "the operation batch would leave the document invalid",
                     "diagnostics": diagnostics,
@@ -4232,6 +4572,61 @@ def create_app(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    @app.get("/documents/{document_id}/web/export.pdf")
+    def export_web_document_pdf(
+        document_id: str,
+        repo: HybridRepository = Depends(repository),
+    ) -> Response:
+        # The whole SITE as one PDF: every page rendered by Chromium from the same
+        # delivery bytes a publish would serve, concatenated in document order.
+        # Nothing is persisted — no revision, no pointer — so exporting a PDF never
+        # puts a site on the air. A render or compile failure fails the request
+        # honestly (502) rather than shipping a blank or unstyled document.
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        try:
+            content = web_pdf.build_web_pdf(
+                app.state.core,
+                repo,
+                document,
+                blobs=blob_store(repo),
+                workspace_id=store_workspace_id(repo),
+                node_bin=app.state.web_export_node_bin,
+                runtime=document_thumbnails.resolve_tailwind_runtime(),
+            )
+        except web_pdf.WebPdfUnavailable as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": error.code, "message": str(error)},
+            ) from error
+        except web_export.WebExportCompileError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "web_export.compile_failed",
+                    "message": error.stderr or "static css compile failed",
+                },
+            ) from error
+        except web_export.WebExportError as error:
+            raise HTTPException(
+                status_code=502,
+                detail={"code": "web_export.failed", "message": str(error)},
+            ) from error
+
+        filename = f"{web_slugify(document['title'])}-{document_id[:8]}.pdf"
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_pdf_export_completed",
+            document_id=document_id,
+            byte_count=len(content),
+        )
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
     def _publish_refusals(slug: str, document_id: str) -> Dict[str, Any]:
         """The exact wire contract the editor has always seen for a refused publish.
 
@@ -4262,7 +4657,6 @@ def create_app(
         document: JsonObject,
         *,
         slug: str,
-        public_base: str,
         idempotency_key: Optional[str] = None,
         noindex: bool = False,
     ) -> JsonObject:
@@ -4280,7 +4674,6 @@ def create_app(
                 "design_publish_web",
                 {
                     "document_id": document["id"],
-                    "public_base": public_base,
                     "slug": slug,
                     "noindex": noindex,
                 },
@@ -4318,7 +4711,6 @@ def create_app(
     def publish_web_document(
         document_id: str,
         payload: WebPublishRequest,
-        request: Request,
         repo: HybridRepository = Depends(repository),
         idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
@@ -4331,8 +4723,8 @@ def create_app(
             repo,
             document,
             slug=slug,
-            public_base=str(request.base_url).rstrip("/"),
             idempotency_key=idempotency_key,
+            noindex=payload.noindex,
         )
         log_event(
             api_logger,
@@ -4342,10 +4734,16 @@ def create_app(
             slug=slug,
             doc_version=publish["doc_version"],
         )
+        address = site_address(repo, slug)
+        custom = custom_site_address(repo, slug)
+        routes = list(publish.get("routes") or []) or ["/"]
         return {
             "schema_version": 1,
             "slug": slug,
-            "url": public_publish_path(repo, slug),
+            "url": address.page_url("/"),
+            "custom_url": None if custom is None else custom.page_url("/"),
+            "public_origin": address.origin,
+            "custom_origin": None if custom is None else custom.origin,
             "doc_version": publish["doc_version"],
             "runtime_version": publish["runtime_version"],
             "publish_id": publish["publish_id"],
@@ -4353,22 +4751,50 @@ def create_app(
             "package_digest": publish.get("package_digest"),
             "html_digest": publish.get("html_digest"),
             "previous_available": publish["previous_available"],
+            # F5: every route this publish just put on the air, in document order.
+            "routes": list(publish.get("routes") or []),
+            # F5/R-F5-1: and their ABSOLUTE addresses, built by the ONE builder that knows where
+            # sites live (the hostname registry). The share menu shows exactly these — joining a
+            # site root to a route is the server's job, so the links the marketer copies move
+            # with the workspace's addresses. One map per origin: the always-live system
+            # hostname, and the active custom domain when there is one.
+            "page_urls": {route: address.page_url(route) for route in routes},
+            "custom_page_urls": (
+                {} if custom is None else {route: custom.page_url(route) for route in routes}
+            ),
         }
 
     @app.get("/documents/{document_id}/web/publish")
     def get_web_publish_state(
-        document_id: str, repo: HybridRepository = Depends(repository)
+        document_id: str,
+        repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
         publish = repo.get_web_publish_for_document(document_id)
         if publish is None:
-            return {"schema_version": 1, "published": False}
+            # Even unpublished, the state names WHERE this document would publish — the
+            # workspace's always-live system origin, and its custom origin when it has one.
+            return {
+                "schema_version": 1,
+                "published": False,
+                "public_origin": system_public_origin(repo),
+                "custom_origin": custom_public_origin(repo),
+            }
+        # F5/R-F5-1: the site's public address, from the hostname registry — never the request.
+        address = site_address(repo, publish["slug"])
+        custom = custom_site_address(repo, publish["slug"])
+        pages = repo.list_web_publish_pages(publish["slug"])
+        # A pre-F5 publish has no page rows and still serves its one page at `/`.
+        routes = [page["route"] for page in pages] or ["/"]
         return {
             "schema_version": 1,
             "published": True,
             "slug": publish["slug"],
-            "url": public_publish_path(repo, publish["slug"]),
+            "url": address.page_url("/"),
+            "custom_url": None if custom is None else custom.page_url("/"),
+            "public_origin": address.origin,
+            "custom_origin": None if custom is None else custom.origin,
             "doc_version": publish["doc_version"],
             "status": publish["status"],
             "publish_id": publish.get("publish_id"),
@@ -4377,6 +4803,16 @@ def create_app(
             "html_digest": publish.get("html_digest"),
             "previous_available": publish["previous_html"] is not None,
             "updated_at": publish["updated_at"],
+            # F5: the routes the SITE currently serves — route/page_id/html_digest, no markup.
+            # A pre-F5 publish has no page rows and answers with an empty list; it still serves
+            # its single page at `/` from the publish row's own html.
+            "pages": pages,
+            # F5: the absolute address of EVERY route this site serves. The editor shows exactly
+            # these — there is no host constant on the client. One map per origin.
+            "page_urls": {route: address.page_url(route) for route in routes},
+            "custom_page_urls": (
+                {} if custom is None else {route: custom.page_url(route) for route in routes}
+            ),
         }
 
     def _publish_not_found(slug: str) -> HTTPException:
@@ -5131,7 +5567,6 @@ def create_app(
         account_id: str,
         publish: bool,
         slug_base: str,
-        public_base: str,
     ) -> JsonObject:
         """Derive (and optionally publish) one account against `template`.
         Never raises: any failure is captured on the manifest row (status
@@ -5237,11 +5672,9 @@ def create_app(
                 # R-F1: the durable stamp was written at DERIVE time above (T27 review C-1);
                 # the publish tool resolves the document itself, so it reads the row that
                 # stamp just wrote. The explicit `noindex=abm` below is belt to that braces.
-                _publish_web(
-                    repo, derived, slug=slug, public_base=public_base, noindex=abm
-                )
+                _publish_web(repo, derived, slug=slug, noindex=abm)
                 row["slug"] = slug
-                row["url"] = public_publish_path(repo, slug)
+                row["url"] = site_address(repo, slug).page_url("/")
                 row["noindex"] = abm
                 row["status"] = "published"
             return row
@@ -5257,9 +5690,7 @@ def create_app(
             )
             return row
 
-    def _process_web_batch(
-        repo: HybridRepository, batch: JsonObject, public_base: str
-    ) -> JsonObject:
+    def _process_web_batch(repo: HybridRepository, batch: JsonObject) -> JsonObject:
         """Synchronous-chunked processing (chunk 5): the cursor persists after
         every chunk so an interrupted batch resumes exactly where it stopped.
         Status is "partial" mid-way and "completed" when the cursor reaches the
@@ -5312,7 +5743,6 @@ def create_app(
                         account_ids[index],
                         batch["publish"],
                         batch["slug_base"],
-                        public_base,
                     )
                 )
             status = "completed" if chunk_end >= total else "partial"
@@ -5330,7 +5760,6 @@ def create_app(
     def create_web_batch(
         document_id: str,
         payload: WebBatchRequest,
-        request: Request,
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         document = require_document(repo, document_id)
@@ -5379,7 +5808,6 @@ def create_app(
                     ),
                 },
             )
-        public_base = str(request.base_url).rstrip("/")
         batch_ref = run_design_tool(
             "design_create_web_batch",
             {
@@ -5397,9 +5825,7 @@ def create_app(
             },
             workspace_id=store_workspace_id(repo),
         )
-        batch = _process_web_batch(
-            repo, repo.require_web_batch(batch_ref["batch_id"]), public_base
-        )
+        batch = _process_web_batch(repo, repo.require_web_batch(batch_ref["batch_id"]))
         log_event(
             api_logger,
             logging.INFO,
@@ -5414,13 +5840,12 @@ def create_app(
 
     @app.post("/web/batches/{batch_id}/resume")
     def resume_web_batch(
-        batch_id: str, request: Request, repo: HybridRepository = Depends(repository)
+        batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         batch = repo.require_web_batch(batch_id)
         if batch["status"] == "completed":
             return web_batch_response(batch)
-        public_base = str(request.base_url).rstrip("/")
-        batch = _process_web_batch(repo, batch, public_base)
+        batch = _process_web_batch(repo, batch)
         return web_batch_response(batch)
 
     @app.get("/web/batches/{batch_id}")
@@ -5428,97 +5853,6 @@ def create_app(
         batch_id: str, repo: HybridRepository = Depends(repository)
     ) -> JsonObject:
         return web_batch_response(repo.require_web_batch(batch_id))
-
-    # --- O6b interim public serving surface ------------------------------- #
-    # RATIFIED 2026-08-08 (option (a)), docs/specs/PD-part2-design-substrate.md §6: publish
-    # slugs became workspace-LOCAL when design_web_publish gained PK (workspace_id, slug) — O6 —
-    # so a bare /p/{slug} is genuinely AMBIGUOUS across tenants and is DELETED (404), not kept
-    # as a fallback. The workspace comes from the PATH because a public visitor sends no header.
-    # Part-IV item 5 (design-integration-master-plan.md) owns the real public routing and
-    # DELETES these three routes when it ships.
-
-    @app.get("/w/{workspace_id}/p-assets/{asset_name}")
-    def serve_publish_asset(workspace_id: str, asset_name: str) -> Response:
-        # D4: per-tenant byte custody is real, so the workspace segment is no longer decorative —
-        # it IS the storage scope this read resolves against (`{workspace}/design/{sha256}`).
-        # Another tenant's digest simply has no row here and 404s, the same refusal an unknown
-        # digest gets. `ensure_workspace=False`: an anonymous GET must never create a workspace.
-        match = re.fullmatch(r"([0-9a-f]{64})\.(js|css|html)", asset_name)
-        if match is None:
-            return Response(status_code=404)
-        digest, extension = match.groups()
-        try:
-            data, media_type = web_export.resolve_publish_asset(
-                public_blob_store(workspace_id), digest, extension
-            )
-        except web_export.WebExportError:
-            return Response(status_code=404)
-        return Response(
-            content=data,
-            media_type=media_type,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "Cache-Control": "public, max-age=31536000, immutable",
-                "ETag": f'"sha256-{digest}"',
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
-
-    @app.get("/w/{workspace_id}/p/{slug}/manifest.json")
-    def serve_publish_manifest(
-        workspace_id: str, slug: str, repo: HybridRepository = Depends(public_repository)
-    ) -> Response:
-        publish = repo.get_web_publish(slug)
-        if publish is None or publish["status"] != "active":
-            return Response(status_code=404)
-        manifest = publish.get("manifest")
-        if not isinstance(manifest, dict):
-            return Response(status_code=404)
-        return Response(
-            content=json.dumps(
-                manifest,
-                ensure_ascii=True,
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-            media_type="application/json",
-            headers={
-                "Cache-Control": "public, max-age=60, must-revalidate",
-                "ETag": f'"sha256-{publish.get("manifest_digest")}"',
-                "X-Content-Type-Options": "nosniff",
-            },
-        )
-
-    @app.get("/w/{workspace_id}/p/{slug}")
-    def serve_published_page(
-        workspace_id: str,
-        slug: str,
-        request: Request,
-        repo: HybridRepository = Depends(public_repository),
-    ) -> HTMLResponse:
-        publish = repo.get_web_publish(slug)
-        if publish is None or publish["status"] != "active":
-            return HTMLResponse(
-                content=(
-                    "<!doctype html><html><head><meta charset=\"utf-8\">"
-                    "<title>Not found</title></head><body><h1>404</h1>"
-                    "<p>No published page at this address.</p></body></html>"
-                ),
-                status_code=404,
-            )
-        return HTMLResponse(
-            content=publish["html"],
-            status_code=200,
-            headers={
-                "Cache-Control": "public, max-age=60, must-revalidate",
-                "ETag": f'"sha256-{publish.get("html_digest")}"',
-                "Content-Security-Policy": web_export._delivery_csp(
-                    str(request.base_url).rstrip("/")
-                ),
-                "X-Content-Type-Options": "nosniff",
-                "Referrer-Policy": "no-referrer",
-            },
-        )
 
     @app.post("/documents/{document_id}/export")
     def export_document(
@@ -6549,9 +6883,27 @@ def create_app(
         uploaded_by: Optional[str] = Form(None),
         license_json: Optional[str] = Form(None),
         tags: Optional[str] = Form(None),
+        idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key", min_length=1, max_length=200),
+        creative_type: Optional[str] = Form(None),
+        usage_roles: Optional[str] = Form(None),
+        user_note: Optional[str] = Form(None),
+        brand_kit_id: Optional[str] = Form(None),
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
-        data = file.file.read()
+        from clue_design.asset_context import AssetOverrides, fingerprint
+        from .asset_enrichment import UploadKeyConflict
+        from pydantic import ValidationError
+        try:
+            overrides = AssetOverrides.model_validate({
+                **({"creative_type": creative_type} if creative_type else {}),
+                **({"usage_roles": json.loads(usage_roles)} if usage_roles else {}),
+                **({"user_note": user_note} if user_note else {}),
+            }).model_dump(exclude_none=True, exclude_unset=True)
+        except (ValueError, ValidationError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        if brand_kit_id:
+            repo.require_brand_kit(brand_kit_id)
+        data = file.file.read(asset_max_bytes() + 1)
         max_bytes = asset_max_bytes()
         if len(data) > max_bytes:
             raise HTTPException(
@@ -6626,7 +6978,22 @@ def create_app(
         register_engine_write(
             blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
         )
-        stored = _register_asset_record(repo, record)
+        enrichment = None
+        if str((record.get("media") or {}).get("mime_type", "")).startswith("image/"):
+            enrichment = {
+                "idempotency_key": idempotency_key or uuid4().hex,
+                "request_digest": fingerprint({"file": hashlib.sha256(data).hexdigest(),
+                                               "filename": file.filename, "label": label,
+                                               "mime_type": file.content_type, "uploaded_by": uploaded_by,
+                                               "kind": kind, "license": license_payload,
+                                               "tags": tag_list, "overrides": overrides,
+                                               "brand_kit_id": brand_kit_id}),
+                "overrides": overrides, "brand_kit_id": brand_kit_id,
+            }
+        try:
+            stored = _register_asset_record(repo, record, enrichment=enrichment)
+        except UploadKeyConflict as error:
+            raise HTTPException(status_code=409, detail={"code": "asset_upload.key_conflict", "message": str(error)}) from error
         log_event(
             api_logger,
             logging.INFO,
@@ -6643,6 +7010,8 @@ def create_app(
             "asset": public_asset_record(stored["asset"]),
             "deduplicated": asset_payload.get("deduplicated", False),
             "diagnostics": diagnostics,
+            "enrichment": DescriptionStore(workspace_id=repo.workspace_id).get_many(
+                [stored["asset"]["id"]]).get(stored["asset"]["id"]),
         }
 
     @app.post("/assets/generate/qr")
@@ -6741,254 +7110,284 @@ def create_app(
         """Public Phase E provider-registry surface (lands with Phase G):
         run any registered generation provider and persist the normalized
         asset record."""
-        asset_id = f"asset_gen_{uuid4().hex[:12]}"
-        cache_key: Optional[str] = None
-        blobs = blob_store(repo)
-        cache_dir = request_cache_dir(repo)
-        if image_provider.is_image_model_provider(payload.provider):
-            # Phase 3b image EDIT: resolve the source asset's pixels up front.
-            # The edit keys the cache on the source digest (same instruction on
-            # a different image must never hit) and stamps the result's source
-            # as kind "edited" with the parent asset id, so provenance chains.
-            source_images: Optional[list] = None
-            source_digest: Optional[str] = None
-            if payload.source_asset_id:
-                source_stored = repo.require_asset_record(payload.source_asset_id)
-                source_media = (source_stored["asset"].get("media") or {})
-                source_digest = (source_media.get("digest") or {}).get("value")
-                # D4: a pure-Python read — go straight to durable storage. Routing it through
-                # the engine cache would mean materializing bytes no engine call will read.
-                source_bytes = read_asset_bytes(blobs, source_digest)
-                if source_bytes is None:
-                    raise HTTPException(
-                        status_code=409,
-                        detail={
-                            "code": "asset.source_bytes_missing",
-                            "message": (
-                                f"source asset {payload.source_asset_id} has no stored"
-                                " bytes to edit"
-                            ),
-                            "diagnostics": [],
-                        },
-                    )
-                source_images = [
-                    (source_bytes, source_media.get("mime_type") or "image/png")
-                ]
-            # RC (D-RC2.5): reference-conditioned GENERATION — resolve the
-            # request's reference_asset_ids into real bytes (the field was inert
-            # before) so the editor's generate flow conditions on attached style
-            # references. Only on the pure-generation path (an edit already rides
-            # its source pixels). Empty ids → None → byte-identical to today.
-            reference_images: Optional[list] = None
-            reference_digests: Optional[List[str]] = None
-            if source_images is None:
-                ref_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
-                if ref_ids:
-                    reference_images, reference_digests = (
-                        resolve_reference_images_for_generate(
-                            repo, blobs, cache_dir, ref_ids
-                        )
-                    )
-            # Generation cache: re-use the asset produced by an identical earlier
-            # request instead of re-paying the model (the byte-digest store dedup
-            # only fires AFTER the paid, non-deterministic call). Checked BEFORE the
-            # provider; the cache lives in the same store the assets do.
-            cache_key = image_cache.generation_key(
-                prompt=payload.prompt,
-                model=image_provider.configured_model_id(),
-                width=payload.width,
-                height=payload.height,
-                brand_notes=payload.brand_notes,
-                aspect_ratio=payload.aspect_ratio,
-                image_size=payload.image_size,
-                transparent_background=payload.transparent_background,
-                reference_asset_ids=payload.reference_asset_ids,
-                reference_digests=reference_digests,
-                source_digest=source_digest,
-            )
-            # D6 Round C: the ledger is Postgres (``design_generation_result``), not the JSON
-            # sidecar under the wipeable engine cache. This probe is a READ and deliberately not
-            # a tool — it is what AVOIDS the provider spend, and it has to run before it. The
-            # write that claims the key is governed (``design_register_generated_asset``) and
-            # re-checks the ledger inside its own transaction, so two requests that both reach
-            # here on a miss still converge on one asset.
-            cached = repo.get_generation_result(cache_key)
-            if cached:
-                cached_record = cached["asset"]
-                log_event(
-                    api_logger,
-                    logging.INFO,
-                    "asset_generation_completed",
-                    status="ok",
-                    provider=payload.provider,
-                    asset_id=cached_record.get("id"),
-                    deduplicated=True,
-                    cached=True,
+        # Lane 3 slice 5: this REQUEST is the unit of work — the image model call it makes
+        # runs through this scope's ProviderCaller and its rows land on provider_call_ledger
+        # before the response goes out. The route is a sync def (FastAPI runs it in the
+        # threadpool), so the drain owns its own loop.
+        with _request_spend_scope(store_workspace_id(repo)):
+            if not image_provider.is_image_model_provider(payload.provider) and any(
+                value is not None
+                for value in (payload.reference_roles, payload.reference_framing, payload.operation)
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "image_model.unsupported_reference_semantics",
+                        "message": (
+                            "reference roles, framing and operation labels require "
+                            "the image model provider"
+                        ),
+                        "diagnostics": [],
+                    },
                 )
-                return {
-                    "schema_version": 1,
-                    "asset": public_asset_record(cached_record),
-                    "provider": {"id": payload.provider},
-                    "deduplicated": True,
-                    "diagnostics": [],
+            asset_id = f"asset_gen_{uuid4().hex[:12]}"
+            cache_key: Optional[str] = None
+            blobs = blob_store(repo)
+            cache_dir = request_cache_dir(repo)
+            if image_provider.is_image_model_provider(payload.provider):
+                # Phase 3b image EDIT: resolve the source asset's pixels up front.
+                # The edit keys the cache on the source digest (same instruction on
+                # a different image must never hit) and stamps the result's source
+                # as kind "edited" with the parent asset id, so provenance chains.
+                source_images: Optional[list] = None
+                source_digest: Optional[str] = None
+                if payload.source_asset_id:
+                    source_stored = repo.require_asset_record(payload.source_asset_id)
+                    source_media = (source_stored["asset"].get("media") or {})
+                    source_digest = (source_media.get("digest") or {}).get("value")
+                    # D4: a pure-Python read — go straight to durable storage. Routing it through
+                    # the engine cache would mean materializing bytes no engine call will read.
+                    source_bytes = read_asset_bytes(blobs, source_digest)
+                    if source_bytes is None:
+                        raise HTTPException(
+                            status_code=409,
+                            detail={
+                                "code": "asset.source_bytes_missing",
+                                "message": (
+                                    f"source asset {payload.source_asset_id} has no stored"
+                                    " bytes to edit"
+                                ),
+                                "diagnostics": [],
+                            },
+                        )
+                    source_images = [
+                        (source_bytes, source_media.get("mime_type") or "image/png")
+                    ]
+                # RC (D-RC2.5): reference-conditioned GENERATION — resolve the
+                # request's reference_asset_ids into real bytes (the field was inert
+                # before) so the editor's generate flow conditions on attached style
+                # references. Only on the pure-generation path (an edit already rides
+                # its source pixels). Empty ids → None → byte-identical to today.
+                reference_images: Optional[list] = None
+                reference_digests: Optional[List[str]] = None
+                ref_ids = payload.reference_asset_ids
+                if source_images is None:
+                    ref_ids = _dedupe_and_cap_reference_ids(payload.reference_asset_ids)
+                    if ref_ids:
+                        reference_images, reference_digests = (
+                            resolve_reference_images_for_generate(
+                                repo, blobs, cache_dir, ref_ids
+                            )
+                        )
+                # Generation cache: re-use the asset produced by an identical earlier
+                # request instead of re-paying the model (the byte-digest store dedup
+                # only fires AFTER the paid, non-deterministic call). Checked BEFORE the
+                # provider; the cache lives in the same store the assets do.
+                cache_key = image_cache.generation_key(
+                    prompt=payload.prompt,
+                    model=image_provider.configured_model_id(),
+                    width=payload.width,
+                    height=payload.height,
+                    brand_notes=payload.brand_notes,
+                    aspect_ratio=payload.aspect_ratio,
+                    image_size=payload.image_size,
+                    transparent_background=payload.transparent_background,
+                    reference_asset_ids=ref_ids,
+                    reference_digests=reference_digests,
+                    source_digest=source_digest,
+                    operation=payload.operation,
+                    reference_roles=payload.reference_roles,
+                    reference_framing=payload.reference_framing,
+                )
+                # D6 Round C: the ledger is Postgres (``design_generation_result``), not the JSON
+                # sidecar under the wipeable engine cache. This probe is a READ and deliberately not
+                # a tool — it is what AVOIDS the provider spend, and it has to run before it. The
+                # write that claims the key is governed (``design_register_generated_asset``) and
+                # re-checks the ledger inside its own transaction, so two requests that both reach
+                # here on a miss still converge on one asset.
+                cached = repo.get_generation_result(cache_key)
+                if cached:
+                    cached_record = cached["asset"]
+                    log_event(
+                        api_logger,
+                        logging.INFO,
+                        "asset_generation_completed",
+                        status="ok",
+                        provider=payload.provider,
+                        asset_id=cached_record.get("id"),
+                        deduplicated=True,
+                        cached=True,
+                    )
+                    return {
+                        "schema_version": 1,
+                        "asset": public_asset_record(cached_record),
+                        "provider": {"id": payload.provider},
+                        "deduplicated": True,
+                        "diagnostics": [],
+                        **image_provider.image_request_receipt_fields(cached_record),
+                    }
+                # Real text-to-image generation runs here in the async-capable Python
+                # layer; the returned bytes are persisted through the SAME ingest
+                # pipeline as uploads, stamped with a `generated` source, so the rest
+                # of the stack (placement/render/export/validation) is unchanged.
+                try:
+                    if source_images is not None:
+                        generated = image_provider.edit(
+                            prompt=payload.prompt,
+                            source_images=source_images,
+                            brand_notes=payload.brand_notes,
+                            transparent_background=payload.transparent_background,
+                            request_id=asset_id,
+                            operation=payload.operation,
+                        )
+                    else:
+                        generated = image_provider.generate(
+                            prompt=payload.prompt,
+                            width=payload.width,
+                            height=payload.height,
+                            brand_notes=payload.brand_notes,
+                            aspect_ratio=payload.aspect_ratio,
+                            image_size=payload.image_size,
+                            transparent_background=payload.transparent_background,
+                            reference_asset_ids=ref_ids,
+                            reference_images=reference_images,
+                            request_id=asset_id,
+                            operation=payload.operation,
+                            reference_roles=payload.reference_roles,
+                            reference_framing=payload.reference_framing,
+                        )
+                except image_provider.ImageGenerationError as error:
+                    log_event(
+                        api_logger,
+                        logging.INFO,
+                        "asset_generation_completed",
+                        status="rejected",
+                        provider=payload.provider,
+                        error_code=error.code,
+                    )
+                    raise HTTPException(
+                        status_code=error.status_code,
+                        detail={"code": error.code, "message": str(error), "diagnostics": []},
+                    ) from error
+                try:
+                    result = app.state.core.ingest_asset(
+                        store_root=cache_dir,
+                        bytes_base64=base64.b64encode(generated.image_bytes).decode("ascii"),
+                        asset_id=asset_id,
+                        label=payload.label or (payload.prompt[:60].strip() or asset_id),
+                        declared_mime_type=generated.mime_type,
+                        kind=payload.output_kind,
+                        license=generated.license,
+                        provenance=generated.provenance,
+                        source=(
+                            {
+                                "kind": "edited",
+                                "request_id": asset_id,
+                                "model": generated.model,
+                                "source_asset_id": payload.source_asset_id,
+                            }
+                            if payload.source_asset_id
+                            else {
+                                "kind": "generated",
+                                "request_id": asset_id,
+                                "model": generated.model,
+                            }
+                        ),
+                        max_bytes=asset_max_bytes(),
+                        raise_on_error=False,
+                    )
+                except CoreError as error:
+                    raise core_http_error(error) from error
+            else:
+                request = {
+                    "request_id": asset_id,
+                    "prompt": payload.prompt,
+                    "output_kind": payload.output_kind,
+                    "target_node_id": None,
+                    "target_slot_id": None,
+                    "constraints": {
+                        "width": payload.width,
+                        "height": payload.height,
+                        "mime_type": payload.mime_type,
+                        "transparent_background": payload.transparent_background,
+                        "brand_notes": payload.brand_notes,
+                        "aspect_ratio": payload.aspect_ratio,
+                        "image_size": payload.image_size,
+                        "reference_asset_ids": payload.reference_asset_ids,
+                    },
                 }
-            # Real text-to-image generation runs here in the async-capable Python
-            # layer; the returned bytes are persisted through the SAME ingest
-            # pipeline as uploads, stamped with a `generated` source, so the rest
-            # of the stack (placement/render/export/validation) is unchanged.
-            try:
-                if source_images is not None:
-                    generated = image_provider.edit(
-                        prompt=payload.prompt,
-                        source_images=source_images,
-                        brand_notes=payload.brand_notes,
-                        transparent_background=payload.transparent_background,
-                        request_id=asset_id,
+                try:
+                    result = app.state.core.generate_asset(
+                        store_root=cache_dir,
+                        provider=payload.provider,
+                        request=request,
+                        asset_id=asset_id,
+                        label=payload.label,
+                        raise_on_error=False,
                     )
-                else:
-                    generated = image_provider.generate(
-                        prompt=payload.prompt,
-                        width=payload.width,
-                        height=payload.height,
-                        brand_notes=payload.brand_notes,
-                        aspect_ratio=payload.aspect_ratio,
-                        image_size=payload.image_size,
-                        transparent_background=payload.transparent_background,
-                        reference_asset_ids=payload.reference_asset_ids,
-                        reference_images=reference_images,
-                        request_id=asset_id,
-                    )
-            except image_provider.ImageGenerationError as error:
+                except CoreError as error:
+                    raise core_http_error(error) from error
+
+            diagnostics = result.get("diagnostics", [])
+            if not result.get("ok", False):
+                error = result.get("error") or {}
+                if not diagnostics:
+                    diagnostics = diagnostics_from_helper_error(error)
                 log_event(
                     api_logger,
                     logging.INFO,
                     "asset_generation_completed",
                     status="rejected",
                     provider=payload.provider,
-                    error_code=error.code,
+                    error_code=error.get("code"),
+                    **diagnostic_summary(diagnostics),
                 )
                 raise HTTPException(
-                    status_code=error.status_code,
-                    detail={"code": error.code, "message": str(error), "diagnostics": []},
-                ) from error
-            try:
-                result = app.state.core.ingest_asset(
-                    store_root=cache_dir,
-                    bytes_base64=base64.b64encode(generated.image_bytes).decode("ascii"),
-                    asset_id=asset_id,
-                    label=payload.label or (payload.prompt[:60].strip() or asset_id),
-                    declared_mime_type=generated.mime_type,
-                    kind=payload.output_kind,
-                    license=generated.license,
-                    provenance=generated.provenance,
-                    source=(
-                        {
-                            "kind": "edited",
-                            "request_id": asset_id,
-                            "model": generated.model,
-                            "source_asset_id": payload.source_asset_id,
-                        }
-                        if payload.source_asset_id
-                        else {
-                            "kind": "generated",
-                            "request_id": asset_id,
-                            "model": generated.model,
-                        }
-                    ),
-                    max_bytes=asset_max_bytes(),
-                    raise_on_error=False,
+                    status_code=400,
+                    detail={
+                        "code": error.get("code"),
+                        "message": error.get("message"),
+                        "diagnostics": diagnostics,
+                    },
                 )
-            except CoreError as error:
-                raise core_http_error(error) from error
-        else:
-            request = {
-                "request_id": asset_id,
-                "prompt": payload.prompt,
-                "output_kind": payload.output_kind,
-                "target_node_id": None,
-                "target_slot_id": None,
-                "constraints": {
-                    "width": payload.width,
-                    "height": payload.height,
-                    "mime_type": payload.mime_type,
-                    "transparent_background": payload.transparent_background,
-                    "brand_notes": payload.brand_notes,
-                    "aspect_ratio": payload.aspect_ratio,
-                    "image_size": payload.image_size,
-                    "reference_asset_ids": payload.reference_asset_ids,
-                },
-            }
-            try:
-                result = app.state.core.generate_asset(
-                    store_root=cache_dir,
-                    provider=payload.provider,
-                    request=request,
-                    asset_id=asset_id,
-                    label=payload.label,
-                    raise_on_error=False,
-                )
-            except CoreError as error:
-                raise core_http_error(error) from error
 
-        diagnostics = result.get("diagnostics", [])
-        if not result.get("ok", False):
-            error = result.get("error") or {}
-            if not diagnostics:
-                diagnostics = diagnostics_from_helper_error(error)
+            asset_payload = result.get("asset") or {}
+            record = asset_payload.get("record") or {}
+            # D4 write-back before the registry row (see POST /assets). Covers both branches: the
+            # Python image provider's bytes re-ingested through the engine, and a registered
+            # provider's `generate_asset`.
+            register_engine_write(
+                blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
+            )
+            if cache_key is not None:
+                # One governed write: the registry row AND the ledger claim, in one transaction, so
+                # an identical repeat re-places this asset instead of re-paying the model.
+                ref = run_design_tool(
+                    "design_register_generated_asset",
+                    {"record": record, "generation_key": cache_key},
+                    workspace_id=store_workspace_id(repo),
+                )
+                stored = repo.require_asset_record(ref["asset_id"])
+            else:
+                stored = _register_asset_record(repo, record)
             log_event(
                 api_logger,
                 logging.INFO,
                 "asset_generation_completed",
-                status="rejected",
+                status="ok",
                 provider=payload.provider,
-                error_code=error.get("code"),
+                asset_id=record.get("id"),
+                deduplicated=asset_payload.get("deduplicated", False),
                 **diagnostic_summary(diagnostics),
             )
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": error.get("code"),
-                    "message": error.get("message"),
-                    "diagnostics": diagnostics,
-                },
-            )
-
-        asset_payload = result.get("asset") or {}
-        record = asset_payload.get("record") or {}
-        # D4 write-back before the registry row (see POST /assets). Covers both branches: the
-        # Python image provider's bytes re-ingested through the engine, and a registered
-        # provider's `generate_asset`.
-        register_engine_write(
-            blobs, cache_dir, record=record, source_key=design_storage.SOURCE_KEY_ASSET
-        )
-        if cache_key is not None:
-            # One governed write: the registry row AND the ledger claim, in one transaction, so
-            # an identical repeat re-places this asset instead of re-paying the model.
-            ref = run_design_tool(
-                "design_register_generated_asset",
-                {"record": record, "generation_key": cache_key},
-                workspace_id=store_workspace_id(repo),
-            )
-            stored = repo.require_asset_record(ref["asset_id"])
-        else:
-            stored = _register_asset_record(repo, record)
-        log_event(
-            api_logger,
-            logging.INFO,
-            "asset_generation_completed",
-            status="ok",
-            provider=payload.provider,
-            asset_id=record.get("id"),
-            deduplicated=asset_payload.get("deduplicated", False),
-            **diagnostic_summary(diagnostics),
-        )
-        return {
-            "schema_version": 1,
-            "asset": public_asset_record(stored["asset"]),
-            "provider": asset_payload.get("provider") or {"id": payload.provider},
-            "deduplicated": asset_payload.get("deduplicated", False),
-            "diagnostics": diagnostics,
-        }
+            return {
+                "schema_version": 1,
+                "asset": public_asset_record(stored["asset"]),
+                "provider": asset_payload.get("provider") or {"id": payload.provider},
+                "deduplicated": asset_payload.get("deduplicated", False),
+                "diagnostics": diagnostics,
+                **image_provider.image_request_receipt_fields(stored["asset"]),
+            }
 
     @app.get("/assets")
     def list_assets(
@@ -7112,17 +7511,24 @@ def create_app(
         """
         run_design_tool(
             "design_set_asset_description",
-            {
-                "asset_id": asset_id,
-                "title": payload.title,
-                "description": payload.description,
-                "usage": payload.usage,
-                "tags": payload.tags,
-            },
+            {"asset_id": asset_id, **payload.model_dump(exclude_none=True)},
             workspace_id=store_workspace_id(repo),
             refusals=_asset_refusals(asset_id),
         )
         return DescriptionStore(workspace_id=repo.workspace_id).get_many([asset_id])[asset_id]
+
+    @app.get("/assets/upload-capabilities")
+    def asset_upload_capabilities() -> JsonObject:
+        return {"max_bytes": asset_max_bytes(), "formats": ["png", "jpeg", "webp", "svg", "gif"]}
+
+    @app.post("/assets/{asset_id}/analysis/retry")
+    def retry_asset_analysis(asset_id: str, repo: HybridRepository = Depends(repository)) -> JsonObject:
+        repo.require_asset_record(asset_id)
+        try:
+            job = _offer_ingestion(repo, "asset_enrichment", {"targets": {asset_id: {}}})
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return {"schema_version": 1, "job": ingestion_job_dto(job)}
 
     @app.get("/assets/{asset_id}")
     def get_asset(
@@ -7145,7 +7551,14 @@ def create_app(
         # D4: a pure-Python read straight from durable storage — resolved BY DIGEST, so the
         # three historical `opaque_ref` shapes (and their three provider labels) all serve, and
         # no stored ref is ever interpreted as a filesystem path.
-        stored = repo.require_asset_record(asset_id)
+        try:
+            stored = repo.require_asset_record(asset_id)
+        except NotFoundError:
+            shared_font = shared_library_font_bytes(asset_id, app.state.storage)
+            if shared_font is None:
+                raise
+            media_type, data = shared_font
+            return Response(content=data, media_type=media_type)
         record = stored["asset"]
         media = record.get("media") or {}
         digest = location_digest(media.get("location"))
@@ -7334,22 +7747,49 @@ def create_app(
     return app
 
 
+def install_design_api_telemetry(app: FastAPI) -> Any:
+    """OTel + Sentry + Langfuse at this root, from the same .env the fleet reads.
+
+    The dev stack sources the repo-root .env for this process; the CLUE_OTEL_*/CLUE_SENTRY_*/
+    CLUE_LANGFUSE_* keys are the fleet's. Missing Langfuse keys skip with a warning; Sentry off by
+    default; no OTLP endpoint means spans are created and dropped — same as the fleet.
+
+    Called once, on the module-level ``app`` below — the object `uvicorn lumen_api.main:app`
+    serves. NOT inside ``create_app()``: OTel takes one global provider per process and the httpx
+    instrumentation is process-wide, so a suite that builds hundreds of apps would install
+    hundreds of providers, Langfuse clients and exporters.
+    """
+
+    settings = load_settings()
+    secrets = Secrets()
+    runtime = install_production_tracing(settings, secrets, service_name="clue-design-api")
+    install_production_sentry(settings, secrets, service_name="clue-design-api")
+    install_production_langfuse(settings, secrets, runtime=runtime, service_name="clue-design-api")
+    if settings.otel_instrument_fastapi:
+        runtime.instrument_app(app)
+    app.state.tracing_runtime = runtime
+    return runtime
+
+
 app = create_app()
+
+# Installed only when THIS module is the process ROOT — i.e. nothing has claimed the process's
+# tracer provider yet. `uvicorn lumen_api.main:app` reaches here first and installs.
+#
+# The guard is not defensive dressing: `lumen_api.fleet_handler` lazily imports `.main` to execute
+# a design job, and that handler runs inside the PLATFORM fleet worker, which has already
+# installed its own provider, Sentry and Langfuse client under `clue-worker-fleet`. A second
+# install there would re-point `clue_obs.otel.tracing`, re-instrument httpx and replace the
+# process's Langfuse client mid-run — the fleet's own traces would start reporting as
+# `clue-design-api`. OTel's global provider is the exact question "does this process already have
+# a root?", so it is what is asked.
+if not isinstance(otel_trace.get_tracer_provider(), SdkTracerProvider):
+    install_design_api_telemetry(app)
 
 
 def store_workspace_id(repo: HybridRepository) -> str:
     """The workspace the store is bound to."""
     return repo.workspace_id
-
-
-def public_publish_path(repo: HybridRepository, slug: str) -> str:
-    """The ONE builder for a publish's public path — O6b interim scheme.
-
-    Publish slugs are workspace-local (O6), so every minted link carries the tenant in the
-    path. The workspace comes from the STORE the publish row lives in, never from the request
-    URL. Part-IV item 5 (design-integration-master-plan.md) replaces this scheme wholesale.
-    """
-    return f"/w/{store_workspace_id(repo)}/p/{slug}"
 
 
 def require_document(repo: HybridRepository, document_id: str) -> JsonObject:
@@ -7558,6 +7998,33 @@ def require_draft_document(document: JsonObject, action: str) -> None:
         )
 
 
+def _refuse_if_agent_running(document_id: str, store: HybridRepository) -> None:
+    """Refuse a MANUAL scene write while a design run is driving this document.
+
+    The founder's rule for live-streamed design runs: while the agent is working, the document is
+    not editable by hand. Two authors on one scene interleave badly — the run commits mid-flight
+    (the P0.4 checkpoints), so a human edit landing between them is either clobbered by the next
+    checkpoint or turns the run's remaining operations into a conflict nobody asked for.
+
+    The 409 names the run, which is the only thing the caller can act on: watch it, or cancel it.
+
+    It guards the SIX manual scene-write routes — ``PUT /scene``, ``POST /operations``, ``/undo``,
+    ``/redo``, ``/edits`` (the inspector's structured edit) and ``/revert`` (N composed undos).
+    The rule is about authorship, not about any one route's shape: every path a human can move a
+    scene through is closed while the agent is moving it.
+
+    The agent's own writes go through the governed ``design_apply_operations`` tool
+    (``_LegSceneCommitter``), never through these routes — a lock that reached the tool would
+    deadlock every run against itself.
+    """
+    run_id = store.active_design_run_for_document(document_id)
+    if run_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "document.agent_run_active", "run_id": run_id},
+        )
+
+
 def require_base_version(document: JsonObject, base_version: Optional[int]) -> None:
     if base_version is not None and base_version != document["current_version"]:
         raise HTTPException(
@@ -7644,6 +8111,47 @@ def public_document(document: JsonObject) -> JsonObject:
             continue
         result[key] = value
     return result
+
+
+def fragment_meta_for_document(
+    document: JsonObject, fragment_rows: Sequence[JsonObject]
+) -> Optional[JsonObject]:
+    """Ruling R-A5 (founder, 2026-09-04): the registry facts a human name is made of —
+    ``label`` + ``section_role`` — for every fragment the document pins, on every page. A
+    pinned id the registry does not hold (unreleased, another workspace's) gets honest
+    nulls, so the frontend names it "Cloned section" instead of guessing. None for a scene
+    document.
+
+    This rides BESIDE the document rather than inside it: the body a client sends back is
+    the body it was served, byte for byte, and a registry label is not a document fact.
+    The walk is :func:`lumen_api.database.fragment_references` — the one reader of a web
+    document's pins in this codebase — so a page shape it accepts cannot mean two different
+    things here and there.
+    """
+    if document.get("doc_kind") != "web":
+        return None
+    by_id: JsonObject = {}
+    for row in fragment_rows:
+        fragment_id = row.get("fragment_id")
+        if isinstance(fragment_id, str):
+            label = row.get("label")
+            section_role = row.get("section_role")
+            by_id[fragment_id] = {
+                "label": label if isinstance(label, str) else None,
+                "section_role": section_role
+                if isinstance(section_role, str)
+                else None,
+            }
+    scene = document.get("scene")
+    if not isinstance(scene, dict):
+        return {}
+    meta: JsonObject = {}
+    for _node_id, fragment_id in fragment_references(scene).values():
+        if fragment_id not in meta:
+            meta[fragment_id] = by_id.get(
+                fragment_id, {"label": None, "section_role": None}
+            )
+    return meta
 
 
 def duplicate_brand_kit_error(brand_kit: JsonObject) -> HTTPException:
@@ -7861,6 +8369,39 @@ def choose_effective_brand(
     if payload.strict_no_fallback:
         return "none", None
     return "platform_default", core.platform_default_brand_kit()
+
+
+def document_render_context(
+    core: CoreClient, repo: HybridRepository, document: JsonObject
+) -> JsonObject:
+    """Fresh normal-export inputs, projected only at the saved scene READ seam.
+
+    This is neither persisted metadata nor an attach/rebind operation. A fallback
+    chosen by export stays identifiable as that fallback, never as an exact pin.
+    """
+    meta = document["scene"].get("meta", {})
+    pin = meta.get("brand_kit")
+    diagnostics: List[JsonObject] = []
+    source, kit = "unavailable", None
+    try:
+        source, kit = choose_effective_brand(core, repo, document, PreflightRequest())
+    except (NotFoundError, CoreError) as error:
+        diagnostics.append({"severity": "error", "phase": "brand",
+            "code": "EDITOR_RENDER_CONTEXT_UNAVAILABLE", "message": str(error),
+            "subject": {"kind": "document"}, "hint": None})
+    if pin and kit and (pin.get("id"), pin.get("version")) != (kit.get("id"), kit.get("version")):
+        diagnostics.append({"severity": "error", "phase": "brand", "code": "LUMB0101",
+            "message": "Selected export Brand Kit does not match the scene's exact pinned kit.",
+            "subject": {"kind": "document"},
+            "hint": "Restore the exact version or use the explicit attach/rebind path."})
+    context = {"document_id": document["id"],
+        "document_version": document["current_version"], "scene_brand_ref": pin,
+        "scene_medium": meta.get("medium"), "source": source, "brand_kit": kit,
+        "mode": choose_effective_brand_mode(document, kit, None), "diagnostics": diagnostics}
+    context["context_key"] = hashlib.sha256(
+        json.dumps(context, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return context
 
 
 def choose_effective_brand_for_scene_preview(
@@ -8425,6 +8966,60 @@ _REFERENCES_UNRESOLVED = object()
 _BRAND_KIT_UNRESOLVED = object()
 
 
+def _stamp_session_manifest(
+    response: JsonObject,
+    *,
+    session_dir: Path | None,
+    history_file: Path | None,
+    session_id: str | None,
+    blobs: DesignBlobStore,
+    snapshot_session: Any,
+) -> JsonObject:
+    """Give this session's folder durable custody and name the manifest on the turn's result.
+
+    Session continuity (2026-09-18). ``result_json['session_manifest_sha256']`` is the ONLY
+    durable pointer to a session's memory — the next turn reads it back
+    (``latest_session_manifest_sha256``) and restores the folder wherever it happens to run.
+
+    Runs on every SESSION turn the runtime returns from — including one that returns a refusal,
+    because the workspace it left is still this session's memory of what it tried. A turn whose
+    runtime CRASHED snapshots nothing and keeps the previous turn's manifest as the session's
+    last good memory. Non-session turns (``session_dir is None``) are untouched, so every
+    editor/CLI/fixture path stays byte-identical.
+
+    BEST-EFFORT and loud: the work really happened and its result is really returned, so a
+    storage failure must not turn a finished turn into a failed one — but it must not be silent
+    either, because a swallowed snapshot is a session that will wake up with amnesia.
+    """
+    if session_dir is None:
+        return response
+    try:
+        manifest = snapshot_session(
+            session_dir,
+            register=lambda data, media_type, source_key: blobs.register(
+                data, media_type=media_type, source_key=source_key
+            ),
+            history_file=history_file,
+        )
+        manifest_bytes = json.dumps(manifest, sort_keys=True).encode()
+        # ``register`` returns a storage KEY while ``read_blob`` takes a DIGEST, so the digest is
+        # what the result carries — the key would be unreadable to the restore path.
+        blobs.register(
+            manifest_bytes,
+            media_type="application/json",
+            source_key="design-session/manifest",
+        )
+        response["session_manifest_sha256"] = hashlib.sha256(manifest_bytes).hexdigest()
+    except Exception as error:  # noqa: BLE001 - a lost snapshot is never a lost turn
+        api_logger.error(
+            "design_session.snapshot_failed",
+            session_id=session_id,
+            error=str(error),
+            exc_info=True,
+        )
+    return response
+
+
 def run_agent_turn_preview(
     payload: AgentTurnPreviewRequest,
     root: Path,
@@ -8437,9 +9032,17 @@ def run_agent_turn_preview(
     engine_cache_root: Optional[Path] = None,
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
+    session_id: str | None = None,
+    run_id: str | None = None,
+    session_manifest: dict | None = None,
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED,
+    resolved_asset_library: JsonObject | None = None,
     scene_checkpoint: Any = None,
     cancel_requested: Any = None,
+    scoped_preferences: Any = None,
+    runtime_workspace_guard: Any = None,
+    callbacks: Any = None,
+    platform_reads: Any = None,
 ) -> JsonObject:
     # D4: the turn's tenant. It decides which engine materialization cache the runtime reads and
     # writes — and the accept seam that gives those bytes durable custody looks in that same
@@ -8460,7 +9063,8 @@ def run_agent_turn_preview(
     )
     try:
         from lumen_agent.config import AgentRuntimeConfig
-        from lumen_agent.harness import run_deepagent_turn
+        from lumen_agent.harness import effective_runtime_config, run_deepagent_turn
+        from lumen_agent.session_sync import restore_session, snapshot_session
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.unavailable",
@@ -8500,6 +9104,22 @@ def run_agent_turn_preview(
 
     try:
         config = AgentRuntimeConfig.from_env(root)
+        if session_id:
+            # Session continuity (2026-09-18): this turn belongs to a DOCUMENT's design session,
+            # so the runtime's per-turn files land under that session's folder and its agent
+            # workspace survives across turns. The run id rides along so a retried run reuses its
+            # own turn folder and stamps the same id on its human message — which is what lets
+            # the checkpoint seam resume it instead of appending a second turn (ruling T5-1).
+            # Absent (the editor preview route, the CLI, fixtures) the runtime keeps its
+            # per-run folder and its own generated id, byte-identical to before.
+            config = replace(config, session_id=session_id, run_id=run_id)
+        if platform_reads is not None:
+            # Design note 2026-09-19: what this LEG turn may read from the platform — the target
+            # account's research through the governed tools, and the seller's pinned knowledge.
+            # Composed by the platform and passed BY VALUE, the same rule as every other
+            # capability here: the runtime never opens the platform database. Absent (a direct
+            # editor turn, the CLI, fixtures) the config is byte-identical to before the note.
+            config = replace(config, platform_reads=platform_reads)
         if payload.max_iterations is not None:
             # v0 harness does not consume max_iterations (no Python-loop cap);
             # kept set for config parity + offline/CLI paths that still read it.
@@ -8513,6 +9133,9 @@ def run_agent_turn_preview(
             # the accept seam (the scene-persist backstop). Pointing the runtime anywhere else
             # fails seeded imagery with LUME0210. LUMEN_AGENT_ASSET_STORE still overrides.
             config = replace(config, asset_store_root=turn_cache_root)
+        # Vendor-first logo family cache (decision #4): per workspace, keyed by registrable
+        # domain; the tool degrades to uncached fetching when this is None.
+        config = replace(config, logo_family_cache=DurableLogoFamilyCache(blobs=turn_blobs))
         if resolved_brand_kit is _BRAND_KIT_UNRESOLVED:
             brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
                 resolve_agent_turn_brand_kit(payload, turn_blobs)
@@ -8538,7 +9161,7 @@ def run_agent_turn_preview(
                 brand_kit_assets=brand_kit_assets,
                 brand_fonts=brand_fonts,
             )
-        asset_library = resolve_scene_turn_asset_library(turn_blobs, turn_cache_root)
+        asset_library = resolved_asset_library if resolved_asset_library is not None else resolve_scene_turn_asset_library(turn_blobs, turn_cache_root)
         if asset_library is not None:
             # W1.1 (Brand Ad Assets v1 §5): the bounded workspace ASSET LIBRARY rides
             # the run BY VALUE — the same rule as brand_kit_assets and
@@ -8552,8 +9175,13 @@ def run_agent_turn_preview(
             config = replace(
                 config,
                 asset_library=asset_library,
+                asset_materializer=asset_materializer(asset_library, turn_blobs, str(turn_cache_root)),
                 asset_store_root=turn_cache_root,
             )
+        for manifest in (config.brand_kit_assets or {},):
+            for aid, entry in manifest.items():
+                if aid in (asset_library or {}):
+                    entry.update({key: value for key, value in asset_library[aid].items() if key != "record"})
         turn_targets = editor_target_node_ids(payload)
         if turn_targets:
             # Slice 2.5: the chipped edit targets ride the run BY VALUE so the
@@ -8576,7 +9204,7 @@ def run_agent_turn_preview(
             # that attach references.
             config = replace(
                 config,
-                reference_assets=reference_assets,
+                reference_assets={aid: {**entry, **{k: v for k, v in (asset_library or {}).get(aid, {}).items() if k != "record"}} for aid, entry in reference_assets.items()},
                 asset_store_root=turn_cache_root,
             )
         ad_dna_card = ad_runtime.context_card(ad_lane)
@@ -8617,6 +9245,31 @@ def run_agent_turn_preview(
         clarification_already_requested = (
             payload.previous_turn_outcome == "clarification_requested"
         )
+        # Session continuity (2026-09-18): WHERE this session's memory lives, resolved through the
+        # same rule the harness uses, so the candidate bundle's rebound root can never leave the
+        # two looking in different folders. Computed before the run because the restore below must
+        # happen before `materialize_agent_workspace` and the tools touch the workspace, and reused
+        # after it for the snapshot.
+        effective = effective_runtime_config(config)
+        session_dir = effective.session_dir()
+        history_file = (
+            None
+            if session_dir is None
+            else effective.trace_dir / "conversation_history" / f"{session_id}.md"
+        )
+        if session_dir is not None and not session_dir.exists() and session_manifest is not None:
+            # A DIFFERENT worker ran this session's last turn (or this one's disk was reclaimed).
+            # Rebuild the folder before anything reads it, or the agent would continue a
+            # conversation about files it cannot open.
+            restored = restore_session(
+                session_dir,
+                session_manifest,
+                read_blob=turn_blobs.read_blob,
+                history_file=history_file,
+            )
+            api_logger.info(
+                "design_session.restored", session_id=session_id, files=restored
+            )
         payload_result, tools = run_deepagent_turn(
             prompt,
             config,
@@ -8636,6 +9289,12 @@ def run_agent_turn_preview(
             # THROUGH — the synchronous preview route holds the request open and has no id a
             # second caller could name.
             cancel_requested=cancel_requested,
+            # Lane 3 slice 5: the platform's injected handlers and the executor's receipt
+            # collector, attached by the harness at the graph's invoke config. None on every
+            # non-fleet path, which still collects — the harness always opens a collector.
+            callbacks=callbacks,
+            **({"scoped_preferences": scoped_preferences} if scoped_preferences is not None else {}),
+            **({"runtime_workspace_guard": runtime_workspace_guard} if runtime_workspace_guard is not None else {}),
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -8644,14 +9303,57 @@ def run_agent_turn_preview(
             str(error),
         )
 
-    return agent_response_from_trace(payload_result, tools.trace_dir, tools.scene)
+    # ``turn_dir``, not ``trace_dir``: since the session folder landed (2026-09-18) the
+    # operations ledger and the iteration folders live under THIS turn's folder, so a
+    # session turn read from the session root would report zero operations.
+    response = agent_response_from_trace(payload_result, tools.turn_dir, tools.scene)
+    return _stamp_session_manifest(
+        response,
+        session_dir=session_dir,
+        history_file=history_file,
+        session_id=session_id,
+        blobs=turn_blobs,
+        snapshot_session=snapshot_session,
+    )
 
 
-def _web_node_label(node: JsonObject) -> Optional[str]:
-    """A cheap human label for a WebDoc node: its data-name, else its text/
-    button copy (inline markup stripped), truncated. None when nothing cheap
-    is available."""
-    for key in ("name", "content", "label"):
+def _web_node_label(
+    node: JsonObject,
+    nodes: Optional[JsonObject] = None,
+    fragment_meta: Optional[JsonObject] = None,
+) -> Optional[str]:
+    """A cheap human label for a WebDoc node, in the SAME order of precedence the
+    shell shows a human (``displayNameForNode``, ruling R-A5): its own name, else a
+    clone's registry name, else a section's sole clone child's name, else its text/
+    button/alt copy (inline markup stripped), truncated. None when nothing cheap is
+    available — the caller then prints the bare kind, as it always has.
+
+    The two mirrors must stay in step: the user says "make the hero tighter" about a
+    band the layers panel calls "Hero — Stripe homepage hero", and the agent's TURN
+    TARGET line has to name that same band with those same words, or the two of them
+    are discussing different things. ``nodes`` (the page's node map) and
+    ``fragment_meta`` (the registry facts, :func:`fragment_meta_for_document`) are
+    optional so a caller with neither still gets the old text/name answer.
+    """
+    name = node.get("name")
+    if isinstance(name, str) and name.strip():
+        return name.strip()[:40]
+    kind = node.get("kind")
+    if kind == "fragment":
+        meta = (fragment_meta or {}).get(node.get("fragment_id") or "") or {}
+        role = meta.get("section_role")
+        label = meta.get("label")
+        role = role.strip().capitalize() if isinstance(role, str) and role.strip() else None
+        label = label.strip() if isinstance(label, str) and label.strip() else None
+        # A pin the registry does not hold (unreleased, or another workspace's) is named
+        # honestly rather than guessed at — the frontend's fallback, word for word.
+        return (f"{role} — {label}" if role and label else role or label) or "Cloned section"
+    if kind == "section" and nodes is not None:
+        children = node.get("children") or []
+        only = nodes.get(children[0]) if len(children) == 1 else None
+        if isinstance(only, dict) and only.get("kind") == "fragment":
+            return _web_node_label(only, nodes, fragment_meta)
+    for key in ("content", "label", "alt"):
         value = node.get(key)
         if isinstance(value, str) and value.strip():
             text = re.sub(r"<[^>]+>", "", value).strip()
@@ -8660,37 +9362,164 @@ def _web_node_label(node: JsonObject) -> Optional[str]:
     return None
 
 
-def _describe_web_turn_targets(
-    web_doc: JsonObject, target_node_ids: List[str]
-) -> str:
-    """Build the TURN TARGET brief addendum for a scoped edit turn: one line
-    per selected node, naming the node, its kind, and the enclosing section the
-    turn should be scoped to. A selection that no longer exists in the page
-    yields a line telling the agent to fall back to its own judgment."""
-    page = None
-    for candidate in web_doc.get("pages") or []:
-        if isinstance(candidate, dict) and candidate.get("id") == "home":
-            page = candidate
-            break
-    nodes = (page or {}).get("nodes") or {}
-    root_id = (page or {}).get("root")
-    root = nodes.get(root_id) or {}
-    root_child_set = set(root.get("children") or [])
-    parent_of: Dict[str, str] = {}
-    for nid, node in nodes.items():
-        if isinstance(node, dict):
-            for child in node.get("children") or []:
-                parent_of[child] = nid
+#: A human numbers their own annotations ("1. …", "2. …") in the composer, and those numbers
+#: are what the badges in the iframe show them. When a note carries one, it wins over the
+#: submission order — the agent and the marketer must be able to say "annotation 2" and mean
+#: the same element.
+_ANNOTATION_NUMBER_RE = re.compile(r"^\s*(\d{1,3})\s*[.)]\s")
 
-    lines: List[str] = []
-    for target in target_node_ids:
-        node = nodes.get(target)
-        if not isinstance(node, dict):
-            lines.append(
-                f"\n\nTURN TARGET: the user selected `{target}`, but that element no "
-                "longer exists in the page — use your own judgment about what to edit."
+#: How much of an annotated element's current copy to quote back. Enough to recognize the
+#: element by; not so much that a long paragraph crowds out the brief.
+_ANNOTATED_TEXT_CHARS = 160
+
+
+def _fragment_hidden_slot_keys(node: JsonObject) -> List[str]:
+    """The node's slot keys bound `{"visible": false}` — the elements the render DROPS.
+
+    A structural path is measured in the browser, against the rendered clone, so any element a
+    slot has hidden was never in the count. Every server-side walk over the STORED artifact
+    therefore needs this set, or it counts siblings the page does not have (spec §3.1). The wire
+    shape is the engine's externally-tagged `FragmentSlotValue` — `{"text": …}` / `{"asset": …}`
+    / `{"visible": false}` — so only the third form, and only when false, hides anything.
+    """
+    slots = node.get("slots")
+    if not isinstance(slots, dict):
+        return []
+    return [
+        key
+        for key, value in slots.items()
+        if isinstance(key, str) and isinstance(value, dict) and value.get("visible") is False
+    ]
+
+
+def _annotation_number(note: str, order: int) -> int:
+    """The number this annotation should be called by: the human's own leading `N.` when
+    they wrote one, else its 1-based position in the submission."""
+    match = _ANNOTATION_NUMBER_RE.match(note)
+    return int(match.group(1)) if match else order
+
+
+def _describe_annotated_element(
+    node: JsonObject,
+    path: str,
+    read_source: Optional[Any],
+    cache: Dict[str, Optional[JsonObject]],
+) -> str:
+    """The `, element …` clause of an ANNOTATION line: what the path lands on inside the
+    clone's REAL stored markup, or an honest statement that it lands on nothing.
+
+    The path is only meaningful inside a cloned band (the bridge emits one only under
+    `data-fragment-root`), so a path on any other node kind is treated as dead rather than
+    resolved against markup that does not exist.
+
+    The walk is told THIS NODE's hidden slot keys, because the path was counted over what the
+    browser rendered and a hidden slot's element is not in that render — without them a note on
+    the headline of a clone whose badge is switched off names the badge instead."""
+    fragment_id = node.get("fragment_id")
+    resolved: Optional[JsonObject] = None
+    if node.get("kind") == "fragment" and isinstance(fragment_id, str) and fragment_id:
+        if fragment_id not in cache:
+            source: Optional[JsonObject] = None
+            if read_source is not None:
+                try:
+                    candidate = read_source(fragment_id)
+                    source = candidate if isinstance(candidate, dict) else None
+                except Exception:
+                    # A registry miss (unreleased pin, another workspace's artifact, storage
+                    # hiccup) must never take the prompt build down: the annotation degrades to
+                    # "the path no longer resolves", which is the same honest answer a genuinely
+                    # dead path gets.
+                    source = None
+            cache[fragment_id] = source
+        source = cache[fragment_id]
+        if source is not None:
+            resolved = resolve_structural_path(
+                str(source.get("html") or ""),
+                path,
+                hidden_slot_keys=_fragment_hidden_slot_keys(node),
             )
+    if resolved is None:
+        return ""
+    name = (
+        f"{resolved['tag']} · {resolved['slot']}"
+        if resolved.get("slot")
+        else str(resolved["tag"])
+    )
+    text = str(resolved.get("text") or "")
+    if len(text) > _ANNOTATED_TEXT_CHARS:
+        text = text[:_ANNOTATED_TEXT_CHARS].rstrip() + "…"
+    reading = f' reading "{text}"' if text else ""
+    return f", element `{name}` at path `{path}`{reading}"
+
+
+def _describe_web_turn_targets(
+    web_doc: JsonObject,
+    target_node_ids: List[str],
+    fragment_meta: Optional[JsonObject] = None,
+    target_notes: Optional[List[JsonObject]] = None,
+    read_source: Optional[Any] = None,
+) -> str:
+    """Build the TURN TARGET / ANNOTATION brief addendum for a scoped edit turn: one line
+    per selected node, naming the node, its kind, the PAGE it sits on, and the
+    enclosing section the turn should be scoped to. A selection that no longer
+    exists in the document yields a line telling the agent to fall back to its
+    own judgment.
+
+    F5: every page is searched, not the one spelled `home`. A selection made on
+    a second page used to resolve against the home page's node map and come
+    back as "that element no longer exists" — the agent then rebuilt on its own
+    judgment instead of editing what the user had actually clicked.
+
+    R-A5: `fragment_meta` (this workspace's registry facts, keyed by fragment id)
+    is what lets a selected clone be named the way the human's layers panel names
+    it. Omitted, a clone still reads as `fragment "Cloned section"` — honest, just
+    less useful.
+
+    R-A2: `target_notes` is what the marketer actually WROTE — one entry per
+    annotation they made, in submission order, each naming the owning node, the
+    optional inner element (a `:nth-child` path, spec §3.1) and their words. A
+    target that carries a note gets a numbered ANNOTATION line INSTEAD of its
+    TURN TARGET line — the annotation already names the node, its page and its
+    section, and saying it twice would only invite the agent to treat one
+    selection as two. Targets with no note keep the TURN TARGET line they have
+    always had, byte for byte.
+
+    `read_source` is the registry seam (`DurableAgentClonedSectionRegistry.read_source`)
+    used to resolve an inner path against the clone's REAL stored HTML, so the line can
+    name the element and quote what it currently says. Without it — or when the path is
+    dead — the line says the path no longer resolves rather than describing markup nobody
+    checked."""
+    # (page id, nodes, that page's top-level band ids, child -> parent) per page,
+    # in document order. Built once; a target is then looked up across all of them.
+    pages: List[Tuple[str, Dict[str, Any], set, Dict[str, str]]] = []
+    for candidate in web_doc.get("pages") or []:
+        if not isinstance(candidate, dict):
             continue
+        nodes = candidate.get("nodes")
+        if not isinstance(nodes, dict):
+            continue
+        page_id = candidate.get("id") if isinstance(candidate.get("id"), str) else ""
+        root = nodes.get(candidate.get("root")) or {}
+        root_child_set = set(root.get("children") or []) if isinstance(root, dict) else set()
+        parent_of: Dict[str, str] = {}
+        for nid, node in nodes.items():
+            if isinstance(node, dict):
+                for child in node.get("children") or []:
+                    parent_of[child] = nid
+        pages.append((page_id, nodes, root_child_set, parent_of))
+
+    def locate(target: str):
+        """(page id, nodes, node, enclosing section id) for a target, or None when the
+        document no longer holds it."""
+        # First page carrying the id wins. Node ids are document-unique, so this is a
+        # lookup rather than a choice; ordering it makes the tie deterministic anyway.
+        found = next(
+            (entry for entry in pages if isinstance(entry[1].get(target), dict)),
+            None,
+        )
+        if found is None:
+            return None
+        page_id, nodes, root_child_set, parent_of = found
         section: Optional[str] = None
         if target in root_child_set:
             section = target
@@ -8703,15 +9532,86 @@ def _describe_web_turn_targets(
                 if current in root_child_set:
                     section = current
                     break
+        return page_id, nodes, nodes[target], section
+
+    # One entry per annotation the human actually wrote. An entry with no words is a
+    # selection, not an annotation — the platform sends one ref per selected node whether
+    # or not it carries a note — so it contributes nothing here and its target keeps its
+    # ordinary TURN TARGET line.
+    annotations: List[Tuple[str, Optional[str], str]] = []
+    for entry in target_notes or []:
+        if not isinstance(entry, dict):
+            continue
+        target = entry.get("target")
+        note = entry.get("note")
+        if not isinstance(target, str) or not target:
+            continue
+        if not isinstance(note, str) or not note.strip():
+            continue
+        path = entry.get("path")
+        annotations.append(
+            (target, path if isinstance(path, str) and path else None, note.strip())
+        )
+    annotated = {target for target, _path, _note in annotations}
+
+    lines: List[str] = []
+    for target in target_node_ids:
+        if target in annotated:
+            continue
+        found = locate(target)
+        if found is None:
+            lines.append(
+                f"\n\nTURN TARGET: the user selected `{target}`, but that element no "
+                "longer exists in the page — use your own judgment about what to edit."
+            )
+            continue
+        page_id, nodes, node, section = found
         kind = node.get("kind") or "node"
-        label = _web_node_label(node)
+        label = _web_node_label(node, nodes, fragment_meta)
         descriptor = f'{kind} "{label}"' if label else str(kind)
         section_str = f"`{section}`" if section else "the page"
+        # A page with no id is not addressable, so it is named by saying nothing rather
+        # than by an invented index — the line then reads exactly as it did pre-F5.
+        page_clause = f" on page `{page_id}`" if page_id else ""
         lines.append(
-            f"\n\nTURN TARGET: the user selected `{target}` ({descriptor}) inside "
-            f"section {section_str}. Scope this turn to that section unless the "
+            f"\n\nTURN TARGET: the user selected `{target}` ({descriptor}){page_clause} "
+            f"inside section {section_str}. Scope this turn to that section unless the "
             "brief clearly requires more."
         )
+
+    source_cache: Dict[str, Optional[JsonObject]] = {}
+    for order, (target, path, note) in enumerate(annotations, start=1):
+        number = _annotation_number(note, order)
+        found = locate(target)
+        if found is None:
+            lines.append(
+                f"\n\nANNOTATION {number}: the user annotated `{target}`, but that element "
+                f'no longer exists in the page — "{note}". Use your own judgment about '
+                "what to edit."
+            )
+            continue
+        page_id, nodes, node, section = found
+        kind = node.get("kind") or "node"
+        label = _web_node_label(node, nodes, fragment_meta)
+        descriptor = f'{kind} "{label}"' if label else str(kind)
+        where_parts: List[str] = []
+        if page_id:
+            where_parts.append(f"page `{page_id}`")
+        where_parts.append(f"section `{section}`" if section else "the page")
+        where = f" ({', '.join(where_parts)})"
+        inner = (
+            _describe_annotated_element(node, path, read_source, source_cache)
+            if path
+            else ""
+        )
+        if path and not inner:
+            lines.append(
+                f"\n\nANNOTATION {number}: on {descriptor}{where}, element at path "
+                f'`{path}` — "{note}". That path no longer resolves in this section, so '
+                "use your judgment about which element they meant."
+            )
+            continue
+        lines.append(f'\n\nANNOTATION {number}: on {descriptor}{where}{inner} — "{note}"')
     return "".join(lines)
 
 
@@ -8722,6 +9622,7 @@ def run_web_agent_turn(
     root: Path,
     event_sink=None,
     target_node_ids: Optional[List[str]] = None,
+    target_notes: Optional[List[JsonObject]] = None,
     account_card: Optional[JsonObject] = None,
     asset_library: Optional[JsonObject] = None,
     custom_component_registry: Any = None,
@@ -8732,7 +9633,12 @@ def run_web_agent_turn(
     engine_cache_root: Optional[Path] = None,
     checkpointer: Any = None,
     thread_id: Optional[str] = None,
+    session_id: str | None = None,
+    run_id: str | None = None,
+    session_manifest: dict | None = None,
     cancel_requested: Any = None,
+    callbacks: Any = None,
+    platform_reads: Any = None,
 ) -> JsonObject:
     """Run one website-mode turn against a WebDoc document. Mirrors
     run_agent_turn_preview's config assembly (env config + model override +
@@ -8742,7 +9648,17 @@ def run_web_agent_turn(
 
     `target_node_ids` (a scoped edit turn): each selected node is resolved to
     its enclosing section in Python and appended to the brief as a TURN TARGET
-    line so the orchestrator scopes the turn to that section.
+    line so the orchestrator scopes the turn to that section. R-A5: the line
+    NAMES that node the way the human's layers panel names it, which for a
+    cloned band means reading this workspace's fragment registry here.
+
+    `target_notes` (R-A2): what the human WROTE about those targets — one entry
+    per submitted reference, in submission order, each optionally naming an
+    element INSIDE a cloned band by structural path. Each note becomes a numbered
+    ANNOTATION line, and the path is resolved HERE against the artifact's real
+    stored HTML (the same registry read the agent's own inspect tool uses), so
+    the brief can name the element and quote the words it currently reads instead
+    of handing the agent a bare `:nth-child` chain to guess at.
 
     `account_card` (a 1:1 personalized turn, P5 D6): the target account card
     {name, domain, logo_asset_id, data, notes}, resolved to 404 before the run
@@ -8772,6 +9688,7 @@ def run_web_agent_turn(
     try:
         from lumen_agent.config import AgentRuntimeConfig
         from lumen_agent.harness_web import run_deepagent_web_turn
+        from lumen_agent.session_sync import restore_session, snapshot_session
     except Exception as error:
         return failed_agent_turn_response(
             "agent_runtime.unavailable",
@@ -8800,16 +9717,56 @@ def run_web_agent_turn(
         else api_engine_cache_root(turn_workspace_id)
     )
     web_doc = document["scene"]
-    if target_node_ids:
-        prompt = prompt + _describe_web_turn_targets(web_doc, target_node_ids)
     try:
+        # F2.3: the workspace's cloned-section registry. Built once, up here, because two
+        # things now need it: the brief's ANNOTATION lines resolve an annotated inner path
+        # against the artifact's stored HTML through `read_source`, and the runtime gets the
+        # whole registry as a capability further down (see the F2.3 note at its `replace`).
+        cloned_section_registry = DurableAgentClonedSectionRegistry(
+            blobs=turn_blobs, cache_dir=turn_cache_root
+        )
+        if target_node_ids:
+            # R-A5: the TURN TARGET lines name the selection the way the human's layers
+            # panel does. A selected CLONE is named from the registry, so the rows are
+            # read here — where the database is — exactly as the read route reads them
+            # (`GET /documents/{id}`), and only when this document pins something, so a
+            # clone-free turn pays for no registry scan. The build happens inside this
+            # try for the same reason everything else does: a turn that cannot reach the
+            # registry must fold into a failed envelope, not raise out of this function.
+            fragment_meta = (
+                fragment_meta_for_document(
+                    {"doc_kind": "web", "scene": web_doc},
+                    HybridRepository(workspace_id=turn_workspace_id).list_web_fragments(),
+                )
+                if web_doc_all_fragment_ids(web_doc)
+                else None
+            )
+            prompt = prompt + _describe_web_turn_targets(
+                web_doc,
+                target_node_ids,
+                fragment_meta=fragment_meta,
+                target_notes=list(target_notes) if target_notes else None,
+                read_source=cloned_section_registry.read_source,
+            )
         config = AgentRuntimeConfig.from_env(root)
+        if session_id:
+            # Session continuity (2026-09-18): see run_agent_turn_preview. The document's session
+            # owns the runtime's folder; the run id rides along so a retried run resumes rather
+            # than opening a second turn on the thread.
+            config = replace(config, session_id=session_id, run_id=run_id)
+        if platform_reads is not None:
+            # Design note 2026-09-19: see run_agent_turn_preview — a leg turn's platform reads,
+            # by value, and nothing on any other path.
+            config = replace(config, platform_reads=platform_reads)
         if model:
             config = replace(config, model=model)
         if config.asset_store_root is None:
             # D4: generated imagery must land in (and export from) the request workspace's
             # engine cache, exactly as the scene path pins it.
             config = replace(config, asset_store_root=turn_cache_root)
+        # Vendor-first logo family cache (decision #4): per workspace, keyed by registrable
+        # domain; the tool degrades to uncached fetching when this is None.
+        config = replace(config, logo_family_cache=DurableLogoFamilyCache(blobs=turn_blobs))
         # The agent's in-loop preview resolves every `<img data-asset=…>` against
         # `config.asset_base_url`. Unlike the HTTP render route above (which derives it from
         # `request.base_url`), this path has NO request: a web turn is leased fleet work and
@@ -8825,7 +9782,11 @@ def run_web_agent_turn(
                 "placed image broken. Set LUMEN_API_ORIGIN to the design API's origin."
             )
         if asset_library is not None:
-            config = replace(config, asset_library=asset_library)
+            config = replace(config, asset_library=asset_library,
+                             asset_materializer=asset_materializer(asset_library, turn_blobs, str(turn_cache_root)))
+        for aid, entry in (config.brand_kit_assets or {}).items():
+            if aid in (asset_library or {}):
+                entry.update({key: value for key, value in asset_library[aid].items() if key != "record"})
         # F1.3: resolve the artifacts this document ALREADY pins HERE, where the database is, and
         # hand them to the runtime BY VALUE — the same rule asset_library follows, because a fleet
         # worker never reads the API database.
@@ -8837,14 +9798,18 @@ def run_web_agent_turn(
         # placeholder for the visual reviewer to judge. A pin that reaches the document by any
         # OTHER route mid-turn — hand-built ops naming an id nothing resolved — still renders the
         # placeholder, which is the honest answer rather than an improvised one.
-        if web_doc_fragment_ids(web_doc, "home"):
+        #
+        # F5: EVERY page's pins, not the home page's. A turn is of a DOCUMENT — the agent can
+        # author on any page during it — so a package scoped to one page would render a band
+        # pinned on `/pricing` as the engine's placeholder in the agent's own screenshots, and
+        # the visual reviewer would judge the hole.
+        if web_doc_all_fragment_ids(web_doc):
             config = replace(
                 config,
-                fragment_render_package=build_fragment_render_package(
+                fragment_render_package=build_fragment_render_package_for_document(
                     turn_blobs.storage,
                     workspace_id=turn_workspace_id,
                     web_doc=web_doc,
-                    page_id="home",
                 ),
             )
         # F2.3: the WORKSPACE's released cloned sections, as a capability rather than a value —
@@ -8853,12 +9818,7 @@ def run_web_agent_turn(
         # and that second question is a PERMISSION question whose answer must come from the
         # document write's own gate at the moment it is asked, not from a snapshot of the
         # registry taken when the turn was composed.
-        config = replace(
-            config,
-            cloned_section_registry=DurableAgentClonedSectionRegistry(
-                blobs=turn_blobs, cache_dir=turn_cache_root
-            ),
-        )
+        config = replace(config, cloned_section_registry=cloned_section_registry)
         if account_logo_binder is not None:
             # F4.3 (ruling R25-1): the G1+G2 bridge. Passed IN rather than built here — unlike
             # the cloned-section registry it needs the governed tool invoker, which lives at the
@@ -8885,6 +9845,10 @@ def run_web_agent_turn(
             config = replace(
                 config, turn_target_node_ids=list(target_node_ids)
             )
+        if target_notes:
+            # The runtime's own prompt block reads these; the brief addendum above is the
+            # API's rendering of the same facts, so both sides see one submission order.
+            config = replace(config, turn_target_notes=list(target_notes))
         brand_kit, brand_kit_source, brand_kit_assets, brand_fonts = (
             resolve_web_turn_brand_kit(web_doc, turn_blobs)
         )
@@ -8920,6 +9884,25 @@ def run_web_agent_turn(
             base_url=config.agent_base_url,
             api_key=config.agent_api_key,
         )
+        # Session continuity (2026-09-18): the WEB harness has no candidate-bundle rebase, so the
+        # session folder is exactly where this config says it is. Restored before the runtime
+        # touches the workspace; snapshotted on the way out.
+        session_dir = config.session_dir()
+        history_file = (
+            None
+            if session_dir is None
+            else config.trace_dir / "conversation_history" / f"{session_id}.md"
+        )
+        if session_dir is not None and not session_dir.exists() and session_manifest is not None:
+            restored = restore_session(
+                session_dir,
+                session_manifest,
+                read_blob=turn_blobs.read_blob,
+                history_file=history_file,
+            )
+            api_logger.info(
+                "design_session.restored", session_id=session_id, files=restored
+            )
         result = run_deepagent_web_turn(
             prompt=prompt,
             config=config,
@@ -8932,6 +9915,8 @@ def run_web_agent_turn(
             # `failed` with nothing applied — website mode persists once at the end, so there
             # is no partial work a stop could keep.
             cancel_requested=cancel_requested,
+            # Lane 3 slice 5: see run_agent_turn_preview.
+            callbacks=callbacks,
         )
     except Exception as error:
         return failed_agent_turn_response(
@@ -8940,19 +9925,26 @@ def run_web_agent_turn(
             str(error),
         )
 
-    return {
-        "schema_version": 1,
-        "status": result.get("status"),
-        "outcome": result.get("outcome"),
-        "summary": result.get("summary"),
-        "web_doc": result.get("web_doc"),
-        "operations": result.get("operations", []),
-        "grounding": result.get(
-            "grounding", {"schema_version": 1, "sources": [], "citations": []}
-        ),
-        "preview_paths": result.get("preview_paths", []),
-        "doc_kind": "web",
-    }
+    return _stamp_session_manifest(
+        {
+            "schema_version": 1,
+            "status": result.get("status"),
+            "outcome": result.get("outcome"),
+            "summary": result.get("summary"),
+            "web_doc": result.get("web_doc"),
+            "operations": result.get("operations", []),
+            "grounding": result.get(
+                "grounding", {"schema_version": 1, "sources": [], "citations": []}
+            ),
+            "preview_paths": result.get("preview_paths", []),
+            "doc_kind": "web",
+        },
+        session_dir=session_dir,
+        history_file=history_file,
+        session_id=session_id,
+        blobs=turn_blobs,
+        snapshot_session=snapshot_session,
+    )
 
 
 # --- fleet turn executors (D5 Round B) --------------------------------------------------------
@@ -9174,6 +10166,153 @@ def _empty_page_steering_note(scene: Any) -> Optional[str]:
     )
 
 
+
+# --- Lane 3 slice 5: one spend scope per unit of work -----------------------------------------
+
+
+def _turn_spend_stamp(envelope: Any) -> "LedgerStamp":
+    """The ledger stamp for one design turn.
+
+    A turn stamps its workspace, its project when the offerer froze one onto the envelope
+    (``DesignTurnEnvelope.project_id`` — absent on a pre-slice-5 envelope and on a design-API
+    turn that has no platform project), and its run — the run id in the ``job_id`` column, whose
+    documented meaning is "the job that spent". A run id that is not a UUID stamps without the
+    job rather than failing the turn: an unstampable row is still a row, and losing the money
+    trail to a parse error would be the worse answer.
+
+    ``getattr`` rather than an attribute read because this executor also runs envelopes replayed
+    verbatim from rows frozen before the field existed.
+    """
+    from clue_spend import LedgerStamp
+
+    try:
+        job_id = UUID(str(envelope.run_id))
+    except (TypeError, ValueError):
+        job_id = None
+    return LedgerStamp(
+        workspace_id=envelope.workspace_id,
+        project_id=getattr(envelope, "project_id", None),
+        job_id=job_id,
+    )
+
+
+@contextmanager
+def _request_spend_scope(workspace_id: str):
+    """One request's spend scope, drained on the way out. For a route that spends.
+
+    A request carries no project or run of its own, so the stamp is the workspace alone — the
+    shape ``LedgerStamp`` documents for "a display page or a chat-turn tool".
+    """
+    from clue_spend import LedgerStamp
+
+    from . import spend as _spend
+
+    with _spend.spend_scope(LedgerStamp(workspace_id=workspace_id)) as scope:
+        try:
+            yield scope
+        finally:
+            _drain_spend(scope)
+
+
+def _turn_model_call_collector(callbacks: Any) -> Tuple[Any, Any]:
+    """The turn's ONE model-call collector, and the ``TurnCallbacks`` to hand the harness.
+
+    Lane 3 slice 5. The collector is opened HERE, at the executor, rather than inside the harness,
+    because this is the only frame that sees every terminal-status return — including the ones
+    that REPLACE the harness's response dict (a pageless proposal, an un-replayable web operation
+    history). A turn that spent money and then failed validation must still come back with its
+    receipts.
+
+    Returns ``(None, callbacks)`` when the agent runtime is not importable in this process: the
+    design API is deployed without it in some shapes, and a missing collector must degrade to "no
+    receipts", never to a failed turn.
+    """
+    try:
+        from lumen_agent.usage_collector import ModelCallCollector, TurnCallbacks
+    except Exception:  # pragma: no cover - deployment shape, not logic
+        return None, callbacks
+    langfuse_ids = getattr(callbacks, "langfuse_ids", None)
+    collector = ModelCallCollector(langfuse_ids=langfuse_ids)
+    injected = tuple(getattr(callbacks, "handlers", ()) or ())
+    return collector, TurnCallbacks(
+        handlers=(collector, *injected), langfuse_ids=langfuse_ids
+    )
+
+
+def _with_model_calls(response: JsonObject, collector: Any) -> JsonObject:
+    """Stamp the turn's per-call receipts onto the dict that becomes the run's ``result_json``.
+
+    Always present when a collector exists, even as ``[]`` — "this turn made no model calls" is a
+    fact a cost reader needs to be able to read, and an absent key would be indistinguishable
+    from an executor that forgot.
+    """
+    if collector is None or not isinstance(response, dict):
+        return response
+    return {**response, "model_calls": [call.as_json() for call in collector.calls]}
+
+
+def _document_drift_note(
+    store: HybridRepository, *, document_id: str, current_version: int
+) -> str | None:
+    """What moved under this document's session since the agent last wrote it, or ``None``.
+
+    Session continuity (2026-09-18): a continued session holds the scene IT wrote, so anything a
+    human (or another leg) committed in between has to be SAID — as data, never as instructions.
+
+    ``None`` means nothing moved, no agent turn has ever written this document, or the read itself
+    failed: the note is advisory context, so an unreadable history costs the agent one paragraph
+    and never a paid turn. Shared by both executors so the two can never disagree on what drift is.
+    """
+    try:
+        last_written = store.latest_agent_written_version(document_id)
+        if last_written is None or last_written >= current_version:
+            return None
+        return render_document_drift_note(
+            previous_version=last_written,
+            current_version=current_version,
+            envelopes=store.list_envelopes(document_id, newest_first=False),
+        )
+    except Exception as error:  # noqa: BLE001 - advisory context never fails a turn
+        api_logger.warning(
+            "design_turn.drift_note_unavailable",
+            document_id=document_id,
+            current_version=current_version,
+            error=str(error),
+        )
+        return None
+
+
+def _session_manifest(
+    store: HybridRepository, blobs: DesignBlobStore, *, document_id: str
+) -> JsonObject | None:
+    """This document's session-folder manifest from its last synced turn, or ``None``.
+
+    Session continuity (2026-09-18): the runtime restores the session folder from this when the
+    turn lands on a worker that has never run this session. Read HERE, at the executor, because
+    this is the frame that has the database; the runtime is handed the manifest BY VALUE, the
+    same rule the brand kit and the asset library follow.
+
+    ``None`` means no turn has synced this session yet, or the read itself failed. A missing
+    manifest is not a failure: the runtime simply starts the session's folder fresh, which is
+    what the very first turn of every session does anyway. Shared by both executors so the two
+    can never disagree on where a session's memory comes from.
+    """
+    try:
+        sha = store.latest_session_manifest_sha256(document_id)
+        if sha is None:
+            return None
+        _, data = blobs.read_blob(sha)
+        manifest = json.loads(data)
+        return manifest if isinstance(manifest, dict) else None
+    except Exception as error:  # noqa: BLE001 - an unreadable manifest costs memory, not the turn
+        api_logger.warning(
+            "design_session.manifest_unavailable",
+            document_id=document_id,
+            error=str(error),
+        )
+        return None
+
+
 def execute_agent_turn_job(
     envelope: Any,
     *,
@@ -9182,6 +10321,52 @@ def execute_agent_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    spend_drain: Any = None,
+    callbacks: Any = None,
+    session_continued: bool = False,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One scene-mode turn under its own spend scope — see :func:`_execute_agent_turn_job`.
+
+    Every paid call the turn makes (image generation, the ad style-group tie-break) runs through
+    this scope's ``ProviderCaller`` and lands on ``provider_call_ledger`` when the turn ends.
+    ``spend_drain`` is the injected drain (PRE-1b): the platform passes one that also records a
+    provider incident, so that bookkeeping lives once on its side.
+
+    ``callbacks`` (lane 3 slice 5) is the platform's injected ``TurnCallbacks`` — its Langfuse
+    handler and the run-id registry that handler fills. This frame adds the turn's own
+    ``ModelCallCollector`` to them and stamps what it collected onto the response, which is what
+    ``complete_run`` persists as the run's ``result_json``.
+    """
+    from . import spend as _spend
+
+    collector, turn_callbacks = _turn_model_call_collector(callbacks)
+    with _spend.spend_scope(_turn_spend_stamp(envelope), drain_fn=spend_drain) as scope:
+        try:
+            status, response, event_type, event_data = _execute_agent_turn_job(
+                envelope,
+                store=store,
+                host=host,
+                event_sink=event_sink,
+                checkpointer=checkpointer,
+                lease_generation=lease_generation,
+                callbacks=turn_callbacks,
+                session_continued=session_continued,
+            )
+            return status, _with_model_calls(response, collector), event_type, event_data
+        finally:
+            _drain_spend(scope)
+
+
+def _execute_agent_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
+    callbacks: Any = None,
+    session_continued: bool = False,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One scene-mode turn, executed from its frozen envelope.
 
@@ -9199,6 +10384,36 @@ def execute_agent_turn_job(
         run_id=envelope.run_id, lease_generation=lease_generation
     )
     payload = AgentTurnPreviewRequest.model_validate(envelope.config.get("request") or {})
+    scoped_preferences = None
+    runtime_workspace_guard = None
+    if "design_memory" in envelope.config:
+        # The platform verifies this opaque selection against its durable scope,
+        # run and journal authority. Never treat a queued body-free pin as access.
+        factory = getattr(host, "preference_resolver_factory", None)
+        try:
+            if not callable(factory):
+                raise RuntimeError("preference authority unavailable")
+            scoped_preferences = factory(envelope)
+            if scoped_preferences is not None and not callable(scoped_preferences):
+                raise RuntimeError("invalid preference resolver")
+        except Exception:
+            failed = failed_agent_turn_response(
+                "scoped_preferences.unavailable",
+                "Saved design preferences could not be authorized for this turn.",
+                "The platform must resolve this turn's original scoped selection before retrying.",
+            )
+            return "failed", failed, "error", {"message": "scoped preferences unavailable"}
+        if scoped_preferences is not None:
+            from .runtime_privacy import bind_runtime_workspace
+
+            def runtime_workspace_guard(inner_run_id, trace_dir):
+                return bind_runtime_workspace(
+                    workspace_id=envelope.workspace_id, outer_run_id=envelope.run_id,
+                    inner_run_id=inner_run_id, trace_dir=trace_dir,
+                    emit=lambda event, data: store.emit_run_event(
+                        envelope.run_id, event, data, expected_generation=lease_generation,
+                    ),
+                )
     # G9: the USER's own words, captured BEFORE the leg prompt render below composes the brief
     # and the history into them. This is the human-facing ``intent`` on the durable edit
     # envelope, so it must never become the rendered brief block.
@@ -9222,6 +10437,64 @@ def execute_agent_turn_job(
     leg_block = envelope.config.get("leg") or {}
     delegation_bundle = envelope.config.get("delegation_bundle")
     leg_history = envelope.config.get("history")
+
+    # --- design note 2026-09-19: what this turn may read from the platform ---------------------
+    # A LEG turn only. The factory is the platform's (composed at its composition root with the
+    # journaled tool invoker); this side calls it and never assembles it. Reads are a CAPABILITY,
+    # not a precondition — unlike the scoped preferences above, which are the human's explicit
+    # selection and so refuse the turn when they cannot be authorized, a turn that cannot compose
+    # these still designs from the brief, exactly as it did before this note.
+    platform_reads = None
+    if leg_block:
+        reads_factory = getattr(host, "platform_reads_factory", None)
+        if callable(reads_factory):
+            try:
+                platform_reads = reads_factory(envelope)
+            except Exception:
+                api_logger.warning(
+                    "design_turn.platform_reads_unavailable",
+                    run_id=envelope.run_id,
+                    exc_info=True,
+                )
+                platform_reads = None
+
+    # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
+    # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
+    # fails the first; a legacy (AD4.R-era) document-less leg fails the second and third. A
+    # missing ``document_base_version`` is read as "preview-only", never as version zero — a
+    # fabricated base would CAS against whatever happens to sit at the head and clobber it.
+    document_id = payload.document_id
+    base_version = leg_block.get("document_base_version") if isinstance(leg_block, dict) else None
+    leg_persist = bool(leg_block) and bool(document_id) and base_version is not None
+    workspace_id = envelope.workspace_id
+
+    # --- session continuity (2026-09-18): the DOCUMENT is this turn's scene and its CAS base ---
+    # The envelope froze a scene and a version when the leg dispatched; by the time a worker runs
+    # the turn a human may have edited, and the agent's OWN previous turn certainly did. So the
+    # document is re-read HERE, and what it holds is what the trio designs from and what the
+    # write CAS's against. This REPLACES the pre-run conflict: "the document moved" is the normal
+    # condition of a continued session, not a terminal failure. The write-time CAS (inside the
+    # committer) still refuses the human edit that lands WHILE the turn runs — that window is the
+    # one an early check never could close, and it is the only one worth failing for.
+    doc: JsonObject | None = None
+    drift_note: str | None = None
+    if leg_persist:
+        try:
+            doc = store.require_document(document_id)
+        except Exception as error:  # noqa: BLE001 - mirrors the executor's own outer handler
+            # Same shape the outer handler below mints, minted here because this read happens
+            # before it opens: a turn that cannot read its own document has not begun.
+            failed = failed_agent_turn_response(
+                "agent_runtime.failed",
+                "Agent turn crashed before returning a proposal.",
+                str(error),
+            )
+            return "failed", failed, "error", {"message": str(error)}
+        base_version = int(doc["current_version"])
+        drift_note = _document_drift_note(
+            store, document_id=str(document_id), current_version=base_version
+        )
+        payload = payload.model_copy(update={"scene": doc["scene"]})
 
     pinned_kit_id = leg_block.get("brand_kit_id") if isinstance(leg_block, dict) else None
     resolved_brand_kit: Any = _BRAND_KIT_UNRESOLVED
@@ -9268,55 +10541,47 @@ def execute_agent_turn_job(
     # the prefill-cached prefix those two form (P3.7's block order) is untouched.
     steering_note = _empty_page_steering_note(payload.scene) if leg_block else None
     composed_prompt = f"{steering_note}\n\n{payload.prompt}" if steering_note else payload.prompt
-    if delegation_bundle or leg_history:
+    # Session continuity (2026-09-18): on a CONTINUED thread the agent already holds every earlier
+    # turn of this session, so re-sending the history block says the same thing twice. The
+    # immutable delegation brief still opens each NEW leg — a new leg is a new assignment even on
+    # a thread that has run before — which is what ``first_turn_of_leg`` (frozen by the platform's
+    # leg runner) names. A fresh thread sends both, exactly as it always has.
+    first_turn_of_leg = (
+        bool(leg_block.get("first_turn_of_leg", True)) if isinstance(leg_block, dict) else True
+    )
+    bundle_block = (
+        delegation_bundle
+        if (delegation_bundle and (not session_continued or first_turn_of_leg))
+        else None
+    )
+    history_block = None if session_continued else leg_history
+    if bundle_block or history_block or drift_note:
         composed_prompt = render_leg_turn_prompt(
-            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
-            history=leg_history if isinstance(leg_history, list) else None,
+            bundle=bundle_block if isinstance(bundle_block, dict) else None,
+            history=history_block if isinstance(history_block, list) else None,
             prompt=composed_prompt,
+            drift_note=drift_note,
         )
     if composed_prompt != payload.prompt:
         payload = payload.model_copy(update={"prompt": composed_prompt})
 
-    # --- genad Task 5: is this turn's proposal ours to commit? ---------------------------------
-    # ALL of: a leg block, a pinned document, and the leg's frozen CAS base. A direct editor turn
-    # fails the first; a legacy (AD4.R-era) document-less leg fails the second and third. A
-    # missing ``document_base_version`` is read as "preview-only", never as version zero — a
-    # fabricated base would CAS against whatever happens to sit at the head and clobber it.
-    document_id = payload.document_id
-    base_version = leg_block.get("document_base_version") if isinstance(leg_block, dict) else None
-    leg_persist = bool(leg_block) and bool(document_id) and base_version is not None
-
     override = host.agent_turn_runner
     root = repo_root()
-    workspace_id = envelope.workspace_id
+    # The session this turn belongs to: one document, one design session (2026-09-18). A SESSION IS
+    # A LEG-TURN CONCEPT (ruling T6-1): it takes both a leg block and a pinned document. A direct
+    # editor turn carries no leg block — the design API's own routes still thread it on its run id
+    # (``main.py`` /agent/turns) — so it keeps today's per-run folder, joins no session, and its
+    # prompt stays byte-identical. Note this is deliberately ONE step looser than ``leg_persist``:
+    # a legacy leg that pins a document but froze no CAS base is still that document's session,
+    # even though it commits nothing (and, reading no document, notices no drift).
+    session_id = (
+        design_session_id(workspace_id, str(document_id))
+        if (leg_block and document_id)
+        else None
+    )
     try:
-        doc: Optional[JsonObject] = None
         committer: Optional[_LegSceneCommitter] = None
         if leg_persist:
-            # The web executor's early-out, verbatim in spirit: a turn that already lost the
-            # race comes back conflicted BEFORE the trio spends a token. The governed write
-            # below still carries ``expected_base_version`` for the race window after this read.
-            doc = store.require_document(document_id)
-            if doc["current_version"] != base_version:
-                # P0.4 replay guard. A moved document is USUALLY a human who edited while we ran
-                # — but it is also what THIS run's own checkpoints look like to a redrive (a
-                # takeover restarts the agent from the frozen envelope, so its fresh operation
-                # history would double-apply onto its own committed work). Ask the run's durable
-                # event stream which of the two happened before blaming a human.
-                if _own_checkpoint_version(
-                    store, run_id=envelope.run_id, document_id=str(document_id)
-                ) == doc["current_version"]:
-                    interrupted = failed_agent_turn_response(
-                        "agent_turn.interrupted_after_checkpoint",
-                        "This design turn was interrupted after part of it was saved.",
-                        f"The design was saved at version {doc['current_version']} before the "
-                        "turn stopped. Ask again to keep going from there — nothing is lost.",
-                    )
-                    return "failed", interrupted, "result", {"status": interrupted["status"]}
-                conflicted = conflicted_agent_turn_response(
-                    base_version, doc["current_version"]
-                )
-                return "failed", conflicted, "result", {"status": conflicted["status"]}
             committer = _LegSceneCommitter(
                 doc=doc,
                 document_id=str(document_id),
@@ -9329,7 +10594,8 @@ def execute_agent_turn_job(
             )
         if override is not None:
             response = _call_turn_override(
-                override, payload, root, scene_checkpoint=_checkpoint_sink(committer)
+                override, payload, root, scene_checkpoint=_checkpoint_sink(committer),
+                scoped_preferences=scoped_preferences,
             )
         else:
             response = run_agent_turn_preview(
@@ -9337,6 +10603,7 @@ def execute_agent_turn_job(
                 root,
                 event_sink=event_sink,
                 resolved_reference_assets=reference_assets,
+                resolved_asset_library=pinned_asset_library(store, envelope.run_id),
                 frozen_ad_lane=frozen_ad_lane,
                 workspace_id=envelope.workspace_id,
                 # D5 Round C: the dispatching app's byte backend + engine-cache tree, so an
@@ -9345,6 +10612,24 @@ def execute_agent_turn_job(
                 engine_cache_root=_host_engine_cache_root(host, envelope.workspace_id),
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
+                # Session continuity (2026-09-18): the runtime's per-turn substrate lives under
+                # this document's session folder, and the run id rides with it so a RETRIED run
+                # reuses its own turn folder and is recognised as a resume rather than a new
+                # turn on the thread (ruling T5-1).
+                session_id=session_id,
+                run_id=envelope.run_id if session_id else None,
+                # ...and the memory that session left behind, so a turn on a worker that has
+                # never run it rebuilds the folder instead of opening a continued thread over
+                # an empty workspace.
+                session_manifest=(
+                    _session_manifest(
+                        store,
+                        _turn_blob_store(host, envelope.workspace_id),
+                        document_id=str(document_id),
+                    )
+                    if session_id
+                    else None
+                ),
                 resolved_brand_kit=resolved_brand_kit,
                 # P0.4: only a LEG turn owns a persist, so only a leg turn checkpoints. A direct
                 # editor turn passes None and stays save-nothing, exactly as before.
@@ -9353,6 +10638,14 @@ def execute_agent_turn_job(
                 # doomed W5 run was a plain editor turn, and "you can only stop it if it came
                 # from chat" would be an arbitrary line to draw through a paid run.
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),
+                # Lane 3 slice 5: the platform's handlers plus this turn's receipt collector,
+                # attached at the graph's invoke config by the harness.
+                callbacks=callbacks,
+                # Design note 2026-09-19: the platform's reads for this leg turn; None on every
+                # other path, which leaves the runtime config as it was.
+                platform_reads=platform_reads,
+                **({"scoped_preferences": scoped_preferences} if scoped_preferences is not None else {}),
+                **({"runtime_workspace_guard": runtime_workspace_guard} if runtime_workspace_guard is not None else {}),
             )
         operations = response.get("operations")
         if committer is not None and doc is not None and response.get("status") == "proposed":
@@ -9407,10 +10700,12 @@ def execute_agent_turn_job(
         return "failed", failed, "error", {"message": str(error)}
 
 
-#: The durable mark one P0.4 checkpoint commit leaves on its run's event stream. It is BOTH the
-#: frontend's mid-run progress signal (the canvas can pin a real version instead of waiting out
-#: the whole generation on version 0) and the replay guard's evidence: a redrive reads it back to
-#: recognise a document its OWN earlier attempt advanced.
+#: The durable mark one P0.4 checkpoint commit leaves on its run's event stream: the frontend's
+#: mid-run progress signal, so the canvas can pin a real version instead of waiting out the whole
+#: generation on version 0. It used to be a replay guard's evidence too — a redrive read it back
+#: to tell a document its OWN earlier attempt had advanced apart from one a human had edited —
+#: which session continuity (2026-09-18) retired along with the pre-run conflict: the executor
+#: now re-reads the document and designs from where it actually is, so neither mover is a refusal.
 SCENE_CHECKPOINT_EVENT = "scene_checkpoint_committed"
 
 
@@ -9581,33 +10876,6 @@ class _LegSceneCommitter:
         )
 
 
-def _own_checkpoint_version(
-    store: HybridRepository, *, run_id: str, document_id: str
-) -> Optional[int]:
-    """The version this run's OWN last P0.4 checkpoint left the document at, or None.
-
-    Read off the run's durable event stream, which survives a takeover because it is keyed on the
-    run — so a redrive can tell "my earlier attempt already moved this document" apart from "a
-    human edited it while I ran". Best-effort: an unreadable stream returns None and the caller
-    falls back to treating the move as somebody else's, which refuses rather than double-commits.
-    """
-    try:
-        events = store.list_run_events(run_id)
-    except Exception:  # noqa: BLE001 - never fail a turn on a progress-stream read
-        return None
-    version: Optional[int] = None
-    for event in events:
-        if not isinstance(event, dict) or event.get("type") != SCENE_CHECKPOINT_EVENT:
-            continue
-        data = event.get("data")
-        if not isinstance(data, dict) or data.get("document_id") != document_id:
-            continue
-        candidate = data.get("version")
-        if isinstance(candidate, int):
-            version = candidate
-    return version
-
-
 def _checkpoint_sink(committer: Optional["_LegSceneCommitter"]):
     """The runtime's P0.4 sink for this turn, or None when the turn owns no persist."""
     return None if committer is None else committer.checkpoint
@@ -9631,7 +10899,10 @@ def _run_cancel_probe(store: HybridRepository, run_id: str):
     return CancellationProbe(lambda: store.cancellation_requested(run_id))
 
 
-def _call_turn_override(override: Any, payload: Any, root: Path, *, scene_checkpoint: Any):
+def _call_turn_override(
+    override: Any, payload: Any, root: Path, *, scene_checkpoint: Any,
+    scoped_preferences: Any = None,
+):
     """Call the injected turn-runner test seam, handing it the checkpoint sink only if it wants it.
 
     ``DesignTurnHost.agent_turn_runner`` is a test double whose shipped contract is
@@ -9647,9 +10918,12 @@ def _call_turn_override(override: Any, payload: Any, root: Path, *, scene_checkp
         parameter.kind is inspect.Parameter.VAR_KEYWORD
         for parameter in parameters.values()
     )
-    if wants_sink:
-        return override(payload, root, scene_checkpoint=scene_checkpoint)
-    return override(payload, root)
+    kwargs = {"scene_checkpoint": scene_checkpoint} if wants_sink else {}
+    if scoped_preferences is not None:
+        # The legacy override seam has no enforceable runtime-workspace custody
+        # contract. A keyword declaration alone cannot prove binding before use.
+        raise RuntimeError("scoped_preferences.override_unsupported")
+    return override(payload, root, **kwargs)
 
 
 def _persist_leg_scene_proposal(
@@ -9763,6 +11037,46 @@ def execute_web_turn_job(
     event_sink: Any,
     checkpointer: Any = None,
     lease_generation: Optional[int] = None,
+    spend_drain: Any = None,
+    callbacks: Any = None,
+    session_continued: bool = False,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One website-mode turn under its own spend scope — see :func:`_execute_web_turn_job`.
+
+    ``callbacks`` (lane 3 slice 5): the platform's injected ``TurnCallbacks``. Same treatment as
+    the scene executor — the turn's own collector is added here and its receipts are stamped onto
+    whatever response this frame returns, which is what lands in ``result_json``.
+    """
+    from . import spend as _spend
+
+    collector, turn_callbacks = _turn_model_call_collector(callbacks)
+    with _spend.spend_scope(_turn_spend_stamp(envelope), drain_fn=spend_drain) as scope:
+        try:
+            status, response, event_type, event_data = _execute_web_turn_job(
+                envelope,
+                store=store,
+                host=host,
+                event_sink=event_sink,
+                checkpointer=checkpointer,
+                lease_generation=lease_generation,
+                callbacks=turn_callbacks,
+                session_continued=session_continued,
+            )
+            return status, _with_model_calls(response, collector), event_type, event_data
+        finally:
+            _drain_spend(scope)
+
+
+def _execute_web_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
+    callbacks: Any = None,
+    session_continued: bool = False,
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     """One website-mode turn, executed from its frozen envelope.
 
@@ -9791,28 +11105,83 @@ def execute_web_turn_job(
     # and its prompt stays byte-identical.
     delegation_bundle = envelope.config.get("delegation_bundle")
     leg_history = envelope.config.get("history")
+    leg_block = envelope.config.get("leg") or {}
+
+    # --- design note 2026-09-19: what this turn may read from the platform ---------------------
+    # The scene executor's rule verbatim: a LEG turn only, resolved through the host's factory,
+    # and a CAPABILITY rather than a precondition — a turn that cannot compose these still
+    # generates from the brief, exactly as it did before this note.
+    platform_reads = None
+    if leg_block:
+        reads_factory = getattr(host, "platform_reads_factory", None)
+        if callable(reads_factory):
+            try:
+                platform_reads = reads_factory(envelope)
+            except Exception:
+                api_logger.warning(
+                    "design_turn.platform_reads_unavailable",
+                    run_id=envelope.run_id,
+                    exc_info=True,
+                )
+                platform_reads = None
+
     user_message = payload.prompt
-    prompt = (
-        render_leg_turn_prompt(
-            bundle=delegation_bundle if isinstance(delegation_bundle, dict) else None,
-            history=leg_history if isinstance(leg_history, list) else None,
-            prompt=user_message,
-        )
-        if delegation_bundle or leg_history
-        else user_message
+    # Session continuity (2026-09-18), the scene executor's rule verbatim: a CONTINUED thread
+    # already holds every earlier turn of this session, so the history block would say it all
+    # twice; the immutable brief still opens each NEW leg. The composition itself happens below,
+    # after the document read, because the drift note is part of it.
+    first_turn_of_leg = (
+        bool(leg_block.get("first_turn_of_leg", True)) if isinstance(leg_block, dict) else True
     )
+    bundle_block = (
+        delegation_bundle
+        if (delegation_bundle and (not session_continued or first_turn_of_leg))
+        else None
+    )
+    history_block = None if session_continued else leg_history
 
     model = payload.model
     target_node_ids = payload.target_node_ids
-    base_version = payload.base_version
+    # R-A2: back to plain dicts at this seam. The envelope is frozen JSON and
+    # `_describe_web_turn_targets` / the runtime config both take mappings, so the model is
+    # the validation gate on the way in and nothing downstream depends on the class.
+    target_notes = (
+        [note.model_dump(mode="json") for note in payload.target_notes]
+        if payload.target_notes
+        else None
+    )
     override = host.web_turn_runner
     root = repo_root()
     workspace_id = envelope.workspace_id
     try:
+        # Session continuity (2026-09-18): the DOCUMENT decides, not the frozen envelope. The
+        # request's ``base_version`` was pinned when the turn was submitted; the turn designs
+        # against — and CAS's on — the version it actually reads here, and a session that wrote
+        # this document before is TOLD what moved since instead of being refused. The write-time
+        # CAS below still refuses the human edit that lands while the turn runs, which is the
+        # only window an early check never could close.
         doc = store.require_document(document_id)
-        if doc["current_version"] != base_version:
-            response = conflicted_web_turn_response(base_version, doc["current_version"])
-        elif override is not None:
+        base_version = int(doc["current_version"])
+        # Ruling T6-1: drift is something a SESSION is told, and only a leg turn has one. A direct
+        # BFF turn (no leg block) carries the human's words verbatim, exactly as it always has.
+        drift_note = (
+            _document_drift_note(
+                store, document_id=str(document_id), current_version=base_version
+            )
+            if leg_block
+            else None
+        )
+        prompt = (
+            render_leg_turn_prompt(
+                bundle=bundle_block if isinstance(bundle_block, dict) else None,
+                history=history_block if isinstance(history_block, list) else None,
+                prompt=user_message,
+                drift_note=drift_note,
+            )
+            if (bundle_block or history_block or drift_note)
+            else user_message
+        )
+        if override is not None:
             # Backward-compatible seam: existing stubs take four positional args; only pass the
             # scoped-target ids when the request carried them (a five-arg stub), and only pass
             # account_card as a keyword when the turn is personalized (so the un-personalized
@@ -9825,7 +11194,7 @@ def execute_web_turn_job(
             else:
                 response = override(doc, prompt, model, root, **account_kwargs)
         else:
-            asset_library = workspace_asset_library_manifest(store)
+            asset_library = pinned_asset_library(store, envelope.run_id)
             component_account_id = doc.get("account_id")
             custom_component_registry = (
                 DurableAgentCustomComponentRegistry(
@@ -9847,6 +11216,7 @@ def execute_web_turn_job(
                 root,
                 event_sink=event_sink,
                 target_node_ids=target_node_ids,
+                target_notes=target_notes,
                 account_card=account_card,
                 asset_library=asset_library,
                 custom_component_registry=custom_component_registry,
@@ -9865,9 +11235,30 @@ def execute_web_turn_job(
                 engine_cache_root=_host_engine_cache_root(host, workspace_id),
                 checkpointer=checkpointer,
                 thread_id=envelope.checkpoint_thread_id,
+                # Session continuity (2026-09-18), ruling T6-1: a web turn is always OF a
+                # document, but only a LEG turn is of that document's session — a direct BFF turn
+                # keeps its per-run folder and its own generated id, as before.
+                session_id=(
+                    design_session_id(workspace_id, str(document_id)) if leg_block else None
+                ),
+                run_id=envelope.run_id if leg_block else None,
+                # See the scene executor: the session's synced folder, by value.
+                session_manifest=(
+                    _session_manifest(
+                        store,
+                        _turn_blob_store(host, workspace_id),
+                        document_id=str(document_id),
+                    )
+                    if leg_block
+                    else None
+                ),
                 # A3 (defect R3-D): the same durable probe the scene executor builds, so ONE
                 # route can honestly stop either kind of design run.
                 cancel_requested=_run_cancel_probe(store, envelope.run_id),
+                # Lane 3 slice 5: see the scene executor.
+                callbacks=callbacks,
+                # Design note 2026-09-19: see the scene executor.
+                platform_reads=platform_reads,
             )
         if response.get("status") == "applied":
             operations = response.get("operations")
@@ -9989,6 +11380,44 @@ def execute_ingestion_job(
     *,
     host: Any,
     expected_generation: Optional[int] = None,
+    spend_drain: Any = None,
+) -> str:
+    """One brand-kit ingestion under its own spend scope — see :func:`_execute_ingestion_job`.
+
+    Every model call the pipeline makes (describe, assist, PDF vision, ad-DNA) and every vendor
+    credit it spends (the logo vendor, the ad-library vendor) runs through this scope's
+    ``ProviderCaller`` and lands
+    on ``provider_call_ledger`` stamped with this job's id. ``spend_drain`` is the injected drain
+    (PRE-1b).
+    """
+    from clue_spend import LedgerStamp
+
+    from . import spend as _spend
+
+    try:
+        job_id = UUID(str(envelope.job_id))
+    except (TypeError, ValueError):
+        job_id = None
+    stamp = LedgerStamp(workspace_id=envelope.workspace_id, job_id=job_id)
+    from lumen_ingestion.asset_enrichment import JOB_CONTEXT
+    job_context = JOB_CONTEXT.set((envelope.job_id, expected_generation))
+    with _spend.spend_scope(stamp, drain_fn=spend_drain) as scope:
+        try:
+            return _execute_ingestion_job(
+                envelope, host=host, expected_generation=expected_generation
+            )
+        finally:
+            try:
+                _drain_spend(scope)
+            finally:
+                JOB_CONTEXT.reset(job_context)
+
+
+def _execute_ingestion_job(
+    envelope: Any,
+    *,
+    host: Any,
+    expected_generation: Optional[int] = None,
 ) -> str:
     """One brand-kit ingestion, executed from its frozen envelope. Returns the job's status.
 
@@ -10006,7 +11435,9 @@ def execute_ingestion_job(
     """
     workspace_id = envelope.workspace_id
     kind = DesignIngestionKind(envelope.ingestion_kind)
+    from .asset_enrichment import run_asset_enrichment
     runner = {
+        DesignIngestionKind.ASSET_ENRICHMENT: run_asset_enrichment,
         DesignIngestionKind.WEBSITE: run_website_ingestion,
         DesignIngestionKind.PDF: run_pdf_ingestion,
         DesignIngestionKind.ASSET_UPLOAD: run_asset_ingestion,
@@ -10037,19 +11468,6 @@ def execute_ingestion_job(
 # now installed uv workspace members. The lazy import and its ``agent_runtime.unavailable``
 # degradation stay exactly as they were — a machine without the runtime extras must still get an
 # honest failure envelope rather than an import crash at module load.
-
-
-def api_engine_cache_root(workspace_id: str) -> Path:
-    """One workspace's engine materialization cache, resolved as ``create_app`` resolves it.
-
-    The off-request-thread twin of the app's own ``engine_cache_dir``: agent-turn workers and
-    the by-value resolvers below run outside a request, so they cannot read ``app.state``.
-    Deliberately per-WORKSPACE for the same reason the in-app accessor is — the engine resolves
-    purely by digest, so one shared tree would let a turn read another tenant's bytes.
-    """
-    path = settings.effective_asset_store_root / workspace_id
-    path.mkdir(parents=True, exist_ok=True)
-    return path
 
 
 def api_blob_store(workspace_id: str) -> DesignBlobStore:
@@ -10366,157 +11784,75 @@ def resolve_account_assets(
         return None
 
 
-WEB_AGENT_ASSET_LIBRARY_MAX = 2_000
+ASSET_LIBRARY_PAGE_SIZE = 500
+# Compatibility constants describe page/response sizes, never total inventory coverage.
+WEB_AGENT_ASSET_LIBRARY_MAX = ASSET_LIBRARY_PAGE_SIZE
+SCENE_TURN_ASSET_LIBRARY_MAX = 24
+SCENE_TURN_ASSET_LIBRARY_SCAN = ASSET_LIBRARY_PAGE_SIZE
+SCENE_TURN_ASSET_LIBRARY_KINDS = frozenset({"raster_image", "logo", "vector"})
+
+
+def asset_metadata_entry(described: dict) -> dict:
+    if not described:
+        return {}
+    return {
+        **{key: described.get(key) for key in ("title", "description", "usage", "tags", "creative_type", "usage_roles", "revision")},
+        "analysis_status": described.get("status", "stale"),
+        "sources": sorted({item["source"] for item in described.get("source_occurrences", [])}),
+        "asset_context": {key: described.get(key) for key in (
+            "asset_id", "revision", "status", "title", "description", "creative_type",
+            "usage_roles", "classification_origin", "classification_reason", "overrides",
+            "source_occurrences", "agent_context", "model", "input_fingerprint",
+        )},
+    }
 
 
 def workspace_asset_library_manifest(repo: HybridRepository) -> JsonObject:
-    """Grounded website-agent inventory of real workspace asset records.
-
-    The API owns persistence, so it materializes a bounded, non-archived
-    manifest BY VALUE for the runtime. Description rows are advisory search
-    metadata; the engine-built record remains authoritative for placement,
-    license, digest, and provenance.
-    """
-    rows = repo.list_asset_records(
-        include_archived=False,
-        limit=WEB_AGENT_ASSET_LIBRARY_MAX,
-        offset=0,
-    )
-    asset_ids = [
-        str((row.get("asset") or {}).get("id"))
-        for row in rows
-        if (row.get("asset") or {}).get("id")
-    ]
-    try:
-        # D5 Round C: workspace-scoped. `DescriptionStore()` defaulted to the DEV workspace, so
-        # every tenant's asset-library manifest was annotated from the dev tenant's description
-        # rows (in practice: no descriptions at all, silently). The registry read beside it has
-        # always been correctly scoped, which is what hid the split.
-        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(asset_ids)
-    except Exception:
-        descriptions = {}
-
-    manifest: JsonObject = {}
-    for row in rows:
-        record = row.get("asset") or {}
-        asset_id = record.get("id")
-        if not asset_id or record.get("status") == "archived":
-            continue
-        described = descriptions.get(str(asset_id)) or {}
-        entry: JsonObject = {
-            "record": record,
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-        }
-        for field in ("title", "description", "usage", "tags"):
-            if described.get(field):
-                entry[field] = described[field]
-        manifest[str(asset_id)] = entry
-    return manifest
+    """All non-archived records, paginated metadata only. No image bytes or prompt dump."""
+    manifest = {}
+    offset = 0
+    while True:
+        rows = repo.list_asset_records(include_archived=False, limit=ASSET_LIBRARY_PAGE_SIZE, offset=offset)
+        ids = [str(row["asset"]["id"]) for row in rows if (row.get("asset") or {}).get("id")]
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(ids)
+        for row in rows:
+            record = row.get("asset") or {}
+            asset_id = record.get("id")
+            if asset_id and record.get("status") != "archived":
+                manifest[str(asset_id)] = {
+                    "record": record, "created_at": row.get("created_at"),
+                    "updated_at": row.get("updated_at"),
+                    **asset_metadata_entry(descriptions.get(str(asset_id)) or {}),
+                }
+        if len(rows) < ASSET_LIBRARY_PAGE_SIZE:
+            return manifest
+        offset += len(rows)
 
 
-# --- W1.1: the workspace asset library -> SCENE turn -----------------------------------------
-#
-# THE BOUND LIVES HERE, and it is deliberately far smaller than website mode's
-# `WEB_AGENT_ASSET_LIBRARY_MAX` (2_000). The two manifests are consumed differently:
-#
-#   * A WEBSITE turn only ever SEARCHES its manifest (`search_assets` scores it in Python and
-#     returns ≤8 hits), so 2_000 entries cost memory and nothing else.
-#   * A SCENE turn has no search tool. Its manifest is looked up by id — and, more expensively,
-#     every entry's bytes are pulled out of durable storage into the per-workspace engine cache
-#     by the read-through below, because a placed asset that never materializes renders as an
-#     empty chip. Its ids are also listed back to the agent by `view`'s honest-miss text, which
-#     IS prompt-cache surface.
-#
-# So the scene manifest is the workspace's MOST RECENTLY UPDATED placeable images, capped. That
-# ordering is the DAL's (`updated_at DESC, asset_id`) and it is the right one for this feature:
-# the assets a scene turn wants are the ones the onboarding harvest / pre-generation lane just
-# wrote. If a client ever needs to reach further back, the answer is a search tool on the scene
-# side — NOT a bigger dump into every turn's context.
-SCENE_TURN_ASSET_LIBRARY_MAX = 24
-
-# Fonts and documents are not placeable in a scene, and shipping them would spend read-through
-# on bytes no image node can ever bind. `vector` stays: SVG library assets are placeable and
-# ingestion gives them raster thumbnails.
-SCENE_TURN_ASSET_LIBRARY_KINDS = frozenset({"raster_image", "logo", "vector"})
-
-# The kind/status filter runs in Python (the DAL takes one `kind` at a time), so the query
-# over-fetches a BOUNDED window of the recency order and keeps the first N placeable rows.
-# The window is what stops a library whose newest rows are all fonts from yielding nothing;
-# it is a scan bound, never a manifest bound.
-SCENE_TURN_ASSET_LIBRARY_SCAN = SCENE_TURN_ASSET_LIBRARY_MAX * 8
+def pinned_asset_library(repo: HybridRepository, run_id: str) -> JsonObject:
+    """First execution pins one metadata revision; takeover never reads newer guidance."""
+    from clue_design.runs import asset_context_snapshot, pin_asset_context_snapshot
+    stored = repo._bridge._run(lambda conn: asset_context_snapshot(conn, workspace_id=repo.workspace_id, run_id=run_id))
+    if stored is not None:
+        return stored
+    snapshot = workspace_asset_library_manifest(repo)
+    return repo._bridge._run(lambda conn: pin_asset_context_snapshot(
+        conn, workspace_id=repo.workspace_id, run_id=run_id, snapshot=snapshot))
 
 
-def scene_turn_asset_library_manifest(
-    repo: HybridRepository,
-    blobs: DesignBlobStore,
-    cache_dir: str,
-) -> JsonObject:
-    """The bounded workspace-library manifest a SCENE turn can view and place.
+def asset_materializer(manifest: dict, blobs: DesignBlobStore, cache_dir: str):
+    """Only records already authorized in this run can cause a durable byte read."""
+    def materialize(asset_id: str):
+        entry = manifest.get(asset_id)
+        if entry is not None:
+            ensure_materialized(blobs, cache_dir, (digest for digest, _mime in record_digests(entry["record"])))
+    return materialize
 
-    W1.1 (Brand Ad Assets v1 §5). `workspace_asset_library_manifest` had exactly one
-    call site — the website-mode turn — so a scene turn saw only `brand_kit_assets`
-    and this turn's `reference_assets`. A pre-generated `asset_gen_*` background was
-    therefore unviewable AND unplaceable however healthy it was in the database
-    (Apollo POC 2026-08-26, `.context/ref-ads-pilot-apollo-report.md` §6.1). This is
-    the missing third channel, built from the same rows and the same description
-    store, then bounded (see the constants above) and byte-backed.
 
-    Read-through, the P0.1 pattern (fast-loop v1 §4), identical to
-    `brand_kit_asset_manifest`: the runtime resolves previews BY DIGEST out of the
-    per-workspace engine cache, so durable bytes are materialized there first.
-    Without it a fleet worker sees the manifest and none of the pixels — a silent
-    empty chip, which is the failure mode this whole item exists to kill. Fail-SOFT
-    like every other read-through: a digest with no durable bytes is left absent and
-    `view("asset:…")` degrades to its honest missing-file text.
-    """
-    manifest: JsonObject = {}
-    # The DAL already returns `updated_at DESC, asset_id`; keep THAT order rather than
-    # re-sorting here, so recency has exactly one definition and no timestamp shape has
-    # to be re-derived in Python.
-    for row in repo.list_asset_records(
-        include_archived=False,
-        limit=SCENE_TURN_ASSET_LIBRARY_SCAN,
-        offset=0,
-    ):
-        if len(manifest) >= SCENE_TURN_ASSET_LIBRARY_MAX:
-            break
-        record = row.get("asset") or {}
-        asset_id = record.get("id")
-        # `status` is mirrored onto the record; only a READY asset is placeable, and
-        # the runtime's library seam refuses anything else anyway.
-        if not asset_id or record.get("status") != "ready":
-            continue
-        if record.get("kind") not in SCENE_TURN_ASSET_LIBRARY_KINDS:
-            continue
-        manifest[str(asset_id)] = {
-            "record": record,
-            "created_at": row.get("created_at"),
-            "updated_at": row.get("updated_at"),
-        }
-
-    try:
-        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(
-            list(manifest.keys())
-        )
-    except Exception:
-        descriptions = {}
-    for asset_id, entry in manifest.items():
-        described = descriptions.get(asset_id) or {}
-        for field in ("title", "description", "usage", "tags"):
-            if described.get(field):
-                entry[field] = described[field]
-
-    ensure_materialized(
-        blobs,
-        cache_dir,
-        (
-            digest
-            for entry in manifest.values()
-            for digest, _mime in record_digests(entry["record"])
-        ),
-    )
-    return manifest
+def scene_turn_asset_library_manifest(repo: HybridRepository, blobs: DesignBlobStore, cache_dir: str) -> JsonObject:
+    return {asset_id: entry for asset_id, entry in workspace_asset_library_manifest(repo).items()
+            if entry["record"].get("status") == "ready"
+            and entry["record"].get("kind") in SCENE_TURN_ASSET_LIBRARY_KINDS}
 
 
 def resolve_scene_turn_asset_library(
@@ -10583,7 +11919,7 @@ def brand_kit_asset_manifest(
     try:
         from lumen_ingestion.describe import DescriptionStore
 
-        descriptions = DescriptionStore().get_many(asset_ids)
+        descriptions = DescriptionStore(workspace_id=repo.workspace_id).get_many(asset_ids)
     except Exception:
         descriptions = {}
 
@@ -10594,9 +11930,7 @@ def brand_kit_asset_manifest(
             continue
         entry: JsonObject = {"record": record.get("asset") or record}
         described = descriptions.get(asset_id) or {}
-        for field in ("title", "description", "usage"):
-            if described.get(field):
-                entry[field] = described[field]
+        entry.update(asset_metadata_entry(described))
         manifest[asset_id] = entry
 
     ensure_materialized(
@@ -10857,9 +12191,7 @@ def reference_asset_manifest(
             "order": order,
         }
         described = descriptions.get(asset_id) or {}
-        for field in ("title", "description"):
-            if described.get(field):
-                entry[field] = described[field]
+        entry.update(asset_metadata_entry(described))
         manifest[asset_id] = entry
     return manifest
 
@@ -11109,6 +12441,16 @@ def agent_response_from_trace(
     operations: List[JsonObject] = []
     dsl_blocks: List[str] = []
     diagnostics: List[JsonObject] = []
+    diagnostic_history: List[JsonObject] = []
+    verification = result.get("draft_verification")
+    if not isinstance(verification, dict):
+        verification = None
+    if verification:
+        preflight = verification.get("preflight")
+        if isinstance(preflight, dict) and preflight.get("status") == "current":
+            diagnostics.extend(agent_diagnostics_from_summaries(
+                preflight.get("diagnostics", []), "preflight"
+            ))
     # Phase 0b: the loop's keep-best snapshot can return an EARLIER iteration's
     # scene as the draft. Operations from later iterations are then not part of
     # that draft and must not be replayed by the editor.
@@ -11152,11 +12494,15 @@ def agent_response_from_trace(
                 except json.JSONDecodeError:
                     continue
                 compile_summary = compile_payload.get("compile") or {}
-                diagnostics.extend(
-                    agent_diagnostics_from_summaries(
-                        compile_summary.get("diagnostics", []), "dsl"
-                    )
+                attempt_diagnostics = agent_diagnostics_from_summaries(
+                    compile_summary.get("diagnostics", []), "dsl"
                 )
+                if attempt_diagnostics:
+                    diagnostic_history.append({
+                        "iteration": int(iteration_dir.name) if iteration_dir.name.isdigit() else iteration_dir.name,
+                        "phase": "dsl",
+                        "diagnostics": attempt_diagnostics,
+                    })
                 if (
                     ledger_operations is None
                     and compile_summary.get("status") == "ok"
@@ -11177,20 +12523,30 @@ def agent_response_from_trace(
     # verified applied proposes its operations even though the whole-design
     # critique still has (advisory) complaints.
     edit_scoped = result.get("status") == "edit_applied"
-    # Agent-quality: `completed_with_warnings` means the loop kept a
-    # PREFLIGHT-CLEAN best draft that simply never won explicit visual
-    # acceptance within the repair budget. That is a reviewable proposal —
-    # mapping it to "failed" threw away good drafts (runs d6e08a28/d77d41d in
-    # the 2e gate both died here). The unresolved critique rides along as
-    # advisory warnings, exactly like an edit-scoped acceptance.
+    # A warning result retains editable work. It does not certify current
+    # preflight, preview, or visual acceptance; the runtime receipts below
+    # describe those separately. Preserve the existing proposal policy.
     best_draft = result.get("status") == "completed_with_warnings"
     status = (
         "proposed" if (accepted or edit_scoped or best_draft) and operations else "failed"
     )
-    if (edit_scoped or best_draft) and status == "proposed":
+    review = (verification or {}).get("review")
+    review_current = isinstance(review, dict) and review.get("status") == "current"
+    if (edit_scoped or best_draft) and status == "proposed" and review_current:
         diagnostics.extend(
             advisory_critique_diagnostics(result.get("critique"))
         )
+    summary = result.get("summary") or "Agent run completed."
+    if best_draft and not review_current:
+        summary = draft_verification_note(verification)
+    historical_critique = result.get("historical_critique")
+    if not review_current and not historical_critique and result.get("critique"):
+        historical_critique = {
+            "critique": result["critique"],
+            "status": "unbound",
+            "scene_stamp": None,
+            "iteration": None,
+        }
     if status == "failed" and not diagnostics:
         diagnostics.append(
             agent_diagnostic(
@@ -11204,7 +12560,7 @@ def agent_response_from_trace(
     return {
         "schema_version": 1,
         "status": status,
-        "summary": result.get("summary") or "Agent run completed.",
+        "summary": summary,
         "run_id": result.get("run_id"),
         "trace_dir": str(trace_dir),
         "preview_paths": preview_paths,
@@ -11216,6 +12572,9 @@ def agent_response_from_trace(
         if isinstance(result.get("stop_reason"), str)
         else None,
         "diagnostics": diagnostics,
+        "diagnostic_history": diagnostic_history,
+        "draft_verification": verification,
+        "historical_critique": historical_critique,
         "artifacts": [
             {
                 "format": agent_artifact_format(path),

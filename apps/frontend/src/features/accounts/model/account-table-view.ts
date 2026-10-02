@@ -1,19 +1,37 @@
-/**
- * Accounts-table view configuration (presentation only — no wire meaning).
- *
- * The column set tracks the as-built list row: the fixture-era `fit`
- * (`overallFit`, never a backend concept — D-6) and `locations`
- * (`locationCount`, an industry-pack placeholder — D-7) columns are gone;
- * `projects` replaces them, because project membership now carries a resolved
- * name and is the axis the table filters and sorts on.
- */
-export type AccountColumnKey =
+import type { Account } from "./account";
+
+export type CoreAccountColumnKey =
   | "company"
+  | "owner"
+  | "industry"
   | "research"
+  | "fit"
   | "score"
   | "revenue"
-  | "size"
-  | "projects";
+  | "headcount"
+  | "locations"
+  | "website"
+  | "linkedin"
+  | "twitter"
+  | "facebook"
+  | "instagram"
+  | "created"
+  | "modified";
+export type AccountVariableColumnKey = `variable:${string}`;
+export type AccountColumnKey =
+  | CoreAccountColumnKey
+  | AccountVariableColumnKey;
+
+export interface AccountColumnDefinition {
+  icon: string;
+  key: AccountColumnKey;
+  kind: "core" | "variable";
+  label: string;
+  maxWidth: number;
+  minWidth: number;
+  variableId?: string;
+  width: number;
+}
 
 export type AccountSort =
   | "default"
@@ -22,28 +40,196 @@ export type AccountSort =
   | "project-asc"
   | "project-desc";
 export type AccountTableDensity = "compact" | "comfortable" | "spacious";
-export type AccountColumnWidths = Record<AccountColumnKey, number>;
+export type AccountColumnWidths = Record<string, number>;
+export type AccountColumnVisibility = Record<string, boolean>;
 
-export const defaultAccountColumnOrder: AccountColumnKey[] = [
-  "company",
-  "research",
-  "score",
-  "revenue",
-  "size",
-  "projects",
+export const coreAccountColumnDefinitions: AccountColumnDefinition[] = [
+  {
+    icon: "account",
+    key: "company",
+    kind: "core",
+    label: "Company name",
+    maxWidth: 640,
+    minWidth: 180,
+    width: 280,
+  },
+  {
+    icon: "owner",
+    key: "owner",
+    kind: "core",
+    label: "Owner",
+    maxWidth: 480,
+    minWidth: 150,
+    width: 180,
+  },
+  {
+    icon: "industry",
+    key: "industry",
+    kind: "core",
+    label: "Industry",
+    maxWidth: 560,
+    minWidth: 180,
+    width: 260,
+  },
+  {
+    icon: "research-status",
+    key: "research",
+    kind: "core",
+    label: "Research status",
+    maxWidth: 480,
+    minWidth: 136,
+    width: 160,
+  },
+  {
+    icon: "overall-fit",
+    key: "fit",
+    kind: "core",
+    label: "Overall fit",
+    maxWidth: 400,
+    minWidth: 120,
+    width: 140,
+  },
+  {
+    icon: "fit-score",
+    key: "score",
+    kind: "core",
+    label: "Fit score",
+    maxWidth: 400,
+    minWidth: 120,
+    width: 140,
+  },
+  {
+    icon: "revenue",
+    key: "revenue",
+    kind: "core",
+    label: "Revenue",
+    maxWidth: 480,
+    minWidth: 120,
+    width: 140,
+  },
+  {
+    icon: "headcount",
+    key: "headcount",
+    kind: "core",
+    label: "Headcount",
+    maxWidth: 400,
+    minWidth: 112,
+    width: 140,
+  },
+  {
+    icon: "locations",
+    key: "locations",
+    kind: "core",
+    label: "Locations",
+    maxWidth: 400,
+    minWidth: 112,
+    width: 140,
+  },
+  {
+    icon: "website",
+    key: "website",
+    kind: "core",
+    label: "Website",
+    maxWidth: 520,
+    minWidth: 180,
+    width: 220,
+  },
+  ...(["LinkedIn", "Twitter", "Facebook", "Instagram"] as const).map(
+    (label): AccountColumnDefinition => ({
+      icon: "social",
+      key: label.toLowerCase() as
+        | "linkedin"
+        | "twitter"
+        | "facebook"
+        | "instagram",
+      kind: "core",
+      label,
+      maxWidth: 440,
+      minWidth: 130,
+      width: 150,
+    }),
+  ),
+  {
+    icon: "created",
+    key: "created",
+    kind: "core",
+    label: "Date Created",
+    maxWidth: 420,
+    minWidth: 140,
+    width: 160,
+  },
+  {
+    icon: "modified",
+    key: "modified",
+    kind: "core",
+    label: "Last Modified",
+    maxWidth: 420,
+    minWidth: 140,
+    width: 160,
+  },
 ];
 
-export const defaultAccountColumns: Record<AccountColumnKey, boolean> = {
-  company: true,
-  research: true,
-  score: true,
-  revenue: true,
-  size: true,
-  projects: true,
-};
+export const defaultAccountColumnOrder = coreAccountColumnDefinitions.map(
+  (column) => column.key,
+);
+
+export const defaultAccountColumns = Object.fromEntries(
+  coreAccountColumnDefinitions.map((column) => [column.key, true]),
+) as AccountColumnVisibility;
+
+export function createAccountColumnDefinitions(accounts: Account[]) {
+  const variables = new Map<
+    string,
+    Account["customFields"][number]
+  >();
+
+  for (const account of accounts) {
+    for (const variable of account.customFields) {
+      if (!variables.has(variable.id)) variables.set(variable.id, variable);
+    }
+  }
+
+  return [
+    ...coreAccountColumnDefinitions,
+    ...[...variables.values()].map(
+      (variable): AccountColumnDefinition => ({
+        icon: "variable",
+        key: `variable:${variable.id}`,
+        kind: "variable",
+        label: variable.label,
+        maxWidth: 480,
+        minWidth: 120,
+        variableId: variable.id,
+        width: 140,
+      }),
+    ),
+  ];
+}
+
+export function createAccountColumnOrder(
+  definitions: AccountColumnDefinition[],
+) {
+  return definitions.map((column) => column.key);
+}
+
+export function createAccountColumnVisibility(
+  definitions: AccountColumnDefinition[],
+) {
+  return Object.fromEntries(
+    definitions.map((column) => [column.key, true]),
+  ) as AccountColumnVisibility;
+}
+
+export function createAccountColumnWidths(
+  definitions: AccountColumnDefinition[],
+) {
+  return Object.fromEntries(
+    definitions.map((column) => [column.key, column.width]),
+  ) as AccountColumnWidths;
+}
 
 export function getFirstScrollableAccountColumn(
-  visibleColumns: Record<AccountColumnKey, boolean>,
+  visibleColumns: AccountColumnVisibility,
   columnOrder: AccountColumnKey[],
 ) {
   return columnOrder.find(
@@ -51,23 +237,6 @@ export function getFirstScrollableAccountColumn(
   );
 }
 
-export const defaultAccountColumnWidths: AccountColumnWidths = {
-  company: 280,
-  research: 180,
-  score: 140,
-  revenue: 160,
-  size: 140,
-  projects: 220,
-};
-
-export const accountColumnWidthConstraints: Record<
-  AccountColumnKey,
-  { max: number; min: number }
-> = {
-  company: { max: 640, min: 180 },
-  research: { max: 480, min: 136 },
-  score: { max: 400, min: 120 },
-  revenue: { max: 480, min: 120 },
-  size: { max: 400, min: 112 },
-  projects: { max: 520, min: 140 },
-};
+export const defaultAccountColumnWidths = createAccountColumnWidths(
+  coreAccountColumnDefinitions,
+);

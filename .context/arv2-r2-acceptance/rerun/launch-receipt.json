@@ -1,0 +1,22 @@
+2026-09-08 17:35:47 [info     ] storage.backend.configured     backend=fs fs_root=/Users/aryankeshri/conductor/workspaces/research-and-data/san-salvador/.artifacts
+2026-09-08 17:35:47 [info     ] arv2.account_research_launched accounts=2 project_id=prj_arv2_answer_key replayed=False run_id=e5c457d3-e38b-5e36-b84f-114a841045cf
+2026-09-08 17:35:47 [info     ] arv2.account_research_enqueued accepted=2 offered=2 run_id=e5c457d3-e38b-5e36-b84f-114a841045cf
+{
+  "accounts": {
+    "probook.ai": "b23b6daf-92fe-44cd-9499-afd7fb1089d8",
+    "zafran.io": "74d83176-f407-4d35-a9c2-25ad0a8bbf91"
+  },
+  "committee_cap": 5,
+  "effort": "full",
+  "enqueued": 2,
+  "icp_artifact_sha256": "d52f8e36fdcb00a8a9717b060da38dd315f24c28417561a857faf60f785433d9",
+  "icp_document": "audience/icp-clue-abm-buyers.md",
+  "job_ids": [
+    "f85a7774-7b62-5e75-8034-728613ac7fe0",
+    "691a7d73-bd64-57fa-b250-1da18eaea3f2"
+  ],
+  "product_selection_version": 1,
+  "project_run_id": "0a2f18b6-1509-514a-8003-16397100c06b",
+  "replayed": false,
+  "run_id": "e5c457d3-e38b-5e36-b84f-114a841045cf"
+}

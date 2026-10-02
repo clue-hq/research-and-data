@@ -40,6 +40,7 @@ import os
 import re
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -201,7 +202,10 @@ def _reset(out: Path) -> None:
             shutil.rmtree(path)
 
 
-def materialize(view: RunView, out_dir: Path, *, copy: bool = False) -> None:
+def materialize(
+    view: RunView, out_dir: Path, *, copy: bool = False,
+    evaluation_receipt: dict | None = None, comparison_receipt: dict | None = None,
+) -> None:
     """Write the run view's browsable layout into ``out_dir``.
 
     Absent sections are skipped silently — ``manifest['gaps']`` already names them, and an empty
@@ -212,6 +216,14 @@ def materialize(view: RunView, out_dir: Path, *, copy: bool = False) -> None:
     out.mkdir(parents=True, exist_ok=True)
     _reset(out)
 
+    # Evaluation is derived from a separate observer receipt, never from runtime counters.
+    view.manifest["evaluation"] = evaluate_creative(evaluation_receipt, view.manifest)
+    if evaluation_receipt is not None:
+        view.manifest["evaluation"]["receipt"] = evaluation_receipt
+    if comparison_receipt is not None:
+        view.manifest["evaluation"]["comparison"] = compare_evaluations(
+            comparison_receipt, evaluation_receipt or {}
+        )
     (out / "manifest.json").write_text(_dump(view.manifest), encoding="utf-8")
     if view.brief is not None:
         (out / "brief.json").write_text(_dump(view.brief), encoding="utf-8")
@@ -338,6 +350,11 @@ def _metrics_section(metrics: dict | None) -> list[str]:
         "| --- | ---: | ---: |",
     ]
     lines += [f"| {name} | {value} | {gate} |" for name, value, gate in rows]
+    lines += [
+        "", "The <= 4 min value is the **historical first-preview gate**. "
+        "It does not establish the finished-creative target. Runtime wall time is not "
+        "submission-to-ready time; see the separate evaluation below.",
+    ]
 
     by_role = metrics.get("by_role")
     if isinstance(by_role, dict) and by_role:
@@ -354,6 +371,243 @@ def _metrics_section(metrics: dict | None) -> list[str]:
                 f"| {_ms(stats.get('duration_ms_max'))} "
                 f"| {_num(stats.get('input_tokens'))} | {_num(stats.get('output_tokens'))} |"
             )
+    return lines
+
+
+# --- optional creative-evaluation receipt (local observation, no runtime authority) -------------
+
+
+_TIMINGS = {
+    "worker_started_at": "queue_ms", "first_preview_at": "first_preview_ms",
+    "agent_completed_at": "agent_completion_ms", "saved_at": "save_ms",
+    "visible_ready_at": "visible_ready_ms", "export_verified_at": "export_verified_ms",
+    "observed_until_at": "observed_elapsed_ms",
+}
+_FINISH_STAMPS = ("agent_completed_at", "saved_at", "visible_ready_at", "export_verified_at")
+
+
+def evaluate_creative(receipt: dict | None, manifest: dict | None = None) -> dict:
+    """Measure one submission, including internal retries, from explicit UTC/offset stamps.
+
+    Receipt evidence references are observer attestations, not independently verified pixels.
+    In particular neither a run_metrics outcome nor current_scene proves browser readiness.
+    Missing observations stay null; a timeout stays in the denominator without inventing an
+    end timestamp. Assisted repairs need their own receipt linked to the untouched first case.
+    """
+    gaps: list[str] = []
+    result = {
+        "status": "unavailable", "finished_creative_ms": None, "within_target": None,
+        "within_stretch": None, "target_ms": 240_000, "stretch_ms": 180_000,
+        "diagnostic_ceiling_ms": 600_000, "include_in_denominator": True,
+        "first_pass_eligible": False, "attempts_total": None,
+        "evidence_basis": "observer receipt; evidence references require independent review",
+        "gaps": gaps, **dict.fromkeys(_TIMINGS.values()),
+    }
+    if not receipt:
+        gaps.append("finished-creative evidence unavailable: no evaluation receipt")
+        return result
+    for name in ("context", "timestamps", "delivery", "controls"):
+        if name in receipt and not isinstance(receipt[name], dict):
+            gaps.append(f"{name} must be an object")
+    if gaps:
+        result["status"] = "invalid"
+        return result
+    errors: list[str] = []
+    if receipt.get("schema_version") != 1:
+        errors.append("schema_version must be 1")
+    phase = receipt.get("phase")
+    corrections = receipt.get("operator_corrections")
+    if phase not in ("first_pass", "assisted_repair"):
+        errors.append("phase must distinguish first_pass from assisted_repair")
+    if type(corrections) is not int or corrections < 0:
+        errors.append("operator_corrections must be a non-negative integer")
+    elif phase == "first_pass" and corrections:
+        errors.append("first_pass cannot contain operator_corrections")
+    if phase == "assisted_repair" and not receipt.get("parent_case_id"):
+        errors.append("assisted_repair requires parent_case_id")
+    attempts = receipt.get("attempts")
+    attempt_errors: list[str] = []
+    if not isinstance(attempts, list) or not attempts:
+        attempt_errors.append("attempts must be a nonempty list of attempt records")
+    else:
+        for index, attempt in enumerate(attempts):
+            if not isinstance(attempt, dict):
+                attempt_errors.append(f"attempts[{index}] must be an object")
+                continue
+            run_ref = attempt.get("run_ref")
+            if not isinstance(run_ref, str) or not run_ref.strip():
+                attempt_errors.append(f"attempts[{index}].run_ref must be a nonempty string")
+            elif index == 0 and run_ref != receipt.get("run_ref"):
+                attempt_errors.append("attempts[0].run_ref must match the receipt run_ref")
+            kinds = ("initial",) if index == 0 else ("internal_retry", "internal_repair")
+            if attempt.get("kind") not in kinds:
+                attempt_errors.append(f"attempts[{index}].kind must be {' or '.join(kinds)}")
+        if not attempt_errors:
+            result["attempts_total"] = len(attempts)
+    errors.extend(attempt_errors)
+    stamps = {}
+    for name in ("submitted_at", *_TIMINGS):
+        raw = (receipt.get("timestamps") or {}).get(name)
+        if raw is None:
+            gaps.append(f"{name} unavailable")
+            continue
+        try:
+            stamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if stamp.tzinfo is None or stamp.utcoffset() is None:
+                raise ValueError("timezone required")
+            stamps[name] = stamp
+        except (AttributeError, TypeError, ValueError):
+            errors.append(f"{name} invalid: timezone-aware ISO timestamp required")
+    start = stamps.get("submitted_at")
+    if start is not None:
+        for name, key in _TIMINGS.items():
+            if name in stamps:
+                elapsed = round((stamps[name] - start).total_seconds() * 1000)
+                if stamps[name] < start:
+                    errors.append(f"{name} precedes submitted_at")
+                else:
+                    result[key] = elapsed
+    for earlier, later in (
+        ("worker_started_at", "agent_completed_at"),
+        ("saved_at", "visible_ready_at"), ("saved_at", "export_verified_at"),
+    ):
+        if earlier in stamps and later in stamps and stamps[earlier] > stamps[later]:
+            errors.append(f"{later} precedes {earlier}")
+    if "observed_until_at" in stamps and any(
+        stamp > stamps["observed_until_at"] for stamp in stamps.values()
+    ):
+        errors.append("observed_until_at precedes an observation")
+
+    delivery = receipt.get("delivery") or {}
+    context = receipt.get("context") or {}
+    evidence_ok = True
+    for name in ("document_id", "scene_sha256", "first_scene_ref", "first_png_ref"):
+        if not delivery.get(name):
+            gaps.append(f"delivery.{name} unavailable")
+            evidence_ok = False
+    if type(delivery.get("version")) is not int or delivery["version"] < 0:
+        gaps.append("delivery.version unavailable")
+        evidence_ok = False
+    if delivery.get("document_id") != context.get("document_id"):
+        errors.append("delivery.document_id does not match context.document_id")
+    for name in ("save_proof", "visible_ready_proof", "export_proof"):
+        proof = delivery.get(name) or {}
+        if not isinstance(proof, dict) or not proof.get("ref"):
+            gaps.append(f"delivery.{name} unavailable")
+            evidence_ok = False
+        elif any(proof.get(key) != delivery.get(key) for key in ("document_id", "version")):
+            errors.append(f"delivery.{name} does not match the delivered document/version")
+    if manifest is not None:
+        document = manifest.get("document") or {}
+        for name, observed, claimed in (
+            ("run_ref", manifest.get("ref"), receipt.get("run_ref")),
+            ("workspace_id", manifest.get("workspace_id"), context.get("workspace_id")),
+            ("document_id", document.get("id"), context.get("document_id")),
+        ):
+            if not observed or observed != claimed:
+                errors.append(f"{name} does not match the materialized run view")
+        # The view is CURRENT, so later edits must never pass as the untouched delivery.
+        if document.get("current_version") != delivery.get("version"):
+            errors.append("current_version differs from delivery.version; preserve the first view")
+    complete = start is not None and all(name in stamps for name in _FINISH_STAMPS)
+    if errors:
+        result["status"] = "invalid"
+        gaps.extend(errors)
+    elif complete and evidence_ok:
+        finish = max(stamps[name] for name in _FINISH_STAMPS)
+        elapsed = round((finish - start).total_seconds() * 1000)
+        result.update(status="observed", finished_creative_ms=elapsed,
+                      within_target=elapsed <= 240_000, within_stretch=elapsed <= 180_000)
+    elif (result["observed_elapsed_ms"] or 0) >= 600_000:
+        result["status"] = "timed_out"
+    result["first_pass_eligible"] = phase == "first_pass" and corrections == 0 and not errors
+    return result
+
+
+def compare_evaluations(baseline: dict, candidate: dict) -> dict:
+    """Check paired receipt consistency. This VIEW cannot enforce execution isolation.
+
+    Matching snapshot strings alone do not show that retrieval used the frozen corpus.
+    Require named audit receipts and report consistency only; independent execution-seam
+    review must establish source eligibility/cache isolation before a causal quality claim.
+    """
+    gaps: list[str] = []
+    evaluations = [evaluate_creative(receipt) for receipt in (baseline, candidate)]
+    if any(not isinstance(receipt.get(key, {}), dict)
+           for receipt in (baseline, candidate)
+           for key in ("context", "timestamps", "delivery", "controls")):
+        return {"status": "ineligible", "execution_isolation_verified": False,
+                "gaps": ["both arms require valid first_pass receipts"] + [
+                    gap for evaluation in evaluations for gap in evaluation["gaps"]]}
+    for key in ("pair_id", "request"):
+        if not baseline.get(key) or baseline.get(key) != candidate.get(key):
+            gaps.append(f"{key} missing or different")
+    if baseline.get("arm") != "baseline" or candidate.get("arm") != "candidate":
+        gaps.append("arms must be baseline then candidate")
+    for key in ("workspace_id", "product_id", "brand_kit_id", "brand_kit_version"):
+        left, right = baseline.get("context") or {}, candidate.get("context") or {}
+        if left.get(key) is None or left.get(key) != right.get(key):
+            gaps.append(f"context.{key} missing or different")
+    for key in ("case_id", "run_ref"):
+        if not baseline.get(key) or not candidate.get(key) or baseline[key] == candidate[key]:
+            gaps.append(f"{key} must be present and distinct")
+    left, right = baseline.get("context") or {}, candidate.get("context") or {}
+    for key in ("project_id", "thread_id", "document_id"):
+        if not left.get(key) or not right.get(key) or left[key] == right[key]:
+            gaps.append(f"context.{key} must be present and distinct")
+    left, right = baseline.get("controls") or {}, candidate.get("controls") or {}
+    for key in ("runtime_sha256", "model_config_sha256", "source_snapshot_sha256",
+                "load_profile", "worker_limit", "provider_limit"):
+        if not left.get(key) or left.get(key) != right.get(key):
+            gaps.append(f"controls.{key} missing or different")
+    for arm, receipt, evaluation in zip(("baseline", "candidate"),
+                                         (baseline, candidate), evaluations, strict=True):
+        if not evaluation["first_pass_eligible"]:
+            gaps.append(f"{arm} must be an untouched first_pass receipt")
+            gaps.extend(f"{arm}.{gap}" for gap in evaluation["gaps"])
+        controls = receipt.get("controls") or {}
+        for key in ("knowledge_bundle_sha256", "source_snapshot_ref",
+                    "source_enforcement_ref", "cache_isolation_ref"):
+            if not controls.get(key):
+                gaps.append(f"{arm}.controls.{key} unavailable")
+        if controls.get("empty_history") is not True:
+            gaps.append(f"{arm}.controls.empty_history is not established")
+        hits = controls.get("cache_hits")
+        if type(hits) is not int or hits < 0:
+            gaps.append(f"{arm}.controls.cache_hits unavailable")
+    for key in ("generated_cache_namespace", "knowledge_bundle_sha256"):
+        if not left.get(key) or not right.get(key) or left[key] == right[key]:
+            gaps.append(f"controls.{key} must be present and distinct")
+    return {"status": "ineligible" if gaps else "receipt_consistent",
+            "execution_isolation_verified": False, "gaps": gaps}
+
+
+def _evaluation_section(evaluation: dict) -> list[str]:
+    rows = [("queue", "queue_ms"), ("submission to first preview", "first_preview_ms"),
+            ("submission to agent completion", "agent_completion_ms"),
+            ("submission to save", "save_ms"), ("submission to visible ready", "visible_ready_ms"),
+            ("submission to verified export", "export_verified_ms"),
+            ("finished creative", "finished_creative_ms")]
+    lines = ["", "## Finished-creative evaluation", "",
+             f"Status: **{evaluation['status']}**. Target <= 240s; stretch <= 180s. "
+             "All durations start at user submission and include queue and internal retries. "
+             "Finish requires the same saved, visible, usable artifact and a valid export; "
+             "agent completion alone is insufficient.", "",
+             "Observer evidence references require independent review. Human acceptance, "
+             "native editability and execution isolation are not inferred by this view.", "",
+             "| observation | elapsed |", "| --- | ---: |"]
+    for name, key in rows:
+        value = _ms(evaluation[key]) if evaluation[key] is not None else "unavailable"
+        lines.append(f"| {name} | {value} |")
+    lines += ["", f"First-pass eligible: {evaluation['first_pass_eligible']}; "
+              f"attempts: {evaluation['attempts_total']}; "
+              f"retain in denominator: {evaluation['include_in_denominator']}."]
+    comparison = evaluation.get("comparison")
+    if comparison:
+        lines += ["", f"Paired receipts: **{comparison['status']}**. "
+                  "Execution isolation is not verified by this view."]
+        lines += [f"- {gap}" for gap in comparison["gaps"]]
+    lines += [f"- {gap}" for gap in evaluation["gaps"]]
     return lines
 
 
@@ -400,6 +654,7 @@ def _readme(view: RunView, *, copy: bool, skipped: list[str]) -> str:
         f"- scene: {'present' if view.scene is not None else 'absent (see gaps)'}",
     ]
     lines += _metrics_section(view.metrics)
+    lines += _evaluation_section(manifest.get("evaluation") or evaluate_creative(None))
     if manifest.get("bridged_from"):
         lines += [
             "",
@@ -494,7 +749,27 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="copy asset bytes instead of symlinking them (for handing the directory around)",
     )
+    parser.add_argument(
+        "--evaluation-receipt", type=Path,
+        help="local browser/operator evaluation JSON; kept separate from run metrics",
+    )
+    parser.add_argument("--comparison-receipt", type=Path,
+                        help="baseline receipt to compare with the candidate evaluation receipt")
     args = parser.parse_args(argv)
+    if args.comparison_receipt and not args.evaluation_receipt:
+        parser.error("--comparison-receipt requires --evaluation-receipt")
+    receipts = []
+    for path in (args.evaluation_receipt, args.comparison_receipt):
+        if path is None:
+            receipts.append(None)
+            continue
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(receipt, dict):
+                raise ValueError("receipt must be a JSON object")
+            receipts.append(receipt)
+        except (OSError, ValueError) as error:
+            parser.error(f"cannot read evaluation receipt {path}: {error}")
 
     database_url = _require_env("CLUE_DATABASE_URL", "The view reads Postgres (read-only).")
     why_root = (
@@ -536,7 +811,8 @@ def main(argv: list[str] | None = None) -> int:
         ) from error
 
     out = args.out or _DEFAULT_OUT_ROOT / _safe_name(args.ref, "unnamed-ref")
-    materialize(view, out, copy=args.copy)
+    materialize(view, out, copy=args.copy,
+                evaluation_receipt=receipts[0], comparison_receipt=receipts[1])
 
     counts = view.manifest.get("counts") or {}
     print(

@@ -1,0 +1,913 @@
+{
+  "account": "Vendelux",
+  "domain": "vendelux.com",
+  "entity": "account:vendelux",
+  "workspace_id": "workspace:clue-smoke-2026-08-31",
+  "run": "arv2-smoke-cluehq",
+  "research_date": "2026-08-31",
+  "claim_counts": {
+    "total": 38,
+    "by_tier": {
+      "1": 24,
+      "2": 1,
+      "4": 13
+    },
+    "by_priority": {
+      "1": 2,
+      "2": 21,
+      "3": 15
+    },
+    "account_entity": 14,
+    "contact_entity": 24,
+    "distinct_contacts": 12
+  },
+  "committee_same_name_audit": {
+    "admitted": [
+      {
+        "name": "Leanne Ortega",
+        "title": "GTM @ Vendelux",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/leanne-ortega-810865201",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Cullen O'Neill",
+        "title": "Data / Data Ops",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/cullenoneill",
+        "start": "2026-06-01"
+      },
+      {
+        "name": "Violet Hyun",
+        "title": "Product Designer",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/violet-hyun",
+        "start": "2026-03-01"
+      },
+      {
+        "name": "Charlie Bentivenga",
+        "title": "Head of Talent",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/charliebentivenga",
+        "start": "2023-11-01"
+      },
+      {
+        "name": "Matthew Nelson",
+        "title": "Head of Data Operations",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/matthewnelson92",
+        "start": "2025-01-01"
+      },
+      {
+        "name": "Erica Korn",
+        "title": "Head of Mid-Market Sales",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/ericankorn",
+        "start": "2026-04-01"
+      },
+      {
+        "name": "Elena Kokhanovski",
+        "title": "Talent Acquisition Partner",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/elenakokhanovski",
+        "start": "2026-01-01"
+      },
+      {
+        "name": "Eli Silverman",
+        "title": "Enterprise Account Executive",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/eli-silverman-baa479b4",
+        "start": "2024-02-01"
+      },
+      {
+        "name": "Alex Reynolds",
+        "title": "Co-founder & CEO",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/alexreynolds1",
+        "start": "2021-01-01"
+      },
+      {
+        "name": "Dena Lopez",
+        "title": "Field Sales Representative",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/denalopez",
+        "start": "2026-07-01"
+      },
+      {
+        "name": "Tanya Peress",
+        "title": "Head of Marketing",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/tanya-p",
+        "start": "2025-07-01"
+      },
+      {
+        "name": "Stanton Quan",
+        "title": "Head of Sales",
+        "current_company": "Vendelux",
+        "linkedin": "https://www.linkedin.com/in/stantonquan",
+        "start": "2024-09-01"
+      }
+    ],
+    "rejected_same_name": [],
+    "roster_returned": 12,
+    "roster_total_available": 100
+  },
+  "claims": [
+    {
+      "entity": "contact:leanne-ortega",
+      "field_key": "contact.current_title",
+      "value_json": "GTM @ Vendelux",
+      "evidence_span": "profile.title = \"GTM @ Vendelux\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/leanne-ortega-810865201",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:leanne-ortega",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "GTM @ Vendelux",
+          "start": "2026-06-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"GTM @ Vendelux\", date.start: \"2026-06-01\"}",
+      "source_url": "https://www.linkedin.com/in/leanne-ortega-810865201",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:cullen-o-neill",
+      "field_key": "contact.current_title",
+      "value_json": "Data / Data Ops",
+      "evidence_span": "profile.title = \"Data / Data Ops\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/cullenoneill",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:cullen-o-neill",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Data / Data Ops",
+          "start": "2026-06-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Data / Data Ops\", date.start: \"2026-06-01\"}",
+      "source_url": "https://www.linkedin.com/in/cullenoneill",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:violet-hyun",
+      "field_key": "contact.current_title",
+      "value_json": "Product Designer",
+      "evidence_span": "profile.title = \"Product Designer\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/violet-hyun",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:violet-hyun",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Product Designer",
+          "start": "2026-03-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Product Designer\", date.start: \"2026-03-01\"}",
+      "source_url": "https://www.linkedin.com/in/violet-hyun",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:charlie-bentivenga",
+      "field_key": "contact.current_title",
+      "value_json": "Head of Talent",
+      "evidence_span": "profile.title = \"Head of Talent\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/charliebentivenga",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:charlie-bentivenga",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Head of Talent",
+          "start": "2023-11-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Head of Talent\", date.start: \"2023-11-01\"}",
+      "source_url": "https://www.linkedin.com/in/charliebentivenga",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:matthew-nelson",
+      "field_key": "contact.current_title",
+      "value_json": "Head of Data Operations",
+      "evidence_span": "profile.title = \"Head of Data Operations\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/matthewnelson92",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:matthew-nelson",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Head of Data Operations",
+          "start": "2025-01-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Head of Data Operations\", date.start: \"2025-01-01\"}",
+      "source_url": "https://www.linkedin.com/in/matthewnelson92",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:erica-korn",
+      "field_key": "contact.current_title",
+      "value_json": "Head of Mid-Market Sales",
+      "evidence_span": "profile.title = \"Head of Mid-Market Sales\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/ericankorn",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:erica-korn",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Head of Mid-Market Sales",
+          "start": "2026-04-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Head of Mid-Market Sales\", date.start: \"2026-04-01\"}",
+      "source_url": "https://www.linkedin.com/in/ericankorn",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:elena-kokhanovski",
+      "field_key": "contact.current_title",
+      "value_json": "Talent Acquisition Partner",
+      "evidence_span": "profile.title = \"Talent Acquisition Partner\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/elenakokhanovski",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:elena-kokhanovski",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Talent Acquisition Partner",
+          "start": "2026-01-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Talent Acquisition Partner\", date.start: \"2026-01-01\"}",
+      "source_url": "https://www.linkedin.com/in/elenakokhanovski",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:eli-silverman",
+      "field_key": "contact.current_title",
+      "value_json": "Enterprise Account Executive",
+      "evidence_span": "profile.title = \"Enterprise Account Executive\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/eli-silverman-baa479b4",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:eli-silverman",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Enterprise Account Executive",
+          "start": "2024-02-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Enterprise Account Executive\", date.start: \"2024-02-01\"}",
+      "source_url": "https://www.linkedin.com/in/eli-silverman-baa479b4",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:alex-reynolds",
+      "field_key": "contact.current_title",
+      "value_json": "Co-founder & CEO",
+      "evidence_span": "profile.title = \"Co-founder & CEO\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/alexreynolds1",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:alex-reynolds",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Co-founder & CEO",
+          "start": "2021-01-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Co-founder & CEO\", date.start: \"2021-01-01\"}",
+      "source_url": "https://www.linkedin.com/in/alexreynolds1",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:dena-lopez",
+      "field_key": "contact.current_title",
+      "value_json": "Field Sales Representative",
+      "evidence_span": "profile.title = \"Field Sales Representative\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/denalopez",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:dena-lopez",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Field Sales Representative",
+          "start": "2026-07-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Field Sales Representative\", date.start: \"2026-07-01\"}",
+      "source_url": "https://www.linkedin.com/in/denalopez",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:tanya-peress",
+      "field_key": "contact.current_title",
+      "value_json": "Head of Marketing",
+      "evidence_span": "profile.title = \"Head of Marketing\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/tanya-p",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:tanya-peress",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Head of Marketing",
+          "start": "2025-07-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Head of Marketing\", date.start: \"2025-07-01\"}",
+      "source_url": "https://www.linkedin.com/in/tanya-p",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:stanton-quan",
+      "field_key": "contact.current_title",
+      "value_json": "Head of Sales",
+      "evidence_span": "profile.title = \"Head of Sales\" with position_groups[0].company.name = \"Vendelux\"",
+      "source_url": "https://www.linkedin.com/in/stantonquan",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:stanton-quan",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Vendelux",
+          "role": "Head of Sales",
+          "start": "2024-09-01",
+          "end": "present"
+        }
+      ],
+      "evidence_span": "position_groups[0] = {company: \"Vendelux\", title: \"Head of Sales\", date.start: \"2024-09-01\"}",
+      "source_url": "https://www.linkedin.com/in/stantonquan",
+      "source_key": "ai_ark",
+      "source_tier": 1,
+      "extraction_method": "api",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 2.0,
+      "evidence_span": "Ashby public posting API job_board/vendelux: 2 live engineering/R&D reqs of 29 total (isListed=true)",
+      "source_url": "https://api.ashbyhq.com/posting-api/job-board/vendelux",
+      "source_key": "ashby_public",
+      "source_tier": 2,
+      "extraction_method": "official_scrape",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 3
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.account_name",
+      "value_json": "Vendelux",
+      "evidence_span": "Vendelux | AI-Native Event Marketing Platform",
+      "source_url": "https://www.vendelux.com",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.primary_domain",
+      "value_json": "vendelux.com",
+      "evidence_span": "Vendelux | AI-Native Event Marketing Platform",
+      "source_url": "https://www.vendelux.com",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.95,
+      "priority": 2
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.company_about",
+      "value_json": "Vendelux turns in-person events into a predictable, pipeline-generating engine - before you even step on the show floor.",
+      "evidence_span": "Vendelux turns in-person events into a predictable, pipeline-generating engine - before you even step on the show floor.",
+      "source_url": "https://www.vendelux.com",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 3
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.employee_count",
+      "value_json": 60,
+      "evidence_span": "60+ full-time employees based at our NYC HQ and globally",
+      "source_url": "https://vendelux.com/about",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 2
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.hq_location",
+      "value_json": {
+        "raw": "NYC HQ",
+        "city": "New York",
+        "region": "New York",
+        "country": "United States",
+        "country_code": "US"
+      },
+      "evidence_span": "60+ full-time employees based at our NYC HQ and globally",
+      "source_url": "https://vendelux.com/about",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.company_linkedin_url",
+      "value_json": "https://linkedin.com/company/vendelux",
+      "evidence_span": "https://linkedin.com/company/vendelux",
+      "source_url": "https://vendelux.com",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.primary_tech_stack",
+      "value_json": [
+        "HubSpot",
+        "Salesforce",
+        "Outreach",
+        "Salesloft",
+        "Apollo"
+      ],
+      "evidence_span": "Every booked meeting flows continuously into HubSpot or Salesforce.",
+      "source_url": "https://vendelux.com/event-marketing",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 2
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 50000000,
+        "round": "Series B"
+      },
+      "evidence_span": "Today, we\u00039re thrilled to share that Vendelux has raised a $50M Series B, led by our friends at Tribeca Venture Partners",
+      "source_url": "https://vendelux.com/blog/series-b",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.95,
+      "priority": 1
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "account.total_funding",
+      "value_json": {
+        "amount_usd": 71000000,
+        "estimate_kind": "reported"
+      },
+      "evidence_span": "This brings our total funding to $71M.",
+      "source_url": "https://vendelux.com/blog/series-b",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 1
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "account.strategic_moves",
+      "value_json": "Expand event intelligence and meeting automation: build attendee intelligence, add human-led Meetings that book qualified meetings, and connect CRM attribution to drive measurable ROI.",
+      "evidence_span": "they\u00039ve used AI to turn that data asset into something genuinely actionable... one of the largest event intelligence data repositories... used AI to turn that data asset into something genuinely actionable",
+      "source_url": "https://firstmark.com/story/vendelux-raises-50m-series-b-to-bring-ai-led-intelligence-to-b2b-events/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "account.operational_pain",
+      "value_json": "Digital channels are saturated and AI automates email/paid outreach, creating a shift toward in-person GTM and the need to measure and attribute event ROI.",
+      "evidence_span": "digital channels saturate and AI automates email and paid outreach",
+      "source_url": "https://vendelux.com/blog/series-b",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 3
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.industry",
+      "value_json": "Event marketing / B2B event intelligence",
+      "evidence_span": "Vendelux | AI-Native Event Marketing Platform",
+      "source_url": "https://www.vendelux.com",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:vendelux",
+      "field_key": "core.employee_range",
+      "value_json": {
+        "label": "60+",
+        "min": 60
+      },
+      "evidence_span": "60+ full-time employees based at our NYC HQ and globally",
+      "source_url": "https://vendelux.com/about",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-smoke-2026-08-31",
+      "confidence": 0.8,
+      "priority": 2
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "core.annual_revenue",
+      "entity_type": "account",
+      "value_type": "object",
+      "value_schema": {
+        "type": "object",
+        "required": [
+          "amount",
+          "currency",
+          "as_of",
+          "estimate_kind"
+        ],
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "as_of": {
+            "type": "string"
+          },
+          "estimate_kind": {
+            "type": "string",
+            "enum": [
+              "reported",
+              "provider_estimate",
+              "third_party_estimate"
+            ]
+          }
+        }
+      },
+      "description": "Exact annual revenue is not reported in the supplied sources; the dossier contains automated estimates but no company-reported ARR.",
+      "reuse_scope": "account:vendelux",
+      "hypothesis": "An ABM platform benefits from knowing exact or banded revenue to size opportunity and prioritize accounts; since Vendelux's ARR is not reported, an annual_revenue claim cannot be sourced here.",
+      "example_value": {
+        "amount": 1200000,
+        "currency": "USD",
+        "as_of": "2025-12-31",
+        "estimate_kind": "third_party_estimate"
+      },
+      "example_evidence_span": "Annual Revenue: USD 1,200,000",
+      "example_source_url": "https://linkedin.com/company/vendelux",
+      "priority": 2
+    }
+  ]
+}

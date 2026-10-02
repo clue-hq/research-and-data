@@ -47,6 +47,7 @@ from clue_research.durable import (
     update_committee_acquisition_operation,
     update_committee_acquisition_snapshot,
 )
+from clue_research.durable.spend_posture import cap_refusal_is_enforced
 from clue_research.resolvers.http import ProviderResponseError
 from clue_research.resolvers.sumble import SUMBLE_API_BASE, SUMBLE_API_VERSION
 from clue_research.resolvers.sumble.committee_transport import (
@@ -75,6 +76,10 @@ SUMBLE_COMMITTEE_CONTRACT_VERSION: Final = (
 )
 SUMBLE_COMMITTEE_POLICY_VERSION: Final = "sumble-committee-s2b-v1"
 SUMBLE_COMMITTEE_PRICING_VERSION: Final = "sumble-v9-credits-2026-08-03"
+
+#: Attribution for the record-only spend-cap posture (founder ruling 2026-08-20; see
+#: :mod:`clue_research.durable.spend_posture`).
+_SITE_COMMITTEE_PREFLIGHT: Final = "sumble_committee_preflight"
 
 
 class SumbleCommitteeOutcome(StrEnum):
@@ -115,9 +120,19 @@ class SumbleCommitteeResult(BaseModel):
 
 
 def compile_sumble_committee_preflight(
-    request: CommitteeAcquisitionRequest, *, cents_per_credit: Decimal
+    request: CommitteeAcquisitionRequest,
+    *,
+    cents_per_credit: Decimal,
+    enforce_budget: bool = True,
 ) -> SumbleCommitteePreflight:
-    """Compile the exact bounded wire plan after the S2 eligibility layer has admitted it."""
+    """Compile the exact bounded wire plan after the S2 eligibility layer has admitted it.
+
+    ``enforce_budget`` is the FI pilot budget-controls switch (``Settings.budget_controls_enabled``,
+    threaded from the composition root). It gates only the two cost comparisons at the end: under
+    the 2026-08-20 record-only ruling a wire plan whose bounded maximum exceeds the configured
+    credit or money cap is recorded and compiled anyway. Every contract/version/identity check
+    above is structural and refuses in both modes.
+    """
 
     if cents_per_credit < 0:
         raise ValueError("Sumble cents per credit must be non-negative")
@@ -153,9 +168,25 @@ def compile_sumble_committee_preflight(
     )
     maximum_units = teams_maximum + people_maximum
     maximum_cost = Decimal(maximum_units) * cents_per_credit
-    if maximum_units > request.provider_credit_cap:
+    if maximum_units > request.provider_credit_cap and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_COMMITTEE_PREFLIGHT,
+        reason="wire_plan_above_credit_cap",
+        amounts={
+            "wire_plan_maximum_units": maximum_units,
+            "provider_credit_cap": request.provider_credit_cap,
+        },
+    ):
         raise ValueError("committee wire plan exceeds its provider credit cap")
-    if maximum_cost > request.money_budget_cap_cents:
+    if maximum_cost > request.money_budget_cap_cents and cap_refusal_is_enforced(
+        enforce_budget,
+        site=_SITE_COMMITTEE_PREFLIGHT,
+        reason="wire_plan_above_money_cap",
+        amounts={
+            "wire_plan_maximum_cost_cents": maximum_cost,
+            "money_budget_cap_cents": request.money_budget_cap_cents,
+        },
+    ):
         raise ValueError("committee wire plan exceeds its money cap")
     return SumbleCommitteePreflight(
         request=request,

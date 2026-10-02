@@ -1,0 +1,94 @@
+{
+  "requestId": "809e90c237fc0fb257ab09c16db23e1b",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://www.909exec.com/podcasts/episode-51-from-the-uk-to-the-us-ai-security-for-the-enterprise-with-harmonics-alastair-paterson",
+      "title": "Cyber909: Episode 51: From the UK to the US: AI Security for the Enterprise with Harmonic's Alastair Paterson",
+      "url": "https://www.909exec.com/podcasts/episode-51-from-the-uk-to-the-us-ai-security-for-the-enterprise-with-harmonics-alastair-paterson",
+      "text": "Cyber909: Episode 51: From the UK to the US: AI Security for the Enterprise with Harmonic's Alastair Paterson\n\nDecember 29, 2025\n\n# Episode 51: From the UK to the US: AI Security for the Enterprise with Harmonic's Alastair Paterson\n\nFrom bootstrapping a cybersecurity startup in London to scaling in Silicon Valley, Alastair shares insights on securing AI workflows, the cultural differences between UK and US startup ecosystems, and why traditional DLP solutions fall short in the AI era.\n\n##### About our guest\n\n### Alastair Paterson\n\nAlastair Paterson is the CEO and co-founder of Harmonic Security, enabling companies to adopt Generative AI without risk to their sensitive data. Prior to this he co-founded and was CEO of the cyber security company Digital Shadows from its inception in 2011 until its acquisition by ReliaQuest/KKR for $160m in July 2022. Alastair led the company to become an international, industry-recognised leader in threat intelligence and digital risk protection.\n\nConnect on LinkedIn\n\n## Watch & Listen on Your Favorite Platforms\n\nWatch on YouTube\n\n## Transcript\n\nNarrator:\n\nWelcome to 909 Exec, your source for wit and wisdom in cybersecurity and beyond. On this podcast, your host, veteran, chief security officer and cyber aficionado, Den Jones, TAPS's vast network to bring you guests, stories, opinions, predictions, and analysis you won't get anywhere else. Join us for 909 Exec episode 51 with Alastair Paterson.\n\nDen:\n\nHey, everybody. Welcome to another episode o",
+      "image": "https://cdn.prod.website-files.com/66da788083300abb036376b6/67f33c1200b7a0c2b3d9181f_909EXEC-FINAL.png",
+      "favicon": "https://cdn.prod.website-files.com/66da788083300abb036376b6/67f339af9fb8d62bef825e08_909EXEC_98x98.png"
+    },
+    {
+      "id": "https://cisoseries.com/getting-visibility-into-ai-usage-with-harmonic-security/",
+      "title": "Getting Visibility into AI Usage with Harmonic Security",
+      "url": "https://cisoseries.com/getting-visibility-into-ai-usage-with-harmonic-security/",
+      "publishedDate": "2026-02-02T12:00:00.000Z",
+      "author": "Rich Stroffolino",
+      "text": "Getting Visibility into AI Usage with Harmonic Security\n\nSearch\n\nSearch\n\nHome Podcast Getting Visibility into AI Usage with Harmonic Security\n\n- Podcast\n- Security You Should Know\n\nAI governance has never been more urgent, yet most organizations remain caught between two equally bad options: blocking AI entirely or letting it run wild. Three seismic shifts in 2025 have made the challenge even more acute. First, every major browser is now AI-enhanced, creating new attack surfaces and data leak vectors. Second, agentic AI has emerged as a specialized discipline with its own governance requirements. Third, the Model Context Protocol gained widespread adoption, introducing fresh security challenges that legacy tools can\u2019t address. The typical enterprise response has been predictably inadequate. Some companies deploy blanket blocks, only to watch employees migrate to personal devices and accounts. Others take a permissive stance, only to discover that four times as many employees use free ChatGPT as their expensive corporate copilot licenses, with sensitive data flowing freely into unapproved systems.\n\nIn this episode, Alastair Paterson, CEO and co-founder at Harmonic Security, explains how Harmonic Protect addresses these challenges by securing workforce AI adoption through browser-based visibility, endpoint agents, and MCP gateways. Joining him are Ross Young, co-host at CISO Tradecraft, and Johna Till Johnson, CEO and founder at Nemertes.\n\n## Want to know:\n\n- Why are enterprise",
+      "image": "https://media.cisoseries.com/wp-content/uploads/2026/01/SYSK-THUMBNAIL-harmonic.png",
+      "favicon": "https://media.cisoseries.com/wp-content/uploads/2022/02/CISOSeries_Logo_final_022122-1-150x150.jpg"
+    },
+    {
+      "id": "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security-ceo-alastair-paterson",
+      "title": "Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson",
+      "url": "https://www.buzzsprout.com/2215185/episodes/19393590-why-usage-intelligence-is-the-missing-layers-in-enterprise-ai-security-with-harmonic-security-ceo-alastair-paterson",
+      "text": "Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson\n\n# CYBR.SEC.CAST\n\nJoin CYBR.SEC.CON. cofounders Michael and Sam each week as they chat with conference speakers about the latest topics and trends in the cybersecurity space.\n\nShow More\n\n## CYBR.SEC.CAST\n\n# Why Usage Intelligence is the Missing Layers in Enterprise AI Security with Harmonic Security CEO Alastair Paterson\n\nJune 24, 2026 \u2022 CYBR.SEC.Media \u2022 Season 2 \u2022 Episode 67\n\nShare\n\n## Share episode\n\nShare on Facebook Share on X Share on LinkedIn\n\nCopy\n\nStart at\n\n0:00 | 29:51\n\nShow Notes\n\nIn this episode of CYBR.SEC.CAST, hosts Michael and Sam sit down with Alastair Patterson, CEO of Harmonic Security, to discuss the rapid evolution of AI in the enterprise. They explore the shift from chatbots to autonomous agents, the challenges CISOs face in governing AI adoption, and how security teams can enable innovation without becoming blockers. Alastair also shares his founder journey, lessons from Digital Shadows, and how Harmonic is helping organizations gain visibility and control over AI usage.\n\nSponsored by Harmonic Security\n\nThings Mentioned:\n\n- Harmonic Security \u2013 https://www.harmonic.security\n- CYBR.SEC.CON. Tickets - https://www.xcdsystem.com/cybrseccommunity/attendee/index.cfm?ID=iV8mb8T\n- Crew Member Application - https://www.cybrseccon.com/jointhecrew\n- CYBR.SEC.CON. Speakers (Partial List) - https://www.xcdsystem.com/cybrseccommunity/program/Wh1YEUW/index.",
+      "image": "https://www.buzzsprout.com/rails/active_storage/representations/redirect/eyJfcmFpbHMiOnsiZGF0YSI6MTU1MjY2Mzg3LCJwdXIiOiJibG9iX2lkIn19--739f7ebf9ed47237693d8fd318afa4672360afc9/eyJfcmFpbHMiOnsiZGF0YSI6eyJmb3JtYXQiOiJqcGciLCJyZXNpemVfdG9fZmlsbCI6WzI1MCwyNTAseyJjcm9wIjoiY2VudHJlIn1dLCJzYXZlciI6eyJxdWFsaXR5Ijo2MH0sImNvbG91cnNwYWNlIjoic3JnYiJ9LCJwdXIiOiJ2YXJpYXRpb24ifX0=--21f3793904e6ce1806a5a794a691217fceef82c7/CYBR.SEC.CAST..png"
+    },
+    {
+      "id": "https://podcasts.expertinsights.com/p/43-alastair-paterson-harmonic",
+      "title": "#43 - How To Embrace GenAI Securely (Alastair Paterson, Harmonic)",
+      "url": "https://podcasts.expertinsights.com/p/43-alastair-paterson-harmonic",
+      "publishedDate": "2024-11-01T08:54:41.000Z",
+      "author": "Expert Insights Podcast",
+      "text": "#43 - How To Embrace GenAI Securely (Alastair Paterson, Harmonic)\n\nSubscribeSign in\n\nExpert Insights Podcast\n\n#43 - How To Embrace GenAI Securely (Alastair Paterson, Harmonic)\n\n0:00\n\n-17:44\n\nAudio playback is not supported on your browser. Please upgrade.\n\n## #43 - How To Embrace GenAI Securely (Alastair Paterson, Harmonic)\n\nNov 01, 2024\n\nShare\n\n77% of organizations say data privacy is one of the biggest barriers to their adoption of GenAI. But there is a way for organizations to embrace these new technologies without sensitive data leaving the business.\n\nWe caught up with Alastair Paterson, CEO and Co-Founder at Harmonic Security, on this month\u2019s episode of the Expert Insights Podcast to discuss how businesses can embrace GenAI without compromising their security.\n\nAbout Expert InsightsExpert Insights is a B2B research and review platform for IT solutions and services. We help over one million IT managers, CISOs, small business owners, and other professionals discover the best IT and cybersecurity solutions. For more, visit: https://expertinsights.com\n\n### Ready for more?\n\nSubscribe\n\n\u00a9 2026 Expert Insights \u00b7 Privacy\u2219 Terms\u2219 Collection notice\n\nStart your Substack Get the app\n\nSubstack is the home for great culture",
+      "image": "https://substackcdn.com/image/fetch/$s_!YOUc!,w_1200,h_600,c_fill,f_jpg,q_auto:good,fl_progressive:steep,g_auto/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fe3c40286-e774-469e-881c-6d58ac4520ad_3000x3000",
+      "favicon": "https://substackcdn.com/image/fetch/$s_!-MZS!,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F171cbbf7-16cd-4981-b194-fd07c530ce00%2Ffavicon-32x32.png"
+    },
+    {
+      "id": "https://podcasts.apple.com/us/podcast/getting-visibility-into-ai-usage-with-harmonic-security/id1798781090?i=1000747687976",
+      "title": "Getting Visibility into AI Usa\u2026 - Security You Should Know - Apple Podcasts",
+      "url": "https://podcasts.apple.com/us/podcast/getting-visibility-into-ai-usage-with-harmonic-security/id1798781090?i=1000747687976",
+      "publishedDate": "2026-02-02T01:44:14.000Z",
+      "text": "Getting Visibility into AI Usa\u2026 - Security You Should Know - Apple Podcasts\n\n- February 2\n\n# Getting Visibility into AI Usage with Harmonic Security\n\nSecurity You Should Know\n\n22m\n\nAll links and images can be found on CISO Series.\n\nIn this episode, Alastair Paterson, CEO and co-founder at Harmonic Security, explains how Harmonic Protect addresses these challenges by securing workforce AI adoption through browser-based visibility, endpoint agents, and MCP gateways. Joining him are Ross Young, co-host at CISO Tradecraft, and Johna Till Johnson, CEO and founder at Nemertes.\n\nWant to know:\n\n- Why are enterprises still struggling with AI governance despite years of motivation to solve it?\n- How does Harmonic keep pace with 50,000+ AI products when the landscape changes monthly?\n- What's the difference between visibility, coaching, and blocking in AI governance?\n- How do you implement AI controls without creating thousands of new alerts for security teams?\n- Where does Harmonic fit in the multi-step process of setting policy, monitoring compliance, and enforcement?\n- How can CISOs measure the ROI of AI governance tools and benchmark against industry peers?\n- What's Harmonic's strategy with secure AI browsers?\n- Why should AI browsers be blocked by default in the enterprise?\n- What should CISOs prioritize for AI security in 2026?\n\nHuge thanks to our sponsor, Harmonic Security\n\nAs every employee adopts AI in their work, organizations need control and visibility. Harmonic Security del",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/db/42/2f/db422fe2-5a70-697f-b352-4def759cf641/mza_4361859197898003565.png/1200x1200bf-60.jpg",
+      "favicon": "https://podcasts.apple.com/assets/favicon/favicon-32.png"
+    },
+    {
+      "id": "https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act",
+      "title": "Cloud Security Podcast by Google: EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!",
+      "url": "https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act",
+      "text": "Cloud Security Podcast by Google: EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!\n\nPreview Mode Links will not work in preview mode\n\n# Cloud Security Podcast by Google\n\n---\n\n### EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!\n\n## EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!\n\nGuest:\n\n- Alastair Paterson, CEO and co-founder @ Harmonic Security\n\nTopics:\n\n- Harmonic Security focuses on securing generative AI in use. Can you walk us through a real, anonymized example of a data leak caused by employee AI usage that your platform has identified?\n- AI governance gets thrown around a lot. What does this mean in the context of Shadow AI? How should organizations be thinking about governing AI in light of upcoming AI regulations in the US and in the EU?\n- If we generally agree that employees are using AI tools before they are sanctioned, how can organizations control this? Network, API, endpoint?\n- Many organizations struggle with the \"ban vs. embrace\" debate for generative AI. Based on your experience, what's a compelling argument for moving from a blanket ban to a managed, secure adoption model? Can you share a success story where this approach demonstrably reduced risk?\n- The term \"shadow AI\" is often used interchangeably with \"shadow IT\" (but for AI-powered applications) but you've highlighted that AI is a different beast. What is the single biggest distinction between managing the risk of unsanctioned ",
+      "image": "http://assets.libsyn.com/show/324875?height=250&width=250&overlay=true"
+    },
+    {
+      "id": "https://podcasts.apple.com/na/podcast/enabling-ai-adoption-in-the-workforce-data-security/id1798833565?i=1000703768243",
+      "title": "Enabling AI Adoption in the Wo\u2026\u2013Founders in Focus \u2013 Apple Podcasts",
+      "url": "https://podcasts.apple.com/na/podcast/enabling-ai-adoption-in-the-workforce-data-security/id1798833565?i=1000703768243",
+      "publishedDate": "2025-04-16T03:06:46.000Z",
+      "text": "Enabling AI Adoption in the Wo\u2026\u2013Founders in Focus \u2013 Apple Podcasts \n\n- 16 APRIL 2025\n- EPISODE 4\n- 53 MIN\n\n# Enabling AI Adoption in the Workforce, Data Security and more w/ Alastair Paterson - Episode 04\n\nFounders in Focus\n\nPlay\n\n \n\nListen in to our conversation with Alastair Paterson as he talks about his company Harmonic, and their impact on enabling AI adoption in the workforce. In this episode, Alastair explains how his company is creating a way for major sectors to feel comfortable with the pace of change in technology through safekeeping proprietary data, PII and more all while leveraging AI.\n\nLearn more about Alastair Paterson: https://www.linkedin.com/in/alastair-paterson-2586445/\n\n \n\nEpisode Webpage\n\n## Information\n\nShow\n\nFounders in Focus\n\nFrequency\n\nUpdated weekly\n\nPublished\n\n16 April 2025 at 17:47 UTC\n\nLength\n\n53 min\n\nEpisode\n\n4\n\nRating\n\nClean",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts211/v4/87/14/1d/87141de0-553f-8cb8-31a7-3796377df8ff/mza_12592020515011539013.jpg/1200x1200bf-60.jpg",
+      "favicon": "https://podcasts.apple.com/assets/favicon/favicon-180.png"
+    },
+    {
+      "id": "https://podcasts.apple.com/cy/podcast/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont/id1554145026?i=1000752604916",
+      "title": "EP265 Beyond Shadow IT: Unsanc\u2026\u2013Cloud Security Podcast by Google \u2013 Apple Podcasts",
+      "url": "https://podcasts.apple.com/cy/podcast/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont/id1554145026?i=1000752604916",
+      "publishedDate": "2026-03-02T20:57:18.000Z",
+      "text": "EP265 Beyond Shadow IT: Unsanc\u2026\u2013Cloud Security Podcast by Google \u2013 Apple Podcasts\n\n- 2 MARCH\n- S1, E265\n- 29 MIN\n\n# EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!\n\nCloud Security Podcast by Google\n\nPlay\n\nGuest:\n\n- Alastair Paterson, CEO and co-founder @ Harmonic Security\n\nTopics:\n\n- Harmonic Security focuses on securing generative AI in use. Can you walk us through a real, anonymized example of a data leak caused by employee AI usage that your platform has identified?\n- AI governance gets thrown around a lot. What does this mean in the context of Shadow AI? How should organizations be thinking about governing AI in light of upcoming AI regulations in the US and in the EU?\n- If we generally agree that employees are using AI tools before they are sanctioned, how can organizations control this? Network, API, endpoint?\n- Many organizations struggle with the \"ban vs. embrace\" debate for generative AI. Based on your experience, what's a compelling argument for moving from a blanket ban to a managed, secure adoption model? Can you share a success story where this approach demonstrably reduced risk?\n- The term \"shadow AI\" is often used interchangeably with \"shadow IT\" (but for AI-powered applications) but you've highlighted that AI is a different beast. What is the single biggest distinction between managing the risk of unsanctioned AI tools versus unsanctioned IT applications?\n- Looking forward, where do you see the biggest risks in the evolution of shadow",
+      "image": "https://is1-ssl.mzstatic.com/image/thumb/Podcasts124/v4/7c/22/b1/7c22b189-fc31-c858-dafd-df9cb74a4a22/mza_12717273021851818734.png/1200x1200bf-60.jpg",
+      "favicon": "https://podcasts.apple.com/assets/favicon/favicon-180.png"
+    }
+  ],
+  "searchTime": 1283.6,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.38,
+  "_request": {
+    "query": "\"Alastair Paterson\" podcast interview guest episode Harmonic Security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

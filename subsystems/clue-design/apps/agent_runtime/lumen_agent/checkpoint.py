@@ -1,41 +1,13 @@
-"""Durable-graph seam for the two turn harnesses (design-integration Part II, slice D5 Round B).
+"""Durable-graph seam for the two turn harnesses.
 
-D5 puts design agent turns on the platform fleet, which means a turn can be *taken over*: the
-worker driving it dies, its lease expires, a second worker claims the same run at a higher
-generation and must do something sensible with the half-finished work. This module is the one
-place that decides what "something sensible" is.
-
-WHAT SHIPPED: **resume-as-restart**, not true mid-turn resume. That is a measured finding, not a
-shortcut, and the reason is structural:
-
-``LumenDesignTools`` / ``LumenWebTools`` mint a FRESH ``run_id`` in their constructor
-(``tools/substrate.py``: ``self.run_id = new_run_id()``) and derive ``trace_dir`` from it. All of
-the turn's real state — the scene under construction, the operations ledger, the round
-directories, the preview images, and ``final.json``, which is the harness's sole authority for the
-turn's outcome — lives in that per-construction directory and in the tool object's memory. None of
-it is in the LangGraph checkpoint, which holds only the message list and graph position.
-
-So a "true" resume would restore a message history whose tool results describe a workspace that no
-longer exists, hand it to a tool substrate whose scene is empty, and let the orchestrator finalize
-against files it never wrote. That is not resumption; it is a fabricated continuation, and the
-design harness's whole discipline is that it never fabricates an outcome. Likewise a *completed*
-checkpoint cannot be short-circuited: the outcome it produced lives in the dead attempt's
-``final.json``, which the new tool substrate cannot name.
-
-Therefore, when a thread already carries state, this module **deletes the thread and re-invokes
-the frozen envelope from the top** — same run, same ``thread_id``, same immutable work
-description, and the run's prior stream events are left untouched so the editor's SSE stream keeps
-its history (``design_run_event`` rows until D7; ``design.run.*`` rows on the platform
-``run_event`` outbox since). Every restart is logged loudly (``turn.checkpoint_restart``).
-
-WHY WIRE THE CHECKPOINTER AT ALL, THEN? Three reasons, all real today:
-1. The graph state becomes durable and inspectable per run — an operator can see how far a dead
-   turn actually got, which the trace dir alone cannot tell them once the process is gone.
-2. ``thread_id`` becomes the design run id (the D5 ruling), so graph state, run row, event stream,
-   and fleet work id all key on one identifier instead of the runtime's private ``tools.run_id``.
-3. It is the seam true resume will land on. When the tool substrate is made reconstructible from a
-   run id (a later round's work), the ``_RESTART`` branch below becomes the resume branch and
-   nothing else moves.
+Design session continuity (founder ruling 2026-09-18) replaces D5's resume-as-restart. The
+thread is the document's SESSION, so a thread that already carries state is the normal case,
+not a crash: a new run appends its user message and the graph continues with every earlier tool
+call, result and critique still in the window; a retried run (same run id as the thread's last
+user message) resumes from the last checkpoint with input ``None``. ``PatchToolCallsMiddleware``
+(deepagents, installed on both graphs) repairs a dangling tool call left by an interrupted attempt.
+The tool substrate is reconstructible now: the scene is reloaded from the document at turn start
+and per-turn files live under the session folder's ``turns/<run_id>``.
 """
 
 from __future__ import annotations
@@ -46,6 +18,8 @@ from py_lumen_obs import get_logger
 
 logger = get_logger("lumen_agent.checkpoint")
 
+RUN_ID_KEY = "lumen_run_id"
+
 
 def invoke_turn_graph(
     agent: Any,
@@ -54,51 +28,46 @@ def invoke_turn_graph(
     invoke_config: dict,
     checkpointer: Any = None,
     thread_id: str | None = None,
+    run_id: str | None = None,
 ) -> Any:
-    """Invoke a compiled turn graph, restarting a thread that already carries state.
+    """Invoke a compiled turn graph on its thread: fresh, continued, or resumed.
 
     ``checkpointer``/``thread_id`` are both optional and only take effect together — a turn run
     without a checkpointer (the CLI, the offline fixtures, every test that does not need
-    durability) invokes exactly as it did before D5, so this function is a no-op on that path.
+    durability) invokes exactly as it did before, so this function is a no-op on that path.
 
     Returns whatever ``agent.invoke`` returns. Never raises on the checkpoint bookkeeping itself:
-    a checkpointer that cannot report or clear its own state must not be able to fail a turn that
-    would otherwise run, so the lookup/delete are best-effort and logged.
+    a checkpointer that cannot report its own state must not be able to fail a turn that would
+    otherwise run, so the lookup is best-effort and logged, and an unreadable thread is treated
+    as fresh.
     """
     if checkpointer is None or thread_id is None:
         return agent.invoke(initial_state, config=invoke_config)
 
-    if _thread_has_state(agent, invoke_config, thread_id):
-        logger.warning(
-            "turn.checkpoint_restart",
-            thread_id=thread_id,
-            reason="tool_substrate_is_not_resumable",
-            detail=(
-                "a previous attempt left graph state on this thread; the turn is re-run from the "
-                "top because the tool substrate (scene, trace dir, final.json) cannot be restored"
-            ),
-        )
-        _clear_thread(checkpointer, thread_id)
-
+    last_run = _last_user_run_id(agent, invoke_config, thread_id)
+    if last_run is None:
+        return agent.invoke(initial_state, config=invoke_config)
+    if run_id is not None and last_run == run_id:
+        logger.info("turn.checkpoint_resume", thread_id=thread_id, run_id=run_id)
+        return agent.invoke(None, config=invoke_config)
+    logger.info("turn.checkpoint_continue", thread_id=thread_id, run_id=run_id, after_run=last_run)
     return agent.invoke(initial_state, config=invoke_config)
 
 
-def _thread_has_state(agent: Any, invoke_config: dict, thread_id: str) -> bool:
+def _last_user_run_id(agent: Any, invoke_config: dict, thread_id: str) -> str | None:
+    """The run id stamped on the thread's newest user message; ``None`` for a fresh thread."""
     try:
         snapshot = agent.get_state(invoke_config)
     except Exception:  # noqa: BLE001 - never let checkpoint bookkeeping fail a runnable turn
         logger.warning("turn.checkpoint_state_unreadable", thread_id=thread_id, exc_info=True)
-        return False
-    # A never-seen thread yields a snapshot whose values are empty and whose config carries no
-    # checkpoint id; `created_at` is the cheapest honest "this thread has been written" signal.
-    return getattr(snapshot, "created_at", None) is not None
+        return None
+    if getattr(snapshot, "created_at", None) is None:
+        return None
+    messages = (getattr(snapshot, "values", None) or {}).get("messages") or []
+    for message in reversed(messages):
+        if getattr(message, "type", None) == "human":
+            return (getattr(message, "additional_kwargs", None) or {}).get(RUN_ID_KEY) or "unknown"
+    return "unknown"
 
 
-def _clear_thread(checkpointer: Any, thread_id: str) -> None:
-    try:
-        checkpointer.delete_thread(thread_id)
-    except Exception:  # noqa: BLE001 - see above
-        logger.warning("turn.checkpoint_clear_failed", thread_id=thread_id, exc_info=True)
-
-
-__all__ = ["invoke_turn_graph"]
+__all__ = ["RUN_ID_KEY", "invoke_turn_graph"]

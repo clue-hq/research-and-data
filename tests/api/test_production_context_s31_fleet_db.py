@@ -455,7 +455,8 @@ def test_real_fleet_chain_keeps_original_pin_through_checkpoint_finalization_and
                 assert int(pin_row["client_kb_version"]) == original_pin.client_kb_version
                 assert int(pin_row["product_kb_version"]) == original_pin.product_kb_version
                 assert (
-                    pin_row["knowledge_scope_policy_version"] == "company-and-selected-product-v2"
+                    pin_row["knowledge_scope_policy_version"]
+                    == "company-and-selected-product-required-v3"
                 )
 
                 # L3 receipts point at the exact immutable card artifact fed to the model. The

@@ -1,12 +1,53 @@
 import { z } from "zod";
 
+export const ProjectRenameResponseSchema = z.object({
+  data: z.object({ id: z.string().min(1), title: z.string().min(1).max(200) }),
+}).transform(({ data }) => data);
+
+export type RenamedProject = z.infer<typeof ProjectRenameResponseSchema>;
+
+export const ProjectEntityTypeSchema = z.enum([
+  "account",
+  "contact",
+  "project_document",
+  "design_document",
+]);
+export const ProjectEntityCategorySchema = z.enum([
+  "accounts",
+  "files",
+  "microsites",
+]);
+export const ProjectEntityIconSchema = z.enum(["file-text", "image", "web"]);
+
+/**
+ * The two shapes an entity image may take: a rooted path the BFF serves (the platform's own
+ * logo route, a local asset) or Brandfetch's embed-only Logo API URL, which the accounts screens
+ * already hand the browser directly. Anything else is no image, never a placeholder path.
+ */
+const BRANDFETCH_LOGO_ORIGIN = "https://cdn.brandfetch.io/";
+
+export function isComposerEntityImagePath(value: string): boolean {
+  return value.startsWith("/") || value.startsWith(BRANDFETCH_LOGO_ORIGIN);
+}
+
+export function composerEntityImagePath(
+  value: string | null | undefined,
+): string | undefined {
+  return value && isComposerEntityImagePath(value) ? value : undefined;
+}
+
 export const ProjectEntitySchema = z.object({
+  // A contact's account, so the picker can nest it under that account's row.
+  accountId: z.string().min(1).optional(),
   accountName: z.string().optional(),
+  // Absent means the legacy account/contact catalog served by the backend.
+  category: ProjectEntityCategorySchema.optional(),
+  icon: ProjectEntityIconSchema.optional(),
   id: z.string().min(1),
-  imagePath: z.string().startsWith("/"),
+  imagePath: z.string().refine(isComposerEntityImagePath).optional(),
   label: z.string().min(1),
   secondaryLabel: z.string().min(1),
-  type: z.enum(["account", "contact"]),
+  type: ProjectEntityTypeSchema,
   version: z.number().int().positive().nullable().optional(),
 });
 
@@ -83,11 +124,16 @@ export const ProjectArtifactSizeSchema = z.object({
 
 export const ProjectArtifactSchema = z.object({
   accountId: z.string().min(1).optional(),
-  accountLogoPath: z.string().startsWith("/").optional(),
+  // A platform path or Brandfetch's Logo API URL — the same rule the composer's
+  // entity images follow (`isComposerEntityImagePath`).
+  accountLogoPath: z.string().refine(isComposerEntityImagePath).optional(),
   accountName: z.string().min(1).optional(),
   canvasPagePaths: z.array(z.string().startsWith("/")).optional(),
   collateralType: GalleryCollateralTypeSchema.optional(),
   createdAt: z.string().datetime().optional(),
+  // The design document behind a design artifact, and its current version — what a
+  // composer tag of this artifact sends. Absent on table/presentation cards.
+  documentId: z.string().min(1).optional(),
   editedLabel: z.string().min(1),
   id: z.string().min(1),
   // Design artifacts now carry a versioned BFF thumbnail URL, so this is
@@ -105,6 +151,7 @@ export const ProjectArtifactSchema = z.object({
   tableContent: ProjectTableContentSchema.optional(),
   type: z.enum(["table", "website", "canvas", "presentation"]),
   updatedAt: z.string().datetime().optional(),
+  version: z.number().int().positive().optional(),
   viewerTitle: z.string().min(1).optional(),
   websiteContent: ProjectWebsiteContentSchema.optional(),
 });
@@ -130,15 +177,6 @@ export const ProjectQuestionnaireSchema = z.object({
     question: z.string().min(1),
   }),
   theme: ProjectQuestionGroupSchema,
-  title: z.string().min(1),
-});
-
-export const ProjectPlanSchema = z.object({
-  audience: z.string().min(1),
-  sections: z.array(z.object({
-    lines: z.array(z.string().min(1)).min(1),
-    title: z.string().min(1),
-  })).min(1),
   title: z.string().min(1),
 });
 
@@ -169,11 +207,12 @@ export const ProjectBootstrapRequestSchema = z.object({
     filename: z.string().min(1).max(255),
     mediaType: z.string().min(1).max(255),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    uploadId: z.string().min(1).max(200),
   }).strict()).default([]),
   brandId: z.string().min(1).max(200),
   contextRefs: z.array(z.object({
     objectId: z.string().min(1).max(200),
-    objectType: z.enum(["account", "contact"]),
+    objectType: ProjectEntityTypeSchema,
     version: z.number().int().positive().nullable().default(null),
   }).strict()).default([]),
   message: ProjectBootstrapMessageSchema,
@@ -193,6 +232,9 @@ const ProjectHomeWireSchema = z.object({
       secondary_label: z.string().min(1),
       image_url: z.string().nullable(),
       version: z.number().int().positive().nullable().default(null),
+      // A contact's account: the id the picker nests it under, the name search shows.
+      account_id: z.string().min(1).nullable().default(null),
+      account_name: z.string().min(1).nullable().default(null),
     })),
     agent_profiles: z.array(z.object({
       id: z.string().min(1),
@@ -223,10 +265,10 @@ export const ProjectHomeResponseSchema = ProjectHomeWireSchema.transform(({ data
     defaultAgentProfileId: data.default_agent_profile_id,
     defaultBrandId: data.default_brand_id,
     entities: data.context_entities.map((entity) => ({
+      ...(entity.account_id ? { accountId: entity.account_id } : {}),
+      ...(entity.account_name ? { accountName: entity.account_name } : {}),
       id: entity.object_id,
-      imagePath: entity.image_url?.startsWith("/")
-        ? entity.image_url
-        : "/logos/clue.svg",
+      imagePath: composerEntityImagePath(entity.image_url),
       label: entity.label,
       secondaryLabel: entity.secondary_label,
       type: entity.object_type,
@@ -253,7 +295,8 @@ const ProjectBootstrapWireSchema = z.object({
     }),
     thread: z.object({
       id: z.string().min(1),
-      title: z.string().min(1),
+      // Born untitled; the conversation namer titles it after the first completed turn.
+      title: z.string().min(1).nullable(),
       href: z.string().startsWith("/projects/"),
       status: z.literal("running"),
       pinned: z.boolean(),
@@ -304,10 +347,14 @@ const ProjectWorkspaceWireSchema = z.object({
   data: z.object({
     id: z.string().min(1),
     title: z.string().min(1),
+    description: z.string().default(""),
     brand_id: z.string().min(1),
     product_id: z.string().min(1).nullable(),
     status: z.enum(["draft", "active", "paused", "archived"]),
+    pinned: z.boolean().default(false),
     created_at: z.string().min(1),
+    updated_at: z.string().min(1).nullable().optional(),
+    archived_at: z.string().min(1).nullable().optional(),
     context_entities: ProjectHomeWireSchema.shape.data.shape.context_entities,
     agent_profiles: ProjectHomeWireSchema.shape.data.shape.agent_profiles,
     default_agent_profile_id: z.string().min(1).nullable(),
@@ -329,22 +376,27 @@ const ProjectWorkspaceWireSchema = z.object({
  * artifact read surface can supply real records.
  */
 export const ProjectWorkspaceSchema = z.object({
+  archivedAt: z.string().min(1).nullable().optional(),
   artifacts: z.tuple([]),
   brandId: z.string().min(1),
   composerCapabilities: ProjectComposerCapabilitiesSchema,
   createdAt: z.string().min(1),
   defaultAgentProfileId: z.string().min(1).nullable(),
+  description: z.string().default(""),
   entities: z.array(ProjectEntitySchema),
   id: z.string().min(1),
   models: z.array(ProjectModelOptionSchema),
+  pinned: z.boolean().default(false),
   productId: z.string().min(1).nullable(),
   status: z.enum(["draft", "active", "paused", "archived"]),
   title: z.string().min(1),
+  updatedAt: z.string().min(1).nullable().optional(),
 }).strict();
 
 export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transform(
   ({ data }) =>
     ProjectWorkspaceSchema.parse({
+      archivedAt: data.archived_at ?? null,
       artifacts: [],
       brandId: data.brand_id,
       composerCapabilities: {
@@ -355,11 +407,12 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
       },
       createdAt: data.created_at,
       defaultAgentProfileId: data.default_agent_profile_id,
+      description: data.description,
       entities: data.context_entities.map((entity) => ({
         id: entity.object_id,
-        imagePath: entity.image_url?.startsWith("/")
-          ? entity.image_url
-          : "/logos/clue.svg",
+        ...(entity.account_id ? { accountId: entity.account_id } : {}),
+        ...(entity.account_name ? { accountName: entity.account_name } : {}),
+        imagePath: composerEntityImagePath(entity.image_url),
         label: entity.label,
         secondaryLabel: entity.secondary_label,
         type: entity.object_type,
@@ -372,9 +425,11 @@ export const ProjectWorkspaceResponseSchema = ProjectWorkspaceWireSchema.transfo
         label: profile.label,
         shortLabel: profile.short_label,
       })),
+      pinned: data.pinned,
       productId: data.product_id,
       status: data.status,
       title: data.title,
+      updatedAt: data.updated_at ?? null,
     }),
 );
 export const GalleryLayoutSchema = z.enum(["grid", "list"]);
@@ -407,7 +462,6 @@ export type GalleryCollateralType = z.infer<typeof GalleryCollateralTypeSchema>;
 export type GallerySizeCategory = z.infer<typeof GallerySizeCategorySchema>;
 export type ProjectArtifactSize = z.infer<typeof ProjectArtifactSizeSchema>;
 export type ProjectQuestionnaire = z.infer<typeof ProjectQuestionnaireSchema>;
-export type ProjectPlan = z.infer<typeof ProjectPlanSchema>;
 export type ProjectQuestionGroup = z.infer<typeof ProjectQuestionGroupSchema>;
 export type ProjectHome = z.infer<typeof ProjectHomeSchema>;
 export type ProjectBootstrapRequest = z.infer<

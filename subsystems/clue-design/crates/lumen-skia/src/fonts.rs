@@ -317,8 +317,7 @@ impl FontManager {
     }
 
     /// Run `f` with this manager's thread-local Skia `FontCollection`. The
-    /// collection is backed exclusively by the loaded bytes: no default font
-    /// manager, font fallback disabled.
+    /// collection is backed exclusively by the loaded bytes, never system fonts.
     pub fn with_collection<R>(&self, f: impl FnOnce(&mut FontCollection) -> R) -> R {
         COLLECTIONS.with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -394,30 +393,26 @@ impl FontManager {
         let mut collection = FontCollection::new();
         let provider_mgr: FontMgr = provider.into();
         collection.set_asset_font_manager(Some(provider_mgr.clone()));
-        // Per-glyph fallback, kept DETERMINISTIC: the fallback font manager is
-        // the SAME byte-backed provider (never the system FontMgr), and the
-        // default fallback family is our loaded default. So a codepoint the
-        // resolved family lacks — the "/", "×", em-dash gaps a subsetted brand
-        // webfont exhibits — shapes from another loaded face (bundled Inter)
-        // instead of rendering .notdef tofu. Resolution of a *whole* family is
-        // still pre-decided by `resolve_family` before the shaper runs, so this
-        // only ever supplies missing GLYPHS, never a different family, and only
-        // from bytes this workspace embeds — the cross-runtime parity contract
-        // holds.
+        // Keep fallback confined to loaded bytes. TypefaceFontProvider has no
+        // character-match implementation, so enabling fallback alone cannot
+        // supply missing glyphs: build_paragraph uses fallback_families below.
         collection.set_default_font_manager(Some(provider_mgr), Some(self.default_family.as_str()));
         collection.enable_font_fallback();
         collection
     }
 
-    /// The characters in `content` that the resolved primary face for
-    /// `requested` (at `weight`) cannot supply — they map to `.notdef` in that
-    /// face — but which another loaded face *does* supply, so per-glyph
-    /// fallback substitutes for them (LUMS0103). Deterministic: it consults
-    /// only the loaded byte-backed faces through the same collection the shaper
-    /// uses. Whitespace and control characters are ignored (never tofu-worthy).
-    /// Order follows first appearance; duplicates are collapsed. A character no
-    /// loaded face covers is genuine tofu, not a substitution, and is excluded.
-    pub fn substituted_chars(
+    /// Explicit shaping chain shared with CanvasKit: primary, then the loaded
+    /// default. Other loaded brand families are not implicit fallback choices.
+    pub(crate) fn fallback_families<'a>(&'a self, primary: &'a str) -> Vec<&'a str> {
+        let mut families = vec![primary];
+        if primary != self.default_family {
+            families.push(self.default_family.as_str());
+        }
+        families
+    }
+
+    /// Unique, non-whitespace/control characters missing from the primary face.
+    pub(crate) fn missing_chars(
         &self,
         requested: &str,
         weight: i32,
@@ -454,17 +449,23 @@ impl FontManager {
                 candidates.push(ch);
             }
         }
+        candidates
+    }
+
+    /// Primary-face gaps covered by another loaded face, for SVG embedding.
+    /// This is byte coverage, not proof of successful paragraph substitution;
+    /// shaping diagnostics must also check the paragraph's unresolved glyphs.
+    pub fn substituted_chars(
+        &self,
+        requested: &str,
+        weight: i32,
+        italic: bool,
+        content: &str,
+    ) -> Vec<char> {
+        let candidates = self.missing_chars(requested, weight, italic, content);
         if candidates.is_empty() {
             return Vec::new();
         }
-
-        // A real substitution only when some OTHER loaded face supplies the
-        // glyph — a char no loaded face covers is genuine tofu, not a
-        // substitution, and is excluded. Parse the loaded faces directly (the
-        // same byte-introspection `build_collection` uses) rather than the
-        // paragraph collection's fallback API, keeping this deterministic and
-        // within loaded bytes only. Only reached when the primary already
-        // lacks a glyph (rare), so the hot fully-covered path never parses.
         let parser = FontMgr::new();
         let faces: Vec<Typeface> = self
             .faces
@@ -481,9 +482,8 @@ impl FontManager {
             .collect()
     }
 
-    /// The loaded faces in registration order — the deterministic scan
-    /// order per-glyph fallback uses when the default family cannot supply
-    /// a character. For the SVG font embedder (same crate) only.
+    /// The loaded faces in registration order for SVG supplier coverage.
+    /// Native shaping has the narrower explicit primary/default family chain.
     pub(crate) fn loaded_faces(&self) -> &[LoadedFace] {
         &self.faces
     }

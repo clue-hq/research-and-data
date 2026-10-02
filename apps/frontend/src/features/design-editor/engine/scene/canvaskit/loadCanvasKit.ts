@@ -197,6 +197,27 @@ export function hasItalicFace(family: string): boolean {
   return (familyFaces.get(resolved) ?? []).some((face) => face.italic);
 }
 
+const REGULAR_REQUEST = 400;
+const BOLD_REQUEST = 700;
+
+/**
+ * Plan 1 item B (2026-09-04): whether asking this family for Bold (700) selects a
+ * DIFFERENT registered face than Regular (400) does. Neither renderer synthesises
+ * bold, so when the answer is no, the Bold toggle would write a weight nobody can
+ * paint — the toolbar disables it and says why. Same Inter fallback as
+ * `hasItalicFace`: an unregistered family renders in Inter, so Inter's faces answer.
+ */
+export function boldChangesFace(family: string): boolean {
+  const resolved = familyFaces.has(family) ? family : INTER_FAMILY;
+  const faces = familyFaces.get(resolved) ?? [];
+  if (faces.length === 0) {
+    return false;
+  }
+  const regular = selectFace(faces, REGULAR_REQUEST, false);
+  const bold = selectFace(faces, BOLD_REQUEST, false);
+  return regular !== null && bold !== null && regular.alias !== bold.alias;
+}
+
 /**
  * The `fontFamilies` chain a paragraph/text style should request for a
  * (family, weight, italic) triple — the canvas twin of the server's

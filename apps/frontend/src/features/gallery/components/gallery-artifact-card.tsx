@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useState } from "react";
 import { ProjectIcon, type ProjectIconName } from "@/features/projects/components/project-icon";
+import { documentKindLabel } from "@/features/projects/model/project-documents";
 import type { GalleryArtifact } from "../model/project-gallery";
 import styles from "./project-gallery.module.css";
 
@@ -42,6 +43,7 @@ function ArtifactPreviewImage({
 }
 
 function typeIcon(artifact: GalleryArtifact): ProjectIconName {
+  if (artifact.document) return "file-text";
   if (artifact.collateralType === "microsite") return "web";
   if (artifact.collateralType === "account-list") return "target-accounts";
   if (artifact.collateralType === "report" || artifact.collateralType === "presentation") {
@@ -73,6 +75,7 @@ export function GalleryArtifactCard({
       aria-label={`Open ${accessibleDetails}`}
       className={styles.artifactCard}
       data-size={artifact.size?.category}
+      data-document={artifact.document ? true : undefined}
       onClick={() => onOpen(artifact)}
       title={accessibleDetails}
       type="button"
@@ -82,7 +85,9 @@ export function GalleryArtifactCard({
             than the norm — a real design document has one) renders its preview
             frame empty rather than showing placeholder artwork; a thumbnail
             that fails to load falls back to that same empty frame. */}
-        {artifact.imagePath ? (
+        {artifact.document ? (
+          <span className={styles.documentPreview}><ProjectIcon name="file-text" size={28} /><span>{artifact.document.kind === "project-plan" ? "Plan" : artifact.document.kind === "icp-definition" ? "Ideal customer profile" : "Personas"}</span></span>
+        ) : artifact.imagePath ? (
           <ArtifactPreviewImage
             key={artifact.imagePath}
             loading={preload ? "eager" : "lazy"}
@@ -101,7 +106,7 @@ export function GalleryArtifactCard({
         </span>
         {artifact.account?.logoPath ? (
           <span className={styles.accountBadge} title={artifact.account.name}>
-            <Image alt="" height={15} src={artifact.account.logoPath} width={15} />
+            <Image alt="" height={15} src={artifact.account.logoPath} unoptimized width={15} />
           </span>
         ) : null}
       </span>
@@ -122,7 +127,9 @@ export function GalleryArtifactListRow({
     <button className={styles.listRow} onClick={() => onOpen(artifact)} type="button">
       <span className={styles.listNameCell}>
         <span className={styles.listThumbnail}>
-          {artifact.imagePath ? (
+          {artifact.document ? (
+          <span className={styles.documentPreview}><ProjectIcon name="file-text" size={28} /><span>{artifact.document.kind === "project-plan" ? "Plan" : artifact.document.kind === "icp-definition" ? "Ideal customer profile" : "Personas"}</span></span>
+        ) : artifact.imagePath ? (
             <ArtifactPreviewImage
               key={artifact.imagePath}
               loading={preload ? "eager" : "lazy"}
@@ -133,12 +140,12 @@ export function GalleryArtifactListRow({
         </span>
         <span>
           <strong>{artifact.title}</strong>
-          <small>{artifact.originThreadId}</small>
+          <small>{artifact.document ? documentKindLabel(artifact.document.kind) : artifact.originThreadId}</small>
         </span>
       </span>
       <span className={styles.listAccountCell}>
         {artifact.account?.logoPath ? (
-          <Image alt="" height={16} src={artifact.account.logoPath} width={16} />
+          <Image alt="" height={16} src={artifact.account.logoPath} unoptimized width={16} />
         ) : null}
         {artifact.account?.name}
       </span>

@@ -366,10 +366,25 @@ def _render_asset_index(rows: list[JsonObject], omitted: int) -> str:
 def pinned_knowledge_paths(config: Any) -> tuple[str, ...]:
     """The configured pin list, or :data:`DEFAULT_PINNED_KNOWLEDGE`."""
     raw = getattr(config, "fast_loop_pinned_knowledge", None)
+    descriptor = _materialized_scene_view(config)
+    if descriptor and not raw:
+        return tuple(descriptor["pinned_knowledge"])
     if not raw:
         return DEFAULT_PINNED_KNOWLEDGE
     entries = tuple(part.strip() for part in str(raw).split(",") if part.strip())
     return entries or DEFAULT_PINNED_KNOWLEDGE
+
+
+def _materialized_scene_view(config: Any) -> dict | None:
+    """Inspect delivered view identity; a web turn can carry the scene flag too."""
+    workspace = getattr(config, "workspace_root", None)
+    if workspace is None:
+        return None
+    path = Path(workspace) / ".deepagent/knowledge-view.json"
+    if not path.is_file():
+        return None
+    descriptor = json.loads(path.read_text(encoding="utf-8"))
+    return descriptor if descriptor.get("view") == "scene" else None
 
 
 def _knowledge_root() -> Path:
@@ -388,9 +403,15 @@ def build_pinned_knowledge(config: Any) -> list[tuple[str, str]]:
     override must not take a design turn down, and the author still has the
     read-only knowledge tree at ``/knowledge_docs/`` for anything not pinned.
     """
-    root = _knowledge_root()
+    scene_view = _materialized_scene_view(config)
+    root = Path(config.workspace_root) / "knowledge_docs" if scene_view else _knowledge_root()
     pinned: list[tuple[str, str]] = []
     for relative in pinned_knowledge_paths(config):
+        if scene_view and (
+            Path(relative).is_absolute() or ".." in Path(relative).parts
+            or relative not in scene_view["knowledge"]
+        ):
+            raise RuntimeError(f"Pin is outside the selected scene view: {relative}")
         source = root / relative
         try:
             text = source.read_text(encoding="utf-8")
@@ -515,7 +536,17 @@ def render_pregenerated_assets_text(
 
 def build_frame_payload(tools: Any) -> str:
     """The whole §5.1 block, appended to the flag-on author system prompt."""
-    sections: list[str] = [_HEADER]
+    scene_candidate = getattr(tools.config, "scene_skill_bundle", "legacy") == "candidate"
+    sections: list[str] = [
+        "COMPOSED FRAME PAYLOAD — the brand card, authored type context, initial "
+        "scene, placeable asset index and selected mechanics below are already "
+        "resolved for this turn. Reuse them instead of hunting for duplicates. "
+        "The validated direction is creative-direction.json in the run workspace. "
+        "Read other relevant skills and source_assets.json when they answer a "
+        "specific unresolved choice; the inline payload is not the full source "
+        "catalog or a limit on later discovery. Inspect current state after mutations."
+        if scene_candidate else _HEADER
+    ]
 
     card = tools.brand_card
     if card:
@@ -549,8 +580,18 @@ def build_frame_payload(tools: Any) -> str:
 
     page_id = next(iter((tools.scene or {}).get("pages") or {}), None)
     width, height = tools._page_dimensions(page_id)
-    ramp = resolve_type_ramp(card, width=width, height=height)
-    sections.append("## TYPE RAMP — resolved for this canvas\n\n" + _render_type_ramp(ramp))
+    if scene_candidate:
+        sections.append(
+            "## TYPE MEASUREMENT\n\n"
+            "The brand card above carries authored type families, weights and sizes. "
+            "Those sizes are source context, not canvas-derived legibility floors. "
+            "Choose hierarchy from the inspected reference and actual copy; measure "
+            "line breaks and visible readability at the intended placement size. "
+            "Use knowledge/scene/components.md and knowledge/scene/placement.md."
+        )
+    else:
+        ramp = resolve_type_ramp(card, width=width, height=height)
+        sections.append("## TYPE RAMP — resolved for this canvas\n\n" + _render_type_ramp(ramp))
 
     digest = build_scene_digest(tools)
     sections.append(

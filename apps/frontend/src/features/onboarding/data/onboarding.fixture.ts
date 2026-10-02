@@ -45,26 +45,34 @@ export const onboardingFixture: OnboardingFlow = {
     finalizingDetail: "Setting up company brand kit...",
     items: [
       {
-        id: "company-products",
-        label: "Looking up company, & products",
-        detail: "Positioning, category, and differentiated value",
+        id: "company",
+        label: "Understanding your company",
+        detail: "Positioning, market and competitors",
         status: "complete",
+      },
+      {
+        id: "products",
+        label: "Your product lineup",
+        detail: "Every offering, from your own pages",
+        status: "running",
+      },
+      {
+        id: "proof",
+        label: "Customer proof",
+        detail: "Reviews, case studies and named customers",
+        status: "queued",
+      },
+      {
+        id: "audience",
+        label: "ICPs and personas",
+        detail: "Who you sell to, and who decides",
+        status: "queued",
       },
       {
         id: "brand-kit",
         label: "Creating brand kit",
         detail: "Colors, typography, tone & voice",
         status: "running",
-      },
-      {
-        id: "competitors",
-        label: "Researching competitors",
-        status: "queued",
-      },
-      {
-        id: "buyers",
-        label: "Researching likely buyers",
-        status: "queued",
       },
     ],
   },

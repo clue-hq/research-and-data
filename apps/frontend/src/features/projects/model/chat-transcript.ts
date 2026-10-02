@@ -95,16 +95,26 @@ export interface TranscriptState {
   /** Non-fatal frames this build could not read, for a visible diagnostic. */
   warnings: string[];
   /**
-   * The thread's design leg, as the lifecycle frames have described it so far.
+   * The thread's design leg, as the lifecycle frames have described it so far —
+   * or, until one arrives, as the durable thread read seeded it
+   * (`seedDesignLeg`).
    *
-   * Stream-derived, and honestly so: if a leg was opened further back than the
-   * replayed backlog reaches, this stays closed and the surface simply says
-   * less. It never says something the frames did not.
+   * It used to be stream-derived only, and that was honest about the transcript
+   * (a leg opened further back than the replayed backlog simply produced no
+   * system line) but NOT about the leg: `open: false` was returned both for "the
+   * leg is closed" and for "no frame has mentioned one", and the editor lock
+   * cannot tell those apart safely. `known` is the difference.
    */
   designLeg: DesignLegState;
 }
 
 export interface DesignLegState {
+  /**
+   * False until either a `leg.*` frame or the durable seed has spoken. A
+   * consumer that can act dangerously on the answer must check this first:
+   * `open: false, known: false` means "nobody has said", not "there is no leg".
+   */
+  known: boolean;
   /** True between `leg.opened`/`leg.reopened` and the matching `leg.closed`. */
   open: boolean;
   legId: string | null;
@@ -112,15 +122,57 @@ export interface DesignLegState {
    * The turn that opened (or reopened) the leg — a head-of-abm turn, not a
    * design turn. Excluded from the "generating" state so the delegating turn's
    * own tail does not claim a website is being generated.
+   *
+   * `null` on a SEEDED leg: the durable read carries no such turn, and inventing
+   * one would put a "generating" badge on a turn that delegated nothing.
    */
   openedByTurnId: string | null;
 }
 
-const CLOSED_LEG: DesignLegState = {
+/** Nobody has said anything about a leg yet. */
+const UNOBSERVED_LEG: DesignLegState = {
+  known: false,
   open: false,
   legId: null,
   openedByTurnId: null,
 };
+
+const CLOSED_LEG: DesignLegState = {
+  known: true,
+  open: false,
+  legId: null,
+  openedByTurnId: null,
+};
+
+/**
+ * Seed the leg from the DURABLE thread read (`ChatThread.designLeg`).
+ *
+ * The frame backlog replays only the last few turns, so a leg opened before it
+ * is invisible to the stream — and "invisible" read as "closed" is what
+ * unlocked the scene editor mid-run (task 4 fix round 1, finding I1). The
+ * thread wire's speaker projection is the platform's own answer, and this is
+ * where it lands.
+ *
+ * It is a FLOOR, never an override: it applies only while nothing has been
+ * observed, so a leg the stream watched close stays closed and a frame that
+ * arrives after a seed replaces it. Returns the same state when it changes
+ * nothing, so a repeated load costs no render.
+ */
+export function seedDesignLeg(
+  state: TranscriptState,
+  seed: { legId: string | null; open: boolean },
+): TranscriptState {
+  if (state.designLeg.known) return state;
+  return {
+    ...state,
+    designLeg: {
+      known: true,
+      open: seed.open,
+      legId: seed.legId,
+      openedByTurnId: null,
+    },
+  };
+}
 
 export function emptyTranscriptState(): TranscriptState {
   return {
@@ -129,7 +181,7 @@ export function emptyTranscriptState(): TranscriptState {
     seenEventIds: new Set(),
     cursor: 0,
     warnings: [],
-    designLeg: CLOSED_LEG,
+    designLeg: UNOBSERVED_LEG,
   };
 }
 
@@ -323,11 +375,13 @@ export function applyChatStreamEvent(
             ? {
                 // The leg is still open; only the frames that OPEN it name the
                 // delegating turn, so an awaiting frame must not overwrite it.
+                known: true,
                 open: true,
                 legId: event.legId ?? state.designLeg.legId,
                 openedByTurnId: state.designLeg.openedByTurnId,
               }
             : {
+                known: true,
                 open: true,
                 legId: event.legId,
                 openedByTurnId: event.turnId,
@@ -338,6 +392,7 @@ export function applyChatStreamEvent(
       const next = TURN_STATES[event.type];
       if (next) turn.state = next;
       if (event.failureCode !== null) turn.failureCode = event.failureCode;
+      if (event.type === "turn.cancelled") turn.failureCode = null;
       if (event.type === "turn.cancelled" || event.type === "turn.failed") {
         markStreamingTextFailed(turn, event.reason ?? event.failureCode);
       }
@@ -556,9 +611,13 @@ export function composeTranscript({
     const durableTurn = turns.find((turn) => turn.turnId === turnId);
     const pending = optimistic.find((item) => item.turnId === turnId);
 
+    const derived = durableTurn?.derivation != null;
     const durableUser = durable.find((message) => message.role === "user");
     const acceptedUser = durableTurn?.submissionMessage;
-    if (durableUser) {
+    if (derived) {
+      // A derived turn (a design-leg redelivery or first turn) carries the user's own bytes,
+      // which the transcript already shows under the turn they were typed on.
+    } else if (durableUser) {
       composed.push(userMessage(durableUser, false));
     } else if (acceptedUser) {
       composed.push(userMessage(acceptedUser, false));
@@ -588,10 +647,14 @@ export function composeTranscript({
       // The turns read is the cold-reload authority. A stream projection may
       // lead it during a live transition, but the absence of replay frames must
       // never erase a durable cancelled/failed/queued assistant receipt.
-      const state =
-        projected?.state ??
-        (durableTurn ? transcriptStateOf(durableTurn.state) : undefined) ??
-        (durableAssistant ? "completed" : "queued");
+      const durableState = durableTurn ? transcriptStateOf(durableTurn.state) : undefined;
+      // Older Stop attempts emitted a generic failure before their cancellation,
+      // and SSE closed at that first terminal. The persisted cancellation is the
+      // later truth even when replay can only reconstruct the earlier failure.
+      // A stale running read must still yield to a live terminal stream frame.
+      const state = durableState === "cancelled"
+        ? durableState
+        : projected?.state ?? durableState ?? (durableAssistant ? "completed" : "queued");
       composed.push({
         id: durableAssistant?.id ?? projected?.messageId ?? `pending:${turnId}`,
         turnId,
@@ -603,7 +666,7 @@ export function composeTranscript({
         refs: durableAssistant?.refs ?? [],
         live: state === "queued" || state === "running",
         state,
-        failureCode: projected?.failureCode ?? null,
+        failureCode: state === "cancelled" ? null : projected?.failureCode ?? null,
         optimistic: false,
         legNotices: orderedLegNotices(projected),
         generatingDesign:
@@ -677,6 +740,36 @@ function livingParts(turn: TranscriptTurn | undefined): ChatPart[] {
     }
     return part;
   });
+}
+
+/**
+ * Fold one durable message page into what is already loaded (Slice C C5).
+ *
+ * The messages read serves the *newest* page first and pages backward on a
+ * before-cursor, so the controller holds a growing window that can receive a
+ * page at either end: an older page prepends during scrollback, and a reload's
+ * fresh newest page lands after older history is already loaded. One rule
+ * covers both: union by message id (the incoming durable row wins), ordered by
+ * the thread's own gap-free `sequence`. Deduplication against optimistic and
+ * streamed stand-ins is not re-implemented here — `composeTranscript`'s
+ * identity guards (turn id, durable-wins) are the merge seam, and they receive
+ * the merged list.
+ *
+ * Reference-preserving: a message already loaded and absent from the incoming
+ * page survives by identity, so React re-renders only what actually changed.
+ */
+export function mergeThreadMessages(
+  loaded: readonly ChatMessage[],
+  page: readonly ChatMessage[],
+): ChatMessage[] {
+  if (page.length === 0) return [...loaded];
+  const incoming = new Map(page.map((message) => [message.id, message]));
+  const merged = loaded.map((message) => incoming.get(message.id) ?? message);
+  const known = new Set(loaded.map((message) => message.id));
+  for (const message of page) {
+    if (!known.has(message.id)) merged.push(message);
+  }
+  return merged.sort((left, right) => left.sequence - right.sequence);
 }
 
 /** Every gate id the transcript currently shows a card for. */

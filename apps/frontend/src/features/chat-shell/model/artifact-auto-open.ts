@@ -2,24 +2,10 @@ import type { ProjectArtifact } from "@/features/projects/model/project-workspac
 import type { ChatShellOpenArtifact } from "./chat-shell";
 
 /**
- * Founder ruling F2 **(b)**, 2026-08-19 — superseding option (a) for v1: when a
- * design leg births its web document, the artifact tab opens **by itself** next
- * to the Gallery, so the user watches the page land instead of hunting for the
- * card. This module is the whole decision; the chat surface only transports it.
- *
- * The crux is what the rule may key off. The `leg.opened` frame carries only
- * `{leg_id}` — it names no document — so the frame cannot say *what* to open.
- * What it does do (slice 3) is refresh the gallery feed, and the born document
- * arrives in the page's `artifacts` props on its own. So the trigger is the
- * feed, not the frame: **an artifact id that was not in the feed when this page
- * mounted**.
- *
- * That distinction is load-bearing, not stylistic. On a cold load the replayed
- * backlog re-fires `leg.opened` and one redundant `router.refresh()`; keying off
- * the frame would re-open the tab on every single page load of a design thread.
- * Keying off "new since mount" is correct on both cold load and live birth, and
- * it handles `leg.reopened` for free — a reopen births no document, so the feed
- * it refreshes contains nothing this page has not already seen.
+ * Agent-created or updated design files open beside Gallery (founder, 2026-09-14).
+ * The feed identifies the document; a leg frame alone cannot. Seed IDs and update
+ * timestamps at mount, then open each new file/version once. Cold backlog replay
+ * and identical feed refreshes must not reopen a tab the user closed.
  */
 
 /**
@@ -29,6 +15,7 @@ import type { ChatShellOpenArtifact } from "./chat-shell";
  */
 export interface AutoOpenFeedArtifact {
   createdAt?: string;
+  updatedAt?: string;
   id: string;
   originThreadId: string;
   title: string;
@@ -36,57 +23,57 @@ export interface AutoOpenFeedArtifact {
 }
 
 /**
- * The artifact tab to open by itself, or `null` — the resting answer.
+ * Every new/changed file from this chat, oldest-born first.
  *
- * Three conditions, all required: there is an active thread; the artifact was
- * **not** in the feed at mount (`knownArtifactIds`, which the caller also grows
- * with everything it has since seen, so one document opens at most once and a
- * tab the user closed stays closed); and the artifact belongs to the active
- * thread (`originThreadId`) — a sibling thread's document must never steal this
- * pane.
- *
- * When more than one document is new at once the pick is deterministic: the
- * newest `createdAt` wins; a card with no usable timestamp ranks oldest (it
- * still opens when it is the only candidate); an exact tie is broken by feed
- * order, first wins — the feed is served newest-updated-first, so the first row
- * of a tie is the most recently touched one. Only one opens: auto-opening a
- * fistful of tabs is not "watch the page land".
- *
- * The kind derivation is the gallery's own (`website` → web, else ad) rather
- * than a second copy of the rule.
+ * One chat message can birth MANY documents on one design leg (one per target
+ * account), so this returns the whole set rather than a single winner: each
+ * born document gets its own tab. The order is the order they were born, and
+ * documents born in the same instant keep the order the feed served them (the
+ * sort is stable) — so the tab strip reads like the leg's own history.
  */
-export function artifactToAutoOpen({
+export function artifactsToAutoOpen({
   activeThreadId,
   artifacts,
   knownArtifactIds,
+  knownUpdates,
+  openArtifactIds,
 }: {
   activeThreadId: string | null;
   artifacts: readonly AutoOpenFeedArtifact[];
   knownArtifactIds: ReadonlySet<string>;
-}): ChatShellOpenArtifact | null {
-  if (activeThreadId === null) return null;
-  let winner: AutoOpenFeedArtifact | null = null;
-  let winnerBornAt = Number.NEGATIVE_INFINITY;
+  knownUpdates?: ReadonlyMap<string, string | undefined>;
+  /**
+   * The tabs already open. An UPDATED document that is already open needs no
+   * opening — its canvas reloads on its own — and opening it again is not
+   * harmless: the shell's `open-artifact` resets edit mode and the inspector
+   * selection, so a person's own edit (which bumps the document's version and
+   * therefore re-lists it as "updated") threw them out of edit mode on every
+   * change (2026-09-20). A NEW document is never in this set, so births open
+   * exactly as before.
+   */
+  openArtifactIds?: ReadonlySet<string>;
+}): ChatShellOpenArtifact[] {
+  if (activeThreadId === null) return [];
+  const opening: AutoOpenFeedArtifact[] = [];
   for (const artifact of artifacts) {
-    if (knownArtifactIds.has(artifact.id)) continue;
+    if (knownArtifactIds.has(artifact.id) && (!artifact.updatedAt || !knownUpdates?.has(artifact.id) || knownUpdates.get(artifact.id) === artifact.updatedAt)) continue;
     if (artifact.originThreadId !== activeThreadId) continue;
-    const bornAt = bornAtOf(artifact);
-    // Strictly greater: a tie leaves the earlier feed row in place.
-    if (winner !== null && bornAt <= winnerBornAt) continue;
-    winner = artifact;
-    winnerBornAt = bornAt;
+    if (openArtifactIds?.has(artifact.id)) continue;
+    opening.push(artifact);
   }
-  if (winner === null) return null;
-  return {
-    id: winner.id,
-    kind: winner.type === "website" ? "web" : "ad",
-    title: winner.title,
-  };
+  return opening
+    .sort((left, right) => updatedAtOf(left) - updatedAtOf(right))
+    .map((artifact) => ({
+      id: artifact.id,
+      kind: artifact.type === "website" ? ("web" as const) : ("ad" as const),
+      title: artifact.title,
+    }));
 }
 
-/** `createdAt` as a comparable instant; absent or unparseable ranks oldest. */
-function bornAtOf(artifact: AutoOpenFeedArtifact): number {
-  if (artifact.createdAt === undefined) return Number.NEGATIVE_INFINITY;
-  const parsed = Date.parse(artifact.createdAt);
+/** Latest update, falling back to creation time; absent/unparseable ranks oldest. */
+function updatedAtOf(artifact: AutoOpenFeedArtifact): number {
+  const timestamp = artifact.updatedAt ?? artifact.createdAt;
+  if (!timestamp) return Number.NEGATIVE_INFINITY;
+  const parsed = Date.parse(timestamp);
   return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
 }

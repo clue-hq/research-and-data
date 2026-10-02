@@ -139,6 +139,20 @@
   color: var(--text-primary);
 }
 
+/* F5: the page switcher, beside the width chips. Only rendered for a document
+   with more than one page, so a single-page site's top bar is unchanged. */
+.brand-app .web-page-select {
+  font: inherit;
+  font-size: var(--text-body-sm);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  cursor: pointer;
+  max-width: 220px;
+}
+
 /* --- workspace: canvas + chat two-pane ---------------------------------- */
 .web-workspace {
   flex: 1;

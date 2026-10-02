@@ -76,6 +76,28 @@ def _parse_string_list(value: Any, format_error: str) -> Any:
     return tuple(item.strip() for item in raw.split(",") if item.strip())
 
 
+# The checked-in activation record for the integration/pilot product path
+# (``docs/FI-comprehensive-account-contact-research-contract.md`` §9). Applied as *defaults* by
+# :meth:`Settings._apply_product_path_overlay` when ``CLUE_PRODUCT_PATH=integration_pilot``; an
+# explicitly provided value (env var or kwarg) always wins over an entry here.
+INTEGRATION_PILOT_OVERLAY: dict[str, bool] = {
+    "exa_websets_lifecycle_enabled": True,
+    "exa_websets_acquisition_enabled": True,
+    "exa_account_deep_acquisition_enabled": True,
+    "sumble_account_gap_enrichment_enabled": True,
+    "sumble_committee_acquisition_enabled": True,
+    "exa_contact_deep_acquisition_enabled": True,
+    "entity_research_runtime_enabled": True,
+    "chat_enabled": True,
+    "frontend_read_enabled": True,
+    "verification_enabled": False,
+    "budget_controls_enabled": False,
+    # Slice F adds: contact_channel_enrichment_enabled, frontend_contact_email_lookup_enabled.
+    # Slice G adds: c7_research_view_read_enabled, c7_snapshot_compose_enabled,
+    #               c7_production_handoff_enabled.
+}
+
+
 class Settings(BaseSettings):
     """Deploy-time settings read from the environment (not secrets)."""
 
@@ -100,6 +122,11 @@ class Settings(BaseSettings):
     # deployment decision, so it gets the same env seam ``synthesis_model`` already has rather than
     # a rewritten constant.
     judge_model: str | None = None
+    # The gateway's per-call timeout ceiling (``GatewayConfig.timeout_s``). It bounds every gateway
+    # request AND is the ceiling the agent model builder enforces on a profile's ``model.timeout_s``
+    # (a profile above it is refused at build time — how the first onboarding-synthesis turn
+    # failed, 2026-09-08). Founder ruling 2026-09-08: 60s. Env: ``CLUE_GATEWAY_TIMEOUT_S``.
+    gateway_timeout_s: float = Field(default=30.0, gt=0)
 
     # Temporary master switch for M9 runtime verification. False keeps the canonical VERIFICATION
     # phase in the durable state-machine sequence, but skips deterministic corroboration and
@@ -128,6 +155,13 @@ class Settings(BaseSettings):
     # Env: ``CLUE_BUDGET_CONTROLS_ENABLED``.
     budget_controls_enabled: bool = True
 
+    # The integration/pilot product path (docs/FI-comprehensive-account-contact-research-contract.md
+    # §9). "integration_pilot" applies INTEGRATION_PILOT_OVERLAY as *defaults*: any flag explicitly
+    # provided (env var or kwarg) still wins. This is the checked-in activation record; individual
+    # deployments keep the conservative "default" path.
+    # Env: ``CLUE_PRODUCT_PATH``.
+    product_path: Literal["default", "integration_pilot"] = "default"
+
     # --- production metrics export -------------------------------------------------------
     # Tests/dev may retain the deterministic in-memory sink. A production-auth deployment must
     # choose OTLP explicitly and provide the collector's HTTP /v1/metrics endpoint; otherwise a
@@ -136,9 +170,51 @@ class Settings(BaseSettings):
     metrics_otlp_endpoint: str | None = None
     metrics_export_interval_ms: int = Field(default=10_000, ge=100)
 
+    # --- telemetry roots (lane 3 slice 2; all off by default) ------------------------------
+    # OTLP/HTTP traces endpoint (slice 3 points it at Langfuse). Empty → spans are created
+    # in-process and exported nowhere, today's behaviour. Env: ``CLUE_OTEL_TRACES_ENDPOINT``.
+    otel_traces_endpoint: str | None = None
+    # Instrument the FastAPI app (server spans) and httpx (client spans) at the roots. On by
+    # default because without an endpoint the spans cost nothing and go nowhere.
+    # Env: ``CLUE_OTEL_INSTRUMENT_FASTAPI`` / ``CLUE_OTEL_INSTRUMENT_HTTPX``.
+    otel_instrument_fastapi: bool = True
+    otel_instrument_httpx: bool = True
+    # Sentry (R6): installed only when enabled AND ``CLUE_SENTRY_DSN`` (a secret) is set; the
+    # roots refuse ``enabled`` with no DSN. ``sentry_environment`` names the deployment posture
+    # on every event; ``release`` is the code version (a git sha), empty → unset.
+    # Env: ``CLUE_SENTRY_ENABLED`` / ``CLUE_SENTRY_ENVIRONMENT`` / ``CLUE_RELEASE``.
+    sentry_enabled: bool = False
+    sentry_environment: str = "lane-san-salvador"
+    release: str | None = None
+
+    # --- Langfuse (lane 3 slice 3, R4: cloud, EU) -------------------------------------------
+    # On by default (founder, 2026-09-15): installed whenever both keys (secrets) are set; with
+    # the keys blank the roots log ``langfuse.not_installed`` and run without it, so a process
+    # without a project (CI, a fresh worktree) still boots. Set it false to silence a configured
+    # project. The client attaches to the process's tracer provider, so the agent tree, the HTTP
+    # spans and the worker's task span are one trace. ``langfuse_environment`` names the
+    # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only).
+    # Env: ``CLUE_LANGFUSE_ENABLED`` / ``CLUE_LANGFUSE_HOST`` / ``CLUE_LANGFUSE_ENVIRONMENT``.
+    langfuse_enabled: bool = True
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_environment: str = "lane-san-salvador"
+
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.
     fleet_poll_interval_s: float = 1.0
+    # How many tasks ONE worker process drives at once (founder ruling 2026-09-10). The worker
+    # runs this many independent drain loops over the same queue; each claims on its own (the
+    # claim is already ``FOR UPDATE SKIP LOCKED``, so two loops never get the same row) and each
+    # task keeps its own lease and heartbeat. Several worker processes still run against the same
+    # queue — this knob is per process. 1 is the single loop the fleet shipped with.
+    # Env: ``CLUE_FLEET_WORKER_CONCURRENCY``.
+    fleet_worker_concurrency: int = Field(default=1, ge=1)
+    # Which task kinds THIS worker process claims (first deployment, 2026-10-01): a comma-separated
+    # list of ``FleetTaskKind`` values, blank = every kind (the behaviour before this setting). It
+    # is how one VM runs separate pools — chat (``agent_turn``), design (``design_job``) and batch
+    # — so a long research job can never hold the slot a chat turn needs.
+    # Env: ``CLUE_FLEET_WORKER_KINDS``.
+    fleet_worker_kinds: str = ""
     # Per-run driver-lease TTL: a killed driver's run is re-drivable after this long. Must be
     # comfortably larger than the heartbeat interval. Env: ``CLUE_FLEET_LEASE_TTL_S``.
     fleet_lease_ttl_s: float = 30.0
@@ -264,6 +340,238 @@ class Settings(BaseSettings):
     # not authorize a provider. Exa/Sumble/channel switches above remain independent hard gates.
     # Env: ``CLUE_ENTITY_RESEARCH_RUNTIME_ENABLED``.
     entity_research_runtime_enabled: bool = False
+
+    # --- ARV2 research lane (R1) ------------------------------------------------------------
+    # Selects the ARV2 fleet handler and launcher at composition (A7). Shipped dark through R1;
+    # **default True since the R2 exit gate passed on 2026-09-08** (founder instruction
+    # 2026-09-07: flip once R2 is over). A worker missing a credential still composes no handler.
+    # Env: ``CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED``.
+    # New launches use the discovery-first v4 Deep Agent (founder ruling 2026-09-24).
+    # Historical jobs still resolve their pinned catalog, including legacy v1 rows.
+    arv2_research_catalog_version: Literal["v1", "v2", "v3", "v4"] = "v4"
+    arv2_account_research_enabled: bool = True
+    # Durable quality continuation/outbox recovery; no effect when no quality generation exists.
+    arv2_quality_reconcile_interval_s: float = Field(default=10.0, gt=0)
+    # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
+    # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
+    arv2_ai_ark_min_gap_s: float = 10.5
+    # OpenRouter model id for the structuring pass (prose -> claims against the field catalog).
+    # Env: ``CLUE_ARV2_STRUCTURING_MODEL``.
+    arv2_structuring_model: str = "openai/gpt-5-mini"
+    # OpenRouter model id for the cheap first pass over short media (Appendix A law 11's
+    # two-model recipe). Env: ``CLUE_ARV2_MEDIA_SHORT_MODEL``.
+    arv2_media_short_model: str = "google/gemini-3.5-flash-lite"
+    # **Native Gemini** model id — the one ARV2 call that bypasses OpenRouter, because OpenRouter
+    # serves neither this transcription model nor a file upload. It reads
+    # ``Secrets.gemini_api_key`` directly. Env: ``CLUE_ARV2_MEDIA_TRANSCRIBE_MODEL``.
+    arv2_media_video_model: str = "gemini-3.5-flash-lite"
+    arv2_media_transcribe_model: str = "gemini-3.5-transcribe"
+    # Active recording ASR is Deepgram Nova-3; Gemini fields above serve legacy callers.
+    # en matches the trial; auto detects dominant language; multi permits code-switching.
+    arv2_deepgram_language: str = "en"
+    # PAYG prerecorded list rates; computed USD is an estimate, not invoice metering.
+    arv2_deepgram_usd_per_minute: Decimal = Field(
+        default=Decimal("0.0043"), ge=0, allow_inf_nan=False
+    )
+    arv2_deepgram_multi_usd_per_minute: Decimal = Field(
+        default=Decimal("0.0052"), ge=0, allow_inf_nan=False
+    )
+    # OpenRouter embeddings model id (text embeddings only — Appendix A law 11).
+    # Env: ``CLUE_ARV2_EMBEDDING_MODEL``.
+    arv2_embedding_model: str = "google/gemini-embedding-2"
+    # Hard ceiling on media seconds sent to a model in one research run. Enforced (money truth,
+    # master plan §2 item 3). Env: ``CLUE_ARV2_MEDIA_SECONDS_CEILING``.
+    arv2_media_seconds_ceiling: int = 9000
+    # Above this duration a media item is not eligible for the cheap short-model pass.
+    # Env: ``CLUE_ARV2_MEDIA_SHORT_MAX_SECONDS``.
+    arv2_media_short_max_seconds: int = 600
+    # Where the file raw sink and the JSONL ledger write in development and tests (production
+    # routes raw bodies to the ``artifact`` table and the ledger to ``provider_call_ledger``),
+    # and — in every environment — where research downloads podcast audio, deleted once
+    # transcribed. Relative paths resolve against the working directory; the backend image sets
+    # an absolute, writable one. Env: ``CLUE_ARV2_RAW_ROOT``.
+    arv2_raw_root: str = ".artifacts/arv2"
+
+    # --- ARV2 R2 account agent (master plan §9 R2; founder stop-policy ruling 2026-09-08) ------
+    # Model rounds per research job (account and person), 350 by founder ruling 2026-09-27. The
+    # agent is told to wrap up three rounds before the end and finalizes ``blocked`` with what it
+    # saved; it is a safety net, never a budget. The upper bound is the runtime's own ceiling
+    # (``clue_agents.execution.MAX_RUNTIME_MODEL_ROUNDS``), so a value the runtime would refuse
+    # is refused here, at start-up. Env: ``CLUE_ARV2_ACCOUNT_MAX_MODEL_ROUNDS``.
+    arv2_account_max_model_rounds: int = Field(default=350, ge=1, le=500)
+    # Tool calls the model may issue in ONE round; the excess receive a recoverable refusal.
+    # Env: ``CLUE_ARV2_ACCOUNT_MAX_TOOL_CALLS_PER_ROUND``.
+    arv2_account_max_tool_calls_per_round: int = Field(default=50, ge=1)
+    # Wall clock per research job, seconds; 0 means no timeout (founder ruling 2026-09-27).
+    # ``agent_long_turn_alert_s`` still warns when a job runs long.
+    # Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
+    arv2_account_max_runtime_s: int = Field(default=0, ge=0)
+    # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
+    arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
+    # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per
+    # client). Env: ``CLUE_ARV2_ACCOUNT_PROVIDER_CONCURRENCY``.
+    arv2_account_provider_concurrency: int = Field(default=4, ge=1)
+    # Largest podcast enclosure the media tool downloads, MiB.
+    # Env: ``CLUE_ARV2_ACCOUNT_MEDIA_MAX_ENCLOSURE_MB``.
+    arv2_account_media_max_enclosure_mb: int = Field(default=200, ge=1)
+
+    # --- Deep Agent turn limits (founder ruling 2026-09-27) -----------------------------------
+    # Operator settings, not profile content: changing one never mints a profile version.
+    # Model rounds per Head-of-ABM chat turn. As with research, the agent is told to wrap up
+    # three rounds before the end and then finalizes ``awaiting_input`` ("reply continue").
+    # Env: ``CLUE_HEAD_OF_ABM_MAX_MODEL_ROUNDS``.
+    head_of_abm_max_model_rounds: int = Field(default=350, ge=1, le=500)
+    # Conversation compaction for every governed agent (founder ruling 2026-09-29). The model's
+    # context window comes from OpenRouter's catalogue unless overridden; compaction starts at
+    # TRIGGER_FRACTION of it and keeps the newest KEEP_FRACTION whole. With no known window the
+    # fixed pair applies. Env: ``CLUE_AGENT_CONTEXT_WINDOW_TOKENS``,
+    # ``CLUE_AGENT_COMPACT_TRIGGER_FRACTION``, ``CLUE_AGENT_COMPACT_KEEP_FRACTION``,
+    # ``CLUE_AGENT_COMPACT_TRIGGER_TOKENS``, ``CLUE_AGENT_COMPACT_KEEP_MESSAGES``.
+    agent_context_window_tokens: int | None = Field(default=None, ge=1)
+    agent_compact_trigger_fraction: float = Field(default=0.90, gt=0, lt=1)
+    agent_compact_keep_fraction: float = Field(default=0.10, gt=0, lt=1)
+    agent_compact_trigger_tokens: int = Field(default=170_000, ge=1)
+    agent_compact_keep_messages: int = Field(default=6, ge=1)
+    # Head-of-ABM chat turns resume the thread's last completed turn (append-only prompt).
+    # Env: ``CLUE_HEAD_OF_ABM_CONTINUATION_ENABLED``.
+    head_of_abm_continuation_enabled: bool = True
+    # Wall clock per Head-of-ABM chat turn, seconds; 0 means no timeout. When set, the agent is
+    # told to wrap up about three minutes before it. Env: ``CLUE_HEAD_OF_ABM_TURN_TIMEOUT_S``.
+    head_of_abm_turn_timeout_s: float = Field(default=0.0, ge=0)
+    # A Head-of-ABM turn or research job still running after this many seconds logs a warning,
+    # flags its Langfuse trace and sends one Sentry warning (when Sentry is installed); 0 turns
+    # the alert off. It never stops the turn. Env: ``CLUE_AGENT_LONG_TURN_ALERT_S``.
+    agent_long_turn_alert_s: float = Field(default=3600.0, ge=0)
+
+    # --- ARV2 R3 person agent (master plan §9 R3) ---------------------------------------------
+    # Media items ONE person job may read (podcast episodes, conference talks, YouTube
+    # appearances). A person is a much smaller media surface than an account, and each item costs
+    # a transcription; 0 disables media for person jobs entirely.
+    # Env: ``CLUE_ARV2_PERSON_MEDIA_MAX_ITEMS``.
+    arv2_person_media_max_items: int = Field(default=3, ge=0)
+
+    # --- ARV2 R4 verified account discovery (master plan §9 R4; spec §2–§4) -------------------
+    # Off by default: a worker composes the discovery handler only when this is on AND
+    # ``CLUE_EXA_API_KEY`` is configured. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
+    arv2_discovery_enabled: bool = False
+    #: Exa Answer model for gate verification (``exa``, ``exa-pro``, ``exa-fast``).
+    arv2_discovery_answer_model: str = "exa"
+    #: Seconds between Websets polls while a discovery run is in flight (spec §3).
+    arv2_discovery_poll_interval_s: float = Field(default=15.0, gt=0)
+    #: Wall clock for one discovery SEARCH, seconds — a run makes its first search and then up to
+    #: ``arv2_discovery_max_topups`` more, one after another.
+    arv2_discovery_wall_s: int = Field(default=1800, ge=60)
+    #: Websets bill 10 credits per all-green result; this is the plan's dollar rate per credit.
+    arv2_discovery_websets_usd_per_credit: Decimal = Field(default=Decimal("0.00449"), ge=0)
+    #: How many Exa Answer calls one discovery run may have in flight while verifying (spec
+    #: 2026-09-12 §2). One semaphore serves both levels: candidates verify in a pool, and one
+    #: candidate's gate questions are asked together. ``1`` reproduces the serial order the R4
+    #: DB proof scripts by position. Env: ``CLUE_ARV2_DISCOVERY_VERIFY_CONCURRENCY``.
+    arv2_discovery_verify_concurrency: int = Field(default=4, ge=1)
+    #: How many top-up searches a discovery run may make after its first, each with the SAME brief
+    #: the Head of ABM wrote, while it has shown fewer companies than asked (spec 2026-09-30 §4).
+    #: ``3`` means at most four searches. Env: ``CLUE_ARV2_DISCOVERY_MAX_TOPUPS``.
+    arv2_discovery_max_topups: int = Field(default=3, ge=0, le=15)
+    #: Brandfetch **Logo API** client id — public by design (it rides in every ``<img src>``),
+    #: so a setting, not a secret. Empty (the default) means no Brandfetch fallback: an account
+    #: with no LinkedIn mark shows the frontend's placeholder. Founder ruling 2026-09-11: the
+    #: Logo API only, never the Brand API. Env: ``CLUE_BRANDFETCH_CLIENT_ID``.
+    brandfetch_client_id: str = ""
+
+    # --- ARV2 onboarding lane (Track O; ARV2-ONBOARDING-PLAN.md §10) --------------------------
+    # Routes ``POST /onboarding`` to the new fleet driver (O3). ON by default since 2026-09-12
+    # (spec 2026-09-12-onboarding-v2-default): the Welcome flow's setting-up screen runs this
+    # lane. Env: ``CLUE_ONBOARDING_V2_ENABLED``.
+    onboarding_v2_enabled: bool = True
+    # Exa Agent effort for the company-overview run (ARV2-COMPANY-OVERVIEW-CONTRACT.md §1).
+    # Env: ``CLUE_ONBOARDING_OVERVIEW_EFFORT``.
+    onboarding_overview_effort: str = "high"
+    # Exa Agent effort for the customer-reviews run (plan §4.3).
+    # Env: ``CLUE_ONBOARDING_REVIEWS_EFFORT``.
+    onboarding_reviews_effort: str = "medium"
+    # Exa Agent effort for each per-product research run (plan §4.4; ruling O-D2 — raise to
+    # ``high`` per deployment if the product files read thin).
+    # Env: ``CLUE_ONBOARDING_PRODUCT_EFFORT``.
+    onboarding_product_effort: str = "medium"
+    # When the reviews run happens (ruling O-D3: ``fast``). Env: ``CLUE_ONBOARDING_REVIEWS_PHASE``.
+    onboarding_reviews_phase: Literal["fast", "background"] = "fast"
+    # Cap on concurrent background per-product Exa Agent runs.
+    # Env: ``CLUE_ONBOARDING_MAX_PARALLEL_RUNS``.
+    onboarding_max_parallel_runs: int = Field(default=6, ge=1)
+    # The governed ``exa_search_evidence@1`` tool the synthesis agent may call once per persona
+    # role (ruling O-D6: on). Env: ``CLUE_ONBOARDING_PERSONA_EVIDENCE_ENABLED``.
+    onboarding_persona_evidence_enabled: bool = True
+    # Catalog identity ladder (O3 follow-up, founder ruling 2026-09-08): after the fingerprint and
+    # exact-spelling stages, one batched model call per run decides "same offering or new" for the
+    # leftovers, with each entry's official page as evidence; automatic merge only at high
+    # confidence. Env: ``CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED``.
+    onboarding_catalog_reconcile_enabled: bool = True
+    # OpenRouter model for that call (validated 2026-09-08 on gpt-5-mini and grok-4.6; the small
+    # one is faster and a fraction of a cent). Env: ``CLUE_ONBOARDING_RECONCILE_MODEL``.
+    onboarding_reconcile_model: str = "openai/gpt-5-mini"
+
+    # --- ARV2 lenient write gate and annotation checks (D1; master plan §2 items 2 and 6, §4) ---
+    # The claim write gate stores instead of refusing: an unregistered key becomes a proposed field,
+    # a schema miss is stored with ``schema_valid=false``, a missing source URL is stored with
+    # ``source_missing``. False restores strict refusals. Env: ``CLUE_CLAIM_WRITE_LENIENT``.
+    claim_write_lenient: bool = True
+    # When "on", quoted spans are checked against cited claims and the verdict is recorded as a
+    # marker; never a blocker. Env: ``CLUE_EVIDENCE_VERBATIM_CHECK``.
+    evidence_verbatim_check: Literal["on", "off"] = "off"
+    # When true, rows with no quote or no URL are purged by the compliance pass; when false they
+    # are only marked ``unevidenced``. It cannot reach a provider-API record or the hooks claim:
+    # those carry neither quote nor URL by design and rule 6 exempts them either way.
+    # Env: ``CLUE_UNEVIDENCED_ROW_PURGE_ENABLED``.
+    unevidenced_row_purge_enabled: bool = False
+    # When "on", the interview records whether a typed value is entailed by the user's statement
+    # as a marker; the value is never required to be a substring. Env:
+    # ``CLUE_INTERVIEW_ENTAILMENT_CHECK``.
+    interview_entailment_check: Literal["on", "off"] = "off"
+    # The one default-on check: redact references to minors from a value and mark special-category
+    # facts outreach_safe=false. It never drops a claim. Env: ``CLUE_SENSITIVITY_FLOOR_ENABLED``.
+    sensitivity_floor_enabled: bool = True
+
+    # --- ARV2 display layer (D2; master plan §7) -----------------------------------------------
+    # OpenRouter model id for focused account reconciliation and the legacy section writer. Grok
+    # 4.6 since 2026-09-29 (founder request; Muse Spark 1.3 from 2026-09-28, Luna before). Env:
+    # ``CLUE_ARV2_DISPLAY_MODEL``.
+    arv2_display_model: str = "x-ai/grok-4.6"
+    # Per-section HTTP timeout. A page's sections run in parallel, so this bounds the first open.
+    # Env: ``CLUE_ARV2_DISPLAY_TIMEOUT_S``.
+    arv2_display_timeout_s: float = 240.0
+    # How many sections of one page are in flight at once (one ProviderCaller each).
+    # Env: ``CLUE_ARV2_DISPLAY_MAX_PARALLEL``.
+    arv2_display_max_parallel: int = 30
+    # ``client.what_we_sell`` in the display prompt, until Track O's company-overview artifact
+    # supplies it (D2 decision 7). Env: ``CLUE_ARV2_DISPLAY_CLIENT_PITCH``.
+    arv2_display_client_pitch: str = (
+        "AI-native ABM: account and committee research, personalised content, "
+        "brand-aligned artifacts, scaled per account"
+    )
+    # D3 decision 10: an accounts screen whose display block is missing generates it during the
+    # request (the first open waits). Off makes every read a pure projection — a page with no
+    # stored block serves its honest empty state instead of calling a model.
+    # Env: ``CLUE_ARV2_DISPLAY_GENERATE_ON_READ``.
+    arv2_display_generate_on_read: bool = True
+    # The fit-band cuts over the 0–1 ``account.scoring.fit`` score (D3 ruling S3: thresholds are
+    # config, not code — a client tunes what "High" means without a deploy). ``>= high`` is High,
+    # ``>= medium`` is Medium, below is Low; an unscored account has no band at all.
+    # Env: ``CLUE_ARV2_FIT_HIGH_THRESHOLD``.
+    arv2_fit_high_threshold: float = 0.70
+    # Env: ``CLUE_ARV2_FIT_MEDIUM_THRESHOLD``.
+    arv2_fit_medium_threshold: float = 0.40
+
+    # --- Conversation naming (spec 2026-09-18-conversation-naming-design §4.8) ---------------
+    # One cheap call names the chat (and, on the Home path, the project) once the first agent
+    # reply exists. Off keeps the placeholders. Env: ``CLUE_CONVERSATION_NAMING_ENABLED``.
+    conversation_naming_enabled: bool = True
+    # OpenRouter model id for the naming call. Env: ``CLUE_CONVERSATION_NAMING_MODEL``.
+    conversation_naming_model: str = "openai/gpt-5.6-luna"
+    # The naming call's HTTP timeout. The turn never waits this long — the engine waits
+    # ``NAMING_GRACE_S`` and lets a slower call finish detached (§4.1).
+    # Env: ``CLUE_CONVERSATION_NAMING_TIMEOUT_S``.
+    conversation_naming_timeout_s: float = 60.0
+
     # Part II D5 Round B production cutover for design agent turns (scene + website). This switch
     # owns only whether the detached fleet worker registers the ``design_job`` handler; the design
     # API always offers the work, and its own embedded worker (LUMEN_EMBEDDED_FLEET_WORKER) is
@@ -271,6 +579,10 @@ class Settings(BaseSettings):
     # app installed cannot execute a design turn — registering the handler there would claim work
     # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
     design_runtime_enabled: bool = False
+    # Staged until output-history erasure closure and explicit preference writes are validated.
+    # Gates only production scene preference selection/resolution, not ordinary platform memory.
+    # Env: ``CLUE_DESIGN_PREFERENCE_CONTEXT_ENABLED``.
+    design_preference_context_enabled: bool = False
     # Part II D5 Round C: how often the stranded-design-work reaper sweeps, in seconds. Gated by
     # ``design_runtime_enabled`` (a deployment that does not drain design work must not re-offer
     # it); ``<= 0`` disables the sweep entirely, the ``storage_orphan_sweep_interval_s``
@@ -286,6 +598,16 @@ class Settings(BaseSettings):
     # unconfigured and does nothing, which is a posture, not an error. Env:
     # ``CLUE_DESIGN_API_BASE_URL``.
     design_api_base_url: str | None = None
+    # Onboarding also offers ONE ad-assets harvest for the company's own LinkedIn ads, beside the
+    # website ingestion and through the same trigger (auto ad ingestion, 2026-09-28): the most
+    # recent static ads, up to ``brand_ad_assets_auto_max_creatives``, reading at most
+    # ``brand_ad_assets_auto_max_pages`` ad-library pages (~25 ads and ~1 vendor credit each).
+    # The design API must also run the ad lane (``LUMEN_BRAND_AD_ASSETS``); when it does not, the
+    # route 404s and the offer is a logged, fail-soft skip. Env:
+    # ``CLUE_BRAND_AD_ASSETS_AUTO_ONBOARD`` / ``_AUTO_MAX_CREATIVES`` / ``_AUTO_MAX_PAGES``.
+    brand_ad_assets_auto_onboard: bool = True
+    brand_ad_assets_auto_max_creatives: int = Field(default=50, ge=1)
+    brand_ad_assets_auto_max_pages: int = Field(default=8, ge=1)
     # R9 requires a positive worst-case monetary reservation even when a subscription provider
     # reports credits while ``sumble_cents_per_credit`` is intentionally zero. This admission
     # floor is released after settlement and is never recorded as spend. It is policy, not an
@@ -294,7 +616,7 @@ class Settings(BaseSettings):
     # One process-wide provider permit policy is shared by account/contact jobs. Exact per-run and
     # per-job concurrency limits are still enforced separately by the R2/R9 substrate.
     # Env: ``CLUE_ENTITY_RESEARCH_PROVIDER_CONCURRENCY_LIMIT``.
-    entity_research_provider_concurrency_limit: int = Field(default=8, ge=1, le=1024)
+    entity_research_provider_concurrency_limit: int = Field(default=30, ge=1, le=1024)
     # R5 structured Sumble actions retain the S1 per-request credit cap in addition to monetary
     # admission. The compiler still raises when a selected field set has a larger documented
     # bounded maximum. Env: ``CLUE_ENTITY_RESEARCH_SUMBLE_PROVIDER_CREDIT_CAP``.
@@ -364,13 +686,14 @@ class Settings(BaseSettings):
     frontend_cors_allow_origins: Annotated[tuple[str, ...], NoDecode] = ()
     # Authenticated, user-initiated professional-email acquisition for the Contacts table. This is
     # intentionally distinct from ``contact_channel_enrichment_enabled``: that switch owns C5's
-    # stricter independently-validated delivery workflow, while this one exposes provider-observed
-    # Exa + Sumble results without promoting ``contact_entity.verified_email``. Missing provider
-    # credentials remain an honest per-provider unavailable outcome. Budget controls do not stop
-    # this explicit user action; realized provider units/cost are still recorded durably.
+    # stricter independently-validated delivery workflow, while this one exposes the AI Ark export
+    # (founder ruling 2026-09-29: on by default, the same AI Ark path the research agents use)
+    # without promoting ``contact_entity.verified_email``. A missing AI Ark key remains an honest
+    # unavailable outcome. Budget controls do not stop this explicit user action; realized provider
+    # units/cost are still recorded durably.
     # Env: ``CLUE_FRONTEND_CONTACT_EMAIL_LOOKUP_ENABLED`` /
     # ``CLUE_FRONTEND_CONTACT_EMAIL_POLL_AFTER_S``.
-    frontend_contact_email_lookup_enabled: bool = False
+    frontend_contact_email_lookup_enabled: bool = True
     frontend_contact_email_poll_after_s: int = Field(default=5, ge=1, le=300)
 
     # --- FI Lane D production chat surface --------------------------------------------------
@@ -417,6 +740,32 @@ class Settings(BaseSettings):
     # (§3.5). This is the cancellation latency bound; ``0`` disables stop observation entirely.
     # Env: ``CLUE_CHAT_TURN_STOP_POLL_INTERVAL_S``.
     chat_turn_stop_poll_interval_s: float = 0.25
+    # Chat attachments (spec 2026-09-18). Per-message ceilings the upload route and the
+    # submission route both enforce, and the number of prior-turn images re-sent to the model
+    # as image parts on every later turn of a thread (``0`` = no cap). Env:
+    # ``CLUE_CHAT_ATTACHMENT_MAX_FILES`` / ``_MAX_TOTAL_BYTES`` / ``_IMAGE_MAX_BYTES`` /
+    # ``_TEXT_MAX_BYTES`` / ``_HISTORY_IMAGES_MAX``.
+    chat_attachment_max_files: int = Field(default=10, ge=1)
+    chat_attachment_max_total_bytes: int = Field(default=150 * 1024 * 1024, ge=1)
+    chat_attachment_image_max_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
+    chat_attachment_text_max_bytes: int = Field(default=5 * 1024 * 1024, ge=1)
+    chat_attachment_history_images_max: int = Field(default=20, ge=0)
+    # Document attachments (spec 2026-09-19 §3.1): the per-file cap of the document family
+    # (PDF, DOCX, PPTX, XLSX, CSV, JSON). Env: ``CLUE_CHAT_ATTACHMENT_DOCUMENT_MAX_BYTES``.
+    chat_attachment_document_max_bytes: int = Field(default=25 * 1024 * 1024, ge=1)
+    # The code sandbox (spec 2026-09-19 §3.4): on by default (founder, 2026-09-20) — one container
+    # per run with these bounds. The image must exist on the worker host (`make sandbox-image`);
+    # without it, or with the flag off, run_python refuses ``sandbox_unavailable`` and a binary
+    # attachment is unreadable to the agent. Env: ``CLUE_SANDBOX_ENABLED`` /
+    # ``_IMAGE`` / ``_TIMEOUT_S`` / ``_CPUS`` / ``_MEMORY_MB`` / ``_MAX_RUNS_PER_TURN`` /
+    # ``_MAX_OUTPUT_BYTES``.
+    sandbox_enabled: bool = True
+    sandbox_image: str = "clue-agent-sandbox:latest"
+    sandbox_timeout_s: float = Field(default=60.0, gt=0)
+    sandbox_cpus: float = Field(default=1.0, gt=0)
+    sandbox_memory_mb: int = Field(default=1024, ge=64)
+    sandbox_max_runs_per_turn: int = Field(default=10, ge=1)
+    sandbox_max_output_bytes: int = Field(default=1_048_576, ge=1024)
     # The explicit replay-retention policy of §3.3(7): how long a *terminal* turn's frames stay in
     # the outbox before the worker's sweep deletes them. Should be >= CLUE_SSE_REPLAY_HORIZON_S —
     # pruning inside the replay horizon promises a replay the table can no longer serve (still
@@ -485,11 +834,47 @@ class Settings(BaseSettings):
     auth_clerk_jwks_url: str | None = None
     auth_clerk_issuer: str | None = None
     auth_clerk_authorized_parties: Annotated[tuple[str, ...], NoDecode] = ()
+    # Public frontend origin used for settings invitation links. Env: CLUE_APP_ORIGIN.
+    app_origin: str = "http://localhost:3020"
     # FI-4 slice 1: gates POST /auth/v1/provision (self-serve workspace creation). Default-off
     # like every neighbouring write surface — an unconfigured deployment serves session reads
     # only; enabling requires an explicit operator decision because each valid provider session
     # can mint one workspace+brand. Env: ``CLUE_SELF_SERVE_PROVISIONING_ENABLED``.
-    self_serve_provisioning_enabled: bool = False
+    self_serve_provisioning_enabled: bool = True
+
+    # --- Public pages: hostnames and delivery (custom-domain publishing spec 2026-09-17 §9) ---
+    # The suffix every workspace's permanent system hostname ends in (`<label>.<suffix>`). The
+    # registry rows are written under it, so it must match the rows a database holds; the page
+    # origin and the backfill warn loudly when they do not. Dev stack: `pages.localhost`.
+    # Env: ``CLUE_PAGES_SYSTEM_SUFFIX``.
+    pages_system_suffix: str = "pages.cluehq.ai"
+    # Scheme and optional port for public page URLs the design API mints (og:image, publish `url`).
+    # Production: https and no port; dev stack: http + 8040. Env: ``CLUE_PAGES_PUBLIC_SCHEME`` /
+    # ``CLUE_PAGES_PUBLIC_PORT`` (empty string = unset).
+    pages_public_scheme: Literal["http", "https"] = "https"
+    pages_public_port: int | None = None
+    # Local development only: the page origin skips the edge-secret gate and reads the public
+    # hostname from the Host header. The origin refuses to start with this on while
+    # CLUE_PAGES_EDGE_SECRET is set, so the two can never both be live in a deployment.
+    # Env: ``CLUE_PAGES_TRUST_HOST_HEADER``.
+    pages_trust_host_header: bool = False
+    # The port `python -m clue_page_origin.main` listens on when Railway's PORT is absent.
+    # Env: ``CLUE_PAGES_ORIGIN_PORT``.
+    pages_origin_port: int = Field(default=8040, gt=0, lt=65536)
+    # The CNAME value a customer points their subdomain at (spec §3 item 4, §7.2). Normally the
+    # Cloudflare for SaaS fallback-origin record in our zone. Env: ``CLUE_PAGES_CNAME_TARGET``.
+    pages_cname_target: str = "pages.cluehq.ai"
+    # The Cloudflare zone that holds our DNS and the SaaS custom hostnames (spec §7.7). None = the
+    # custom-domain control plane is not configured (connect answers 503).
+    # Env: ``CLUE_CLOUDFLARE_ZONE_ID``.
+    cloudflare_zone_id: str | None = None
+
+    # The OLD Stage-0 recon (scrape binder, ``/stage0/setup``, the STAGE0_RECON fleet handler and
+    # the official-site crawl). Until 2026-09-12 it composed whenever provisioning was on, which
+    # meant "provisioning on" = "old lane on" (ledger A4). It now composes only behind this flag,
+    # default off, until section G of the ledger retires the code. Env:
+    # ``CLUE_LEGACY_STAGE0_RECON_ENABLED``.
+    legacy_stage0_recon_enabled: bool = False
 
     # --- Lane E E3 value-narrative synthesis ------------------------------------------------
     # One default-off gate over the on-completion positioning step (the M12.1 Positioner behind
@@ -640,6 +1025,16 @@ class Settings(BaseSettings):
     # and ignored, never honoured. Env: ``CLUE_DESIGN_RUN_EVENT_RETENTION_S``.
     design_run_event_retention_s: float = 2_592_000.0  # 30d
 
+    @field_validator("agent_context_window_tokens", mode="before")
+    @classmethod
+    def _blank_context_window_is_unknown(cls, value: Any) -> Any:
+        """``CLUE_AGENT_CONTEXT_WINDOW_TOKENS=`` (blank, the documented default) means "use the
+        model catalogue" — ``None`` — rather than an unparsable integer (env-parity rule)."""
+
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     @field_validator("stage0_crawl_max_depth", mode="before")
     @classmethod
     def _coerce_stage0_crawl_max_depth(cls, value: Any) -> Any:
@@ -655,6 +1050,25 @@ class Settings(BaseSettings):
         if isinstance(value, str) and value.strip().isdigit():
             return int(value.strip())
         return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_product_path_overlay(cls, data: Any) -> Any:
+        """Fill the §9 activation defaults for the integration product path.
+
+        ``mode="before"`` sees the merged source dict (env + kwargs), so ``setdefault`` never
+        overrides a value the deployment stated explicitly.
+        """
+
+        if isinstance(data, dict) and data.get("product_path") == "integration_pilot":
+            for field, value in INTEGRATION_PILOT_OVERLAY.items():
+                data.setdefault(field, value)
+        return data
+
+    @field_validator("pages_public_port", mode="before")
+    @classmethod
+    def _empty_port_is_unset(cls, value: object) -> object:
+        return None if isinstance(value, str) and value.strip() == "" else value
 
     @field_validator("agent_workspace_allowlist", mode="before")
     @classmethod

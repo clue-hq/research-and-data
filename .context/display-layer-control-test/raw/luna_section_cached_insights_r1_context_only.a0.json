@@ -1,0 +1,58 @@
+{
+ "id": "gen-1788504863-Hhn9H29yPZNHyUKTKnbB",
+ "object": "chat.completion",
+ "created": 1788504863,
+ "model": "openai/gpt-5.6-luna",
+ "provider": "OpenAI",
+ "system_fingerprint": null,
+ "service_tier": "default",
+ "choices": [
+  {
+   "index": 0,
+   "logprobs": null,
+   "finish_reason": "stop",
+   "native_finish_reason": "completed",
+   "message": {
+    "role": "assistant",
+    "content": "{\"sections\":[{\"key\":\"context_only\",\"empty\":false,\"items\":[{\"h2\":\"Cisco acquisition claim — refuted\",\"body\":[{\"text\":\"Status: refuted; the claim says Cisco made a strategic investment, not an acquisition.\",\"claimIds\":[\"zaf-135\",\"zaf-169\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-135\",\"zaf-169\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"Third-party claims about ARR, differentiation, and cash burn — unresolved\",\"body\":[{\"text\":\"Status: unresolved; third-party reporting cites roughly $20 million in annual recurring revenue, competitive struggles, and high cash burn.\",\"claimIds\":[\"zaf-138\",\"zaf-170\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-138\",\"zaf-170\"]}],\"contactRefs\":[],\"priority\":1},{\"h2\":\"Amex Ventures investment amount — unresolved\",\"body\":[{\"text\":\"Status: unresolved; the amount was reported only as an estimate of several million dollars.\",\"claimIds\":[\"zaf-139\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-139\"]}],\"contactRefs\":[],\"priority\":2},{\"h2\":\"Snir Havdala departure to NVIDIA — confirmed\",\"body\":[{\"text\":\"Status: confirmed; Snir Havdala joined NVIDIA, and Zafran stated that the transition was planned and coordinated over several months.\",\"claimIds\":[\"zaf-142\",\"zaf-171\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-142\",\"zaf-171\"]}],\"contactRefs\":[{\"name\":\"Snir Havdala\"}],\"priority\":1},{\"h2\":\"Sanaz Yashar’s former offensive cyber and personal background — confirmed\",\"body\":[{\"text\":\"Status: confirmed; the claim describes Sanaz Yashar as a former offensive cyber investigator and incident responder with experience at Mandiant, and references her background in biology, microbiology, and IDF service.\",\"claimIds\":[\"zaf-153\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-153\"]}],\"contactRefs\":[{\"name\":\"Sanaz Yashar\"}],\"priority\":2},{\"h2\":\"Nick Fisher’s cocktail-content hobby — confirmed\",\"body\":[{\"text\":\"Status: confirmed; Nick Fisher hosts Cocktail Chemistry videos as a side hobby, films in his kitchen, invests in liquor and equipment, and runs Patreon for support.\",\"claimIds\":[\"zaf-160\"]},{\"text\":\"Never mention.\",\"claimIds\":[\"zaf-160\"]}],\"contactRefs\":[{\"name\":\"Nick Fisher\"}],\"priority\":2}]}]}",
+    "refusal": null,
+    "reasoning": null,
+    "reasoning_details": [
+     {
+      "type": "reasoning.encrypted",
+      "data": "gAAAAABqmmshtuqYcH7e-j-UddtxLTywPHk-rAxzyW-vevf2hooQNxs2a8-_1cpuMZyDZpbe2yFtM4-MSZEA02oeQB-D9ozKPtsHG8F3s9pvHrUQi2J0ZIhSHZPo26BkSeOEFBt2gPVX7j43t0UAOU97bAza01gte5fGaWeBIbk9A4g9GXdUQ9LTncFMj7THe5OyvdYVgdsxNwDJ_jyCY9EfunEMJ9rXt9sTNBnEDvv-BUTf60N7UxIohfogJ9Ffn9_fHiewWwKvdxq77XPgKk2mRDdMrGAVemT7qjRazU-oI3un6OrH_SW3-4n4I2PLir28bmxFLnyRA6qBKVl4ZKfX3WjBboxymgZD8TBawe0vG8hoZQiJYe3uqqitXo1NWT9UOrwxRe9tT9WLKIsrzk42wdIkArOPAmMCCAQeVu9tkYgmrtOm7bxIc7i2MvbQ6-PGvlDfuWCkomHwbJ9fIj7urZ_exxhmnYhEAerRA5KclHg1IdoN_USlpuHyA6bRPFL9PoLInLyz_MFrSKl40hQbQLrTPjO4vd0aZ9KgyUEPTZYLJjjyHrBdTeKlBv05dG7easHvWGniKCcmRQmzLoDg41ELkB1Xq3t6m8-EScso_mBW80yZDF0TMPjCf9hKBdn3E2IdhNYPQjVD6M5BO6TPkzgAvb-JCgf7e_ApcP5NFYvPj2q9xlTHnNFu2npgTGiXmdfSCVTvfuYkKW-oaxFkAR5qYoT7HxJRoYjqg5Nw78hNiYtrWYiebiaAvE-7rmub4TGyLIIxsBEhDLqPR9BtPjljmIxzeVsTjCk7pIX-dfc685rjRt9TIIx0fJagofVdZvinohiZDQSiOSrMJbR5NoMnzusa_HAjqec3kSlraLTRnvxxIRLOqYdjsW67XG2TmIlSOLzUOqNtz7Puc4f93ZozeXc677Cqgwr5y6ZP2XKyEbBZ_k3xrK8GvU9TXTMoV07nU6eOF9xNTKR8dpIlNftL_8qZLDjWjWs7HG2ilz14e4BRqlUJMaTYts6V45lAbC8qQQpE089_ZODoj4P6ogv5OjlrAjokrNIav9fYdOjkaTPlKhy0lYjU6I2ZtOcC76yUUmloHgQMWPYcmzLKq8uRFAQ-ql7nxZg3JM9L9auSJiuXJJX76rNt0hUT_zZZ0GQ_srsEDdsqOaAE7R14RPqdjJ0KRsEk4jvT3hbcD3XWdse9NWq18cnv6I1VRE5I_WwAEeLhn4E0Mx0fdJFdQnnDbeX9kKIFxHu3YbqN3YT4IeWC-pAzTEd_nNse3rt9ckz2vbjWlXNIO9VIV7bjW9GxKJWAkNUFH6TXty4XDFH5tiDPkQz9i3DVdwc4BdOQCQjO7__btoLwegmS5bb7Brh91U48FPi2ZIn5J6L4n1ZcD281JynRYXULRFsbgCpJ4g3gLtnndycLo2OvPJ416tCmhHWqlLncP4DNEifXUlXIn9mZPvvlbEUoAguv_LYo4EbJwYpJurDpTQfiWp3Vd0EJU41NNJC2xjX4_P4k1UJSS9BNaSl72lufoY-3ChOieVcVgi-WAeBa_Yvj6ilg1RRbrn6sSMcbUz8veyiwuBuaosjgS-Q6XpzEequ6bNg582IgisS4hSziXa3CjOcnsY-LUiHFtUmtNfbYOZoBKZBoguzlr56j3DAxU8so5BeiyqhIA10ZtGQ80XgnBDdKR8imUZ0vmjfi8BfJifvuF_6zC4STwmnFQvXg7pNGw5fPVTXwrxa5Ag7QuQsBku9SvwWUG5JhJ_xfy49dmbI-v3i7FBS5loKvQpxVZUOk6wSlft7U_Jubnq8nb6TWWknf9SOMFwhV92BAk1-fWpvU4dDI9ZFTLc0HLpXLLgbETGf5rNyjxVyTELpNEctji8NlJ0y5yaMP-zbp1v8ZOmhYhpoOu8XDjoAo6Ku0BilnmqEJUWbwyZJVz6QKXNOQyPQmenT_xXDJaKyMD2Q9DPlQJySfsNFteb67rgrY4zi-gZ0t9MkZtRryEcHxfISJk33xaVxn3gF1uAJhY9kUDs3pPajUZu-6SPkGfOQtf_dVK4NyTqnFY7g1ZTln5B1hdDKwAGksU5i0Pr2KPf01sgxifYFrhhAYKNVWWeY_tmIJ3_Ea0HW2YuQBuLU3tTOboK0n9Qtz6RcwUGP-bTCu3qzJBtMnBHt2iKU4HSyRc8z6iRuvg3EsNtScSZlLO-xIG3avCeDAN3gWfff-8iPPIc5kPR2pU1VhFK82YB07ss61viked48jIZvW3qAhK6vaLBtTh0dH8BCteQ==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LjYtbHVuYS0yMDI2MDcwOXxvcGVuYWkifQ",
+      "format": "openai-responses-v1",
+      "id": "rs_016bf80766293064016a9a6b2001a487d08d7ea5c00a24a843",
+      "index": 0
+     }
+    ]
+   }
+  }
+ ],
+ "usage": {
+  "prompt_tokens": 25183,
+  "completion_tokens": 716,
+  "total_tokens": 25899,
+  "cost": 0,
+  "is_byok": true,
+  "prompt_tokens_details": {
+   "cached_tokens": 0,
+   "cache_write_tokens": 25180,
+   "audio_tokens": 0,
+   "video_tokens": 0
+  },
+  "cost_details": {
+   "upstream_inference_cost": 0.0071548,
+   "upstream_inference_prompt_cost": 0.0062956,
+   "upstream_inference_completions_cost": 0.0008592
+  },
+  "completion_tokens_details": {
+   "reasoning_tokens": 171,
+   "image_tokens": 0,
+   "audio_tokens": 0
+  }
+ },
+ "_http_status": 200,
+ "_elapsed_s": 5.51,
+ "_attempt": 0
+}

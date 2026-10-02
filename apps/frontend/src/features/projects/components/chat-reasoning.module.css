@@ -1,0 +1,70 @@
+.trace {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  color: var(--clue-ds-color-content-subtle);
+}
+
+.trace .trigger,
+.status {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--clue-ds-color-content-subtle);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.trace .trigger { cursor: pointer; }
+.trigger:hover { color: var(--clue-ds-color-content-neutral); }
+.chevron { flex: none; transition: transform 150ms ease; }
+.trigger[aria-expanded="true"] .chevron { transform: rotate(180deg); }
+
+.trace .content {
+  min-width: 0;
+  max-width: 100%;
+  margin-top: 12px;
+}
+
+.text {
+  min-width: 0;
+  max-width: 100%;
+  max-height: 256px;
+  margin-left: 2px;
+  border-left: 1px solid var(--clue-ds-color-border-neutral);
+  padding: 0 9px 0 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  color: var(--clue-ds-color-content-subtle);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.75;
+  /* Plain text, including backticks, fences and URLs. Never a Markdown parser. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.trigger:focus-visible,
+.text:focus-visible {
+  outline: 2px solid var(--clue-ds-color-border-neutral);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    background: none !important;
+    color: var(--clue-ds-color-content-subtle) !important;
+  }
+  .chevron,
+  .trace .content { animation: none !important; transition: none !important; }
+}

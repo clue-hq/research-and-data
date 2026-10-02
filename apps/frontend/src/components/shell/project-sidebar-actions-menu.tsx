@@ -26,7 +26,7 @@ export function ProjectSidebarActionsMenu({
     }] : []),
     ...(onEdit ? [{
       icon: "sidebar-edit-project",
-      label: "Edit project",
+      label: "Rename project",
       onSelect: onEdit,
     }] : []),
     {

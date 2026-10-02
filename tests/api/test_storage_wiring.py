@@ -191,16 +191,22 @@ def test_each_run_gets_a_fresh_sink() -> None:
 def test_orphan_sweep_runner_uses_the_given_storage(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: dict[str, object] = {}
 
+    async def _purge(conn: object, storage: object) -> None:
+        calls.update(purge_conn=conn, purge_storage=storage)
+
     async def _spy(conn: object, storage: object, *, grace: timedelta, now: object = None) -> tuple:
+        assert calls["purge_conn"] is conn
         calls.update(conn=conn, storage=storage, grace=grace)
         return ("public/deadbeef",)
 
     monkeypatch.setattr(storage_wiring, "sweep_orphan_blobs", _spy)
+    monkeypatch.setattr(storage_wiring, "purge_erased_artifacts", _purge)
     conn, storage = object(), FakeStorage()
     result = run_async(run_orphan_blob_sweep(conn, storage=storage))  # type: ignore[arg-type]
     assert result == ("public/deadbeef",)
     assert calls["conn"] is conn
     assert calls["storage"] is storage
+    assert calls["purge_storage"] is storage
     assert calls["grace"] == DEFAULT_ORPHAN_SWEEP_GRACE
 
 
@@ -210,12 +216,17 @@ def test_orphan_sweep_runner_defaults_to_the_composed_backend(
     sentinel = FakeStorage()
     seen: dict[str, object] = {}
 
+    async def _purge(conn: object, storage: object) -> None:
+        seen["purge_storage"] = storage
+
     async def _spy(conn: object, storage: object, *, grace: timedelta, now: object = None) -> tuple:
         seen["storage"] = storage
         return ()
 
     monkeypatch.setattr(storage_wiring, "build_storage_backend", lambda *a, **k: sentinel)
     monkeypatch.setattr(storage_wiring, "sweep_orphan_blobs", _spy)
+    monkeypatch.setattr(storage_wiring, "purge_erased_artifacts", _purge)
     run_async(run_orphan_blob_sweep(object()))  # type: ignore[arg-type]
     # storage=None → the runner composes the process backend via build_storage_backend.
     assert seen["storage"] is sentinel
+    assert seen["purge_storage"] is sentinel

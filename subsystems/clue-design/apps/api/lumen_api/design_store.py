@@ -59,13 +59,16 @@ tenant's* data, and every request-path bug of that shape is invisible until it i
 incident. ``default_workspace_id()`` survives only for DIRECT store constructions (scripts, the
 startup sweep, tests) that have no request to read a header from.
 
-One surface genuinely cannot send a header, and names its tenant in the URL instead:
+One surface genuinely could not send a header, and named its tenant in the URL instead:
 
 * **Public publish serving** — an anonymous visitor sends no headers at all. O6b (ratified:
-  option (a)) puts the workspace in the PATH (``/w/{workspace_id}/p/{slug}``), served through
-  main.py's ``public_repository`` dependency, which builds this store with
-  ``ensure_workspace=False`` (an anonymous GET must never write) and therefore 404s on an
-  unknown tenant through the fail-closed workspace-scoped reads.
+  option (a)) put the workspace in the PATH (``/w/{workspace_id}/p/{slug}``), served through
+  main.py's ``public_repository`` dependency. **Custom-domain publishing S1 deleted that whole
+  surface**: the page origin serves published pages, resolving the tenant from the request
+  HOSTNAME through the hostname registry, and this app has no public route left. What survives
+  here is the ``ensure_workspace=False`` constructor flag the page origin (and the test helpers
+  that read a publish row) still build this store with — an anonymous read must never write, so
+  an unknown tenant reads nothing through the fail-closed workspace-scoped reads.
 
 (The run-event SSE stream used to be a second: ``EventSource`` cannot set request headers, so
 ``GET /agent/runs/{id}/events`` took ``?workspace_id=``. **D7 closed it.** The stream is now opened
@@ -74,7 +77,7 @@ with a single-use token minted through a normal header-authenticated ``POST
 that could not carry a header no longer carries a *claim* either. See ``lumen_api.run_stream``.)
 
 The dev workspace row is ensured lazily (once per process per workspace) — Part-IV auth deletes
-that scaffolding, and Part-IV item 5 deletes the interim ``/w/{workspace_id}/p/...`` route.
+that scaffolding. (The interim ``/w/{workspace_id}/p/...`` route is already gone; see above.)
 """
 
 from __future__ import annotations
@@ -94,10 +97,17 @@ import threading
 from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
+from clue_config import Settings
 from clue_db import create_engine
+from clue_spine.hostnames import active_custom_hostname as _active_custom_hostname
+from clue_spine.hostnames import ensure_system_hostname
+from clue_spine.hostnames import lock_system_hostname as _lock_system_hostname
+from clue_spine.hostnames import system_hostname as _system_hostname
+from clue_spine.pages_settings import get_pages_settings
 from py_lumen_obs import get_logger
 from clue_storage import StorageBackend
 from clue_design import accounts as design_accounts
@@ -111,6 +121,7 @@ from clue_design import history as design_history
 from clue_design import personalization as design_personalization
 from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
+from clue_design import sessions as design_sessions
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
@@ -316,7 +327,12 @@ class DesignStoreBridge:
 
 async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
     """Dev-only scaffolding (dies at Part-IV auth): the dev workspace row must exist for the
-    tenancy FKs; ensured once per process per workspace, idempotently."""
+    tenancy FKs; ensured once per process per workspace, idempotently.
+
+    It also allocates the workspace's system hostname (custom-domain publishing §4.1), the same
+    allocator ``clue_spine.create_workspace`` uses — so a dev workspace scaffolded here has the
+    registry row every public page URL is minted from, exactly like a provisioned one.
+    """
     with _ensure_lock:
         already = workspace_id in _ensured_workspaces
     if already:
@@ -327,6 +343,9 @@ async def _ensure_workspace(conn: AsyncConnection, workspace_id: str) -> None:
             " ON CONFLICT (workspace_id) DO NOTHING"
         ),
         {"w": workspace_id},
+    )
+    await ensure_system_hostname(
+        conn, workspace_id=workspace_id, name=workspace_id, suffix=Settings().pages_system_suffix
     )
     with _ensure_lock:
         _ensured_workspaces.add(workspace_id)
@@ -729,6 +748,23 @@ class HybridRepository:
                 workspace_id=self.workspace_id,
                 document_id=document_id,
                 enabled=enabled,
+            )
+        )
+
+    def rename_document(self, document_id: str, title: str) -> JsonObject:
+        """Artifacts page (2026-09-15): governed (``design_rename_document``) — the row title and
+        the document JSON's title together, with a version bump (see the DAL docstring)."""
+        return self._bridge._run(
+            lambda conn: design_documents.rename_document(
+                conn, workspace_id=self.workspace_id, document_id=document_id, title=title
+            )
+        )
+
+    def set_document_archived(self, document_id: str, enabled: bool) -> JsonObject:
+        """Artifacts page (2026-09-15): governed (``design_set_document_archived``); converges."""
+        return self._bridge._run(
+            lambda conn: design_documents.set_document_archived(
+                conn, workspace_id=self.workspace_id, document_id=document_id, enabled=enabled
             )
         )
 
@@ -1320,6 +1356,41 @@ class HybridRepository:
             )
         )
 
+    def system_hostname(self) -> str | None:
+        """The workspace's permanent ``<label>.<suffix>`` hostname.
+
+        Custom-domain publishing §4.1.
+        """
+        return self._bridge._run(lambda conn: _system_hostname(conn, self.workspace_id))
+
+    def active_custom_hostname(self) -> str | None:
+        return self._bridge._run(lambda conn: _active_custom_hostname(conn, self.workspace_id))
+
+    def pages_defaults(self) -> dict[str, str | None]:
+        """Workspace page defaults applied at publish time (custom-domain publishing §4.2).
+
+        They FILL IN, never override: the description is used only when the page derives an
+        empty one, and the social preview only when the page carries no image node.
+        """
+
+        async def _read(conn: AsyncConnection) -> dict[str, str | None]:
+            row = await get_pages_settings(conn, self.workspace_id)
+            return {
+                "page_description": row.page_description,
+                "social_preview_sha256": row.social_preview_sha256,
+            }
+
+        return self._bridge._run(_read)
+
+    def lock_system_hostname(self) -> None:
+        """Freeze the workspace's system label at a successful publish (F5 R-F5-5, adopted by
+        the 2026-09-28 reconciliation ruling): a published URL is out in the world, so its host
+        segment must not move. Idempotent — ``locked_at`` stays the moment the address first
+        went public."""
+        self._bridge._run(
+            lambda conn: _lock_system_hostname(conn, workspace_id=self.workspace_id)
+        )
+
     def get_web_publish_for_document(self, document_id: str) -> Optional[JsonObject]:
         return self._bridge._run(
             lambda conn: design_publishes.get_web_publish_for_document(
@@ -1334,9 +1405,36 @@ class HybridRepository:
             )
         )
 
+    def unpublish_other_slugs(self, document_id: str, keep_slug: str) -> list[str]:
+        """Take ``document_id`` off every live slug but ``keep_slug`` (a republish is a move)."""
+        return self._bridge._run(
+            lambda conn: design_publishes.unpublish_other_slugs(
+                conn, workspace_id=self.workspace_id, document_id=document_id, keep_slug=keep_slug
+            )
+        )
+
     def rollback_web_publish(self, slug: str) -> Any:
         return self._bridge._run(
             lambda conn: design_publishes.rollback_web_publish(
+                conn, workspace_id=self.workspace_id, slug=slug
+            )
+        )
+
+    def get_web_publish_page(self, slug: str, route: str) -> Optional[JsonObject]:
+        """One served route of a multi-page site (F5), or ``None``.
+
+        ``None`` also covers a pre-F5 publish, which has no page rows at all — the caller falls
+        back to the publish row's own ``html`` for ``/`` and 404s elsewhere."""
+        return self._bridge._run(
+            lambda conn: design_publishes.get_web_publish_page(
+                conn, workspace_id=self.workspace_id, slug=slug, route=route
+            )
+        )
+
+    def list_web_publish_pages(self, slug: str) -> list[JsonObject]:
+        """Every route the site currently serves (route/page_id/html_digest, no html)."""
+        return self._bridge._run(
+            lambda conn: design_publishes.list_web_publish_pages(
                 conn, workspace_id=self.workspace_id, slug=slug
             )
         )
@@ -1981,6 +2079,52 @@ class HybridRepository:
             lambda conn: design_runs.list_running_runs(conn, workspace_id=self.workspace_id)
         )
 
+    def latest_agent_written_version(self, document_id: str) -> int | None:
+        """The version the DESIGN AGENT last committed to this document, or ``None``.
+
+        Session continuity (2026-09-18): one document is one design session, and a continued
+        session holds the scene IT wrote. Comparing this against the document's current version
+        is how the executor knows a human (or another leg) moved the document between turns, and
+        therefore what the drift note has to tell the agent. Sync twin of
+        :func:`clue_design.sessions.latest_written_version`, on the same one-transaction bridge
+        every other read here uses.
+        """
+        return self._bridge._run(
+            lambda conn: design_sessions.latest_written_version(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
+    def latest_session_manifest_sha256(self, document_id: str) -> str | None:
+        """The digest of the newest session-folder manifest this document's session stored, or
+        ``None``.
+
+        Session continuity (2026-09-18): the session folder lives on ONE worker's disk, so a turn
+        that lands anywhere else restores it from this manifest before the agent sees its
+        workspace. Sync twin of :func:`clue_design.sessions.latest_session_manifest_sha256`, on
+        the same one-transaction bridge every other read here uses.
+        """
+        return self._bridge._run(
+            lambda conn: design_sessions.latest_session_manifest_sha256(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
+    def active_design_run_for_document(self, document_id: str) -> Optional[str]:
+        """The run id of a design run currently DRIVING this document, or ``None``.
+
+        The write lock's one read (scene live-streaming, rung A): while a design run is in flight
+        on a document, the manual scene-write routes refuse with 409 ``document.agent_run_active``
+        and name this run, so a human edit can never interleave with the run's own commits. The
+        agent's own writes go through the governed tools, never those routes, so they are
+        untouched by it. See :func:`clue_design.runs.active_run_for_document` for what counts as
+        driving."""
+        return self._bridge._run(
+            lambda conn: design_runs.active_run_for_document(
+                conn, workspace_id=self.workspace_id, document_id=document_id
+            )
+        )
+
     # --- cross-domain reads over the Postgres document feed ----------------------------------
 
     def list_custom_component_usages(self, account_id: str, slug: str) -> List[JsonObject]:
@@ -2139,3 +2283,18 @@ class HybridRepository:
                 kind=kind,
             )
         )
+
+
+def api_engine_cache_root(workspace_id: str) -> Path:
+    """One workspace's engine materialization cache, resolved as ``create_app`` resolves it.
+
+    The off-request-thread twin of the app's own ``engine_cache_dir``: agent-turn workers and
+    the by-value resolvers below run outside a request, so they cannot read ``app.state``.
+    Deliberately per-WORKSPACE for the same reason the in-app accessor is — the engine resolves
+    purely by digest, so one shared tree would let a turn read another tenant's bytes.
+    """
+    from py_lumen_config import settings
+
+    path = settings.effective_asset_store_root / workspace_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path

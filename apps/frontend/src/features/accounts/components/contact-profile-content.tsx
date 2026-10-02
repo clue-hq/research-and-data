@@ -1,160 +1,328 @@
+import Image from "next/image";
+import Link from "./research-link";
+import {
+  AtSign,
+  BookOpen,
+  BriefcaseBusiness,
+  Building2,
+  CalendarClock,
+  ChevronDown,
+  Gauge,
+  Link2,
+  Mail,
+  MapPin,
+  MessageSquareText,
+  RadioTower,
+  UserRound,
+  UsersRound,
+  type LucideIcon,
+} from "lucide-react";
 import type { AccountContactDetail } from "../model/account-contact";
-import { contactPersonaLabel } from "../model/account-contact";
-import { contactDisplayName } from "../model/contact-accessibility";
-import { contactEvidenceArtifactHref } from "../model/evidence";
-import {
-  formatConfidence,
-  formatSemanticToken,
-} from "../model/formatting";
-import {
-  AccountFlowIcon,
-  type AccountFlowIconName,
-} from "./account-flow-icon";
-import { Absent, FactList, Restricted } from "./account-facts";
 import readability from "./account-readability.module.css";
+import components from "./account-components.module.css";
 import { ContactAvatar } from "./contact-avatar";
-import { AccountTextSection } from "./account-detail-primitives";
-import { EvidenceList } from "./evidence-list";
+import { ResearchStack, SourceChip } from "./research-content";
+
+const personaToneClasses = {
+  blue: components.badgeToneBlue,
+  cyan: components.badgeToneCyan,
+  green: components.badgeToneGreen,
+  olive: components.badgeToneGrass,
+  orange: components.badgeToneOrange,
+  pink: components.badgeTonePink,
+  red: components.badgeToneRed,
+} as const;
+
+/** The account glyph shown when the account has no logo asset (ruling S2). */
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
 
 function ProfileRow({
   icon,
   label,
   children,
 }: {
-  icon: AccountFlowIconName;
+  icon: LucideIcon;
   label: string;
   children: React.ReactNode;
 }) {
+  const Icon = icon;
+
   return (
-    <div className="grid min-h-10 grid-cols-[148px_minmax(0,1fr)] items-center gap-4">
-      <div className={`${readability.fieldLabel} flex items-center gap-2 text-[var(--clue-content-subtle)]`}>
-        <span className="flex size-5 shrink-0 items-center justify-center">
-          <AccountFlowIcon className="opacity-80" name={icon} size={15} />
-        </span>
+    <div className="flex min-h-8 w-full items-center gap-1">
+      <div className={`${readability.fieldLabel} flex w-40 shrink-0 items-center gap-2 text-[var(--clue-content-subtle)]`}>
+        <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.5} />
         <span>{label}</span>
       </div>
-      <div className={`${readability.fieldValue} min-w-0`}>{children}</div>
+      <div className={`${readability.fieldValue} min-w-0 flex-1`}>{children}</div>
+    </div>
+  );
+}
+
+function EvidenceSourceIcon({
+  source,
+}: {
+  source: AccountContactDetail["evidence"][number]["source"];
+}) {
+  const Icon = source === "link" ? Link2 : AtSign;
+  return <Icon aria-hidden="true" className="size-4" strokeWidth={1.5} />;
+}
+
+export function ContactIdentity({
+  contact,
+}: {
+  contact: AccountContactDetail;
+}) {
+  return (
+    <div>
+      <ContactAvatar name={contact.name} priority size={48} src={contact.avatarUrl} />
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <h1 className={readability.detailTitle}>{contact.name}</h1>
+        <span className={`${readability.pillMedium} ${components.badge} ${personaToneClasses[contact.personaTone]}`}>
+          {contact.persona}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export function ContactDetailsList({
+  contact,
+}: {
+  contact: AccountContactDetail;
+}) {
+  // The email chip cites the served work-email claim by id (ruling R5); it used
+  // to hunt for the address inside evidence text, which cited whatever mentioned it.
+  const emailEvidence = contact.emailClaimId
+    ? contact.researchEvidence.find(
+        (evidence) => evidence.claimId === contact.emailClaimId,
+      )
+    : undefined;
+  return (
+    <div>
+      <div className="flex flex-col gap-2">
+        <h2 className={`${readability.sectionHeading} mb-1 text-[var(--clue-content-subtle)]`}>
+          Core
+        </h2>
+        <ProfileRow icon={UserRound} label="Name">
+          {contact.name}
+        </ProfileRow>
+        <ProfileRow icon={Building2} label="Account">
+          <Link
+            className="flex w-fit items-center gap-1.5 underline decoration-[var(--clue-content-subtle)] underline-offset-2"
+            href={`/accounts/${contact.accountId}`}
+          >
+            <Image
+              alt=""
+              aria-hidden="true"
+              className="size-3"
+              height={12}
+              src={contact.accountLogoPath ?? ACCOUNT_GLYPH_PATH}
+              unoptimized={contact.accountLogoPath != null}
+              width={12}
+            />
+            {contact.accountName}
+          </Link>
+        </ProfileRow>
+        <ProfileRow icon={BriefcaseBusiness} label={contact.contactDisplay ? "Title" : "Role"}>
+          {/* Ruling S7: no title claim renders an em dash, never a guess. */}
+          {contact.title ?? "—"}
+        </ProfileRow>
+        <ProfileRow icon={Gauge} label="Influence">
+          {contact.influence ? (
+            <span
+              className={`${readability.pillMedium} ${components.badge} ${
+                contact.influence === "High"
+                  ? components.badgePositive
+                  : components.badgeNeutral
+              }`}
+            >
+              {contact.influence}
+            </span>
+          ) : (
+            "—"
+          )}
+        </ProfileRow>
+        <ProfileRow icon={RadioTower} label={contact.contactDisplay ? "Research" : "Recent signals"}>
+          <span className={`${readability.pillMedium} ${components.badge} ${components.badgeNeutral}`}>
+            {contact.recentSignalsLabel}
+          </span>
+        </ProfileRow>
+        {contact.emailLabel ? (
+          <ProfileRow icon={Mail} label="Email">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <a
+                className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
+                href={contact.outreachEligible === false ? undefined : `mailto:${contact.emailLabel}`}
+                aria-disabled={contact.outreachEligible === false || undefined}
+              >
+                {contact.emailLabel}
+              </a>
+              {emailEvidence ? <SourceChip evidence={emailEvidence} /> : null}
+            </span>
+          </ProfileRow>
+        ) : null}
+        <ProfileRow icon={AtSign} label="LinkedIn">
+          <a
+            className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
+            href={contact.linkedinUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {contact.linkedinLabel}
+          </a>
+        </ProfileRow>
+        {contact.xUrl && contact.xLabel ? (
+          <ProfileRow icon={AtSign} label="Twitter">
+            <a
+              className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
+              href={contact.xUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {contact.xLabel}
+            </a>
+          </ProfileRow>
+        ) : null}
+        {contact.locationLabel ? (
+          <ProfileRow icon={MapPin} label="Location">
+            {contact.locationLabel}
+            {contact.locationClaimId && contact.researchEvidence.find((record) => record.claimId === contact.locationClaimId) ? (
+              <SourceChip evidence={contact.researchEvidence.find((record) => record.claimId === contact.locationClaimId)!} />
+            ) : null}
+          </ProfileRow>
+        ) : null}
+      </div>
+
+      {contact.contactDisplay &&
+      (contact.bestFirstChannelLabel ||
+        contact.educationLabel ||
+        contact.tenureLabel ||
+        contact.reports.length > 0) ? (
+        <details className="group mt-2">
+          <summary className={`${readability.actionMedium} flex h-8 w-fit cursor-pointer list-none items-center gap-1 rounded-[var(--clue-ds-product-component-button-sm-radius)] px-2 text-[var(--clue-content-subtle)] hover:bg-[var(--clue-background-hover)] hover:text-[var(--clue-content-neutral)] [&::-webkit-details-marker]:hidden`}>
+            See all details
+            <ChevronDown
+              aria-hidden="true"
+              className="size-3.5 transition-transform group-open:rotate-180"
+              strokeWidth={1.5}
+            />
+          </summary>
+          <div className="mt-2 flex flex-col gap-2">
+            {contact.linkedinFollowers !== undefined ? (
+              <ProfileRow icon={AtSign} label="LinkedIn profile">
+                {contact.linkedinFollowers.toLocaleString("en-US")} followers{contact.linkedinCreator ? " · creator" : ""}
+              </ProfileRow>
+            ) : null}
+            {contact.bestFirstChannelLabel ? (
+              <ProfileRow icon={MessageSquareText} label="Best first channel">
+                {contact.bestFirstChannelLabel}
+              </ProfileRow>
+            ) : null}
+            {contact.educationLabel ? (
+              <ProfileRow icon={BookOpen} label="Education">
+                {contact.educationLabel}
+              </ProfileRow>
+            ) : null}
+            {contact.tenureLabel ? (
+              <ProfileRow icon={CalendarClock} label={`At ${contact.accountName}`}>
+                {contact.tenureLabel}
+              </ProfileRow>
+            ) : null}
+            {contact.reports.length > 0 ? (
+              <ProfileRow icon={UsersRound} label="Direct reports">
+                <span className="flex flex-wrap gap-x-1">
+                  {contact.reports.map((report, index) => (
+                    <span key={report.contactId}>
+                      {index > 0 ? ", " : ""}
+                      <Link
+                        className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
+                        href={`/accounts/${report.accountId}/contacts/${report.contactId}`}
+                      >
+                        {report.name}
+                      </Link>
+                      {report.title ? ` · ${report.title}` : ""}
+                    </span>
+                  ))}
+                </span>
+              </ProfileRow>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
 
 export function ContactProfileContent({
   contact,
+  showDetails = true,
 }: {
   contact: AccountContactDetail;
+  showDetails?: boolean;
 }) {
-  const confidence = formatConfidence(contact.roleOnCommittee.confidence);
+  const researchSections = contact.contactDisplay?.sections;
 
   return (
     <div>
-      <div className="flex items-center gap-3">
-        <ContactAvatar decorative name={contact.name} priority size={48} />
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <h1 className={readability.detailTitle}>
-          {contactDisplayName(contact.name)}
-        </h1>
-        <span className={`${readability.pillMedium} rounded-xl bg-[#f0f3cf] px-2 py-1 shadow-[var(--clue-shadow-low)]`}>
-          {contactPersonaLabel(contact.persona)}
-        </span>
-      </div>
-      {contact.redirectedFrom ? (
-        <p
-          className={`${readability.uiRegular} mt-2 text-[var(--clue-content-subtle)]`}
-        >
-          This contact was merged; you followed a link to a record that now
-          resolves here.
-        </p>
+      <ContactIdentity contact={contact} />
+      {showDetails ? (
+        <div className="mt-9">
+          <ContactDetailsList contact={contact} />
+        </div>
       ) : null}
 
-      <div className="mt-9">
-        <ProfileRow icon="contacts" label="Name">
-          {contact.name ?? <Absent />}
-        </ProfileRow>
-        <ProfileRow icon="account" label="Account">
-          {contact.accountName ?? <Absent />}
-        </ProfileRow>
-        <ProfileRow icon="role" label="Title">
-          {contact.titleRestricted ? (
-            <Restricted />
-          ) : (
-            contact.title ?? <Absent />
-          )}
-        </ProfileRow>
-        <ProfileRow icon="influence" label="Committee role">
-          <span className="flex items-center gap-2">
-            {formatSemanticToken(contact.roleOnCommittee.value)}
-            {confidence ? (
-              <span className="text-[var(--clue-content-subtle)]">
-                {confidence} confidence
-              </span>
-            ) : null}
-          </span>
-        </ProfileRow>
-        <ProfileRow icon="recent" label="Recent signals">
-          {/* Signal TYPES, bounded by a whitelist — never a count of posts. */}
-          {contact.signals.typeCount > 0 ? (
-            <>
-              {contact.signals.typeCount} signal
-              {contact.signals.typeCount === 1 ? " type" : " types"}
-            </>
-          ) : (
-            <Absent label="No signal types" />
-          )}
-        </ProfileRow>
-        <ProfileRow icon="linkedin" label="LinkedIn">
-          {contact.linkedinUrl ? (
-            <a href={contact.linkedinUrl} rel="noreferrer" target="_blank">
-              {contact.linkedinUrl.replace(/^https?:\/\/(www\.)?/, "")}
-            </a>
-          ) : (
-            <Absent />
-          )}
-        </ProfileRow>
-        <ProfileRow icon="account" label="Projects">
-          {contact.projectIds.length ? (
-            `${contact.projectIds.length} project${contact.projectIds.length === 1 ? "" : "s"}`
-          ) : (
-            <Absent label="Not on any committee yet" />
-          )}
-        </ProfileRow>
-      </div>
-
-      <div className="mt-9">
-        <AccountTextSection
-          emptyNote="No written contact overview has been composed yet."
-          prose={contact.overview}
-          restrictedNote="The contact overview is unavailable for display."
-          title="Overview"
-        />
-      </div>
-
-      <section className="mt-9">
-        <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
-          Professional facts
-        </h2>
-        <div className="mt-4">
-          <FactList facts={contact.professionalFacts} />
-        </div>
-      </section>
-
-      <section className="mt-9 pb-10">
-        <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
-          Evidence
-        </h2>
-        <div className="mt-4">
-          <EvidenceList
-            artifactHref={(evidence) =>
-              contactEvidenceArtifactHref(
-                contact.accountId,
-                contact.id,
-                evidence.claimId,
-              )
-            }
-            evidence={contact.evidence}
+      {researchSections ? (
+        <section className="mt-10 pb-12" aria-label="Contact research">
+          <ResearchStack
+            contactId={contact.id}
+            evidence={contact.researchEvidence}
+            sections={researchSections}
+            name={contact.name}
           />
-        </div>
-      </section>
+        </section>
+      ) : (
+        <>
+          <section className="mt-9">
+            <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
+              Overview
+            </h2>
+            <div className={`${readability.bodyCopy} mt-4 space-y-5`}>
+              {contact.overviewParagraphs.map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+            </div>
+          </section>
+
+          <section className="mt-9 pb-10">
+            <div className="flex items-center justify-between">
+              <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
+                Insight &amp; evidence
+              </h2>
+              <Link className={readability.actionMedium} href={`/accounts/${contact.accountId}/insights`}>
+                See all
+              </Link>
+            </div>
+            <div className="mt-4 space-y-3">
+              {contact.evidence.length === 0 ? <p className={readability.bodyCopy}>No insight &amp; evidence information found for {contact.name}.</p> : null}
+              {contact.evidence.map((evidence) => (
+                <a
+                  className={`${readability.uiRegular} grid grid-cols-[16px_minmax(0,1fr)_128px] items-center gap-2`}
+                  href={evidence.url}
+                  key={evidence.id}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <EvidenceSourceIcon source={evidence.source} />
+                  <span className={`${readability.uiMedium} truncate`}>{evidence.title}</span>
+                  <time className="text-right text-[var(--clue-content-subtle)]">
+                    {evidence.dateLabel}
+                  </time>
+                </a>
+              ))}
+            </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }

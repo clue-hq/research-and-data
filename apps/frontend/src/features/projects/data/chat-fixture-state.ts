@@ -23,6 +23,7 @@ export interface FixtureChatState {
       decision: GateDecision;
       revisionRequest?: string;
       selectedProductId?: string;
+      selectedProductIds?: readonly string[];
     }
   >;
   /** turnId → which scripted stream that turn plays. */

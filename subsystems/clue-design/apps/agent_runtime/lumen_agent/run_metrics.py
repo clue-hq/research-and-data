@@ -334,7 +334,7 @@ class RunMetrics:
 # --------------------------------------------------------------------------- #
 # run-end emission
 # --------------------------------------------------------------------------- #
-def count_round_dirs(rounds_dir: Path) -> int:
+def count_round_dirs(rounds_dir: Path, *, above: int = 0) -> int:
     """How many ``rounds/round_N`` directories the turn produced.
 
     Rounds are a FILESYSTEM fact here: the orchestrator creates each round
@@ -342,6 +342,11 @@ def count_round_dirs(rounds_dir: Path) -> int:
     started" call to count. One directory listing at run end is cheaper and more
     honest than inferring rounds from delegation counts, and it is deliberately
     NOT done in the hot loop.
+
+    ``above`` is the round base this turn inherited from its design session (the
+    workspace outlives the turn, so earlier turns' round directories are still
+    there). Only rounds numbered above it belong to this turn; the default 0
+    counts them all, which is every non-session run.
     """
     try:
         if not rounds_dir.is_dir():
@@ -352,6 +357,7 @@ def count_round_dirs(rounds_dir: Path) -> int:
             if child.is_dir()
             and child.name.startswith("round_")
             and child.name[len("round_") :].isdigit()
+            and int(child.name[len("round_") :]) > above
         )
     except OSError:
         return 0
@@ -376,7 +382,7 @@ def emit_run_metrics(
 
     1. ``logs/run.jsonl`` via the obs logger — what ``python -m lumen_agent.trace``
        renders and what a human greps;
-    2. ``metrics.json`` in the run directory, next to ``final.json`` — a file
+    2. ``metrics.json`` in the turn directory, next to ``final.json`` — a file
        artifact that outlives log rotation;
     3. the substrate's ``record`` (trace.jsonl + the optional event sink), whose
        sink lands the summary on the durable ``run_event`` stream so the run
@@ -389,11 +395,17 @@ def emit_run_metrics(
     if metrics is None:
         return None
     try:
+        solo_rounds = getattr(tools, "solo_rounds_executed", None)
         summary = metrics.snapshot(
             outcome=outcome,
             status=status,
             stop_reason=stop_reason,
-            rounds_total=count_round_dirs(rounds_dir) if rounds_dir is not None else 0,
+            rounds_total=(
+                solo_rounds if solo_rounds is not None
+                else count_round_dirs(
+                    rounds_dir, above=getattr(tools, "round_base", 0)
+                ) if rounds_dir is not None else 0
+            ),
         )
     except Exception as error:  # noqa: BLE001 - never fail a turn on its own metrics
         _log.warning("run_metrics_snapshot_failed", error=f"{type(error).__name__}: {error}")
@@ -405,9 +417,11 @@ def emit_run_metrics(
         pass
 
     try:
-        trace_dir = getattr(tools, "trace_dir", None)
-        if trace_dir is not None:
-            (Path(trace_dir) / METRICS_FILENAME).write_text(
+        # The turn's own folder — which is the run folder unless this run belongs
+        # to a design session, where `turn_dir` is where its `final.json` lands.
+        turn_dir = getattr(tools, "turn_dir", None) or getattr(tools, "trace_dir", None)
+        if turn_dir is not None:
+            (Path(turn_dir) / METRICS_FILENAME).write_text(
                 json.dumps(summary, indent=2), encoding="utf-8"
             )
     except Exception as error:  # noqa: BLE001

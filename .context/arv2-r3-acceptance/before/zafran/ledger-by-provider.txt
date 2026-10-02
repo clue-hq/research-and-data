@@ -1,0 +1,14 @@
+   job    |  provider  |       operation       | count |  usd   | credits |   src   
+----------+------------+-----------------------+-------+--------+---------+---------
+ c216f775 | ai_ark     | v1/companies          |     1 | 0.0000 |   0.100 | metered
+ c216f775 | ai_ark     | v1/people             |     4 | 0.0000 |   2.500 | metered
+ c216f775 | ashby      | posting-api/job-board |     1 | 0.0000 |   0.000 | free
+ c216f775 | exa        | contents              |    66 | 0.0660 |   0.000 | metered
+ c216f775 | exa        | deep-reasoning        |     1 | 0.0250 |   0.000 | metered
+ c216f775 | exa        | search                |     6 | 0.0420 |   0.000 | metered
+ c216f775 | live_http  | careers-page          |     2 | 0.0000 |   0.000 | free
+ c216f775 | openrouter | agent_completion      |    12 | 0.7928 |       0 | metered
+ c216f775 | openrouter | chat/completions      |     2 | 0.0107 |   0.000 | metered
+ c216f775 | youtube    | watch                 |     1 | 0.0000 |   0.000 | free
+(10 rows)
+

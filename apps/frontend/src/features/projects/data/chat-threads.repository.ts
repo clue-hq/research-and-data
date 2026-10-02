@@ -14,9 +14,8 @@ import { fixtureThreads } from "./chat.fixture";
  * Every mutation is per-thread and cursor-paginated, per the founder-ratified
  * as-built section: `PATCH …/threads/:threadId` for rename/pin,
  * `POST …/threads/:threadId/archive` for a reversible status flip, and
- * `GET …/threads` for the first-class paginated list. The proposal's
- * project-level `PATCH /projects/:projectId` and bulk archive are not
- * implemented by the backend and are therefore not offered here.
+ * `GET …/threads` for the first-class paginated list. Project rename is owned by the project workspace repository; bulk archive
+ * is not implemented by the backend and is not offered here.
  */
 export interface ChatThreadsRepository {
   list(input: {
@@ -140,6 +139,11 @@ export function createFixtureChatThreadsRepository(): ChatThreadsRepository {
         projectId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        // A locally-created thread has no durable speaker projection behind it
+        // yet, and `null` is exactly that: not derived. Never `{state: null}`,
+        // which would be a positive claim that this thread holds no design leg.
+        designLeg: null,
+        discovery: null,
       });
     },
     async update({ threadId, title, pinned }) {

@@ -1,0 +1,78 @@
+48 configs to run (1 already done)
+done luna|whole|contact|r1                    json=True $0.0044 24.1s  quotes_bad=0/5 nums_bad=0 leaks=0 off_recipe=6 p1=0.5 useline=1.0
+done gemini-2.5-fl|whole|contact|r1           json=True $0.0033 11.0s  quotes_bad=0/9 nums_bad=0 leaks=0 off_recipe=14 p1=0.5 useline=0.77
+done muse-1.3c|whole|contact|r1               json=False $0.0000 0.1s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=0 p1=0.0 useline=0.0
+done luna|section_cached|contact|r1           json=True $0.0251 44.7s  quotes_bad=0/5 nums_bad=4 leaks=0 off_recipe=0 p1=0.5 useline=1.0
+done luna|section_min|contact|r1              json=True $0.0125 56.4s  quotes_bad=1/4 nums_bad=6 leaks=0 off_recipe=0 p1=0.58 useline=1.0
+done mistral-small|whole|contact|r1           json=True $0.0042 17.2s  quotes_bad=0/5 nums_bad=0 leaks=0 off_recipe=12 p1=0.35 useline=1.0
+done gpt-5-nano|whole|contact|r1              json=True $0.0088 125.8s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=6 p1=0.5 useline=1.0
+done gpt-5-mini|whole|contact|r1              json=True $0.0253 126.6s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=8 p1=0.46 useline=1.0
+done deepseek-v4-fl|whole|contact|r1          json=True $0.0042 106.0s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=2 p1=0.5 useline=1.0
+done luna|whole|contact|r2                    json=True $0.0045 24.1s  quotes_bad=0/2 nums_bad=0 leaks=0 off_recipe=3 p1=0.5 useline=1.0
+done luna|section_min|contact|r2              json=True $0.0081 51.6s  quotes_bad=0/2 nums_bad=0 leaks=0 off_recipe=0 p1=0.54 useline=1.0
+done luna|section_cached|contact|r2           json=True $0.0077 42.0s  quotes_bad=0/6 nums_bad=0 leaks=0 off_recipe=5 p1=0.5 useline=1.0
+done qwen3.7-flash|whole|contact|r1           json=True $0.0027 146.1s  quotes_bad=18/35 nums_bad=0 leaks=0 off_recipe=1 p1=0.5 useline=1.0
+done muse-1.3c|whole|contact|r2               json=False $0.0000 0.1s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=0 p1=0.0 useline=0.0
+done gemini-2.5-fl|whole|contact|r2           json=True $0.0034 11.6s  quotes_bad=0/0 nums_bad=0 leaks=2 off_recipe=29 p1=0.46 useline=1.0
+done llama-4-mav|whole|contact|r1             json=True $0.0057 159.0s  quotes_bad=0/0 nums_bad=27 leaks=3 off_recipe=14 p1=0.5 useline=1.0
+done deepseek-v4-fl|whole|contact|r2          json=True $0.0032 62.7s  quotes_bad=0/22 nums_bad=5 leaks=0 off_recipe=6 p1=0.46 useline=1.0
+done gpt-5-mini|whole|contact|r2              json=True $0.0136 82.0s  quotes_bad=1/5 nums_bad=2 leaks=2 off_recipe=12 p1=0.58 useline=1.0
+done mistral-small|whole|contact|r2           json=True $0.0037 11.6s  quotes_bad=1/8 nums_bad=0 leaks=0 off_recipe=5 p1=0.38 useline=1.0
+done gpt-5-nano|whole|contact|r2              json=False $0.0059 114.5s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=0 p1=0.0 useline=0.0
+done qwen3.7-flash|whole|contact|r2           json=True $0.0019 94.7s  quotes_bad=1/14 nums_bad=31 leaks=0 off_recipe=2 p1=0.5 useline=1.0
+done luna|whole|insights|r1                   json=True $0.0112 28.6s  quotes_bad=0/7 nums_bad=0 leaks=0 off_recipe=3 p1=0.5 useline=None
+done llama-4-mav|whole|contact|r2             json=True $0.0055 49.4s  quotes_bad=0/0 nums_bad=29 leaks=0 off_recipe=8 p1=0.5 useline=1.0
+done muse-1.3c|whole|insights|r1              json=False $0.0000 0.1s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=0 p1=0.0 useline=None
+done luna|section_min|insights|r1             json=True $0.0149 66.2s  quotes_bad=0/12 nums_bad=12 leaks=0 off_recipe=0 p1=0.47 useline=None
+done luna|section_cached|insights|r1          json=True $0.0464 68.7s  quotes_bad=0/9 nums_bad=15 leaks=0 off_recipe=7 p1=0.47 useline=None
+done gemini-2.5-fl|whole|insights|r1          json=True $0.0048 13.1s  quotes_bad=1/5 nums_bad=0 leaks=5 off_recipe=10 p1=0.47 useline=None
+done gpt-5-mini|whole|insights|r1             json=True $0.0318 125.7s  quotes_bad=2/26 nums_bad=7 leaks=0 off_recipe=15 p1=0.5 useline=None
+done mistral-small|whole|insights|r1          json=True $0.0057 14.8s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=4 p1=0.44 useline=None
+done qwen3.7-flash|whole|insights|r1          json=True $0.0032 154.5s  quotes_bad=10/24 nums_bad=0 leaks=0 off_recipe=11 p1=0.5 useline=None
+done luna|whole|insights|r2                   json=True $0.0041 20.1s  quotes_bad=0/9 nums_bad=0 leaks=0 off_recipe=3 p1=0.44 useline=None
+done luna|section_min|insights|r2             json=True $0.0106 63.0s  quotes_bad=0/9 nums_bad=9 leaks=0 off_recipe=0 p1=0.5 useline=None
+done luna|section_cached|insights|r2          json=True $0.0118 57.0s  quotes_bad=0/15 nums_bad=31 leaks=0 off_recipe=2 p1=0.47 useline=None
+done llama-4-mav|whole|insights|r1            json=True $0.0081 203.2s  quotes_bad=1/8 nums_bad=40 leaks=0 off_recipe=5 p1=0.47 useline=None
+done muse-1.3c|whole|insights|r2              json=False $0.0000 0.2s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=0 p1=0.0 useline=None
+done deepseek-v4-fl|whole|insights|r1         json=True $0.0024 369.5s  quotes_bad=0/17 nums_bad=1 leaks=0 off_recipe=15 p1=0.47 useline=None
+done gemini-2.5-fl|whole|insights|r2          json=True $0.0051 14.6s  quotes_bad=0/5 nums_bad=0 leaks=0 off_recipe=11 p1=0.53 useline=None
+done gpt-5-nano|whole|insights|r2             json=True $0.0082 143.5s  quotes_bad=0/1 nums_bad=0 leaks=0 off_recipe=0 p1=0.12 useline=None
+done deepseek-v4-fl|whole|insights|r2         json=True $0.0059 107.8s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=1 p1=0.53 useline=None
+done gpt-5-mini|whole|insights|r2             json=True $0.0301 152.2s  quotes_bad=0/8 nums_bad=0 leaks=0 off_recipe=4 p1=0.41 useline=None
+done mistral-small|whole|insights|r2          json=True $0.0076 23.0s  quotes_bad=10/19 nums_bad=1 leaks=0 off_recipe=15 p1=0.44 useline=None
+done llama-4-mav|whole|insights|r2            json=True $0.0082 72.6s  quotes_bad=0/3 nums_bad=23 leaks=0 off_recipe=5 p1=0.35 useline=None
+done glm-5.3-flash|whole|contact|r1           json=False $0.0079 247.4s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=0 p1=0.0 useline=0.0
+done qwen3.7-flash|whole|insights|r2          json=True $0.0033 156.8s  quotes_bad=4/22 nums_bad=0 leaks=0 off_recipe=11 p1=0.59 useline=None
+done glm-5.3-flash|whole|contact|r2           json=False $0.0000 302.1s  quotes_bad=0/0 nums_bad=0 leaks=0 off_recipe=0 p1=0.0 useline=0.0
+done glm-5.3-flash|whole|insights|r1          json=True $0.0276 985.8s  quotes_bad=8/68 nums_bad=0 leaks=0 off_recipe=0 p1=0.68 useline=None
+done glm-5.3-flash|whole|insights|r2          json=True $0.0135 934.0s  quotes_bad=12/59 nums_bad=0 leaks=0 off_recipe=1 p1=0.68 useline=None
+Traceback (most recent call last):
+  File "/Users/shashank/conductor/workspaces/research-and-data/winnipeg/.context/display-layer-control-test/control_test.py", line 472, in <module>
+    rec = run_config("luna", "whole", "contact", 0)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 619, in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 317, in _result_or_cancel
+    return fut.result(timeout)
+           ~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3_1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/Users/shashank/conductor/workspaces/research-and-data/winnipeg/.context/display-layer-control-test/control_test.py", line 472, in <lambda>
+    rec = run_config("luna", "whole", "contact", 0)
+                              ^^^^^^^^^^^^^^
+  File "/Users/shashank/conductor/workspaces/research-and-data/winnipeg/.context/display-layer-control-test/control_test.py", line 296, in run_config
+    "cost_source": calls[0]["cost_source"], "sections": sections or []}
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/shashank/conductor/workspaces/research-and-data/winnipeg/.context/display-layer-control-test/control_test.py", line 352, in mechanical
+    allowed = {s[0]: set(s[3]) for s in PAGES[page]["sections"] if s[4] == "safe"}
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/shashank/conductor/workspaces/research-and-data/winnipeg/.context/display-layer-control-test/control_test.py", line 352, in <genexpr>
+    allowed = {s[0]: set(s[3]) for s in PAGES[page]["sections"] if s[4] == "safe"}
+                                                       ^^^^^
+AttributeError: 'str' object has no attribute 'get'

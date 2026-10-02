@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 
 import pytest
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 
 from clue_execution import (
     BarrierNode,
@@ -78,6 +78,44 @@ def _catalog() -> ToolRegistry:
     registry.register(_SourceTool(), make_default=True)
     registry.register(_TargetTool(), make_default=True)
     return registry
+
+
+class _JsonInput(ToolInput):
+    value: JsonValue
+
+
+class _JsonTool(_SafeTool):
+    name = "json_target"
+    input_model = _JsonInput
+    output_model = _TargetOutput
+
+
+@pytest.mark.parametrize("unconstrained_target", [True, False])
+def test_arbitrary_json_binding_accepts_json_but_not_a_narrower_type(unconstrained_target):
+    registry = _catalog()
+    registry.register(_JsonTool(), make_default=True)
+    name = "json_target" if unconstrained_target else "target"
+    node = _tool_node(
+        registry,
+        key="consume",
+        name=name,
+        ordinal=0,
+        bindings={"value": ParameterBinding(kind="parameter", name="value")},
+    )
+    report = validate_graph(
+        RecipeGraph(nodes=(node,), tool_allowlist=(f"{name}@1",)),
+        parameter_schema={
+            "type": "object",
+            "properties": {"value": {}},
+            "required": ["value"],
+            "additionalProperties": False,
+        },
+        tool_catalog=registry,
+        max_nodes=2,
+        max_depth=2,
+        max_fanout=1,
+    )
+    assert report.valid is unconstrained_target
 
 
 def _tool_node(

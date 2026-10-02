@@ -1,0 +1,1971 @@
+[
+  {
+    "at": "2026-09-09T22:46:04.866931+00:00",
+    "arm": "S",
+    "provider": "exa_search",
+    "label": "d1_seriesA_vertical_ai_smb",
+    "http": 200,
+    "elapsed_s": 1.99,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:46:06.751497+00:00",
+    "arm": "S",
+    "provider": "exa_search",
+    "label": "d2_seriesA_gtm_hiring",
+    "http": 200,
+    "elapsed_s": 1.88,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:46:09.687309+00:00",
+    "arm": "S",
+    "provider": "exa_search",
+    "label": "d3_founder_led_sales_scaling",
+    "http": 200,
+    "elapsed_s": 2.94,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:46:20.838862+00:00",
+    "arm": "W5",
+    "provider": "exa_websets",
+    "label": "create",
+    "http": 201,
+    "elapsed_s": 1.99,
+    "webset_id": "webset_01m245khk2n469ryjtjw86e15m"
+  },
+  {
+    "at": "2026-09-09T22:46:21.982841+00:00",
+    "arm": "W3",
+    "provider": "exa_websets",
+    "label": "create",
+    "http": 201,
+    "elapsed_s": 1.14,
+    "webset_id": "webset_01m245kjq82atj0w5040zxpvcb"
+  },
+  {
+    "at": "2026-09-09T22:54:41.439498+00:00",
+    "arm": "W5",
+    "provider": "exa_websets",
+    "label": "final",
+    "webset_status": "idle",
+    "search_status": "completed",
+    "found": 1,
+    "analyzed": 334,
+    "time_to_idle_s": 499
+  },
+  {
+    "at": "2026-09-09T22:54:42.678482+00:00",
+    "arm": "W5",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 1,
+    "all_green": 1,
+    "credits_est": 10
+  },
+  {
+    "at": "2026-09-09T22:54:43.195398+00:00",
+    "arm": "W3",
+    "provider": "exa_websets",
+    "label": "final",
+    "webset_status": "idle",
+    "search_status": "completed",
+    "found": 25,
+    "analyzed": 449,
+    "time_to_idle_s": 0
+  },
+  {
+    "at": "2026-09-09T22:54:44.131560+00:00",
+    "arm": "W3",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 25,
+    "all_green": 25,
+    "credits_est": 250
+  },
+  {
+    "at": "2026-09-09T22:55:26.187166+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Avoca",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:28.373048+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Archy",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:30.978490+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Patientdesk_ai__YC_W26_",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:32.762457+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Auto_Hauler_Exchange",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:34.335441+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Toothio",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:36.956827+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Equal_Parts",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:38.256333+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Lassie",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:39.854458+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Paxton",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:41.299899+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Anchor",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:42.938972+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Field_Materials_AI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:44.635984+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_FurtherAI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:45.939839+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Wisdom",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:47.203123+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Revv",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:49.026467+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Zuma__",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:50.722166+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_SimplyAgree",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:52.872444+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Toma",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:54.387604+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_OneCrew",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:56.669658+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Lucio_AI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:58.491318+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Rebar",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:55:59.698585+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_FirmPilot",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:56:01.086889+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_PointOne",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:56:03.539076+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_VITL",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:56:05.135682+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Hona",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:56:06.506032+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_SingleFile",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-09T22:56:08.073922+00:00",
+    "arm": "probe",
+    "provider": "exa_search",
+    "label": "stage_Rebar",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:09:02.881829+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "create",
+    "http": 201,
+    "webset_id": "webset_01m25g3f3azqf2x5ya3gpra5kz"
+  },
+  {
+    "at": "2026-09-10T11:16:24.368351+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "final",
+    "found": 15,
+    "analyzed": 333,
+    "time_to_idle_s": 441
+  },
+  {
+    "at": "2026-09-10T11:16:25.486648+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:16:26.834149+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Patientdesk_ai__YC_W26_",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:16:33.215117+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_1Fort_AI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:16:39.831364+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Snout",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:16:46.768236+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Lasso_MD",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:16:54.150190+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage__AI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:00.387962+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_DentalHQ",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:10.772394+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Probook",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:19.483209+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Digs",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:22.392191+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Lassie",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:25.570434+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Levanta",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:28.876542+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_INFI",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:33.630309+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Superorder",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:41.741387+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_BeyondTrucks",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:49.574893+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Equal_Parts",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:17:57.300936+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Boostly",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:19:45.322574+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:22:18.285268+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:24:03.158261+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:26:30.546781+00:00",
+    "arm": "H",
+    "provider": "exa_websets",
+    "label": "items",
+    "items": 15,
+    "all_green": 15,
+    "credits_est": 150
+  },
+  {
+    "at": "2026-09-10T11:46:36.355021+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Pie",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:46:40.487726+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Rebar",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:46:44.831153+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_GenHealth_ai",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T11:46:49.295781+00:00",
+    "arm": "H",
+    "provider": "exa_search",
+    "label": "stage_Avoca",
+    "http": 200,
+    "cost_usd": 0.007
+  },
+  {
+    "at": "2026-09-10T12:14:50.599926+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Patientdesk_ai__YC_W26_:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.0
+  },
+  {
+    "at": "2026-09-10T12:14:52.940302+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Patientdesk_ai__YC_W26_:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:14:54.928661+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Patientdesk_ai__YC_W26_:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.0
+  },
+  {
+    "at": "2026-09-10T12:14:57.977594+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Patientdesk_ai__YC_W26_:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 3.0
+  },
+  {
+    "at": "2026-09-10T12:15:00.137991+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Probook:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:15:02.324880+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Probook:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:15:04.597352+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Probook:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:15:06.917276+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Probook:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:15:09.193378+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Lassie:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:15:11.392524+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Lassie:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:15:13.550648+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Lassie:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:15:15.585883+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Lassie:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.0
+  },
+  {
+    "at": "2026-09-10T12:15:17.862862+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "BeyondTrucks:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:15:19.811147+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "BeyondTrucks:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 1.9
+  },
+  {
+    "at": "2026-09-10T12:15:21.822512+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "BeyondTrucks:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.0
+  },
+  {
+    "at": "2026-09-10T12:15:24.231720+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "BeyondTrucks:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.4
+  },
+  {
+    "at": "2026-09-10T12:15:26.936856+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Boostly:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.7
+  },
+  {
+    "at": "2026-09-10T12:15:30.088696+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Boostly:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 3.1
+  },
+  {
+    "at": "2026-09-10T12:15:32.287334+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Boostly:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:15:34.786453+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Boostly:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.5
+  },
+  {
+    "at": "2026-09-10T12:15:37.012608+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Avoca:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:15:39.351460+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Avoca:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:15:41.443650+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Avoca:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.1
+  },
+  {
+    "at": "2026-09-10T12:15:43.865818+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Avoca:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.4
+  },
+  {
+    "at": "2026-09-10T12:16:08.906798+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "1Fort_AI:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.4
+  },
+  {
+    "at": "2026-09-10T12:16:11.434575+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "1Fort_AI:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.5
+  },
+  {
+    "at": "2026-09-10T12:16:13.640894+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "1Fort_AI:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:16:15.732566+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "1Fort_AI:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.1
+  },
+  {
+    "at": "2026-09-10T12:16:17.861011+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Snout:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.1
+  },
+  {
+    "at": "2026-09-10T12:16:20.249360+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Snout:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.4
+  },
+  {
+    "at": "2026-09-10T12:16:22.619122+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Snout:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.4
+  },
+  {
+    "at": "2026-09-10T12:16:24.799552+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Snout:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:16:29.922202+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Lasso_MD:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 5.1
+  },
+  {
+    "at": "2026-09-10T12:16:32.004726+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Lasso_MD:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.1
+  },
+  {
+    "at": "2026-09-10T12:16:34.468242+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Lasso_MD:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.5
+  },
+  {
+    "at": "2026-09-10T12:16:36.648884+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Lasso_MD:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:16:39.151857+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "_AI:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.5
+  },
+  {
+    "at": "2026-09-10T12:16:41.443724+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "_AI:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:16:43.614151+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "_AI:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:16:46.141478+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "_AI:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.5
+  },
+  {
+    "at": "2026-09-10T12:16:48.283427+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "DentalHQ:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.1
+  },
+  {
+    "at": "2026-09-10T12:16:50.441500+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "DentalHQ:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:16:53.269864+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "DentalHQ:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.8
+  },
+  {
+    "at": "2026-09-10T12:16:55.557409+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "DentalHQ:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:16:57.702655+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Digs:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.1
+  },
+  {
+    "at": "2026-09-10T12:16:59.725107+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Digs:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.0
+  },
+  {
+    "at": "2026-09-10T12:17:01.664501+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Digs:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 1.9
+  },
+  {
+    "at": "2026-09-10T12:17:04.306700+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Digs:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.6
+  },
+  {
+    "at": "2026-09-10T12:17:06.805873+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Levanta:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.5
+  },
+  {
+    "at": "2026-09-10T12:17:09.665570+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Levanta:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.9
+  },
+  {
+    "at": "2026-09-10T12:17:12.015193+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Levanta:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:17:14.064280+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Levanta:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.0
+  },
+  {
+    "at": "2026-09-10T12:17:16.081464+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "INFI:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.0
+  },
+  {
+    "at": "2026-09-10T12:17:18.248252+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "INFI:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:17:20.596685+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "INFI:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:17:22.792960+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "INFI:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:17:25.024755+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Superorder:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:17:27.541611+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Superorder:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.5
+  },
+  {
+    "at": "2026-09-10T12:17:29.802270+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Superorder:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:17:32.072166+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Superorder:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.3
+  },
+  {
+    "at": "2026-09-10T12:17:34.013017+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Equal_Parts:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 1.9
+  },
+  {
+    "at": "2026-09-10T12:17:36.852622+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Equal_Parts:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.8
+  },
+  {
+    "at": "2026-09-10T12:17:39.669081+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Equal_Parts:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.8
+  },
+  {
+    "at": "2026-09-10T12:17:42.463878+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Equal_Parts:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.8
+  },
+  {
+    "at": "2026-09-10T12:17:44.844190+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "GenHealth_ai:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.4
+  },
+  {
+    "at": "2026-09-10T12:17:46.949973+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "GenHealth_ai:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.1
+  },
+  {
+    "at": "2026-09-10T12:17:49.201939+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "GenHealth_ai:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:17:51.038695+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "GenHealth_ai:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 1.8
+  },
+  {
+    "at": "2026-09-10T12:17:53.238165+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Pie:stage",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.2
+  },
+  {
+    "at": "2026-09-10T12:17:56.185820+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Pie:geography",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.9
+  },
+  {
+    "at": "2026-09-10T12:17:58.609786+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Pie:hiring",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.4
+  },
+  {
+    "at": "2026-09-10T12:18:01.488138+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa",
+    "label": "Pie:intent",
+    "http": 200,
+    "cost_usd": 0.005,
+    "elapsed_s": 2.9
+  },
+  {
+    "at": "2026-09-10T12:18:43.245008+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa-pro",
+    "label": "Superorder:stage",
+    "http": 402,
+    "cost_usd": 0.0,
+    "elapsed_s": 0.4
+  },
+  {
+    "at": "2026-09-10T12:18:43.771799+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa-pro",
+    "label": "INFI:intent",
+    "http": 402,
+    "cost_usd": 0.0,
+    "elapsed_s": 0.5
+  },
+  {
+    "at": "2026-09-10T12:18:44.293264+00:00",
+    "arm": "A",
+    "provider": "exa_answer",
+    "model": "exa-pro",
+    "label": "Equal_Parts:hiring",
+    "http": 402,
+    "cost_usd": 0.0,
+    "elapsed_s": 0.5
+  },
+  {
+    "at": "2026-09-10T12:26:35.998944+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Patientdesk_ai__YC_W26_:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.1
+  },
+  {
+    "at": "2026-09-10T12:26:39.315844+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Patientdesk_ai__YC_W26_:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.3
+  },
+  {
+    "at": "2026-09-10T12:26:42.463878+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Patientdesk_ai__YC_W26_:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.1
+  },
+  {
+    "at": "2026-09-10T12:26:46.379392+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Patientdesk_ai__YC_W26_:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.9
+  },
+  {
+    "at": "2026-09-10T12:26:49.550554+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "1Fort_AI:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.2
+  },
+  {
+    "at": "2026-09-10T12:26:52.536211+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "1Fort_AI:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.0
+  },
+  {
+    "at": "2026-09-10T12:26:56.416085+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "1Fort_AI:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.9
+  },
+  {
+    "at": "2026-09-10T12:27:00.679228+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "1Fort_AI:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.3
+  },
+  {
+    "at": "2026-09-10T12:27:04.380978+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Snout:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.7
+  },
+  {
+    "at": "2026-09-10T12:27:07.493635+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Snout:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.1
+  },
+  {
+    "at": "2026-09-10T12:27:10.643062+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Snout:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.1
+  },
+  {
+    "at": "2026-09-10T12:27:14.838730+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Snout:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.2
+  },
+  {
+    "at": "2026-09-10T12:27:17.532308+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Lasso_MD:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 2.7
+  },
+  {
+    "at": "2026-09-10T12:27:20.519946+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Lasso_MD:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.0
+  },
+  {
+    "at": "2026-09-10T12:27:23.323098+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Lasso_MD:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 2.8
+  },
+  {
+    "at": "2026-09-10T12:27:26.384524+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Lasso_MD:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.1
+  },
+  {
+    "at": "2026-09-10T12:27:29.243200+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "_AI:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 2.9
+  },
+  {
+    "at": "2026-09-10T12:27:32.254421+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "_AI:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.0
+  },
+  {
+    "at": "2026-09-10T12:27:37.103111+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "_AI:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.8
+  },
+  {
+    "at": "2026-09-10T12:27:40.850704+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "_AI:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.7
+  },
+  {
+    "at": "2026-09-10T12:27:44.540050+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "DentalHQ:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.7
+  },
+  {
+    "at": "2026-09-10T12:27:48.992767+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "DentalHQ:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.5
+  },
+  {
+    "at": "2026-09-10T12:27:52.936706+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "DentalHQ:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.9
+  },
+  {
+    "at": "2026-09-10T12:27:56.860923+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "DentalHQ:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.9
+  },
+  {
+    "at": "2026-09-10T12:28:00.208916+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Probook:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.3
+  },
+  {
+    "at": "2026-09-10T12:28:03.841210+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Probook:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.6
+  },
+  {
+    "at": "2026-09-10T12:28:08.121662+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Probook:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.3
+  },
+  {
+    "at": "2026-09-10T12:28:12.463921+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Probook:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.3
+  },
+  {
+    "at": "2026-09-10T12:28:15.779796+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Digs:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.3
+  },
+  {
+    "at": "2026-09-10T12:28:19.249918+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Digs:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.5
+  },
+  {
+    "at": "2026-09-10T12:28:22.832327+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Digs:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.6
+  },
+  {
+    "at": "2026-09-10T12:28:25.991688+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Digs:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.2
+  },
+  {
+    "at": "2026-09-10T12:28:29.711475+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Lassie:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.7
+  },
+  {
+    "at": "2026-09-10T12:28:35.195011+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Lassie:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 5.5
+  },
+  {
+    "at": "2026-09-10T12:28:38.699272+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Lassie:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.5
+  },
+  {
+    "at": "2026-09-10T12:28:43.211309+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Lassie:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.5
+  },
+  {
+    "at": "2026-09-10T12:28:47.777058+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Levanta:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.6
+  },
+  {
+    "at": "2026-09-10T12:28:52.087887+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Levanta:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.3
+  },
+  {
+    "at": "2026-09-10T12:28:55.062204+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Levanta:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.0
+  },
+  {
+    "at": "2026-09-10T12:28:59.943467+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Levanta:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.9
+  },
+  {
+    "at": "2026-09-10T12:29:04.723764+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "INFI:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.8
+  },
+  {
+    "at": "2026-09-10T12:29:09.077525+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "INFI:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.4
+  },
+  {
+    "at": "2026-09-10T12:29:13.391067+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "INFI:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.3
+  },
+  {
+    "at": "2026-09-10T12:29:17.830208+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "INFI:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.4
+  },
+  {
+    "at": "2026-09-10T12:29:21.290850+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Superorder:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.5
+  },
+  {
+    "at": "2026-09-10T12:29:25.245503+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Superorder:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.0
+  },
+  {
+    "at": "2026-09-10T12:29:28.257257+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Superorder:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.0
+  },
+  {
+    "at": "2026-09-10T12:29:32.613377+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Superorder:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.4
+  },
+  {
+    "at": "2026-09-10T12:29:35.831741+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "BeyondTrucks:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.2
+  },
+  {
+    "at": "2026-09-10T12:29:38.732025+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "BeyondTrucks:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 2.9
+  },
+  {
+    "at": "2026-09-10T12:29:41.581833+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "BeyondTrucks:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 2.8
+  },
+  {
+    "at": "2026-09-10T12:29:44.505370+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "BeyondTrucks:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 2.9
+  },
+  {
+    "at": "2026-09-10T12:29:48.823682+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Equal_Parts:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.3
+  },
+  {
+    "at": "2026-09-10T12:29:52.050982+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Equal_Parts:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.2
+  },
+  {
+    "at": "2026-09-10T12:29:56.470534+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Equal_Parts:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.4
+  },
+  {
+    "at": "2026-09-10T12:30:00.772593+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Equal_Parts:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.3
+  },
+  {
+    "at": "2026-09-10T12:30:03.920470+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Boostly:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.1
+  },
+  {
+    "at": "2026-09-10T12:30:07.992968+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Boostly:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.1
+  },
+  {
+    "at": "2026-09-10T12:30:11.645834+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Boostly:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.6
+  },
+  {
+    "at": "2026-09-10T12:30:15.721943+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Boostly:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.1
+  },
+  {
+    "at": "2026-09-10T12:30:19.178065+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "GenHealth_ai:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.5
+  },
+  {
+    "at": "2026-09-10T12:30:23.122207+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "GenHealth_ai:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.9
+  },
+  {
+    "at": "2026-09-10T12:30:29.071709+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "GenHealth_ai:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 5.9
+  },
+  {
+    "at": "2026-09-10T12:30:33.880177+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "GenHealth_ai:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.8
+  },
+  {
+    "at": "2026-09-10T12:30:37.463330+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Avoca:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.6
+  },
+  {
+    "at": "2026-09-10T12:30:42.882260+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Avoca:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 5.4
+  },
+  {
+    "at": "2026-09-10T12:30:47.018273+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Avoca:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.1
+  },
+  {
+    "at": "2026-09-10T12:30:50.049062+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Avoca:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.0
+  },
+  {
+    "at": "2026-09-10T12:30:53.775935+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Pie:stage",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.7
+  },
+  {
+    "at": "2026-09-10T12:30:57.774695+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Pie:geography",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.0
+  },
+  {
+    "at": "2026-09-10T12:31:01.862027+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Pie:hiring",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 4.1
+  },
+  {
+    "at": "2026-09-10T12:31:05.287242+00:00",
+    "arm": "S2",
+    "provider": "exa_search_schema",
+    "bounded": false,
+    "label": "Pie:intent",
+    "http": 200,
+    "cost_usd": 0.007,
+    "elapsed_s": 3.4
+  }
+]

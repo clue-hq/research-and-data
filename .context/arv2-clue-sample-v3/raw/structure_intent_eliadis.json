@@ -1,0 +1,65 @@
+{
+  "id": "gen-1787808906-HErTYTFTaC2gFsCetmvK",
+  "object": "chat.completion",
+  "created": 1787808906,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\"contact_claims\": [{\"entity\": \"contact:george-eliadis\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"Until December, our 'sales team' was just me\", \"evidence_span\": \"Until December, our 'sales team' was just me\", \"source_url\": \"https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v\", \"confidence\": 0.95, \"priority\": 1, \"use_class\": \"professional-public\"}, {\"entity\": \"contact:george-eliadis\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"I've personally met pretty much every Probook customer, run every demo, and traveled across the US to visit almost every shop.\", \"evidence_span\": \"I've personally met pretty much every Probook customer, run every demo, and traveled across the US to visit almost every shop.\", \"source_url\": \"https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v\", \"confidence\": 0.95, \"priority\": 1, \"use_class\": \"professional-public\"}, {\"entity\": \"contact:george-eliadis\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"Being stuck in founder-led sales isn't a flex. I wish I realized that sooner\", \"evidence_span\": \"Being stuck in founder-led sales isn't a flex. I wish I realized that sooner\", \"source_url\": \"https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v\", \"confidence\": 0.95, \"priority\": 1, \"use_class\": \"professional-public\"}, {\"entity\": \"contact:george-eliadis\", \"field_key\": \"contact.facet.recent_post\", \"value_json\": \"The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead.\", \"evidence_span\": \"The first wave of AI in home services was point solutions. One tool for voice. One for outbound. One for follow-up. Operators ended up with five vendors and more overhead.\", \"source_url\": \"https://www.linkedin.com/posts/george-eliadis_today-were-announcing-40m-in-funding-from-activity-7475172924774293504-mVOB\", \"confidence\": 0.9, \"priority\": 1, \"use_class\": \"professional-public\"}]}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABqj8yMKdZcAxiG_4WmHMjoF7OKHmJo7aoKzvthL3Oe7WsUEPC6CxephGQImxKnWDB5j_PtudfQslvDEWa3o0JgxDOI4fwdae7iZP0kMobSFh-Vd4VNjGFPkdwJcKQIMqRUkzzfqSzAkocdaW-dsO1An0N1umbS1y0S3cb1AaeUKAYA8LfZ5PTaPmCnWyXj1XEU1LjVZ0frz6IUe40Oa2zvFOpnLLNistQ9eS3PHedMBTkkBtVtIf7h61YtbmxLyJ9z92TwnAF8Ddpdmm4cWEA0L0cqlGNkZtpRtnL5-fHiODEh39R03x5bJDsgzBb9K83JjX1CD3t3YEF8CzBSu0noYe3QpxVn0ERCarruK6EmoDeqzClOIFxerjIsdb7jF2BoWVwbXXbR2YGNsiAbir_nu0b8MKErksLOgWWcZt5wdvjKyOI-E3ics08XMbt9EmET9MBs1iaVkHd3MPnXPQdDHrwkeu9vCbrKAxU6UwEDrreYJKMZWd1U7wp6peCbMy72u0olNrRZG9dVH1s4PlyWR9QpFYfWnh8TuxCiBvoajWszz1u3JISNu4cqCLFEQ02BZHdyrbZN7FHx5rOgj36iZ8PRjVQYDpUd5updlhXg3muKFjo4xqSRu9CgmYlNF-3qpIZaHn0-3HSpa5tb_rgMszS8GU1NwbTgqMBt6JFvHZ6mfd_6FCiJZfByz2IohPWISpynC2HX3_ejlsENd0jaZEWzuryhWuiPdKs53uEadQACJaucw6YMx-FCPdXQkHSeFwZg-LzoPcGWzH0wHKM4lsrr0xeRGTkpaUR9H1zp4fa6DzzjQtCZpNG3tUnR8DZm3uo648I6TyIBTZhIz8LKs23p8A8h7PRdKbJrwY49ycCEYvI78RMLFYlR36gTemOw1BibqqS_RxQAwwWrfixG7LKFvrEOjvWE7EiMOxUv9UlgpF7tDcDvbZwLCI-A16UoXXXdNXokMWxDC2bUA0mroiU3qG7M_pK5q-eqmDS865tPf9ertTzIV1cbZRs2Trkcq-_NN1GuRCli1w5Opasdf6wtdbJmnKoF9O7yM9P8UyN0aExXrwThnbKaKEGucT-9_cUqREyt1Wcy8XkPDmp2QDmYIuL0skxn9w2qPaDvhbaXb7JVkYrsar2IAbORRpg-ukoEQzI3ov04H0ERhvzsWsheNiRCNpwITeJndrwC6IQHNDXT6YZ8oYZiOPmjJfu4XFYOhnUSqafsBgkh1s9OCaHQNNz73kFk6ZZ2kEeRoH63m0TuM-q940S1FRKlAhNc3BSAnsCg8HBdg_SM8msW6xVhzriBLginPhJJ_K2P8Kh9AYc9jtpw1mL0jglz0GsodBZfNpZyrksdpIkiD8fLgCk0g3QmP0AujeTZXWaHyu3I_Pkg7aMNGKtG-8uzMR7igYNyNnxibtZ3q_bErzHRcETlsQ==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0d3d8490c5e493c3016a8fcc8be7d087d09de593523137a0da",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 5574,
+    "completion_tokens": 603,
+    "total_tokens": 6177,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 4864,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.0015051,
+      "upstream_inference_prompt_cost": 0.0002991,
+      "upstream_inference_completions_cost": 0.001206
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 7.6,
+  "_request_shape": {
+    "model": "openai/gpt-5-mini",
+    "n_messages": 2,
+    "prompt_chars": 22934,
+    "response_format": {
+      "type": "json_object"
+    }
+  }
+}

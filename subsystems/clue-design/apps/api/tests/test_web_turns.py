@@ -218,6 +218,54 @@ def test_web_render_bridge_includes_generic_node_metrics_protocol(
     assert "new ResizeObserver" in html
 
 
+def test_web_render_bridge_carries_the_documents_route_map(
+    client: TestClient,
+) -> None:
+    """F5 task 20: in-editor navigation. The bridge already swallows every
+    anchor click; to turn a SITE-INTERNAL one into a page switch it needs to
+    know which hrefs are routes of THIS document, so the script carries the
+    whole document's `{route: page_id}` map — every page, not just the rendered
+    one (the point is to leave the rendered page)."""
+    document = create_web_document(client)
+    client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [
+                {
+                    "kind": "add_page",
+                    "page": {
+                        "id": "pricing",
+                        "name": "Pricing",
+                        "route": "/pricing",
+                        "root": "root_pricing",
+                        "nodes": {
+                            "root_pricing": {
+                                "id": "root_pricing",
+                                "kind": "container",
+                                "classes": "",
+                                "children": [],
+                            }
+                        },
+                    },
+                }
+            ]
+        },
+    ).raise_for_status()
+    response = client.get(
+        f"/documents/{document['id']}/web/render"
+        "?bridge=1&nonce=bridge-routes-123&page_id=home"
+    )
+    assert response.status_code == 200, response.text
+    html = response.json()["html"]
+    # The map is interpolated as compact JSON, the same escaped way every other
+    # capability list is, so a route can never break out of the script string.
+    assert "var PAGE_ROUTES = " in html
+    assert '"/":"home"' in html
+    assert '"/pricing":"pricing"' in html
+    # ...and the click handler consults it before posting a navigation intent.
+    assert 'post("lumen:navigate"' in html
+
+
 def test_web_render_bridge_exposes_generic_reorder_and_reparent_capabilities(
     client: TestClient,
 ) -> None:
@@ -985,11 +1033,18 @@ def test_a_route_shaped_web_turn_prompt_is_the_users_message_verbatim(
     assert received["prompt"] == "Build a landing page"
 
 
-def test_a_leg_web_turn_on_a_stale_base_version_still_conflicts_before_the_runner(
+def test_a_leg_web_turn_on_a_stale_envelope_base_runs_against_the_version_it_reads(
     client: TestClient,
 ) -> None:
-    """The CAS re-check is unchanged by the composition: it happens first, and a conflicted
-    turn never reaches the runtime at all."""
+    """Session continuity (2026-09-18) retires the pre-run conflict on the web lane too.
+
+    The envelope's ``base_version`` was frozen when the leg dispatched; the document is truth at
+    execution time, so the executor reads it, designs against it, and CAS's the write on the
+    version it read. The human edit that lands WHILE the turn runs is still refused — by that
+    write-time CAS (``test_web_turn_conflict_preserves_edit_committed_while_agent_runs``) — and
+    the route still refuses a stale base before a turn is even offered
+    (``test_web_turn_rejects_stale_base_version_before_start``).
+    """
 
     from lumen_api.main import execute_web_turn_job
 
@@ -1013,10 +1068,266 @@ def test_a_leg_web_turn_on_a_stale_base_version_still_conflicts_before_the_runne
         host=_turn_host(client, capturing_web_runner(received)),
         event_sink=None,
     )
-    assert status == "failed"
-    assert response["status"] == "conflicted"
-    assert response["diagnostics"][0]["code"] == "web_turn.version_conflict"
-    assert received == {}
+    assert status == "succeeded", response
+    assert response["status"] == "applied"
+    assert LEG_BRIEF in received["prompt"]
+    # No prior agent run wrote this document, so there is no drift to report.
+    assert "DOCUMENT CHANGED SINCE YOUR LAST TURN" not in received["prompt"]
+    assert store.require_document(document["id"])["current_version"] == 1
+
+
+def test_a_continued_web_session_is_told_what_moved_and_re_sends_no_history(
+    client: TestClient,
+) -> None:
+    """The web twin of the scene executor's session gating and drift note."""
+
+    from lumen_api.main import execute_web_turn_job
+
+    document = create_web_document(client)
+    content = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content)
+    store = HybridRepository()
+
+    # Turn one, recorded the way the fleet worker records it: the succeeded run's stamped
+    # `current_version` is what "the version this session last wrote" reads.
+    first_received: dict = {}
+    operations = [{"kind": "set_custom_css", "css": "body { letter-spacing: 0.01em; }"}]
+    agent_doc = client.app.state.core.web_apply_ops(content, operations)["web_doc"]
+    first = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {"request": {"prompt": "Go ahead.", "base_version": 1}, "leg": {"leg_id": "leg-1"}},
+    )
+    store.create_run(first.run_id, document["id"], kind="web_turn", payload={})
+    status, response, event_type, event_data = execute_web_turn_job(
+        first,
+        store=store,
+        host=_turn_host(
+            client,
+            capturing_web_runner(
+                first_received,
+                result={
+                    "schema_version": 1,
+                    "status": "applied",
+                    "outcome": "accepted",
+                    "summary": "Built it.",
+                    "web_doc": agent_doc,
+                    "operations": operations,
+                    "preview_paths": [],
+                    "doc_kind": "web",
+                },
+            ),
+        ),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+    store.complete_run(first.run_id, status, response, event_type, event_data)
+    written_version = response["current_version"]
+
+    # The human edit between turns.
+    edited = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [{"kind": "set_custom_css", "css": "body { opacity: 1; }"}],
+            "base_version": written_version,
+            "intent": "human moved the logo",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+
+    received: dict = {}
+    second = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {
+            "request": {"prompt": "Warmer.", "base_version": 1},
+            "delegation_bundle": {"brief": LEG_BRIEF},
+            "history": [{"role": "user", "text": "Go ahead."}],
+            "leg": {"leg_id": "leg-1", "first_turn_of_leg": False},
+        },
+    )
+    status, response, _, _ = execute_web_turn_job(
+        second,
+        store=store,
+        host=_turn_host(client, capturing_web_runner(received)),
+        event_sink=None,
+        session_continued=True,
+    )
+
+    assert status == "succeeded", response
+    prompt = received["prompt"]
+    assert "DOCUMENT CHANGED SINCE YOUR LAST TURN" in prompt
+    assert "human moved the logo" in prompt
+    # A continued thread already holds the brief and every earlier message.
+    assert "<<<HISTORY" not in prompt and "<<<BRIEF" not in prompt
+
+
+def test_a_direct_bff_web_turn_joins_no_session_even_on_a_document_the_agent_wrote(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ruling T6-1, the web twin: no ``leg`` block, no session and no drift note.
+
+    The route-shaped turn is threaded on its run id by the design API's own route, so joining the
+    document's session folder would be a half-join. Proven on a document a prior (recorded) agent
+    turn wrote and a human then moved — the exact state in which a LEG turn is told about drift.
+    """
+
+    import lumen_api.main as main
+
+    document = create_web_document(client)
+    content = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content)
+    store = HybridRepository()
+
+    operations = [{"kind": "set_custom_css", "css": "body { letter-spacing: 0.01em; }"}]
+    agent_doc = client.app.state.core.web_apply_ops(content, operations)["web_doc"]
+    first = _web_turn_envelope(
+        document["id"],
+        store.workspace_id,
+        {"request": {"prompt": "Go ahead.", "base_version": 1}, "leg": {"leg_id": "leg-1"}},
+    )
+    store.create_run(first.run_id, document["id"], kind="web_turn", payload={})
+    status, response, event_type, event_data = main.execute_web_turn_job(
+        first,
+        store=store,
+        host=_turn_host(
+            client,
+            capturing_web_runner(
+                {},
+                result={
+                    "schema_version": 1,
+                    "status": "applied",
+                    "outcome": "accepted",
+                    "summary": "Built it.",
+                    "web_doc": agent_doc,
+                    "operations": operations,
+                    "preview_paths": [],
+                    "doc_kind": "web",
+                },
+            ),
+        ),
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+    store.complete_run(first.run_id, status, response, event_type, event_data)
+    edited = client.post(
+        f"/documents/{document['id']}/web/operations",
+        json={
+            "operations": [{"kind": "set_custom_css", "css": "body { opacity: 1; }"}],
+            "base_version": response["current_version"],
+            "intent": "human moved the logo",
+        },
+    )
+    assert edited.status_code == 200, edited.text
+
+    captured: dict = {}
+
+    def fake_web_turn(doc, prompt, model, root, **kwargs):
+        captured["session_id"] = kwargs.get("session_id")
+        captured["run_id"] = kwargs.get("run_id")
+        captured["prompt"] = prompt
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Looked at it.",
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    monkeypatch.setattr(main, "run_web_agent_turn", fake_web_turn)
+    # No `leg` block, and no override runner: the (monkeypatched) runtime call is the probe.
+    status, response, _, _ = main.execute_web_turn_job(
+        _web_turn_envelope(
+            document["id"],
+            store.workspace_id,
+            {"request": {"prompt": "Build a landing page", "base_version": 1}},
+        ),
+        store=store,
+        host=_turn_host(client, None),
+        event_sink=None,
+    )
+
+    assert status == "succeeded", response
+    assert captured["session_id"] is None
+    assert captured["run_id"] is None
+    assert captured["prompt"] == "Build a landing page"
+
+
+def test_a_leg_web_turn_hands_the_platform_reads_to_the_runtime_and_a_direct_turn_does_not(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Design note 2026-09-19: the web executor threads the platform's reads exactly as the
+    scene one does — resolved for a LEG turn, absent for a direct BFF turn.
+
+    Captured at the runtime call rather than inside it (the scene suite owns the
+    ``AgentRuntimeConfig`` proof): what this file has to say is that the host's factory is
+    consulted for a leg turn, its answer reaches ``run_web_agent_turn``, and a direct turn's
+    call is unchanged.
+    """
+
+    from dataclasses import replace as dataclass_replace
+
+    import lumen_api.main as main
+
+    document = create_web_document(client)
+    content = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content)
+    store = HybridRepository()
+    seen: list = []
+
+    def fake_web_turn(doc, prompt, model, root, **kwargs):
+        seen.append(kwargs.get("platform_reads"))
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Looked at it.",
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    monkeypatch.setattr(main, "run_web_agent_turn", fake_web_turn)
+
+    sentinel = object()
+    host = dataclass_replace(
+        _turn_host(client, None),
+        platform_reads_factory=lambda envelope: sentinel if "leg" in envelope.config else None,
+    )
+
+    status, response, _, _ = main.execute_web_turn_job(
+        _web_turn_envelope(
+            document["id"],
+            store.workspace_id,
+            {
+                "request": {"prompt": "Go ahead.", "base_version": 1},
+                "leg": {"leg_id": "leg-1"},
+            },
+        ),
+        store=store,
+        host=host,
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+
+    status, response, _, _ = main.execute_web_turn_job(
+        _web_turn_envelope(
+            document["id"],
+            store.workspace_id,
+            {"request": {"prompt": "Build a landing page", "base_version": 1}},
+        ),
+        store=store,
+        host=host,
+        event_sink=None,
+    )
+    assert status == "succeeded", response
+
+    assert seen == [sentinel, None]
 
 
 def test_a_leg_web_turns_commit_is_labelled_with_the_users_message(
@@ -1063,3 +1374,88 @@ def test_a_leg_web_turns_commit_is_labelled_with_the_users_message(
     envelopes = store.list_envelopes(document["id"])
     assert len(envelopes) == 1
     assert envelopes[0]["intent"] == "Go ahead."
+
+
+# --- annotated targets (R-A2) -----------------------------------------------
+
+
+def test_web_turn_accepts_annotated_targets_and_keeps_them_dict_shaped(
+    client: TestClient,
+) -> None:
+    """R-A2: the request model is the validation gate, and what comes out the other side is
+    the plain mapping every consumer downstream takes.
+
+    `execute_web_turn_job` dumps the validated notes back to dicts before handing them to the
+    brief builder and the runtime config, so this pins both halves: the wire shape the platform
+    sends is accepted, and dumping it returns exactly that shape (a note's absent `path`/`note`
+    stay explicit `None`s rather than disappearing, because submission ORDER and arity are part
+    of what the human said)."""
+    from lumen_api.models import WebTurnRequest
+
+    wire = {
+        "prompt": "Tighten the hero",
+        "base_version": 1,
+        "target_node_ids": ["frg_a", "sec_b"],
+        "target_notes": [
+            {
+                "target": "frg_a",
+                "path": ":nth-child(1) > :nth-child(2)",
+                "note": "1. Make this shorter",
+            },
+            {"target": "sec_b", "path": None, "note": None},
+        ],
+    }
+    payload = WebTurnRequest.model_validate(wire)
+    assert [note.model_dump(mode="json") for note in payload.target_notes] == wire[
+        "target_notes"
+    ]
+
+    document = create_web_document(client)
+    content_doc = ingest_content(client, document["id"])
+    seed_web_doc(client, document["id"], content_doc)
+
+    received: dict = {}
+
+    def stub(doc, prompt, model, root, target_node_ids):
+        received["target_node_ids"] = target_node_ids
+        return {
+            "schema_version": 1,
+            "status": "applied",
+            "outcome": "accepted",
+            "summary": "Scoped the hero.",
+            "web_doc": doc["scene"],
+            "operations": [],
+            "preview_paths": [],
+            "doc_kind": "web",
+        }
+
+    client.app.state.web_turn_runner = stub
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={**wire, "target_node_ids": ["hero"], "target_notes": [
+            {"target": "hero", "path": ":nth-child(1)", "note": "1. Shorter"}
+        ]},
+    )
+    assert response.status_code == 200, response.text
+    run = wait_for_run(client, response.json()["run_id"])
+    assert run["status"] == "succeeded", run
+    assert received["target_node_ids"] == ["hero"]
+
+
+def test_web_turn_refuses_an_annotation_path_outside_the_closed_grammar(
+    client: TestClient,
+) -> None:
+    """Spec §3.1's grammar is enforced at the HTTP boundary, not deep inside the prompt
+    build: a path is interpolated into the brief and later resolved against real markup, so
+    anything that is not a `:nth-child` chain is refused before a run row exists."""
+    document = create_web_document(client)
+    response = client.post(
+        f"/documents/{document['id']}/web/turns",
+        json={
+            "prompt": "Tighten the hero",
+            "base_version": 1,
+            "target_node_ids": ["hero"],
+            "target_notes": [{"target": "hero", "path": "div > h2", "note": "1. Shorter"}],
+        },
+    )
+    assert response.status_code == 422, response.text

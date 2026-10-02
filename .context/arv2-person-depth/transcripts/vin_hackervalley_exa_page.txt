@@ -1,0 +1,49 @@
+# EXA INDEXED COPY of https://hackervalleystudio.podbean.com/e/the-rise-of-the-autonomous-blue-team-with-vineet-edupuganti/
+# title: The Rise of the Autonomous Blue Team with Vineet Edupuganti | Hacker Valley Studio
+# chars: 2753
+
+The Rise of the Autonomous Blue Team with Vineet Edupuganti | Hacker Valley Studio
+
+# Hacker Valley Studio
+
+Welcome back to the show! Hacker Valley Studio podcast features Host Ron Eddings, as he explores the world of cybersecurity through the eyes of professionals in the industry. We cover everything from inspirational real-life stories in tech, to highlighting influential cybersecurity companies, and we do so in a fun and enthusiastic way. We’re making cybersecurity accessible, creating a whole new form of entertainment: cybertainment.
+
+## Episodes
+
+Sep 4, 2025
+
+### The Rise of the Autonomous Blue Team with Vineet Edupuganti
+
+Sep 4, 2025
+
+Sep 4, 2025
+
+37 min
+
+What if defenders had their own AI-powered task force, always on, always adapting, and finally one step ahead of attackers?
+
+In this episode, Ron welcomes Vineet Edupuganti, Founder and CEO of Cogent Security, to discuss how AI agents are rewriting the rules of cybersecurity. Vineet shares why traditional vulnerability management is fundamentally broken, why exposure management matters more than ever, and how Cogent is building an “AI Task Force” to give defenders the edge. From his early days in machine learning to reshaping the future of cyber defense, Vineet breaks down the urgent need for automation, context-driven insights, and explainable AI in security.
+
+Impactful Moments:00:00 - Introduction02:00 - Vineet’s journey into AI and cyber04:30 - Why vulnerability management is broken06:10 - Generative AI as a defender’s edge08:20 - Why AI agents outperform brittle automation09:45 - The first use cases for Cogent’s agents12:00 - Rethinking tier-one SOC analyst roles13:30 - The rise of exposure management (CTEM)17:10 - Cogent’s vision for an AI task force18:30 - Early wins and insights with Cogent20:00 - Biggest misconceptions about AI in security23:00 - What enterprises should demand from vendors25:00 - Why explainability is essential in AI systems27:00 - Startups vs incumbents in cybersecurity innovation29:30 - Why enterprises must invest in AI now
+
+Links:Connect with our guest, Vineet Edupuganti, on LinkedIn: https://www.linkedin.com/in/vineetedupuganti
+
+Learn more about Cogent Security: https://www.cogent.security
+
+Check out our upcoming events: https://www.hackervalley.com/livestreams
+
+Join our creative mastermind and stand out as a cybersecurity professional: https://www.patreon.com/hackervalleystudio
+
+Love Hacker Valley Studio? Pick up some swag: https://store.hackervalley.com
+
+Continue the conversation by joining our Discord: https://hackervalley.com/discord
+
+Become a sponsor of the show to amplify your brand: https://hackervalley.com/work-with-us/
+
+Listen Now
+
+Comment (0)
+
+No comments yet. Be the first to say something!
+
+Version: 20241125

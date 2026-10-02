@@ -44,6 +44,16 @@ from clue_projections.agents import (
     agent_turns_for_project,
     agent_turns_for_thread,
 )
+from clue_projections.cost import (
+    NOT_COVERED,
+    CostFilters,
+    CostReport,
+    JobSpendLine,
+    ModelSpendLine,
+    ProjectSpendLine,
+    ProviderSpendLine,
+    cost_report,
+)
 from clue_projections.dtos import (
     PROJECTIONS_SCHEMA_VERSION,
     AccountProgress,
@@ -118,6 +128,14 @@ from clue_projections.production_context import (
     compile_project_conversation_card,
     compile_stage0_project_state_card,
 )
+from clue_projections.projects import (
+    DEFAULT_PROJECT_DIRECTORY_PAGE_SIZE,
+    MAX_PROJECT_DIRECTORY_PAGE_SIZE,
+    ProjectDirectoryItemView,
+    ProjectDirectoryPage,
+    project_directory_item,
+    project_directory_page,
+)
 from clue_projections.proposals import (
     FieldProposalCard,
     ProposalScopeCard,
@@ -178,6 +196,11 @@ from clue_projections.thread_refs import (
     MessageObjectRef,
     MessageRefFlavor,
     flavors_for_message_role,
+)
+from clue_projections.thread_research_tasks import (
+    ResearchFieldProgress,
+    ThreadResearchTaskView,
+    thread_research_tasks,
 )
 from clue_projections.threads import (
     AGENT_TURN_TASK_DEDUP_PREFIX,
@@ -277,6 +300,15 @@ __all__ = [
     "AccountDeepSteeringAccount",
     "AccountDeepSteeringCard",
     "AccountDeepSteeringLaunch",
+    # lane 3 slice 1 cost read
+    "NOT_COVERED",
+    "CostFilters",
+    "CostReport",
+    "JobSpendLine",
+    "ModelSpendLine",
+    "ProjectSpendLine",
+    "ProviderSpendLine",
+    "cost_report",
     # DTOs
     "RunOverview",
     "AccountProgress",
@@ -313,6 +345,10 @@ __all__ = [
     "ResearchTaskCounts",
     "ResearchTaskView",
     "research_tasks_for_action_refs",
+    # Slice C: the durable per-thread task read a live progress card polls
+    "ResearchFieldProgress",
+    "ThreadResearchTaskView",
+    "thread_research_tasks",
     # FI Lane D dev-lens turn-context inspector (dev-only read surface; zero new storage)
     "TurnContextLayerView",
     "TurnContextReceiptView",
@@ -329,6 +365,13 @@ __all__ = [
     "turn_plan_receipt",
     "turn_status_ledger",
     "turn_tool_calls",
+    # spec 2026-09-19 project directory
+    "DEFAULT_PROJECT_DIRECTORY_PAGE_SIZE",
+    "MAX_PROJECT_DIRECTORY_PAGE_SIZE",
+    "ProjectDirectoryItemView",
+    "ProjectDirectoryPage",
+    "project_directory_item",
+    "project_directory_page",
     # Phase C2 proposals
     "ProposalScopeCard",
     "FieldProposalCard",

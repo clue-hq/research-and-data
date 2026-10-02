@@ -18,8 +18,11 @@ import type { DesignArtifactListItem } from "../model/artifact";
  * frame is the FALLBACK for a thumbnail that is missing or fails to load,
  * not the universal state.
  *
- * Size, account and last-viewed are likewise unanswerable here; the gallery's
- * own `normalizeGalleryArtifact` supplies its defaults for them.
+ * Size and last-viewed are likewise unanswerable here; the gallery's own
+ * `normalizeGalleryArtifact` supplies its defaults for them. The ACCOUNT is
+ * no longer among them: a multi-artifact design leg births one document per
+ * target account, and the feed now says which — so the card states the real
+ * account, and a document made for none still says nothing.
  *
  * AD2.1 made it kind-aware. A `web` document is a `website` artifact whose
  * gallery collateral is a `microsite`; an `ad` (scene) document is a `canvas`
@@ -33,7 +36,7 @@ import type { DesignArtifactListItem } from "../model/artifact";
  * vocabulary, and ONLY when it genuinely names one. An unrecognised or absent
  * type maps to nothing: the founder's ruling is that we are not necessarily
  * always making ads, so a card that cannot prove its channel claims none. */
-function collateralTypeFor(artifactType: string | undefined) {
+export function collateralTypeFor(artifactType: string | undefined) {
   if (!artifactType) return undefined;
   const value = artifactType.toLowerCase();
   if (value.includes("linkedin")) return "linkedin-ad" as const;
@@ -48,7 +51,7 @@ function collateralTypeFor(artifactType: string | undefined) {
 
 /** G-H: the document's real page size → the card's size cell and its
  * size-category filter. Absent when the document has no page; never a default. */
-function sizeFor(widthPx: number | undefined, heightPx: number | undefined) {
+export function sizeFor(widthPx: number | undefined, heightPx: number | undefined) {
   if (!widthPx || !heightPx) return undefined;
   const ratio = widthPx / heightPx;
   const category =
@@ -67,6 +70,12 @@ function designThumbnailPath(item: DesignArtifactListItem): string {
   return `/api/clue/design/documents/${encodeURIComponent(item.documentId)}/thumbnail?v=${encodeURIComponent(item.currentVersionId)}`;
 }
 
+/** The tag a composer sends pins a numeric design version; anything else is no version. */
+function versionOf(currentVersionId: string): number | undefined {
+  const value = Number(currentVersionId);
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 export function toProjectArtifact(
   item: DesignArtifactListItem,
   { now = new Date() }: { now?: Date } = {},
@@ -74,10 +83,25 @@ export function toProjectArtifact(
   const ad = item.kind === "ad";
   const collateralType = ad ? collateralTypeFor(item.artifactType) : "microsite";
   const size = ad ? sizeFor(item.widthPx, item.heightPx) : undefined;
+  const version = versionOf(item.currentVersionId);
+  const account = item.account;
   return ProjectArtifactSchema.parse({
     ...(collateralType ? { collateralType } : {}),
     ...(size ? { size } : {}),
+    // The account the document was made for, onto the three fields the
+    // designed card already reads. The logo is Brandfetch's Logo API mark when
+    // the backend could build one (founder, 2026-09-20 — the accounts screens'
+    // own rule), else the favicon proxy the artifact library uses; an account
+    // with no domain names itself and claims no logo.
+    ...(account ? { accountId: account.id, accountName: account.name } : {}),
+    ...(account?.logoPath
+      ? { accountLogoPath: account.logoPath }
+      : account?.domain
+        ? { accountLogoPath: `/api/source-favicon?domain=${encodeURIComponent(account.domain)}` }
+        : {}),
     createdAt: utcInstant(item.createdAt),
+    documentId: item.documentId,
+    ...(version ? { version } : {}),
     editedLabel: editedLabelFor(item.updatedAt, now),
     id: item.id,
     imagePath: designThumbnailPath(item),

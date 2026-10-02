@@ -111,6 +111,7 @@ class LogoEvidence(BaseModel):
     description: str | None = None
     usage_note: str | None = None
     tags: list[str] = []
+    source_occurrences: list[dict] = []
     pointer: EvidencePointer
 
     @field_validator("background_hint")
@@ -135,6 +136,7 @@ class ImageEvidence(BaseModel):
     description: str | None = None
     usage_note: str | None = None
     tags: list[str] = []
+    source_occurrences: list[dict] = []
     pointer: EvidencePointer
 
     @field_validator("dominant_colors")
@@ -408,6 +410,7 @@ class BrandEvidence(BaseModel):
 
     schema_version: int = 1
     source: dict
+    description_progress: dict = {}
     colors: list[ColorEvidence] = []
     type_samples: list[TypeSample] = []
     fonts: list[FontEvidence] = []

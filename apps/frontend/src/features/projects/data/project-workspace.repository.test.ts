@@ -6,6 +6,33 @@ import {
   getProjectWorkspace,
 } from "./project-workspace.repository";
 
+test("project rename writes through the BFF and returns the server title", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    assert.equal(String(input), "/api/clue/api/v1/projects/prj_real");
+    assert.equal(init?.method, "PATCH");
+    assert.equal(init?.cache, "no-store");
+    assert.deepEqual(JSON.parse(String(init?.body)), { title: " Campaign planning " });
+    return Response.json({ data: { id: "prj_real", title: "Campaign planning" } });
+  };
+  try {
+    assert.deepEqual(await createHttpProjectWorkspaceRepository({ mode: "http", prefix: "/api/clue" }).rename("prj_real", " Campaign planning "), {
+      id: "prj_real", title: "Campaign planning",
+    });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("project rename refuses failed writes and malformed responses", async () => {
+  const originalFetch = globalThis.fetch;
+  const repository = createHttpProjectWorkspaceRepository({ mode: "http", prefix: "/api/clue" });
+  try {
+    globalThis.fetch = async () => Response.json({ error: { code: "PERMISSION_DENIED", message: "Cannot rename this project" } }, { status: 403 });
+    await assert.rejects(repository.rename("prj_real", "New title"), /Cannot rename this project/);
+    globalThis.fetch = async () => Response.json({ data: { id: "prj_real" } });
+    await assert.rejects(repository.rename("prj_real", "New title"));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("fixture project shell uses the honest pre-artifact contract", async () => {
   const [home, project] = await Promise.all([
     getProjectHome(),
@@ -17,17 +44,21 @@ test("fixture project shell uses the honest pre-artifact contract", async () => 
   assert.ok(home.composerCapabilities.contextRefs);
   assert.deepEqual(project.artifacts, []);
   assert.deepEqual(Object.keys(project).sort(), [
+    "archivedAt",
     "artifacts",
     "brandId",
     "composerCapabilities",
     "createdAt",
     "defaultAgentProfileId",
+    "description",
     "entities",
     "id",
     "models",
+    "pinned",
     "productId",
     "status",
     "title",
+    "updatedAt",
   ]);
   assert.equal(home.suggestions.length, 3);
   assert.ok(home.suggestions.every((suggestion) => suggestion.length > 0));

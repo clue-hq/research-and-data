@@ -1,4 +1,8 @@
-import type { ChatPart, ChatTaskPart, TaskState } from "./chat-parts";
+import type {
+  ChatPart,
+  ChatTaskPart,
+  TaskState,
+} from "./chat-parts";
 
 /**
  * The research-execution task model (Figma `136:2`, charter §3.4).
@@ -120,7 +124,14 @@ export function researchTaskModel(part: ChatTaskPart): ResearchTaskModel {
       { id: "queued", label: "Queued", count: counts.queued, tone: "queued" },
       { id: "running", label: "Researching", count: counts.running, tone: "running" },
       { id: "completed", label: "Complete", count: counts.completed, tone: "complete" },
-      { id: "partial", label: "Partial", count: counts.partial, tone: "partial" },
+      {
+        id: "partial",
+        label: "Partial",
+        // The backend counts a reviewable subject apart from a shortfall; the card has one
+        // designed row for "finished, but not with everything", so both land in it.
+        count: counts.partial + counts.needsReview,
+        tone: "partial",
+      },
       { id: "blocked", label: "Blocked", count: counts.blocked, tone: "blocked" },
       { id: "failed", label: "Failed", count: counts.failed, tone: "failed" },
     ] as const
@@ -129,7 +140,9 @@ export function researchTaskModel(part: ChatTaskPart): ResearchTaskModel {
     .map((step) => ({ ...step }));
 
   const phaseIndex = RESEARCH_PHASES.indexOf(activity);
-  const settled = counts.completed + counts.partial;
+  // Settled is every subject that stopped moving — a reviewable one has, so leaving it out would
+  // stall the line at "2 of 3" on a run that has finished.
+  const settled = counts.completed + counts.partial + counts.needsReview;
   const summary =
     counts.total > 0
       ? `${settled} of ${counts.total} ${accountWord(counts.total)} ${

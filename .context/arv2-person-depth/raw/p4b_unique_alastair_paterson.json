@@ -1,0 +1,57 @@
+{
+  "id": "gen-1788330127-TdeoNOuyMkwdTBXKuVBr",
+  "object": "chat.completion",
+  "created": 1788330127,
+  "model": "openai/gpt-5-mini",
+  "provider": "OpenAI",
+  "system_fingerprint": null,
+  "service_tier": "default",
+  "choices": [
+    {
+      "index": 0,
+      "logprobs": null,
+      "finish_reason": "stop",
+      "native_finish_reason": "completed",
+      "message": {
+        "role": "assistant",
+        "content": "{\n  \"unique_insight\": {\n    \"text\": \"Alastair Paterson co-founded Digital Shadows in 2011 and led it to a $160 million acquisition by ReliaQuest in July 2022 \u2014 a major entrepreneurial exit that preceded founding Harmonic Security. This specific exit amount and timeline is a distinctive, non-job-title fact about his track record.\",\n    \"evidence_quote\": \"co-founded Digital Shadows in 2011 and led it to become an internationally recognised leader in threat intelligence and digital risk protection, before its acquisition by ReliaQuest for $160 million in July 2022.\",\n    \"source_url\": \"https://gbxglobal.org/gbx-co-chair-alastair-paterson-on-his-160m-exit-and-starting-over-with-harmonic/\",\n    \"why_generic_tools_miss_it\": \"Many enrichment tools list roles and companies but do not surface specific exit amounts or acquisition timelines tied to a founder's prior startup.\",\n    \"outreach_safe\": true\n  },\n  \"extra_life_claims\": [\n    {\n      \"field_key\": \"contact.facet.hobby\",\n      \"value\": \"Played in school bands and performed live as a teenager; played raves and large concerts in his early 20s\",\n      \"evidence_quote\": \"I was in school bands when I was a teenager, like 13, 14, and playing a concert for 400 people when I was 15. Then I played raves for 5,000 people. I was 22.\",\n      \"source_url\": \"https://www.909exec.com/podcasts/episode-51-from-the-uk-to-the-us-ai-security-for-the-enterprise-with-harmonics-alastair-paterson\",\n      \"charter_category\": \"life_outside_work\",\n      \"priority\": \"P2\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"outreach_safe\": true\n    },\n    {\n      \"field_key\": \"contact.facet.hobby\",\n      \"value\": [\"Plays football\", \"Runs\", \"Snowboards\"],\n      \"evidence_quote\": \"for me, fitness is big thing \u2013 I still play football, I run a lot, and I snowboard as often as possible.\",\n      \"source_url\": \"https://octopusventures.com/blog/digital-shadows-3-3/\",\n      \"charter_category\": \"life_outside_work\",\n      \"priority\": \"P2\",\n      \"use_class\": \"personal-public-non-sensitive\",\n      \"outreach_safe\": true\n    },\n    {\n      \"field_key\": \"contact.facet.public_appearances\",\n      \"value\": \"Gave a guest talk to a third year class at the University of Bristol Centre for Innovation and Entrepreneurship; referenced being \\\"in the same seat\\\" 20 years earlier\",\n      \"evidence_quote\": \"While visiting back in UK I was lucky enough to give a guest talk to a third year class at the University of Bristol Centre for Innovation and Entrepreneurship. 20 years ago I was in the same seat as these students.\",\n      \"source_url\": \"https://www.linkedin.com/posts/alastair-paterson-2586445_while-visiting-back-in-uk-i-was-lucky-enough-activity-7386564280935944192-RCdP\",\n      \"charter_category\": \"background\",\n      \"priority\": \"P3\",\n      \"use_class\": \"professional-public\",\n      \"outreach_safe\": true\n    }\n  ]\n}",
+        "refusal": null,
+        "reasoning": null,
+        "reasoning_details": [
+          {
+            "type": "reasoning.encrypted",
+            "data": "gAAAAABql8CQuG8MGyvY7ULvPJ8V4rYo31ZEr_E7iND0d0MjKnYO2x3hppnNTcYE0LffVwC7R_dxKixNzqjshVX_WVEq5J4uMJ5d95BXMnw3R19JoIAJQLWlEVzXi_VJ6mq_afKABAxcNWJJTyj1uvR9-A58d8SHk9nZWdciAT_GSVU6Z6gLsmmyOreeIdvli2SrwiWroXBhaMiUWP062B6vmx863T9LUOl1NXKYujBTW7V3pq2MsId4qko8dtRE66xULt70HVFuVF-gdlVkUeWUAJMZJQQXbilwgm7RD99AJueW9deYDw-pkzLWGMY8H39OlMYQJbJfcjbHz-fS7Yyaza_9XpP2-SQMFzISccUomotdj0RqO95NnkueJMyPzbmcbySt8h3jAY0asDXAnmTUahGWHI8Ovsu24B0w7Fe6eMOYXmCUqIk1BZEIt8omLKRdRqRmTyqraG9fSajeUWmgQse_3nqfwwMh_Wdtcnobn2RIF532phmtvSOMvx-48vXnhhCMeuQWtwq1pEe4rsrgHwGD_w3ZaBvd-MtdUy4TJm0MMYKmgpzZWd4B_z0b4l9lYvaAYZPe7NW1qKFaVc8eaHBeBqxs88jAybXd83v4cx5vfHQRjXUd5uCvh5R2eM2VYE56d5JdpoCglqMBzNXoEQWQBAzd5-XdnyFftATETx3wQ22BfpZHSwhRqlhmHVT-53KFcKc39HJWV8udGQjYndorJw6yN76ozNRROxrCzRB8Rj87r-hyiXensjsLTXKb6wGHOD9RNlspbiCQmgz-fHFOS17iNmP-FeAFx1yFaalk83TOeAntodhvnbx5j7f9vFXpfQhy7DUzkY-M4JhE8mTy6iCjOuXCty-kGcAANWc9W_BH9ia7yoBvLkpZ62cUkxoCO6nH8Q1uhqWQyhVHX77eSvZSPaY5eq6-BO1HzJQL4Agf2OdQVIUkJzrqXCeNM0ArGUcpN2ZG2TLbTNUqz4OAxr-lip9bz5Llc8lXodN1P5mvS6KgeraYeG3TSUmtWwQzy9W4FnD7wMGiBQsVhMSwojLAIT-RK6hE-6zwdVGT56DSX9yhh0lLRrbEaBRyM2ogp3YW8pQqRFkB_myv4UiqmEFgVES45GhvLhR-Ph9Hico3vSrytdmgdQEbOaT21oY1GdS22zEl304NSbt2zd328s2NZnD0_sGCmoY0V8Bvo_ma5u03PSlbCpfG76USSawngn0GzrpLtXqHHuPDZc91wm377toL4gUsOS_V5i2RPrruQZTZXHk3IYlnwTQ8tWJeW-DYcLAn2s_d2oOizW9LWzy0AF0thlP4Dl9eu11q-ke0YlQLcrP_1Rwd18zJB4dXfNtgKCS0j8FDrIkveFn8bRnpVAh-8Y4MENT5grY0Zx5s0v4mnE5inzBAvJquvZTXswWefxj_kvDDZK0AQDjVQNpr4A==.eyJlbmRwb2ludF9zbHVnIjoib3BlbmFpL2dwdC01LW1pbmktMjAyNS0wOC0wN3xvcGVuYWkifQ",
+            "format": "openai-responses-v1",
+            "id": "rs_0a1a33218d0e5548016a97c09080c087d0bc65e3478d6eb15b",
+            "index": 0
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3220,
+    "completion_tokens": 744,
+    "total_tokens": 3964,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.002293,
+      "upstream_inference_prompt_cost": 0.000805,
+      "upstream_inference_completions_cost": 0.001488
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 6.02
+}

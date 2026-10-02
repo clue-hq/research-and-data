@@ -1,0 +1,211 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 1.99,
+  "_request_path": "/v1/companies",
+  "_request_body": {
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "zafran.io"
+          ]
+        }
+      }
+    },
+    "page": 0,
+    "size": 3
+  },
+  "_body": {
+    "content": [
+      {
+        "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+        "summary": {
+          "name": "Zafran Security",
+          "legal_name": "Zafran Security Ltd.",
+          "description": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe\u2019re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+          "overview": "Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability management lifecycle. With threat actors rapidly exploiting newly revealed security vulnerabilities through AI automation, Zafran's platform enables organizations to take action before these vulnerabilities result in incidents. The company\u2019s solutions work alongside current security tools, utilizing AI agents to pinpoint weaknesses, provide contextual information, and address these issues by linking them to controls and evaluating the potential for exploitation.",
+          "founded_year": 2022,
+          "type": "PRIVATELY_HELD",
+          "industry": "computer and network security",
+          "staff": {
+            "total": 167,
+            "range": {
+              "start": 51,
+              "end": 200
+            }
+          },
+          "logo": {
+            "source": "https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg"
+          }
+        },
+        "link": {
+          "website": "https://www.zafran.io",
+          "domain": "zafran.io",
+          "domain_ltd": "zafran.io",
+          "linkedin": "https://www.linkedin.com/company/zafran-security",
+          "twitter": "https://x.com/Zafran_io",
+          "crunchbase": "https://www.crunchbase.com/organization/zafran"
+        },
+        "contact": {
+          "email": "info@zafran.io"
+        },
+        "financial": {
+          "revenue": {
+            "annual": {
+              "start": 10000000,
+              "end": 25000000,
+              "amount": "10000000-25000000"
+            }
+          },
+          "funding": {
+            "type": "SERIES_C",
+            "total_amount": 130500000,
+            "last_amount": 60000000,
+            "num_investor": 9,
+            "num_funding_rounds": 4,
+            "rounds": [
+              {
+                "announced_at": "2025-12-02",
+                "raised_amount": 60000000,
+                "type": "SERIES_C",
+                "investors": [
+                  "Vintage Investment Partners",
+                  "Cyberstarts",
+                  "Amex Ventures",
+                  "PSP Growth",
+                  "Knollwood Investment Advisory",
+                  "Sequoia Capital",
+                  "Menlo Ventures"
+                ]
+              },
+              {
+                "announced_at": "2024-09-08",
+                "raised_amount": 40000000,
+                "type": "SERIES_B",
+                "investors": [
+                  "Penny Jar Capital",
+                  "Cerca Partners",
+                  "Cyberstarts"
+                ]
+              },
+              {
+                "announced_at": "2024-03-28",
+                "raised_amount": 25000000,
+                "type": "VENTURE_ROUND"
+              },
+              {
+                "announced_at": "2024-03-28",
+                "raised_amount": 5500000,
+                "type": "SEED_ROUND"
+              }
+            ],
+            "date": "2025-12-02"
+          }
+        },
+        "location": {
+          "headquarter": {
+            "continent": "North America",
+            "country": "United States",
+            "city": "New York, New York",
+            "raw_address": "New York, New York, United States, North America",
+            "position": {
+              "lng": -73.98556,
+              "lat": 40.748295
+            }
+          },
+          "locations": [
+            {
+              "continent": "North America",
+              "country": "United States",
+              "city": "New York, New York",
+              "raw_address": "New York, New York, United States, North America",
+              "position": {
+                "lng": -73.98556,
+                "lat": 40.748295
+              }
+            }
+          ]
+        },
+        "technologies": [
+          {
+            "name": "dnssec",
+            "category": "ns"
+          },
+          {
+            "name": "google cloud",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon s3",
+            "category": "cdn"
+          },
+          {
+            "name": "envoy",
+            "category": "server"
+          },
+          {
+            "name": "floc opt-out",
+            "category": "ads"
+          },
+          {
+            "name": "cloudflare automatic challenge",
+            "category": "cdn"
+          },
+          {
+            "name": "cloudflare challenge",
+            "category": "cdn"
+          },
+          {
+            "name": "hubspot hosted",
+            "category": "hosting"
+          },
+          {
+            "name": "amazon oregon region",
+            "category": "hosting"
+          },
+          {
+            "name": "zendesk mail",
+            "category": "mx"
+          }
+        ],
+        "industries": [
+          "risk management",
+          "cyber security",
+          "information technology",
+          "network security",
+          "software",
+          "computer and network security"
+        ],
+        "languages": [
+          "english"
+        ],
+        "last_updated": "2026-08-22"
+      }
+    ],
+    "pageable": {
+      "pageNumber": 0,
+      "pageSize": 3,
+      "sort": {
+        "sorted": true,
+        "empty": false,
+        "unsorted": false
+      },
+      "offset": 0,
+      "paged": true,
+      "unpaged": false
+    },
+    "last": true,
+    "totalElements": 1,
+    "totalPages": 1,
+    "first": true,
+    "size": 3,
+    "number": 0,
+    "sort": {
+      "sorted": true,
+      "empty": false,
+      "unsorted": false
+    },
+    "numberOfElements": 1,
+    "empty": false
+  }
+}

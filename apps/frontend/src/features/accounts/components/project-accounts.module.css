@@ -1,0 +1,77 @@
+.surface {
+  container: target-accounts / inline-size;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--clue-background-neutral);
+  color: var(--clue-content-neutral);
+  font-family: var(--clue-ds-typography-text-sm-font-family);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  line-height: var(--clue-ds-typography-text-sm-line-height);
+}
+.breadcrumb {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 24px;
+  border-bottom: .5px solid var(--clue-ds-color-border-subtle);
+  color: var(--clue-content-subtle);
+}
+.breadcrumb > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.breadcrumb h1 { color: var(--clue-content-neutral); font-size: inherit; font-weight: 500; white-space: nowrap; }
+.count { margin-left: auto; white-space: nowrap; }
+.viewport { min-width: 0; min-height: 0; flex: 1; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--clue-ds-color-primitives-gray-600) var(--clue-background-page); }
+.footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  min-height: 54px;
+  padding: 12px 24px;
+  border-top: .5px solid var(--clue-border-table);
+  color: var(--clue-content-subtle);
+}
+.pagination, .pageSize, .selection { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.selection { padding: 6px 24px; border-bottom: .5px solid var(--clue-border-table); }
+.footer select {
+  min-width: 60px;
+  padding: 4px 8px;
+  border: .5px solid var(--clue-border-input);
+  border-radius: var(--clue-ds-product-component-button-sm-radius);
+  background: var(--clue-background-neutral);
+  color: var(--clue-content-neutral);
+}
+.empty { display: flex; min-height: 240px; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 32px; text-align: center; }
+.empty h2 { font-size: inherit; font-weight: 500; }
+.empty p { color: var(--clue-content-subtle); }
+.loadingRows { flex: 1; overflow: hidden; }
+.loadingRow { display: grid; grid-template-columns: 24px 2fr 1fr 1fr 1fr; align-items: center; gap: 24px; height: var(--clue-ds-product-dimension-table-row-spacious); padding: 0 24px; border-bottom: .5px solid var(--clue-border-table); }
+.skeleton { height: 14px; background: var(--clue-ds-color-primitives-gray-100); border-radius: 2px; animation: pulse 1.4s ease-in-out infinite alternate; }
+@keyframes pulse { to { opacity: .4; } }
+.dialog { position: fixed; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: .5px solid var(--clue-border-neutral); border-radius: var(--clue-ds-product-component-button-md-radius); background: var(--clue-background-neutral); color: var(--clue-content-neutral); box-shadow: var(--clue-shadow-low); }
+.dialog::backdrop { background: rgb(17 24 39 / 18%); }
+.previewScope { display: contents; }
+.dialogHeader { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; border-bottom: .5px solid var(--clue-border-table); background: var(--clue-background-neutral); }
+.dialogHeader h2 { font-size: inherit; font-weight: 500; }
+.dialogBody { padding: 24px; }
+.dialogBody > p { margin-bottom: 16px; color: var(--clue-content-subtle); }
+.dialogSearch { display: flex; width: 100%; align-items: center; gap: 8px; padding: 0 10px; }
+.dialogSearch input { min-width: 0; width: 100%; outline: none; }
+.pickerList { max-height: min(48dvh, 400px); overflow: auto; margin-top: 16px; }
+.pickerRow { display: flex; width: 100%; align-items: center; gap: 12px; padding: 12px 0; border-bottom: .5px solid var(--clue-border-table); }
+.pickerRow span { display: flex; flex: 1; flex-direction: column; text-align: left; }
+.pickerRow small { color: var(--clue-content-subtle); }
+.dialogFooter { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 24px; border-top: .5px solid var(--clue-border-table); }
+@container target-accounts (max-width: 650px) {
+  .breadcrumb, .footer { padding-inline: 16px; }
+  .breadcrumb > span:first-child { max-width: 30%; }
+  .pagination { width: 100%; justify-content: space-between; }
+}
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

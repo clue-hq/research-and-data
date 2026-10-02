@@ -25,7 +25,6 @@ from clue_core import (
     CommitteeExecutionAuthorization,
     EntityType,
     EnumerationScope,
-    ExtractionMethod,
     PreSpendGate,
     PreSpendKind,
     PreSpendRequest,
@@ -36,9 +35,12 @@ from clue_core import (
     UseClass,
     new_committee_eligibility_decision_id,
 )
+from clue_core.entity_research import SealedDiscoveryLaunchReceipt
 from clue_db import ConnFactory, transaction
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.discovery_scoring.tiering import (
+    ACCOUNT_RESEARCH_ELIGIBLE_TIERS,
+    TIER_CLAIM_MAX_SOURCE_TIER,
     TIER_FIELD,
     DiscoverySelectionDisposition,
     DiscoverySelectionPolicy,
@@ -73,7 +75,7 @@ class CommitteeEligibilityPolicy(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     version: str = COMMITTEE_ELIGIBILITY_POLICY_VERSION
-    committee_eligible_tiers: frozenset[str] = frozenset({"high", "top"})
+    committee_eligible_tiers: frozenset[str] = ACCOUNT_RESEARCH_ELIGIBLE_TIERS
     reusable_snapshot_ttl_seconds: int = Field(default=30 * 24 * 60 * 60, ge=0)
     required_use_class: UseClass = UseClass.PROFESSIONAL_PUBLIC
 
@@ -136,6 +138,7 @@ class CommitteeEligibilityService:
         authorization: CommitteeExecutionAuthorization,
         proposed_cost_cents: Decimal,
         now: datetime | None = None,
+        discovery_receipt: SealedDiscoveryLaunchReceipt | None = None,
     ) -> CommitteeEligibilityDecision:
         if proposed_cost_cents < 0:
             raise ValueError("committee eligibility proposed cost cannot be negative")
@@ -151,6 +154,7 @@ class CommitteeEligibilityService:
                 project_run_id=request.project_run_id,
                 icp_key=request.icp_key,
                 icp_version=request.icp_version,
+                discovery_receipt=discovery_receipt,
             )
         except DiscoverySealConflict:
             seal_reasons.append("discovery_seal_conflict")
@@ -189,42 +193,57 @@ class CommitteeEligibilityService:
                 or run.icp_version != request.icp_version
             ):
                 pass_a_reasons.append("project_run_lineage_mismatch")
-            elif run.status is not ProjectRunStatus.ACTIVE:
+            elif (
+                request.entity_research_job_id is None and run.status is not ProjectRunStatus.ACTIVE
+            ):
                 pass_a_reasons.append("project_run_not_active")
             elif request.entity_research_job_id is None and run.phase is not ProjectPhase.DEEP:
                 pass_a_reasons.append("historical_project_run_not_active_deep")
-            scoring = await get_checkpoint(conn, request.project_run_id, ProjectPhase.SCORING)
-            if scoring is None or scoring.status is not PhaseCheckpointStatus.COMMITTED:
-                pass_a_reasons.append("pass_a_scoring_checkpoint_not_committed")
+            if request.entity_research_job_id is not None:
+                # An exact live R6 account job is already the durable, explicit selection and
+                # provider authority for this account. Requiring the legacy scoring checkpoint
+                # here reintroduced a signal gate after the user had directly launched research.
+                pass_a_evidence.append(f"entity-research-job:{request.entity_research_job_id}")
             else:
-                pass_a_evidence.append(f"phase-checkpoint:{scoring.id}")
+                scoring = await get_checkpoint(conn, request.project_run_id, ProjectPhase.SCORING)
+                if scoring is None or scoring.status is not PhaseCheckpointStatus.COMMITTED:
+                    pass_a_reasons.append("pass_a_scoring_checkpoint_not_committed")
+                else:
+                    pass_a_evidence.append(f"phase-checkpoint:{scoring.id}")
 
             selection_policy = None
             selection = None
-            try:
-                spec = await get_icp_version(
-                    conn, request.workspace_id, request.icp_key, request.icp_version
-                )
-                if spec is None:
-                    raise ValueError("pinned ICP version does not exist")
-                selection_policy = DiscoverySelectionPolicy.from_slot(spec.discovery_strategy)
-            except (LookupError, ValueError):
-                criteria_reasons.append("pinned_icp_selection_policy_invalid")
-            if selection_policy is not None:
-                if not selection_policy.required_criteria:
-                    criteria_reasons.append("pinned_icp_has_no_must_have_criteria")
-                elif sealed is None:
-                    criteria_reasons.append("must_have_proof_requires_sealed_batch")
-                else:
-                    try:
-                        selection = await load_discovery_criteria_selection(
-                            conn,
-                            sealed=sealed,
-                            workspace_id=request.workspace_id,
-                            policy=selection_policy,
-                        )
-                    except ValueError:
-                        criteria_reasons.append("sealed_must_have_selection_invalid")
+            if request.entity_research_job_id is not None:
+                # Must-have criteria decide broad discovery selection. They are not a second
+                # committee gate after a human explicitly selected this exact account and the R6
+                # job reached committee work. This condition remains in the audit trail, proven
+                # by that exact job rather than a synthetic high/low signal classification.
+                criteria_evidence.append(f"entity-research-job:{request.entity_research_job_id}")
+            else:
+                try:
+                    spec = await get_icp_version(
+                        conn, request.workspace_id, request.icp_key, request.icp_version
+                    )
+                    if spec is None:
+                        raise ValueError("pinned ICP version does not exist")
+                    selection_policy = DiscoverySelectionPolicy.from_slot(spec.discovery_strategy)
+                except (LookupError, ValueError):
+                    criteria_reasons.append("pinned_icp_selection_policy_invalid")
+                if selection_policy is not None:
+                    if not selection_policy.required_criteria:
+                        criteria_reasons.append("pinned_icp_has_no_must_have_criteria")
+                    elif sealed is None:
+                        criteria_reasons.append("must_have_proof_requires_sealed_batch")
+                    else:
+                        try:
+                            selection = await load_discovery_criteria_selection(
+                                conn,
+                                sealed=sealed,
+                                workspace_id=request.workspace_id,
+                                policy=selection_policy,
+                            )
+                        except ValueError:
+                            criteria_reasons.append("sealed_must_have_selection_invalid")
             selected_view = None
             if selection is not None:
                 selected_view = next(
@@ -254,48 +273,53 @@ class CommitteeEligibilityService:
                                 reference.url for reference in observation.references
                             )
 
-            tier_checkpoint = await get_checkpoint(
-                conn, request.project_run_id, ProjectPhase.TIER_CHECKPOINT
-            )
-            if (
-                tier_checkpoint is None
-                or tier_checkpoint.status is not PhaseCheckpointStatus.COMMITTED
-                or tier_checkpoint.payload.get("decision_action") != "approve"
-            ):
-                tier_reasons.append("human_tier_checkpoint_not_approved")
+            if request.entity_research_job_id is not None:
+                # The exact running R6 job is the explicit human selection. Its provider-spend
+                # capacity check below proves that durable authority transactionally, so legacy
+                # discovery tier labels are neither required nor interpreted here.
+                tier_evidence.append(f"entity-research-job:{request.entity_research_job_id}")
             else:
-                tier_evidence.append(f"phase-checkpoint:{tier_checkpoint.id}")
-            matching_tiers = []
-            for claim in await claims_for(
-                conn,
-                request.account_id,
-                TIER_FIELD,
-                scope=WorkspaceScope.for_workspace(request.workspace_id),
-            ):
-                value = claim.value_json
-                if not isinstance(value, dict):
-                    continue
+                tier_checkpoint = await get_checkpoint(
+                    conn, request.project_run_id, ProjectPhase.TIER_CHECKPOINT
+                )
                 if (
-                    claim.id == request.tier_claim_id
-                    and claim.extraction_method is ExtractionMethod.HUMAN
-                    and claim.source_tier == 1
-                    and value.get("decision_basis") == "discovery_criteria"
-                    and value.get("project_run_id") == str(request.project_run_id)
-                    and sealed is not None
-                    and value.get("discovery_batch_id") == str(sealed.discovery_batch_id)
-                    and value.get("discovery_seal_sha256") == sealed.seal_sha256
-                    and value.get("icp_key") == request.icp_key
-                    and value.get("icp_version") == request.icp_version
-                    and value.get("disposition") == "selected"
-                    and value.get("tier") in self._policy.committee_eligible_tiers
-                    and selection_policy is not None
-                    and value.get("selection_policy_version") == selection_policy.policy_version
+                    tier_checkpoint is None
+                    or tier_checkpoint.status is not PhaseCheckpointStatus.COMMITTED
+                    or tier_checkpoint.payload.get("decision_action") != "approve"
                 ):
-                    matching_tiers.append(claim)
-            if len(matching_tiers) != 1:
-                tier_reasons.append("exact_human_committee_eligible_tier_missing")
-            else:
-                tier_evidence.append(f"claim:{matching_tiers[0].id}")
+                    tier_reasons.append("human_tier_checkpoint_not_approved")
+                else:
+                    tier_evidence.append(f"phase-checkpoint:{tier_checkpoint.id}")
+                matching_tiers = []
+                for claim in await claims_for(
+                    conn,
+                    request.account_id,
+                    TIER_FIELD,
+                    scope=WorkspaceScope.for_workspace(request.workspace_id),
+                ):
+                    value = claim.value_json
+                    if not isinstance(value, dict):
+                        continue
+                    if (
+                        claim.id == request.tier_claim_id
+                        and claim.source_tier <= TIER_CLAIM_MAX_SOURCE_TIER
+                        and value.get("decision_basis") == "discovery_criteria"
+                        and value.get("project_run_id") == str(request.project_run_id)
+                        and sealed is not None
+                        and value.get("discovery_batch_id") == str(sealed.discovery_batch_id)
+                        and value.get("discovery_seal_sha256") == sealed.seal_sha256
+                        and value.get("icp_key") == request.icp_key
+                        and value.get("icp_version") == request.icp_version
+                        and value.get("disposition") == "selected"
+                        and value.get("tier") in self._policy.committee_eligible_tiers
+                        and selection_policy is not None
+                        and value.get("selection_policy_version") == selection_policy.policy_version
+                    ):
+                        matching_tiers.append(claim)
+                if len(matching_tiers) != 1:
+                    tier_reasons.append("exact_committee_eligible_tier_claim_missing")
+                else:
+                    tier_evidence.append(f"claim:{matching_tiers[0].id}")
 
             reusable_operation = await find_committee_acquisition_operation(
                 conn,

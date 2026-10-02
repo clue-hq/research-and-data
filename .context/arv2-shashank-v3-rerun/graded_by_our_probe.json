@@ -1,0 +1,269 @@
+[
+  {
+    "name": "Lassie",
+    "url": "https://www.lassie.ai",
+    "domain": "lassie.ai",
+    "hq": "San Francisco  US",
+    "employees": null,
+    "websets_says": "",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-06-04 (3 months ago; votes {'series a': 8})",
+        "references": [
+          "https://techfundingnews.com/ex-robinhood-and-superhuman-alums-raise-35m-in-a16z-led-round-to-let-ai-run-small-businesses-end-to-end/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters San Francisco, None, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "pass",
+        "reason": "4 GTM of 16 open roles on ashby:lassie: Account Executive, GTM Associate, Head of Marketing, Software Engineer, Growth",
+        "references": [
+          "https://api.ashbyhq.com/posting-api/job-board/lassie?includeCompensation=true"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "Q7 only (4 concurrent GTM openings); one Tier-2 signal is not enough on its own",
+        "references": []
+      }
+    ],
+    "fit": 0.875,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 4,
+    "board": "ashby:lassie"
+  },
+  {
+    "name": "Probook",
+    "url": "https://probook.ai",
+    "domain": "probook.ai",
+    "hq": "New York  US",
+    "employees": null,
+    "websets_says": "",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-06-23 (3 months ago; votes {'series a': 17, 'seed': 12})",
+        "references": [
+          "https://a16z.com/announcement/investing-in-probook/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters New York, None, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "pass",
+        "reason": "5 GTM of 13 open roles on ashby:probook: Enterprise Account Executive, Events Marketing Specialist, Sales Development Representative, Senior Product Marketing Manager, Strategic Account Executive",
+        "references": [
+          "https://api.ashbyhq.com/posting-api/job-board/probook?includeCompensation=true"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "pass",
+        "reason": "Q1 in a GTM posting: \u201c\u2026ook. You figure out what works, document it, and do it at scale.    What you will own   - Outbound pipeline: Build and execute a high-volume outbound motion across cold calls, email sequen\u2026\u201d",
+        "references": [
+          "https://jobs.ashbyhq.com/probook/81d50bde-0d98-48f0-a3c1-d8eee6d4a3c0"
+        ]
+      }
+    ],
+    "fit": 1.0,
+    "band": "High",
+    "disposition": "pass",
+    "probe_cost_usd": 0.0,
+    "gtm_postings": 5,
+    "board": "ashby:probook"
+  },
+  {
+    "name": "Pie",
+    "url": "https://www.pie.com",
+    "domain": "pie.com",
+    "hq": "?  US",
+    "employees": null,
+    "websets_says": "",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-08-04 (1 months ago; votes {'series a': 1})",
+        "references": [
+          "https://www.morningstar.com/news/business-wire/20260804437204/pie-announces-investment-from-amex-ventures-to-help-expand-ai-powered-growth-platform-for-small-businesses"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters ?, None, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "homepage fetch 0",
+        "references": []
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no page to read",
+        "references": []
+      }
+    ],
+    "fit": 0.75,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.007,
+    "gtm_postings": 0,
+    "board": null
+  },
+  {
+    "name": "Rebar",
+    "url": "https://withrebar.ai",
+    "domain": "withrebar.ai",
+    "hq": "New York  US",
+    "employees": null,
+    "websets_says": "",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-03-11 (6 months ago; votes {'series a': 6})",
+        "references": [
+          "https://finance.yahoo.com/news/rebar-closes-14m-series-led-140000556.html"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "unclear",
+        "reason": "Websets says US but the probe carries a non-US dateline: European (news.crunchbase.com)",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "pass",
+        "reason": "3 GTM of 7 open roles on ashby:rebar: Account Executive, Business Development Representative, Founding Marketing Lead",
+        "references": [
+          "https://api.ashbyhq.com/posting-api/job-board/rebar?includeCompensation=true"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "pass",
+        "reason": "Q1 in a GTM posting: \u201c\u2026r growth is driven by strong market pull, customer referrals, industry relationships, and outbound sales. We're hiring for someone who'll own Rebar's external presence. That means owning h\u2026\u201d",
+        "references": [
+          "https://jobs.ashbyhq.com/rebar/804c39e8-9e33-45cf-86b3-bdf0ef38d0e6"
+        ]
+      }
+    ],
+    "fit": 0.875,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.007,
+    "gtm_postings": 3,
+    "board": "ashby:rebar"
+  },
+  {
+    "name": "GenHealth.ai",
+    "url": "https://genhealth.ai",
+    "domain": "genhealth.ai",
+    "hq": "?  US",
+    "employees": null,
+    "websets_says": "",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-09-09 (0 months ago; votes {'series a': 7, 'seed': 1, 'series d': 1, 'series c': 1})",
+        "references": [
+          "https://completeaitraining.com/news/genhealthai-raises-165-million-in-series-a-funding-for/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters ?, None, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a careers page exists for the human to read",
+        "references": [
+          "https://genhealth.ai/jobs"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.75,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.007,
+    "gtm_postings": 0,
+    "board": "page:genhealth.ai"
+  },
+  {
+    "name": "Avoca",
+    "url": "https://avoca.ai",
+    "domain": "avoca.ai",
+    "hq": "New York  US",
+    "employees": null,
+    "websets_says": "",
+    "verdicts": [
+      {
+        "gate": "stage",
+        "verdict": "pass",
+        "reason": "most recent labelled round 'series a' on 2026-04-28 (5 months ago; votes {'seed': 2, 'series a': 4, 'series b': 4})",
+        "references": [
+          "https://www.thesaasnews.com/news/avoca-raises-125m-at-1b-valuation/"
+        ]
+      },
+      {
+        "gate": "geography",
+        "verdict": "pass",
+        "reason": "Websets headquarters New York, None, US; no non-US dateline in the probe",
+        "references": []
+      },
+      {
+        "gate": "hiring",
+        "verdict": "unclear",
+        "reason": "no Ashby/Greenhouse/Lever board; a careers page exists for the human to read",
+        "references": [
+          "https://avoca.ai/inbound",
+          "https://avoca.ai/careers"
+        ]
+      },
+      {
+        "gate": "intent",
+        "verdict": "unclear",
+        "reason": "no board postings to read",
+        "references": []
+      }
+    ],
+    "fit": 0.75,
+    "band": "High",
+    "disposition": "unclear",
+    "probe_cost_usd": 0.007,
+    "gtm_postings": 0,
+    "board": "page:avoca.ai"
+  }
+]

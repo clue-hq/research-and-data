@@ -43,6 +43,9 @@ export function nodePatch(patch: Partial<NodePatch>): NodePatch {
   return {
     name: patch.name ?? unchanged(),
     kind: patch.kind ?? unchanged(),
+    ...(patch.explicit_text_tokens !== undefined
+      ? { explicit_text_tokens: patch.explicit_text_tokens }
+      : {}),
     transform: patch.transform ?? unchanged(),
     size: patch.size ?? unchanged(),
     fills: patch.fills ?? unchanged(),

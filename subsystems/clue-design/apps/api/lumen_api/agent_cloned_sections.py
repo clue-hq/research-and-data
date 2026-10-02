@@ -68,8 +68,8 @@ from .fragments import (
     REPAIR_NOTE_MAX_CHARS,
     WEB_FRAGMENT_SOURCE_KEY,
     FragmentRefused,
-    assert_campaign_shell_shape,
     build_fragment_artifact,
+    campaign_shell_shape_notes,
     campaign_shell_slots,
     create_web_fragment,
     degraded_headline,
@@ -276,14 +276,38 @@ def _resolve_lineages(
     def is_healthy(row: JsonObject) -> bool:
         return row.get("status") == "approved" and not row.get("degraded")
 
+    def is_campaign_variant(row: JsonObject) -> bool:
+        """A CAMPAIGN VARIANT is a sibling band, never a successor (founder ruling 2026-09-04).
+
+        A repair exists to REPLACE a broken original, so it rightly becomes what pins of the
+        original resolve to. A variant exists to serve one campaign — the homepage hero with
+        one CTA and an eyebrow — and must never hijack the canonical band: found live on the
+        third solo Ramp run, where the agent correctly refused to derive from Stripe's real
+        hero because "deriving from the homepage hero would replace Stripe's captured band for
+        every future pin", and lost the whole DERIVE-VARIANT rung to that (true) fear. The
+        marker is the note prefix the repair-cloned-sections skill mandates for variants
+        (`repair_reason` embeds the note in `derived_reason`); a variant keeps `derived_from`
+        as provenance but starts its own family, so pins of the original keep resolving to
+        the original (or its genuine repairs), and later pages pin the variant by its own id.
+        """
+        reason = row.get("derived_reason")
+        return isinstance(reason, str) and "campaign variant" in reason.lower()
+
+    def lineage_parent(row: JsonObject) -> str | None:
+        """The parent for RESOLUTION purposes: a variant's link is provenance only."""
+        if is_campaign_variant(row):
+            return None
+        parent = row.get("derived_from")
+        return parent if isinstance(parent, str) and parent in by_id else None
+
     def root_of(fragment_id: str) -> str:
         seen: set = set()
         current = fragment_id
         while current not in seen:
             seen.add(current)
             row = by_id.get(current)
-            parent = row.get("derived_from") if isinstance(row, dict) else None
-            if not isinstance(parent, str) or parent not in by_id:
+            parent = lineage_parent(row) if isinstance(row, dict) else None
+            if parent is None:
                 return current
             current = parent
         return current
@@ -292,8 +316,8 @@ def _resolve_lineages(
     children: Dict[str, List[str]] = {}
     for fragment_id, row in by_id.items():
         families.setdefault(root_of(fragment_id), []).append(row)
-        parent = row.get("derived_from")
-        if isinstance(parent, str) and parent in by_id:
+        parent = lineage_parent(row)
+        if parent is not None:
             children.setdefault(parent, []).append(fragment_id)
 
     healthy_below: Dict[str, bool] = {}
@@ -654,6 +678,36 @@ class DurableAgentClonedSectionRegistry:
 
     # --- the insert gate ---------------------------------------------------------------------
 
+    def read_source(self, fragment_id: str) -> JsonObject:
+        """A cloned section's REAL SOURCE — its captured HTML and scoped CSS — plus its slots.
+
+        The raw lane's whole premise is "remix the original's actual bytes", and until this
+        existed no tool showed the agent those bytes: `search_cloned_sections` lists slots and a
+        preview handle, `view` shows a picture. Found live 2026-09-04 (third solo Ramp run): the
+        agent spent eight calls grepping the workspace filesystem — other runs' directories
+        included — for clone markup that lives in blob storage, then composed from memory. This
+        is a read of any fragment the workspace holds (draft or released; inspecting is not
+        pinning, and the pin gate is unchanged), the same payload every pin resolves through.
+        """
+        loaded = read_web_fragment(
+            self.blobs.storage,
+            workspace_id=self.workspace_id,
+            fragment_id=fragment_id,
+        )
+        row = loaded.row
+        payload = loaded.payload
+        return {
+            "fragment_id": fragment_id,
+            "section_role": row.get("section_role"),
+            "label": row.get("label"),
+            "source_url": row.get("source_url"),
+            "status": row.get("status"),
+            "derived_from": row.get("derived_from"),
+            "slots": _slot_summary(loaded.slot_manifest),
+            "html": str(payload.get("html") or ""),
+            "css": str(payload.get("css") or ""),
+        }
+
     def resolve_insertable(self, fragment_id: str) -> JsonObject:
         """May this fragment be pinned, and what does it render as?
 
@@ -933,15 +987,17 @@ class DurableAgentClonedSectionRegistry:
         sanitized = sanitize_fragment_html(html, rehosted={})
 
         # A shell-role repair mints under the SHELL contract (ruling R23-F1, fix-round I2): the
-        # no-escape-route gate runs on it exactly as on the shell it replaces — this door was the
-        # one producer of `campaign_header` fragments the gate never saw, and the review minted a
-        # nav-carrying "repair" through it live — and its editing surface is the RULED slots, not
-        # whatever the harvest detector finds. A repair whose markup dropped a marker class has
-        # no place for a ruled slot to live and refuses typed at the annotator
-        # (`fragment.slot_selector_unmatched`) rather than minting with a shrunken surface.
+        # campaign-shell shape check runs on it exactly as on the shell it replaces — this door
+        # was the one producer of `campaign_header` fragments the check never saw — and its
+        # editing surface is the RULED slots, not whatever the harvest detector finds. Since
+        # founder ruling R-F5-8 what the check finds is ADVICE the caller hands back, never a
+        # refusal: a nav-carrying repair mints, with the note attached. A repair whose markup
+        # dropped a marker class still refuses typed at the annotator
+        # (`fragment.slot_selector_unmatched`) — that is a broken slot surface, not a taste.
         original_role = str(original.get("section_role") or "other")
+        shape_notes: list[str] = []
         if original_role in CAMPAIGN_SHELL_ROLES:
-            assert_campaign_shell_shape(original_role, sanitized.html)
+            shape_notes = campaign_shell_shape_notes(original_role, sanitized.html)
             slot_specs = list(campaign_shell_slots(original_role))
         else:
             slot_specs = list(detect_slots(sanitized.html).specs)
@@ -1044,6 +1100,10 @@ class DurableAgentClonedSectionRegistry:
             "converged": converged,
             "lineage_kept": row.get("derived_from") == replaces
             and row.get("derived_reason") == reason,
+            # R-F5-8: the campaign-shell shape is PRACTICE, not a gate. What the shape check
+            # found (if anything) rides back as sentences the agent reads and judges — the mint
+            # happened either way, because links are structurally free.
+            "advice": shape_notes,
             # A fresh repair is `draft`, so the answer is almost always False — and it is the
             # caller's job to say so out loud rather than to imply a pin that did not happen.
             "insertable": row.get("status") == "approved",
@@ -1079,8 +1139,9 @@ class DurableAgentClonedSectionRegistry:
         `set_web_fragment_status` transition every other release uses, recorded in provenance.
 
         **Shell roles keep their contract.** A composed `campaign_header`/`campaign_footer`
-        passes the same no-escape-route shape gate and RULED slot set as every other producer of
-        those roles (R23-F1) — this door does not bypass R23-3.
+        runs the same campaign-shell shape check and takes the same RULED slot set as every other
+        producer of those roles (R23-F1) — this door does not bypass R23-3, and since founder
+        ruling R-F5-8 that check's findings come back in `advice` rather than refusing the mint.
 
         Provenance carries ``composed: "agent"`` — listed and insertable like any released
         section, and excluded from whole-page recreates exactly like the campaign shells
@@ -1095,8 +1156,9 @@ class DurableAgentClonedSectionRegistry:
             )
         clean_role = (section_role or "other").strip().lower() or "other"
         sanitized = sanitize_fragment_html(html, rehosted={})
+        shape_notes: list[str] = []
         if clean_role in CAMPAIGN_SHELL_ROLES:
-            assert_campaign_shell_shape(clean_role, sanitized.html)
+            shape_notes = campaign_shell_shape_notes(clean_role, sanitized.html)
             slot_specs = list(campaign_shell_slots(clean_role))
         else:
             slot_specs = list(detect_slots(sanitized.html).specs)
@@ -1135,6 +1197,10 @@ class DurableAgentClonedSectionRegistry:
             "slot_keys": [spec.key for spec in slot_specs],
             "asset_digests": list(artifact.payload.get("asset_digests") or []),
             "sanitizer_notes": list(sanitized.notes) + list(artifact.notes),
+            # R-F5-8: the campaign-shell shape is PRACTICE, not a gate. What the shape check
+            # found (if anything) rides back as sentences the agent reads and judges — the mint
+            # happened either way, because links are structurally free.
+            "advice": shape_notes,
             # Content addressing: identical bytes converge onto the existing row
             # (first-writer-wins), whose status/lineage survive.
             "insertable": status == "approved",
@@ -1368,21 +1434,23 @@ class DurableAgentClonedSectionRegistry:
         source_kit_version: Optional[int] = None,
         composition: Optional[Mapping[str, Any]] = None,
     ) -> JsonObject:
-        """Mint one campaign shell — the identical fragment path, plus the no-escape-route gate.
+        """Mint one campaign shell — the identical fragment path, plus the shape check's notes.
 
         ``html`` is the ENGINE's own render of the composed shell (ruling R23-1, the same rule the
         repair mint obeys) and ``css`` the utilities that render compiles against the kit's theme.
         The order below is the mint pipeline's own, unchanged:
 
         sanitize (fail-closed on an un-rehostable byte reference, handlers stripped, banned
-        elements dropped) → **the campaign-shell shape gate** → annotate the RULED slots → scope
+        elements dropped) → **the campaign-shell shape check** → annotate the RULED slots → scope
         the CSS under the fragment's wrapper → content-address → insert the row.
 
-        The one addition is :func:`assert_campaign_shell_shape`, and it sits HERE rather than in
-        the composer on purpose (ruling R23-3): the rule is that a shell cannot contain an escape
-        route, and a rule enforced only by the thing that writes the markup is a rule about that
-        writer, not about shells. It runs on the SANITIZED form — what the artifact will
-        literally be — so a link the sanitizer would have kept is a link the gate has seen.
+        The one addition is :func:`campaign_shell_shape_notes`, and it sits HERE rather than in
+        the composer on purpose (ruling R23-3): the practice is about SHELLS, and a rule known
+        only to the thing that writes the markup is a rule about that writer. It runs on the
+        SANITIZED form — what the artifact will literally be — so a link the sanitizer would have
+        kept is a link the check has seen. Founder ruling R-F5-8 (2026-09-02) made its findings
+        ADVICE: they ride back in the result's `advice`, and the shell mints regardless. Links
+        are structurally free; the agent is told, not stopped.
 
         Slots are the RULED ones, not detected ones. A campaign shell's editing surface is the
         contract in R23-2, and running the harvest detector over it would offer whatever the
@@ -1399,7 +1467,7 @@ class DurableAgentClonedSectionRegistry:
                 f"{', '.join(CAMPAIGN_SHELL_ROLES)}"
             )
         sanitized = sanitize_fragment_html(html, rehosted={})
-        assert_campaign_shell_shape(role, sanitized.html)
+        shape_notes = campaign_shell_shape_notes(role, sanitized.html)
         slots = campaign_shell_slots(role)
 
         probe = build_fragment_artifact(
@@ -1455,6 +1523,10 @@ class DurableAgentClonedSectionRegistry:
             # The FIRST pass's notes are the real ones (`create_web_fragment` sanitizes again,
             # idempotently, over markup this method already cleaned).
             "sanitizer_notes": list(sanitized.notes) + list(artifact.notes),
+            # R-F5-8: the campaign-shell shape is PRACTICE, not a gate. What the shape check
+            # found (if anything) rides back as sentences the agent reads and judges — the mint
+            # happened either way, because links are structurally free.
+            "advice": shape_notes,
             # Content addressing, said out loud: the same shell for the same kit converges.
             "converged": already is not None,
             "insertable": row.get("status") == "approved",

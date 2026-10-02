@@ -1,0 +1,11 @@
+                job_id                |   verdict    | count 
+--------------------------------------+--------------+-------
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | EXACT        |    52
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | NOT_FOUND    |    18
+ 691a7d73-bd64-57fa-b250-1da18eaea3f2 | PARTIAL      |    12
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | EXACT        |    55
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | fetch_failed |     1
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | NOT_FOUND    |    15
+ f85a7774-7b62-5e75-8034-728613ac7fe0 | PARTIAL      |     3
+(7 rows)
+

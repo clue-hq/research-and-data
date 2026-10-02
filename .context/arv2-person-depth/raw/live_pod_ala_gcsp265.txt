@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1.0, maximum-scale=2.0">
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-itunes-app" content="app-id=1554145026">
+	<meta name="description" content="Guest:  , CEO and co-founder @   Topics:   focuses on securing generative AI in use. Can you walk us through a real, anonymized example of a data leak caused by employee AI usage that your platform has identified? AI governance gets thrown around a lot. What does this mean in the context of Shadow AI? How should organizations be thinking about governing AI in light of upcoming AI regulations in the US and in the EU? If we generally agree that employees are using AI tools before they are sanctioned, how can organizations control this? Network, API, endpoint? Many organizations struggle with the &quot;ban vs. embrace&quot; debate for generative AI. Based on your experience, what's a compelling argument for moving from a blanket ban to a managed, secure adoption model? Can you share a success story where this approach demonstrably reduced risk? The term &quot;shadow AI&quot; is often used interchangeably with &quot;shadow IT&quot; (but for AI-powered applications)&amp;nbsp; but you've highlighted that AI is a different beast. What is the single biggest distinction between managing the risk of unsanctioned AI tools versus unsanctioned IT applications? Looking forward, where do you see the biggest risks in the evolution of shadow AI? For instance, will the next threat be from highly specialized AI agents trained on proprietary data, or from the rapid proliferation of new, unmonitored open-source models? Given the speed of change in this space, what's one piece of advice you'd give to a CISO today who is just beginning to get a handle on their organization's shadow AI problem?  Resources:     blog  blog (RSA 2026 presentation coming!)  blog  (aka “dirty bomb episode”)  video  ">
+	<meta itemprop="name" content="Cloud Security Podcast by Google: EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!">
+	<meta itemprop="description" content="Guest:  , CEO and co-founder @   Topics:   focuses on securing generative AI in use. Can you walk us through a real, anonymized example of a data leak caused by employee AI usage that your platform has identified? AI governance gets thrown around a lot. What does this mean in the context of Shadow AI? How should organizations be thinking about governing AI in light of upcoming AI regulations in the US and in the EU? If we generally agree that employees are using AI tools before they are sanctioned, how can organizations control this? Network, API, endpoint? Many organizations struggle with the &quot;ban vs. embrace&quot; debate for generative AI. Based on your experience, what's a compelling argument for moving from a blanket ban to a managed, secure adoption model? Can you share a success story where this approach demonstrably reduced risk? The term &quot;shadow AI&quot; is often used interchangeably with &quot;shadow IT&quot; (but for AI-powered applications)&amp;nbsp; but you've highlighted that AI is a different beast. What is the single biggest distinction between managing the risk of unsanctioned AI tools versus unsanctioned IT applications? Looking forward, where do you see the biggest risks in the evolution of shadow AI? For instance, will the next threat be from highly specialized AI agents trained on proprietary data, or from the rapid proliferation of new, unmonitored open-source models? Given the speed of change in this space, what's one piece of advice you'd give to a CISO today who is just beginning to get a handle on their organization's shadow AI problem?  Resources:     blog  blog (RSA 2026 presentation coming!)  blog  (aka “dirty bomb episode”)  video  ">
+	<meta itemprop="image" content="https://assets.libsyn.com/secure/item/40255005">
+	<meta property="og:url" content="https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act">
+	<meta property="og:title" content="Cloud Security Podcast by Google: EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!">
+	<meta property="og:description" content="Guest:  , CEO and co-founder @   Topics:   focuses on securing generative AI in use. Can you walk us through a real, anonymized example of a data leak caused by employee AI usage that your platform has identified? AI governance gets thrown around a lot. What does this mean in the context of Shadow AI? How should organizations be thinking about governing AI in light of upcoming AI regulations in the US and in the EU? If we generally agree that employees are using AI tools before they are sanctioned, how can organizations control this? Network, API, endpoint? Many organizations struggle with the &quot;ban vs. embrace&quot; debate for generative AI. Based on your experience, what's a compelling argument for moving from a blanket ban to a managed, secure adoption model? Can you share a success story where this approach demonstrably reduced risk? The term &quot;shadow AI&quot; is often used interchangeably with &quot;shadow IT&quot; (but for AI-powered applications)&amp;nbsp; but you've highlighted that AI is a different beast. What is the single biggest distinction between managing the risk of unsanctioned AI tools versus unsanctioned IT applications? Looking forward, where do you see the biggest risks in the evolution of shadow AI? For instance, will the next threat be from highly specialized AI agents trained on proprietary data, or from the rapid proliferation of new, unmonitored open-source models? Given the speed of change in this space, what's one piece of advice you'd give to a CISO today who is just beginning to get a handle on their organization's shadow AI problem?  Resources:     blog  blog (RSA 2026 presentation coming!)  blog  (aka “dirty bomb episode”)  video  ">
+	<meta property="og:image" content="http://assets.libsyn.com/show/324875?height=250&amp;width=250&amp;overlay=true">
+	<meta property="og:image:width" content="250">
+	<meta property="og:image:height" content="250">
+	<meta name="twitter:site" content="@CloudSecPodcast">
+	<meta name="twitter:card" content="player">
+	<meta name="twitter:image" content="https://assets.libsyn.com/secure/item/40255005?height=250&amp;width=250&amp;overlay=true">
+	<meta name="twitter:player" content="https://play.libsyn.com/embed/episode/id/40255005/theme/modern/tdest_id/2641823">
+	<meta name="twitter:player:width" content="640">
+	<meta name="twitter:player:height" content="200">
+	<meta name="twitter:player:stream" content="https://traffic.libsyn.com/secure/cloudsecuritypodcast/EP265_not261_CloudSecPodcast.mp3">
+	<meta name="twitter:player:stream:content_type" content="audio/mpeg">
+	<meta name="twitter:title" content="Cloud Security Podcast by Google: EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!">
+	<meta name="twitter:description" content="Guest:  , CEO and co-founder @   Topics:   focuses on securing generative AI in use. Can you walk us through a real, anonymized example of a data leak caused by employee AI usage that your platform has identified? AI governance gets thrown around a lot. What does this mean in the context of Shadow AI? How should organizations be thinking about governing AI in light of upcoming AI regulations in the US and in the EU? If we generally agree that employees are using AI tools before they are sanctioned, how can organizations control this? Network, API, endpoint? Many organizations struggle with the &quot;ban vs. embrace&quot; debate for generative AI. Based on your experience, what's a compelling argument for moving from a blanket ban to a managed, secure adoption model? Can you share a success story where this approach demonstrably reduced risk? The term &quot;shadow AI&quot; is often used interchangeably with &quot;shadow IT&quot; (but for AI-powered applications)&amp;nbsp; but you've highlighted that AI is a different beast. What is the single biggest distinction between managing the risk of unsanctioned AI tools versus unsanctioned IT applications? Looking forward, where do you see the biggest risks in the evolution of shadow AI? For instance, will the next threat be from highly specialized AI agents trained on proprietary data, or from the rapid proliferation of new, unmonitored open-source models? Given the speed of change in this space, what's one piece of advice you'd give to a CISO today who is just beginning to get a handle on their organization's shadow AI problem?  Resources:     blog  blog (RSA 2026 presentation coming!)  blog  (aka “dirty bomb episode”)  video  ">		            <link rel="alternate" type="application/json+oembed" href="//oembed.libsyn.com?url=http://cloudsecuritypodcast.libsyn.com%2Fep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act&format=json">
+        <link rel="alternate" type="text/xml+oembed" href="//oembed.libsyn.com?url=http://cloudsecuritypodcast.libsyn.com%2Fep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act&format=xml">
+    
+    <title>Cloud Security Podcast by Google: EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!</title>
+
+			<link rel="alternate" type="application/rss+xml" title="Cloud Security Podcast by Google" href="http://feeds.libsyn.com/324875/rss">
+	
+    <!-- Bootstrap Core CSS -->
+    <link href="https://ssl-static.libsyn.com/p/assets/platform/websuite/css/bootstrap.css" rel="stylesheet">
+    <link href="https://ssl-static.libsyn.com/p/assets/platform/websuite/css/jquery.smartmenus.bootstrap.css" rel="stylesheet">
+
+    <!-- Custom CSS -->
+    <link href="https://ssl-static.libsyn.com/p/assets/platform/websuite/css/default-theme.css" rel="stylesheet">
+
+    <!-- Custom Fonts -->
+    <link href="https://maxcdn.bootstrapcdn.com/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet" type="text/css">
+
+    <link href="https://://fonts.googleapis.com/css?family=Lato:300,400,700,300italic,400italic,700italic" rel="stylesheet" type="text/css">
+
+    
+    <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+        <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+        <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+    <![endif]-->
+
+    <!-- style overrides -->
+    <style>
+		    .image-pop:hover {
+        cursor: hand;
+        cursor: pointer;
+        opacity: .8;
+    }
+
+    .image-pop {
+        height:auto;
+        width:100%;
+        max-width:400px;
+        padding-right:20px;
+    }
+
+    .img-social {
+        max-height:16px;
+    }
+
+    .producer-message-row {
+        word-wrap: break-word;
+    }
+
+    ul.social-list {
+        list-style: none;
+    }
+
+    ul.social-list li{
+        display: inline;
+        margin-left: 5px;
+    }
+
+            .intro-message h1 {
+            font-size:5em;
+         }
+         @media (max-width: 1199px) {
+            .intro-message h1 {
+                font-size:4em;
+             }
+         }
+         @media (max-width: 991px) {
+            .intro-message h1 {
+                font-size:3em;
+             }
+         }
+         @media (max-width: 842px) {
+            .intro-message h1 {
+                font-size:2.5em;
+             }
+         }
+          @media (max-width: 750px) {
+            .intro-message h1 {
+                font-size:2em;
+             }
+         }
+          @media (max-width: 500px) {
+            .intro-message h1 {
+                font-size:1.5em;
+             }
+         }
+             .profile {
+           background: url(https://assets.libsyn.com/secure/content/99381704/?height=80) no-repeat center center;
+           background-size: cover;
+         }
+             .intro-header, .banner, .navbar-default .navbar-nav>li>a, .navbar-brand, .producer-message, .producer-message-row a, .btn-widget-login, .navbar-default .navbar-nav .open, .dropdown-submenu, .widget-header{
+           color:#ffffff !important;
+        }
+        .producer-message-row a {
+            text-decoration: underline;
+        }
+             .intro-message h1, .subtitle-text {
+            color:#000000 !important;
+            background: #fff;
+        }
+     
+        .navbar-default, .producer-message, .btn-send, .btn-widget-login, .dropdown-menu, .navbar-default .navbar-nav > .open > a, .navbar-default .navbar-nav > .open > a:hover, .navbar-default .navbar-nav > .open > a:focus, .nav .open > a, .nav .open > a:hover, .nav .open > a:focus, .widget-btn{
+            background-color:#000000 !important;
+         }
+
+         .custom-blog-thumbnail {
+            border:1px solid #000000 !important;
+        }
+
+            .libsyn-item a {
+           color:#337ab7 !important;
+        }
+     
+    .dropdown-menu > li > a {
+        color: #ffffff;
+    }
+
+    .navbar-nav > li > .dropdown-menu > li a:hover {
+        background: #ffffff !important;
+        color:#000000 !important;
+    }
+
+    body {
+        font-weight:normal !important;
+    }
+
+    .dropdown-submenu{
+        display: block;
+        padding: 3px 20px;
+        clear: both;
+        font-weight: 400;
+        line-height: 1.42857143;
+        white-space: nowrap;
+    }
+
+    .left-side {
+        padding-top:0px !important;
+    }
+
+    .section-heading{
+        margin:5px 0 25px 0;
+    }
+
+    p.date {
+        margin:5px 0 5px 0;
+    }
+
+    .item-height-restriction, .item-height-restriction-video {
+        height:auto;
+    }
+
+    .show_more {
+        direction:rtl;
+        text-indent: 25px;
+        font-size:15px;
+        font-weight:400;
+    }
+
+    .adjusted-player {
+        width: 1px;
+        min-width: 100%;
+    }
+
+     .adjusted-player {
+        width: 1px;
+        min-width: 100%;
+    }
+
+    .navbar-fixed-top .navbar-collapse, .navbar-fixed-bottom .navbar-collapse {
+       max-height: 1000px;
+    }
+
+		@media screen and (max-width: 767px){
+			.navbar-form{
+				margin-right: 0px;
+				margin-left: 0px;
+			}
+		}
+
+    </style>
+
+    
+     <!-- Google Analytics -->
+		 
+ 		
+    <script>
+    (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+    (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+    m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+    })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+    ga('create', 'UA-1417413-3', 'auto');
+    ga('send', 'pageview');
+
+        </script>
+
+    <!-- End Google Analytics -->
+
+</head>
+
+<body>
+    <script>
+      (function(w, d){
+       var id='embedly-platform', n = 'script';
+       if (!d.getElementById(id)){
+         w.embedly = w.embedly || function() {(w.embedly.q = w.embedly.q || []).push(arguments);};
+         var e = d.createElement(n); e.id = id; e.async=1;
+         e.src = ('https:' === document.location.protocol ? 'https' : 'http') + '://cdn.embedly.com/widgets/platform.js';
+         var s = d.getElementsByTagName(n)[0];
+         s.parentNode.insertBefore(e, s);
+       }
+      })(window, document);
+    </script>
+
+    <div id="fb-root"></div>
+    <script>(function(d, s, id) {
+      var js, fjs = d.getElementsByTagName(s)[0];
+      if (d.getElementById(id)) return;
+      js = d.createElement(s); js.id = id;
+      js.src = "//connect.facebook.net/en_US/sdk.js#xfbml=1&version=v2.8&appId=834757889913083";
+      fjs.parentNode.insertBefore(js, fjs);
+    }(document, 'script', 'facebook-jssdk'));</script>
+
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-default navbar-fixed-top topnav" role="navigation" id="main-menu">
+        <div class="container topnav">
+            <!-- Brand and toggle get grouped for better mobile display -->
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                                    <a title="Home Page" class="navbar-brand topnav" href="/"><div class="profile"></div></a>
+                            </div>
+            <!-- Collect the nav links, forms, and other content for toggling -->
+            <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+
+                <ul class="nav navbar-nav navbar-right" data-sm-skip-collapsible-behavior="true">
+                    <li>
+                        
+                        <form class="navbar-form navbar-right" method="GET" action="https://cloudsecuritypodcast.libsyn.com/size/5/">
+                            <div class="form-group search-form">
+                                <input type="text" aria-label="Search for Episodes" name="search" class="form-control" value="" placeholder="Search">
+                            </div>
+                            <button type="submit" aria-label="Click to submit search" class="btn btn-default"><i class="fa fa-search"></i></button>
+                        </form>
+                    </li>
+                    <li>
+                                <a href="" class="share-link" data-toggle="modal" data-target="#aboutModal">About</a>
+                            </li>
+                    <li><a href="#">Episodes <span class="caret"></span></a>
+                            <ul class="dropdown-menu">
+                                <li><a href="/">All Episodes</a></li>
+
+                                <!-- premium episodes link -->
+                                
+                                <!-- categories -->
+                                
+                                <!-- archives -->
+                                                                    <li><a href="#">Archives <b class="caret"></b> </a>
+                                        <ul class="dropdown-menu">
+                                            <li><a href="/2026">2026 <b class="caret"></b> </a><ul class="dropdown-menu"><li><a href="/2026/08">August</a></li><li><a href="/2026/07">July</a></li><li><a href="/2026/06">June</a></li><li><a href="/2026/05">May</a></li><li><a href="/2026/04">April</a></li><li><a href="/2026/03">March</a></li><li><a href="/2026/02">February</a></li><li><a href="/2026/01">January</a></li></ul></li><li><a href="/2025">2025 <b class="caret"></b> </a><ul class="dropdown-menu"><li><a href="/2025/12">December</a></li><li><a href="/2025/11">November</a></li><li><a href="/2025/10">October</a></li><li><a href="/2025/09">September</a></li><li><a href="/2025/08">August</a></li><li><a href="/2025/07">July</a></li><li><a href="/2025/06">June</a></li><li><a href="/2025/05">May</a></li><li><a href="/2025/04">April</a></li><li><a href="/2025/03">March</a></li><li><a href="/2025/02">February</a></li><li><a href="/2025/01">January</a></li></ul></li><li><a href="/2024">2024 <b class="caret"></b> </a><ul class="dropdown-menu"><li><a href="/2024/12">December</a></li><li><a href="/2024/11">November</a></li><li><a href="/2024/10">October</a></li><li><a href="/2024/09">September</a></li><li><a href="/2024/08">August</a></li><li><a href="/2024/07">July</a></li><li><a href="/2024/06">June</a></li><li><a href="/2024/05">May</a></li><li><a href="/2024/04">April</a></li><li><a href="/2024/03">March</a></li><li><a href="/2024/02">February</a></li><li><a href="/2024/01">January</a></li></ul></li><li><a href="/2023">2023 <b class="caret"></b> </a><ul class="dropdown-menu"><li><a href="/2023/12">December</a></li><li><a href="/2023/11">November</a></li><li><a href="/2023/10">October</a></li><li><a href="/2023/09">September</a></li><li><a href="/2023/08">August</a></li><li><a href="/2023/07">July</a></li><li><a href="/2023/06">June</a></li><li><a href="/2023/05">May</a></li><li><a href="/2023/04">April</a></li><li><a href="/2023/03">March</a></li><li><a href="/2023/02">February</a></li><li><a href="/2023/01">January</a></li></ul></li><li><a href="/2022">2022 <b class="caret"></b> </a><ul class="dropdown-menu"><li><a href="/2022/12">December</a></li><li><a href="/2022/11">November</a></li><li><a href="/2022/10">October</a></li><li><a href="/2022/09">September</a></li><li><a href="/2022/08">August</a></li><li><a href="/2022/07">July</a></li><li><a href="/2022/06">June</a></li><li><a href="/2022/05">May</a></li><li><a href="/2022/04">April</a></li><li><a href="/2022/03">March</a></li><li><a href="/2022/02">February</a></li><li><a href="/2022/01">January</a></li></ul></li><li><a href="/2021">2021 <b class="caret"></b> </a><ul class="dropdown-menu"><li><a href="/2021/12">December</a></li><li><a href="/2021/11">November</a></li><li><a href="/2021/10">October</a></li><li><a href="/2021/09">September</a></li><li><a href="/2021/08">August</a></li><li><a href="/2021/07">July</a></li><li><a href="/2021/06">June</a></li><li><a href="/2021/05">May</a></li><li><a href="/2021/04">April</a></li><li><a href="/2021/03">March</a></li><li><a href="/2021/02">February</a></li></ul></li>
+                                        </ul>
+                                    </li>
+                                                            </ul>
+                    </li>
+                    <!-- premium episodes link -->
+                                                        </ul>
+            </div>
+            <!-- /.navbar-collapse -->
+        </div>
+        <!-- /.container -->
+    </nav>
+
+
+    <!-- Header -->
+    <a name="about"></a>
+    <div class="intro-header">
+        <div class="container main-container">
+            <div class="row">
+                <div class="col-lg-12">
+                     <div class="click-alert alert alert-info fade">
+                      <strong>Preview Mode</strong> Links will not work in preview mode
+                    </div>
+                    <div class="intro-message">
+                                                    <h1>Cloud Security Podcast by Google</h1>
+                            <h3><hr class="intro-divider"> <div class="subtitle-text hidden-xs">EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!</div></h3>
+                                            </div>
+                </div>
+            </div>
+        </div>
+        <!-- /.container -->
+
+    </div>
+    <!-- /.intro-header -->
+
+    <!-- Page Content -->
+
+        <div class="container">
+
+            <div class="alert alert-info alert-dismissible producer-message">
+                            <div class="row">
+                <div class="col-lg-12">
+                                        <div class="col-lg-12 col-sm-12 align-top">
+                        <ul class="text-center social-list">
+                         <li style="display: inline;"><a aria-label="Visit Us on Facebook" title="Visit Us on Facebook" data-toggle="tooltip" data-placement="bottom" target="_blank" rel="noopener noreferrer" href="https://www.facebook.com/CloudSecPodcast" class="btn btn-default"><i class="fa fa-facebook fa-fw"></i></a></li><li style="display: inline;"><a aria-label="Visit Us on Twitter" title="Visit Us on Twitter" data-toggle="tooltip" data-placement="bottom" target="_blank" rel="noopener noreferrer" href="http://twitter.com/CloudSecPodcast" class="btn btn-default"><i class="fa fa-twitter fa-fw"></i></a></li><li style="display: inline;"><a aria-label="Subscribe to RSS Feed" title="Subscribe to RSS Feed" data-toggle="tooltip" data-placement="bottom" target="_blank" rel="noopener noreferrer" href="http://feeds.libsyn.com/324875/rss" class="btn btn-default"><i class="fa fa-rss fa-fw"></i></a></li><li style="display: inline;"><a aria-label="Listen on Deezer" title="Listen on Deezer" data-toggle="tooltip" data-placement="bottom" target="_blank" rel="noopener noreferrer" href="https://www.deezer.com/us/show/2976392" class="btn btn-default btn-social"><img src="https://ssl-static.libsyn.com/p/assets/platform/websuite/deezer-logo.png" class="img-social" alt="Deezer"></a></li><li style="display: inline;"><a aria-label="Listen on Apple Podcasts" title="Listen on Apple Podcasts" data-toggle="tooltip" data-placement="bottom" target="_blank" rel="noopener noreferrer" href="https://podcasts.apple.com/us/podcast/cloud-security-podcast-by-google/id1554145026?ls=1" class="btn btn-default"><i class="fa fa-podcast fa-fw"></i></a></li><li style="display: inline;"><a aria-label="Listen on TuneIn" title="Listen on TuneIn" data-toggle="tooltip" data-placement="bottom" target="_blank" rel="noopener noreferrer" href="https://tunein.com/podcasts/Technology-Podcasts/Cloud-Security-Podcast-by-Google-p1408150/" class="btn btn-default"><img src="https://ssl-static.libsyn.com/p/assets/platform/websuite/tunein.png" class="img-social" alt="TuneIn"></a></li><li style="display: inline;"><a aria-label="Listen on Stitcher" title="Listen on Stitcher" data-toggle="tooltip" data-placement="bottom" target="_blank" rel="noopener noreferrer" href="https://www.stitcher.com/show/cloud-security-podcast-by-google" class="btn btn-default btn-social"><img src="https://ssl-static.libsyn.com/p/assets/platform/websuite/stitcher.png" class="img-social" alt="Stitcher"></a></li><li style="display: inline;"><a aria-label="Listen on Spotify" title="Listen on Spotify" data-toggle="tooltip" data-placement="bottom" target="_blank" rel="noopener noreferrer" href="https://open.spotify.com/show/1MetS3TVKZVraqykpwHOCL" class="btn btn-default"><i class="fa fa-spotify fa-fw"></i></a></li>                        </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- bread crumbs -->
+                                <ol class="breadcrumb">
+                  <li class="breadcrumb-item"><a  href="/">All Episodes</a></li>
+                  <li class="breadcrumb-item active">EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!</li>
+                </ol>
+                <div class="col-lg-12 col-md-12 item-container"><div class="row libsyn-item libsyn libsyn-item-free libsyn-item-40255005" data-id="40255005"><div class="col-lg-12 col-md-12 left-side libsyn-item-40255005"><h2 class="section-heading"><a data-iframe-id="embed_40255005"  class="read_more" href="https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act">EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!</a></h2><iframe id="embed_40255005"  title="EP265 Beyond Shadow IT: Unsanctioned AI Agents Don't Just Talk, They Act!" style="border: none" src="//html5-player.libsyn.com/embed/episode/id/40255005/height/90/theme/custom/thumbnail/yes/direction/forward/tdest_id/2641823/render-playlist/no/custom-color/000000/" height="90" width="100%" scrolling="no"  allowfullscreen webkitallowfullscreen mozallowfullscreen oallowfullscreen msallowfullscreen></iframe><div class="row"></div></div><div class="col-lg-12 col-md-12 col-sm-12 right-side"><p class="date">Mar 2, 2026</p><p class="lead"><p dir="ltr">Guest:</p>
+<ul>
+<li dir="ltr" role="presentation"><a href=
+"https://www.linkedin.com/in/alastair-paterson-2586445/">Alastair
+Paterson</a>, CEO and co-founder @ <a href=
+"https://www.harmonic.security/">Harmonic Security</a></li>
+</ul>
+<p dir="ltr">Topics:</p>
+<ul>
+<li dir="ltr" role="presentation"><a href=
+"https://www.harmonic.security/">Harmonic Security</a> focuses on
+securing generative AI in use. Can you walk us through a real,
+anonymized example of a data leak caused by employee AI usage that
+your platform has identified?</li>
+<li dir="ltr" role="presentation">AI governance gets thrown around
+a lot. What does this mean in the context of Shadow AI? How should
+organizations be thinking about governing AI in light of upcoming
+AI regulations in the US and in the EU?</li>
+<li dir="ltr" role="presentation">If we generally agree that
+employees are using AI tools before they are sanctioned, how can
+organizations control this? Network, API, endpoint?</li>
+<li dir="ltr" role="presentation">Many organizations struggle with
+the "ban vs. embrace" debate for generative AI. Based on your
+experience, what's a compelling argument for moving from a blanket
+ban to a managed, secure adoption model? Can you share a success
+story where this approach demonstrably reduced risk?</li>
+<li dir="ltr" role="presentation">The term "shadow AI" is often
+used interchangeably with "shadow IT" (but for AI-powered
+applications)&nbsp; but you've highlighted that AI is a different
+beast. What is the single biggest distinction between managing the
+risk of unsanctioned AI tools versus unsanctioned IT
+applications?</li>
+<li dir="ltr" role="presentation">Looking forward, where do you see
+the biggest risks in the evolution of shadow AI? For instance, will
+the next threat be from highly specialized AI agents trained on
+proprietary data, or from the rapid proliferation of new,
+unmonitored open-source models?</li>
+<li dir="ltr" role="presentation">Given the speed of change in this
+space, what's one piece of advice you'd give to a CISO today who is
+just beginning to get a handle on their organization's shadow AI
+problem?</li>
+</ul>
+<p dir="ltr">Resources:</p>
+<ul>
+<li dir="ltr" role="presentation"><a href=
+"https://youtu.be/qu51DBOkrNE">Video version</a></li>
+<li dir="ltr" role="presentation"><a href=
+"https://docs.google.com/document/d/1KFRGz6b07RfleMa5fcvdjHIhvl3wAP4hOLNeINWuziA/edit#shorts%20#podcast%20#cybersecurity%20#infosec">
+Harmonic Security research</a></li>
+<li dir="ltr" role="presentation"><a href=
+"https://security.googlecloudcommunity.com/ciso-blog-77/shadow-ai-strikes-back-enterprise-ai-absent-oversight-in-the-age-of-gen-ai-3963">
+Shadow AI Strikes Back: Enterprise AI Absent Oversight in the Age
+of Gen AI</a> blog</li>
+<li dir="ltr" role="presentation"><a href=
+"https://security.googlecloudcommunity.com/ciso-blog-77/shadow-agents-a-new-era-of-shadow-ai-risk-in-the-enterprise-5831">
+Shadow Agents: A New Era of Shadow AI Risk in the Enterprise</a>
+blog (RSA 2026 presentation coming!)</li>
+<li dir="ltr" role="presentation"><a href=
+"https://cloud.google.com/transform/spotlighting-shadow-ai-how-to-protect-against-risky-ai-practices">
+Spotlighting ‘shadow AI’: How to protect against risky AI
+practices</a> blog</li>
+<li dir="ltr" role="presentation"><a href=
+"https://cloud.withgoogle.com/cloudsecurity/podcast/ep171-genai-in-the-wrong-hands-unmasking-the-threat-of-malicious-ai-and-defending-against-the-dark-side/">
+EP171 GenAI in the Wrong Hands: Unmasking the Threat of Malicious
+AI and Defending Against the Dark Side</a> (aka “dirty bomb
+episode”)</li>
+<li dir="ltr" role="presentation"><a href=
+"https://www.youtube.com/watch?v=UBHmlZGucuY">A Conversation with
+Alastair Paterson from Harmonic Security</a> video</li>
+</ul>
+</p></p></div></div><hr>
+                        <!-- facebook comment -->
+                        <div id="comments" style="height:100%" class="fb-comments" data-href="https://cloudsecuritypodcast.libsyn.com/ep265-beyond-shadow-it-unsanctioned-ai-agents-dont-just-talk-they-act" data-width="100%" data-numposts="5"></div>
+
+                        
+        </div>
+        <!-- /.container -->
+
+
+    </div>
+    <!-- /.content-section-a -->
+
+
+
+    <!-- About Modal -->
+    <div id="aboutModal" class="modal fade" role="dialog">
+        <div class="modal-dialog">
+            <!-- Modal content-->
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                    <h4 class="modal-title">About the Podcast</h4>
+                </div>
+                <div class="modal-body">
+                    <p>Cloud Security Podcast by Google focuses on security in the cloud, delivering security from the cloud, and all things at the intersection of security and cloud. Of course, we will also cover what we are doing in Google Cloud to help keep our users' data safe and workloads secure. 
+
+We’re going to do our best to avoid security theater, and cut to the heart of real security questions and issues. Expect us to question threat models and ask if something is done for the data subject’s benefit or just for organizational benefit. 
+
+We hope you’ll join us if you’re interested in where technology overlaps with process and bumps up against organizational design. We’re hoping to attract listeners who are happy to hear conventional wisdom questioned, and who are curious about what lessons we can and can’t keep as the world moves from on-premises computing to cloud computing.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div id="shareModal" class="modal" role="dialog">
+        <div class="modal-dialog">
+            <!-- Modal content-->
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                    <h4 class="modal-title">Share This Episode</h4>
+                </div>
+                <div class="modal-body">
+                    <p id="pw-share"><div class="addthis_inline_share_toolbox"></div></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Private Premium Modal -->
+    <div id="loginModal" class="modal" role="dialog">
+        <div class="modal-dialog">
+            <!-- Modal content-->
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h4 class="modal-title"><i class="fa fa-lock fa-lg"></i> Private Premium Login</h4>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        <form class="form-signin" method="POST" action="">
+                            <h5 class="form-signin-heading">Login</h5>
+                                <label for="inputEmail" class="sr-only">Email</label>
+                                <input type="email" id="inputEmail" name="email" class="form-control" placeholder="Email address" required autofocus>
+                                <label for="inputPassword" class="sr-only">Password</label>
+                                <input type="password" id="inputPassword" name="password" class="form-control" placeholder="Password" required>
+                                <p class="pull-right"><a href="'">Having trouble logging in?</a></p>
+                            <button name="Login for Premium Access" class="btn btn-lg btn-primary btn-block btn-widget-login" type="submit">Login <i class="fa fa-arrow-circle-right fa-lg pull-right"></i></button>
+                      </form>
+                    </p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Enlarge Modal -->
+    <div class="modal fade" id="imagemodal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                </div>
+                <div class="modal-body" style="text-align:center;">
+                    <img src="" id="imagepreview" style="width: auto; height: 300px;" >
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div class="row">
+                <div class="col-lg-12">
+                    <p class="copyright small pull-right">&copy; Copyright Google Cloud</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- jQuery -->
+    <script src="https://ssl-static.libsyn.com/p/assets/platform/websuite/js/jquery.js"></script>
+
+    <!-- Bootstrap Core JavaScript -->
+    <script src="https://ssl-static.libsyn.com/p/assets/platform/websuite/js/bootstrap.js"></script>
+
+    <!-- Smart Menu JS -->
+    <script src="https://ssl-static.libsyn.com/p/assets/platform/websuite/js/jquery.smartmenus.js"></script>
+    <script src="https://ssl-static.libsyn.com/p/assets/platform/websuite/js/jquery.smartmenus.bootstrap.js"></script>
+
+
+
+
+    <script>
+    var addthis_config = {};
+    addthis_config.pubid = 'ra-57f683ee47f14d2b';
+
+    var lockScroll = false;
+    var premiumAuthorized = true;
+    var enablePremiumDownload = false;
+
+    function noPremium(){
+
+        
+        premiumAuthorized = false;
+
+    }
+
+    function adjustPlayerWidth(){
+        $(".producer-message iframe[src*='html5-player']").addClass('adjusted-player');
+        $(".libsyn-item iframe[src*='html5-player']").addClass('adjusted-player');
+        $(".libsyn-item-video iframe[src*='html5-player']").addClass('adjusted-player-video');
+        makeImagesResponsive();
+    }
+
+    function makeImagesResponsive(){
+        $(".right-side img").addClass("img-responsive");
+        $(".left-side img").addClass("img-responsive");
+    }
+
+    function getFBCommentCount(uri,element){
+        var apiUrl = "//graph.facebook.com/?ids=" + uri;
+        var commentsCount = 0;
+        $.ajax({
+            url: apiUrl,
+            success: function(result) {
+				if ( typeof result != "undefined" && result.hasOwnProperty(uri) && typeof result[uri].share != "undefined" ) {
+                	commentsCount = result[uri].share.comment_count;
+               		element.html('<i class="fa fa-comments" title="Leave a Comment"></i> ' + commentsCount + " Comment(s)");
+				}
+            }
+        });
+        return false;
+    }
+
+    function updateCommentsCount(){
+        $(".facebook-comments-count" ).each(function() {
+            if($(this).html() == ""){
+                var pageIndex = $(this).data("uri");
+                getFBCommentCount(pageIndex,$(this));
+            }
+        });
+    }
+
+    $(function() {
+
+        var lastScroll = 0;
+
+        $('#main-menu').on('show.bs.collapse', function () {
+            $(this).removeClass("navbar-fixed-top").addClass("navbar-static-top");
+            lastScroll = $(window).scrollTop();
+            $(window).scrollTop(0);
+        });
+
+        $('#main-menu').on('hide.bs.collapse', function () {
+            $(window).scrollTop(lastScroll);
+            $(this).removeClass("navbar-static-top").addClass("navbar-fixed-top");
+        });
+
+        window.fbAsyncInit = function() {
+            FB.Canvas.setAutoGrow();
+        }
+
+        function sizeChangeCallback() {
+            FB.Canvas.setSize({ width: 520, height: 1400 });
+        }
+
+        //social tooltip instantiation
+        $('[data-toggle="tooltip"]').tooltip();
+
+        //share link
+        $(document.body).on("click",".share-link", function(event) {
+
+            var url = $(this).data('item-url');
+            var title = $(this).data('item-title');
+            var image = $(this).data('item-image-url');
+
+            $.getScript( "//s7.addthis.com/js/300/addthis_widget.js#async=1" )
+                .done(function( script, textStatus ) {
+                    addthis.init();
+                    addthis.update('share', 'url', url);
+                    addthis.update('share', 'title', title);
+                    addthis.update('share', 'description', "");
+                    addthis.update('share', 'image', image)
+                })
+                .fail(function( jqxhr, settings, exception ) {
+                    //do nothing
+                });
+        });
+
+        //resize players
+        adjustPlayerWidth();
+
+        //change profile pic on scroll
+        $(window).scroll(function(){
+            if($(window).scrollTop() > 225){
+                $(".profile").addClass('profile-small');
+            }
+            else{
+                $(".profile").removeClass('profile-small');
+            }
+        });
+
+        // get all premium episodes
+        var show_id = '324875';
+        var id_prefix = "libsyn-item-";
+        var episode_ids = new Array(); // For some reason, this line was causing Firefox to become unresponsive.
+        $('.libsyn-item-premium').each(function(index){
+            var id = $(this).data('id');
+            episode_ids.push(id);
+        });
+
+        var episodes =  (episode_ids.length > 0) ? episode_ids.join(',') : 0;
+
+		 noPremium();
+
+        //image modal
+        $(document.body).on("click",".image-pop", function() {
+           $('#imagepreview').attr('src', $(this).attr('src'));
+           $('#imagemodal').modal('show');
+        });
+
+	        updateCommentsCount();
+	
+    });
+
+	if( $('#download_app_div').size() > 0 ){
+		var isMac = (navigator.platform.indexOf('Mac') != -1);
+		var isIos = !!navigator.platform && (/iPad|iPhone|iPod/.test(navigator.platform) || isMac);
+
+		if(isIos){
+			$.ajax({
+				type: 'GET',
+				url: "//my.libsyn.com/app/generate-websuite-plist-url",
+				data: {destination_id: 2641823},
+				dataType: 'jsonp',
+				success:function(json){
+					console.log(json);
+					if(typeof json.success != "undefined"){
+						if(json.success){
+							var plistAnchor = $('<a>').addClass('btn').addClass('btn-default').attr('aria-label','Download iOS App')
+								.attr('href', 'itms-services://?action=download-manifest&url=' + encodeURIComponent(json.plist_url)).append(
+									$('<i>').addClass('fa').addClass('fa-download').addClass('fa-5x')
+								).append('<div>Download/Install iOS App</div>');
+
+							$('#download_app_div').empty();
+
+							if(isMac){
+								$('#download_app_div').append($('<p>').html('If you are using an iPad, you may install the app below:'));
+							}
+
+							$('#download_app_div').append(plistAnchor);
+
+						} else {
+							$('#download_app_div').empty().html('An error has occurred:' + json.message);
+						}
+					} else {
+						$('#download_app_div').empty().html('An error has occurred');
+					}
+				},
+				error:function(xhr, textStatus, errorThrown){
+					$('#download_app_div').empty().html('An error has occurred: ' + textStatus);
+				}
+			});
+		} else {
+			$('#download_app_div').empty().html('Sorry, app download is only available for iOS devices.');
+		}
+	}
+
+    
+
+    $("#btn-send-contact").click(function(event){
+        event.preventDefault();
+
+        var error = "";
+        //validate
+        var valid = true;
+        $('#podcast-page-contact-form').find(':input:not(button)').each(function(){
+            var name = $(this).attr("name");
+            var value = $(this).val();
+			if (typeof name != 'undefined' && value == ""){
+				valid = false;
+                return false;
+            }
+        });
+
+        if(valid){
+            //submit form
+            var datastring = $("#podcast-page-contact-form").serialize();
+            $.ajax({
+                type: "POST",
+                url: "https://web-support.libsyn.com/contact/submit",
+                data: datastring,
+                dataType: "json",
+                success: function(data) {
+                    if(data == false){
+                        error = "<strong>Error</strong> Your message could not be sent at this time. Please try again later.";
+                        $("#podcast-page-contact-form-error").html(error).fadeIn().delay(5000).fadeOut();
+                    } else {
+                        $('#podcast-page-contact-form').find(":input").val("").hide();
+                        $('#podcast-page-contact-form').fadeOut();
+                        $("#podcast-page-contact-form-success").show();
+                    }
+                },
+                error: function() {
+                    error = "<strong>Error</strong> Your message could not be sent at this time. Please try again later.";
+                    $("#podcast-page-contact-form-error").html(error).fadeIn().delay(5000).fadeOut();
+                }
+            });
+
+        } else {
+            error = "<strong>Error</strong> Please fill out all fields and submit again.";
+            $("#podcast-page-contact-form-error").html(error).fadeIn().delay(5000).fadeOut();
+            return false;
+        }
+
+    });
+
+    
+    
+    //check if episode began playing on home page
+    var playerData = localStorage.getItem(window.location.href);
+    try {
+        var playerData = JSON.parse(playerData);
+        if(typeof(playerData.elapsed) != "undefined" && playerData.elapsed != "00:00:00"){
+            var iframeId = "embed_40255005";
+            var iframeSrc = $("#"+iframeId).attr("src");
+            newSrc = iframeSrc + "time-start/" + playerData.elapsed;
+            $("#"+iframeId).attr('src', newSrc);
+            localStorage.removeItem(window.location.href);
+        }
+    } catch (e) {
+        //Not what we were looking for
+        localStorage.removeItem(window.location.href);
+    }
+
+    
+
+    </script>
+
+</body>
+
+</html>
+

@@ -51,8 +51,9 @@ from clue_core import (
 class ResolvedField(BaseModel):
     """A provider's answer for one field, normalized — the only shape a backend returns.
 
-    Carries exactly what a *source* knows: the typed value, the citing ``source_url`` (an ``api``
-    claim must cite a source — the claim-model invariant), the ``evidence_span`` (the returned
+    Carries exactly what a *source* knows: the typed value, the citing ``source_url`` (construction
+    admits an ``api`` claim without one — ARV2 D1 moved the rule to ``can_be_promoted``, which
+    refuses it — so this shape requires it here instead), the ``evidence_span`` (the returned
     record/field — required and non-empty so every claim is grounded, an M4.4 acceptance criterion),
     a ``confidence``, and — for a contact claim — its ``use_class``. It deliberately does **not**
     carry ``source_key``/``run_id``/``research_mode``/``identity_binding``: those are engine-owned

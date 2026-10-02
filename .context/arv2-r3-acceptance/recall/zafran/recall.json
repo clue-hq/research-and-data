@@ -1,0 +1,1962 @@
+{
+  "accounts": [
+    {
+      "account": "zafran",
+      "by_section": {
+        "account": {
+          "hits": 8,
+          "keys": 26
+        },
+        "account.resonance": {
+          "hits": 1,
+          "keys": 11
+        },
+        "core": {
+          "hits": 24,
+          "keys": 29
+        }
+      },
+      "exact": 22,
+      "field_only": 23,
+      "insight_found": false,
+      "keys": 66,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "core.account_name",
+          "key_value": "Zafran Security",
+          "run_claim_id": "c0276e96-e9a3-43a7-99f2-c5de9a9db6f8",
+          "run_value": "Zafran Security",
+          "source_row_id": "zaf-001",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.legal_name",
+          "key_value": "Zafran Security Ltd.",
+          "run_claim_id": "5a50ca74-aefb-46ad-ac3d-c9e61efd936e",
+          "run_value": "Zafran Security Ltd.",
+          "source_row_id": "zaf-002",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_about",
+          "key_value": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe’re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+          "run_claim_id": "18b68489-9fc1-4465-9b64-dbb85d4d3c5a",
+          "run_value": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe’re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+          "source_row_id": "zaf-003",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.industry",
+          "key_value": "computer and network security",
+          "run_claim_id": "acd7196d-e48c-4a7a-a2fa-c719a2658f0c",
+          "run_value": "computer and network security",
+          "source_row_id": "zaf-004",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.employee_count",
+          "key_value": 167,
+          "run_claim_id": "858e7f5f-c80f-4241-a242-a089b06df496",
+          "run_value": 167,
+          "source_row_id": "zaf-005",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.employee_range",
+          "key_value": {
+            "label": "51-200",
+            "max": 200,
+            "min": 51
+          },
+          "run_claim_id": "4dd57a9e-f73a-49c0-b410-47722369014b",
+          "run_value": {
+            "label": "51-200",
+            "max": 200,
+            "min": 51
+          },
+          "source_row_id": "zaf-006",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.founded_year",
+          "key_value": 2022,
+          "run_claim_id": "2c253b6b-c067-45de-9754-9e0b08c15f68",
+          "run_value": 2022,
+          "source_row_id": "zaf-007",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_type",
+          "key_value": "PRIVATELY_HELD",
+          "run_claim_id": "ab0e0377-192c-4d6d-9822-e15abea17533",
+          "run_value": "PRIVATELY_HELD",
+          "source_row_id": "zaf-008",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.primary_domain",
+          "key_value": "zafran.io",
+          "run_claim_id": "222a8bcc-7e83-4a50-a23f-7e048c139441",
+          "run_value": "zafran.io",
+          "source_row_id": "zaf-009",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_linkedin_url",
+          "key_value": "https://www.linkedin.com/company/zafran-security",
+          "run_claim_id": "1b1f8606-9f43-4076-ad47-53b9d5c178aa",
+          "run_value": "https://www.linkedin.com/company/zafran-security",
+          "source_row_id": "zaf-010",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_twitter_url",
+          "key_value": "https://x.com/Zafran_io",
+          "run_claim_id": "96973ce7-15cc-4991-bcad-8a45257cfcb3",
+          "run_value": "https://x.com/Zafran_io",
+          "source_row_id": "zaf-011",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_crunchbase_url",
+          "key_value": "https://www.crunchbase.com/organization/zafran",
+          "run_claim_id": "a9e9208f-f1bc-408f-b393-66e752f886f6",
+          "run_value": "https://www.crunchbase.com/organization/zafran",
+          "source_row_id": "zaf-012",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_email",
+          "key_value": "info@zafran.io",
+          "run_claim_id": "19cb37da-8b5a-43ce-9db6-c4898a3b76ab",
+          "run_value": "info@zafran.io",
+          "source_row_id": "zaf-013",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.hq_location",
+          "key_value": {
+            "city": "New York, New York",
+            "country": "United States",
+            "lat": 40.748295,
+            "lng": -73.98556,
+            "raw": "New York, New York, United States, North America"
+          },
+          "run_claim_id": "dbdfde37-2bac-4cc2-8860-e0cd8ca05d3c",
+          "run_value": {
+            "city": "New York, New York",
+            "country": "United States",
+            "raw": "New York, New York, United States, North America"
+          },
+          "source_row_id": "zaf-014",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.annual_revenue",
+          "key_value": {
+            "amount_max": 25000000,
+            "amount_min": 10000000,
+            "as_of": "2026-08-22",
+            "currency": "USD",
+            "estimate_kind": "provider_estimate"
+          },
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-015",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.revenue_band",
+          "key_value": "10m_50m",
+          "run_claim_id": "b1b7f57b-0ad3-46c5-a968-d9ecf12dfaf6",
+          "run_value": "10m_50m",
+          "source_row_id": "zaf-016",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.total_funding",
+          "key_value": {
+            "amount": 130500000,
+            "currency": "USD",
+            "investors": 9,
+            "rounds": 4
+          },
+          "run_claim_id": "0c991a1b-d25a-4cd0-afb5-10eec1e18794",
+          "run_value": {
+            "amount_usd": 130000000,
+            "estimate_kind": "reported"
+          },
+          "source_row_id": "zaf-017",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.recent_funding",
+          "key_value": [
+            {
+              "announced_at": "2025-12-02",
+              "investors": [
+                "Vintage Investment Partners",
+                "Cyberstarts",
+                "Amex Ventures",
+                "PSP Growth",
+                "Knollwood Investment Advisory",
+                "Sequoia Capital",
+                "Menlo Ventures"
+              ],
+              "raised_amount": 60000000,
+              "type": "SERIES_C"
+            },
+            {
+              "announced_at": "2024-09-08",
+              "investors": [
+                "Penny Jar Capital",
+                "Cerca Partners",
+                "Cyberstarts"
+              ],
+              "raised_amount": 40000000,
+              "type": "SERIES_B"
+            },
+            {
+              "announced_at": "2024-03-28",
+              "raised_amount": 25000000,
+              "type": "VENTURE_ROUND"
+            },
+            {
+              "announced_at": "2024-03-28",
+              "raised_amount": 5500000,
+              "type": "SEED_ROUND"
+            }
+          ],
+          "run_claim_id": "5b71778c-9932-486c-b497-c1904932c72a",
+          "run_value": {
+            "amount_usd": null,
+            "date": "2026-02-24",
+            "investor": "Amex Ventures",
+            "round": "strategic investment"
+          },
+          "source_row_id": "zaf-018",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.primary_tech_stack",
+          "key_value": [
+            "dnssec",
+            "google cloud",
+            "amazon s3",
+            "envoy",
+            "floc opt-out",
+            "cloudflare automatic challenge",
+            "cloudflare challenge",
+            "hubspot hosted",
+            "amazon oregon region",
+            "zendesk mail"
+          ],
+          "run_claim_id": "2b9e1dc5-521b-4864-9b0e-136f15c9d8dc",
+          "run_value": [
+            "dnssec",
+            "google cloud",
+            "amazon s3",
+            "envoy",
+            "floc opt-out",
+            "cloudflare automatic challenge",
+            "cloudflare challenge",
+            "hubspot hosted",
+            "amazon oregon region",
+            "zendesk mail"
+          ],
+          "source_row_id": "zaf-019",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.tech_stack_categorised",
+          "key_value": [
+            {
+              "category": "ns",
+              "name": "dnssec"
+            },
+            {
+              "category": "hosting",
+              "name": "google cloud"
+            },
+            {
+              "category": "cdn",
+              "name": "amazon s3"
+            },
+            {
+              "category": "server",
+              "name": "envoy"
+            },
+            {
+              "category": "ads",
+              "name": "floc opt-out"
+            },
+            {
+              "category": "cdn",
+              "name": "cloudflare automatic challenge"
+            },
+            {
+              "category": "cdn",
+              "name": "cloudflare challenge"
+            },
+            {
+              "category": "hosting",
+              "name": "hubspot hosted"
+            },
+            {
+              "category": "hosting",
+              "name": "amazon oregon region"
+            },
+            {
+              "category": "mx",
+              "name": "zendesk mail"
+            }
+          ],
+          "run_claim_id": "62e2591a-3085-452f-a521-c422209c64c1",
+          "run_value": [
+            {
+              "category": "ns",
+              "name": "dnssec"
+            },
+            {
+              "category": "hosting",
+              "name": "google cloud"
+            },
+            {
+              "category": "cdn",
+              "name": "amazon s3"
+            },
+            {
+              "category": "server",
+              "name": "envoy"
+            },
+            {
+              "category": "ads",
+              "name": "floc opt-out"
+            },
+            {
+              "category": "cdn",
+              "name": "cloudflare automatic challenge"
+            },
+            {
+              "category": "cdn",
+              "name": "cloudflare challenge"
+            },
+            {
+              "category": "hosting",
+              "name": "hubspot hosted"
+            },
+            {
+              "category": "hosting",
+              "name": "amazon oregon region"
+            },
+            {
+              "category": "mx",
+              "name": "zendesk mail"
+            }
+          ],
+          "source_row_id": "zaf-020",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.industries_all",
+          "key_value": [
+            "risk management",
+            "cyber security",
+            "information technology",
+            "network security",
+            "software",
+            "computer and network security"
+          ],
+          "run_claim_id": "29d82a62-fd6a-4e83-a261-019638f5caba",
+          "run_value": [
+            "risk management",
+            "cyber security",
+            "information technology",
+            "network security",
+            "software",
+            "computer and network security"
+          ],
+          "source_row_id": "zaf-021",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_languages",
+          "key_value": [
+            "english"
+          ],
+          "run_claim_id": "39e25a13-5de3-4d4e-b089-0ddfe1f54440",
+          "run_value": [
+            "english"
+          ],
+          "source_row_id": "zaf-022",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.employee_roster_sample",
+          "key_value": [
+            {
+              "department": [
+                "sales"
+              ],
+              "full_name": "Brian Sams",
+              "linkedin": "https://www.linkedin.com/in/brian-sams",
+              "seniority": "mid_level",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2026-08-01",
+              "title": "RSM SLED"
+            },
+            {
+              "department": [
+                "sales"
+              ],
+              "full_name": "Tom Anthony",
+              "linkedin": "https://www.linkedin.com/in/tomanthonyjr",
+              "seniority": "vp",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2024-11-01",
+              "title": "SVP, Global Sales"
+            },
+            {
+              "department": [
+                "customer_success_and_support"
+              ],
+              "full_name": "Corey Wahler",
+              "linkedin": "https://www.linkedin.com/in/coreywahler",
+              "seniority": "senior",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2025-12-01",
+              "title": "Technical Account Manager"
+            },
+            {
+              "department": [
+                "sales"
+              ],
+              "full_name": "Jordan Beam",
+              "linkedin": "https://www.linkedin.com/in/jordanbeam",
+              "seniority": "mid_level",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2025-11-01",
+              "title": "Major Account Manager"
+            },
+            {
+              "department": [
+                "sales"
+              ],
+              "full_name": "Travis J. Bennett",
+              "linkedin": "https://www.linkedin.com/in/travis-j-bennett-113a1414",
+              "seniority": "manager",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2026-02-01",
+              "title": "Regional Sales Manager - Majors"
+            },
+            {
+              "department": [
+                "information_technology"
+              ],
+              "full_name": "Sanaz Yashar",
+              "linkedin": "https://www.linkedin.com/in/sanaz-yashar",
+              "seniority": "founder",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2022-11-01",
+              "title": "Co-Founder & CEO"
+            },
+            {
+              "department": [
+                "sales"
+              ],
+              "full_name": "Brett Robinson",
+              "linkedin": "https://www.linkedin.com/in/bwrobinson1",
+              "seniority": "manager",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2025-02-01",
+              "title": "Regional Sales Manager - Majors"
+            },
+            {
+              "department": [
+                "business_development"
+              ],
+              "full_name": "Aidan Maloney",
+              "linkedin": "https://www.linkedin.com/in/aidan-maloney-614856181",
+              "seniority": "mid_level",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2025-12-01",
+              "title": "Business Development"
+            },
+            {
+              "department": [
+                "finance"
+              ],
+              "full_name": "Rotem Peled-Dvir",
+              "linkedin": "https://www.linkedin.com/in/rotem-peled-dvir",
+              "seniority": "vp",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2025-01-01",
+              "title": "SVP, Finance"
+            },
+            {
+              "department": [
+                "sales"
+              ],
+              "full_name": "Andrew Marasa",
+              "linkedin": "https://www.linkedin.com/in/andrewmarasa",
+              "seniority": "manager",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2025-11-01",
+              "title": "Regional Sales Manager"
+            },
+            {
+              "department": [
+                "sales"
+              ],
+              "full_name": "Kris Nordberg",
+              "linkedin": "https://www.linkedin.com/in/kris-nordberg-bb465090",
+              "seniority": "manager",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2025-10-01",
+              "title": "Regional Sales Manager"
+            },
+            {
+              "department": [
+                "sales"
+              ],
+              "full_name": "Quentin O'Dell",
+              "linkedin": "https://www.linkedin.com/in/quentin-odell",
+              "seniority": "director",
+              "source_call": "POST /v1/people {domain:zafran.io,size:12}",
+              "start": "2026-06-01",
+              "title": "Director, Technical Account Manager"
+            },
+            {
+              "department": [
+                "marketing"
+              ],
+              "full_name": "Vari Kaur",
+              "linkedin": "https://www.linkedin.com/in/varinderkaur",
+              "seniority": "head",
+              "source_call": "POST /v1/people {fullName:[Vari Kaur,Varinder Kaur],domain:zafran.io}",
+              "start": "2025-05-01",
+              "title": "Head of Growth Marketing"
+            },
+            {
+              "department": [
+                "marketing"
+              ],
+              "full_name": "Nick Fisher",
+              "linkedin": "https://www.linkedin.com/in/nicholastfisher",
+              "seniority": "vp",
+              "source_call": "POST /v1/people {fullName:[Nick Fisher,Nicholas Fisher],domain:zafran.io}",
+              "start": "2024-04-01",
+              "title": "VP of Marketing"
+            },
+            {
+              "department": [
+                "information_technology"
+              ],
+              "full_name": "Ben Seri",
+              "linkedin": "https://www.linkedin.com/in/ben-seri",
+              "seniority": "founder",
+              "source_call": "POST /v1/people {fullName:[Ben Seri],domain:zafran.io}",
+              "start": "2022-11-01",
+              "title": "Co-Founder & CTO"
+            }
+          ],
+          "run_claim_id": "19db63b1-66f7-473d-912a-8d3c01463c6e",
+          "run_value": [
+            {
+              "name": "Sanaz Yashar",
+              "title": "Co-Founder & CEO"
+            },
+            {
+              "name": "Ben Seri",
+              "title": "Co-Founder & CTO"
+            },
+            {
+              "name": "Rotem Peled-Dvir",
+              "title": "SVP Finance"
+            },
+            {
+              "name": "Tom Anthony",
+              "title": "SVP Sales"
+            },
+            {
+              "name": "Nick Fisher",
+              "title": "VP Marketing"
+            },
+            {
+              "name": "Hadas Bergman",
+              "title": "VP Business Operations"
+            },
+            {
+              "name": "Racheli Barouch-Haik",
+              "title": "VP HR & Operations"
+            },
+            {
+              "name": "Itay Nachum",
+              "title": "VP Product Management"
+            },
+            {
+              "name": "Christopher Phillips",
+              "title": "VP Customer Success"
+            }
+          ],
+          "source_row_id": "zaf-023",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.open_requisitions",
+          "key_value": [
+            {
+              "compensation_published": false,
+              "days_open": 81,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/22702028-c1c6-4147-b099-0bc62d81b978",
+              "location": "EMEA Remote",
+              "published_at": "2026-06-13",
+              "team": "Sales",
+              "title": "Regional Sales Manager (United Kingdom)",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 81,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/47061b6e-fb90-4d64-bdc1-1201b6b636d7",
+              "location": "USA",
+              "published_at": "2026-06-13",
+              "team": "Sales",
+              "title": "Regional Sales Manager, Enterprise (DC, Maryland & Virginia)",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 81,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/541ccaaa-3ea5-4393-bbcd-5c0dd797d97e",
+              "location": "USA",
+              "published_at": "2026-06-13",
+              "team": "Sales",
+              "title": "Regional Sales Manager, Enterprise (Missouri & Nebraska)",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 81,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/b9e6834d-5aaf-4a30-a11b-a55f16a314fc",
+              "location": "New York",
+              "published_at": "2026-06-13",
+              "team": "Sales",
+              "title": "Regional Sales Manager, Majors (NYC)",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 81,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/eb1927e8-374b-431d-aa18-4eec0f307c7c",
+              "location": "USA",
+              "published_at": "2026-06-13",
+              "team": "Sales",
+              "title": "Regional Sales Manager, Enterprise (Pacific Northwest)",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 81,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/9142e12b-83c0-4a76-bdd4-2d9b1d8fef7f",
+              "location": "USA",
+              "published_at": "2026-06-13",
+              "team": "Sales",
+              "title": "Regional Sales Manager, Majors (N. TOLA)",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 79,
+              "department": "R&D",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/656516a7-d4f7-4ff3-86b8-89461acc2dde",
+              "location": "Tel Aviv",
+              "published_at": "2026-06-15",
+              "team": "R&D",
+              "title": "Backend Developer",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 13,
+              "department": "R&D",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/246ae954-d395-45ab-82c9-28b15d1fb6c4",
+              "location": "Tel Aviv",
+              "published_at": "2026-08-20",
+              "team": "R&D",
+              "title": "Security Researcher",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 79,
+              "department": "R&D",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/6a5a3bf1-f4c6-465d-a11f-f4a045e45352",
+              "location": "Tel Aviv",
+              "published_at": "2026-06-15",
+              "team": "R&D",
+              "title": "Devops Engineer",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 58,
+              "department": "R&D",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/684e5591-fcab-4a45-92f1-3348a56b6b8f",
+              "location": "Tel Aviv",
+              "published_at": "2026-07-06",
+              "team": "R&D",
+              "title": "Software Engineer – Data Collection Team",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 77,
+              "department": "Marketing",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/2441fd5c-2d63-4f17-a6ee-a7aad50bd2e7",
+              "location": "USA",
+              "published_at": "2026-06-17",
+              "team": "Marketing",
+              "title": "Sr Technical Marketing Manager",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 77,
+              "department": "Marketing",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf",
+              "location": "USA",
+              "published_at": "2026-06-17",
+              "team": "Marketing",
+              "title": "Senior Manager, ABM & Integrated Campaigns",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 54,
+              "department": "Customer Success",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/858af4a6-b9a8-4037-8305-1bc4adc2b6f4",
+              "location": "USA",
+              "published_at": "2026-07-10",
+              "team": "Customer Success",
+              "title": "Solution Architect",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 76,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/86dd03e1-ec13-4919-b54f-f9775afefade",
+              "location": "USA",
+              "published_at": "2026-06-18",
+              "team": "Sales",
+              "title": "Sales Engineer, Majors",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 56,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/c2e201db-3469-47c5-ad7a-12dce06ae41c",
+              "location": "USA",
+              "published_at": "2026-07-08",
+              "team": "Sales",
+              "title": "Director Sales Engineering, Majors",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 68,
+              "department": "R&D",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/98e3b74f-e668-4203-b7bf-13ed3ffe8b9b",
+              "location": "USA",
+              "published_at": "2026-06-26",
+              "team": "R&D",
+              "title": "Senior DevOps Engineer, Security & Compliance",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 63,
+              "department": "Finance",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/c7c080bf-24a6-46d6-a599-26ef7f05f06f",
+              "location": "New York",
+              "published_at": "2026-07-01",
+              "team": "Finance",
+              "title": "Senior Accountant",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 14,
+              "department": "Product",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/bdafbbaa-5f4b-4918-bdb0-0bc31720f7ce",
+              "location": "Tel Aviv",
+              "published_at": "2026-08-19",
+              "team": "Product",
+              "title": "Product Manager",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 34,
+              "department": "R&D",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/bcad7bb3-0eb5-439c-bbdf-5132e8e5ebfe",
+              "location": "Tel Aviv",
+              "published_at": "2026-07-30",
+              "team": "R&D",
+              "title": "Senior Frontend Engineer",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 35,
+              "department": "R&D",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/f78b955f-4316-43d5-9964-73ba0b04bb26",
+              "location": "Tel Aviv",
+              "published_at": "2026-07-29",
+              "team": "R&D",
+              "title": "Cyber Security Analyst",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 10,
+              "department": "R&D",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/7cbbfdb7-be93-4c15-9948-7da17048bad8",
+              "location": "Tel Aviv",
+              "published_at": "2026-08-23",
+              "team": "R&D",
+              "title": "Data Infra Team Lead ",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 14,
+              "department": "Marketing",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/9b7a9e8e-56ac-4358-b312-848dbdfe7e13",
+              "location": "New York",
+              "published_at": "2026-08-19",
+              "team": "Marketing",
+              "title": "Business Development Representative",
+              "workplace_type": "Hybrid"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 13,
+              "department": "HR",
+              "employment_type": "FullTime",
+              "is_remote": false,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/f7f4b78d-0e35-4b36-af45-20ff679ff4b6",
+              "location": "Tel Aviv",
+              "published_at": "2026-08-20",
+              "team": "HR",
+              "title": "Senior Talent Acquisition Partner",
+              "workplace_type": "OnSite"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 5,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/172f1b1f-9f6a-4239-9b7b-b24c348c6337",
+              "location": "USA",
+              "published_at": "2026-08-28",
+              "team": "Sales",
+              "title": "Regional Sales Manager (Greater San Diego)",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 1,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/60ed854a-29fb-4c04-8cff-bb6f6fa60f0a",
+              "location": "USA",
+              "published_at": "2026-09-01",
+              "team": "Sales",
+              "title": "Director of Sales, Enterprise",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 1,
+              "department": "Sales",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/b7b67d8b-b559-4cb8-bc1c-080f268c4c17",
+              "location": "USA",
+              "published_at": "2026-09-01",
+              "team": "Sales",
+              "title": "Director of Alliances",
+              "workplace_type": "Remote"
+            },
+            {
+              "compensation_published": false,
+              "days_open": 1,
+              "department": "G&A",
+              "employment_type": "FullTime",
+              "is_remote": true,
+              "job_url": "https://jobs.ashbyhq.com/zafran-security/d954e531-2425-4125-8576-6c0e9f96b317",
+              "location": "USA",
+              "published_at": "2026-09-01",
+              "team": "G&A",
+              "title": "HR Business Partner",
+              "workplace_type": "Remote"
+            }
+          ],
+          "run_claim_id": "79215836-55d9-4812-916e-c04db82765cb",
+          "run_value": [
+            {
+              "dept": "Marketing",
+              "published": "2026-08-19",
+              "still_listed": true,
+              "title": "Business Development Representative",
+              "url": "https://jobs.ashbyhq.com/zafran-security/9b7a9e8e-56ac-4358-b312-848dbdfe7e13"
+            }
+          ],
+          "source_row_id": "zaf-087",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.hiring_velocity",
+          "key_value": {
+            "by_department": {
+              "Customer Success": 1,
+              "Finance": 1,
+              "G&A": 1,
+              "HR": 1,
+              "Marketing": 3,
+              "Product": 1,
+              "R&D": 8,
+              "Sales": 11
+            },
+            "longest_open_marketing_req_days": 77,
+            "open_reqs_total": 27,
+            "published_last_30_days": 9,
+            "published_last_7_days": 4
+          },
+          "run_claim_id": "ab18dfff-0e93-4892-a978-b040789e55f3",
+          "run_value": {
+            "sample": [
+              {
+                "dept": "Marketing",
+                "published": "2026-06-17",
+                "title": "Senior Manager, ABM & Integrated Campaigns"
+              },
+              {
+                "dept": "Partnerships/Alliances",
+                "published": "2026-09-01",
+                "title": "Director of Alliances"
+              },
+              {
+                "dept": "Marketing",
+                "published": "2026-08-19",
+                "title": "Business Development Representative"
+              }
+            ]
+          },
+          "source_row_id": "zaf-088",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.gtm_tooling_stack",
+          "key_value": {
+            "explicitly_absent_from_all_27_reqs": [
+              "6sense",
+              "Demandbase",
+              "Terminus",
+              "RollWorks",
+              "Mutiny",
+              "Folloze",
+              "Influ2",
+              "Madison Logic",
+              "Clay",
+              "Common Room",
+              "Gong",
+              "Marketo",
+              "Salesloft",
+              "Apollo"
+            ],
+            "marketing_stack": [
+              "HubSpot",
+              "Salesforce",
+              "(unnamed) major ABM platforms"
+            ],
+            "sdr_stack": [
+              "Salesforce",
+              "LinkedIn Sales Navigator",
+              "ZoomInfo",
+              "Outreach"
+            ]
+          },
+          "run_claim_id": "95d44504-20a2-46c6-a0e4-a5bb36c35601",
+          "run_value": {
+            "absent": [],
+            "notes": "Named in job reqs as tools to utilize or proficiency; NOT FOUND is not not-installed. Named unspecified: major ABM platforms. Not found by name as an installed product: 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, Clay, Common Room, Gong, Marketo, Salesloft, Apollo.",
+            "present": [
+              "Salesforce",
+              "HubSpot",
+              "LinkedIn Sales Navigator",
+              "ZoomInfo",
+              "Outreach"
+            ]
+          },
+          "source_row_id": "zaf-089",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.abm_program_maturity",
+          "key_value": {
+            "days_open": 77,
+            "published_at": "2026-06-17",
+            "reports_to": "Head of Growth Marketing (Vari Kaur)",
+            "req": "Senior Manager, ABM & Integrated Campaigns",
+            "state": "being built from scratch",
+            "url": "https://jobs.ashbyhq.com/zafran-security/c879de63-c999-47cc-99a3-e35cf9ba7cdf"
+          },
+          "run_claim_id": "40b3d94e-1227-4b14-80cb-369316919d6a",
+          "run_value": {
+            "paragraphs": [
+              "Own ABM from the ground up: 1:1 programs for your most strategic targets, 1:few cluster plays for high-potential segments, and scaled 1:many motions where volume matters."
+            ]
+          },
+          "source_row_id": "zaf-090",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.strategic_moves",
+          "key_value": {
+            "days_open": 1,
+            "move": "standing up a partner/alliances channel from zero",
+            "published_at": "2026-09-01",
+            "req": "Director of Alliances"
+          },
+          "run_claim_id": "9bba2e4e-ba96-44e0-a1a8-f423cfe6afc0",
+          "run_value": "Director of Alliances req (published 2026-09-01) to stand up partner/alliances channel from zero, GSI-first (Accenture, Deloitte, PwC, KPMG).",
+          "source_row_id": "zaf-091",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.buying_culture",
+          "key_value": {
+            "bdr_reports_into": "Marketing department (Ashby department field)",
+            "office_policy": "NYC office ~3 days a week for the BDR seat"
+          },
+          "run_claim_id": "3e042fc6-1120-4886-9275-17a9f4543d73",
+          "run_value": {
+            "culture_label": "hybrid NYC GTM",
+            "summary": "NYC office ~3 days a week for the BDR seat; BDR reports into Marketing department"
+          },
+          "source_row_id": "zaf-092",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.named_customers",
+          "key_value": [
+            {
+              "name": "Ricardo Lafosse",
+              "quote": " platform page See the Full Platform ## Ranked #1 for Continuous Threat Exposure Management (CTEM) ״Zafran is tackling vulnerabilities from a hacker's perspective. They add a true layer of risk mitigation through compensating controls. Most importantly, they help us understand if our controls are effectively implemented and how we can use them to improve our protection.״ ######",
+              "role": "CISO, Kraft Heinz"
+            },
+            {
+              "name": "Dave Estlick",
+              "quote": "trols are effectively implemented and how we can use them to improve our protection.״ ###### Ricardo Lafosse CISO, Kraft Heinz “By integrating with the security controls configurations we can identify what is working and what is not. Zafran enables us to evaluate our security tech stack, identify gaps, make informed decisions, and ultimately improve the ROI on our tools” ######",
+              "role": "CISO, Chipotle"
+            },
+            {
+              "name": "James Robinson",
+              "quote": " with the security controls configurations we can identify what is working and what is not. Zafran enables us to evaluate our security tech stack, identify gaps, make informed decisions, and ultimately improve the ROI on our tools” ###### Dave Estlick CISO, Chipotle “Zafran enhanced our controls enabling us to position ourselves with exploit and zero-day countermeasures” ######",
+              "role": "CISO, Netskope"
+            }
+          ],
+          "run_claim_id": "0834ba4d-bdca-4dd5-86a6-9d386cc4927b",
+          "run_value": [
+            "Lumen Technologies"
+          ],
+          "source_row_id": "zaf-093",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.media_layer_index",
+          "key_value": [
+            {
+              "cost_usd": 0.024451,
+              "duration": "00:42:49",
+              "latency_s": 44.11,
+              "person": "Sanaz Yashar",
+              "title": "Boardroom Club — AI Summit: Sanaz Yashar",
+              "transcript_chars": 44409,
+              "url": "https://podcasters.spotify.com/pod/show/boardroomclub/episodes/AI-Summit-Sanaz-Yashar--Co-Founder-and-CEO-at-Zafran-Security-e36d9ai"
+            },
+            {
+              "cost_usd": 0.001191,
+              "duration": "00:01:31",
+              "latency_s": 23.22,
+              "person": "Nick Fisher",
+              "title": "Supporting Cocktail Chemistry",
+              "transcript_chars": 3126,
+              "url": "https://www.youtube.com/watch?v=8_YWBtq4eic"
+            },
+            {
+              "cost_usd": 0.002991,
+              "duration": "00:04:14",
+              "latency_s": 9.37,
+              "person": "Nick Fisher",
+              "title": "Advanced Techniques - How To Make A Moscow Mule",
+              "transcript_chars": 5240,
+              "url": "https://www.youtube.com/watch?v=avcD5WVLCYs"
+            }
+          ],
+          "run_claim_id": "8855fe7f-d085-4be4-8445-1a0e80653288",
+          "run_value": [
+            {
+              "duration_s": 212,
+              "kind": "youtube",
+              "person": "Sanaz Yashar",
+              "speaker_verified": false,
+              "url": "https://www.youtube.com/watch?v=CVVlYiauTE4"
+            }
+          ],
+          "source_row_id": "zaf-094",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.media_transcript_quality_warning",
+          "key_value": {
+            "media": "42:49 podcast",
+            "model": "gemini-3.5-flash-lite",
+            "remedy": "gemini-3.5-transcribe re-ran the same file and produced the full 6,926-word episode with no looping, but returns parts[].audioTranscription.text with NO timestamps and NO speaker labels.",
+            "rule_applied": "any flash-lite quote after [12:38] was re-verified against the faithful ASR before being kept",
+            "sustained_loop_begins_ts": "12:41",
+            "timestamped_lines": 329,
+            "unique_lines": 120
+          },
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-118",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.account_name",
+          "key_value": "Zafran Security Ltd.",
+          "run_claim_id": "c0276e96-e9a3-43a7-99f2-c5de9a9db6f8",
+          "run_value": "Zafran Security",
+          "source_row_id": "zaf-119",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.primary_domain",
+          "key_value": "zafran.io",
+          "run_claim_id": "222a8bcc-7e83-4a50-a23f-7e048c139441",
+          "run_value": "zafran.io",
+          "source_row_id": "zaf-120",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_about",
+          "key_value": "AI-Native Threat Exposure Management Platform that proves what attackers can exploit and mobilizes existing defenses; positions Agentic Exposure Management as end-to-end exposure lifecycle including autonomous remediation",
+          "run_claim_id": "b83ab9a3-f43b-4d67-981c-71246509f3da",
+          "run_value": "Zafran | AI-Native Threat Exposure Management Platform\nZafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.\nZafran is for security teams buried in vulnerabilities and manual work.",
+          "source_row_id": "zaf-121",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_about",
+          "key_value": "Describes itself as \"the first AI-native end-to-end Threat Exposure Management platform\" and promotes \"Agentic Exposure Management\" covering asset inventory, vulnerability detection, risk assessment, and autonomous remediation workflows",
+          "run_claim_id": "b83ab9a3-f43b-4d67-981c-71246509f3da",
+          "run_value": "Zafran | AI-Native Threat Exposure Management Platform\nZafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.\nZafran is for security teams buried in vulnerabilities and manual work.",
+          "source_row_id": "zaf-122",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.industry",
+          "key_value": "Cybersecurity / Threat Exposure Management / Vulnerability Management",
+          "run_claim_id": "7f14eb25-3147-4185-9a8f-c668a4babc36",
+          "run_value": "Cybersecurity / Threat Exposure Management",
+          "source_row_id": "zaf-123",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.total_funding",
+          "key_value": {
+            "amount_usd": 130000000,
+            "semantics": "reported total funding as-of 2025-12-02"
+          },
+          "run_claim_id": "0c991a1b-d25a-4cd0-afb5-10eec1e18794",
+          "run_value": {
+            "amount_usd": 130000000,
+            "estimate_kind": "reported"
+          },
+          "source_row_id": "zaf-124",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.recent_funding",
+          "key_value": "Series C $60M led by Menlo Ventures (Dec 2, 2025); subsequent strategic investments/extensions from Amex Ventures and Cisco Investments announced in 2026",
+          "run_claim_id": "5b71778c-9932-486c-b497-c1904932c72a",
+          "run_value": {
+            "amount_usd": null,
+            "date": "2026-02-24",
+            "investor": "Amex Ventures",
+            "round": "strategic investment"
+          },
+          "source_row_id": "zaf-125",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.total_funding",
+          "key_value": {
+            "amount_usd": "more than $130M (company reported); third-party coverage estimated >$140M after Cisco investment but exact amount NOT FOUND",
+            "semantics": "reported and third-party estimate mixed"
+          },
+          "run_claim_id": "0c991a1b-d25a-4cd0-afb5-10eec1e18794",
+          "run_value": {
+            "amount_usd": 130000000,
+            "estimate_kind": "reported"
+          },
+          "source_row_id": "zaf-126",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_about",
+          "key_value": "Claims outcome: de-risks 90% of critical vulnerabilities overnight and uses existing security tools to remediate the 10% most likely to be exploited",
+          "run_claim_id": "b83ab9a3-f43b-4d67-981c-71246509f3da",
+          "run_value": "Zafran | AI-Native Threat Exposure Management Platform\nZafran's agentic platform proves what attackers can exploit in your environment, then mobilizes your existing defenses to stop them.\nZafran is for security teams buried in vulnerabilities and manual work.",
+          "source_row_id": "zaf-127",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.strategic_moves",
+          "key_value": "Launched Agentic Exposure Management (autonomous AI agents across vulnerability lifecycle); positioning product as an overlay that leverages existing scanners/agents/controls; packaging core + add-ons (Zafran Discover, Zafran Autonomous Workflows)",
+          "run_claim_id": "2f4e4269-9a54-4faf-a8d8-54b24b9a28b9",
+          "run_value": "Agentic Exposure Management launch with Series C; capital for product innovation and global expansion",
+          "source_row_id": "zaf-128",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.operational_pain",
+          "key_value": "Company cites rapid AI development driving hiring needs across engineering, sales, customer success, and core infrastructure; scaling to meet demand",
+          "run_claim_id": "0e3d31ad-9a6e-443b-b9ce-915fde9dec37",
+          "run_value": "ABM program being built from scratch by a single senior hire who must execute hands-on without a large team or large budget; 1:1 / 1:few / 1:many still to be stood up.",
+          "source_row_id": "zaf-129",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.hq_location",
+          "key_value": "New York, New York (company press release dateline); company has Israeli founders / presence referenced across coverage",
+          "run_claim_id": "a8b06bf8-c0a5-4802-831a-ad57d8c028ce",
+          "run_value": {
+            "city": "New York",
+            "country": "United States",
+            "country_code": "US",
+            "raw": "New York, New York",
+            "region": "New York"
+          },
+          "source_row_id": "zaf-134",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.recent_funding",
+          "key_value": "Strategic investment announced from Cisco Investments (2026-07-22), company confirmed investment (not an acquisition)",
+          "run_claim_id": "5b71778c-9932-486c-b497-c1904932c72a",
+          "run_value": {
+            "amount_usd": null,
+            "date": "2026-02-24",
+            "investor": "Amex Ventures",
+            "round": "strategic investment"
+          },
+          "source_row_id": "zaf-135",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.public_frustrations",
+          "key_value": "Company positions product as addressing customer frustration with noisy scanners and manual triage; claims to \"replace legacy scanner with Zafran continuous detection, no new agents\" and to \"normalize and de-duplicate findings\"",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-136",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.culture",
+          "key_value": "Company frames itself as R&D and enterprise security talent driven; hires for engineering, sales, CS, and core infra after Series C",
+          "run_claim_id": "9a7e07cf-6f05-4d0b-8bb3-8653bfb919f8",
+          "run_value": "R&D and enterprise security talent framing; careers page employee quotes from Field Marketing, Solutions, Engineering, DevOps, RSM, BDR",
+          "source_row_id": "zaf-137",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.public_frustrations",
+          "key_value": "Third-party press raised questions about competitive differentiation and ARR growth pace; anonymous exec quoted saying product struggled to demonstrate meaningful competitive advantage",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-138",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.recent_funding",
+          "key_value": "Amex Ventures strategic investment announced Feb 24, 2026; CTech reported amount estimated at several million as an extension",
+          "run_claim_id": "5b71778c-9932-486c-b497-c1904932c72a",
+          "run_value": {
+            "amount_usd": null,
+            "date": "2026-02-24",
+            "investor": "Amex Ventures",
+            "round": "strategic investment"
+          },
+          "source_row_id": "zaf-139",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.buying_culture",
+          "key_value": "Company targets CISOs, security practitioners, and business leaders and uses ABM-driven GTM; land motion emphasizes leveraging customers' existing tools and routing remediation through Jira/ServiceNow",
+          "run_claim_id": "3e042fc6-1120-4886-9275-17a9f4543d73",
+          "run_value": {
+            "culture_label": "hybrid NYC GTM",
+            "summary": "NYC office ~3 days a week for the BDR seat; BDR reports into Marketing department"
+          },
+          "source_row_id": "zaf-140",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.hiring_velocity_eng",
+          "key_value": "Multiple open roles listed in 2026: Senior Manager ABM & Integrated Campaigns, Sr Technical Marketing Manager, Director of Product Marketing, AVP Sales East, Technical Account Manager (public job postings)",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-141",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.attrition_signal",
+          "key_value": "Co-founder / CPO Snir Havdala reported by CTech to have departed to NVIDIA; company stated departure was planned and product leadership assumed by Itay Nachum (VP Product)",
+          "run_claim_id": "273cf5f1-4abe-4b97-b0c0-f99d59fd9f03",
+          "run_value": {
+            "direction": "stable",
+            "signal_type": "attrition",
+            "summary": "Co-founder/CPO Snir Havdala left; company says planned; Itay Nachum VP Product assumed product org"
+          },
+          "source_row_id": "zaf-142",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.eng_blog_tone",
+          "key_value": "Company messaging emphasizes agentic AI, autonomous agents, and practical remediation outcomes (de-duplication, exploitability testing, mitigation via existing controls)",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-143",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.recent_funding",
+          "key_value": "Series C messaging: capital to accelerate product innovation and global expansion",
+          "run_claim_id": "5b71778c-9932-486c-b497-c1904932c72a",
+          "run_value": {
+            "amount_usd": null,
+            "date": "2026-02-24",
+            "investor": "Amex Ventures",
+            "round": "strategic investment"
+          },
+          "source_row_id": "zaf-144",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.public_frustrations",
+          "key_value": "Claims platform reduces remediation time from weeks to hours and presents RemOps metric of \"87%\" time reduction per vulnerability (modeled savings $169K to $2.7M)",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-145",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.company_linkedin_url",
+          "key_value": "https://www.linkedin.com/company/zafran-security",
+          "run_claim_id": "1b1f8606-9f43-4076-ad47-53b9d5c178aa",
+          "run_value": "https://www.linkedin.com/company/zafran-security",
+          "source_row_id": "zaf-146",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "core.primary_tech_stack",
+          "key_value": "Agentic AI / generative AI agents, Exposure Graph, integrations with scanners/endpoint/cloud security tools, ticketing integrations (Jira, ServiceNow)",
+          "run_claim_id": "2b9e1dc5-521b-4864-9b0e-136f15c9d8dc",
+          "run_value": [
+            "dnssec",
+            "google cloud",
+            "amazon s3",
+            "envoy",
+            "floc opt-out",
+            "cloudflare automatic challenge",
+            "cloudflare challenge",
+            "hubspot hosted",
+            "amazon oregon region",
+            "zendesk mail"
+          ],
+          "source_row_id": "zaf-147",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.public_frustrations",
+          "key_value": "Company claims 99% of critical vulnerabilities are not exploitable and 1% require rapid remediation, repeated across corporate messaging",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-148",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.public_frustrations",
+          "key_value": "Company claims to \"de-duplicate\" findings and provide a single source of truth across cloud, on-prem, and AppSec",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-149",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.resonance.public_frustrations",
+          "key_value": "Company states it is trusted by Fortune 500 and high-growth companies and lists CISO quotes from Kraft Heinz, Chipotle, Netskope, Ashland, and a Fortune 25 Healthcare Enterprise",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "zaf-150",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.reputation_risk",
+          "key_value": {
+            "status": "REFUTED",
+            "what": "Cisco acquisition rumor (July 2026) — acquisition claim"
+          },
+          "run_claim_id": "f55b5a5e-1999-4a11-b718-f20777f21094",
+          "run_value": {
+            "status": "refuted",
+            "what": "Cisco acquiring Zafran"
+          },
+          "source_row_id": "zaf-169",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.reputation_risk",
+          "key_value": {
+            "status": "UNRESOLVED",
+            "what": "CTech/third-party claim of roughly $20M ARR and competitive struggles / high burn"
+          },
+          "run_claim_id": "7d31022d-ee75-41d2-8870-f6ff0072ca75",
+          "run_value": {
+            "source_note": "CTech citing unnamed sources; company denied a sale",
+            "status": "UNRESOLVED",
+            "what": "Media reports of acquisition valuation $150M-$200M"
+          },
+          "source_row_id": "zaf-170",
+          "verdict": "partial"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.reputation_risk",
+          "key_value": {
+            "status": "CONFIRMED",
+            "what": "Founder / CPO Snir Havdala departure to NVIDIA"
+          },
+          "run_claim_id": "9ba43792-1486-4f2f-8d29-b49642048fe4",
+          "run_value": {
+            "source_note": "Company via CTech: planned and coordinated; Itay Nachum VP Product assumed product org",
+            "status": "CONFIRMED",
+            "what": "Co-founder / CPO Snir Havdala departure to NVIDIA"
+          },
+          "source_row_id": "zaf-171",
+          "verdict": "exact"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.claimed_customer_logos",
+          "key_value": [
+            "Kraft Heinz (Ricardo Lafosse, CISO)",
+            "Chipotle (Dave Estlick, CISO)",
+            "Netskope (James Robinson, CISO)",
+            "Ashland (Robert Schuetter, CISO)",
+            "Unnamed Fortune 25 Healthcare Enterprise (CISO quote)",
+            "OpenAI (press: \"OpenAI Selects Zafran for Trusted Access for Cyber\")",
+            "Sallie Mae (Steve Lodin quoted)"
+          ],
+          "run_claim_id": "96803e45-6188-454b-9eb2-f20e954623a1",
+          "run_value": [
+            "Kraft Heinz",
+            "Chipotle",
+            "Netskope",
+            "Ashland",
+            "Lumen"
+          ],
+          "source_row_id": "zaf-172",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.product_packaging",
+          "key_value": {
+            "addons": [
+              "Zafran Discover",
+              "Zafran Autonomous Workflows"
+            ],
+            "core": "Zafran platform (Agentic Exposure Management)"
+          },
+          "run_claim_id": "8e81134a-22f2-445c-8f84-0a4e077cd270",
+          "run_value": {
+            "core": "AI-Native Threat Exposure Management / Agentic Exposure Management",
+            "named_modules": [
+              "Unify Findings",
+              "Assess Risk",
+              "Mitigate",
+              "RemOps / Remediate",
+              "Proactive Exposure Hunting",
+              "Exposure Graph",
+              "Agentic Remediation"
+            ]
+          },
+          "source_row_id": "zaf-173",
+          "verdict": "field_only"
+        },
+        {
+          "alternatives": [],
+          "field_key": "account.claimed_outcomes_metrics",
+          "key_value": {
+            "99_percent_not_exploitable": "company claim",
+            "RemOps_87_percent_time_reduction": "company claim",
+            "de-risk_90_percent_critical_overnight": "company claim"
+          },
+          "run_claim_id": "84db49a6-4195-422f-9756-013d9c87a55e",
+          "run_value": {
+            "99_percent_not_exploitable": "company claim on homepage",
+            "de-risk_90_percent_critical": "company platform/jobs claim"
+          },
+          "source_row_id": "zaf-174",
+          "verdict": "exact"
+        }
+      ],
+      "missing": 10,
+      "partial": 11,
+      "recall": 0.5,
+      "subject_kind": "account"
+    }
+  ],
+  "people": [
+    {
+      "account": "sanaz-yashar",
+      "by_section": {
+        "contact.facet": {
+          "hits": 0,
+          "keys": 13
+        }
+      },
+      "exact": 0,
+      "field_only": 0,
+      "insight_found": false,
+      "keys": 13,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": [
+            "Co-Founder & CEO - Zafran Security (Nov 2022 - Present) in Tel Aviv, Israel",
+            "Senior Manager - Mandiant (Nov 2021 - Nov 2022)",
+            "Manager - FireEye, Inc. (Oct 2017 - Mar 2022)",
+            "Director of Intelligence - Cybereason (Sep 2016 - Oct 2017)",
+            "Head of Department - Israeli Military Intelligence (Oct 2001 - Sep 2016)"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-001",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.alma_mater",
+          "key_value": [
+            "Bachelor’s of science, Biochemistry and Molecular Biology at Tel Aviv University (1999 - 2002)",
+            "Master of Business Administration (M.B.A.) at Ben-Gurion University of the Negev (2008 - 2010)"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-002",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": [
+            "Analyst, team leader, threat intelligence, intelligence, cyber security, PM"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-003",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.public_appearances",
+          "key_value": [
+            "AI Summit: Sanaz Yashar, Co-Founder and CEO at Zafran Security (Boardroom Club podcast episode)"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-004",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.publications",
+          "key_value": [
+            "Zafran's Threat Exposure Management Platform integrates with your security tools to reveal, remediate, and mitigate risk"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-005",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": [
+            "Finay we branded my two first loves #chemistry and #breaking bad series with cyber exposure.",
+            "I spent 25 hours in #Atlanta",
+            "Personal confession: I never watch my own videos."
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-006",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hobby",
+          "key_value": [
+            "Thai Boxing",
+            "Breaking Bad (TV series)"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-007",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.communication_style",
+          "key_value": [
+            "Personal confession: I never watch my own videos."
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-008",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.conference_talk",
+          "key_value": [
+            "RSAC 2026: Sanaz Yashar, Zafran, Co-Founder & CEO - RSA Conference 2026"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-009",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_award",
+          "key_value": "it raised over $30 million in funding",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-010",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hooks",
+          "key_value": [
+            "We’ve secured additional funding led by Sequoia Capital’s Growth Fund",
+            "mean time to remediate #vulnerabilities(#MTTR) reduced for Zafran customers by almost 80%!!!"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-011",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.openers",
+          "key_value": [
+            "Congrats on securing additional funding led by Sequoia — curious how you’re measuring MTTR improvements across customers?",
+            "Loved your post about branding chemistry and Breaking Bad with cyber exposure — would love to hear the story behind that mashup."
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-012",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.voice_quote",
+          "key_value": "Born in Iran, moved to Israel, studied #Biology and ended up in Cyber.",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "sanaz_yashar-013",
+          "verdict": "missing"
+        }
+      ],
+      "missing": 13,
+      "partial": 0,
+      "recall": 0.0,
+      "subject_kind": "person"
+    },
+    {
+      "account": "vari-kaur",
+      "by_section": {
+        "contact.facet": {
+          "hits": 0,
+          "keys": 12
+        }
+      },
+      "exact": 0,
+      "field_only": 0,
+      "insight_found": false,
+      "keys": 12,
+      "matches": [
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.nickname",
+          "key_value": "Vari Kaur (aka Varinder Kaur)",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-001",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.alma_mater",
+          "key_value": [
+            "Master of Business Administration (M.B.A) Marketing — Punjab Technical University (2008 - 2010)",
+            "Master of Computer Application (M.C.A) — Punjab Technical University (2001 - 2004)"
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-002",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": "Head of Growth Marketing - Zafran Security (May 2025 - Present)",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-003",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.career_history",
+          "key_value": "Director, Demand Generation & Technology - Secureworks (Jun 2022 - May 2025)",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-004",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": "Passionate about using AI and automation to optimize performance, enhance personalization, and improve campaign ROI.",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-005",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.stated_interests",
+          "key_value": "I specialize in full-funnel strategy development—from top-of-funnel lead acquisition to pipeline acceleration and sales enablement.",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-006",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.communication_style",
+          "key_value": "Results-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs for B2B SaaS companies.",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-007",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "Our marketing team at Zafran Security is expanding! 🚀 I'm hiring a Senior Manager, ABM & Integrated Campaigns.",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-008",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-009",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.hooks",
+          "key_value": [
+            "You recently posted you're hiring a Senior Manager, ABM & Integrated Campaigns — thought I should reach out.",
+            "Congrats on Zafran's $60M raise — would love to hear how growth marketing will scale with that investment."
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-010",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.openers",
+          "key_value": [
+            "Saw your post: \"Our marketing team at Zafran Security is expanding! 🚀 I'm hiring a Senior Manager, ABM & Integrated Campaigns.\" Would love to share one idea for speeding ABM ramp.",
+            "Congrats on \"Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management\" — curious how you're planning to scale demand with the raise."
+          ],
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-011",
+          "verdict": "missing"
+        },
+        {
+          "alternatives": [],
+          "field_key": "contact.facet.recent_post",
+          "key_value": "Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader.",
+          "run_claim_id": null,
+          "run_value": null,
+          "source_row_id": "vari_kaur-012",
+          "verdict": "missing"
+        }
+      ],
+      "missing": 12,
+      "partial": 0,
+      "recall": 0.0,
+      "subject_kind": "person"
+    }
+  ],
+  "run_id": "ba43bd2f-7699-5de3-b2bc-badc9607ee17",
+  "run_ids": [
+    "ba43bd2f-7699-5de3-b2bc-badc9607ee17"
+  ],
+  "workspace_id": "ws_arv2_answer_key"
+}

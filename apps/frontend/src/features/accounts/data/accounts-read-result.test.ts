@@ -14,10 +14,7 @@ const EMPTY_RESPONSE: AccountsResponse = {
   data: [],
   meta: {
     nextCursor: null,
-    page: null,
-    pageSize: null,
     total: 0,
-    totalPages: null,
   },
 };
 

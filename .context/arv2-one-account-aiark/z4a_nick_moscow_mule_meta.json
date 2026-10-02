@@ -1,0 +1,24 @@
+{
+  "video": "https://www.youtube.com/watch?v=avcD5WVLCYs",
+  "model": "gemini-3.5-flash-lite",
+  "usageMetadata": {
+    "promptTokenCount": 23403,
+    "candidatesTokenCount": 1626,
+    "totalTokenCount": 25029,
+    "promptTokensDetails": [
+      {
+        "modality": "VIDEO",
+        "tokenCount": 23109
+      },
+      {
+        "modality": "TEXT",
+        "tokenCount": 294
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "cost_usd": 0.002991,
+  "elapsed_s": 9.37,
+  "chars": 5240,
+  "finishReason": "STOP"
+}

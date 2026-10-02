@@ -1,0 +1,1 @@
+sh -c 'mkdir -p /tmp/tls && echo "$REDIS_TLS_CERT_B64" | base64 -d > /tmp/tls/redis.crt && echo "$REDIS_TLS_KEY_B64" | base64 -d > /tmp/tls/redis.key && exec redis-server --port 6380 --tls-port 6379 --tls-cert-file /tmp/tls/redis.crt --tls-key-file /tmp/tls/redis.key --tls-auth-clients no --requirepass "$REDIS_PASSWORD" --maxmemory-policy noeviction'

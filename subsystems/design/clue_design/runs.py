@@ -62,7 +62,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import bindparam, text
@@ -436,19 +436,13 @@ async def request_run_cancellation(
     # no-op cases below. One read decides which, so the answer is never guessed.
     current = (
         await conn.execute(
-            text(
-                "SELECT * FROM design_agent_run WHERE run_id = :r AND workspace_id = :w"
-            ),
+            text("SELECT * FROM design_agent_run WHERE run_id = :r AND workspace_id = :w"),
             {"r": run_id, "w": workspace_id},
         )
     ).first()
     if current is None:
         raise DesignNotFoundError("agent_run", run_id)
-    outcome = (
-        "already_requested"
-        if current.cancel_requested_at is not None
-        else "already_terminal"
-    )
+    outcome = "already_requested" if current.cancel_requested_at is not None else "already_terminal"
     return {
         **_agent_run_from_row(current),
         "outcome": outcome,
@@ -456,9 +450,7 @@ async def request_run_cancellation(
     }
 
 
-async def cancellation_requested(
-    conn: AsyncConnection, *, workspace_id: str, run_id: str
-) -> bool:
+async def cancellation_requested(conn: AsyncConnection, *, workspace_id: str, run_id: str) -> bool:
     """Has this run been asked to stop? The probe the driving worker polls at call boundaries.
 
     Deliberately narrow — one boolean off one indexed key lookup, not the whole row — because it
@@ -497,6 +489,82 @@ async def list_running_runs(conn: AsyncConnection, *, workspace_id: str) -> list
         {"run_id": row.run_id, "document_id": row.document_id, "doc_kind": row.doc_kind}
         for row in rows
     ]
+
+
+async def runs_for_execution(
+    conn: AsyncConnection, *, workspace_id: str, execution_id: UUID
+) -> list[JsonObject]:
+    """Every run dispatched under one platform execution, oldest first (spec §3.3/§3.9: the
+    batch of one leg turn is the runs stamped with that turn's execution id)."""
+    rows = await conn.execute(
+        text(
+            "SELECT * FROM design_agent_run WHERE workspace_id = :w AND execution_id = :e "
+            "ORDER BY created_at ASC, run_id ASC"
+        ),
+        {"w": workspace_id, "e": execution_id},
+    )
+    return [_agent_run_from_row(row) for row in rows]
+
+
+async def active_run_for_document(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> str | None:
+    """The id of a RUNNING run whose frozen envelope targets ``document_id``, else ``None``.
+
+    The write-lock read: while a design run is driving a document, the design API refuses manual
+    writes to that document (409 ``document.agent_run_active``), so a human and an agent can never
+    author the same scene at the same time.
+
+    The predicate is the run's own PAYLOAD, not the ``document_id`` column, because the payload is
+    the frozen ``DesignTurnEnvelope`` — the immutable statement of what this run was dispatched to
+    do. The column is a nullable convenience (:func:`create_run` stores an id it cannot resolve as
+    NULL), so a run whose envelope names a document is the honest question to ask.
+
+    Only ``running`` counts. A ``queued`` run has nobody driving it yet and a terminal one is over;
+    locking either would refuse edits for work that is not happening. The lock is therefore a state
+    that lifts by itself — including when a lease expires and the reaper fails the row.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT run_id FROM design_agent_run"
+                " WHERE workspace_id = :w AND status = 'running'"
+                "   AND payload ->> 'document_id' = :d"
+                " ORDER BY created_at ASC, run_id ASC"
+                " LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id},
+        )
+    ).first()
+    return None if row is None else str(row.run_id)
+
+
+async def latest_terminal_run_for_document(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str
+) -> JsonObject | None:
+    """The newest TERMINAL run whose frozen envelope targets ``document_id``, else ``None``.
+
+    Spec 2026-09-20 (clarification cards) §2.3: "this document has an open question" is derived
+    — its latest terminal run's result status is ``clarification_requested`` — never stored.
+    Same predicate as :func:`active_run_for_document` (the payload, not the nullable column).
+
+    Terminal means ``succeeded`` or ``failed``: a ``queued`` or ``running`` run has not said
+    anything yet, so letting one answer this read would report a stale question (or none) while
+    the current turn is still deciding.
+    """
+    row = (
+        await conn.execute(
+            text(
+                "SELECT * FROM design_agent_run"
+                " WHERE workspace_id = :w AND status IN ('succeeded', 'failed')"
+                "   AND payload ->> 'document_id' = :d"
+                " ORDER BY created_at DESC, run_id DESC"
+                " LIMIT 1"
+            ),
+            {"w": workspace_id, "d": document_id},
+        )
+    ).first()
+    return None if row is None else _agent_run_from_row(row)
 
 
 # --- the stranded-work surface (D5 Round C) ----------------------------------------------------
@@ -775,3 +843,38 @@ async def touch_run(conn: AsyncConnection, *, workspace_id: str, run_id: str) ->
         ),
         {"r": run_id, "w": workspace_id},
     )
+
+
+async def asset_context_snapshot(
+    conn: AsyncConnection, *, workspace_id: str, run_id: str
+) -> JsonObject | None:
+    row = (
+        await conn.execute(
+            text(
+                "SELECT asset_context_snapshot FROM design_agent_run"
+                " WHERE workspace_id = :w AND run_id = :r"
+            ),
+            {"w": workspace_id, "r": run_id},
+        )
+    ).first()
+    if row is None:
+        raise DesignNotFoundError("agent_run", run_id)
+    return cast(JsonObject | None, load_json_opt(row.asset_context_snapshot))
+
+
+async def pin_asset_context_snapshot(
+    conn: AsyncConnection, *, workspace_id: str, run_id: str, snapshot: JsonObject
+) -> JsonObject:
+    row = (
+        await conn.execute(
+            text("""
+        UPDATE design_agent_run SET
+          asset_context_snapshot = COALESCE(asset_context_snapshot, CAST(:snapshot AS jsonb))
+        WHERE workspace_id = :w AND run_id = :r RETURNING asset_context_snapshot
+    """),
+            {"w": workspace_id, "r": run_id, "snapshot": dump_json(snapshot)},
+        )
+    ).first()
+    if row is None:
+        raise DesignNotFoundError("agent_run", run_id)
+    return cast(JsonObject, load_json(row.asset_context_snapshot))

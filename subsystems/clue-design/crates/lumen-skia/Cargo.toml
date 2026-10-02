@@ -10,8 +10,12 @@ fontcull-skrifa = "0.39.2"
 fontcull-write-fonts = "0.44.3"
 lumen-core = { path = "../lumen-core" }
 lumen-export = { path = "../lumen-export" }
+quick-xml = "0.37"
+roxmltree = "0.20"
+simplecss = "0.2.2"
 skia-safe.workspace = true
 
 [dev-dependencies]
+base64 = "0.22"
 lopdf = "0.36"
 serde_json.workspace = true

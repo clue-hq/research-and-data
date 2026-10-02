@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, Field, StrictInt
+from pydantic import AliasChoices, BaseModel, Field, StrictInt, model_validator
+from clue_design.asset_context import AssetContextPatch
 
 
 JsonObject = Dict[str, Any]
@@ -142,6 +143,32 @@ class AgentTurnPreviewRequest(BaseModel):
     previous_turn_outcome: Optional[str] = None
 
 
+class WebTurnTargetNote(BaseModel):
+    """One annotation a human made in the editor (R-A2): the node they pointed at, the
+    optional element INSIDE it, and their own words about it.
+
+    ``path`` is the closed structural grammar of spec §3.1 — ``:nth-child(n)`` steps joined
+    by `` > `` and nothing else — enforced here so a value that reached the brief could
+    never widen into a selector. It is measured from the clone's rendered wrapper, which is
+    what makes it resolvable against the artifact's stored HTML.
+
+    The same pattern is written twice more and cannot be shared across the seam: the
+    platform's acceptance gate (``clue_api.design_turn_targets._WEB_TARGET_PATH``) and this
+    subsystem's resolver (``lumen_api.fragments.paths.PATH_RE``). Change one, change all
+    three.
+
+    ``note`` may be absent: the platform sends one entry per selected node whether or not
+    the human wrote about it, and a note-less entry simply leaves that node with its
+    ordinary TURN TARGET line.
+    """
+
+    target: str
+    path: Optional[str] = Field(
+        default=None, max_length=256, pattern=r"^(:nth-child\(\d+\)( > )?)+$"
+    )
+    note: Optional[str] = Field(default=None, max_length=2000)
+
+
 class WebTurnRequest(BaseModel):
     """A website-mode agent turn against one exact stored WebDoc revision.
 
@@ -157,6 +184,11 @@ class WebTurnRequest(BaseModel):
     # (the orchestrator reacts to a "TURN TARGET" line appended to the brief).
     # Absent/None → an ordinary whole-page turn.
     target_node_ids: Optional[List[str]] = None
+    # R-A2: what the human WROTE about those targets, one entry per submitted
+    # reference in submission order (the order is part of what they said — they
+    # number their own annotations "1.", "2.", …). Absent/None → a selection-only
+    # scoped turn, whose brief is byte-identical to the pre-annotation one.
+    target_notes: Optional[List[WebTurnTargetNote]] = None
     # P5 (D6): the target account this turn personalizes for. Unknown id → 404
     # before the run starts. Absent → the document row's own account_id (a
     # derived doc) is used when present, else an un-personalized turn.
@@ -262,6 +294,12 @@ class WebPublishRequest(BaseModel):
     public-slug charset by the endpoint."""
 
     slug: Optional[str] = None
+    #: F5 task 13 (ruling R-F1): ask for the robots ``noindex`` meta on this publish's pages.
+    #: Defaults OFF, so an ordinary publish is byte-identical to what it produced before this
+    #: field existed. It can only ADD noindex: the publish tool ORs the document's DURABLE
+    #: ABM noindex, so ``false`` from a share menu can never take an ABM account page back
+    #: into the index.
+    noindex: bool = False
 
 
 class SetAgentInstructionsRequest(BaseModel):
@@ -282,6 +320,18 @@ class SetWebNoindexRequest(BaseModel):
     """
 
     noindex: bool
+
+
+class RenameDocumentRequest(BaseModel):
+    """Artifacts page (2026-09-15): the new title; blank is refused (422) by the tool gate."""
+
+    title: str
+
+
+class SetDocumentArchivedRequest(BaseModel):
+    """Artifacts page (2026-09-15): REQUIRED, no default — same rule as ``SetWebNoindexRequest``."""
+
+    archived: bool
 
 
 class FinalizeTemplateRequest(BaseModel):
@@ -310,12 +360,38 @@ class GenerateAssetRequest(BaseModel):
     aspect_ratio: Optional[str] = None
     image_size: Optional[str] = None
     reference_asset_ids: List[str] = Field(default_factory=list)
+    reference_roles: Optional[List[Literal["source", "treatment", "composition"]]] = None
+    reference_framing: Optional[str] = None
+    operation: Optional[str] = None
     label: Optional[str] = None
     # Phase 3b image EDIT: when set, the prompt is an edit instruction applied
     # to this existing asset's pixels; the result is a NEW asset whose source
     # records the parent (kind "edited"). Remove-background = an edit with
     # transparent_background=true.
     source_asset_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_reference_semantics(self) -> "GenerateAssetRequest":
+        if self.reference_roles is not None:
+            if len(self.reference_roles) != len(self.reference_asset_ids):
+                raise ValueError(
+                    "reference_roles must match reference_asset_ids in order and length"
+                )
+            if any(not asset_id.strip() for asset_id in self.reference_asset_ids) or (
+                len(set(self.reference_asset_ids)) != len(self.reference_asset_ids)
+            ):
+                raise ValueError("role-aware reference_asset_ids must be non-empty and unique")
+        if self.reference_framing is not None and (
+            not self.reference_framing.strip() or not any(self.reference_asset_ids)
+        ):
+            raise ValueError(
+                "reference_framing requires reference assets and a non-empty instruction"
+            )
+        if self.source_asset_id and (
+            self.reference_roles is not None or self.reference_framing is not None
+        ):
+            raise ValueError("source edits do not accept generation reference roles or framing")
+        return self
 
 
 class CreateBindingSetRequest(BaseModel):
@@ -433,13 +509,21 @@ class OnboardAdAssetsRequest(BaseModel):
     and neither, because guessing which one a caller meant would spend a vendor credit on a
     question nobody asked.
 
-    ``brand_kit_id`` / ``brand_kit_version`` name the kit this harvest is FOR. It is required
-    because the ad-DNA card pins the kit version it was distilled against: a card that cannot
-    say which brand it describes is a card no turn can safely be conditioned on.
+    ``brand_kit_id`` / ``brand_kit_version`` name the kit this harvest is FOR. A ``full`` job
+    requires them because the ad-DNA card pins the kit version it was distilled against: a card
+    that cannot say which brand it describes is a card no turn can safely be conditioned on.
+
+    ``phase`` (auto ad ingestion, 2026-09-28) splits the job so onboarding can start before any
+    kit exists: ``harvest`` custodies and describes the ads with no kit, and ``card`` distils and
+    pre-generates from a finished harvest's stored ads once a kit exists. ``card`` jobs are
+    offered by the worker that finishes second (``ad_library.auto_card``), never by this route.
     """
 
-    brand_kit_id: str
-    brand_kit_version: int
+    phase: Literal["full", "harvest", "card"] = "full"
+    brand_kit_id: Optional[str] = None
+    brand_kit_version: Optional[int] = None
+    #: The harvest a ``card`` job distils from.
+    harvest_job_id: Optional[str] = None
     company_domain: Optional[str] = None
     #: THE OPERATOR'S EXPLICIT OVERRIDE (W5/R3-A), and the strongest selector there is.
     #:
@@ -471,6 +555,9 @@ class OnboardAdAssetsRequest(BaseModel):
     #: Bounded spend: ~24–25 ads and ~1 vendor credit per page.
     max_pages: int = 3
     max_creatives: int = 15
+    #: Recover source ads without spending on style analysis or generated backgrounds.
+    #: Persisted with the job so a worker re-drive honors the same requested scope.
+    harvest_only: bool = False
     date_filter: Optional[str] = None
     #: The card lineage to append to. Defaults to one card per brand kit.
     card_id: Optional[str] = None
@@ -490,11 +577,9 @@ class SetBrandKitLogoRequest(BaseModel):
     color_mode: str = "full_color"
 
 
-class SetAssetDescriptionRequest(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    usage: Optional[str] = None
-    tags: Optional[List[str]] = None
+
+class SetAssetDescriptionRequest(AssetContextPatch):
+    pass
 
 
 class BrandCompatibilityRequest(BaseModel):

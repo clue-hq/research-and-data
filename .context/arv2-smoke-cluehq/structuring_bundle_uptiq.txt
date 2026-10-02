@@ -1,0 +1,1174 @@
+You convert free-form research reports into typed claim rows for a claim store.
+
+ABSOLUTE RULES
+1. You may ONLY use a field_key from the catalog given to you. If a fact does not fit any catalog
+   key, DO NOT force it — put it in proposed_fields instead.
+2. value_json MUST validate against that field's value_schema exactly (right JSON type, required
+   properties present, enum values exact).
+3. evidence_span MUST be a VERBATIM substring of the material given to you — copy the quoted text
+   exactly as it appears. Never paraphrase into evidence_span. If there is no quote for a fact,
+   omit the fact entirely.
+4. source_url MUST be the URL the material attributes that fact to. Every row needs one. Never
+   invent a URL and never reuse an unrelated one.
+5. NEVER emit a row for anything marked "NOT FOUND". Never emit an automated/LinkedIn REVENUE
+   ESTIMATE as core.annual_revenue — an estimate is not a reported number; skip it or use
+   core.revenue_band only if the material states a band.
+6. NEVER emit special-category personal data (health, religion, politics, sexual orientation,
+   ethnicity, union membership, criminal matters, family/bereavement, home address, personal
+   phone/email).
+7. Do NOT emit provenance fields (source_key, tier, extraction_method, verification_status): the
+   caller stamps those. Emit only field_key, value_json, evidence_span, source_url, confidence,
+   priority, and for contact.facet.* also use_class.
+8. Prefer fewer, well-evidenced rows over many thin ones. One row per field per distinct fact.
+
+SIGNAL PRIORITY — every claim MUST carry `priority`: 1, 2 or 3.
+  priority 1 (top; shown first): ACTIVE BUYING INTENT. Go-to-market/marketing hiring (quote the
+    req), fresh funding (amount/date/investors), a vacant or newly-filled marketing/growth seat, a
+    tooling gap (no ABM/intent platform), an executive publicly naming a GTM bottleneck or growth
+    commitment, and any timing event less than 6 months old.
+  priority 2 (supporting): firmographics that QUALIFY the account (headcount, vertical, customers,
+    outcome metrics), committee composition, titles and personas, tech stack.
+  priority 3 (context): history, culture and resonance, background facts, personal hooks.
+
+Return ONLY a JSON object with the keys the user message asks for.
+Each proposed field: {"field_key","entity_type","value_type","value_schema","description",
+"reuse_scope","hypothesis","example_value","example_evidence_span","example_source_url",
+"priority"} where description is agent-facing and hypothesis is one paragraph on why an ABM
+platform needs this field.
+
+=====
+
+# FIELD CATALOG (the ONLY keys you may use)
+ACCOUNT FIELDS (entity = the account):
+  core.account_name | value_type=str | Canonical account name observation. | value_schema={'type': 'string'}
+  core.primary_domain | value_type=str | Primary web domain. | value_schema={'type': 'string'}
+  core.company_linkedin_url | value_type=str | Public LinkedIn company page URL. | value_schema={'type': 'string'}
+  core.industry | value_type=str | Primary industry classification. | value_schema={'type': 'string'}
+  core.company_about | value_type=str | Public company description/about text. | value_schema={'type': 'string'}
+  core.employee_count | value_type=int | Total headcount. | value_schema={'type': 'integer'}
+  core.employee_range | value_type=object | Employee range, used only when exact headcount is unavailable. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string'}, 'min': {'type': 'integer'}, 'max': {'type': 'integer'}}}
+  core.hq_location | value_type=object | Normalized HQ/primary location plus the source's raw value. | value_schema={'type': 'object', 'required': ['raw'], 'properties': {'raw': {'type': 'string'}, 'city': {'type': 'string'}, 'region': {'type': 'string'}, 'country': {'type': 'string'}, 'country_code': {'type': 'string'}}}
+  core.annual_revenue | value_type=object | Annual revenue with currency, as-of date and reported/estimate semantics. | value_schema={'type': 'object', 'required': ['amount', 'currency', 'as_of', 'estimate_kind'], 'properties': {'amount': {'type': 'number'}, 'currency': {'type': 'string'}, 'as_of': {'type': 'string'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  core.revenue_band | value_type=enum | Bounded revenue band when exact sourced revenue is absent. | value_schema={'type': 'string', 'enum': ['under_1m', '1m_10m', '10m_50m', '50m_100m', '100m_500m', '500m_1b', '1b_plus']}
+  core.company_email | value_type=str | Public general company contact email. | value_schema={'type': 'string'}
+  core.company_phone | value_type=str | Public general company contact phone. | value_schema={'type': 'string'}
+  core.primary_tech_stack | value_type=list[str] | Detected primary technologies. | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  account.recent_funding | value_type=object | Most recent funding round. | value_schema={'type': 'object', 'required': ['amount_usd'], 'properties': {'amount_usd': {'type': 'number'}, 'round': {'type': 'string'}}}
+  account.total_funding | value_type=object | Total funding in USD with explicit estimate semantics. | value_schema={'type': 'object', 'required': ['amount_usd', 'estimate_kind'], 'properties': {'amount_usd': {'type': 'number'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  account.hiring_velocity_eng | value_type=number | Engineering hiring velocity (count of open engineering roles). | value_schema={'type': 'number'}
+  account.operational_pain | value_type=str | Synthesized operational pain. | value_schema={'type': 'string'}
+  account.strategic_moves | value_type=str | Strategic moves / initiatives. | value_schema={'type': 'string'}
+  account.resonance.culture | value_type=str | Cultural resonance signal. | value_schema={'type': 'string'}
+  account.resonance.employee_sentiment | value_type=object | Aggregate employee sentiment. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string', 'enum': ['positive', 'neutral', 'negative', 'mixed']}, 'polarity': {'type': 'number'}, 'summary': {'type': 'string'}}}
+  account.resonance.attrition_signal | value_type=object | Morale / attrition / layoff signal. | value_schema={'type': 'object', 'required': ['signal_type'], 'properties': {'signal_type': {'type': 'string', 'enum': ['morale', 'attrition', 'layoff']}, 'direction': {'type': 'string', 'enum': ['improving', 'stable', 'worsening']}, 'summary': {'type': 'string'}}}
+  account.resonance.eng_blog_tone | value_type=object | Tone/voice of the company's engineering or company blog. | value_schema={'type': 'object', 'required': ['tone_label'], 'properties': {'tone_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  account.resonance.public_frustrations | value_type=list[object] | Publicly aired frustrations about the account. | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['frustration'], 'properties': {'frustration': {'type': 'string'}, 'summary': {'type': 'string'}}}}
+  account.resonance.buying_culture | value_type=object | 'What it's like to buy here' - procurement culture. | value_schema={'type': 'object', 'required': ['culture_label'], 'properties': {'culture_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+
+CONTACT FIELDS (entity = the contact; plain contact.*):
+  core.work_email | value_type=str | Selected contact's observed work email. | value_schema={'type': 'string'}
+  core.direct_phone | value_type=str | Selected contact's observed direct phone. | value_schema={'type': 'string'}
+  contact.current_title | value_type=str | Current professional title. | value_schema={'type': 'string'}
+  contact.job_function | value_type=str | Current job function. | value_schema={'type': 'string'}
+  contact.job_level | value_type=str | Current job level. | value_schema={'type': 'string'}
+  contact.current_location | value_type=object | Current professional location/country. | value_schema={'type': 'object', 'properties': {'raw': {'type': 'string'}, 'country': {'type': 'string'}}}
+  contact.persona | value_type=str | Buying-committee persona key (CLOSED enum - only these four values exist). | value_schema={'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}
+  contact.role_on_committee | value_type=object | Inferred buying-committee role + plausibility rationale. | value_schema={'type': 'object', 'required': ['role'], 'properties': {'role': {'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}, 'rationale': {'type': 'string'}}}
+
+CONTACT FACET FIELDS (entity = the contact; GOVERNED - every claim MUST carry identity_binding and use_class):
+  contact.facet.career_history | value_type=list[object] | Professional history beyond the current title. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['org'], 'properties': {'org': {'type': 'string'}, 'role': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}}}
+  contact.facet.alma_mater | value_type=list[str] | School(s) / university the person attended. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.stated_interests | value_type=list[str] | Publicly stated interests / topics. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.communication_style | value_type=object | Inferred communication style / tone from public activity. | default use_class=professional-public | value_schema={'type': 'object', 'required': ['style_label'], 'properties': {'style_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  contact.facet.public_appearances | value_type=list[object] | Podcasts / talks / panels the person appeared in. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.publications | value_type=list[object] | Articles / papers / books the person authored. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.recent_post | value_type=str | Recent public post (personal hook). | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.nickname | value_type=str | Preferred / known-by name beyond the legal first name. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.hobby | value_type=str | Publicly stated hobby. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.recent_award | value_type=str | Recent award or recognition. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.conference_talk | value_type=str | Conference talk given by the person. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.causes | value_type=list[object] | Publicly supported causes (sensitive by default). | default use_class=sensitive | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['cause'], 'properties': {'cause': {'type': 'string'}, 'context': {'type': 'string'}}}}
+
+# ACCOUNT: UPTIQ, Inc. (uptiq.ai). Entity id: account:uptiq
+# The client selling INTO this account is Clue (cluehq.ai), an AI-native ABM orchestration platform: deep account research, buying-committee mapping, per-account microsites, LinkedIn/Meta paid media, and direct mail. Judge priority against THAT sale.
+
+# DEEP RESEARCH REPORT (Exa deep-reasoning, one call)
+# UPTIQ, Inc. (uptiq.ai) — evidence dossier Research cut-off: 2026-08-31. I treated the target as the Dallas/McKinney financial-services AI company, not similarly named businesses. ## 1. Identity and disambiguation - Operating/legal identity: the company publicly brands itself “Uptiq”/“Uptiq.ai”; exact Secretary-of-State legal-name record was NOT FOUND. Its own funding release calls it “Uptiq.ai” and describes its business as AI infrastructure for financial services: “Uptiq.ai builds AI infrastructure powering the future of financial services.” URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows
+- HQ: “7300 TX-121, McKinney, Texas 75070, US” appears in an automated Exa organization record. This is a third-party/automated record, not a company-address page. URL: https://www.linkedin.com/company/uptiqai
+- GTM location: the company says it has “teams in the United States and India”; Mandar Marathe’s LinkedIn lists “Vice President Marketing … in Pune,” and Parth Raval’s lists “GTM PLG … in Pune City.” Thus the observable marketing/GTM center is India, while the company’s stated US base is Texas. URL: https://www.uptiq.ai/careers ; URL: https://www.linkedin.com/in/mandarmarathe ; URL: https://www.linkedin.com/in/parth-raval-9060a61a0
+- Founded: “2022” in the automated organization record; Snehal Fulzele’s work history says “Founder & CEO … Jan 2022–Present.” URL: https://www.linkedin.com/company/uptiqai ; URL: https://www.linkedin.com/in/snehalfulzele
+- Domains: uptiq.ai is the verified operating domain. Other official domains were NOT FOUND.
+- LinkedIn: https://www.linkedin.com/company/uptiqai
+- Employees: LinkedIn’s company result reports “Employees: 151 (51-200 employees).” This is a LinkedIn/automated count, not an audited headcount. URL: https://www.linkedin.com/company/uptiqai
+- Excluded same-name entities: “Uptick” (different spelling/name; no evidence it is uptiq.ai); “Uptiq Wealth” where unrelated (wealth businesses using that name, not literally the target domain); and any similarly spelled fintech not literally operating at uptiq.ai. A specific exhaustive registry list of those entities was NOT FOUND. GrowthSpree was not treated as an Uptiq entity: its site says “We buy & scale marketing software companies,” not that it is Uptiq. URL: https://www.growthspree.com/ ## 2. Product and buyers - In the company’s words, Uptiq is “the intelligent operating layer” that “unifies growth, origination, and continuous service suites,” with “Autonomous financial operators that execute complex workflows across systems.” URL: https://www.uptiq.ai/about-us
+- The platform is aimed at “banks, credit unions, fintechs, and wealth firms.” URL: https://www.uptiq.ai/careers
+- Exact buyer title: NOT FOUND. Public material names market segments and functions, but does not state a single exact economic-buyer title. The Series B release does mention “credit union innovation teams and developers.” URL: https://www.uptiq.ai/press-releases/uptiq-announces-strategic-investment-from-curql-to-accelerate-ai-adoption-across-credit-unions
+- Target-universe size: Uptiq says “150+ financial institutions” and elsewhere “more than 140 financial institutions.” URL: https://www.uptiq.ai/about-us ; URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows
+- US universe reference points: FDIC reports “Number of FDIC-Insured … 4,336” institutions as of Q4 2025; NCUA reports “the number of federally insured credit unions declined to 4,287.” These are not Uptiq’s exact addressable universe and should not be added without a scope rule. URL: https://www.fdic.gov/quarterly-banking-profile/statistics-glance-industry-trends-fourth-quarter-2025.pdf ; URL: https://ncua.gov/newsroom/press-release/2026/ncua-releases-fourth-quarter-2025-credit-union-system-performance-data
+- Pricing: NOT FOUND; no public price card or pricing model located. ## 3. Traction - Named customers: “Focus Financial Partners, Orion, Broadridge, Nano Banc, and TransPecos Bank.” URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows
+- Logo/customer count: company claim “over 150+ financial institutions”; a contemporaneous company release says “more than 140.” URL: https://www.uptiq.ai/about-us ; URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows
+- Outcomes: company claims customers see “41% faster underwriting, 29% lower operations costs and up to 2x loan volume without adding headcount.” URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows
+- Processing volume: CEO/company release says “more than $1 billion in loan balances over the past 18 months”; current About page says “over $10 billion in transactions processed.” These are company claims with differing scopes, not independently verified. URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows ; URL: https://www.uptiq.ai/about-us
+- ARR/revenue: NOT FOUND. Automated Exa record has “revenueAnnual: null.” URL: https://www.linkedin.com/company/uptiqai
+- Investor/press/automated attribution: the $25M and metrics in are presented as company claims in a release saying CEO Snehal Fulzele told Axios; the 151 employee figure is automated LinkedIn data; no investor-supplied ARR was found. ## 4. Funding - October 25, 2025: “raised $12 million in a new funding round led by Silverton Partners”; participants “Live Oak Venture Partners, Tau Ventures, First Capital and Green Visor Capital.” URL: https://www.uptiq.ai/press-releases/uptiq-ai-raises-12-million-to-build-the-future-of-ai-infrastructure-for-financial-services
+- February 12, 2026: $25M Series B, led by Curql, with “Silverton Partners, 645 Ventures, Broadridge, Green Visor Capital, Live Oak Ventures, First Capital, Epic Ventures, Tau Ventures, and Evolution VC.” URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows
+- Curql strategic-investment announcement: it was “part of Uptiq’s recently completed $25 million Series B financing.” URL: https://www.uptiq.ai/press-releases/uptiq-announces-strategic-investment-from-curql-to-accelerate-ai-adoption-across-credit-unions
+- Total: company says “more than $55M in equity funding.” URL: https://www.uptiq.ai/about-us
+- Use of proceeds: company said the $12M would “drive large-scale adoption of Uptiq Qore,” “scale its distribution network,” “expand integration partnerships,” and “accelerate go-to-market programs.” URL: https://www.uptiq.ai/press-releases/uptiq-ai-raises-12-million-to-build-the-future-of-ai-infrastructure-for-financial-services
+- Complete pre-October-2025 round history, exact dates/amounts/participants: NOT FOUND. ## 5. GTM hiring - On the supplied 2026-08-31 observation, the careers page showed only three India roles—Site Reliability Engineer, Technical Support Engineer, SBA Loan Specialist—and zero US GTM requisitions; this exact snapshot cannot be independently reproduced from the static search result. The page nevertheless says “We’re hiring across multiple functions in USA & India” and lists “Marketing & Growth,” “Sales (Enterprise & Mid-Market).” URL: https://www.uptiq.ai/careers
+- Performance Marketing Manager: third-party listing says “own pipeline, not just campaigns,” “Drive enterprise and growth marketing,” “Work closely with sales,” and optimize for “MQL SQL Revenue.” Published date/status and reporting line: NOT FOUND. URL: https://getmereferred.com/in/job-listing/performance-marketing-manager-uptiq-inmhpunecity-5-to-10-years-experience-ccb52536-91ba-473f-ac0b-9cb3ca6ac09b
+- Vishnu Tiwari’s May 22, 2026 post says he was hiring for “Performance marketing and paid channels,” “Outbound and GTM,” “Vibe coding and agent building,” and “Growth interns.” Whether any remained open on Aug. 31, 2026 and reporting lines: NOT FOUND. URL: https://www.linkedin.com/posts/vishnu-tiwari_hiring-marketinghiring-activity-7463573715230990336-oy30
+- Target-account-list/account-research/ABM/field-marketing/event language in accessible Uptiq job descriptions: NOT FOUND. Long-open role flag: NOT FOUND. ## 6. Marketing and ABM tooling - CRM: NOT FOUND.
+- Marketing automation: NOT FOUND.
+- Sales engagement: NOT FOUND.
+- ABM/intent platforms—6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, ZoomInfo, Clay, Common Room: NOT FOUND in the located public evidence. Do not infer tooling from the word “ABM” in a person’s profile. URL: https://www.linkedin.com/in/mandarmarathe
+- GrowthSpree case study: NOT FOUND. The located GrowthSpree homepage contains no Uptiq case study and only says it “manage[s] communities of over 200,000 entrepreneurs & small businesses.” URL: https://www.growthspree.com/ ## 7. Leadership and GTM organization - Snehal Fulzele — “Founder & CEO”; joined/founded January 2022 per LinkedIn work history. URL: https://www.linkedin.com/in/snehalfulzele
+- Mandar Marathe — “Vice President Marketing,” current, “Jan 2025–Present,” Pune. URL: https://www.linkedin.com/in/mandarmarathe
+- Gagan Kanjlia — “Chief Banking Officer”; owns “product strategy and revenue for the Bank and Credit Union market.” URL: https://www.uptiq.ai/press-releases/uptiq-expands-u-s-banking-leadership-as-institutions-move-ai-from-pilot-to-production
+- Amit Parmar — “Executive Vice President of Strategic Accounts and Data Strategy.” URL: https://www.uptiq.ai/press-releases/uptiq-expands-u-s-banking-leadership-as-institutions-move-ai-from-pilot-to-production
+- Marc Billanti — “Senior Vice President of Sales,” leading sales for the Credit Union market. URL: https://www.uptiq.ai/press-releases/uptiq-expands-u-s-banking-leadership-as-institutions-move-ai-from-pilot-to-production
+- Other LinkedIn-listed leaders include Mahrukh Shah (“Marketing Lead”), Christopher Boas (“Head of International”), and Ken Kovasala (“VP of Banking”). URL: https://www.linkedin.com/company/uptiqai
+- CMO/Head of Marketing/Head of Growth: no person with those exact titles was found; VP Marketing is held by Mandar Marathe. URL: https://www.linkedin.com/in/mandarmarathe
+- Vacant GTM seat: the absence of US GTM openings on the stated Aug. 31 snapshot means no US GTM vacancy was evidenced; the company’s general careers copy says it is hiring “Marketing & Growth” and “Sales.” Exact vacant seat: NOT FOUND.
+- Recent GTM leadership hire (<12 months): Marc Billanti’s appointment/return is in the recent leadership release, but its publication date is not exposed in the search result; exact join date: NOT FOUND. URL: https://www.uptiq.ai/press-releases/uptiq-expands-u-s-banking-leadership-as-institutions-move-ai-from-pilot-to-production ## 8. Operational pain and strategic moves - Stated problem: Uptiq says general-purpose AI “goes wide” while Uptiq “goes deep with agents built for financial services,” with governance “examiners expect.” URL: https://www.uptiq.ai/
+- Stated constraint/market change: institutions are moving “AI from pilot to production.” URL: https://www.uptiq.ai/press-releases/uptiq-expands-u-s-banking-leadership-as-institutions-move-ai-from-pilot-to-production
+- Moves: expand Qore access so “credit union innovation teams and developers” can build/deploy workflows; scale distribution, integrations, and GTM. URL: https://www.uptiq.ai/press-releases/uptiq-announces-strategic-investment-from-curql-to-accelerate-ai-adoption-across-credit-unions ; URL: https://www.uptiq.ai/press-releases/uptiq-ai-raises-12-million-to-build-the-future-of-ai-infrastructure-for-financial-services ## 9. Culture and resonance - Company language: “High Ownership. High Velocity. High Growth”; “You’ll own your work end-to-end”; “You’ll ship fast.” URL: https://www.uptiq.ai/careers
+- Self-positioning: “the proven AI partner for highly regulated industries” and “leading it.” URL: https://www.uptiq.ai/about-us
+- Publicly aired frustration: NOT FOUND.
+- Employee-sentiment/attrition signal: NOT FOUND. LinkedIn reports annual workforce growth “+137.3%,” but that is an automated platform signal, not sentiment or attrition evidence. URL: https://www.linkedin.com/company/uptiqai
+- Awards: NOT FOUND. ## 10. Timing events, newest first - 2026-08-31: user-provided careers-page snapshot: only three India roles and no US GTM requisitions; independently dated page snapshot: NOT FOUND. URL: https://www.uptiq.ai/careers
+- 2026-08-22: Snehal Fulzele LinkedIn profile was published/updated and identifies him as “Founder & CEO, UPTIQ.” URL: https://www.linkedin.com/in/snehalfulzele
+- 2026-07-15: public LinkedIn profile for “Marketing And Sales @ UPTIQ” indicates a current marketing/sales employee in McKinney; title is not executive. URL: https://www.linkedin.com/in/abhijit-d-aa3b49345
+- 2026-05-22: Vishnu Tiwari publicly advertised hiring across performance marketing, outbound/GTM, agent building, and growth interns. URL: https://www.linkedin.com/posts/vishnu-tiwari_hiring-marketinghiring-activity-7463573715230990336-oy30
+- 2026-02-16: Mandar Marathe posted “Excited to be a part of UPTIQ”; LinkedIn identifies him as VP Marketing. URL: https://www.linkedin.com/posts/mandarmarathe_excited-to-be-a-part-of-uptiq-tagging-activity-7429114094110199808-RbpT
+- 2026-02-12: company announced $25M Series B; Curql led and the company claimed 140+ live institutions plus outcome metrics. URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows
+- 2025-10-25: company announced $12M round led by Silverton and committed proceeds to Qore adoption, distribution, integrations, and GTM. URL: https://www.uptiq.ai/press-releases/uptiq-ai-raises-12-million-to-build-the-future-of-ai-infrastructure-for-financial-services ## Special-probe answers (a) Marketing owner: Mandar Marathe, “Vice President Marketing,” Pune; no CMO/Head of Marketing/Head of Growth title was found. URL: https://www.linkedin.com/in/mandarmarathe (b) GrowthSpree ABM case study: NOT FOUND. Therefore program, account count, duration, meaning/scope of “$400K+ pipeline,” and whether engagement remains live are all NOT FOUND. The only located GrowthSpree evidence describes its own acquisition/marketing business, not Uptiq. URL: https://www.growthspree.com/ (c) ABM/intent tooling: NOT FOUND for every specifically requested platform: 6sense, Demandbase, Terminus, RollWorks, Mutiny, Folloze, Influ2, Madison Logic, ZoomInfo, Clay, and Common Room. (d) Published customer count: “over 150+ financial institutions” (company claim). Earlier release: “more than 140 financial institutions.” ARR: NOT FOUND. URL: https://www.uptiq.ai/about-us ; URL: https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows (e) Remaining US universe: official/near-official reference counts found are 4,336 FDIC-insured institutions and 4,287 federally insured credit unions. These categories may overlap in institution type definitions and should not be summed as an exact Uptiq TAM without methodology. URL: https://www.fdic.gov/quarterly-banking-profile/statistics-glance-industry-trends-fourth-quarter-2025.pdf ; URL: https://ncua.gov/newsroom/press-release/2026/ncua-releases-fourth-quarter-2025-credit-union-system-performance-data
+
+# THE COMPANY'S OWN PAGES + FUNDING ANNOUNCEMENTS (fetched verbatim)
+SOURCE https://www.uptiq.ai [via Exa /contents]
+Uptiq - Financial AI Platform for Banks, Credit Unions & Wealth Firms
+
+The AI Platform for Financial Services
+
+# The only bank-grade AI platform.
+
+General-purpose AI goes wide. Uptiq goes deep with agents built for financial services, running in 150+ institutions with the governance examiners expect.
+
+Book a Discovery Call
+
+Banks
+
+Credit Unions
+
+Non-Bank Lenders
+
+Equipment Finance
+
+Wealth Firms
+
+Industry preview
+
+## Banks
+
+Governed agents for underwriting, monitoring, and member service — held to bank-grade standards.
+
+Industry preview
+
+## Credit Unions
+
+Member-first automation across account opening, lending, and everyday servicing.
+
+Industry preview
+
+## Non-Bank Lenders
+
+Faster origination and portfolio operations for specialty and consumer lenders.
+
+Industry preview
+
+## Equipment Finance
+
+Streamlined credit, documentation, and booking for equipment finance teams.
+
+Industry preview
+
+## Wealth
+
+Advisor-ready agents for onboarding, review prep, and client operations.
+
+150+
+
+Institutions Trust Uptiq
+
+The Qore AI Platform
+
+## Everything you need to run AI.
+
+Actions grounded in your institution's truth, provable to your examiners, and governed end to end as work moves front office to back.
+
+See how it works
+
+Meet the agents
+
+## Agents work with your teams.
+
+Ready to deploy: account opening, onboarding, underwriting, monitoring. Or build your own, no engineering required.
+
+Growth Agents
+
+Onboarding & Origination Agents
+
+Operations Agents
+
+Build an Agent
+
+Agent Preview
+
+### Deposit Account Opening
+
+Collects documents, verifies identity, and prepares every application for a fast, compliant decision.
+
+Explore the Agent Marketplace
+
+Qore AI Platform
+
+Product preview
+
+Purpose-built agent
+
+### Underwriting Agent
+
+Spreads financials, surfaces risk, and drafts credit memos — underwriters stay on judgment.
+
+Explore the Agent Marketplace
+
+Qore AI Platform
+
+Product preview
+
+Purpose-built agent
+
+### Continuous Monitoring Agent
+
+Monitors portfolios, covenants, and activity to surface issues early.
+
+Explore the Agent Marketplace
+
+Qore AI Platform
+
+Product preview
+
+Build New Agents
+
+### Your Agent
+
+Bring a workflow and launch it on Qore. No engineering required.
+
+Qore AI Platform
+
+Product preview
+
+How you grow with Uptiq
+
+## Start with one workflow. Scale to the institution.
+
+Deploy one agentic workflow
+
+### Start
+
+Agents are pre-built and ready to deploy. Pick the workflow with the most drag and go live in weeks.
+
+Expand across the institution
+
+### Extend
+
+Add agents team by team on the same platform. No new stack, no new integration project.
+
+Evolve as AI evolves
+
+### Evolve
+
+New models and skills drop into Qore as they emerge. Build your own agents on the same platform.
+
+Agents ready to deploy. A platform ready to build and scale on.
+
+Book a Discovery Call
+
+Enterprise AI, without the black box
+
+## AI your institution can trust.
+
+Build agents that know your policies and have the governance, financial skills and document AI to execute with context.
+
+09:42
+
+09:42
+
+Auditability
+
+Every agent action is logged with a traceable decision trail.
+
+Lending policy
+
+Role: Underwriter
+
+Human checkpoint
+
+Approved
+
+Governance
+
+Agents operate inside your policies, with role-based controls and human checkpoints.
+
+Why was this flagged?
+
+Reg B §1002.9
+
+Policy 4.2
+
+Explainability
+
+See why an agent reached a conclusion, in plain language, citation-backed.
+
+SOC 2
+
+Encrypted
+
+Your data stays yours
+
+Secure
+
+Bank-grade security end to end. Encrypted in transit and at rest, and your data never trains shared models.
+
+Proof, not promises
+
+## Measured results from financial workflows.
+
+The work moves. Your controls stay.
+
+63%
+
+Less preparation time
+
+Loan and credit-memo prep.
+
+41%
+
+Shorter cycle time
+
+Underwriting, end to end.
+
+36%
+
+Less manual extraction
+
+Spreading and extraction.
+
+Basis: aggregate results across Uptiq deployments in commercial and small business lending.
+
+What changes
+
+## Your team stops chasing the work.
+
+Today
+
+### Your people move the work.
+
+Chase documents across inboxes
+
+Rekey information between systems
+
+Assemble analysis by hand
+
+Assemble analysis by hand
+
+With Uptiq
+
+### Agents move it. People lead it.
+
+Agents collect and validate documents and data
+
+Qore coordinates systems and handoffs
+
+Teams receive review-ready outputs
+
+Exceptions surface as they happen
+
+## The Complete Guide to Financial AI in 2026
+
+Explore how banks, credit unions, wealth managers, equipment finance firms, and private credit lenders are using AI agents, document intelligence, and workflow automation to transform lending, underwriting, risk monitoring, and client engagement.
+
+Download the AI Guide
+
+Resources
+
+## Insights & Resources That Keep You Ahead
+
+Stay ahead with the latest insights on AI, automation, and the future of financial services industry
+
+#### Before Your NCUA Examiner Asks About Your AI, Read This
+
+Credit UnionAugust 27, 2026
+
+## Uptiq Expands U.S. Banking Leadership as Institutions Move AI From Pilot to Production
+
+Press ReleasesAugust 18, 2026
+
+## The Future of Equipment Finance: AI-Powered Automation
+
+Start with one workflow
+
+## See what your next agent could do.
+
+Bring us the workflow with the most drag. We’ll show you an agent running it.
+
+Book a Discovery Call
+
+### Want Insights from Uptiq sent straight to your inbox?
+
+Join ever-growing community of 500+ Financial Institutions who have harnessed the power of Uptiq Insights.
+
+Thank you! Your submission has been received!
+
+Oops! Something went wrong while submitting the form.
+
+United States
+
+10900 Stonelake Blvd Bldg II Ste 100, Austin, Texas 78759.
+
+India
+
+WeWork Futura, Magarpatta Rd, Kirtane Baugh, Magarpatta, Hadapsar, Pune, Maharashtra 411028
+
+Industries
+
+Important Links
+
+Resources
+
+Company
+
+Other
+
+Privacy Policy Terms of Service
+
+### Powering the future of financial intelligence
+
+The financial industry is evolving faster than ever, and modern institutions need smarter, faster systems to stay ahead. Uptiq's financial AI platform transforms complex financial operations into intelligent, automated workflows, reducing manual effort, improving decision accuracy, and delivering real-time visibility across every stage of the lending lifecycle. From credit operations to compliance, our financial AI is built to help institutions do more with the teams they already have.
+
+Read More
+
+Read Less
+
+© 2026 UPTIQ, Inc. All rights reserved.
+
+SOURCE https://www.uptiq.ai/about-us [via Exa /contents]
+About Uptiq | AI Agent Platform Built for Financial Services
+
+OUR STORY
+
+# About Us
+
+Founded by industry veterans, Uptiq is the enterprise-ready AI platform purpose-built to modernize financial services workflows. With deep domain expertise, our sophisticated AI powers a unified solution that enhances operational efficiency and maximizes team capacity, driving superior outcomes through a better client experience. Uptiq delivers rapid results through easily deployable AI agentic apps and an innovative AI Workbench that enables institutions to adapt and scale with evolving business needs.
+
+Trusted by over 150+ financial institutions, including Focus Financial Partners, Orion, Broadridge, and TransPecos Banks, Uptiq is the proven AI partner for highly regulated industries. With over $10 billion in transactions processed and more than $55M in equity funding, Uptiq isn’t just shaping the future of AI in financial services — it’s leading it.
+
+#### 150+
+
+Financial Institutions Trust Us
+
+#### $10 billion
+
+transactions processed
+
+#### $55m
+
+in equity funding
+
+## Our Values
+
+Innovate without fear
+
+Listen to the market
+
+Love the climb
+
+Teams
+
+## UPTIQ Team
+
+Adriene McCanceSVP & GM, Wealth and Private Credit
+
+Amit ParmarEVP, Strategic Accounts
+
+Jay RichardsonSVP & GM, Non-Bank Lending
+
+Kyle KneubuhlSVP & GM, Banks & Credit Unions
+
+Investor
+
+## Backed by the Best
+
+645 Ventures
+
+645 Ventures is an early-stage partner backing founders who are building the iconic, industry-transforming companies of tomorrow.
+
+Green Visor Capital
+
+Green Visor Capital invests in passionate founders who are solving the most important problems in financial services.
+
+Curql
+
+Curql unites credit unions and fintech companies, fostering the collaboration and investment that drives innovation across the financial services industry.
+
+Silverton Partners
+
+Silverton Partners is an early-stage VC that invests in technology companies with the potential to build significant, lasting competitive advantages over time.
+
+Live Oak Ventures
+
+LiveOak partners with exceptional Texas-based founders, building tech and tech-enabled service companies.
+
+Evolution VC
+
+Evolution VC Partners invests in early and growth-stage technology startups across sectors, providing them with capital, customer access, and top-tier talent.
+
+Broadridge
+
+Broadridge Financial Solutions (NYSE: BR) is a global technology leader delivering trusted expertise and transformative technology to the financial services industry.
+
+Tau Ventures
+
+Established in 2019 and based in Palo Alto, Tau Ventures is an early-stage fund dedicated to partnering with entrepreneurs building the next generation of technology companies.
+
+First Capital
+
+First Capital is an AI-native venture fund backing the startups that make legacy look outdated. Focused on Full Stack AI, Superagents, and next-gen SaaS, they invest in vertical-first, agentic companies built to replace industries not retrofit them.
+
+BAT VC
+
+Founded in 2022 and headquartered in New York, BAT VC is an early-stage venture capital firm investing in AI, Fintech, and Enterprise SaaS startups across the US and India. With a hands-on approach to the product-market fit journey.
+
+Start with one workflow
+
+## See what your next agent could do.
+
+Bring us the workflow with the most drag. We’ll show you an agent running it.
+
+Book a Discovery Call
+
+### Want Insights from Uptiq sent straight to your inbox?
+
+Join ever-growing community of 500+ Financial Institutions who have harnessed the power of Uptiq Insights.
+
+Thank you! Your submission has been received!
+
+Oops! Something went wrong while submitting the form.
+
+United States
+
+10900 Stonelake Blvd Bldg II Ste 100, Austin, Texas 78759.
+
+India
+
+WeWork Futura, Magarpatta Rd, Kirtane Baugh, Magarpatta, Hadapsar, Pune, Maharashtra 411028
+
+Industries
+
+Important Links
+
+Resources
+
+Company
+
+Other
+
+Privacy Policy Terms of Service
+
+© 2026 UPTIQ, Inc. All rights reserved.
+
+SOURCE https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders [via Exa /contents]
+Uptiq.ai ABM Case Study: $400K+ Pipeline | GrowthSpree
+
+Client Success Story
+
+# How GrowthSpree Built Uptiq.ai an ABM Engine for Modern Financial Leaders
+
+Conservative financial buyers rarely move fast on AI. Uptiq.ai needed to win them anyway. A 120-day, multi-layered ABM motion across four lending segments turned $2,700 of ad spend into $400K+ in pipeline — with CFO-level engagement across 150+ enterprise accounts.
+
+$400K+
+
+Pipeline Created
+
+8
+
+Opportunities Created
+
+150+
+
+Enterprise Accounts Engaged
+
+Uptiq.ai
+
+AI credit & lending automation for financial institutions
+
+Founded
+
+2022
+
+Headquarters
+
+McKinney, Texas
+
+Company Size
+
+51–200 employees
+
+Sector
+
+AI Lending / FinTech SaaS
+
+Uptiq.ai × GrowthSpree — At a Glance
+
+Client Uptiq.ai — AI credit & lending automation platform, founded 2022, McKinney, Texas
+
+Problem Conservative AI buyers, hard-to-reach CFOs, four distinct lending segments, and a lean $2,700 budget
+
+Result $400K+ pipeline and 8 opportunities from just $2,700 of ad spend
+
+Timeframe 120 days, across 150+ enterprise accounts in the U.S.
+
+Case Study at a Glance
+
+## Key Takeaways
+
+Uptiq.ai — an AI credit and lending automation platform — hired GrowthSpree to expand its footprint among CFOs, credit leaders, and lending heads across the U.S. A multi-layered ABM motion combining segment-specific paid ads, personalized LinkedIn outreach, and event-led nurturing built a repeatable engine for enterprise pipeline.
+
+- $400K+ in pipeline and 8 opportunities created — on just $2,700 of LinkedIn ad spend.
+- 3,874 ABM connections at 12.9% acceptance, a 23% reply rate, and 50 interested prospects.
+- CXO-level engagement across 150+ enterprise accounts — CFOs, SVPs, and Credit Heads.
+- Closed deals including $50K from Nubank and a confirmed $100K Equipment Finance opportunity.
+- Events were the top lever: 30–50% conversion per event, lifting replies 3–4× over cold outreach.
+- 80% of opportunities came via LinkedIn — personalized messaging plus human follow-up beat email.
+
+## The Mission
+
+Uptiq.ai helps banks, credit unions, and SMB lenders streamline their intake, underwriting, and credit memo processes with AI — without overhauling their loan origination system. In 2025, Uptiq set out to expand its footprint among CFOs, credit leaders, and lending heads across the U.S., using ABM and targeted ad campaigns to reach high-intent enterprise prospects.
+
+## The Challenge
+
+Financial institutions are among the most conservative AI buyers, and the people who matter — CFOs, VPs, and Credit Ops Heads — are notoriously hard to reach. Uptiq needed to build awareness and trust across four very different lending segments, prove its AI-enabled origination narrative to skeptical leaders, and convert event-driven interest into real pipeline — all on a lean budget and within long financial sales cycles.
+
+### What We Were Up Against
+
+✕Conservative buyers: banks and credit unions are cautious about AI in core credit workflows.
+
+✕Hard-to-reach personas: CFOs, VPs, and Credit Ops Heads ignore generic outreach.
+
+✕Four distinct segments: Equipment Finance, Banks & Credit Unions, SMB Lending, and Dealerships each need their own narrative.
+
+✕"Don't rip out my LOS": prospects feared disruptive migrations of their loan origination system.
+
+✕A lean budget: a modest $2,700 in ad spend had to work hard to create pipeline.
+
+✕Long sales cycles: enterprise lending decisions demand nurture, trust, and persistence.
+
+Baseline snapshot — before the ABM engine
+
+| Spend / channels | A lean $2,700 LinkedIn ad budget had to work alongside personalized outreach — there was no room for broad, generic paid campaigns. |
+| --- | --- |
+| CAC / cost model | Not a per-lead CAC — success was measured by pipeline value and opportunities created per dollar of ad spend. |
+| Conversion rate | Generic outreach was being ignored by CFOs, VPs, and Credit Ops Heads, and "don't rip out my LOS" fears stalled conversations before they started. |
+| Targeting | Four very different lending segments — Equipment Finance, Banks & Credit Unions, SMB Lending, and Dealerships — each needing its own narrative. |
+
+## Our Strategy
+
+We designed a multi-layered ABM motion built on one principle: match the message to the person's function and the moment's context. Awareness ads, personalized LinkedIn outreach, email coverage, and event-led plays all reinforced a single, non-disruptive promise — cut time-to-offer by 60–80% without replacing the LOS.
+
+1
+
+Build awareness and engagement among CFOs, VPs, and Credit Ops Heads in financial institutions.
+
+2
+
+Convert event-driven interest (ELFA, Digital Banking, Private Debt Investor Network) into pipeline.
+
+3
+
+Test Uptiq's AI loan-origination and credit-automation narrative across four key segments.
+
+### The GrowthSpree Approach
+
+Segment-specific LinkedIn paid ads built awareness, while personalized ABM outreach (via Dripify) was tuned by function — Finance, Risk, or Lending Ops — and context — Event, Product, or Region — with a human follow-up on every promising reply. Email layers (Instantly and an AiSDR agent) extended coverage between touches.
+
+On top of that, an event calendar — ELFA Innovation Lab, the Private Debt Investor Network, and the Digital Banking Conference — was used as a series of intent triggers, turning warm event context into qualified meetings and opportunities.
+
+## How GrowthSpree Saved the Day
+
+### Segment-Specific Paid Ads
+
+LinkedIn ads tuned to each vertical drove up to a 2.1% CTR and reached 55% of the Equipment Finance audience — proof that targeted creative beats generic messaging.
+
+Up to 2.1% CTR
+
+55% Audience Reached
+
+### Personalized LinkedIn ABM
+
+Function- and context-specific messaging with human follow-up converted at the top of the funnel — and drove roughly 80% of all opportunities, far ahead of email.
+
+12.9% Acceptance
+
+80% of Opportunities
+
+### Event-Led Intent Triggers
+
+ELFA, the Private Debt Investor Network, and the Digital Banking Conference acted as catalysts — converting at 30–50% per event and lifting replies 3–4× over cold outreach.
+
+30–50% Per Event
+
+3–4× Reply Lift
+
+## The Four-Segment Deep Dive
+
+One engine, four tailored narratives — each tuned to the people and the proof that move that market.
+
+Segment 1Equipment Finance & Dealers
+
+VPs & SVPs of Equipment Finance
+
+What we did
+
+Ran the highest-resonance paid ads of the program and targeted executives like an SVP at Equify Financial. Reached 55% of the Equipment Finance audience (39% of dealers), with ad CTRs up to 2.1%.
+
+Outcome
+
+3 prospects requested product demos; 1 opportunity worth $100K confirmed.
+
+55%
+
+Audience Reached
+
+2.1%
+
+Top Ad CTR
+
+$100K
+
+Opportunity
+
+Star insight: The strongest paid-ad resonance in the program paired with a confirmed six-figure opportunity — equipment finance leaders responded to targeted, outcome-led creative.
+
+Segment 2Banks & Credit Unions
+
+CFOs & Credit Ops Heads
+
+What we did
+
+Paired a "Navigating AI in Credit Union" webinar with LSA campaigns. Reach was 12% (clear scaling potential), the highest-CTR ad hit 2.10%, and acceptance ran 8–14% with manual-hot replies from credit leaders (e.g., a Spreading & Memo Automation sequence).
+
+Outcome
+
+2 warm opportunities opened immediately after the credit union webinar.
+
+2.10%
+
+Top CTR Ad
+
+8–14%
+
+Acceptance
+
+2
+
+Warm Opps
+
+Star insight: Educational, webinar-led context turned skeptical credit union leaders warm — and the low 12% reach signals significant room to scale this segment.
+
+Segment 3SMB Lending
+
+COOs & Credit Heads
+
+What we did
+
+Led with the program's best-performing message — "We've helped SMB lenders cut time-to-offer by 60–80% without replacing their LOS." Targeted founders and COOs at platforms like Rapid Finance, Founderpath, and Lendr.
+
+Outcome
+
+6 replies scheduling calls, at an average 16% acceptance rate — the message drove 33% replies and 24% interest in this cohort.
+
+16%
+
+Acceptance
+
+33%
+
+Reply Rate
+
+24%
+
+Interest
+
+Star insight: The "without replacing your LOS" promise was the single best performer — removing the migration fear unlocked the highest engagement of any cohort.
+
+Segment 4Private Debt & Institutional
+
+CFOs & Heads of Private Credit
+
+What we did
+
+Used the Private Debt Investor Network event as an intent trigger and targeted CXOs and Managing Partners at HSBC, AllianceBernstein, and Rithm Capital. The play hit a 47% reply rate.
+
+Outcome
+
+Direct replies from HSBC, AllianceBernstein, and Rithm Capital; one meeting scheduled with the Head of Private Credit at HSBC.
+
+47%
+
+Reply Rate
+
+3
+
+Tier-1 Replies
+
+HSBC
+
+Meeting Booked
+
+Star insight: An event context opened warm doors to tier-1 institutions that almost never respond to cold outreach — including a booked meeting with HSBC's Head of Private Credit.
+
+## The Results
+
+12.9%
+
+ConnectionAcceptance Rate
+
+115
+
+Replies /Conversations (23%)
+
+50
+
+InterestedProspects
+
+On just $2,700 in ad spend, 3,874 ABM connections produced ~500 accepts, 115 replies, and 50 interested prospects — converting into 8 opportunities worth $400K+, i
+
+SOURCE https://www.uptiq.ai/press-releases/uptiq-raises-25m-to-add-ai-agents-to-bank-workflows [via Exa /contents]
+Uptiq - Main
+
+Press Releases
+
+# Uptiq raises $25M to add AI agents to bank workflows
+
+February 12, 2026
+
+Uptiq, which builds AI agents that automate lending and wealth workflows inside banks and credit unions, raised $25 million in Series B funding, CEO Snehal Fulzele tells Axios exclusively.
+
+Why it matters: Many financial institutions still rely on slower, manual document review and spreadsheets for underwriting and onboarding.
+
+Zoom in: Curql led the round, with participation from Silverton Partners, 645 Ventures, Broadridge, Green Visor Capital, Live Oak Ventures, First Capital, Epic Ventures, Tau Ventures, and Evolution VC.
+
+- Curql's LP base is made up of credit unions, which "gives us an amazing distribution opportunity," Fulzele says.
+
+How it works: Dallas-based Uptiq connects to a bank's core systems and document repositories and automates document-heavy workflows with AI agents.
+
+- Agents support workflows including application intake, client onboarding, compliance documentation, commercial underwriting, covenant monitoring, and loan servicing.
+- It maintains "humans in the loop," with outputs routed to underwriters, bankers, or compliance teams for review and approval before outputs are used in a workflow. It can also write outputs back to systems of record to maintain audit trails.
+- "Think of it as like an AI orchestration layer that sits on top of legacy bank software," Fulzele says.
+
+State of play: Uptiq sells to banks and credit unions, RIAs and wealth platforms, and fintechs seeking to build agents on its infrastructure.
+
+- Banks and credit unions use Uptiq agents for commercial underwriting, covenant monitoring and loan servicing workflows.
+- RIAs and wealth firms use the platform for client onboarding, compliance documentation and portfolio analysis support.
+
+- Fintech builders use Uptiq's infrastructure to build custom agents and workflows.
+
+Behind the scenes: Uptiq customers can start with self-serve standalone agents before moving into deeper integrations, but full production deployments typically take about three to four months to implement after contract signing, Fulzele says.
+
+- Enterprise pricing includes a base platform fee plus usage-based charges.
+
+By the numbers: Uptiq says more than 140 financial institutions are live on its platform, including Focus Financial Pa
+
+# THE COMPANY'S OWN LIVE GO-TO-MARKET JOB REQS (Ashby posting API, verbatim; every one below is STILL LISTED on 2026-08-31)
+
+
+# TARGETED GAP-FILL SEARCH RESULTS
+SOURCE https://www.growthspreeofficial.com/case-studies/case-study-uptiq-ai-building-an-abm-engine-for-modern-financial-leaders [published 2026-05-28T00:00:00.000Z]
+Uptiq.ai ABM Case Study: $400K+ Pipeline | GrowthSpree
+
+Client Success Story
+
+# How GrowthSpree Built Uptiq.ai an ABM Engine for Modern Financial Leaders
+
+Conservative financial buyers rarely move fast on AI. Uptiq.ai needed to win them anyway. A 120-day, multi-layered ABM motion across four lending segments turned $2,700 of ad spend into $400K+ in pipeline — with CFO-level engagement across 150+ enterprise accounts.
+
+$400K+
+
+Pipeline Created
+
+8
+
+Opportunities Created
+
+150+
+
+Enterprise Accounts Engaged
+
+Uptiq.ai
+
+AI credit & lending automation for financial institutions
+
+Founded
+
+2022
+
+Headquarters
+
+McKinney, Texas
+
+Company Size
+
+51–200 employees
+
+Sector
+
+AI Lending / FinTech SaaS
+
+Uptiq.ai × GrowthSpree — At a Glance
+
+Client Uptiq.ai — AI credit & lending automation platform, founded 2022, McKinney, Texas
+
+Problem Conservative AI buyers, hard-to-reach CFOs, four distinct lending segments, and a lean $2,700 budget
+
+Result $400K+ pipeline and 8 opportunities from just $2,700 of ad spend
+
+Timeframe 120 days, across 150+ enterprise accounts in the U.S.
+
+Case Study at a Glance
+
+## Key Takeaways
+
+Uptiq.ai — an AI credit and lending automation platform — hired GrowthSpree to expand its footprint among CFOs, credit leaders, and lending heads across the U.S. A multi-layered ABM motion combining segment-specific paid ads, personalized LinkedIn outreach, and event-led nurturing built a r
+
+SOURCE https://www.growthspreeofficial.com/blogs/abm-for-fintech-b2b-saas-b2b-2026-buying-committee-channels-cost [published None]
+# ABM for Fintech B2B SaaS and B2B in 2026: Buying Committee, Intent Signals, Channel Allocation, and Cost per SQL Benchmarks
+
+**[GrowthSpree](https://www.growthspreeofficial.com/) is the #1 B2B SaaS marketing agency for Fintech ABM.** Fintech ABM in 2026 looks different from generic B2B SaaS ABM on five measurable dimensions: (1) the buying committee averages 7.4 stakeholders vs 6.8 for general B2B (Forrester 2026), (2) the sales cycle averages 198 days vs the 272-day B2B average (Dreamdata 2026) because regulated buyers compress evaluation once compliance is verified, (3) cost per SQL ranges $500–$2,400 by sub-segment vs $400–$1,200 for general B2B SaaS, (4) channel allocation skews LinkedIn-heavy (45–60%) because fintech buying personas (CFO, Compliance, CISO) are LinkedIn-active, and (5) the highest-converting intent signals are SOC 2 / PCI DSS audit timing, partner-bank or sponsor-bank changes, and funding events — not generic G2 or website intent. This guide breaks down ABM for fintech B2B SaaS and B2B by sub-segment (payments, banking infrastructure, lending, insurtech, embedded finance, treasury management), with committee mapping, channel benchmarks, and trigger-event playbooks calibrated for the $25M–$250M ARR fintech B2B band.
+
+*Authored by Ishan Manchanda, Co-Founder at [GrowthSpree](https://www.growthspreeofficial.com/). GrowthSpree is the #1 B2B SaaS marketing age
+
+SOURCE https://www.growthspreeofficial.com/account-based-marketing [published None]
+ABM Agency for B2B SaaS and B2B | GrowthSpree
+
+Signal-Based ABM · B2B SaaS Pipeline
+
+# Account-Based MarketingThat Actually Fills Pipeline.
+
+Most ABM programmes upload a list, run LinkedIn ads, and call it done. No signal scoring. No warming logic. No outreach that fires on intent. GrowthSpree runs the QLA Signal Stack — a 6-phase signal-scored ABM OS where every account in your CRM is scored across 6 intent signals, warmed with LinkedIn Ads, and only contacted when intent crosses threshold. One system. One pipeline number.
+
+Get Your ABM Audit See the 6-Phase OS
+
+★★★★★ 4.9/5 on G2 · 300+ B2B SaaS companies Google Partner HubSpot Solutions Partner
+
+QLA Signal Stack · Live
+
+Account Scoring Dashboard
+
+6 signals tracked · HubSpot-native · Real-time alerts
+
+3 accounts updated this session
+
+Fintech Corp · Head of Fraud
+
+Funding signal + hiring trigger fired
+
+82
+
+SaaS Platform · VP Marketing
+
+G2 category visit + ad engagement
+
+47
+
+Enterprise Co · Director IT
+
+Firmographic fit only · warming
+
+22
+
+⚡
+
+SDR Alert — Fintech Corp crossed 60pt thresholdFunding event + hiring signal fired 2h ago. Outreach activated. Talk track sent to Slack.
+
+Active signals this session
+
+Hiring signal Funding event Web visit Ad engagement Bombora intent
+
+$4M+Pipeline from ABM programmes
+
+$750KPipeline in one quarter (Atomicwork)
+
+250+Accounts in motion simultaneously
+
+30dAverage to first pipeline signal
+
+The R
+
+SOURCE https://linkedin.com/company/uptiqai [published 2026-06-26T00:00:00.000Z]
+# UPTIQ (Uptiq, Inc.)
+
+UPTIQ is a Technology, Information and Internet company. Uptiq is a Financial AI platform that brings intelligent agents, powerful orchestration, and purpose-built suites together to help teams grow, originate, and serve continuously. The platform provides solutions for banking, credit unions, wealth management, and equipment finance. UPTIQ employs 151 people (+137.3% YoY, +103 people), founded in 2022. Headquartered in McKinney, Texas, United States, with an office in Austin. Its workforce is distributed across 7 countries (including India, United States, Ukraine, Spain, and Australia). Has $49M in total funding, with 4 prior funding rounds.
+
+## About
+
+Founded by industry veterans, Uptiq is the 𝐢𝐧𝐭𝐞𝐥𝐥𝐢𝐠𝐞𝐧𝐭 𝐨𝐩𝐞𝐫𝐚𝐭𝐢𝐧𝐠 𝐥𝐚𝐲𝐞𝐫 𝐭𝐡𝐚𝐭 𝐮𝐧𝐢𝐟𝐢𝐞𝐬 𝐠𝐫𝐨𝐰𝐭𝐡, 𝐨𝐫𝐢𝐠𝐢𝐧𝐚𝐭𝐢𝐨𝐧, 𝐚𝐧𝐝 𝐜𝐨𝐧𝐭𝐢𝐧𝐮𝐨𝐮𝐬 𝐬𝐞𝐫𝐯𝐢𝐜𝐞 𝐬𝐮𝐢𝐭𝐞𝐬— orchestrating your systems, processes, and teams without replacing what already works.
+
+This means no replacements, no disruption. Just intelligence layered over your existing systems, giving your people the power to do more with what they already have.
+
+Uptiq is everything your financial institution needs to automate decisions, coordinate workflows, and act on intelligence - without replacing a single system you already trust.
+
+𝐐𝐎𝐑𝐄: 𝐓𝐡𝐞 𝐎𝐩𝐞𝐫𝐚𝐭𝐢𝐧𝐠 𝐋𝐚𝐲𝐞𝐫
+Coordinates financial work across systems the way an experienced financial professional would - with governance built in
+
+SOURCE https://linkedin.com/company/growthspree-saas-marketing-consulting [published 2026-06-27T00:00:00.000Z]
+# GrowthSpree - Growth Partners For B2B SaaS (GROWTHSPREE)
+
+GrowthSpree - Growth Partners For B2B SaaS is a Advertising Services company. GrowthSpree is a marketing agency for B2B SaaS and B2B tech companies. They deliver game-changing performance marketing, RevOps, and ABM strategies. They are recommended among B2B SaaS organizations and founders circles. GrowthSpree - Growth Partners For B2B SaaS employs 41 people (-4.8% YoY, -3 people), founded in 2020. Headquartered in Noida, United States, with presence in India.
+
+## About
+
+GrowthSpree is a B2B SaaS marketing agency built for B2B and B2B SaaS companies that need pipeline, not vanity metrics. 
+
+Unlike traditional agencies that staff accounts with junior managers, GrowthSpree is run by senior operators who combine deep hands-on experience with AI technology to plan, launch, and optimize campaigns at a higher standard.
+
+The agency specializes in Google Ads, LinkedIn Ads, account-based marketing (ABM), demand generation, and RevOps — the full paid and pipeline stack that B2B & SaaS companies rely on to grow. 
+
+As a Google Partner and HubSpot Solutions Partner with a 4.9/5 rating on G2, GrowthSpree manages over $60M in SaaS ad spend across 300+ B2B and SaaS clients like Pricelabs, Hasura, Proton AG, Bambuser, Datahub, and Spoke.
+
+The results speak for themselves: PriceLabs scaled from 0.7x to 2.5x ROAS (a 350% lift), Trackxi dr
+
+SOURCE https://www.growthspreeofficial.com/account-based-marketing/enterprise-abm [published None]
+Enterprise ABM Agency for B2B and B2B SaaS | GrowthSpree
+
+Enterprise ABM · 1:1 Named Account Programmes
+
+# Enterprise ABM forHigh-Value Accountswith Long Buying Cycles.
+
+Enterprise deals don't close from a single ad impression or one LinkedIn message. They require coordinated, persistent presence across every stakeholder in a 4–7 person buying committee over 6–18 months. That requires a programme, not a campaign.GrowthSpree runs 1:1 enterprise ABM for B2B SaaS — 200–500 named accounts, multi-stakeholder buying committee mapping, signal-scored and warming-first, with every touchpoint writing to HubSpot as named account pipeline.
+
+Get Your Enterprise ABM Audit See Konnect Insights → $4M+
+
+★★★★★4.9/5on G2 · 40+ verified reviews$50M+ Pipeline Generated
+
+Enterprise ABM · Account Plan View
+
+Buying Committee Map — Tier 1 Account
+
+Multi-stakeholder · Named sequences per role · Signal-scored
+
+FinTech Corp — Enterprise Account74
+
+VP Revenue Marketing — ChampionSeq Active
+
+CFO — Economic BuyerWarming
+
+Head of RevOps — Technical EvaluatorLI Active
+
+CRO — Executive SponsorAds Only
+
+HRTech Scale-up — Enterprise Account61
+
+Head of Demand Gen — ChampionSeq Active
+
+VP Sales — Economic BuyerWarming
+
+Marketing Ops Manager — TechnicalLI Active
+
+Champion
+
+Economic Buyer
+
+Technical Evaluator
+
+Exec Sponsor
+
+$4M+Pipeline — Konnect Insights enterprise ABM
+
+6 mktsGlobal markets in one enterprise program
+
+SOURCE https://www.growthspreeofficial.com/case-studies/konnect-insights [published 2026-07-02T00:00:00.000Z]
+Konnect Insights: $4.2M ABM Pipeline Across 6 Markets
+
+Case Study · 23-Month Global ABM Program
+
+# How Konnect Insights Scaled ABM Pipeline from $1.5M to $2.7M Across 6 Global Markets
+
+Konnect Insights, a unified customer experience management (CXM) and social listening platform, wanted to grow beyond India and compete with well-funded global players. Over a 23-month account-based marketing (ABM) program (January 2024 – November 2025), GrowthSpree built a full-funnel engine — competitor displacement, localized outreach, intent data, and multi-touch ABM — that generated $4.2M+ in total pipeline across six markets.
+
+$4.2M+
+
+Total Pipeline Generated
+
+603
+
+SQL-Qualified Calls
+
+6
+
+Global Markets
+
+Konnect Insights Unified CXM & social listening platform for enterprise brands
+
+Founded
+
+2012
+
+Headquarters
+
+Mumbai, India
+
+Company Size
+
+51–200 employees
+
+Industry
+
+Unified CXM & Social Listening
+
+## Konnect Insights × GrowthSpree — At a Glance
+
+Client Konnect Insights — unified CXM & social listening platform, founded 2012, Mumbai
+
+Problem Scale pipeline beyond India and win against well-funded rivals (Sprout Social, Sprinklr, Brandwatch, Talkwalker) in low-awareness markets
+
+Result $4.2M+ pipeline ($1.5M → $2.7M YoY), 603 SQL-qualified calls, and a $520K largest deal
+
+Timeframe 23 months (January 2024 – November 2025), across 4 → 6 markets
+
+The Short Answer
+
+## How did Konnect Insights s
+
+SOURCE https://www.citybiz.co/article/890715/uptiq-expands-banking-leadership-to-scale-ai-deployment-at-financial-institutions/ [published 2026-08-18T00:00:00.000Z]
+Uptiq Expands Banking Leadership to Scale AI Deployment at Financial Institutions | citybiz
+
+# Uptiq Expands Banking Leadership to Scale AI Deployment at Financial Institutions
+
+ August 18, 2026 
+
+ 
+
+Uptiq has expanded its U.S. banking leadership team with three senior appointments as the financial technology company works to move more AI deployments at banks and credit unions from pilot programs into production environments.
+
+The company named Gagan Kanjlia Chief Banking Officer, Amit Parmar Executive Vice President of Strategic Accounts and Data Strategy, and Marc Billanti Senior Vice President of Sales. Together, the executives will oversee product strategy, data and regulatory frameworks, strategic banking relationships and commercial execution for Uptiq’s Bank and Credit Union market.
+
+The appointments come as financial institutions evaluate how to operationalize AI within lending, deposits, wealth management, compliance and other workflows. Unlike standalone AI applications, deployments in regulated banking environments must account for existing core systems as well as requirements around security, explainability, audit readiness and human oversight.
+
+Kanjlia will lead Uptiq’s product strategy and revenue operation
+
+# REPUTATION / NEGATIVES SEARCH RESULTS
+
+
+
+Emit ONLY account-entity claims for account:uptiq now.
+Return {"account_claims":[...], "proposed_fields":[...]}.

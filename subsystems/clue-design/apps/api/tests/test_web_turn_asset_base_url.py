@@ -36,7 +36,17 @@ def _captured_turn(monkeypatch: pytest.MonkeyPatch) -> dict:
     import lumen_agent.harness_web as harness_web
     import lumen_agent.llm as agent_llm
 
-    def _fake_turn(*, prompt, config, initial_web_doc, event_sink, checkpointer, thread_id):
+    def _fake_turn(
+        *,
+        prompt,
+        config,
+        initial_web_doc,
+        event_sink,
+        checkpointer,
+        thread_id,
+        cancel_requested=None,
+        callbacks=None,
+    ):
         captured["config"] = config
         return {
             "status": "applied",
@@ -130,5 +140,8 @@ def test_the_export_paths_still_use_their_own_relative_and_same_origin_bases():
     from lumen_api import web_export
 
     source = Path(web_export.__file__).read_text()
-    assert 'asset_base_url="assets"' in source
+    # F5 multi-page export (Task 11): the ZIP base gained the per-page relative
+    # hop `prefix` ("" for the root `index.html`, "../" for a `<route>/index.html`
+    # subpage), so each page still resolves its own sibling `assets/` folder.
+    assert 'asset_base_url=f"{prefix}assets"' in source
     assert 'asset_base_url="/asset-store"' in source

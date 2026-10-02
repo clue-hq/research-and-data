@@ -1,0 +1,436 @@
+{
+  "id": "63174e0badba1b00014e22fa",
+  "name": "Lassie",
+  "website_url": "http://www.lassie.ai",
+  "primary_domain": "lassie.ai",
+  "linkedin_url": "http://www.linkedin.com/company/lassie",
+  "twitter_url": null,
+  "founded_year": null,
+  "industry": "information technology & services",
+  "industries": [
+    "information technology & services",
+    "computer software"
+  ],
+  "keywords": [
+    "software development",
+    "information technology & services"
+  ],
+  "estimated_num_employees": 41,
+  "annual_revenue": null,
+  "annual_revenue_printed": null,
+  "total_funding": 35000000,
+  "total_funding_printed": "35M",
+  "latest_funding_round_date": "2026-06-01T00:00:00.000+00:00",
+  "latest_funding_stage": "Series A",
+  "funding_events": [
+    {
+      "id": "6a30ae765b8ef70001fa7504",
+      "date": "2026-06-01T00:00:00.000+00:00",
+      "news_url": "https://www.businesswire.com/news/home/20260603909717/en/Lassie-Raises-%2435M-Led-by-Andreessen-Horowitz-to-Build-AI-for-Small-Businesses-to-Run-Themselves",
+      "type": "Series A",
+      "investors": "Andreessen Horowitz, Zach Perret, Brian Balfour, Gokul Rajaram, Rahul Vohra, Taavet Hinrikus, Night Capital",
+      "amount": "35M",
+      "currency": "$"
+    }
+  ],
+  "current_technologies": [
+    {
+      "uid": "ai",
+      "name": "AI",
+      "category": "Other"
+    },
+    {
+      "uid": "anthropic_claude",
+      "name": "Anthropic Claude",
+      "category": "Other"
+    },
+    {
+      "uid": "apple_business_manager",
+      "name": "Apple Business Manager",
+      "category": "Cloud Services"
+    },
+    {
+      "uid": "apple_pay",
+      "name": "Apple Pay",
+      "category": "Payments"
+    },
+    {
+      "uid": "apple_school_manager",
+      "name": "Apple School Manager",
+      "category": "Education Management Software"
+    },
+    {
+      "uid": "canva",
+      "name": "Canva",
+      "category": "Content Management Platform"
+    },
+    {
+      "uid": "cloudflare",
+      "name": "CloudFlare",
+      "category": "Web Accelerators"
+    },
+    {
+      "uid": "cloudflare_cdn",
+      "name": "CloudFlare CDN",
+      "category": "Content Delivery Networks"
+    },
+    {
+      "uid": "cloudflare_dns",
+      "name": "Cloudflare DNS",
+      "category": "Domain Name Services"
+    },
+    {
+      "uid": "cursor",
+      "name": "Cursor",
+      "category": "Other"
+    },
+    {
+      "uid": "django",
+      "name": "Django",
+      "category": "Frameworks and Programming Languages"
+    },
+    {
+      "uid": "enom",
+      "name": "Enom",
+      "category": "Domain Name Services"
+    },
+    {
+      "uid": "facebook_pixel",
+      "name": "Facebook Pixel",
+      "category": "ERP"
+    },
+    {
+      "uid": "figma",
+      "name": "Figma",
+      "category": "Communication and Collaboration"
+    },
+    {
+      "uid": "github",
+      "name": "GitHub",
+      "category": "Hosting"
+    },
+    {
+      "uid": "gmail",
+      "name": "Gmail",
+      "category": "Email Providers"
+    },
+    {
+      "uid": "google_alloydb_for_postgresql",
+      "name": "Google AlloyDB for PostgreSQL",
+      "category": "Cloud Services"
+    },
+    {
+      "uid": "google_analytics",
+      "name": "Google Analytics",
+      "category": "Analytics and Tracking"
+    },
+    {
+      "uid": "google_analytics_4_ga4",
+      "name": "Google Analytics 4",
+      "category": "Analytics and Tracking"
+    },
+    {
+      "uid": "google_cloud",
+      "name": "Google Cloud",
+      "category": "Cloud Services"
+    },
+    {
+      "uid": "google_meet",
+      "name": "Google Meet",
+      "category": "Communication and Collaboration"
+    },
+    {
+      "uid": "google_search_console",
+      "name": "Google Search Console",
+      "category": "Analytics and Tracking"
+    },
+    {
+      "uid": "google_search_console",
+      "name": "Google Search Console",
+      "category": "Analytics and Tracking"
+    },
+    {
+      "uid": "google_tag_manager",
+      "name": "Google Tag Manager",
+      "category": "Tag Management"
+    },
+    {
+      "uid": "google workspace",
+      "name": "Google Workspace",
+      "category": "Cloud Services"
+    },
+    {
+      "uid": "hsts",
+      "name": "HSTS",
+      "category": "Security"
+    },
+    {
+      "uid": "hightouch",
+      "name": "Hightouch",
+      "category": "Data Management Platform"
+    },
+    {
+      "uid": "linear",
+      "name": "Linear",
+      "category": "Other"
+    },
+    {
+      "uid": "linkedin_ads",
+      "name": "LinkedIn Ads",
+      "category": "Advertising Networks"
+    },
+    {
+      "uid": "linkedin_display_ads__formerly_bizo",
+      "name": "Linkedin Marketing Solutions",
+      "category": "Advertising Networks"
+    },
+    {
+      "uid": "loom",
+      "name": "Loom",
+      "category": "Communication and Collaboration"
+    },
+    {
+      "uid": "microsoft_365",
+      "name": "Microsoft 365",
+      "category": "Communication and Collaboration"
+    },
+    {
+      "uid": "mobile_friendly",
+      "name": "Mobile Friendly",
+      "category": "Other"
+    },
+    {
+      "uid": "nextjs",
+      "name": "Next.js",
+      "category": "Frameworks and Programming Languages"
+    },
+    {
+      "uid": "notion",
+      "name": "Notion",
+      "category": "Communication and Collaboration"
+    },
+    {
+      "uid": "open_graph",
+      "name": "Open Graph",
+      "category": "Other"
+    },
+    {
+      "uid": "openai",
+      "name": "OpenAI",
+      "category": "Cloud Services"
+    },
+    {
+      "uid": "opensrs",
+      "name": "OpenSRS",
+      "category": "Email Providers"
+    },
+    {
+      "uid": "postman",
+      "name": "Postman",
+      "category": "Other"
+    },
+    {
+      "uid": "priority_hints",
+      "name": "Priority Hints",
+      "category": "Web Performance Monitoring"
+    },
+    {
+      "uid": "python",
+      "name": "Python",
+      "category": "Frameworks and Programming Languages"
+    },
+    {
+      "uid": "react",
+      "name": "React",
+      "category": "CSS and JavaScript Libraries"
+    },
+    {
+      "uid": "redis",
+      "name": "Redis",
+      "category": "Database"
+    },
+    {
+      "uid": "sqlite",
+      "name": "SQLite",
+      "category": "Database"
+    },
+    {
+      "uid": "salesforce",
+      "name": "Salesforce",
+      "category": "Customer Relationship Management"
+    },
+    {
+      "uid": "sanity",
+      "name": "Sanity",
+      "category": "CMS"
+    },
+    {
+      "uid": "slack",
+      "name": "Slack",
+      "category": "Chats"
+    },
+    {
+      "uid": "snowflake",
+      "name": "Snowflake",
+      "category": "Data Management Platform"
+    },
+    {
+      "uid": "stripe",
+      "name": "Stripe",
+      "category": "Payments"
+    },
+    {
+      "uid": "tailwind",
+      "name": "Tailwind",
+      "category": "CSS and JavaScript Libraries"
+    },
+    {
+      "uid": "tailwind_css",
+      "name": "Tailwind CSS",
+      "category": "CSS and JavaScript Libraries"
+    },
+    {
+      "uid": "typescript",
+      "name": "TypeScript",
+      "category": "Frameworks and Programming Languages"
+    },
+    {
+      "uid": "uber_for_business",
+      "name": "Uber for Business",
+      "category": "Other"
+    },
+    {
+      "uid": "vercel",
+      "name": "Vercel",
+      "category": "Hosting"
+    },
+    {
+      "uid": "viewport_meta",
+      "name": "Viewport Meta",
+      "category": "CSS and JavaScript Libraries"
+    },
+    {
+      "uid": "zendesk",
+      "name": "Zendesk",
+      "category": "Support and Feedback"
+    },
+    {
+      "uid": "zendesk_support_suite",
+      "name": "Zendesk Support Suite",
+      "category": "Support and Feedback"
+    },
+    {
+      "uid": "zendesk_for_service",
+      "name": "Zendesk for Service",
+      "category": "Customer Relationship Management"
+    },
+    {
+      "uid": "zoom_meetings",
+      "name": "Zoom Meetings",
+      "category": "Communication and Collaboration"
+    },
+    {
+      "uid": "webpack",
+      "name": "webpack",
+      "category": "CSS and JavaScript Libraries"
+    }
+  ],
+  "technology_names": [
+    "AI",
+    "Anthropic Claude",
+    "Apple Business Manager",
+    "Apple Pay",
+    "Apple School Manager",
+    "Canva",
+    "CloudFlare",
+    "CloudFlare CDN",
+    "Cloudflare DNS",
+    "Cursor",
+    "Django",
+    "Enom",
+    "Facebook Pixel",
+    "Figma",
+    "GitHub",
+    "Gmail",
+    "Google AlloyDB for PostgreSQL",
+    "Google Analytics",
+    "Google Analytics 4",
+    "Google Cloud",
+    "Google Meet",
+    "Google Search Console",
+    "Google Search Console",
+    "Google Tag Manager",
+    "Google Workspace",
+    "HSTS",
+    "Hightouch",
+    "Linear",
+    "LinkedIn Ads",
+    "Linkedin Marketing Solutions",
+    "Loom",
+    "Microsoft 365",
+    "Mobile Friendly",
+    "Next.js",
+    "Notion",
+    "Open Graph",
+    "OpenAI",
+    "OpenSRS",
+    "Postman",
+    "Priority Hints",
+    "Python",
+    "React",
+    "Redis",
+    "SQLite",
+    "Salesforce",
+    "Sanity",
+    "Slack",
+    "Snowflake",
+    "Stripe",
+    "Tailwind",
+    "Tailwind CSS",
+    "TypeScript",
+    "Uber for Business",
+    "Vercel",
+    "Viewport Meta",
+    "Zendesk",
+    "Zendesk Support Suite",
+    "Zendesk for Service",
+    "Zoom Meetings",
+    "webpack"
+  ],
+  "departmental_head_count": {
+    "engineering": 12,
+    "operations": 2,
+    "marketing": 1,
+    "arts_and_design": 1,
+    "entrepreneurship": 1,
+    "accounting": 0,
+    "sales": 0,
+    "finance": 0,
+    "human_resources": 0,
+    "information_technology": 0,
+    "legal": 0,
+    "business_development": 0,
+    "product_management": 0,
+    "consulting": 0,
+    "education": 0,
+    "administrative": 0,
+    "media_and_commmunication": 0,
+    "support": 0,
+    "data_science": 0
+  },
+  "organization_headcount_six_month_growth": 0.1904761904761905,
+  "organization_headcount_twelve_month_growth": 0.3888888888888889,
+  "organization_headcount_twenty_four_month_growth": 5.25,
+  "raw_address": "san francisco, california, united states",
+  "street_address": "",
+  "city": "San Francisco",
+  "state": "California",
+  "postal_code": null,
+  "country": "United States",
+  "phone": "+1 650-405-0509",
+  "short_description": "Lassie is an AI-powered software company focused on automating administrative workflows for healthcare practices, particularly dental offices. Founded by Steijn Pelle and Frederik, the company aims to support independent doctors by allowing them to concentrate on patient care instead of paperwork. Headquartered in the U.S., Lassie has rapidly grown to serve over 1,000 dentists nationwide and is on track to achieve $100 million in annual recurring revenue.\n\nThe core offering is an AI healthcare admin worker that automates financial and insurance-related operations. Key features include instant retrieval and posting of Explanation of Benefits (EOBs), claims posting, payment tracking, and back-office automation. This solution significantly reduces manual errors and saves practices an average of 60-70 hours per month on administrative tasks. Lassie targets independent doctor-owners managing substantial annual admin expenses, positioning itself as a vital tool in enhancing operational efficiency in healthcare.",
+  "seo_description": null,
+  "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/6a58b43172ba5b0001c72814/picture",
+  "publicly_traded_symbol": null,
+  "owned_by_organization_id": null
+}

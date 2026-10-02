@@ -137,6 +137,8 @@ export function collectKitFontFaceRefs(
 export interface LoadKitFontFacesOptions {
   apiBaseUrl: string;
   fetchImpl?: typeof fetch;
+  /** Fence async font registration to the load/context that requested it. */
+  isCurrent?: () => boolean;
   /**
    * Called once per kit face that could NOT be fetched/registered. Previously
    * these failures were swallowed (the face was skipped and the canvas kept a
@@ -189,9 +191,10 @@ function kitDomFontFaceDiagnostic(
  * face landed in a live provider (the caller should then invalidate text
  * measurement/render memos). */
 export async function loadKitFontFaces(
-  { apiBaseUrl, fetchImpl, onFaceDiagnostic }: LoadKitFontFacesOptions,
+  { apiBaseUrl, fetchImpl, onFaceDiagnostic, isCurrent = () => true }: LoadKitFontFacesOptions,
   kit: BrandKitDetailPayload | null | undefined
 ): Promise<boolean> {
+  if (!isCurrent()) return false;
   const refs = collectKitFontFaceRefs(kit);
   for (const family of collectKitFontFamilyRefs(kit)) {
     if (family.assetIds.length === 0) {
@@ -231,6 +234,7 @@ export async function loadKitFontFaces(
       }
     })
   );
+  if (!isCurrent()) return false;
   const loaded = faces.filter((face): face is NonNullable<typeof face> => face !== null);
   if (loaded.length === 0) {
     return false;
@@ -241,7 +245,8 @@ export async function loadKitFontFaces(
   // their bytes are never inlined) render kit type instead of a default
   // serif. Purely local display of already-fetched bytes; it does not touch
   // export/embedding. Failures are swallowed so the canvas leg is unaffected.
-  await registerKitFontFacesInDom(loaded, onFaceDiagnostic);
+  await registerKitFontFacesInDom(loaded, onFaceDiagnostic, isCurrent);
+  if (!isCurrent()) return false;
   try {
     return registerKitFontFaces(loaded);
   } catch (error) {
@@ -276,7 +281,8 @@ export function resetKitDomFontsForTests(): void {
  * where FontFace/document.fonts are unavailable (jsdom/tests). */
 async function registerKitFontFacesInDom(
   faces: { key: string; family: string; bytes: ArrayBuffer; weight?: number; style?: string }[],
-  onFaceDiagnostic?: (diagnostic: Diagnostic) => void
+  onFaceDiagnostic?: (diagnostic: Diagnostic) => void,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
     return;
@@ -286,7 +292,7 @@ async function registerKitFontFacesInDom(
       if (registeredDomFaceKeys.has(face.key)) {
         return;
       }
-      registeredDomFaceKeys.add(face.key);
+      if (!isCurrent()) return;
       try {
         // A7b (D5): weight/style descriptors so a kit's italic face registers
         // distinctly from its upright instead of colliding at the default.
@@ -299,10 +305,12 @@ async function registerKitFontFacesInDom(
           fontFaceDescriptors({ weight: meta.weight, style: meta.italic ? "italic" : "normal" })
         );
         await fontFace.load();
+        if (!isCurrent() || registeredDomFaceKeys.has(face.key)) return;
         document.fonts.add(fontFace);
+        registeredDomFaceKeys.add(face.key);
       } catch (error) {
         // A DOM font registration failure must not affect the canvas leg.
-        registeredDomFaceKeys.delete(face.key);
+        if (!isCurrent()) return;
         onFaceDiagnostic?.(
           kitDomFontFaceDiagnostic(
             face,

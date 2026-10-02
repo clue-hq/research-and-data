@@ -81,6 +81,9 @@ try {
     stdio: "inherit",
   });
 } catch (error) {
+  // Strict (Railway build, first deployment spec §9.5): a stale editor wasm must fail the
+  // build, not warn — shipping it means an uneditable canvas for every user.
+  if (process.env.WASM_PREFLIGHT_STRICT === "1") throw error;
   console.warn(
     `[copy-design-vendor] wasm preflight did not complete (${error instanceof Error ? error.message : error}) — continuing with whatever artifact exists.`,
   );

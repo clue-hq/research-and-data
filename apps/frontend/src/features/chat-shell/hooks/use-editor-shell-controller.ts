@@ -15,7 +15,11 @@ import type {
 // gallery surface, and an empty shell starts there. There is deliberately no
 // default-tab fabrication: the artifact list is the source of tab truth.
 
-export type EditorShellSurface = "artifact" | "gallery";
+// The target-accounts surface joins the pair as a third resting surface of the
+// rail (the branch's own `ChatShellSurface` gained it the same way): it is not
+// an artifact, carries no editing, and — like the gallery — never opens the
+// editor dock.
+export type EditorShellSurface = "artifact" | "gallery" | "target-accounts" | "plan";
 
 export interface EditorShellInitialState {
   artifactId?: string;
@@ -44,7 +48,9 @@ export interface EditorShellState {
 export type EditorShellAction =
   | { type: "activate-artifact"; artifactId: string }
   | { type: "open-artifact"; artifact: ChatShellOpenArtifact }
+  | { type: "open-plan" }
   | { type: "open-gallery" }
+  | { type: "open-target-accounts" }
   | { type: "close-artifact"; artifactId: string }
   | { type: "rename-artifact"; artifactId: string; title: string }
   | { type: "toggle-panel" }
@@ -83,6 +89,17 @@ export function editorShellReducer(
         surface: "artifact",
       };
     case "open-artifact":
+      // Re-opening the tab that is already in front is a no-op. Resetting
+      // edit mode and the selection here would throw a person out of an edit
+      // they are in the middle of — which is what a feed refresh carrying their
+      // own write did until 2026-09-20.
+      if (
+        state.activeArtifactId === action.artifact.id &&
+        state.surface === "artifact" &&
+        state.panelOpen
+      ) {
+        return state;
+      }
       return {
         ...state,
         activeArtifactId: action.artifact.id,
@@ -96,8 +113,17 @@ export function editorShellReducer(
         panelOpen: true,
         surface: "artifact",
       };
+    case "open-plan":
+      return { ...state, editing: false, panelOpen: true, surface: "plan" };
     case "open-gallery":
       return { ...state, editing: false, panelOpen: true, surface: "gallery" };
+    case "open-target-accounts":
+      return {
+        ...state,
+        editing: false,
+        panelOpen: true,
+        surface: "target-accounts",
+      };
     case "close-artifact": {
       const closedIndex = state.openArtifacts.findIndex(
         (artifact) => artifact.id === action.artifactId,
@@ -168,7 +194,9 @@ export interface EditorShellController {
   inspectorSelection: ChatShellInspectorSelection;
   openArtifact: (artifact: ChatShellOpenArtifact) => void;
   openArtifacts: ChatShellOpenArtifact[];
+  openPlan: () => void;
   openGallery: () => void;
+  openTargetAccounts: () => void;
   panelOpen: boolean;
   projectId?: string;
   toggleArtifactPanel: () => void;
@@ -202,8 +230,12 @@ export function useEditorShellController(
   const closeArtifact = useCallback((artifactId: string) => {
     dispatch({ artifactId, type: "close-artifact" });
   }, []);
+  const openPlan = useCallback(() => { dispatch({ type: "open-plan" }); }, []);
   const openGallery = useCallback(() => {
     dispatch({ type: "open-gallery" });
+  }, []);
+  const openTargetAccounts = useCallback(() => {
+    dispatch({ type: "open-target-accounts" });
   }, []);
   const setArtifactTitleFor = useCallback((artifactId: string, title: string) => {
     dispatch({ artifactId, title, type: "rename-artifact" });
@@ -250,7 +282,9 @@ export function useEditorShellController(
       inspectorSelection: state.inspectorSelection,
       openArtifact,
       openArtifacts: state.openArtifacts,
+      openPlan,
       openGallery,
+      openTargetAccounts,
       panelOpen: state.panelOpen,
       projectId: initial.projectId,
       selectInspectorElement,
@@ -266,7 +300,9 @@ export function useEditorShellController(
       closeArtifact,
       initial.projectId,
       openArtifact,
+      openPlan,
       openGallery,
+      openTargetAccounts,
       selectInspectorElement,
       setArtifactTitleFor,
       setEditing,

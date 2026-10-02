@@ -4,9 +4,15 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { textMeasurementSignature } from "../adapter/scene-canvas-view";
 import { designBffConfig } from "../data/design-bff";
 import { loadCanvasKit } from "../engine/scene/canvaskit/loadCanvasKit";
-import { skiaMeasurements } from "../engine/scene/canvaskit/skiaMeasurements";
+import {
+  injectSkiaMeasurements,
+  skiaLineMeasurements,
+  skiaRequestedMeasurements,
+  skiaMeasurements,
+} from "../engine/scene/canvaskit/skiaMeasurements";
+import type { RenderContext } from "../engine/scene/renderContext";
 import type { Diagnostic, PageId, Scene } from "../engine/scene/contracts";
-import { fetchBrandKitDetail, fetchDocument } from "../engine/scene/documentStore";
+import { fetchDocument } from "../engine/scene/documentStore";
 import { loadKitFontFaces } from "../engine/scene/kitFonts";
 import { loadLibraryFontFaces } from "../engine/scene/libraryFonts";
 import {
@@ -17,7 +23,6 @@ import {
 } from "../engine/scene/renderAdapter";
 import { firstPageId } from "../engine/scene/sceneQueries";
 import {
-  PLATFORM_DEFAULT_BRAND_KIT_ID,
   buildKitTokenMaps,
 } from "../engine/scene/tokenColors";
 import {
@@ -88,6 +93,7 @@ export interface SceneDocumentHistory {
 export interface SceneDocumentState {
   kind: "loading" | "ready" | "error";
   scene: Scene | null;
+  presentationScene: Scene | null;
   engine: WasmEngine | null;
   pageId: PageId | null;
   title: string | null;
@@ -107,6 +113,7 @@ export interface SceneDocumentState {
   /** Live renderer-only font failures. Scene/preflight diagnostics cannot
    * carry these because they arise while the browser loads/registers faces. */
   fontDiagnostics: Diagnostic[];
+  measurementIncomplete: boolean;
   /** Adopt the engine's current (relaid) scene as the rendered one. */
   refresh: () => void;
 }
@@ -117,6 +124,7 @@ type LoadState =
   | {
       kind: "ready";
       scene: Scene;
+      renderContext: RenderContext | null;
       engine: WasmEngine | null;
       pageId: PageId | null;
       title: string;
@@ -140,15 +148,6 @@ const ENGINE_ACTIVE: SceneEngineStatus = {
 
 const NO_DIAGNOSTICS: Diagnostic[] = [];
 
-/** The value the brand-kit effect keys on: the pin `id@version`, never the
- * object (a fresh identity per scene update re-fetched the same kit thousands
- * of times per turn in the source shell). */
-function kitRefKeyOf(scene: Scene): string {
-  return `${scene.meta.brand_kit?.id ?? PLATFORM_DEFAULT_BRAND_KIT_ID}@${
-    scene.meta.brand_kit?.version ?? ""
-  }`;
-}
-
 /**
  * The handshake is a property of this origin's build, not of a document, so it
  * runs once per page load: a reload token or a second artifact must not re-import
@@ -171,6 +170,9 @@ export function useSceneDocument(
   reloadToken = 0,
 ): SceneDocumentState {
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
+  const [measurementState, setMeasurementState] = useState<{
+    engine: WasmEngine; incomplete: boolean;
+  } | null>(null);
   const [engineStatus, setEngineStatus] =
     useState<SceneEngineStatus>(ENGINE_ACTIVE);
   const [kitFontDiagnosticState, setKitFontDiagnosticState] = useState<{
@@ -190,7 +192,7 @@ export function useSceneDocument(
   // registry (`null` = the deterministic fallback maps). The clears below are
   // guarded on it: a reload-token refetch of the SAME pinned kit must not wipe
   // maps the brand-kit effect (keyed on the pin value) will never re-install.
-  const installedKitKeyRef = useRef<string | null>(null);
+  const activeLoadRef = useRef(0);
 
   const tokenGeneration = useSyncExternalStore(
     subscribeTokenColors,
@@ -200,6 +202,7 @@ export function useSceneDocument(
 
   useEffect(() => {
     let cancelled = false;
+    const generation = ++activeLoadRef.current;
     void (async () => {
       const config = designBffConfig();
       // 1. Stamp handshake FIRST — the engine's availability decides whether
@@ -232,24 +235,13 @@ export function useSceneDocument(
           activated.status === "active"
             ? new WasmEngine(activated.module, loaded.scene)
             : null;
-        // The token registry is module-scoped. Clear it BEFORE publishing a
-        // newly loaded scene whose PIN DIFFERS from the installed kit, so a
-        // document switch can never paint one frame with the previous
-        // document's kit while its own pinned version is in flight. Guarded,
-        // because the brand-kit effect below is keyed on the pin VALUE: after
-        // a reload of the same pin (every committed write and agent turn bumps
-        // the reload token) that effect does not re-run, so an unconditional
-        // clear here would leave the canvas on fallback tokens for the rest of
-        // the session.
-        const loadedScene = engine ? engine.scene : loaded.scene;
-        if (installedKitKeyRef.current !== kitRefKeyOf(loadedScene)) {
-          setKitTokenMaps(buildKitTokenMaps(null));
-          installedKitKeyRef.current = null;
-        }
+        engine?.setRenderContext(loaded.renderContext);
+        setKitTokenMaps(buildKitTokenMaps(null));
         loadGenerationRef.current += 1;
         setLoad({
           kind: "ready",
           scene: engine ? engine.scene : loaded.scene,
+          renderContext: loaded.renderContext,
           engine,
           pageId: firstPageId(engine ? engine.scene : loaded.scene),
           title: loaded.title,
@@ -273,139 +265,73 @@ export function useSceneDocument(
     })();
     return () => {
       cancelled = true;
+      if (activeLoadRef.current === generation) activeLoadRef.current += 1;
     };
   }, [documentId, reloadToken]);
 
   const scene = load.kind === "ready" ? load.scene : null;
   const engine = load.kind === "ready" ? load.engine : null;
 
-  // Brand kit leg. Keyed on the ref's VALUE (`id@version`), never the object:
-  // `scene.meta.brand_kit` gets a fresh identity on every scene update, and an
-  // object-keyed dep re-fetched the same kit thousands of times per turn in the
-  // source shell. A failed fetch leaves the map cleared and reports the exact
-  // pin as unavailable — it never paints with another document's/latest kit.
-  const brandKitRefKey = scene ? kitRefKeyOf(scene) : null;
-  const kitFontDiagnostics =
-    brandKitRefKey &&
-    kitFontDiagnosticState?.forBrandKitRef === brandKitRefKey
-      ? kitFontDiagnosticState.diagnostics
-      : NO_DIAGNOSTICS;
+  const presentationScene = engine?.presentationScene ?? scene;
+  const renderContext = load.kind === "ready" ? load.renderContext : null;
+  const contextKey = renderContext?.context_key ?? null;
+  const derivationStatus = engine?.derivation.status ?? "unavailable";
+  const inputRevision = engine?.derivation.input_revision ?? 0;
+  const kitFontDiagnostics = contextKey && kitFontDiagnosticState?.forBrandKitRef === contextKey
+    ? kitFontDiagnosticState.diagnostics : NO_DIAGNOSTICS;
   useEffect(() => {
-    if (!brandKitRefKey) {
-      return;
-    }
+    if (!engine || !contextKey || !renderContext || derivationStatus !== "ready") return;
     let cancelled = false;
+    const generation = activeLoadRef.current;
+    const current = () => !cancelled && activeLoadRef.current === generation
+      && engine.derivation.context_key === contextKey && engine.derivation.status === "ready";
     const config = designBffConfig();
-    const separator = brandKitRefKey.lastIndexOf("@");
-    const brandKitId = brandKitRefKey.slice(0, separator);
-    const versionText = brandKitRefKey.slice(separator + 1);
-    const brandKitVersion = versionText.length > 0 ? Number(versionText) : null;
-    // The pin changed under an installed kit (an in-place SetBrandKitRef, or a
-    // remount): fall back deterministically while the new pin is in flight
-    // rather than painting with the previous kit.
-    if (installedKitKeyRef.current !== brandKitRefKey) {
-      setKitTokenMaps(buildKitTokenMaps(null));
-      installedKitKeyRef.current = null;
-    }
-    void (async () => {
-      let detail;
-      try {
-        detail = await fetchBrandKitDetail(config, brandKitId, brandKitVersion);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        // The requested pin itself is part of render truth. Do not silently
-        // keep another document's/latest kit when it cannot be read — this
-        // effect owns the clear it reports, so the message cannot lie.
-        setKitTokenMaps(buildKitTokenMaps(null));
-        installedKitKeyRef.current = null;
-        setKitFontDiagnosticState({
-          forBrandKitRef: brandKitRefKey,
-          diagnostics: [
-            {
-              severity: "error",
-              phase: "brand",
-              code: "EDITOR_PINNED_BRAND_KIT_UNAVAILABLE",
-              message: `Pinned Brand Kit ${brandKitRefKey} could not be loaded (${error instanceof Error ? error.message : "fetch failed"}); canvas uses deterministic fallback tokens and Inter rather than a different kit version.`,
-              subject: { kind: "document" },
-              hint: "Restore that exact Brand Kit version or rebind the document explicitly; the editor will not substitute the latest version.",
-            },
-          ],
-        });
-        return;
-      }
-      if (cancelled) {
-        return;
-      }
-      // Colors + type roles + numbers in one install, so paint, text
-      // measurement and radii all resolve from the kit.
-      setKitTokenMaps(buildKitTokenMaps(detail));
-      installedKitKeyRef.current = brandKitRefKey;
-      const diagnostics: Diagnostic[] = [];
-      try {
-        const registered = await loadKitFontFaces(
-          {
-            ...config,
-            onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
-          },
-          detail,
-        );
-        if (registered && !cancelled) {
-          notifyKitFontsChanged();
-        }
-      } catch (error) {
-        // A font-leg throw arrives AFTER the token maps installed above, so it
-        // is a font degradation, never a token one — saying "fallback tokens"
-        // here would be false.
-        diagnostics.push({
-          severity: "error",
-          phase: "brand",
-          code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
-          message: `Brand Kit ${brandKitRefKey} font faces could not be loaded (${error instanceof Error ? error.message : "font load failed"}); canvas and server export use deterministic Inter fallback while kit tokens stay applied.`,
-          subject: { kind: "document" },
-          hint: "Confirm the kit's licensed TTF/OTF assets are present in durable storage.",
-        });
-      }
-      if (!cancelled) {
-        setKitFontDiagnosticState({
-          forBrandKitRef: brandKitRefKey,
-          diagnostics,
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [brandKitRefKey]);
+    // Palette maps are compatibility data only. Canonical paint already has resolved literals.
+    const detail = renderContext.brand_kit;
+    setKitTokenMaps(buildKitTokenMaps(detail));
+    const diagnostics: Diagnostic[] = [];
+    void loadKitFontFaces({ ...config, isCurrent: current, onFaceDiagnostic: d => diagnostics.push(d) }, detail)
+      .then(registered => { if (registered && current()) notifyKitFontsChanged(); })
+      .catch(error => {
+        diagnostics.push({ severity: "error", phase: "brand", code: "EDITOR_KIT_FONT_FAMILY_UNAVAILABLE",
+          message: `Selected Brand Kit fonts could not be loaded (${String(error)}).`,
+          subject: { kind: "document" }, hint: "Restore the selected kit's font assets." });
+      }).finally(() => {
+        if (current()) setKitFontDiagnosticState({ forBrandKitRef: contextKey, diagnostics });
+      });
+    return () => { cancelled = true; };
+  }, [contextKey, engine, renderContext, derivationStatus]);
 
   // Curated font-library leg: register only the faces whose family this scene
   // references. The manifest is module-cached and the face registry dedupes,
   // so a re-run over already-loaded families makes no network calls.
   useEffect(() => {
-    if (!scene) {
-      return;
-    }
+    if (!presentationScene) return;
     let cancelled = false;
+    const generation = activeLoadRef.current;
+    const expectedContext = engine?.derivation.context_key;
+    const current = () => !cancelled && generation === activeLoadRef.current
+      && (!engine || (engine.derivation.context_key === expectedContext && engine.derivation.status === "ready"));
     const config = designBffConfig();
     const diagnostics: Diagnostic[] = [];
-    void loadLibraryFontFaces(scene, {
+    void loadLibraryFontFaces(presentationScene, {
       ...config,
+      isCurrent: current,
       onFaceDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
     })
       .then((registered) => {
-        if (!cancelled) {
+        if (current()) {
           setLibraryFontDiagnosticState({
             forDocumentId: documentId,
             diagnostics,
           });
         }
-        if (registered && !cancelled) {
+        if (registered && current()) {
           notifyKitFontsChanged();
         }
       })
       .catch((error) => {
-        if (cancelled) {
+        if (!current()) {
           return;
         }
         setLibraryFontDiagnosticState({
@@ -425,7 +351,7 @@ export function useSceneDocument(
     return () => {
       cancelled = true;
     };
-  }, [documentId, scene]);
+  }, [documentId, presentationScene, engine]);
 
   const libraryFontDiagnostics =
     scene && libraryFontDiagnosticState?.forDocumentId === documentId
@@ -440,22 +366,39 @@ export function useSceneDocument(
   // only — never the whole scene: `setMeasurements` relayouts and hands back a
   // new scene, so a scene-keyed effect would loop forever.
   const textSignature = useMemo(
-    () => (scene ? textMeasurementSignature(scene, tokenGeneration) : ""),
-    [scene, tokenGeneration],
+    () => (presentationScene ? `${contextKey}:${textMeasurementSignature(presentationScene, tokenGeneration)}` : ""),
+    [presentationScene, contextKey, tokenGeneration],
   );
   useEffect(() => {
-    if (!engine || !textSignature) {
+    if (!engine || !textSignature || engine.derivation.status !== "ready") {
       return;
     }
     let cancelled = false;
+    const revision = engine.derivation.input_revision;
+    const generation = activeLoadRef.current;
     void loadCanvasKit().then((bundle) => {
-      if (cancelled || !bundle?.fontProvider) {
+      if (cancelled || generation !== activeLoadRef.current || revision !== engine.derivation.input_revision || !bundle?.fontProvider) {
         return;
       }
-      engine.setMeasurements(
-        skiaMeasurements(bundle.ck, bundle.fontProvider, engine.scene),
-      );
+      // Bound once: the narrowing above does not reach inside the pass
+      // closures below.
+      const { ck, fontProvider } = bundle;
+      // Pass 1 (Wave 3 C4): unconstrained extents, so hug boxes take Skia's
+      // size. Pass 2 (Plan 4 item F): the line boxes, keyed on the boxes pass
+      // 1 solved. It ITERATES because the line records move boxes themselves
+      // — the taffy-keyed record gives a wrapped hug box CanvasKit's height,
+      // which the validate-keyed record from the same round has already
+      // named at its old value — so the pass re-runs until the solved sizes
+      // stop changing (bounded; see `injectSkiaMeasurements`). The effect's
+      // own signature includes those sizes, so its outer re-run then finds
+      // nothing left to change.
+      const measured = injectSkiaMeasurements(engine, {
+        unconstrained: (scene) => skiaMeasurements(ck, fontProvider, scene),
+        lines: (scene) => skiaLineMeasurements(ck, fontProvider, scene),
+        requests: (scene, requests) => skiaRequestedMeasurements(ck, fontProvider, scene, requests),
+      });
       if (!cancelled) {
+        setMeasurementState({ engine, incomplete: !measured.converged });
         setLoad((current) =>
           current.kind === "ready" && current.engine === engine
             ? { ...current, scene: engine.scene }
@@ -466,7 +409,7 @@ export function useSceneDocument(
     return () => {
       cancelled = true;
     };
-  }, [engine, textSignature]);
+  }, [engine, textSignature, inputRevision]);
 
   return useMemo<SceneDocumentState>(() => {
     // Before the first load there is no history to report, and zero depths are
@@ -476,6 +419,7 @@ export function useSceneDocument(
     return {
       kind: load.kind,
       scene,
+      presentationScene,
       engine,
       pageId: load.kind === "ready" ? load.pageId : null,
       title: load.kind === "ready" ? load.title : null,
@@ -487,6 +431,7 @@ export function useSceneDocument(
       undoDepth: history.undoDepth,
       tokenGeneration,
       fontDiagnostics,
+      measurementIncomplete: measurementState?.engine === engine && measurementState.incomplete,
       refresh: () => {
         setLoad((current) =>
           current.kind === "ready" && current.engine
@@ -495,5 +440,5 @@ export function useSceneDocument(
         );
       },
     };
-  }, [engine, engineStatus, fontDiagnostics, load, scene, tokenGeneration]);
+  }, [engine, engineStatus, fontDiagnostics, load, measurementState, scene, presentationScene, tokenGeneration]);
 }

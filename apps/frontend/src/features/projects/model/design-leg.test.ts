@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  DESIGN_CHECKPOINT_EVENT_TYPE,
   DESIGN_GENERATION_WAIT_NOTICE,
   DESIGN_LEG_EVENT_TYPES,
+  DESIGN_OP_BATCH_EVENT_TYPE,
   designLegNotice,
   designRefreshForEvent,
   designTurnFailureNotice,
@@ -46,14 +48,14 @@ test("the close line names the exit the agent recorded", () => {
   );
 });
 
-test("opening and reopening both say the thread now talks to Design", () => {
+test("opening and reopening both say generation is already underway", () => {
   assert.equal(
     designLegNotice({ type: "leg.opened", reason: null }),
-    "Design session opened — your next message goes to Design.",
+    "Design session opened — generating now.",
   );
   assert.equal(
     designLegNotice({ type: "leg.reopened", reason: null }),
-    "Design session reopened — your next message goes to Design.",
+    "Design session reopened — generating now.",
   );
   assert.equal(
     designLegNotice({ type: "leg.awaiting_user", reason: null }),
@@ -64,7 +66,7 @@ test("opening and reopening both say the thread now talks to Design", () => {
 test("the honest wait copy carries no percentage and no ETA", () => {
   assert.equal(
     DESIGN_GENERATION_WAIT_NOTICE,
-    "Website generation often takes 5–15 minutes.",
+    "Design generation can take several minutes.",
   );
   assert.equal(/%|\bETA\b|\bat \d/.test(DESIGN_GENERATION_WAIT_NOTICE), false);
 });
@@ -80,11 +82,11 @@ test("each typed leg refusal renders a sentence, never its code", () => {
   );
   assert.equal(
     designTurnFailureNotice("design_leg_turn_failed"),
-    "Design couldn't finish this page. Nothing was saved — send another message to try again.",
+    "Design stopped before completion. Any saved draft remains available.",
   );
   assert.equal(
     designTurnFailureNotice("design_leg_turn_crashed"),
-    "The design turn stopped unexpectedly. Nothing was saved — send another message to try again.",
+    "Design stopped before completion. Any saved draft remains available.",
   );
 });
 
@@ -166,4 +168,84 @@ test("a frame for another thread refreshes nothing", () => {
     ),
     { refetchFeed: false, reloadCanvas: false },
   );
+});
+
+// --- mid-run checkpoints (scene live-streaming rung A) ---------------------
+
+test("a mid-run checkpoint reloads the canvas and leaves the gallery alone", () => {
+  assert.deepEqual(
+    designRefreshForEvent(
+      { type: DESIGN_CHECKPOINT_EVENT_TYPE, threadId: "thr-1" },
+      activeThread,
+    ),
+    { refetchFeed: false, reloadCanvas: true },
+  );
+  // The literal is the platform's, verbatim; a typo here silently costs every
+  // mid-run reload, because an unrecognized type falls through to NO_REFRESH.
+  assert.equal(DESIGN_CHECKPOINT_EVENT_TYPE, "design.checkpoint");
+});
+
+test("no checkpoint, on any thread, ever refetches the gallery feed", () => {
+  // The gallery lists *artifacts*, and a checkpoint births none: it announces a
+  // new version of a document that already has its card. Refetching here would
+  // re-run the rail's read many times per minute for a list that cannot change.
+  for (const context of [activeThread, { activeThreadId: null }]) {
+    assert.equal(
+      designRefreshForEvent(
+        { type: DESIGN_CHECKPOINT_EVENT_TYPE, threadId: "thr-1" },
+        context,
+      ).refetchFeed,
+      false,
+    );
+  }
+});
+
+test("a checkpoint for another thread refreshes nothing", () => {
+  assert.deepEqual(
+    designRefreshForEvent(
+      { type: DESIGN_CHECKPOINT_EVENT_TYPE, threadId: "thr-2" },
+      activeThread,
+    ),
+    { refetchFeed: false, reloadCanvas: false },
+  );
+  assert.deepEqual(
+    designRefreshForEvent(
+      { type: DESIGN_CHECKPOINT_EVENT_TYPE, threadId: "thr-1" },
+      { activeThreadId: null },
+    ),
+    { refetchFeed: false, reloadCanvas: false },
+  );
+});
+
+test("an op batch refreshes nothing — it announces nothing durable", () => {
+  // Rung B streams operations BEFORE they are committed. Reloading the canvas
+  // here would re-read the durable document to show it a version it does not
+  // have yet, several times a second. The optimistic render is the cursor's
+  // and the reveal pump's business, never a refresh counter's.
+  for (const context of [activeThread, { activeThreadId: null }]) {
+    assert.deepEqual(
+      designRefreshForEvent(
+        { type: DESIGN_OP_BATCH_EVENT_TYPE, threadId: "thr-1" },
+        context,
+      ),
+      { refetchFeed: false, reloadCanvas: false },
+    );
+  }
+});
+
+test("a provider refusal on a turn reads as a sentence, not a code", () => {
+  assert.equal(
+    designTurnFailureNotice("provider_refused:openrouter:key_limit"),
+    "Model provider refused: key limit exceeded. Send another message once it is restored — Clue has been notified.",
+  );
+  assert.equal(
+    designTurnFailureNotice("provider_failed:openrouter:server_error"),
+    "Model provider failing: server errors. Send another message to try again — Clue has been notified.",
+  );
+  assert.equal(
+    designTurnFailureNotice("provider_refused:exa:credits_exhausted"),
+    "Discovery provider refused: credits exhausted. Send another message once it is restored — Clue has been notified.",
+  );
+  assert.equal(designTurnFailureNotice("permission_denied_error"), "permission_denied_error");
+  assert.equal(designTurnFailureNotice(null), null);
 });

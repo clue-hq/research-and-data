@@ -1,0 +1,44 @@
+[
+  {
+    "run": "Z7",
+    "subject": "Zafran Security",
+    "authored": 31,
+    "stored": 31,
+    "finding_text_differences": []
+  },
+  {
+    "run": "Z7",
+    "subject": "Vari Kaur",
+    "authored": 25,
+    "stored": 25,
+    "finding_text_differences": []
+  },
+  {
+    "run": "Z7",
+    "subject": "Nick Fisher",
+    "authored": 53,
+    "stored": 53,
+    "finding_text_differences": []
+  },
+  {
+    "run": "Z8",
+    "subject": "Zafran Security",
+    "authored": 49,
+    "stored": 49,
+    "finding_text_differences": []
+  },
+  {
+    "run": "Z8",
+    "subject": "Tom Anthony",
+    "authored": 33,
+    "stored": 33,
+    "finding_text_differences": []
+  },
+  {
+    "run": "Z8",
+    "subject": "Sanaz Yashar",
+    "authored": 55,
+    "stored": 55,
+    "finding_text_differences": []
+  }
+]

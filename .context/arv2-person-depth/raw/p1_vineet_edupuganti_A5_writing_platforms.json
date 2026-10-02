@@ -1,0 +1,103 @@
+{
+  "requestId": "fbf0c611d261569dad17fd091ae862cb",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://medium.com/abnormal-security-engineering-blog/intelligent-signatures-at-abnormal-security-48ef6c19d4b5",
+      "title": "Intelligent Signatures using Embeddings and K-Nearest-Neighbors | by Vineet Edupuganti | Abnormal Security Engineering Blog | Medium",
+      "url": "https://medium.com/abnormal-security-engineering-blog/intelligent-signatures-at-abnormal-security-48ef6c19d4b5",
+      "publishedDate": "2020-11-18T01:45:22.000Z",
+      "author": "Vineet Edupuganti",
+      "text": "Intelligent Signatures using Embeddings and K-Nearest-Neighbors | by Vineet Edupuganti | Abnormal Security Engineering Blog | Medium\n\nOpen in app\n\nSign up\n\nGet app\n\nSign up\n\n## Abnormal Security Engineering Blog\n\nTales from Abnormal Engineering as we build the next generation of AI cyber security\n\n# Intelligent Signatures using Embeddings and K-Nearest-Neighbors\n\n4 min read\n\nNov 18, 2020\n\n--\n\nShare\n\nAuthors: Vineet Edupuganti and Jeshua Bratman\n\nAt Abnormal Security, one of our key objectives is to build a detection engine that can continuously adapt to a changing attack landscape. As such, we want to ensure that our systems can rapidly adjust to recent and high-value messages \u2014 even with a low number of examples. We have frequently-retrained ML models to catch general trends, but we additionally would like to supplement these models with so-called signatures.\n\nIn classic email security, a signature is usually an exact match on IP, domain, content, etc. These are used as a backup to ML models to help ensure that if the system does make a mistake (either a false positive or false negative), it will not make that same mistake again.\n\nThe challenge here, though, is that this exact match approach on simple attributes of a message doesn\u2019t actually generalize very well in catching similar messages. IP signatures work well in some circumstances, but attackers oftentimes switch up IP\u2019s or use botnets. To address this issue, we need to use \u201cintelligent\u201d signatures that can perform a m",
+      "image": "https://miro.medium.com/v2/da:true/resize:fit:800/0*MZI0yq2TSilmw2XU"
+    },
+    {
+      "id": "https://medium.com/abnormal-security-engineering-blog/lazily-loading-ml-models-for-scoring-with-pyspark-a167d4deed3c",
+      "title": "Lazily Loading ML Models for Scoring with PySpark",
+      "url": "https://medium.com/abnormal-security-engineering-blog/lazily-loading-ml-models-for-scoring-with-pyspark-a167d4deed3c",
+      "publishedDate": "2020-12-11T19:47:59.000Z",
+      "author": "Jeshua Bratman",
+      "text": "Lazily Loading ML Models for Scoring with PySpark | by Jeshua Bratman | Abnormal Security Engineering Blog | Medium\n\nSitemap\n\nOpen in app\n\nSign up\n\nSign in\n\nMedium Logo\n\nWrite\n\nSearch\n\nSign up\n\nSign in\n\n## Abnormal Security Engineering Blog\n\nTales from Abnormal Engineering as we build the next generation of AI cyber security\n\n# Lazily Loading ML Models for Scoring with PySpark\n\nJeshua Bratman\n\n5 min read\n\nDec 11, 2020\n\n--\n\n1\n\nListen\n\nShare\n\nAuthors: Jeshua Bratman and Vineet Edupuganti\n\nOur core email attack detection product at Abnormal works by processing each incoming message, applying a series of classification models, and ultimately deciding if a message might be an attack. This detection system runs in an online distributed system processing millions of messages per day.\n\nRescoring\n\nOne key component in our pipeline is called rescoring. This data pipeline loads historical examples of email attacks in order to evaluate the accuracy of our detection system with respect to historical attacks. Rescoring allows us to easily measure how changes to code and classification models impact the performance of the product.\n\nHigh-level steps in rescoring:\n\n1. Evaluate precision, recall, and other statistics\n2. Re-run every detection model\n3. Re-extract every attribute and feature\n4. Re-process messages\n\nCrucially, we need this batch evaluation pipeline to resemble our online decisioning flow as closely as possible, using the exact same code paths for the scoring module, but run over ",
+      "image": "https://miro.medium.com/v2/da:true/resize:fit:1080/0*CzNijbcHiZArvC_w",
+      "favicon": "https://miro.medium.com/v2/5d8de952517e8160e40ef9841c781cdc14a5db313057fa3c3de41c6f5b494b19"
+    },
+    {
+      "id": "https://medium.com/@vineet.edupuganti/about",
+      "title": "Medium",
+      "url": "https://medium.com/@vineet.edupuganti/about",
+      "text": "MediumAbout \u2013 Vineet Edupuganti \u2013 Medium\n\nSign up\n\nGet app\n\nSign up\n\nVineet Edupuganti\n\n#### 3 followers\u00b71 following\n\n## Vineet Edupuganti\n\nMediumAbout \u2013 Vineet Edupuganti \u2013 Medium\n[Sitemap](/sitemap/sitemap.xml)\n[Open in app](https://play.google.com/store/apps/details?id=com.medium.reader&referrer=utm_source=mobileNavBar)\nSign up\n[Sign in](/m/signin?operation=login&redirect=https://medium.com/@vineet.edupuganti/about)\n[Medium Logo](/)\nGet app\n[\nWrite\n](/m/signin?operation=register&redirect=https://medium.com/new-story)\n[\nSearch\n](/search)\nSign up\n[Sign in](/m/signin?operation=login&redirect=https://medium.com/@vineet.edupuganti/about)\n![Unknown user](https://miro.medium.com/v2/resize:fill:64:64/1*dmbNkD5D-u45r44go_cf0g.png)\n![Vineet Edupuganti](https://miro.medium.com/v2/resize:fill:96:96/0*6Hg00FwJ1yxSrNjE.jpg)\nVineet Edupuganti\n[3 followers](/@vineet.edupuganti/followers)\n#### [3 followers](/@vineet.edupuganti/followers)\n\u00b7\n[1 following](/@vineet.edupuganti/following)\n![Vineet Edupuganti](https://miro.medium.com/v2/resize:fill:176:176/0*6Hg00FwJ1yxSrNjE.jpg)\n## Vineet Edupuganti\n[3 followers](/@vineet.edupuganti/followers)\n[\nHelp\n](https://help.medium.com/hc/en-us)\n[\nStatus\n](https://status.medium.com)\n[\nAbout\n](/about?autoplay=1)\n[\nCareers\n](/jobs-at-medium/work-at-medium-959d1a85284e)\n[\nPress\n](mailto:pressinquiries@medium.com)\n[\nBlog\n](https://blog.medium.com)\n[\nStore\n](https://medium.com/store)\n[\nPrivacy\n](https://policy.medium.com/medium-privacy-policy-f03bf92035c9)\n[\n",
+      "image": "https://miro.medium.com/v2/resize:fit:2400/0*6Hg00FwJ1yxSrNjE.jpg"
+    },
+    {
+      "id": "https://medium.com/abnormal-security-engineering-blog/calibrating-classifiers-in-reality-82f7bdf1ac90",
+      "title": "Calibrating Classifiers in Reality",
+      "url": "https://medium.com/abnormal-security-engineering-blog/calibrating-classifiers-in-reality-82f7bdf1ac90",
+      "publishedDate": "2022-01-24T16:50:02.000Z",
+      "author": "Jeshua Bratman",
+      "text": "Calibrating Classifiers in Reality | by Jeshua Bratman | Abnormal Security Engineering Blog | Medium\n\nSitemap\n\nOpen in app\n\nSign up\n\nSign in\n\nMedium Logo\n\nGet app\n\nWrite\n\nSearch\n\nSign up\n\nSign in\n\n## Abnormal Security Engineering Blog\n\nTales from Abnormal Engineering as we build the next generation of AI cyber security\n\n# Calibrating Classifiers in Reality\n\nJeshua Bratman\n\n9 min read\n\nJan 24, 2022\n\n--\n\nListen\n\nShare\n\nThis post also appears on the Abnormal Blog.\n\nAbnormal\u2019s fundamental job is to detect malicious emails like phishing and business email compromise attacks and other malicious events, such as suspicious sign-ins that indicate an account has been hacked. To do so, we have a complex web of features, sub-models, and classification models that decide on whether an event is malicious or not. Once we\u2019ve built a model we must turn it into a classifier by selecting a threshold. This sounds easy, but there are many tricky details.\n\nWe\u2019ll focus on the email attack detection case for this discussion and simplify it down to the core classification problem. The general approach is straightforward; we want to start with a probabilistic model M(X) that predicts attack probability given our features X.\n\nM(X) = P(attack | X)\n\nOther articles on this blog discuss this attack model itself (here, here, and here), so we won\u2019t discuss that in this article. Here we are interested in what happens after we\u2019ve built a model.\n\nOnce we have a probabilistic model, we could easily build an atta",
+      "image": "https://miro.medium.com/v2/resize:fit:996/1*mdZHr01YC-N8bp05qakgnQ.png",
+      "favicon": "https://miro.medium.com/v2/5d8de952517e8160e40ef9841c781cdc14a5db313057fa3c3de41c6f5b494b19"
+    },
+    {
+      "id": "https://medium.com/abnormal-security-engineering-blog/abnormal-engineering-stories-episode-2-future-of-ml-platform-edc0d1c8034b",
+      "title": "Abnormal Engineering Stories \u2014 Episode #2: Future of ML Platform",
+      "url": "https://medium.com/abnormal-security-engineering-blog/abnormal-engineering-stories-episode-2-future-of-ml-platform-edc0d1c8034b",
+      "publishedDate": "2021-07-07T18:54:58.000Z",
+      "author": "Jeshua Bratman",
+      "text": "Abnormal Engineering Stories \u2014Episode #2: Future of ML Platform | by Jeshua Bratman | Abnormal Security Engineering Blog | Medium\n[Open in app](https://rsci.app.link/?$canonical_url=https://medium.com/p/edc0d1c8034b&~feature=LoOpenInAppButton&~channel=ShowPostUnderCollection&source=---two_column_layout_nav----------------------------------)\nSign up\n[Sign in](https://medium.com/m/signin?operation=login&redirect=https://medium.com/abnormal-security-engineering-blog/abnormal-engineering-stories-episode-2-future-of-ml-platform-edc0d1c8034b&source=post_page---two_column_layout_nav-----------------------global_nav-----------)\n[](https://medium.com/?source=---two_column_layout_nav----------------------------------)\n[\nWrite\n](https://medium.com/m/signin?operation=register&redirect=https://medium.com/new-story&source=---two_column_layout_nav-----------------------new_post_topnav-----------)\n[\n](https://medium.com/search?source=---two_column_layout_nav----------------------------------)\nSign up\n[Sign in](https://medium.com/m/signin?operation=login&redirect=https://medium.com/abnormal-security-engineering-blog/abnormal-engineering-stories-episode-2-future-of-ml-platform-edc0d1c8034b&source=post_page---two_column_layout_nav-----------------------global_nav-----------)\n![](https://miro.medium.com/v2/resize:fill:64:64/1*dmbNkD5D-u45r44go_cf0g.png)\n# Abnormal Engineering Stories \u2014Episode #2: Future of ML Platform\n[\n![Jeshua Bratman](https://miro.medium.com/v2/resize:fill:88:88/2*QZ1f8uKiTxL",
+      "image": "https://miro.medium.com/v2/resize:fit:1200/1*Vhli1GkKRN-nPH5p7PvDTA.png",
+      "favicon": "https://miro.medium.com/v2/1*m-R_BkNf1Qjr1YbyOIJY2w.png"
+    },
+    {
+      "id": "https://medium.com/regeneron-science-talent-search/from-hoop-dreams-to-science-stardom-d48c21194518",
+      "title": "From Hoop Dreams to Science Stardom",
+      "url": "https://medium.com/regeneron-science-talent-search/from-hoop-dreams-to-science-stardom-d48c21194518",
+      "publishedDate": "2017-03-28T16:37:16.000Z",
+      "author": "Society for Science",
+      "text": "Medium\n\n# From Hoop Dreams to Science Stardom\n\nMar 28, 2017\n\nBy Vineet Edupuganti, senior at Oregon Episcopal School and Regeneron Science Talent Search 2017 finalist\n\nIf you had told me in 2005 that I would end up falling in love with science, I would have laughed and called you crazy. You see, as a five-year-old \u2014 with infinite experience and wisdom under my belt \u2014 I was certain that I was going to be a professional basketball player. To me, that job would be the best of all worlds, allowing me to explore my newfound love of numbers by analyzing my statistics, all while playing my favorite sport.\n\nIn case you were wondering, that dream didn\u2019t take long to fizzle out. After a few years, I realized that being the tallest kid in my grade equated to nothing more than operating as an undersized point guard, and my interests slowly turned to other areas like history, geography and eventually, science.\n\nPress enter or click to view image in full size\n\nVineet Edupuganti attending a Portland Trail Blazers game (left) and presenting his research at the Regeneron Science Talent Search 2017 public exhibition of projects (right).\n\nAs I read about the early experiments of Isaac Newton and Galileo Galilei in elementary school, I couldn\u2019t help but feel a wave of excitement flood over me. How could these geniuses have made discoveries that made so much sense, but had such far-ranging implications? I was hooked, and I slowly moved on to other areas within science, learning the elements of th",
+      "image": "https://miro.medium.com/v2/resize:fill:1200:632/g:fp:0.61:0.31/1*o3JUqjnN51fjRlBPG5LT0w.jpeg"
+    },
+    {
+      "id": "https://nojeshua.medium.com/",
+      "title": "Jeshua Bratman \u2013 Medium",
+      "url": "https://nojeshua.medium.com/",
+      "text": "Jeshua Bratman \u2013 Medium\n\nOpen in app\n\nSign up\n\nGet app\n\nSign up\n\nJeshua Bratman\n\nIn\n\nAbnormal Security Engineering Blog\n\nby\n\n\u00b7\n\nJan 24, 2022\n\n## Calibrating Classifiers in Reality\n\n### This post also appears on the Abnormal Blog.\n\nIn\n\nAbnormal Security Engineering Blog\n\nby\n\n\u00b7\n\nJul 7, 2021\n\n## Abnormal Engineering Stories \u2014 Episode #2: Future of ML Platform\n\n### Future of ML Platform w/ Jeshua Bratman & Nico Koumchatzsky\n\nIn\n\nAbnormal Security Engineering Blog\n\nby\n\n\u00b7\n\nJul 2, 2021\n\n## Podcast: Building Applied ML Startups\n\n### It was a pleasure sitting down with Tim Shi of Cresta and Saam Motamedi of Greylock to discuss building companies around machine learning\u2026\n\nIn\n\nby\n\n\u00b7\n\nApr 6, 2021\n\n## How you Should Design ML Engineering Projects\n\n### Analysis of ML lifecycles, common pitfalls, and a copy-and-paste template you can use to improve your software & experimental design.\n\nA response icon1\n\nA response icon1\n\nIn\n\nAbnormal Security Engineering Blog\n\nby\n\n\u00b7\n\nMar 29, 2021\n\n## Re-Scoring an ML Detection Engine on Past Attacks (part 1)\n\n### Developing a machine learning product for cybersecurity comes with unique challenges. For a bit of background, Abnormal Security\u2019s\u2026\n\nA response icon1\n\nA response icon1\n\nIn\n\nAbnormal Security Engineering Blog\n\nby\n\n\u00b7\n\nFeb 1, 2021\n\n## Graph of Models and Features\n\n### At the core of all Abnormal\u2019s detection products sits a sophisticated web of prediction models. For any of these models to function we\u2026\n\nIn\n\nAbnormal Security Engineering Blog\n\nby\n\n\u00b7\n\nDe",
+      "image": "https://miro.medium.com/v2/resize:fit:2400/2*QZ1f8uKiTxLODD9TIK8d3A.png"
+    },
+    {
+      "id": "https://medium.com/regeneron-science-talent-search/how-studying-the-humanities-made-me-a-better-scientist-fb4d7cdce529",
+      "title": "How studying the humanities made me a better scientist | by Society for Science | Regeneron Science Talent Search | Medium",
+      "url": "https://medium.com/regeneron-science-talent-search/how-studying-the-humanities-made-me-a-better-scientist-fb4d7cdce529",
+      "publishedDate": "2018-04-09T14:10:58.000Z",
+      "author": "Society for Science",
+      "text": "How studying the humanities made me a better scientist | by Society for Science | Regeneron Science Talent Search | Medium\n\nOpen in app\n\nSign up\n\nGet app\n\nSign up\n\n## Regeneron Science Talent Search\n\nRegeneron Science Talent Search, a program of the Society for Science & the Public, identifying the nation\u2019s most promising young scientists, mathematicians, engineers and innovators since 1942.\n\n# How studying the humanities made me a better scientist\n\nSociety for Science\n\n3 min read\n\nApr 9, 2018\n\n--\n\nShare\n\nBy Vinjai Vale, senior at Phillips Exeter Academy and Regeneron Science Talent Search 2018 finalist\n\nPress enter or click to view image in full size\n\nToday\u2019s education system has created a rift between STEM (science, technology, engineering and math) and the humanities. It may seem counterintuitive, but studying the humanities actually makes you a better scientist. Scholars of literature, philosophy, art, and history develop an understanding and appreciation for what it means to be human. I believe it is vital for scientists to study these fields, especially in a modern world full of rapid technological advances.\n\nThrough my own research, I experienced firsthand how the humanities can help scientific research.\n\nMy Regeneron STS project was on Artificial Intelligence, specifically teaching computer programs to learn and interpret geometric structures in visual scenes. The current state-of-the-art has poor spatial and compositional understanding; for example, it classifies a l",
+      "image": "https://miro.medium.com/v2/resize:fit:1200/1*79O4qpUeALjRxN7Jae-KDg.jpeg"
+    }
+  ],
+  "searchTime": 873.3,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.02,
+  "_request": {
+    "query": "\"Vineet Edupuganti\" Cogent Security marketing security",
+    "type": "auto",
+    "numResults": 8,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    },
+    "includeDomains": [
+      "substack.com",
+      "medium.com",
+      "dev.to",
+      "hashnode.dev",
+      "ghost.io"
+    ]
+  }
+}

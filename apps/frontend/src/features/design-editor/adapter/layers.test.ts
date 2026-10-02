@@ -25,12 +25,13 @@ test("rows come from the hierarchy in child order, capped at depth 1", () => {
   assert.ok(!rows.some((row) => ["fimg", "ficon", "fembed"].includes(row.nodeId)));
 });
 
-test("labels prefer the authored name and fall back to the node id", () => {
+test("labels prefer the authored name and fall back to a human kind name (R-A5)", () => {
   const rows = buildWebLayerRows(HARVESTED_PAGE, null);
   const byId = new Map(rows.map((row) => [row.nodeId, row]));
   assert.equal(byId.get("hero")?.label, "Hero");
   assert.equal(byId.get("headline")?.label, "Headline");
-  // A node without a name shows its id.
+  // Ruling R-A5 (founder, 2026-09-04): a node without a name NEVER shows its raw
+  // id — `displayNameForNode` names it by kind instead (this used to read "hero").
   const unnamed = buildWebLayerRows(
     {
       ...HARVESTED_PAGE,
@@ -41,7 +42,7 @@ test("labels prefer the authored name and fall back to the node id", () => {
     },
     null,
   );
-  assert.equal(unnamed.find((row) => row.nodeId === "hero")?.label, "hero");
+  assert.equal(unnamed.find((row) => row.nodeId === "hero")?.label, "Section");
 });
 
 test("kind → icon uses the dummy's icon vocabulary", () => {
@@ -98,4 +99,20 @@ test("the active row follows the selected node id", () => {
 
 test("a missing or empty root yields no rows", () => {
   assert.deepEqual(buildWebLayerRows({ page_root: "nope", nodes: {} }, null), []);
+});
+
+
+test("layer rows show display names, never raw ids (R-A5)", () => {
+  const page = {
+    page_root: "root",
+    nodes: {
+      root: { id: "root", kind: "container", classes: "", children: ["sec_1"] },
+      sec_1: { id: "sec_1", kind: "section", classes: "", children: ["frg_1"] },
+      frg_1: { id: "frg_1", kind: "fragment", classes: "", fragment_id: "frag_" + "cd".repeat(8) },
+    },
+  };
+  const rows = buildWebLayerRows(page, null, {
+    ["frag_" + "cd".repeat(8)]: { label: "Stripe footer", section_role: "footer" },
+  });
+  assert.deepEqual(rows.map((r) => r.label), ["Footer — Stripe footer", "Footer — Stripe footer"]);
 });

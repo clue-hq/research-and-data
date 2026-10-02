@@ -17,8 +17,8 @@ from urllib.parse import urljoin
 from selectolax.parser import HTMLParser
 
 from .geometry import GEOMETRY_JS
-from .net import BoundedFetcher, FetchRequest, guard_url
-from .snapshot import Download, SiteSnapshot, Stylesheet, HTML_MAX_BYTES
+from .net import BoundedFetcher, CaptureError, FetchRequest, guard_url, require_complete_html
+from .snapshot import Download, SiteSnapshot, Stylesheet
 from .static import _collect_assets, _extract_meta, fetch_imported_sheets
 
 # JS gathered in one page.evaluate: computed samples + custom props + stylesheets.
@@ -280,6 +280,67 @@ async def collect_stylesheets(
 _VIEWPORT = {"width": 1440, "height": 2000}
 
 
+# Inline logos often inherit all their paint from page CSS. A bare outerHTML
+# export silently turns these into black shapes. Bake the OBSERVED styles into
+# a detached copy, keeping the live page and screenshot untouched. The bound is
+# independent of HTML bytes so a pathological SVG cannot monopolize capture.
+_SERIALIZE_HTML_JS = r"""
+() => {
+  const copy = document.documentElement.cloneNode(true);
+  const source = Array.from(document.querySelectorAll('svg')).filter(n => !n.parentElement.closest('svg'));
+  const targets = Array.from(copy.querySelectorAll('svg')).filter(n => !n.parentElement.closest('svg'));
+  const common = ['display', 'visibility', 'opacity', 'transform', 'transform-origin',
+                  'filter', 'clip-path', 'mask', 'mix-blend-mode'];
+  const paint = ['fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-opacity',
+                 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit',
+                 'stroke-dasharray', 'stroke-dashoffset', 'vector-effect'];
+  const typography = ['font-family', 'font-size', 'font-weight', 'font-style',
+                      'letter-spacing', 'text-anchor', 'dominant-baseline'];
+  let count = 0;
+  const localPaint = value => value.replace(/url\(["']?([^"')]+)["']?\)/g, (match, ref) => {
+    try {
+      const u = new URL(ref, location.href);
+      const here = new URL(location.href);
+      if (u.hash && u.origin === here.origin && u.pathname === here.pathname && u.search === here.search)
+        return `url("${u.hash}")`;
+    } catch (_) {}
+    return match;
+  });
+  source.forEach((svg, i) => {
+    const originals = [svg, ...svg.querySelectorAll('*')];
+    const clones = [targets[i], ...targets[i].querySelectorAll('*')];
+    originals.forEach((node, j) => {
+      if (++count > 20000) throw new Error('SVG style capture exceeds 20000 elements');
+      const cs = getComputedStyle(node);
+      const target = clones[j];
+      // Invisible alternate artwork must not become visible when detached.
+      if (cs.display === 'none') { target.remove(); return; }
+      const properties = [...common];
+      if (node.matches('path,rect,circle,ellipse,line,polyline,polygon,text,tspan,use'))
+        properties.push(...paint);
+      if (node.matches('text,tspan')) properties.push(...typography);
+      if (node.matches('stop')) properties.push('stop-color', 'stop-opacity');
+      for (const name of properties) {
+        const value = cs.getPropertyValue(name);
+        if (value) target.style.setProperty(name, localPaint(value), 'important');
+      }
+    });
+  });
+  const doctype = document.doctype ? new XMLSerializer().serializeToString(document.doctype) : '';
+  return doctype + copy.outerHTML;
+}
+"""
+
+
+async def _capture_html(page) -> str:
+    require_complete_html(await page.content())
+    try:
+        html = await page.evaluate(_SERIALIZE_HTML_JS)
+    except Exception as error:
+        raise CaptureError("LUMI0507", f"Could not preserve rendered SVG styling: {error}") from error
+    return require_complete_html(html)
+
+
 async def _harvest_page(page, diagnostics: list[dict]) -> dict:
     """Everything we take from a live, already-navigated page.
 
@@ -324,7 +385,7 @@ async def _harvest_page(page, diagnostics: list[dict]) -> dict:
                 "message": f"render probe failed; palette election falls back to evidence clusters: {error}",
             }
         )
-    harvest["html"] = await page.content()
+    harvest["html"] = await _capture_html(page)
     harvest["shot"] = await page.screenshot(full_page=True)
     # Brand geometry, measured LAST: the probe programmatically focuses a few
     # elements to read the focus ring, so it runs after the screenshot and can
@@ -378,6 +439,9 @@ async def fetch_rendered(
             )
             return snapshot
         except Exception as error:  # noqa: BLE001 — fallback, loudly
+            if isinstance(error, CaptureError) and error.code == "LUMI0507":
+                # A size refusal is deterministic, not a broken browser backend.
+                raise
             fallback_note = {
                 "code": "LUMI0536",
                 "severity": "warning",
@@ -486,18 +550,12 @@ async def _snapshot_from_harvest(
     fetched_at: str,
 ) -> SiteSnapshot:
     downloads: list[Download] = []
-    html = harvest["html"]
+    html = require_complete_html(harvest["html"])
     shot = harvest["shot"]
     final_url = harvest["final_url"]
     data = harvest.get("data") or {}
     render_probe = harvest.get("render_probe")
     geometry = harvest.get("geometry")
-
-    if len(html.encode("utf-8")) > HTML_MAX_BYTES:
-        html = html.encode("utf-8")[:HTML_MAX_BYTES].decode("utf-8", errors="ignore")
-        diagnostics.append(
-            {"code": "LUMI0507", "severity": "warning", "message": "html truncated to 2 MB"}
-        )
 
     shot_sha = hashlib.sha256(shot).hexdigest()
     downloads.append(

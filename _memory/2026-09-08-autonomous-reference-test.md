@@ -1,0 +1,9 @@
+# Autonomous reference test
+
+- Founder correction: provide the actual reference plus a business brief and editable-layer requirements. Do not dictate a scene, palette, layout or tool sequence. The previous landscape directions came from our test message and were rejected.
+- Fresh Design chat created in the existing local control project, same worktree. Head-of-ABM opened the leg and passed the business brief; next Design turn received the original reference and a fresh-background output goal. No Head-of-ABM source changes.
+- Source frozen at `b2855a04` in `.local-setup/ad-control/autonomous-pins.json`. Thread `thr_c882fd4bcb595ff2aeb2ae1d0399e57d`, document `doc_e5a478ce261b5ba28fa735a4d4c54625`, outer run `run_952997225c1758ac82ce2bcd8fcb1a61`, inner run `run_d048f71976784b51ba30404eeaae34c9`. Started 07:54:39 UTC.
+- PE15 current-scene asset viewing repair is committed and independently reviewed. Full runtime 1657 passed / 7 skipped; nine focused regressions passed. Actual saved generated files were viewed without startup catalogs or additional generation. Linear PE15 Done verified in the browser; this establishes tool correctness only.
+- Current run inspected its exact original reference and authentic logos. One mistaken `reference:0` lookup recovered with `reference:1`. Inputs and durable bytes verified; evolving custody evidence in `.local-setup/ad-control/results/autonomous-custody.{json,md}`.
+- Read-only policy audit found conflicting linked prompt guidance: the skill asks to describe observed qualities, while `knowledge/images/prompts.md` says to keep prompts about a literal subject and not describe reference style. Keep source frozen during the live run; assess the actual output before choosing a repair.
+- Creative quality, final save and live editing remain unverified while generation runs. No push or deployment.

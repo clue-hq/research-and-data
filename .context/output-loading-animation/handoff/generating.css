@@ -1,0 +1,272 @@
+/* =============================================================================
+   Clue — "agent is generating" motion kit
+   -----------------------------------------------------------------------------
+   Single source of truth for BOTH the React components in this folder
+   (generating-glow.tsx, website-generating-veil.tsx, ad-designing-lock.tsx)
+   and the HTML previews in ../v2/. Import it once in the feature that mounts
+   the output pane. Every colour reads a design-system token with a literal
+   fallback so the previews render without the token stylesheet.
+
+   Three pieces, all absolutely positioned inside a `position: relative` host:
+     .clue-gen-glow   soft brand-coloured haze hugging the pane's edges (Comet-style)
+     .clue-gen-veil   blur + Clue mark assembly + label (website: nothing to show yet)
+     .clue-gen-lock   transparent input shield + "Currently designing" pill (ad: live canvas)
+   Each is driven by data-active="true|false" and fades in/out on its own.
+   Stacking: veil 6 < glow 7 < lock 8 (glow shows over the blur; pill shows over the glow).
+   ============================================================================= */
+
+:root {
+  --clue-gen-olive: var(--clue-ds-color-primitives-brand-800, #44483F);
+  --clue-gen-olive-deep: var(--clue-ds-color-primitives-brand-950, #33372E);
+  --clue-gen-sage: var(--clue-ds-color-primitives-brand-500, #BCC4B3);
+  --clue-gen-sage-soft: var(--clue-ds-color-primitives-brand-200, #E4EADC);
+  --clue-gen-cream: #F8F5DC;
+  --clue-gen-teal: var(--clue-ds-color-primitives-accent-700, #5C7A82);
+  --clue-gen-muted: #7A7F75;
+  --clue-gen-font: var(--font-sans, "Satoshi", Arial, sans-serif);
+  --clue-gen-ease: cubic-bezier(.2, .7, .2, 1);
+}
+
+/* Host helper: give the output pane a positioning context and a stacking root. */
+.clue-gen-host { position: relative; isolation: isolate; }
+
+/* ---------------------------------------------------------------------------
+   1. Perimeter glow — a conic gradient of sage / cream / slate-teal, blurred and
+      masked to a ring so only the edges of the pane light up. Rotates slowly
+      and breathes. Never intercepts input.
+   --------------------------------------------------------------------------- */
+.clue-gen-glow {
+  position: absolute; inset: 0; z-index: 7; /* above the veil/lock (6): it never takes input, and it must stay visible over the website blur */
+  pointer-events: none; overflow: hidden; border-radius: inherit;
+  /* Only the edges show: four soft gradients fade the haze out toward the centre
+     (a hard ring mask reads as a rectangle; this reads as light bleeding in). */
+  --clue-gen-glow-reach: 16%;
+  -webkit-mask:
+    linear-gradient(to right,  #000, transparent var(--clue-gen-glow-reach), transparent calc(100% - var(--clue-gen-glow-reach)), #000),
+    linear-gradient(to bottom, #000, transparent var(--clue-gen-glow-reach), transparent calc(100% - var(--clue-gen-glow-reach)), #000);
+          mask:
+    linear-gradient(to right,  #000, transparent var(--clue-gen-glow-reach), transparent calc(100% - var(--clue-gen-glow-reach)), #000),
+    linear-gradient(to bottom, #000, transparent var(--clue-gen-glow-reach), transparent calc(100% - var(--clue-gen-glow-reach)), #000);
+  -webkit-mask-composite: source-over; mask-composite: add;
+  opacity: 0; transition: opacity .7s var(--clue-gen-ease);
+}
+.clue-gen-glow::before {
+  content: ""; position: absolute; inset: -35%;
+  background: conic-gradient(from 0deg,
+    var(--clue-gen-sage) 0deg,
+    var(--clue-gen-cream) 70deg,
+    color-mix(in srgb, var(--clue-gen-teal) 55%, white) 150deg,
+    var(--clue-gen-sage-soft) 220deg,
+    var(--clue-gen-cream) 290deg,
+    var(--clue-gen-sage) 360deg);
+  filter: blur(46px);
+}
+.clue-gen-glow[data-active="true"] { opacity: 1; animation: clue-gen-breathe 5.5s ease-in-out infinite; }
+.clue-gen-glow[data-active="true"]::before { animation: clue-gen-rotate 18s linear infinite; }
+@keyframes clue-gen-rotate  { to { transform: rotate(1turn); } }
+@keyframes clue-gen-breathe { 0%, 100% { opacity: .78; } 50% { opacity: 1; } }
+
+/* ---------------------------------------------------------------------------
+   2. Website veil — the page can't stream, so the pane blurs until it exists.
+      Carries the Option-1 "Assembly" mark: three pieces drift in, lock, breathe,
+      ease apart, repeat. Behind it a slow light-on-paper drift.
+   --------------------------------------------------------------------------- */
+.clue-gen-veil {
+  position: absolute; inset: 0; z-index: 6;
+  display: grid; place-items: center; overflow: hidden;
+  background: rgba(255, 255, 255, .58);
+  -webkit-backdrop-filter: blur(18px) saturate(.7); backdrop-filter: blur(18px) saturate(.7);
+  opacity: 0; pointer-events: none; transition: opacity .6s var(--clue-gen-ease);
+}
+.clue-gen-veil[data-active="true"] { opacity: 1; pointer-events: auto; cursor: progress; }
+.clue-gen-veil::before {
+  content: ""; position: absolute; inset: -40%;
+  background:
+    radial-gradient(40% 40% at 30% 35%, rgba(188, 196, 179, .55), transparent 70%),
+    radial-gradient(35% 35% at 70% 65%, rgba(248, 245, 220, .9), transparent 70%),
+    radial-gradient(30% 30% at 60% 25%, rgba(234, 243, 245, .7), transparent 70%);
+  filter: blur(30px);
+}
+.clue-gen-veil[data-active="true"]::before { animation: clue-gen-drift 14s ease-in-out infinite alternate; }
+@keyframes clue-gen-drift { from { transform: translate(-4%, -3%) rotate(0deg); } to { transform: translate(4%, 3%) rotate(8deg); } }
+
+.clue-gen-veil__stage { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.clue-gen-mark { width: 96px; height: auto; color: var(--clue-gen-olive); overflow: visible; }
+.clue-gen-mark path { fill: currentColor; transform-box: fill-box; transform-origin: center; }
+.clue-gen-veil[data-active="true"] .clue-gen-mark path { animation: 6s cubic-bezier(.6, 0, .2, 1) infinite; }
+.clue-gen-veil[data-active="true"] .clue-gen-mark path:nth-child(1) { animation-name: clue-gen-p1; }
+.clue-gen-veil[data-active="true"] .clue-gen-mark path:nth-child(2) { animation-name: clue-gen-p2; animation-delay: .12s; }
+.clue-gen-veil[data-active="true"] .clue-gen-mark path:nth-child(3) { animation-name: clue-gen-p3; animation-delay: .24s; }
+/* timeline of 6s: 0–22% assemble · 22–58% breathe · 58–78% ease apart · 78–100% fade & return */
+@keyframes clue-gen-p1 { 0% { transform: translate(-90px,-40px) rotate(-14deg); opacity: 0; } 22% { transform: none; opacity: 1; } 40% { transform: translate(-2px,-2px); } 58% { transform: none; } 78% { transform: translate(-26px,-10px) rotate(-6deg); opacity: 1; } 92% { transform: translate(-26px,-10px) rotate(-6deg); opacity: 0; } 100% { transform: translate(-90px,-40px) rotate(-14deg); opacity: 0; } }
+@keyframes clue-gen-p2 { 0% { transform: translate(70px,-70px) rotate(12deg); opacity: 0; } 22% { transform: none; opacity: 1; } 40% { transform: translate(2px,-3px); } 58% { transform: none; } 78% { transform: translate(18px,-18px) rotate(5deg); opacity: 1; } 92% { transform: translate(18px,-18px) rotate(5deg); opacity: 0; } 100% { transform: translate(70px,-70px) rotate(12deg); opacity: 0; } }
+@keyframes clue-gen-p3 { 0% { transform: translate(60px,80px) rotate(-10deg); opacity: 0; } 22% { transform: none; opacity: 1; } 40% { transform: translate(2px,3px); } 58% { transform: none; } 78% { transform: translate(16px,22px) rotate(4deg); opacity: 1; } 92% { transform: translate(16px,22px) rotate(4deg); opacity: 0; } 100% { transform: translate(60px,80px) rotate(-10deg); opacity: 0; } }
+
+.clue-gen-title {
+  margin-top: 26px; font: 500 14px/1.4 var(--clue-gen-font);
+  color: var(--clue-gen-olive-deep);
+  background: linear-gradient(90deg, var(--clue-gen-olive-deep) 0 40%, var(--clue-gen-sage) 50%, var(--clue-gen-olive-deep) 60% 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: clue-gen-shimmer 2.4s linear infinite;
+}
+.clue-gen-hint { margin-top: 6px; font: 400 12px/1.4 var(--clue-gen-font); color: var(--clue-gen-muted); }
+@keyframes clue-gen-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* ---------------------------------------------------------------------------
+   3. Ad lock — the canvas stays fully visible and updates live, but input is
+      shielded and a frosted pill says the agent is working. Modelled on Moda's
+      "Designing. Please wait to edit." with the Clue mark as a 3-segment spinner.
+   --------------------------------------------------------------------------- */
+.clue-gen-lock {
+  position: absolute; inset: 0; z-index: 8; /* above the glow (7) so the pill stays crisp; the shield itself is transparent */
+  opacity: 0; pointer-events: none; transition: opacity .45s var(--clue-gen-ease);
+}
+.clue-gen-lock[data-active="true"] { opacity: 1; pointer-events: auto; cursor: progress; }
+.clue-gen-lock__pill {
+  position: absolute; top: 14px; left: 14px;
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 8px 14px 8px 10px; border-radius: 999px;
+  background: rgba(255, 255, 255, .84);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  border: 1px solid var(--clue-gen-sage-soft);
+  box-shadow: 0 4px 18px rgba(51, 55, 46, .10);
+  font: 500 13px/1.2 var(--clue-gen-font); white-space: nowrap;
+  transform: translateY(-6px); transition: transform .45s var(--clue-gen-ease);
+}
+.clue-gen-lock[data-active="true"] .clue-gen-lock__pill { transform: none; }
+.clue-gen-lock[data-placement="top-center"] .clue-gen-lock__pill { left: 50%; transform: translate(-50%, -6px); }
+.clue-gen-lock[data-placement="top-center"][data-active="true"] .clue-gen-lock__pill { transform: translate(-50%, 0); }
+.clue-gen-spinner { width: 18px; height: auto; color: var(--clue-gen-olive); flex: none; }
+.clue-gen-spinner path { fill: currentColor; opacity: .25; }
+.clue-gen-lock[data-active="true"] .clue-gen-spinner path { animation: clue-gen-seg 1.5s ease-in-out infinite; }
+.clue-gen-spinner path:nth-child(2) { animation-delay: .5s; }
+.clue-gen-spinner path:nth-child(3) { animation-delay: 1s; }
+@keyframes clue-gen-seg { 0%, 60%, 100% { opacity: .25; } 20% { opacity: 1; } }
+.clue-gen-lock__text {
+  color: var(--clue-gen-olive-deep);
+  background: linear-gradient(90deg, var(--clue-gen-olive-deep) 0 40%, var(--clue-gen-sage) 50%, var(--clue-gen-olive-deep) 60% 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: clue-gen-shimmer 2.4s linear infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion: keep the states, drop the movement.
+   --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .clue-gen-glow[data-active="true"], .clue-gen-glow[data-active="true"]::before,
+  .clue-gen-veil[data-active="true"]::before, .clue-gen-veil[data-active="true"] .clue-gen-mark path,
+  .clue-gen-title, .clue-gen-lock__text, .clue-gen-lock[data-active="true"] .clue-gen-spinner path { animation: none; }
+  .clue-gen-spinner path { opacity: .7; }
+  .clue-gen-title, .clue-gen-lock__text { background: none; -webkit-text-fill-color: currentColor; }
+}
+
+/* =============================================================================
+   v3 — depth at the edges (after founder review of v2)
+   -----------------------------------------------------------------------------
+   The Comet reference is not a haze: it is three layers stacked at the frame —
+   a crisp bright line on the very edge, a tight bloom just inside it, and a wide
+   faint haze — with the bright part travelling along the perimeter. The centre
+   of the pane stays clean. Two variants:
+     data-variant="aurora"  two soft light-bands drift around the frame (calm, premium)
+     data-variant="beam"    one bright beam with a long tail races the frame (energetic)
+   The sweep animates a registered custom property, so the gradient stops hug the
+   rectangle's edges instead of a rotated square (which is what scattered v2).
+   ============================================================================= */
+@property --clue-gen-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+.clue-gen-glow[data-variant] {
+  padding: 0; -webkit-mask: none; mask: none; animation: none;
+  --clue-gen-white: #FFFFFF;
+  --clue-gen-sage-600: var(--clue-ds-color-primitives-brand-600, #A6AD9D);
+  --clue-gen-teal-mid: color-mix(in srgb, var(--clue-gen-teal) 70%, white);
+  --clue-gen-teal-light: color-mix(in srgb, var(--clue-gen-teal) 42%, white);
+  --clue-gen-base: rgba(166,173,157,.35); /* the resting tint of the frame line: sage, not olive */
+}
+.clue-gen-glow[data-variant]::before { content: none; }
+.clue-gen-glow[data-variant][data-active="true"] { opacity: 1; }
+.clue-gen-glow[data-variant] > i { position: absolute; inset: 0; display: block; pointer-events: none;
+  /* defined on the layer itself so --reach (set per layer below) resolves; a custom property
+     defined on the parent would resolve var(--reach) there, find nothing, and drop the mask */
+  --clue-gen-edge-mask:
+    linear-gradient(to right,  #000, transparent var(--reach), transparent calc(100% - var(--reach)), #000),
+    linear-gradient(to bottom, #000, transparent var(--reach), transparent calc(100% - var(--reach)), #000);
+}
+
+/* layer: haze — a soft spill just inside the line (founder v3 review: thin and minimal, Moda-like) */
+.clue-gen-glow[data-variant] .clue-gen-glow__haze  { --reach: 5.5%; inset: -1%; filter: blur(18px); opacity: .5;
+  -webkit-mask: var(--clue-gen-edge-mask); mask: var(--clue-gen-edge-mask); -webkit-mask-composite: source-over; mask-composite: add; }
+/* layer: bloom — tight halo right against the line */
+.clue-gen-glow[data-variant] .clue-gen-glow__bloom { --reach: 2.2%; inset: 0; filter: blur(6px) saturate(1.15); opacity: .9;
+  -webkit-mask: var(--clue-gen-edge-mask); mask: var(--clue-gen-edge-mask); -webkit-mask-composite: source-over; mask-composite: add; }
+/* layer: line — 2px stroke on the edge itself: a faint olive frame all the way round, the bright head runs through it */
+.clue-gen-glow[data-variant] .clue-gen-glow__line  { padding: 2px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude; }
+/* layer: rim — a hairline only; no dark recess (founder: the blackish edge did not look good) */
+.clue-gen-glow[data-variant] .clue-gen-glow__rim   { box-shadow: inset 0 0 0 1px rgba(68,72,63,.10); }
+
+/* --- aurora: two opposite light-bands, slow --- */
+.clue-gen-glow[data-variant="aurora"] .clue-gen-glow__haze,
+.clue-gen-glow[data-variant="aurora"] .clue-gen-glow__bloom,
+.clue-gen-glow[data-variant="aurora"] .clue-gen-glow__line {
+  background: conic-gradient(from var(--clue-gen-angle) at 50% 50%,
+    var(--clue-gen-base) 0deg, var(--clue-gen-sage-600) 26deg, var(--clue-gen-cream) 48deg, var(--clue-gen-white) 56deg, var(--clue-gen-teal-mid) 74deg, var(--clue-gen-base) 116deg,
+    var(--clue-gen-base) 180deg, var(--clue-gen-sage-600) 206deg, var(--clue-gen-cream) 228deg, var(--clue-gen-white) 236deg, var(--clue-gen-teal-mid) 254deg, var(--clue-gen-base) 296deg, var(--clue-gen-base) 360deg);
+}
+.clue-gen-glow[data-variant="aurora"][data-active="true"] .clue-gen-glow__haze,
+.clue-gen-glow[data-variant="aurora"][data-active="true"] .clue-gen-glow__bloom,
+.clue-gen-glow[data-variant="aurora"][data-active="true"] .clue-gen-glow__line { animation: clue-gen-sweep 11s linear infinite; }
+
+/* --- beam: one bright head with a long sage tail, faster, darker frame --- */
+.clue-gen-glow[data-variant="beam"] .clue-gen-glow__rim { box-shadow: inset 0 0 0 1px rgba(68,72,63,.14); }
+.clue-gen-glow[data-variant="beam"] .clue-gen-glow__haze {
+  --reach: 7%; opacity: .65;
+  background: conic-gradient(from var(--clue-gen-angle) at 50% 50%,
+    transparent 0deg, var(--clue-gen-teal-mid) 30deg, var(--clue-gen-sage-600) 52deg, var(--clue-gen-cream) 66deg, transparent 100deg, transparent 360deg);
+}
+.clue-gen-glow[data-variant="beam"] .clue-gen-glow__bloom {
+  --reach: 2.6%; filter: blur(7px);
+  background: conic-gradient(from var(--clue-gen-angle) at 50% 50%,
+    transparent 0deg, var(--clue-gen-teal-mid) 24deg, var(--clue-gen-sage-600) 42deg, var(--clue-gen-cream) 54deg, var(--clue-gen-white) 60deg, var(--clue-gen-teal-light) 66deg, transparent 86deg, transparent 360deg);
+}
+.clue-gen-glow[data-variant="beam"] .clue-gen-glow__line {
+  padding: 2px;
+  background: conic-gradient(from var(--clue-gen-angle) at 50% 50%,
+    var(--clue-gen-base) 0deg, var(--clue-gen-teal-mid) 26deg, var(--clue-gen-sage-600) 42deg, var(--clue-gen-cream) 54deg, var(--clue-gen-white) 60deg, var(--clue-gen-teal-light) 66deg, var(--clue-gen-base) 92deg, var(--clue-gen-base) 360deg);
+}
+.clue-gen-glow[data-variant="beam"][data-active="true"] .clue-gen-glow__haze,
+.clue-gen-glow[data-variant="beam"][data-active="true"] .clue-gen-glow__bloom,
+.clue-gen-glow[data-variant="beam"][data-active="true"] .clue-gen-glow__line { animation: clue-gen-sweep 5.5s cubic-bezier(.45,.05,.55,.95) infinite; }
+
+@keyframes clue-gen-sweep { from { --clue-gen-angle: 0deg; } to { --clue-gen-angle: 360deg; } }
+
+/* --- pill, v3: the frontend's radius is 8px (globals.css --radius), not a capsule --- */
+.clue-gen-lock__pill { border-radius: var(--radius-lg, 8px); padding: 7px 12px 7px 9px; gap: 9px; }
+.clue-gen-lock[data-appearance="ink"] .clue-gen-lock__pill {
+  background: var(--clue-gen-olive-deep); border-color: rgba(248,245,220,.16); color: var(--clue-gen-cream);
+  box-shadow: 0 10px 28px -10px rgba(51,55,46,.55), inset 0 1px 0 rgba(248,245,220,.12);
+}
+.clue-gen-lock[data-appearance="ink"] .clue-gen-spinner { color: var(--clue-gen-cream); }
+.clue-gen-lock[data-appearance="ink"] .clue-gen-lock__text {
+  background: linear-gradient(90deg, var(--clue-gen-cream) 0 40%, var(--clue-gen-sage) 50%, var(--clue-gen-cream) 60% 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text;
+}
+
+/* --- website veil, v3 "ink" tone: cinematic dark, cream mark --- */
+.clue-gen-veil[data-tone="ink"] { background: rgba(51,55,46,.86); -webkit-backdrop-filter: blur(18px) saturate(.5); backdrop-filter: blur(18px) saturate(.5); }
+.clue-gen-veil[data-tone="ink"]::before {
+  background:
+    radial-gradient(40% 40% at 30% 35%, rgba(188,196,179,.22), transparent 70%),
+    radial-gradient(35% 35% at 70% 65%, rgba(92,122,130,.30), transparent 70%),
+    radial-gradient(30% 30% at 60% 25%, rgba(248,245,220,.10), transparent 70%);
+}
+.clue-gen-veil[data-tone="ink"] .clue-gen-mark { color: var(--clue-gen-cream); }
+.clue-gen-veil[data-tone="ink"] .clue-gen-title {
+  background: linear-gradient(90deg, var(--clue-gen-cream) 0 40%, var(--clue-gen-sage) 50%, var(--clue-gen-cream) 60% 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text;
+}
+.clue-gen-veil[data-tone="ink"] .clue-gen-hint { color: var(--clue-gen-sage); }
+
+@media (prefers-reduced-motion: reduce) {
+  .clue-gen-glow[data-variant][data-active="true"] > i { animation: none; }
+}

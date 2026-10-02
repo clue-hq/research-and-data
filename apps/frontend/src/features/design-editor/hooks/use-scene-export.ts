@@ -92,7 +92,7 @@ import { createApiExportRunner } from "../engine/scene/exportRunner";
  * nothing; this lane's status line would otherwise say "PNG exported" about a
  * download that never happened.
  */
-function downloadDataUrl(dataUrl: string | null, filename: string): boolean {
+export function downloadDataUrl(dataUrl: string | null, filename: string): boolean {
   if (!dataUrl || typeof document === "undefined") {
     return false;
   }

@@ -265,6 +265,21 @@ def test_identity_dsar_erases_provider_values_but_keeps_internal_audit_ids() -> 
             )
             original_user_id = accepted.user.user_id
             original_membership_id = accepted.membership.membership_id
+            await conn.execute(
+                text(
+                    "INSERT INTO design_document (id, workspace_id, title, status, doc_kind,"
+                    " current_scene_json, current_version)"
+                    " VALUES ('doc_dsar', :ws, 'Doc', 'draft', 'web', '{}'::jsonb, 0)"
+                ),
+                {"ws": owner.workspace.workspace_id},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO design_document_user_mark (workspace_id, user_id, document_id,"
+                    " saved) VALUES (:ws, :user, 'doc_dsar', true)"
+                ),
+                {"ws": owner.workspace.workspace_id, "user": accepted.user.user_id},
+            )
 
             result = await erase_platform_user(
                 conn, accepted.user.user_id, now=NOW + timedelta(minutes=1)
@@ -289,6 +304,14 @@ def test_identity_dsar_erases_provider_values_but_keeps_internal_audit_ids() -> 
                 )
                 is None
             )
+            assert result.artifact_marks_deleted == 1
+            remaining = (
+                await conn.execute(
+                    text("SELECT count(*) FROM design_document_user_mark WHERE user_id = :u"),
+                    {"u": accepted.user.user_id},
+                )
+            ).scalar_one()
+            assert remaining == 0
 
     run_async(scenario())
 

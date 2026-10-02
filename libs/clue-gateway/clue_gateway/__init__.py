@@ -19,11 +19,21 @@ from __future__ import annotations
 
 from clue_gateway.agent_model import OpenRouterAgentModelProvider
 from clue_gateway.factory import build_gateway
+from clue_gateway.metadata import (
+    ANSWERING_MODEL_KEY,
+    COST_CENTS_KEY,
+    COST_SOURCE_KEY,
+    CostSource,
+)
 from clue_gateway.openrouter import GatewayError, OpenRouterGateway
 from clue_gateway.stub import StubGateway
 from clue_gateway.tracing import EVENT_MODEL_CALL_USAGE, TracingGateway
 
 __all__ = [
+    "ANSWERING_MODEL_KEY",
+    "COST_CENTS_KEY",
+    "COST_SOURCE_KEY",
+    "CostSource",
     "build_gateway",
     "EVENT_MODEL_CALL_USAGE",
     "OpenRouterAgentModelProvider",

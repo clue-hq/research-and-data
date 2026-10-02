@@ -1,0 +1,64 @@
+{
+  "recipe_key": "onboarding-synthesis-unit",
+  "scope_type": "system",
+  "workspace_id": null,
+  "version": 1,
+  "executor_protocol": 1,
+  "parameter_schema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "graph": {
+    "nodes": [
+      {
+        "kind": "barrier",
+        "node_key": "onboarding_synthesis_open",
+        "ordinal": 0,
+        "dependencies": [],
+        "requirements": []
+      },
+      {
+        "kind": "gate",
+        "node_key": "onboarding_synthesis_interactions",
+        "ordinal": 1,
+        "dependencies": ["onboarding_synthesis_open"],
+        "authority": "agent",
+        "resume_condition": "input_available",
+        "dynamic_tool_allowlist": ["exa_search_evidence@1"],
+        "dynamic_pin_kinds": ["skill"],
+        "max_children": 32,
+        "requirements": [
+          {"kind": "tool", "key": "exa_search_evidence", "version": "1"},
+          {"kind": "skill", "key": "audience-persona", "version": "v1"}
+        ]
+      },
+      {
+        "kind": "barrier",
+        "node_key": "onboarding_synthesis_complete",
+        "ordinal": 2,
+        "dependencies": ["onboarding_synthesis_interactions"],
+        "requirements": []
+      }
+    ],
+    "tool_allowlist": ["exa_search_evidence@1"],
+    "authority_allowlist": ["agent"],
+    "activity_allowlist": [],
+    "migration_state": "executable"
+  },
+  "compatibility": {
+    "execution": [],
+    "nodes": {
+      "onboarding_synthesis_interactions": [
+        {"kind": "tool", "key": "exa_search_evidence", "version": "1"},
+        {"kind": "skill", "key": "audience-persona", "version": "v1"}
+      ]
+    }
+  },
+  "requested_memory_types": [],
+  "max_nodes": 40,
+  "max_depth": 2,
+  "max_fanout": 1,
+  "source_execution_id": null,
+  "created_by": "system"
+}

@@ -1,32 +1,43 @@
 """Real composer capabilities for Home and project conversations (repair slice R8).
 
-This module is the narrow join between Lane C's workspace-scoped account/contact reads and
-Lane D's durable turn-submission seam. It owns no account or contact state: catalogs come from
-the published frontend-read functions, and validation resolves the typed object ids through the
-identity store plus the governed contact-profile reader.
+This module is the narrow join between the workspace-scoped account/contact reads and Lane D's
+durable turn-submission seam. It owns no account or contact state: the account catalog is the
+accounts table's own page scan, the contact catalog and the contact addressability rule are D2's
+committee (the contacts under an account that hold at least one live claim, which is exactly the
+set the contacts table lists), and versions come from the identity store.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
-from clue_api.client_context_binding import workspace_client_entity_id
-from clue_api.design_turn_targets import DesignTurnTargetError, resolve_scene_targets
-from clue_api.frontend_read.account_detail import AccountNotFound
-from clue_api.frontend_read.accounts_list import list_accounts
-from clue_api.frontend_read.contacts import (
-    ContactNotFound,
-    read_account_contacts,
-    read_contact_profile,
+from clue_api.arv2.display.gather import SubjectRef, committee_members
+from clue_api.arv2.project_documents import (
+    document_title,
+    get_project_document,
+    latest_project_document_version,
+    read_project_document,
 )
+from clue_api.client_context_binding import workspace_client_entity_id
+from clue_api.design_leg_wiring import project_design_documents
+from clue_api.design_turn_targets import (
+    DesignTurnTargetError,
+    resolve_scene_targets,
+    validate_web_targets,
+)
+from clue_api.frontend_read.accounts_list import read_spine_page
+from clue_api.frontend_read.v1_shared import account_logo_path
+from clue_config import Settings
 from clue_core import EntityId
+from clue_research.claimstore import WorkspaceScope, current_values
 from clue_research.identity import get_account, get_contact
 from clue_storage import StorageBackend
 
@@ -36,7 +47,8 @@ __all__ = [
     "MAX_DESIGN_REFERENCE_ASSETS",
     "ComposerContextEntity",
     "ContextReferenceError",
-    "design_asset_ref_presentations",
+    "PRESENTED_REF_TYPES",
+    "context_ref_presentations",
     "list_composer_context_entities",
     "prepare_composer_context_entities",
     "validated_context_refs",
@@ -44,7 +56,13 @@ __all__ = [
 
 # One real choice, per the product ruling for R8. The id names the promoted immutable profile;
 # the model id is presentation metadata, not an instruction the browser may send independently.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v40"
+# v58 grants `run_python@1` — one short script per call in a locked-down container over the
+# turn's own workspace — and mounts the project's `attachments/` read-only, so a human who
+# attaches a PDF, a deck or a spreadsheet gets an answer about what is in it. v59 moves
+# `open_design_leg` to @5, so one ask can open one leg that births many artifacts, and v60 is the
+# prompt that stops telling the user to speak before generation begins: the leg's first design
+# turn is queued from the message that opened it.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v70"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50
@@ -72,47 +90,102 @@ class ComposerContextEntity:
     secondary_label: str
     image_url: str | None = None
     version: int | None = None
+    #: A contact's account — the id the picker nests it under and the name search shows beside
+    #: it. Always both or neither; an account entity carries neither.
+    account_id: str | None = None
+    account_name: str | None = None
+
+
+async def _contact_subject(
+    conn: AsyncConnection, *, workspace_id: str, contact: Any
+) -> SubjectRef | None:
+    """The contact as the screens show them, or ``None`` when nothing addresses them.
+
+    The rule is D2's committee — the contacts under this account that hold at least one live
+    claim — which is exactly the set the contacts table lists and this picker offers. A contact row
+    the research has written nothing about is not referenceable: the card it would compile has a
+    name in it and nothing else.
+    """
+
+    members = await committee_members(
+        conn, workspace_id=workspace_id, account_id=str(contact.account_entity_id)
+    )
+    return next((member for member in members if member.id == str(contact.id)), None)
+
+
+async def _account_logo_urls(
+    conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[EntityId]
+) -> dict[EntityId, Any]:
+    """Each account's stored ``core.logo_url`` under the workspace scope, in one read."""
+
+    if not account_ids:
+        return {}
+    values = await current_values(
+        conn,
+        list(account_ids),
+        ("core.logo_url",),
+        scope=WorkspaceScope.for_workspace(workspace_id),
+    )
+    return {entity_id: current.value_json for (entity_id, _field), current in values.items()}
 
 
 async def list_composer_context_entities(
     conn: AsyncConnection,
     *,
     workspace_id: str,
+    settings: Settings | None = None,
 ) -> tuple[ComposerContextEntity, ...]:
-    """Return a bounded real account/contact catalog using Lane C's governed reads."""
+    """Return a bounded real account/contact catalog: the workspace's newest accounts, each with
+    the contacts its research has actually written about.
 
-    accounts = await list_accounts(
+    An account's ``image_url`` is the same logo the accounts screens show (``account_logo_path``:
+    the platform's logo route for a stored mark, else Brandfetch's Logo API for the domain when
+    ``settings`` carries a client id). Contacts carry no image; the composer draws their initials.
+    """
+
+    _total, rows, _has_more = await read_spine_page(
         conn,
         workspace_id=workspace_id,
+        project_id=None,
         limit=_MAX_CONTEXT_ACCOUNTS,
+        cursor=None,
+        page_number=None,
+    )
+    logo_urls = await _account_logo_urls(
+        conn,
+        workspace_id=workspace_id,
+        account_ids=[EntityId(UUID(str(row[0]))) for row in rows],
     )
     result: list[ComposerContextEntity] = []
-    for account in accounts.data:
+    for account_id, canonical_name, primary_domain, _created_at, _updated_at in rows:
+        name = str(canonical_name)
         result.append(
             ComposerContextEntity(
                 object_type="account",
-                object_id=str(account.id),
-                label=account.name,
-                secondary_label=account.domain or "Account",
+                object_id=str(account_id),
+                label=name,
+                secondary_label=primary_domain or "Account",
+                image_url=account_logo_path(
+                    account_id,
+                    logo_urls.get(EntityId(UUID(str(account_id)))),
+                    domain=primary_domain,
+                    settings=settings,
+                ),
             )
         )
-        try:
-            contacts = await read_account_contacts(
-                conn,
-                workspace_id=workspace_id,
-                account_id=account.id,
-            )
-        except AccountNotFound:  # pragma: no cover - the account page and read share one txn
-            continue
-        for contact in contacts.data:
-            if contact.name is None:
+        for member in await committee_members(
+            conn, workspace_id=workspace_id, account_id=str(account_id)
+        ):
+            if not member.name:
                 continue
             result.append(
                 ComposerContextEntity(
                     object_type="contact",
-                    object_id=str(contact.id),
-                    label=contact.name,
-                    secondary_label=contact.title or account.name,
+                    object_id=member.id,
+                    label=member.name,
+                    secondary_label=member.title or name,
+                    account_id=str(account_id),
+                    account_name=name,
                 )
             )
     return tuple(result)
@@ -123,10 +196,21 @@ async def validated_context_refs(
     *,
     workspace_id: str,
     refs: Sequence[DomainObjectRef],
-    design_leg_document_id: str | None = None,
+    design_leg_document_ids: tuple[str, ...] = (),
     storage: StorageBackend | None = None,
+    project_id: str | None = None,
 ) -> tuple[DomainObjectRef, ...]:
-    """Validate tenancy, exact revisions, and any selected contact/account relationship."""
+    """Validate tenancy, exact revisions, project containment, and contact/account relationship.
+
+    ``project_id`` is the project the composer belongs to. ``project_document`` refs require it
+    (a Gallery file is only addressable inside its project); ``design_document`` refs are
+    additionally contained to the project's own design documents when it is given. The Home
+    bootstrap has no project yet and passes ``None``.
+
+    ``design_leg_document_ids`` is the open design leg's whole document SET (spec §3.7): a leg
+    holds many documents, so a node target only has to name one of them, and reference images
+    ride a leg whose documents are all scene-kind. Empty means no leg is open.
+    """
 
     if any(ref.workspace_id != workspace_id for ref in refs):
         raise ContextReferenceError(
@@ -151,16 +235,16 @@ async def validated_context_refs(
     target_document_ref: DomainObjectRef | None = None
     if design_nodes:
         document_refs = tuple(ref for ref in refs if ref.object_type == "design_document")
-        if len(document_refs) != 1 or design_leg_document_id is None:
+        if len(document_refs) != 1 or not design_leg_document_ids:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
-                "design node targets require the open design leg's one document reference",
+                "design node targets require one document reference on the open design leg",
             )
         target_document_ref = document_refs[0]
-        if target_document_ref.object_id != design_leg_document_id:
+        if target_document_ref.object_id not in design_leg_document_ids:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
-                "the targeted design document is not the open design leg's document",
+                "the targeted design document is not one of the open design leg's documents",
             )
         if target_document_ref.version is None or any(
             ref.version != target_document_ref.version for ref in design_nodes
@@ -183,10 +267,11 @@ async def validated_context_refs(
                 "CONTEXT_REF_NOT_FOUND",
                 "the targeted design document is not available in this workspace",
             ) from exc
-        if target_document.get("doc_kind") != "scene":
+        target_doc_kind = target_document.get("doc_kind")
+        if target_doc_kind not in {"scene", "web"}:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
-                "design node targets require a scene document",
+                "design node targets require a scene or web document",
             )
         if target_document_ref.version != target_document.get("current_version"):
             raise ContextReferenceError(
@@ -194,15 +279,24 @@ async def validated_context_refs(
                 "the targeted design document no longer names the current version",
             )
         try:
-            resolve_scene_targets(
-                target_document.get("scene") or {},
-                tuple(ref.object_id for ref in design_nodes),
-            )
+            # A scene target must resolve to ONE page (the scene runtime edits a page at a
+            # time); a web target only has to exist somewhere in the document, and may carry
+            # an inner ``#`` path naming the annotated element inside its node.
+            if target_doc_kind == "scene":
+                resolve_scene_targets(
+                    target_document.get("scene") or {},
+                    tuple(ref.object_id for ref in design_nodes),
+                )
+            else:
+                validate_web_targets(
+                    target_document.get("scene") or {},
+                    tuple(ref.object_id for ref in design_nodes),
+                )
         except DesignTurnTargetError as exc:
             raise ContextReferenceError(exc.code, exc.message) from exc
 
     if design_assets:
-        if design_leg_document_id is None:
+        if not design_leg_document_ids:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "design reference images require an open design leg",
@@ -222,19 +316,28 @@ async def validated_context_refs(
         from clue_design.errors import DesignNotFoundError
         from clue_design.storage import read_design_blob
 
+        # Untargeted reference images ride EVERY addressed run of the leg (spec §3.7), so the
+        # scene-kind rule is asked of the whole document set, not of one pinned document.
         if target_document is None:
-            try:
-                target_document = await get_design_document(
-                    conn,
-                    workspace_id=workspace_id,
-                    document_id=design_leg_document_id,
-                )
-            except DesignNotFoundError as exc:
-                raise ContextReferenceError(
-                    "CONTEXT_REF_NOT_FOUND",
-                    "the open design leg document is not available in this workspace",
-                ) from exc
-        if target_document.get("doc_kind") != "scene":
+            leg_documents: list[dict[str, Any]] = []
+            for leg_document_id in design_leg_document_ids:
+                try:
+                    leg_documents.append(
+                        await get_design_document(
+                            conn,
+                            workspace_id=workspace_id,
+                            document_id=leg_document_id,
+                        )
+                    )
+                except DesignNotFoundError as exc:
+                    raise ContextReferenceError(
+                        "CONTEXT_REF_NOT_FOUND",
+                        "an open design leg document is not available in this workspace",
+                    ) from exc
+            kinds = {document.get("doc_kind") for document in leg_documents}
+        else:
+            kinds = {target_document.get("doc_kind")}
+        if kinds != {"scene"}:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "reference images are available only for scene-design turns",
@@ -304,6 +407,7 @@ async def validated_context_refs(
         if has_entity_refs
         else None
     )
+    project_design_ids: frozenset[str] | None = None
     for ref in refs:
         if ref.object_type == "design_document":
             # P3.1 (master plan §2.4): design ids are strings, not entity UUIDs, and the
@@ -329,6 +433,19 @@ async def validated_context_refs(
                     "CONTEXT_REF_STALE",
                     "a design document context reference no longer names the current version",
                 )
+            if project_id is not None:
+                if project_design_ids is None:
+                    project_design_ids = frozenset(
+                        str(item["id"])
+                        for item in await project_design_documents(
+                            conn, workspace_id=workspace_id, project_id=project_id
+                        )
+                    )
+                if ref.object_id not in project_design_ids:
+                    raise ContextReferenceError(
+                        "CONTEXT_REF_NOT_FOUND",
+                        "a design document context reference is not in this project",
+                    )
             continue
         if ref.object_type == "design_node":
             # Validated as one document-scoped set above. A node id is not a
@@ -337,6 +454,44 @@ async def validated_context_refs(
         if ref.object_type == "design_asset":
             # Validated as one bounded, scene-leg-scoped set above. Asset ids are opaque design
             # ids, never platform entity UUIDs.
+            continue
+        if ref.object_type == "project_document":
+            # A Gallery file. Always version-pinned to the latest servable row of its path: the
+            # picker only offers the latest, and a tag that has since been superseded is refused
+            # rather than silently repointed.
+            if project_id is None:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+                    "a project document can be referenced only inside its project",
+                )
+            try:
+                document_id = UUID(ref.object_id)
+            except ValueError as exc:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a project document context reference is not available in this project",
+                ) from exc
+            row = await get_project_document(
+                conn, workspace_id=workspace_id, project_id=project_id, document_id=document_id
+            )
+            if row is None:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_NOT_FOUND",
+                    "a project document context reference is not available in this project",
+                )
+            if ref.version is None or ref.version != row.version:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_STALE",
+                    "a project document context reference must pin the document's version",
+                )
+            latest = await latest_project_document_version(
+                conn, workspace_id=workspace_id, project_id=project_id, path=row.path
+            )
+            if latest != row.version:
+                raise ContextReferenceError(
+                    "CONTEXT_REF_STALE",
+                    "a project document context reference no longer names the latest version",
+                )
             continue
         try:
             entity_id = EntityId(UUID(ref.object_id))
@@ -381,18 +536,11 @@ async def validated_context_refs(
                 "CONTEXT_REF_STALE",
                 "a contact context reference no longer names the current revision",
             )
-        try:
-            await read_contact_profile(
-                conn,
-                workspace_id=workspace_id,
-                account_id=UUID(str(contact.account_entity_id)),
-                contact_id=UUID(str(contact.id)),
-            )
-        except (AccountNotFound, ContactNotFound) as exc:
+        if await _contact_subject(conn, workspace_id=workspace_id, contact=contact) is None:
             raise ContextReferenceError(
                 "CONTEXT_REF_NOT_FOUND",
                 "a contact context reference is not available in this workspace",
-            ) from exc
+            )
         contact_parents.append(contact.account_entity_id)
 
     if selected_accounts and any(parent not in selected_accounts for parent in contact_parents):
@@ -408,24 +556,28 @@ async def prepare_composer_context_entities(
     *,
     workspace_id: str,
     refs: Sequence[DomainObjectRef],
+    project_id: str | None = None,
+    settings: Settings | None = None,
 ) -> tuple[ComposerContextEntity, ...]:
     """Validate and hydrate an exact draft set without relying on the bounded mention catalog.
 
-    The returned labels are the same display-approved Account/Contact values used by the live
-    FI-2 reads. Canonical versions are resolved here and revalidated again when the message is
-    submitted; this preparation is draft hydration, never durable authorization.
+    The returned labels are the same values the live Account/Contact reads serve. Canonical
+    versions are resolved here and revalidated again when the message is submitted; this
+    preparation is draft hydration, never durable authorization.
     """
 
     validated = await validated_context_refs(
         conn,
         workspace_id=workspace_id,
         refs=refs,
+        project_id=project_id,
     )
     prepared: list[ComposerContextEntity] = []
     for ref in validated:
         if ref.object_type not in {"account", "contact"}:
-            # This endpoint hydrates mention-picker entities only. Design refs can be present on
-            # durable messages, but they are presented from their owning design read models.
+            # This endpoint hydrates mention-picker entities only. Design and project-document
+            # refs can be present on durable messages, but they are presented from their owning
+            # read models.
             continue
         entity_id = EntityId(UUID(ref.object_id))
         if ref.object_type == "account":
@@ -435,12 +587,21 @@ async def prepare_composer_context_entities(
                     "CONTEXT_REF_NOT_FOUND",
                     "an account context reference is not available in this workspace",
                 )
+            logo_urls = await _account_logo_urls(
+                conn, workspace_id=workspace_id, account_ids=(entity_id,)
+            )
             prepared.append(
                 ComposerContextEntity(
                     object_type="account",
                     object_id=str(account.id),
                     label=account.canonical_name,
                     secondary_label=account.primary_domain or "Account",
+                    image_url=account_logo_path(
+                        account.id,
+                        logo_urls.get(entity_id),
+                        domain=account.primary_domain,
+                        settings=settings,
+                    ),
                     version=account.canonical_version,
                 )
             )
@@ -452,63 +613,174 @@ async def prepare_composer_context_entities(
                 "CONTEXT_REF_NOT_FOUND",
                 "a contact context reference is not available in this workspace",
             )
-        profile = await read_contact_profile(
-            conn,
-            workspace_id=workspace_id,
-            account_id=UUID(str(contact.account_entity_id)),
-            contact_id=UUID(str(contact.id)),
-        )
+        subject = await _contact_subject(conn, workspace_id=workspace_id, contact=contact)
+        if subject is None:  # pragma: no cover - validation above owns this invariant
+            raise ContextReferenceError(
+                "CONTEXT_REF_NOT_FOUND",
+                "a contact context reference is not available in this workspace",
+            )
         prepared.append(
             ComposerContextEntity(
                 object_type="contact",
                 object_id=str(contact.id),
-                label=profile.name or "Unnamed contact",
-                secondary_label=profile.title or profile.account_name,
+                label=subject.name or "Unnamed contact",
+                secondary_label=subject.title or subject.account_name,
                 version=contact.canonical_version,
+                account_id=str(contact.account_entity_id),
+                account_name=subject.account_name,
             )
         )
     return tuple(prepared)
 
 
-async def design_asset_ref_presentations(
+PRESENTED_REF_TYPES = frozenset({"artifact", "design_asset", "design_document", "project_document"})
+"""The ref types whose read-time presentation the transcript joins."""
+
+
+async def _project_document_rows(
+    conn: AsyncConnection, *, workspace_id: str, document_ids: Sequence[UUID]
+) -> dict[str, Any]:
+    """This workspace's project-scoped file rows by id — the join behind a file's label."""
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT document_id, project_id, path, kind FROM brand_knowledge_document "
+                "WHERE workspace_id = :workspace_id "
+                "  AND document_id = ANY(CAST(:ids AS uuid[])) AND project_id IS NOT NULL"
+            ),
+            {"workspace_id": workspace_id, "ids": [str(value) for value in document_ids]},
+        )
+    ).all()
+    return {str(row.document_id): row for row in rows}
+
+
+async def _design_document_rows(
+    conn: AsyncConnection, *, workspace_id: str, document_ids: Sequence[str]
+) -> dict[str, Any]:
+    """This workspace's design documents by id — the join behind a design document's label."""
+
+    rows = (
+        await conn.execute(
+            text(
+                "SELECT id, title, doc_kind FROM design_document "
+                "WHERE workspace_id = :workspace_id AND id = ANY(:ids)"
+            ),
+            {"workspace_id": workspace_id, "ids": list(document_ids)},
+        )
+    ).mappings()
+    return {str(row["id"]): row for row in rows}
+
+
+async def context_ref_presentations(
     conn: AsyncConnection,
     *,
     workspace_id: str,
     refs: Sequence[Any],
+    storage: StorageBackend | None = None,
 ) -> dict[tuple[str, str], dict[str, str]]:
-    """Resolve durable design-asset refs to read-time labels and thumbnail digests.
+    """Resolve durable refs to read-time labels: asset filenames, file titles, design titles.
 
-    The append-only submission row remains the source of *which* asset was submitted. Mutable
-    presentation metadata stays in the design asset library and is joined only while reading the
-    transcript, so filenames and thumbnails are not denormalized into the durable turn receipt.
+    The append-only submission row remains the source of *which* object was submitted. Mutable
+    presentation metadata (a filename, a document's own title) is joined only while reading the
+    transcript, so nothing user-facing is denormalized into the durable turn receipt — and no
+    path or id is ever the label.
     """
 
-    asset_ids = tuple(
-        dict.fromkeys(
-            str(ref.object_id) for ref in refs if ref.object_type == "design_asset"
-        )
-    )
-    if not asset_ids:
-        return {}
-    from clue_design.assets import get_asset_records
-
-    records = await get_asset_records(
-        conn,
-        workspace_id=workspace_id,
-        asset_ids=asset_ids,
-    )
     result: dict[tuple[str, str], dict[str, str]] = {}
-    for asset_id, wrapped in records.items():
-        asset = wrapped.get("asset") or {}
-        media = asset.get("media") or {}
-        thumbnail = media.get("thumbnail") or {}
-        thumbnail_digest = thumbnail.get("digest") or media.get("digest") or {}
-        presentation = {
-            "label": str(media.get("filename") or asset.get("label") or "Reference image"),
-            "media_type": str(media.get("mime_type") or ""),
-        }
-        digest_value = thumbnail_digest.get("value")
-        if thumbnail_digest.get("algorithm") == "sha256" and digest_value:
-            presentation["thumbnail_digest"] = str(digest_value)
-        result[("design_asset", asset_id)] = presentation
+
+    asset_ids = tuple(
+        dict.fromkeys(str(ref.object_id) for ref in refs if ref.object_type == "design_asset")
+    )
+    if asset_ids:
+        from clue_design.assets import get_asset_records
+
+        records = await get_asset_records(
+            conn,
+            workspace_id=workspace_id,
+            asset_ids=asset_ids,
+        )
+        for asset_id, wrapped in records.items():
+            asset = wrapped.get("asset") or {}
+            media = asset.get("media") or {}
+            thumbnail = media.get("thumbnail") or {}
+            thumbnail_digest = thumbnail.get("digest") or media.get("digest") or {}
+            presentation = {
+                "label": str(media.get("filename") or asset.get("label") or "Reference image"),
+                "media_type": str(media.get("mime_type") or ""),
+            }
+            digest_value = thumbnail_digest.get("value")
+            if thumbnail_digest.get("algorithm") == "sha256" and digest_value:
+                presentation["thumbnail_digest"] = str(digest_value)
+            result[("design_asset", asset_id)] = presentation
+
+    document_ids: list[UUID] = []
+    for ref in refs:
+        if ref.object_type != "project_document":
+            continue
+        try:
+            document_ids.append(UUID(str(ref.object_id)))
+        except ValueError:
+            continue
+    if document_ids:
+        rows = await _project_document_rows(
+            conn, workspace_id=workspace_id, document_ids=tuple(dict.fromkeys(document_ids))
+        )
+        for document_id, row in rows.items():
+            front: Mapping[str, Any] = {}
+            body = ""
+            if storage is not None:
+                # ``servable_only=False``: a transcript read of an older turn whose tagged
+                # version has since been superseded still names the document the user tagged.
+                read = await read_project_document(
+                    conn,
+                    storage,
+                    workspace_id=workspace_id,
+                    project_id=str(row.project_id),
+                    document_id=UUID(document_id),
+                    servable_only=False,
+                )
+                if read is not None:
+                    _, front, body = read
+            result[("project_document", document_id)] = {
+                "label": document_title(front, body, path=str(row.path)),
+                "kind": str(row.kind),
+            }
+
+    # An attachment ref projects as ``object_type='artifact'`` with the content-addressed storage
+    # key as its id. The key says nothing a person can read, so the filename and media type the
+    # human's upload carried are joined here — the same read-time-only discipline as above, and
+    # workspace-scoped, so a key from another tenant simply resolves to nothing.
+    artifact_keys = tuple(
+        dict.fromkeys(str(ref.object_id) for ref in refs if ref.object_type == "artifact")
+    )
+    if artifact_keys:
+        attachment_rows = (
+            await conn.execute(
+                text(
+                    "SELECT DISTINCT ON (artifact_key) artifact_key, upload_id, filename, "
+                    "media_type FROM agent_turn_submission_attachment "
+                    "WHERE workspace_id = :ws AND artifact_key = ANY(:keys) "
+                    "ORDER BY artifact_key, created_at DESC"
+                ),
+                {"ws": workspace_id, "keys": list(artifact_keys)},
+            )
+        ).mappings()
+        for attachment in attachment_rows:
+            result[("artifact", str(attachment["artifact_key"]))] = {
+                "label": str(attachment["filename"]),
+                "media_type": str(attachment["media_type"]),
+                "upload_id": str(attachment["upload_id"]),
+            }
+
+    design_ids = tuple(
+        dict.fromkeys(str(ref.object_id) for ref in refs if ref.object_type == "design_document")
+    )
+    if design_ids:
+        rows = await _design_document_rows(conn, workspace_id=workspace_id, document_ids=design_ids)
+        for design_id, row in rows.items():
+            result[("design_document", design_id)] = {
+                "label": str(row["title"] or "Design"),
+                "kind": "web" if row["doc_kind"] == "web" else "ad",
+            }
     return result

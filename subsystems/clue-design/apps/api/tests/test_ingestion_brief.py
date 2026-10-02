@@ -466,6 +466,36 @@ def test_the_agent_browses_nothing() -> None:
     assert OpenRouterBriefAgent.TOOLS == ()
 
 
+def test_the_brief_model_is_built_with_its_own_reasoning_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The brief's model and reasoning effort are its own settings, handed to the gateway
+    build as-is (founder ruling 2026-09-29: grok-4.7 at medium)."""
+    import lumen_agent.llm as llm
+    from lumen_ingestion import brief_agent
+    from py_lumen_config import settings
+
+    monkeypatch.setattr(settings, "lumen_ingestion_brief", True)
+    monkeypatch.setattr(settings, "lumen_ingestion_brief_model", "x-ai/grok-4.7")
+    monkeypatch.setattr(settings, "lumen_ingestion_brief_reasoning", "medium")
+    monkeypatch.setattr(settings, "openrouter_api_key", "sk-test")
+    built: dict = {}
+
+    class _Stop(Exception):
+        pass
+
+    def fake_init_model(model: str, **kwargs: object) -> None:
+        built.update(kwargs, model=model)
+        raise _Stop
+
+    monkeypatch.setattr(llm, "init_model", fake_init_model)
+    with pytest.raises(_Stop):
+        brief_agent.OpenRouterBriefAgent().write_brief(build_brief_request(_evidence(), _kit()))
+    assert built["model"] == "x-ai/grok-4.7"
+    assert built["reasoning"] == "medium"
+    assert built["role"] == "ingestion-brief"
+
+
 # --- the pipeline ride-along --------------------------------------------------------
 
 
@@ -542,7 +572,7 @@ def client(tmp_path: Path) -> TestClient:
     return make_client(create_app(tmp_path / "engine-cache"))
 
 
-def test_the_published_draft_kit_carries_the_brief(
+def test_the_published_approved_kit_carries_the_brief(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class Writer:
@@ -555,7 +585,7 @@ def test_the_published_draft_kit_carries_the_brief(
         client, monkeypatch, brief_agent=Writer(), url="https://brief-rides.example"
     )
     detail = client.get(f"/brand-kits/{job['brand_kit_id']}").json()
-    assert detail["brand_kit"]["approval_status"] == "draft"
+    assert detail["brand_kit"]["approval_status"] == "approved"
     brief = detail["brand_kit_json"]["brief"]
     assert brief["schema_version"] == 1
     assert brief["characterization"]["words"] == ["calm", "clinical", "optimistic"]

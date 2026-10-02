@@ -1,6 +1,6 @@
 ---
 name: linkedin-square-ad
-description: Author a 1080×1080 LinkedIn feed ad end-to-end — concept plan, layout skeleton, type scale, brevity budgets, and the self-audit checklist. Use whenever the brief asks for a linkedin ad, feed ad, square social ad, or 1:1 paid social creative.
+description: Use whenever the brief asks for a linkedin ad, feed ad, square social ad, or 1:1 paid social creative.
 required_decisions: audience, offer_cta, tone, brand_adherence
 selection_policy: llm_selectable
 ---
@@ -17,7 +17,7 @@ This skill decides; the craft skills execute. Read beside it:
 
 - `skills/brand-and-tokens` — role tokens, never guessed values.
 - `skills/color-and-contrast` — which combination of those tokens actually
-  reads. The on-color pairing law, and the shade decision.
+  reads, using resolved colors and the actual image beneath the text.
 - `skills/brand-imagery` — the kit-asset / generate / deliberately-none call.
 - `skills/clarify-design-brief` — derive before you ask.
 
@@ -31,10 +31,15 @@ mid-run: `knowledge/design/layout-recipes` (the six-archetype canon),
 ## Defaults & required decisions
 
 - Surface: `page linkedin_square size(1080,1080,px)`, which lays out as
-  1080 × 1080 pt. Give the root artboard `pad(96) s(fill,fill) clip(true)`.
-  The validated margin is 96pt. **64pt is the hard safe-margin floor.** The
-  content column between the default margins is 888pt wide.
-- One ad = one audience, one promise, one ask. Kill every secondary message.
+  1080 × 1080 pt. Start with `pad(96) s(fill,fill) clip(true)` for an inset layout; use a
+  separate full-bleed artwork layer when the reference calls for it. Keep required
+  copy and marks inside at least 64pt safe margins unless the brief specifies
+  another safe area. Composition, proportions and alignment follow the message
+  and reference, not a mandatory 888pt column.
+  Author it in your FIRST compile, before any imagery or logo — a pageless
+  scene registers nothing.
+- One ad = one audience and one central message. Include an ask only when the
+  brief calls for one; an awareness statement can end with the brand.
 - Brand adherence: **strict** = kit tokens/faces/assets only · **balanced** = kit
   defaults + limited complementary accents · **loose** = brand-inspired, kit
   still recognizable.
@@ -64,48 +69,50 @@ decision. One-sentence test: "For [audience], [brand] is the [category] that
 [single claim]" — if the claim needs two sentences the strategy is broken; ask,
 don't design.
 
-## Layout skeletons (pick one, name it in the direction)
+## Composition from the message and reference
 
-Each is an archetype from `knowledge/design/layout-recipes` — recompose it, never
-pour copy into the shell.
+When references are attached, read `skills/reference-conditioned-ads` and look
+at the pixels. Preserve the relevant hierarchy, relative type/logo scale, field
+proportions, tonal depth and imagery treatment while adapting the supplied copy.
 
-1. **Split-panel** — `al(h)` root: media `s(456,1080)` + panel `s(624,1080)
-   pad(80,64)`, copy column 496pt. Media stays 40–45% so the panel breathes; a
-   50/50 square reads as two half-ads. The photo must survive a hard square crop.
-2. **Full-bleed statement** — the **vertical-poster** on an inverted surface
-   (`fill($surface.inverse)`), type IS the hero, no photo: hug header /
-   `s(888,fill) y(c)` main / hug footer. Use when kit imagery is weak or adherence
-   is strict. Proportions: `blocks/patterns` "Full-canvas poster".
-3. **Stat block** — the **numeral-hero**: one number at **≥300pt** carries the
-   frame, everything else deliberately quiet. The ramp tops out at
-   `$type.size.9xl` (128), so step it raw: `style($type.display) font_size(300)
-   lh(0.92) max_lines(1)`. Only with a number sourced from the brief or kit, kept
-   short (`3.2s`, `99.99%`, `40M`).
+The split-panel, vertical-poster and numeral-hero recipes in
+`knowledge/design/layout-recipes` are examples, not an exhaustive menu or a
+required shell. Choose or combine layout primitives around the actual idea:
+editorial typography, a product stage, a source review card, a device composition,
+a diagram, or an image-led statement may need different geometry. Numbers and
+reviews require approved source content; a visual reference alone is no evidence
+for a new claim. Do not force a left-image/right-copy split or a fixed CTA size.
+
+The direction is a compact handoff: exact copy, selected source asset IDs,
+reference observations, layer ownership, intended geometry and generated-artwork
+requirements. Give the author the exact direction-file path and these essentials
+inline. Reuse inspected assets instead of searching the whole catalog again.
 
 ## Type
 
-- Headline: `style($type.headline) font_size($type.size.7xl)` (80) — or
-  `$type.display` when the kit ships a distinct display role. **Floor
-  `$type.size.6xl` (64)**; the role default 56 does not dominate 1080. ≤7 words,
-  `max_lines(2)`, `lh(1.04)`, `wrap_text(true)`.
-- Body: ≤160 chars at `style($type.body)` (the wide-square role), and at least
-  **22pt**. That is one step above the general 1080² skeletons' 19–21pt, because
-  the feed downscales the canvas. If the kit's body role lands smaller, step up
-  with `font_size($type.size.xl)` (24).
-- CTA label: ≤4 words at `style($type.cta) align(center)`, inside a
-  `s(fill,hug)` text node. Give the label the CTA role and nothing bigger. A
-  `style($type.headline)` label is what inflates a button into a second hero.
-- **The CTA plate is the validated button from `knowledge/design/blocks/actions`.**
-  Build it exactly that way. The plate is a fixed `s(340,76)` container written
-  `al(h,x(c),y(c),pad(20,40))`, with a fill and `rd($radius.button)`. It holds
-  ONE label node sized `s(fill,hug) align(center)`.
-- **Those two sizings are what keep the label centered.** The plate's `y(c)`
-  centers the label box inside the plate. The label's `align(center)` centers
-  the glyph inside that box. Drop either one and the label drifts off-center or
-  sinks toward the bottom edge.
-- **The plate takes its size from its own geometry, never from its label.** A
-  plate left to grow around an oversized label becomes a second focal mass. Never
-  give the label a hug WIDTH either — that trips `LUMV0902`.
+- **Text height is always hug.** Write `s(W,hug)` or `s(fill,hug)`; never a
+  fixed height on a text node — the box stops following the copy and the editor
+  outlines empty space. Widths may be fixed or fill.
+- Headline: keep the kit's appropriate display or headline face. Start around
+  `style($type.display) font_size($type.size.7xl)` and adapt width, line breaks
+  and size to the real copy. Preserve user-supplied copy even when longer than
+  a generic brevity budget. For 1080 output, aim for at least 64pt resolved type
+  unless the reference or brief justifies another scale.
+- Body and CTA: choose explicit legal size tokens alongside their own roles,
+  for example `style($type.body) font_size($type.size.xl)` and
+  `style($type.cta) font_size($type.size.xl)`. Aim for at least 24pt resolved
+  size, preferably larger when space permits, then read them at 360px feed size.
+- The pinned kit may normalize its size ladder. Token names do not guarantee
+  base-ramp numbers. Inspect resolved node sizes after preflight; a raw numeric
+  font size can be replaced by role binding. Check headline, support AND CTA.
+- Build the native CTA using `knowledge/design/blocks/actions`: a separate
+  filled container with `al(h,x(c),y(c),pad(20,40))`, `rd($radius.button)` and
+  one native label with `s(fill,hug) align(center)`. Choose the plate's explicit
+  width/height to fit its measured label and intended padding. Its `y(c)` centers
+  the label box; `align(center)` centers the glyphs. Preserve both. Do not use a
+  hug-width label (`LUMV0902`). A large plate cannot rescue a tiny label.
+- Omit the CTA when the brief calls for awareness without one; do not invent an
+  extra action to satisfy a default recipe.
 - Kit faces first. A library display face may carry the headline when the kit
   voice is too neutral to stop a scroll and adherence is not strict — **Anton**,
   **Bebas Neue** (caps only), **Archivo Black**, **Bricolage Grotesque**; exact
@@ -118,23 +125,36 @@ pour copy into the shell.
 
 ## Brand & assets
 
-- **On a saturated brand ground, text is `$text.inverse`.** Dark ink belongs on
-  `$surface.page`, `$surface.card`, or `$surface.brand.subtle`, never on
-  `$surface.brand`. Do not spend the full-strength brand color on the ground and
-  on the CTA plate both. One of the two takes a softer shade or a neutral. See
-  `skills/color-and-contrast`.
-- Logo or wordmark at real scale — **≥48pt height**, or the kit's declared
-  minimum size if larger; an eyebrow line is not a substitute. Bind through slots
-  (`slot(account.logo)`) with asset roles (`logo.primary` / `logo.reversed`),
-  never an invented asset id.
+- Select foregrounds from actual approved colors using
+  `skills/color-and-contrast`. A saturated brand surface may need dark or light
+  text depending on its luminance. A token name is not a contrast verdict.
+- Keep the authentic logo as its own image layer with undistorted proportions,
+  sized for the composition and the kit's declared minimum. Use actual asset
+  roles (`logo.primary` / `logo.reversed`), never an invented asset id. Prefer a
+  recognizable wordmark/lockup to a favicon when the reference identifies the
+  brand by name. Match its visual weight and choose a compatible ground.
+  A standalone logo image is editable without a personalization slot. When
+  scaling requires `slot(account.logo)`, supply its required placeholder/sample
+  and a `fit=contain` policy matching the real source alpha; opaque assets
+  cannot satisfy `preserve_transparency=true`. Preserve existing bound slots.
 - **Look at every asset before you place it** — `view("asset:<asset_id>")`.
-  Reject crops with baked-in text; check the mark's shape against its frame.
+  Authentic product screenshots may contain source UI text. Keep their bytes
+  intact; use contain or a deliberate crop that preserves meaningful content.
+  Main campaign text remains native; a finished ad bitmap is not the editable
+  composition. Logos, source UI, generated artwork and text are separate layers.
+- When generated variants are requested, follow `skills/generative-imagery`:
+  produce, view and retain the requested distinct assets. An existing screenshot
+  or flat ground does not fulfill that requirement.
+- Website section frequency, CSS classes and website button scales govern WebDoc
+  work. This Scene ad follows its own brief and reference composition.
 - Image slots are born with a default policy; if an inherited document raises
   `LUMV0820`, one line clears it — `#slot:account.logo image_policy(fit=cover,
   focal_x=0.5, focal_y=0.35)` — never delete the slot.
-- Text over a photo ALWAYS gets a scrim beneath it (`fill($surface.inverse)
-  o($opacity.scrim)`) on a dark artboard. Ornament never competes with the focal
-  point: confine a pattern or wash to a strip, quadrant, or radial corner.
+  This is modify-line syntax, not a universal logo crop: choose contain when
+  cover would clip the actual mark, and verify the whole mark remains visible.
+- Put copy on a genuinely quiet image region or an approved plate/scrim.
+  Check local contrast and visual hierarchy. Artwork may occupy the whole frame
+  when it supports the reference; its visual weight must serve the message.
 
 ## Self-audit checklist
 
@@ -154,25 +174,25 @@ not "looks clean" or "feels balanced". A weak design passes an adjective and
 fails a measurement, which is exactly why the measurement is the score.
 
 1. `single-focal-point` — squint: one mass, one landing spot. (`hierarchy`)
-2. `first-second-ordering` — stop → who → idea → act is legible in that order. (`hierarchy`)
-3. `headline-budget` — ≤7 words, ≥64pt, and NOT a caption of the image. (`typography`)
-4. `cta-thumbnail-legibility` — CTA readable at thumbnail scale; ≥ 4.5:1 against its surface. (`contrast`)
-5. `distinctive-asset-at-real-scale` — logo/wordmark ≥48pt; no asset with cropped baked-in text. (`asset_use`)
-6. `safe-margins` — all four margins clear, nothing clipped, no dead or zero-size nodes. (`clipping`)
+2. `first-second-ordering` — the focal idea, brand and any required action read clearly; awareness may omit an action. (`hierarchy`)
+3. `headline-budget` — supplied copy preserved, resolved size and line breaks readable at feed size. (`typography`)
+4. `cta-thumbnail-legibility` — resolved label size and ≥4.5:1 contrast read at 360px; note omitted-by-brief when absent. (`contrast`)
+5. `distinctive-asset-at-real-scale` — authentic mark/UI intact, correct proportions, requested generated variants viewed and retained. (`asset_use`)
+6. `safe-margins` — required copy and marks stay clear; intentional artwork bleed is allowed; no dead or zero-size nodes. (`clipping`)
 7. `no-collisions` — no text runs into another text block, a button, or an image
    edge. (`overflow`)
-8. `on-color-pairing` — every text/ground and plate/ground pair reads cleanly.
-   Dark ink on a saturated brand ground scores 0, and so does spending the
-   full-strength brand color as BOTH the ground and the accent. (`contrast`)
+8. `on-color-pairing` — every resolved text/ground and plate/ground pair reads
+   cleanly; judge local contrast and hierarchy, not semantic color names. (`contrast`)
 9. `brand-adherence-followed` — the chosen level actually holds (tokens, faces, assets). (`brand_fit`)
 
 Test 7 is an EYES test and cannot be scored from geometry. The engine measures a
 line of text as exactly font size times line height, so tight leading shrinks the
 measured box in step with the text and the spill it causes is never reported.
 A scene can preflight perfectly clean while a headline sits on top of the body
-copy. Look at the render, and name both node ids when you find a pair. The fix is
-more line height, more gap, or fewer words — never a smaller font, which only
-hides the crowding.
+copy. Look at the render, and name both node ids when you find a pair. Try
+more line height, more gap, or fewer words only when the brief permits rewriting.
+Otherwise preserve supplied copy and adjust width, layout or size within the
+readable scale. Do not hide collisions by making required text illegibly small.
 
 ## Override
 

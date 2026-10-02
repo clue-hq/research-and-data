@@ -1,0 +1,57 @@
+schema_version: "1"
+kind: profile
+name: onboarding-synthesis
+version: v4
+status: active
+# ARV2 Track O, O4 (ARV2-ONBOARDING-PLAN.md §5). One ICP turn and one persona turn per ICP; the
+# ICP turn runs on the `onboarding_icp` surface, which withholds the evidence tool because that
+# turn writes from the brand's knowledge documents alone. Reads the brand's knowledge documents
+# materialized under inputs/brand/knowledge/, writes ICP + persona documents under
+# outputs/audience/. Model per ruling O-D1: grok-4.6 at the model's default reasoning
+# (ONBOARDING_SYNTHESIS_AGENT_MODEL overrides the pin; _EFFORT stays blank).
+# v4 (2026-09-30): icp-synthesis@v4 writes gates, qualifier fields, exclusions and persona titles
+# as block YAML with quoted values — an unquoted comma inside an inline value split it and lost
+# the rest of the sentence. Nothing else moves.
+role: onboarding_synthesis
+prompt:
+  name: onboarding-synthesis
+  version: v2
+  sha256: e879278b3fb364dea460fea86fb2378fac6e82fd981d38b27d8c9a0645537daa
+skills:
+  - name: icp-synthesis
+    version: v4
+    sha256: b8189b7722041243ebb8bf99b2eced93f4178e1f4e15a756ca8efc324a0a472b
+  - name: audience-persona
+    version: v2
+    sha256: ab494bf4c370ac44c582ab7d9fdf32f73667ad8378ff90aca316eee89f585582
+tools:
+  - name: exa_search_evidence
+    version: "1"
+    input_schema_sha256: 77e25c576fb4b66dfd1443f0b4a3b8fd8f32f41340223214e603db197842858d
+    output_schema_sha256: f2ecfbb9706210a9153d8fcb16b8ed4f6201d246474ae3a4f1f5ca584b4cc45a
+model:
+  model_id: x-ai/grok-4.6
+  # Founder ruling 2026-09-08: 60s. The model builder refuses a profile above the gateway ceiling
+  # (GatewayConfig.timeout_s, env CLUE_GATEWAY_TIMEOUT_S), which is how the first live turn failed
+  # at 120s; the ceiling is 60s in this deployment.
+  timeout_s: 60.0
+  max_retries: 2
+  max_output_tokens: 16384
+  temperature: 0.1
+memory_policy: scoped-advisory-v1
+workspace:
+  virtual_mode: true
+  max_total_bytes: 10485760
+  max_file_bytes: 1048576
+  max_file_count: 200
+  allowed_extensions: [".json", ".md", ".txt", ".yaml"]
+  readable_prefixes: [".deepagent", "inputs", "context", "work", "outputs"]
+  writable_prefixes: ["work", "outputs"]
+  retention_class: agent-ephemeral-v1
+delegation_roles: []
+delegation_tool_grants: {}
+max_delegation_depth: 0
+max_delegations: 0
+max_plan_nodes: 32
+turn_timeout_s: 1200.0
+max_model_rounds: 48

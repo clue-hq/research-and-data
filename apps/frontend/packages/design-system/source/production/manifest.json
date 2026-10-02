@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 2,
+  "capturedAt": "2026-08-18",
+  "sources": [
+    {
+      "fileKey": "NcLl2r0dzVDN28xAQCwvM1",
+      "fileName": "Clue",
+      "nodeId": "1735:38951",
+      "role": "production product screens and product-local components"
+    },
+    {
+      "fileKey": "Gqz4ROcgy5sZ4HMWsLpOVf",
+      "fileName": "Clue Design System",
+      "nodeId": "3025:8195",
+      "role": "published component library, semantic tokens, primitives, typography, and effects"
+    }
+  ],
+  "collections": {
+    "Tokens": 43,
+    "Primitives": 183,
+    "Typography": 52
+  },
+  "textStyles": 14,
+  "componentPages": {
+    "Avatar": "3025:8195",
+    "Badge": "3019:10468",
+    "Button": "69:3108",
+    "Checkbox": "3019:28601",
+    "Dropdown": "3019:28624",
+    "Popover": "3094:14198",
+    "Input": "3023:1698",
+    "Progress": "3019:10470",
+    "Toggle": "3019:10469",
+    "Icons": "3019:10471",
+    "Utils": "3019:10467"
+  },
+  "resolutionRules": [
+    "The production Clue file decides which components and states are used in product screens.",
+    "The published Clue Design System supplies the reusable component definitions and the complete current variable collections.",
+    "Rendered text styles take precedence over stale font-weight metadata on similarly named variables.",
+    "Application geometry and motion are included only when current frontend code consumes them.",
+    "Runtime consumers reference canonical published token names directly; compatibility aliases are not generated."
+  ]
+}

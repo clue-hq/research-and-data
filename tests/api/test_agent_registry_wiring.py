@@ -19,9 +19,11 @@ from clue_agents import (
     RoleRegistryStatus,
     ToolPin,
 )
+from clue_agents.manual.build import MANUAL_CHAPTERS
 from clue_api.agent_registry_wiring import (
     C6_ACTIVE_PROFILE_VERSIONS,
     C6_AGENT_TOOL_AUTHORITY,
+    ONBOARDING_ICP_SURFACE,
     PROJECT_CONVERSATION_SURFACE,
     ToolRegistryAgentCatalog,
     build_agent_profile_registry,
@@ -31,6 +33,7 @@ from clue_api.chat.composer_context import (
     PROJECT_CONVERSATION_MODEL_ID,
 )
 from clue_api.toolbelt_wiring import build_toolbelt
+from tests._model_ids import assert_well_formed_model_id
 from tests.agents.workspace_helpers import make_workspace
 from tests.api.conftest import hermetic_flag_env
 
@@ -44,7 +47,17 @@ def registry() -> AgentProfileRegistry:
     # module-scoped fixture *before* the autouse function-scoped ``_hermetic_feature_flags``, so
     # this one enters the shared neutralisation itself. (Kept module-scoped — rebuilding the
     # catalog per test costs ~5s across this file.)
-    with hermetic_flag_env():
+    # The same reasoning covers the per-role model channel. ``_env_model_policy`` reads
+    # ``<ROLE>_AGENT_MODEL`` straight from ``os.environ`` (not through ``Settings``), so
+    # ``hermetic_flag_env`` cannot reach it, and an operator shell that sourced the repo ``.env``
+    # — which pins every role to grok-4.6 — would make this file assert the deployment setting
+    # instead of the reviewed catalog pin. Resolution is eager, so stripping the overrides around
+    # the build is enough.
+    with hermetic_flag_env(), pytest.MonkeyPatch.context() as mp:
+        for role in AgentRole:
+            mp.delenv(f"{role.value.upper()}_AGENT_MODEL", raising=False)
+        # The deployment-wide per-call timeout override (2026-09-08) rides the same seam.
+        mp.delenv("CLUE_AGENT_MODEL_TIMEOUT_S", raising=False)
         return build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
 
 
@@ -79,29 +92,129 @@ def test_registry_resolves_exact_reviewed_profiles_and_stable_manifests(
         # v39 (genad2) is v38 with the entry promoted once more to `open_design_leg@4` (the scene
         # births ZERO pages; the design agent authors them, and the format inputs are deleted) and
         # prompt v7's route-and-delegate guidance, which states no dimension at all.
-        AgentRole.HEAD_OF_ABM: ("e90e0f9f53466a1d03af609f62c5fd214c204c1a590008001819e1740e36a8ed"),
+        # v41 (comprehensive research, Slice B wave 2) re-pins the directive draft tool at @4 and
+        # account-deep-steering at v7: a normal full-profile request now compiles deterministically
+        # to the fixed 21-field account profile instead of the v6 skill's three qualitative fields.
+        # v42 (Slice B browser-gate repair) re-pins the draft tool at @5 (omittable
+        # `directive.field_keys`) and account-deep-steering at v8, and re-pins the amended v8 sha
+        # after the committee co-definition section (founder ruling 2026-08-20: the deepagent
+        # settles product and the four persona positions with the user before drafting a
+        # committee-discovering directive, and the plan carries the outcome).
+        # v43 (ARV2-R0 merge) is v40 plus v42's directive contract — `draft_account_research_
+        # directive@5` and account-deep-steering v8 — and nothing else; v40 and v42 were divergent
+        # siblings (v42 pins the retired `open_design_leg@1`), so the merge minted the join rather
+        # than promoting either. Digest measured off the merged tree.
+        # v44 (ARV2 onboarding O6) is v43 with the new-lane Stage-0 surface: prompt v8 and
+        # stage0-interview v21 (read the brand's knowledge documents, propose from the ICP files,
+        # open the product-set and ICP gates, launch on the ARV2 lane), the twelve old-lane
+        # recon/readiness/Client-KB/Product-KB/`icp_spec` tools dropped, and
+        # `open_product_set_selection_gate@1`, `open_icp_confirmation_gate@2`,
+        # `launch_arv2_account_research@1` and `read_arv2_account_research_run@1` pinned in their
+        # place. Founder rulings 2 and 3 (2026-09-10) finish the swap: the five old-research-lane
+        # tools and the `account-deep-steering@v8` skill that required all five are dropped, and
+        # `launch_arv2_person_research@1` is pinned — so stage0-interview v21 is the profile's one
+        # skill and the ARV2 trio is its one research lane. Model, workspace, delegation and limits
+        # are v43's. Digest measured off this tree.
+        # v45 (ARV2 R4) is v44 plus `launch_arv2_discovery@1` and stage0-interview v22 (§7b,
+        # discover accounts for the project). v46 (ARV2 context and authoring) is v45 plus
+        # `author_icp_document@1` and `request_persona_synthesis@1` and stage0-interview v23
+        # (§5b authoring, §5c personas). v47 (the project plan) is v46 plus
+        # `write_project_document@1` and stage0-interview v24 (§6b, write the plan). v48 (the ARV2
+        # reads) is v47 plus `read_project_accounts@1`, `read_account_research@1` and
+        # `read_discovery_run@1` and stage0-interview v25 (§7c, read before you speak). v49 and
+        # v50 add no address: v49 re-pinned the three reads' typed contracts with
+        # stage0-interview v26, and v50 re-pins the hotfix contracts (`read_account_research`
+        # paged and prefix-naming, `read_discovery_run`'s repaired input) with
+        # stage0-interview v27. v51 adds no address either: it moves the workspace block to the
+        # thread layout (`scratch/`/`reads/` granted, `work/` dropped, quota raised) and pins
+        # stage0-interview v28, whose §1 names the notebook — the skill body is in the manifest,
+        # so the digest moves. v52 adds no address either: it grants the `brand/` and `project/`
+        # read-only library mounts and pins stage0-interview v29 and prompt head-of-abm v9, which
+        # name those mounted paths instead of the per-turn seeds under `inputs/`; the prompt and
+        # the skill body are both in the manifest, so the digest moves again. v53 adds no address
+        # either: it pins stage0-interview v30, which names the brand library's manifest at its
+        # real mounted path (`brand/index.json`, the tree root) — the skill body is in the
+        # manifest, so the digest moves once more. v54 adds no address either: it discloses the
+        # fifteen `manual-*@v1` chapters (each granting no tool), pins prompt v10 and skill v31,
+        # and every one of those bodies is in the manifest, so the digest moves again. v55 is the
+        # first version that SUBTRACTS: `author_icp_document@1`, `request_persona_synthesis@1` and
+        # `write_project_document@1` are ungranted, because `project/` is writable now and the
+        # three documents they wrote are written as files. It pins stage0-interview v32, the three
+        # document skills (`icp-authoring@v1`, `persona-authoring@v1`, `plan-authoring@v1`, none of
+        # which grants a tool) and the re-minted `manual-*@v2` chapters, so the digest moves for
+        # both reasons at once. v56 moves it for three reasons: two granted addresses change
+        # version (`read_account_research@1`/`read_discovery_run@1` -> their paged `@2`s, a
+        # different input digest), two are added (`read_claims@1`, `read_artifact@1`), and every
+        # pinned skill body in the manifest is new — stage0-interview v33, the document skills at
+        # v2, the re-minted `manual-*@v3`. v57 moves it for neither reason: no tool and no grant
+        # change at all. It raises `turn_timeout_s` to 1800 and `max_model_rounds` to 100 — the
+        # founder's numbers, after a real plan-draft turn was cut mid-thought at the 300-second
+        # cap — and the manifest carries the limits and the `manual-*@v4` bodies its generated
+        # `limits` chapter renders them into, so the digest moves on those alone. v58 moves it for
+        # both reasons at once: one address is ADDED (`run_python@1`, the code sandbox, granted
+        # here for the first time) and every pinned body in the manifest is new — prompt v11,
+        # stage0-interview v34, the new `code-execution@v1`, and the re-minted `manual-*@v5`.
+        # v59 moves it for both reasons again: one granted address changes version
+        # (`open_design_leg@4` -> `@5`, a different input digest, so one ask can open one leg that
+        # births many artifacts) and two pinned bodies in the manifest are new — prompt v12 and
+        # the re-minted `manual-*@v6`. v60 moves it for neither reason: no tool and no grant
+        # change at all, just prompt v13 (one sentence: opening a leg starts generation at once)
+        # and the `manual-*@v7` bodies that render this profile version into their title.
+        # v65 moves it for no tool or grant change either: prompt v17, stage0-interview v38 and
+        # account-research-briefing v2 (repointed paths, one worded example) and the re-minted
+        # `manual-*@v11` bodies that state the turn limits without numbers.
+        # Digest measured off this tree.
+        # v66 (discovery rebuild, 2026-09-28): stage0-interview@v39 and manual-*@v12.
+        # v67 (2026-09-29): briefing v3 without the one-person trial scope; prompt v18,
+        # stage0-interview@v40 and manual-*@v13 repointed.
+        # v68 (2026-09-29): three retired-lane tools dropped; stage0-interview@v41, manual-*@v14.
+        # v69 (2026-09-29): 4 MB workspace files for offloaded history; stage0@v42, manual@v15.
+        # v70 (2026-09-30): the agent writes the discovery brief — `launch_arv2_discovery@2` and
+        # `read_discovery_run@3`; stage0@v43 (section 7b), manual@v16.
+        AgentRole.HEAD_OF_ABM: ("7d081683dcef5863f58fd6a341228ad8806de41f24c1128443d30159c94202b6"),
         AgentRole.RESEARCH: "23cff2335bb82e0549ee0c830316968971146e8b90c8d2090447ee0ed92eed6f",
         AgentRole.CONTENT_DRAFTER: (
             "8985c13ead086350d952f76e6d3c0ed3f4162cc92de290f8dd7edd7fcab44cbf"
         ),
         AgentRole.REVIEWER: "1cd0fc4e5c8276983c5e0b8d9a83904be82a95ed57f27c9c1dfd9f5a3887df46",
+        # ARV2 Track O, O4: onboarding-synthesis@v4 — prompt v2, icp-synthesis v4 (block YAML
+        # with quoted values; v3 batched the product-file reads) and audience-persona v2 skills,
+        # and the single `exa_search_evidence@1` grant. v2 is the
+        # synthesis split: one task per turn, the known-ICPs reuse rule in the ICP skill, and a
+        # persona skill that writes the one document for the one ICP its user message names.
+        # Digest measured off this tree.
+        AgentRole.ONBOARDING_SYNTHESIS: (
+            "586e32b5b6e810f4a10292e2c62710fac61acd69dac2acd85aac1ca5ddd769b8"
+        ),
+    }
+    # The model pin is per role, not blanket: the 2026-08-27 demo-night correction moved the
+    # conversation profile to grok-4.6 (head-of-abm@v43), and ruling O-D1 puts the onboarding
+    # synthesis agent on the same model. The specialists stay on gpt-5.6-terra.
+    expected_models = {
+        AgentRole.HEAD_OF_ABM: "x-ai/grok-4.6",
+        AgentRole.RESEARCH: "openai/gpt-5.6-terra",
+        AgentRole.CONTENT_DRAFTER: "openai/gpt-5.6-terra",
+        AgentRole.REVIEWER: "openai/gpt-5.6-terra",
+        AgentRole.ONBOARDING_SYNTHESIS: "x-ai/grok-4.6",
     }
     toolbelt = build_toolbelt(storage=None, gateway=None)
     for role, digest in expected_manifests.items():
         resolved = registry.resolve(role)
-        assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
+        assert resolved.profile.model.model_id == expected_models[role]
         if role is AgentRole.HEAD_OF_ABM:
             assert (
                 f"{resolved.profile_ref.name}@{resolved.profile_ref.version}"
                 == PROJECT_CONVERSATION_AGENT_PROFILE_ID
             )
             assert resolved.profile.model.model_id == PROJECT_CONVERSATION_MODEL_ID
+        # One name is granted at an address other than its name-only default:
+        # `research_account_gaps@2`. (`head-of-abm@v70` pins the defaults of
+        # `launch_arv2_discovery` and `read_discovery_run`, `@2` and `@3`.)
+        pinned_away_from_default = {
+            "research_account_gaps": "research_account_gaps@2",
+        }
         expected_tools = {
-            (
-                "research_account_gaps@2"
-                if name == "research_account_gaps"
-                else f"{name}@{toolbelt.descriptor(name).version}"
-            )
+            pinned_away_from_default.get(name, f"{name}@{toolbelt.descriptor(name).version}")
             for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
             if role in roles
         }
@@ -154,7 +267,51 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # gates, FI-2's selected-Account launch and reads: 111 + 18 = 129). Brand Ad Assets v1 W2
     # adds its four ungranted lane envelopes, disclosed unavailable to every surface
     # (129 + 4 = 133).
-    assert len(by_address) == 133
+    # Slice B wave 2 installs `draft_account_research_directive@4` alongside its replayable
+    # predecessors, so the inventory gains exactly one address, and the Slice B browser-gate
+    # repair installs @5 the same way. The ARV2-R0 merge unions both lines' additions; 136 is
+    # measured off the merged tree, not derived from either side's arithmetic. ARV2 Track O, O4
+    # installs `exa_search_evidence@1` — the onboarding synthesis agent's one governed evidence
+    # call, granted to `onboarding_synthesis` alone, so it is role-unavailable from this view
+    # (136 + 1 = 137).
+    # ARV2 onboarding O6 re-measures this off the tree rather than continuing the arithmetic: the
+    # standing 137 had already drifted to 139 before this lane (two installs landed without moving
+    # the number), and O6's own seams install `open_icp_confirmation_gate@2` and
+    # `open_product_set_selection_gate@1` (139 + 2 = 141). The ARV2 launch/read pair was already
+    # installed and merely ungranted, so promoting it moves grants, not inventory. The pre-existing
+    # 137 -> 139 drift is folded into this one re-pin. ARV2 Track R, R3 installs
+    # `launch_arv2_person_research@1`, registered ungranted (141 + 1 = 142).
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (142 -> 143).
+    # Project-label renaming is registered for the human UI and granted to no agent (143 -> 144).
+    # ICP authoring installs `author_icp_document@1`, registered ungranted (144 -> 145), and
+    # the persona request `request_persona_synthesis@1` on the same terms (145 -> 146).
+    # The project plan's `write_project_document@1` installs ungranted (146 -> 147), and the
+    # three ARV2 reads install on the same terms (147 -> 150).
+    # The paged reads install `read_account_research@2` and `read_discovery_run@2`, both UNGRANTED
+    # (150 -> 152): `head-of-abm@v55` pins the `@1` contracts by digest, so the new inputs land at
+    # new addresses and the grant moves with a later, reviewed profile version.
+    # The general claims query `read_claims@1` installs UNGRANTED beside them (152 -> 153): one
+    # new name at one address, granted to nobody until a profile pins its contract. The gallery
+    # read `read_artifact@1` installs on exactly the same terms (153 -> 154).
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (154 -> 156).
+    # The code sandbox installs `run_python@1` (156 -> 157). It arrived ungranted and is
+    # GRANTED as of `head-of-abm@v58`, the reviewed bump that pins its two schema digests, so
+    # the head now sees it AVAILABLE rather than role-unavailable.
+    assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
+    # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
+    # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
+    # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
+    # Agent-authored discovery (2026-09-30) installs `launch_arv2_discovery@2` beside the retired
+    # `@1` (166 -> 167), and `read_discovery_run@3` (summary, end reason, exclusions) beside `@2`
+    # (167 -> 168). `head-of-abm@v70` pins both new addresses, so they are available and the
+    # addresses they replace drop to role-unavailable.
+    assert len(by_address) == 168
+    assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["read_discovery_run@3"].status is AgentCapabilityStatus.AVAILABLE
+    assert by_address["read_discovery_run@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["finish_design_leg@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     # P3.3 retired the Part II reservation: the 49 design tools are GRANTED to
     # AgentRole.DESIGN now. From head-of-abm's view they are role-unavailable with
@@ -235,57 +392,171 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # (78 + 51 = 129); all but `open_design_leg` are role-unavailable to the Head of ABM.
     # Brand Ad Assets v1 W2's four ungranted lane envelopes join on the same terms as
     # `synthesize_entity_prose@1`: machine-invoked, disclosed, granted to nobody (129 + 4 = 133).
-    assert len(by_address) == 133
+    # Slice B wave 2 and the browser-gate repair install `draft_account_research_directive@4`
+    # and @5 alongside their replayable predecessors. The ARV2-R0 merge unions both lines'
+    # additions; 136 is measured off the merged tree, not derived from either side's arithmetic.
+    # ARV2 Track O, O4's `exa_search_evidence@1` joins on the same terms: installed, disclosed,
+    # and granted only to `onboarding_synthesis`, so it is unavailable here (136 + 1 = 137).
+    # ARV2 onboarding O6 re-measures this off the tree rather than continuing the arithmetic: the
+    # standing 137 had already drifted to 139 before this lane (two installs landed without moving
+    # the number), and O6's own seams install `open_icp_confirmation_gate@2` and
+    # `open_product_set_selection_gate@1` (139 + 2 = 141). The ARV2 launch/read pair was already
+    # installed and merely ungranted, so promoting it moves grants, not inventory. The pre-existing
+    # 137 -> 139 drift is folded into this one re-pin.
+    # ARV2 Track R, R3 installs `launch_arv2_person_research@1`, registered ungranted
+    # (141 + 1 = 142).
+    # ARV2 Track R, R4 registers `launch_arv2_discovery@1`, ungranted (142 -> 143).
+    # Human project-label rename adds one ungranted address (143 -> 144), ICP authoring's
+    # `author_icp_document@1` adds the next one on the same terms (144 -> 145), and the persona
+    # request `request_persona_synthesis@1` the one after (145 -> 146).
+    # The project plan's `write_project_document@1` installs ungranted (146 -> 147), and the
+    # three ARV2 reads install on the same terms (147 -> 150).
+    # The paged reads install `read_account_research@2` and `read_discovery_run@2`, both UNGRANTED
+    # (150 -> 152): `head-of-abm@v55` pins the `@1` contracts by digest, so the new inputs land at
+    # new addresses and the grant moves with a later, reviewed profile version.
+    # The general claims query `read_claims@1` installs UNGRANTED beside them (152 -> 153): one
+    # new name at one address, granted to nobody until a profile pins its contract. The gallery
+    # read `read_artifact@1` installs on exactly the same terms (153 -> 154).
+    # Artifacts page (2026-09-15): design_rename_document and design_set_document_archived,
+    # ungranted (154 -> 156).
+    # The code sandbox installs `run_python@1` (156 -> 157). It arrived ungranted and is
+    # GRANTED as of `head-of-abm@v58`, the reviewed bump that pins its two schema digests, so
+    # the head now sees it AVAILABLE rather than role-unavailable.
+    assert by_address["run_python@1"].status is AgentCapabilityStatus.AVAILABLE
+    # Projects directory (2026-09-19): four project-row tools, ungranted (157 -> 161).
+    # Asset ingestion adds two @2 contracts and its ungranted enrichment retry (161 -> 164).
+    # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
+    # launch_arv2_discovery@2 (2026-09-30) (166 -> 167) and read_discovery_run@3 (167 -> 168),
+    # both granted at head-of-abm@v70.
+    assert len(by_address) == 168
+    assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
         "rename_thread@1",
+        "rename_project@1",
         "set_thread_pinned@1",
         "archive_thread@1",
+        "create_project@1",
+        "update_project_details@1",
+        "set_project_pinned@1",
+        "set_project_archived@1",
     ):
         assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["synthesize_entity_prose@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["synthesize_value_narrative@1"].status is not AgentCapabilityStatus.AVAILABLE
     assert by_address["inspect_statement_history@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["inspect_readiness_history@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["inspect_client_claim@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
-    assert by_address["list_client_knowledge@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
-    assert by_address["inspect_client_claim@2"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["list_client_knowledge@2"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["inspect_product_claim@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert by_address["list_product_knowledge@1"].status is AgentCapabilityStatus.AVAILABLE
-    assert available == {
-        "draft_account_research_directive@3",
+    # ARV2 onboarding O6: every Client-KB / Product-KB / readiness reader left the Head-of-ABM
+    # surface with `head-of-abm@v44`, both versions of each. The map must disclose them — the model
+    # seeing a capability it lacks is what stops it inventing a workaround — but never as available.
+    for address in (
+        "evaluate_stage0_readiness@1",
         "evaluate_stage0_readiness@2",
-        "get_research_view@1",
         "inspect_readiness_history@1",
+        "inspect_client_claim@1",
         "inspect_client_claim@2",
-        "inspect_product_claim@1",
-        "inspect_statement_history@1",
+        "list_client_knowledge@1",
         "list_client_knowledge@2",
+        "inspect_product_claim@1",
         "list_product_knowledge@1",
+        "open_product_selection_gate@1",
+        "open_discovery_configuration_gate@1",
+        "start_recon@1",
+        "submit_onboarding_input@1",
+        "start_confirmed_project_run@3",
+        "synthesize_icps@3",
+        "open_icp_confirmation_gate@1",
+    ):
+        assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE, address
+    # The whole model-invocable surface of the new Stage-0 lane. `open_icp_confirmation_gate@2`
+    # replaces `@1` (a knowledge document instead of a draft `icp_spec` row),
+    # `open_product_set_selection_gate@1` replaces the single-product gate, and the ARV2 launch
+    # tools — installed but ungranted since Track R R2/R3 — are granted here for the first time,
+    # with stage0-interview v21 stating what must be confirmed before either may be called.
+    #
+    # FOUNDER RULING 2 (2026-09-10): the five old-research-lane tools are NOT here. There is one
+    # research lane on this surface now, and the launch/read pair above is it. `read_arv2_account_
+    # research_run@1` is the only run read; the old lane's two read tools resolve
+    # `account_research_run` rows the new lane never writes, so leaving them installed-and-granted
+    # would advertise a status surface that answers about nothing this agent can start.
+    #
+    # ARV2 Track R, R4 adds `launch_arv2_discovery@1`: finding candidate accounts from the
+    # project's own pinned ICP is the same act on the same lane as researching the accounts a
+    # human named, so it is granted with `head-of-abm@v45` and taught by stage0-interview v22 §7b.
+    #
+    # ARV2 context and authoring adds `author_icp_document@1` and `request_persona_synthesis@1`:
+    # writing the profile down and asking for its personas are the two halves of the ICP flow the
+    # agent may perform itself, granted with `head-of-abm@v46` and taught by stage0-interview v23
+    # §5b/§5c. Neither confirms anything — the ICP gate is still the human's.
+    #
+    # The project plan adds `write_project_document@1`: writing the plan down is the same act
+    # as saying it in the reply, except that the written version is a durable document the
+    # human can edit. Granted with `head-of-abm@v47` and taught by stage0-interview v24 §6b.
+    #
+    # The ARV2 reads add `read_project_accounts@1`, `read_account_research@1` and
+    # `read_discovery_run@1`: the project's own rows, read. They spend nothing and start nothing,
+    # so the skill can require them before the agent speaks about an account at all. Granted with
+    # `head-of-abm@v48` and taught by stage0-interview v25 §7b/§7c.
+    #
+    # The versioned project root takes three away. `author_icp_document@1`,
+    # `request_persona_synthesis@1` and `write_project_document@1` are ungranted at
+    # `head-of-abm@v55`: `project/` is a writable prefix now, so the ICP, the personas and the plan
+    # are written with `write_file` and taught by `icp-authoring@v1`, `persona-authoring@v1` and
+    # `plan-authoring@v1`. They stay installed and disclosed as ROLE_UNAVAILABLE below, which is
+    # the whole point of disclosing a capability the role lacks: the model is not left to invent a
+    # workaround for a tool that vanished.
+    #
+    # Paged and spilled reads move two and add two. `read_account_research` and
+    # `read_discovery_run` are available at their PAGED `@2` — `head-of-abm@v56` pins those exact
+    # contracts, so the `@1`s drop to ROLE_UNAVAILABLE beside the retired document tools — and
+    # `read_claims@1` and `read_artifact@1` join, granted at the same version and taught by
+    # stage0-interview v33 §7c.
+    #
+    # The code sandbox adds `run_python@1`: one short Python script per call, in a locked-down
+    # container over the turn's own workspace, and the only way to open the PDFs, decks,
+    # spreadsheets and images the project's `attachments/` holds. Granted at `head-of-abm@v58`
+    # and taught by `code-execution@v1`. It spends nothing and starts nothing — its only effect
+    # is on files in the agent's own workspace, swept against the profile's policy on exit.
+    #
+    # Multi-artifact legs move one: `open_design_leg` is available at `@5` — `head-of-abm@v59`
+    # pins that exact contract, whose input carries an `artifacts` list instead of one `title` —
+    # so `@4` drops to ROLE_UNAVAILABLE beside the other superseded addresses.
+    #
+    # Agent-authored discovery moves two: the Head of ABM writes the discovery brief, so
+    # `launch_arv2_discovery` is available at `@2` (the brief in its input) and `read_discovery_run`
+    # at `@3` (summary, end reason, exclusions) — `head-of-abm@v70` pins both exact contracts —
+    # and `@1` / `@2` drop to ROLE_UNAVAILABLE. Taught by stage0-interview v43 section 7b.
+    assert available == {
+        "inspect_statement_history@1",
+        "launch_arv2_account_research@1",
+        "launch_arv2_discovery@2",
+        "launch_arv2_person_research@1",
+        "open_design_leg@5",
+        "configure_project_targeting@1",
+        "propose_field@2",
+        "propose_source@1",
+        "read_account_research@2",
+        "read_artifact@1",
+        "read_arv2_account_research_run@1",
+        "read_claims@1",
+        "read_discovery_run@3",
+        "read_project_accounts@1",
+        "record_interview_answer@1",
+        "run_python@1",
+        "submit_ingestion@1",
+        "web_search@1",
+    }
+    # Every dropped old-lane tool stays disclosed — the model seeing a capability it lacks is what
+    # stops it inventing a workaround — and every one of them names WHY.
+    for address in (
         "launch_account_research@1",
         "launch_selected_account_research@1",
         "launch_contact_research@1",
-        "open_design_leg@4",
-        "open_directive_confirmation_gate@1",
-        "open_icp_confirmation_gate@1",
-        "open_product_selection_gate@1",
-        "propose_field@2",
-        "propose_source@1",
         "read_account_research_run@1",
         "read_contact_research_run@1",
-        "record_interview_answer@1",
-        "open_discovery_configuration_gate@1",
-        "start_confirmed_project_run@3",
-        "start_recon@1",
-        "submit_ingestion@1",
-        "submit_onboarding_input@1",
-        "synthesize_icps@3",
-    }
+    ):
+        assert by_address[address].status is AgentCapabilityStatus.ROLE_UNAVAILABLE, address
+        assert by_address[address].reason_code == "superseded_by_onboarding_v2", address
     assert by_address["confirm_project_product@1"].status is AgentCapabilityStatus.HUMAN_ONLY
-    assert by_address["evaluate_stage0_readiness@1"].status is (
-        AgentCapabilityStatus.ROLE_UNAVAILABLE
-    )
     assert by_address["start_confirmed_project_run@1"].status is (
         AgentCapabilityStatus.ROLE_UNAVAILABLE
     )
@@ -320,6 +591,11 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     assert "delegate_specialist: available" in head.generated_resource_map
     assert "execute/shell/process: unavailable" in head.generated_resource_map
     assert "/Users/" not in head.generated_resource_map
+    # Turn limits are operator settings (ruling 2026-09-27): the map never quotes the profile's
+    # own round or timeout numbers, which are not the ones the runtime applies.
+    assert "set by the deployment" in head.generated_resource_map
+    assert "max_model_rounds=" not in head.generated_resource_map
+    assert "turn_timeout_s=" not in head.generated_resource_map
     assert head.system_prompt.endswith("## End resolved resource and capability map")
 
 
@@ -335,20 +611,72 @@ def test_s4e_production_project_surface_resolves_strict_client_kb_v2_and_hardeni
     )
 
     addresses = {pin.address for pin in production.profile.tools}
-    assert production.profile_ref.address == "profile:head-of-abm@v39"
+    assert production.profile_ref.address == "profile:head-of-abm@v70"
     assert [item.resource.address for item in production.skill_disclosures()][0] == (
-        "skill:stage0-interview@v20"
+        "skill:stage0-interview@v43"
     )
-    assert {"list_client_knowledge@2", "inspect_client_claim@2"} <= addresses
-    assert {"list_product_knowledge@1", "inspect_product_claim@1"} <= addresses
-    assert "open_product_selection_gate@1" in addresses
-    assert {"list_client_knowledge@1", "inspect_client_claim@1"}.isdisjoint(addresses)
-    assert toolbelt.descriptor("list_client_knowledge").address == "list_client_knowledge@2"
-    assert toolbelt.descriptor("inspect_client_claim").address == "inspect_client_claim@2"
+    # ARV2 onboarding O6 retired the S4-E Client-KB/Product-KB reader surface from this role: the
+    # new lane's Stage-0 knowledge is brand knowledge documents the agent reads off its workspace,
+    # so the strictness this test was written to guard is now enforced by the tools' ABSENCE.
+    # Every version of every retired reader must be gone from the production surface, not merely
+    # narrowed to its safe version.
+    assert {
+        "list_client_knowledge@1",
+        "list_client_knowledge@2",
+        "inspect_client_claim@1",
+        "inspect_client_claim@2",
+        "list_product_knowledge@1",
+        "inspect_product_claim@1",
+        "open_product_selection_gate@1",
+        "evaluate_stage0_readiness@1",
+        "evaluate_stage0_readiness@2",
+        "start_recon@1",
+    }.isdisjoint(addresses)
+    # What replaces them: the set-valued product gate and the ICP gate over the knowledge document.
+    assert "configure_project_targeting@1" in addresses
+    assert {"open_product_set_selection_gate@1", "open_icp_confirmation_gate@2"}.isdisjoint(
+        addresses
+    )
+    assert "open_icp_confirmation_gate@1" not in addresses
+    assert toolbelt.descriptor("open_icp_confirmation_gate").address == (
+        "open_icp_confirmation_gate@2"
+    )
 
 
-def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() -> None:
-    """No published Product-KB blocks reads, not the first governed human-authored write."""
+def test_v70_grants_the_agent_authored_discovery_pair_and_its_teaching(
+    registry: AgentProfileRegistry,
+) -> None:
+    """`head-of-abm@v70` is where the agent starts writing the discovery brief.
+
+    It grants `launch_arv2_discovery@2` (the brief in the input) and `read_discovery_run@3`
+    (summary, end reason, exclusions) and neither address they replace, and it pins the
+    stage0-interview version whose section 7b teaches how to write the brief.
+    """
+
+    assert C6_ACTIVE_PROFILE_VERSIONS[AgentRole.HEAD_OF_ABM] == "v70"
+    head = registry.resolve(AgentRole.HEAD_OF_ABM)
+    granted = {pin.address for pin in head.profile.tools}
+    assert "launch_arv2_discovery@2" in granted
+    assert "launch_arv2_discovery@1" not in granted
+    assert "read_discovery_run@3" in granted
+    assert "read_discovery_run@2" not in granted
+    assert head.profile.skills[0].resource.address == "skill:stage0-interview@v43"
+    body = head.open_skill("skill:stage0-interview@v43")
+    assert "## 7b. Discover accounts for this project" in body
+    assert "`must_not`" in body
+    assert "discovery_in_progress" in body
+
+
+def test_stage0_skill_says_what_to_do_when_the_brand_has_no_knowledge_documents() -> None:
+    """The honest empty state replaces S4-E's missing-Product-KB carve-out.
+
+    The ancestor of this test guarded that a missing Product-KB card could not block a human from
+    supplying the first product fact. ARV2 onboarding O6 removed the Client-KB/Product-KB readers
+    from this surface entirely, so the equivalent guarantee is now about the brand's knowledge
+    documents: when there are none the agent says so plainly and points at onboarding — it does not
+    research the company itself and does not invent a profile — while routing what the human says
+    stays unconditional, with `unmapped` as the honest floor.
+    """
 
     with hermetic_flag_env():
         registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
@@ -356,13 +684,42 @@ def test_stage0_skill_routes_first_selected_product_fact_without_a_product_kb() 
         AgentRole.HEAD_OF_ABM,
         surface=PROJECT_CONVERSATION_SURFACE,
     )
-    body = production.open_skill("skill:stage0-interview@v20")
+    body = production.open_skill("skill:stage0-interview@v43")
 
-    assert "A missing Product-KB card blocks historical product-knowledge reads" in body
-    assert "not block a human from supplying the first fact" in body
-    assert "Never leave a clearly matching fact unmapped" in body
-    assert "`client.product_use_case`" in body
-    assert "publishes Product-KB v1" in body
+    assert "onboarding has not produced knowledge for this brand yet" in body
+    assert "brand onboarding runs from the workspace's onboarding flow" in body
+    assert "Do not research the company yourself and do not invent a profile." in body
+    assert "Never state a fact a file does not contain" in body
+    assert "is routed `unmapped` with its exact quote" in body
+
+
+def test_onboarding_icp_surface_withholds_the_evidence_tool_under_one_profile() -> None:
+    """The ICP turn writes from the files: the evidence tool is not installed, not discouraged."""
+
+    with hermetic_flag_env():
+        registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+    full = registry.resolve(AgentRole.ONBOARDING_SYNTHESIS)
+    icp = registry.resolve(AgentRole.ONBOARDING_SYNTHESIS, surface=ONBOARDING_ICP_SURFACE)
+
+    assert "exa_search_evidence@1" in {pin.address for pin in full.profile.tools}
+    assert {pin.address for pin in icp.profile.tools} == set()
+    # A surface is a ceiling on one reviewed profile, never a second profile: the ICP turn and the
+    # persona turns resolve the same profile resource and the same prompt.
+    assert icp.profile_ref == full.profile_ref
+    assert icp.profile_ref.address == "profile:onboarding-synthesis@v4"
+    assert icp.resource_manifest.prompt == full.resource_manifest.prompt
+    assert icp.resource_manifest.profile == full.resource_manifest.profile
+    # The manifest binds the EFFECTIVE authority, not the reviewed ceiling, so the narrowed
+    # resolution has its own aggregate digest — that is the manifest doing its job, and the
+    # equality that matters (same reviewed resources) is asserted above. The persona skill goes
+    # with the tool it requires, which is the outcome we want: the ICP turn is not handed a skill
+    # whose whole procedure is an evidence pass it cannot run.
+    assert icp.resource_manifest.aggregate_sha256 != full.resource_manifest.aggregate_sha256
+    assert [ref.address for ref in full.resource_manifest.skills] == [
+        "skill:icp-synthesis@v4",
+        "skill:audience-persona@v2",
+    ]
+    assert [ref.address for ref in icp.resource_manifest.skills] == ["skill:icp-synthesis@v4"]
 
 
 def test_account_research_role_and_surface_are_not_active(
@@ -381,12 +738,33 @@ def test_progressive_skill_disclosure_exposes_metadata_before_body(
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
     disclosures = head.skill_disclosures()
 
-    assert len(disclosures) == 2
-    assert disclosures[0].resource.address == "skill:stage0-interview@v20"
-    assert disclosures[1].resource.address == "skill:account-deep-steering@v6"
+    # One procedure skill, since founder ruling 2 (2026-09-10) dropped `account-deep-steering@v8`
+    # with the five old-lane tools its frontmatter required. A skill cannot grant a tool its
+    # profile does not pin, so keeping it would have disclosed a procedure whose every step is
+    # uncallable. v54 adds the fifteen manual chapters after it, in profile order: reference, not
+    # procedure, each granting no tool.
+    assert [item.resource.address for item in disclosures] == [
+        "skill:stage0-interview@v43",
+        # v55 adds the three document skills between the procedure and the reference shelf: each
+        # one is the whole procedure for one document written under `project/`, and grants no tool.
+        "skill:account-research-briefing@v3",
+        "skill:icp-authoring@v3",
+        "skill:persona-authoring@v2",
+        "skill:plan-authoring@v2",
+        # v58 adds the sandbox skill after them and before the reference shelf: the whole
+        # procedure for `run_python@1`, which it is the one disclosed skill to require.
+        "skill:code-execution@v1",
+        *(f"skill:manual-{name}@v16" for name in MANUAL_CHAPTERS),
+    ]
     assert "Ask one compact question" not in disclosures[0].model_dump_json()
     body = head.open_skill(disclosures[0].resource.address)
-    assert "Ask one compact question" in body
+    assert "Ask one question at a time" in body
+    briefing_path = ".deepagent/skills/account-research-briefing/v3/SKILL.md"
+    launch = build_toolbelt(storage=None, gateway=None).descriptor("launch_arv2_account_research")
+    assert briefing_path in body
+    assert briefing_path in head.prompt_body
+    assert briefing_path in launch.model_description
+    assert briefing_path in head.open_skill("skill:manual-tools@v16")
     with pytest.raises(AgentCatalogError, match="not disclosed"):
         head.open_skill("skill:unknown@v1")
 
@@ -448,16 +826,48 @@ def test_c67_account_deepagent_profile_is_historical_only(
 @pytest.mark.parametrize(
     ("fixture", "required_guidance"),
     (
-        ("url_only", "capture the URL as onboarding input, then start one governed recon"),
-        ("known_product", "show the current product candidate and ask the human to confirm"),
-        ("stale_product", "name the stale evidence and ask for the smallest refresh needed"),
-        ("contradictory_correction", "preserve the new exact quote and route it as a correction"),
-        ("upload", "submit an already captured workspace artifact through `submit_ingestion`"),
-        ("novel_field", "goes through `propose_field` or"),
-        ("novel_source", "or\n  `propose_source`"),
-        ("missing_readiness_floor", "cannot turn a failing deterministic result into ready"),
-        ("human_override", "records a readiness override"),
-        ("confirmed_start", "After the human approves the ICP"),
+        # ARV2 onboarding O6 re-pins these to the situations the NEW lane actually meets. The
+        # v20 fixtures named recon, readiness floors and readiness overrides — three mechanisms
+        # `head-of-abm@v44` no longer has. The rule the test enforces is unchanged: every Stage-0
+        # situation a human can walk into has one explicit governed behaviour written down, not an
+        # inference the model is trusted to make.
+        ("no_knowledge_documents", "onboarding has not produced knowledge for this brand yet"),
+        ("read_before_speaking", "before your first reply on a project, also read"),
+        ("unknown_product_fact", "Never state a fact a file does not contain"),
+        ("automatic_targeting", "call `configure_project_targeting` with the `icp_key`"),
+        ("possible_duplicate", "A candidate marked as a possible duplicate"),
+        ("no_approval_pause", "Do not open an approval card"),
+        # ARV2 context and authoring re-pins this one situation: a Revised gate receipt is no
+        # longer a dead end the agent records and hands back to onboarding — it is drafted, in the
+        # reviewed profile's own scope, and re-gated. The two new situations the same version
+        # creates get their own fixtures beside it.
+        ("icp_revised", "profile (section 5b) in the same scope"),
+        # The versioned project root moves three situations out of this skill and into their own.
+        # What v32 must still do is ROUTE them: each section names the skill that carries the
+        # procedure and the path to open it, so a model that reaches §5b, §5c or §6b is one read
+        # away from the whole rule rather than left with a sentence about a tool it no longer has.
+        ("author_icp", "open the `icp-authoring` skill"),
+        ("personas_after_confirmation", "open the `persona-authoring` skill"),
+        ("write_plan", "open the `plan-authoring` skill"),
+        ("document_skill_paths", "`.deepagent/skills/plan-authoring/v2/SKILL.md`"),
+        # The ARV2 reads: the one situation v25 creates. Speaking about an account is gated on
+        # reading it, and a read is never a launch — both are governed behaviours, not inferences.
+        # v33 widens the same rule past accounts, because the grant did: a claim and a gallery
+        # artifact are read before they are described too, and every read is walked to the end of
+        # its pages before a count is stated.
+        ("read_accounts_before_speaking", "Never state a fact from memory of an earlier thread"),
+        ("read_claims_for_a_specific_question", "**A specific question about claims**"),
+        ("read_the_artifact_before_describing_it", "**What a gallery artifact is or says:**"),
+        ("read_every_page_before_counting", "read again with `offset: next_offset` before you"),
+        ("a_spilled_result_is_read_from_its_file", "the receipt says `spilled_to`"),
+        ("read_discovery_before_relaunching", "call `read_discovery_run` first"),
+        ("prose_is_not_a_receipt", "ordinary file writes do not move a pin."),
+        ("contradictory_correction", "**Corrections carry lineage.**"),
+        ("upload", "goes through `submit_ingestion` with its material context"),
+        ("novel_field", "goes through `propose_field` or `propose_source`"),
+        ("unmappable", "is routed `unmapped` with its exact quote"),
+        ("launch_preconditions", "apply the ICP and products before launching"),
+        ("launch_is_not_completion", "It is never completed research"),
     ),
 )
 def test_stage0_quality_fixture_has_explicit_governed_behavior(
@@ -467,7 +877,7 @@ def test_stage0_quality_fixture_has_explicit_governed_behavior(
 ) -> None:
     del fixture
     head = registry.resolve(AgentRole.HEAD_OF_ABM)
-    body = head.open_skill("skill:stage0-interview@v20")
+    body = head.open_skill("skill:stage0-interview@v43")
 
     assert required_guidance in body
 
@@ -499,7 +909,11 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
         for name, roles in C6_AGENT_TOOL_AUTHORITY.items()
         if roles
     }
-    admitted.remove("evaluate_stage0_readiness@2")
+    # ARV2 onboarding O6: `evaluate_stage0_readiness@2` is no longer granted anywhere, so it can
+    # no longer stand for "a tool the Stage-0 skill needs". `record_interview_answer@1` is the
+    # v21 skill's own routing tool and belongs to no other skill on this profile, so withdrawing it
+    # is the same proof: the ceiling drops the tool AND the skill that depends on it.
+    admitted.remove("record_interview_answer@1")
     narrowed = AgentProfileRegistry(
         prompts=FolderPromptCatalog((CATALOG_ROOT / "prompts").resolve(strict=True)),
         skills=FolderSkillCatalog((CATALOG_ROOT / "skills").resolve(strict=True)),
@@ -510,9 +924,25 @@ def test_engine_ceiling_removes_tools_and_skills_that_depend_on_them() -> None:
     )
 
     head = narrowed.resolve(AgentRole.HEAD_OF_ABM)
-    assert "evaluate_stage0_readiness@2" not in {pin.address for pin in head.profile.tools}
-    assert [item.resource.address for item in head.skill_disclosures()] == [
-        "skill:account-deep-steering@v6"
+    assert "record_interview_answer@1" not in {pin.address for pin in head.profile.tools}
+    # Withdrawing the Stage-0 skill's own routing tool takes the skill with it, which is the
+    # ceiling doing its whole job rather than a weaker version of it. v54's fifteen manual
+    # chapters survive, and must: a chapter requires no tool, so no withdrawal can make its
+    # procedure uncallable. What it can make is a chapter that over-describes the narrowed
+    # surface, which is the manual's honesty problem, not the ceiling's.
+    remaining = [item.resource.address for item in head.skill_disclosures()]
+    assert "skill:stage0-interview@v43" not in remaining
+    # v55's three document skills survive with the manual chapters, and for the same reason: a
+    # skill that requires no tool cannot be made uncallable by withdrawing one.
+    assert remaining == [
+        "skill:account-research-briefing@v3",
+        "skill:icp-authoring@v3",
+        "skill:persona-authoring@v2",
+        "skill:plan-authoring@v2",
+        # v58 adds the sandbox skill after them and before the reference shelf: the whole
+        # procedure for `run_python@1`, which it is the one disclosed skill to require.
+        "skill:code-execution@v1",
+        *(f"skill:manual-{name}@v16" for name in MANUAL_CHAPTERS),
     ]
 
 
@@ -542,7 +972,7 @@ def test_resolved_snapshot_materializes_through_c61_backend(
 def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path) -> None:
     copied = tmp_path / "catalog"
     shutil.copytree(CATALOG_ROOT, copied)
-    prompt = copied / "prompts/head-of-abm/v7/SYSTEM.md"
+    prompt = copied / "prompts/head-of-abm/v18/SYSTEM.md"
     prompt.write_text(prompt.read_text() + "\nChanged under the same version.\n")
     toolbelt = build_toolbelt(storage=None, gateway=None)
     admitted = frozenset(
@@ -579,6 +1009,16 @@ def test_changed_resource_or_tool_schema_fails_before_profile_use(tmp_path: Path
         )
 
 
+@pytest.mark.parametrize("name", ["design_register_asset_record", "design_set_asset_description"])
+def test_asset_api_versions_do_not_expand_the_reviewed_design_profile(
+    registry: AgentProfileRegistry, name: str
+) -> None:
+    capabilities = {item.address: item for item in registry.resolve(AgentRole.DESIGN).capabilities}
+    assert capabilities[f"{name}@1"].status is AgentCapabilityStatus.AVAILABLE
+    assert capabilities[f"{name}@2"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
+    assert capabilities[f"{name}@2"].reason_code == "not_admitted_for_role"
+
+
 def test_design_profile_resolves_with_the_full_granted_write_surface(
     registry: AgentProfileRegistry,
 ) -> None:
@@ -590,12 +1030,27 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     P3.2-gate-ratified model policy on its face. P3.5 adds the fiftieth pin:
     `finish_design_leg@1`, the leg-level exit (§2.2) — the composite's one doorway
     back to head-of-abm.
+
+    2026-09-19 adds three pins: the account reads, granted so a 1:1 creative can open
+    the account's research itself.
     """
     resolved = registry.resolve(AgentRole.DESIGN)
-    assert resolved.profile.version == "v1"
-    assert len(resolved.profile.tools) == 50
+    assert resolved.profile.version == "v3"
+    assert len(resolved.profile.tools) == 54
     assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
     assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
+    # 2026-09-19: the design agent reads the target account the way head-of-abm does.
+    # `read_account_research` is pinned at `@2` — the PAGED contract head-of-abm holds since
+    # `head-of-abm@v56`. `@1` is registered-but-ungranted (frozen for replay), so the design
+    # note's `@1` naming cannot be composed: see the module comment at `_roles_for`.
+    # 2026-09-22 adds the fourth: web_search@1, the open-web search, used last.
+    for address in (
+        "read_project_accounts@1",
+        "read_account_research@2",
+        "read_claims@1",
+        "web_search@1",
+    ):
+        assert any(pin.address == address for pin in resolved.profile.tools), address
 
     by_address = {item.address: item for item in resolved.capabilities}
     available = {
@@ -606,5 +1061,6 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     assert available == {pin.address for pin in resolved.profile.tools}
 
     assert resolved.profile.delegation_roles == ()
-    assert resolved.profile.model.model_id == "openai/gpt-5.6-terra"
+    # The pin is well-formed (one vendor segment); which model it names is an env setting.
+    assert_well_formed_model_id(resolved.profile.model.model_id)
     assert resolved.profile.max_delegation_depth == 0

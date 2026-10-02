@@ -492,7 +492,10 @@ async def _channel_intent(
         entity_id=intent.contact_entity_id,
         entity_type=EntityType.CONTACT,
         field_key="core.work_email",
-        value_json=_EMAIL,
+        # D4-b decision 6: a work-email claim is the address with the verdict that grades it. This
+        # independent directory binds the address to the person; it probes no mailbox, so the
+        # verdict it can honestly carry is ``unverified``. The corroboration compares addresses.
+        value_json={"address": _EMAIL, "status": "unverified"},
         source_url="https://validator.example.invalid/evidence/c5",
         source_key="channel_validator",
         source_tier=1,

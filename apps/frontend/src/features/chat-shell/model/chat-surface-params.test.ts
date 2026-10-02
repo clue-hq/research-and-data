@@ -27,6 +27,23 @@ test("surface=gallery opens the rail on the gallery", () => {
   assert.equal(state.editing, false);
 });
 
+test("Plan round-trips without artifact editing vocabulary", () => {
+  assert.deepEqual(chatSurfaceUrlState({ surface: "plan", edit: "1" }), {
+    surface: "plan", panelOpen: true, editing: false, inspectorSelection: "canvas",
+  });
+  assert.deepEqual(chatSurfacePaneParams(paneState({ surface: "plan", panelOpen: true, editing: true, inspectorSelection: "text" })), {
+    surface: "plan", edit: undefined, selection: undefined,
+  });
+});
+
+test("surface=target-accounts opens the rail on the target-accounts surface", () => {
+  const state = chatSurfaceUrlState({ edit: "1", surface: "target-accounts" });
+  assert.equal(state.panelOpen, true);
+  assert.equal(state.surface, "target-accounts");
+  // edit/selection are artifact-surface vocabulary and are ignored here.
+  assert.equal(state.editing, false);
+});
+
 test("surface=web|ad opens the artifact surface; edit=1 enters editing", () => {
   const web = chatSurfaceUrlState({ edit: "1", surface: "web" });
   assert.equal(web.panelOpen, true);
@@ -134,6 +151,27 @@ test("an open gallery serializes surface=gallery and carries no edit or selectio
     inspectorSelection: "canvas",
     panelOpen: true,
     surface: "gallery",
+  });
+});
+
+test("the target-accounts surface serializes its own name and round-trips", () => {
+  const targetAccounts = paneState({
+    editing: true,
+    inspectorSelection: "image",
+    panelOpen: true,
+    rawSurface: "web",
+    surface: "target-accounts",
+  });
+  assert.deepEqual(chatSurfacePaneParams(targetAccounts), {
+    edit: undefined,
+    selection: undefined,
+    surface: "target-accounts",
+  });
+  assert.deepEqual(roundTrip(targetAccounts), {
+    editing: false,
+    inspectorSelection: "canvas",
+    panelOpen: true,
+    surface: "target-accounts",
   });
 });
 

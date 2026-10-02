@@ -1,136 +1,156 @@
-import Link from "next/link";
-import { SidebarIcon } from "@/components/shell/sidebar-icon";
-import type { AccountDetail, CommitteeMember } from "../model/account-detail";
-import { contactPersonaLabel } from "../model/account-contact";
-import { formatFieldKeyLabel, formatToken } from "../model/formatting";
-import { prosePresentation, type ProseRead } from "../model/prose";
-import readability from "./account-readability.module.css";
-import { AccountAvatar } from "./account-avatar";
-import { Absent, FactList, FactValue } from "./account-facts";
-import { ContactAvatar } from "./contact-avatar";
+"use client";
 
-/** A neutral pill for a semantic token the frontend has already formatted. */
-export function TokenBadge({
-  children,
+import Image from "next/image";
+import Link from "./research-link";
+import { useState } from "react";
+import {
+  AtSign,
+  BadgeCheck,
+  BriefcaseBusiness,
+  Building2,
+  CalendarDays,
+  CalendarPlus,
+  ChevronDown,
+  ChevronUp,
+  CircleDollarSign,
+  CircleGauge,
+  Clock3,
+  Earth,
+  Gauge,
+  Landmark,
+  MapPin,
+  SlidersHorizontal,
+  UserRound,
+  UsersRound,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
+import type { AccountContact, AccountDetail } from "../model/account-detail";
+import readability from "./account-readability.module.css";
+import components from "./account-components.module.css";
+import { ContactAvatar } from "./contact-avatar";
+import { FitScoreIndicator } from "./fit-score-indicator";
+import { SourceChip } from "./source-chip";
+import { useAccountOwner } from "../hooks/use-account-owner";
+import { UNASSIGNED_OWNER_LABEL } from "../model/account-owner";
+
+/** The account glyph shown when the account has no logo asset (ruling S2). */
+const ACCOUNT_GLYPH_PATH = "/icons/building.svg";
+
+const industryBadgeTones = [
+  components.badgeToneOrange,
+  components.badgeToneBlue,
+  components.badgeToneCyan,
+] as const;
+
+const accountDateFormatter = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeZone: "UTC",
+});
+
+function formatAccountDate(value?: string) {
+  return value ? accountDateFormatter.format(new Date(value)) : "—";
+}
+
+export function FitBadge({
   compact = false,
+  fit,
+  neutral = false,
 }: {
-  children: React.ReactNode;
   compact?: boolean;
+  /** `null` is an unscored account, not a band: it prints an em dash. */
+  fit: string | null;
+  neutral?: boolean;
 }) {
+  const high = fit === "High" && !neutral;
+
   return (
     <span
-      className={`${readability.pillMedium} inline-flex items-center rounded-xl bg-[var(--clue-background-pressed)] px-2 py-1 text-[var(--clue-content-neutral)] shadow-[var(--clue-shadow-low)] ${
-        compact ? "min-h-6" : "min-h-7"
-      }`}
+      className={`${readability.pillMedium} ${components.badge} ${
+        high
+          ? components.badgePositive
+          : components.badgeNeutral
+      } ${compact ? "min-h-[26px]" : ""}`}
     >
-      {children}
+      {fit ?? "—"}
     </span>
   );
 }
 
-export function AccountIdentity({ account }: { account: AccountDetail }) {
+export function AccountIdentity({ account }: { account: Pick<AccountDetail, "name" | "logoPath"> }) {
   return (
-    <div className="w-full">
-      <div className="flex size-[68px] items-center justify-center rounded-lg border-[0.5px] border-[var(--clue-border-neutral)] bg-white">
-        {/* The detail wire carries no logo field at all; the list row's
-            `logoUrl` is the (still null) one. Initials are the rendering. */}
-        <AccountAvatar name={account.name} rounded="lg" size={36} />
+    <div>
+      <div className="flex size-[68px] items-center justify-center rounded-lg border border-[var(--clue-border-neutral)] bg-white">
+        <Image
+          alt=""
+          aria-hidden="true"
+          className="size-14 shrink-0 object-contain"
+          height={56}
+          priority
+          src={account.logoPath ?? ACCOUNT_GLYPH_PATH}
+          unoptimized={account.logoPath != null}
+          width={56}
+        />
       </div>
       <h1 className={`${readability.detailTitle} mt-2`}>{account.name}</h1>
-      {account.domain ? (
-        <a
-          className={`${readability.uiRegular} text-[var(--clue-content-subtle)]`}
-          href={`https://${account.domain}`}
-          rel="noreferrer"
-          target="_blank"
-        >
-          {account.domain}
-        </a>
-      ) : null}
-      {account.redirectedFrom ? (
-        <p
-          className={`${readability.uiRegular} mt-2 text-[var(--clue-content-subtle)]`}
-        >
-          This account was merged. You followed a link to a record that now
-          resolves here.
-        </p>
-      ) : null}
     </div>
-  );
-}
-
-type PropertyIconName = "account" | "contacts" | "fit" | "globe" | "hash";
-
-function PropertyIcon({ name }: { name: PropertyIconName }) {
-  if (name === "account") {
-    return <SidebarIcon name="account" />;
-  }
-
-  if (name === "contacts") {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img alt="" className="size-4 object-contain" src="/icons/detail/contacts.png" />
-    );
-  }
-
-  return (
-    <span className="flex size-4 items-center justify-center">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        alt=""
-        className="max-h-4 max-w-4 object-contain"
-        src={`/icons/detail/${name === "fit" ? "circle-chevron-down" : name}.svg`}
-      />
-    </span>
   );
 }
 
 function DetailsRow({
   children,
   compact = false,
-  icon,
+  icon: Icon,
   label,
+  labelAdornment,
 }: {
   children: React.ReactNode;
   compact?: boolean;
-  icon: PropertyIconName;
+  icon: LucideIcon;
   label: string;
+  labelAdornment?: React.ReactNode;
 }) {
   return (
     <div
-      className={`flex w-full items-start gap-1 ${
-        compact ? "min-h-7" : "min-h-8"
-      }`}
+      className={`flex w-full items-center gap-1 ${compact ? "min-h-7" : "min-h-8"}`}
     >
-      <div className={`${readability.fieldLabel} flex w-40 shrink-0 items-center gap-2 pt-1.5 text-[var(--clue-content-subtle)]`}>
-        <PropertyIcon name={icon} />
-        <span>{label}</span>
+      <div className={`${readability.fieldLabel} flex w-40 shrink-0 items-center gap-2 text-[var(--clue-content-subtle)]`}>
+        <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.5} />
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="truncate" title={label}>{label}</span>
+          {labelAdornment}
+        </span>
       </div>
-      <div className={`${readability.fieldValue} min-w-0 pt-1`}>{children}</div>
+      <div className={`${readability.fieldValue} min-w-0 flex-1`}>
+        {children}
+      </div>
     </div>
   );
 }
 
-export function CommitteeInline({
+export function ContactsInline({
   accountId,
-  committee,
+  contacts,
 }: {
   accountId: string;
-  committee: CommitteeMember[];
+  contacts: AccountContact[];
 }) {
-  if (!committee.length) return <Absent label="No committee resolved yet" />;
-
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      {committee.map((member) => (
-        <span className="flex items-center gap-2" key={member.contactId}>
-          <ContactAvatar decorative name={member.name} size={24} />
-          <span>{member.name ?? "Unnamed contact"}</span>
-        </span>
+      {contacts.slice(0, 3).map((contact) => (
+        <Link className="flex items-center gap-2 whitespace-nowrap hover:underline" href={`/accounts/${accountId}/contacts${contact.hasDetail ? `/${contact.id}` : ""}`} key={contact.id}>
+          <ContactAvatar
+            name={contact.name}
+            size={24}
+            src={contact.avatarUrl}
+          />
+          <span>{contact.name}</span>
+        </Link>
       ))}
       <Link
-        className={`${readability.actionMedium} ml-0.5`}
+        className={`${readability.actionMedium} ml-0.5 rounded-[var(--clue-ds-product-component-button-sm-radius)] px-1.5 py-1 hover:bg-[var(--clue-background-hover)]`}
         href={`/accounts/${accountId}/contacts`}
+        prefetch={false}
       >
         See all
       </Link>
@@ -138,216 +158,258 @@ export function CommitteeInline({
   );
 }
 
-/**
- * The account details rail.
- *
- * Identity comes from the entity row; everything else is the registry-driven
- * `neutralFacts` list, rendered generically off `fieldKey`. There is no
- * research-status row: status is an `(account, project)` fact served on the
- * list, and a detail badge would have to invent one.
- */
+export type AccountDetailsListData = Pick<AccountDetail,
+  | "id" | "name" | "owner" | "createdBy" | "industryLabels" | "headcountLabel"
+  | "revenueLabel" | "researchStatus" | "researchStatusLabel" | "websiteUrl"
+  | "websiteLabel" | "overallFit" | "fitScore" | "fitScoreLabel" | "locationsLabel"
+  | "overviewDisplay" | "foundedLabel" | "fundingLabel" | "socials" | "contacts" | "customFields"
+> & { createdAt?: string; lastModifiedAt?: string; researchEvidence?: AccountDetail["researchEvidence"] };
+
 export function AccountDetailsList({
   account,
-  showCommittee = false,
+  showContacts = false,
 }: {
-  account: AccountDetail;
-  showCommittee?: boolean;
+  account: AccountDetailsListData;
+  showContacts?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const owner = useAccountOwner(account);
+  const evidenceById = new Map(account.researchEvidence?.map((record) => [record.claimId, record]));
+  const primaryCustomFields = account.customFields.filter(
+    (field) => field.primary,
+  );
+  const secondaryCustomFields = account.customFields.filter(
+    (field) => !field.primary,
+  );
+
+  const renderCustomField = (
+    field: AccountDetail["customFields"][number],
+  ) => (
+    <DetailsRow
+      icon={SlidersHorizontal}
+      key={field.id}
+      label={field.label}
+      labelAdornment={
+        <Zap
+          aria-label="Custom variable"
+          className="size-3 shrink-0"
+          fill="currentColor"
+          strokeWidth={1.25}
+        />
+      }
+    >
+      {field.presentation === "score" && Number.isFinite(Number(field.value)) ? (
+        <FitScoreIndicator score={Number(field.value)} />
+      ) : field.presentation === "badge" ? (
+        <FitBadge fit={field.value} neutral={field.value !== "High"} />
+      ) : (
+        <span className="min-w-0 truncate">{field.value}</span>
+      )}
+      {field.claimId && evidenceById.has(field.claimId) ? (
+        <SourceChip evidence={evidenceById.get(field.claimId)!} />
+      ) : null}
+    </DetailsRow>
+  );
+
   return (
-    <div className="flex w-full flex-col gap-2">
-      <DetailsRow icon="account" label="Account">
-        {account.name}
-      </DetailsRow>
-      <DetailsRow icon="globe" label="Domain">
-        {account.domain ? (
-          <a
-            href={`https://${account.domain}`}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {account.domain}
-          </a>
-        ) : (
-          <Absent />
-        )}
-      </DetailsRow>
-      <DetailsRow icon="account" label="Also known as">
-        {account.aliases.length ? account.aliases.join(", ") : <Absent />}
-      </DetailsRow>
-      <DetailsRow icon="hash" label="Registry ids">
-        {Object.keys(account.registryIds).length ? (
-          <span className="flex flex-col gap-0.5">
-            {Object.entries(account.registryIds).map(([registry, value]) => (
-              <span key={registry}>
-                <span className="text-[var(--clue-content-subtle)]">
-                  {formatToken(registry)}:
-                </span>{" "}
-                <FactValue value={value} />
+    <div className="flex w-full flex-col">
+      <div className="flex flex-col gap-2">
+        <h3 className={`${readability.sectionHeading} mb-1 text-[var(--clue-content-subtle)]`}>
+          Core
+        </h3>
+        <DetailsRow icon={Building2} label="Account">
+          {account.name}
+        </DetailsRow>
+        <DetailsRow icon={UserRound} label="Owner">
+            {owner ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <ContactAvatar
+                  name={owner.name}
+                  size={22}
+                  src={owner.avatarUrl}
+                />
+                <span className="min-w-0 truncate" title={owner.name}>{owner.name}</span>
+              </span>
+            ) : (
+              <span className="text-[var(--clue-content-disabled)]">{UNASSIGNED_OWNER_LABEL}</span>
+            )}
+        </DetailsRow>
+        <DetailsRow icon={BriefcaseBusiness} label="Industry">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            {account.industryLabels.map((industry, index) => (
+              <span
+                className={`${readability.pillMedium} ${components.badge} ${industryBadgeTones[index % industryBadgeTones.length]}`}
+                key={industry}
+              >
+                {industry}
               </span>
             ))}
-          </span>
-        ) : (
-          <Absent />
-        )}
-      </DetailsRow>
-      <DetailsRow icon="globe" label="Headquarters">
-        {account.hqGeo ? (
-          Object.values(account.hqGeo)
-            .filter((part): part is string => typeof part === "string")
-            .join(", ") || <Absent />
-        ) : (
-          <Absent />
-        )}
-      </DetailsRow>
-
-      <div className="mt-3">
-        <h3
-          className={`${readability.fieldLabel} mb-2 text-[var(--clue-content-subtle)]`}
-        >
-          Researched fields
-        </h3>
-        <FactList facts={account.neutralFacts} />
-      </div>
-
-      {showCommittee ? (
-        <DetailsRow compact icon="contacts" label="Committee">
-          <CommitteeInline
-            accountId={account.id}
-            committee={account.committee}
+          </div>
+        </DetailsRow>
+        <DetailsRow icon={UsersRound} label="Headcount">
+          <FitBadge fit={account.headcountLabel} neutral />
+        </DetailsRow>
+        <DetailsRow icon={CircleDollarSign} label="Revenue">
+          <FitBadge fit={account.revenueLabel} neutral />
+        </DetailsRow>
+        <DetailsRow icon={BadgeCheck} label="Research status">
+          <FitBadge
+            fit={account.researchStatusLabel ?? account.researchStatus}
+            neutral
           />
         </DetailsRow>
+        <DetailsRow icon={Earth} label="Website">
+          {account.websiteUrl ? (
+            <a
+              className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
+              href={account.websiteUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              {account.websiteLabel}
+            </a>
+          ) : (
+            <span className="text-[var(--clue-content-disabled)]">{account.websiteLabel}</span>
+          )}
+        </DetailsRow>
+        <DetailsRow icon={Gauge} label="Overall buying fit">
+          <FitBadge fit={account.overallFit} />
+        </DetailsRow>
+        <DetailsRow icon={CircleGauge} label="Fit Score">
+          {account.fitScoreLabel ?? (
+            <FitScoreIndicator score={account.fitScore} />
+          )}
+        </DetailsRow>
+
+        {expanded ? (
+          <>
+            <DetailsRow icon={MapPin} label={account.overviewDisplay ? "HQ" : "Locations"}>
+              {account.locationsLabel}
+            </DetailsRow>
+            {account.foundedLabel ? (
+              <DetailsRow icon={CalendarDays} label="Founded">
+                {account.foundedLabel}
+              </DetailsRow>
+            ) : null}
+            {account.fundingLabel ? (
+              <DetailsRow icon={Landmark} label="Funding">
+                {account.fundingLabel}
+              </DetailsRow>
+            ) : null}
+            {account.socials.map((social) => (
+              <DetailsRow icon={AtSign} key={social.id} label={social.label}>
+                <a
+                  className="underline decoration-[var(--clue-content-subtle)] underline-offset-2"
+                  href={social.url}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  {social.label}
+                </a>
+              </DetailsRow>
+            ))}
+            <DetailsRow icon={CalendarPlus} label="Date Created">
+              {formatAccountDate(account.createdAt)}
+            </DetailsRow>
+            <DetailsRow icon={Clock3} label="Last Modified">
+              {formatAccountDate(account.lastModifiedAt)}
+            </DetailsRow>
+          </>
+        ) : null}
+      </div>
+
+      {showContacts ? (
+        <div className="mt-5">
+          <DetailsRow compact icon={UsersRound} label="Contacts">
+            <ContactsInline accountId={account.id} contacts={account.contacts} />
+          </DetailsRow>
+        </div>
       ) : null}
+
+      {primaryCustomFields.length > 0 ||
+      (expanded && secondaryCustomFields.length > 0) ? (
+        <div className="mt-5 flex flex-col gap-2">
+          <h3 className={`${readability.sectionHeading} mb-1 text-[var(--clue-content-subtle)]`}>
+            Custom
+          </h3>
+          {primaryCustomFields.map(renderCustomField)}
+          {expanded ? secondaryCustomFields.map(renderCustomField) : null}
+        </div>
+      ) : null}
+
+      <button
+        aria-expanded={expanded}
+        className={`${readability.actionMedium} mt-4 flex h-8 w-fit items-center gap-1 rounded-[var(--clue-ds-product-component-button-sm-radius)] px-2 text-[var(--clue-content-subtle)] transition-colors hover:bg-[var(--clue-background-hover)] hover:text-[var(--clue-content-neutral)]`}
+        onClick={() => setExpanded((current) => !current)}
+        type="button"
+      >
+        <span>{expanded ? "Show less" : "See all"}</span>
+        {expanded ? (
+          <ChevronUp aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
+        ) : (
+          <ChevronDown aria-hidden="true" className="size-3.5" strokeWidth={1.5} />
+        )}
+      </button>
     </div>
   );
 }
 
-/**
- * Coverage, stated for what it is.
- *
- * `researchedFieldCount` counts fields holding a value from ANY writer and has
- * no denominator, so it is never rendered as progress or as a completion
- * meter. `unresolvedFields` is the honest, registry-described research-side
- * companion; the key-only list remains a compatibility fallback.
- */
-export function AccountCoveragePanel({ account }: { account: AccountDetail }) {
-  const unresolvedFields = account.coverage.unresolvedFields.length
-    ? account.coverage.unresolvedFields
-    : account.coverage.unresolvedFieldKeys.map((fieldKey) => ({
-        description: null,
-        fieldKey,
-      }));
-
-  return (
-    <section>
-      <h2
-        className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}
-      >
-        Coverage
-      </h2>
-      <p className={`${readability.uiRegular} mt-2`}>
-        {account.coverage.researchedFieldCount} field
-        {account.coverage.researchedFieldCount === 1 ? "" : "s"} hold a value
-        for this account.
-      </p>
-      {unresolvedFields.length ? (
-        <div className="mt-2">
-          <p
-            className={`${readability.uiRegular} text-[var(--clue-content-subtle)]`}
-          >
-            Research asked for these and could not answer them:
-          </p>
-          <ul className="mt-2 space-y-2">
-            {unresolvedFields.map((field) => (
-              <li key={field.fieldKey} title={field.fieldKey}>
-                <span className={readability.uiMedium}>
-                  {formatFieldKeyLabel(field.fieldKey)}
-                </span>
-                <p
-                  className={`${readability.fieldLabel} text-[var(--clue-content-subtle)]`}
-                >
-                  {field.description ??
-                    `Research could not determine ${formatFieldKeyLabel(field.fieldKey).toLocaleLowerCase()}.`}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-/**
- * A prose section.
- *
- * The state comes from the live Lane-E prose claim, never from the presence of
- * adjacent facts or a guessed research-completion state.
- */
 export function AccountTextSection({
-  emptyNote,
-  prose,
-  restrictedNote,
+  paragraphs,
   title,
 }: {
-  emptyNote: string;
-  prose: ProseRead;
-  restrictedNote: string;
+  paragraphs: string[];
   title: string;
 }) {
-  const presentation = prosePresentation(prose, {
-    empty: emptyNote,
-    restricted: restrictedNote,
-  });
-
   return (
     <section>
       <h2 className={`${readability.sectionHeading} text-[var(--clue-content-subtle)]`}>
         {title}
       </h2>
-      {presentation.kind === "paragraphs" ? (
-        <div className={`${readability.bodyCopy} mt-3 space-y-5`}>
-          {presentation.paragraphs.map((paragraph) => (
-            <p key={paragraph}>{paragraph}</p>
-          ))}
-        </div>
-      ) : (
-        <p
-          className={`${readability.uiRegular} mt-3 text-[var(--clue-content-subtle)]`}
-        >
-          {presentation.message}
-        </p>
-      )}
+      <div className={`${readability.bodyCopy} mt-3 space-y-5`}>
+        {paragraphs.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+      </div>
     </section>
   );
 }
 
-/** Persona label for a committee member, formatted frontend-side. */
-export function personaBadgeLabel(member: CommitteeMember) {
-  return member.roleOnCommittee
-    ? formatToken(member.roleOnCommittee)
-    : contactPersonaLabel(member.persona);
-}
-
-export function PreviewToolbar({ account }: { account: AccountDetail }) {
+export function PreviewToolbar({ account, onClose, onNavigateTo }: {
+  account: Pick<AccountDetail, "id" | "previewTitle">;
+  onClose?: () => void;
+  onNavigateTo: (href: string) => void;
+}) {
   return (
-    <header className="flex h-[var(--clue-ds-product-dimension-header-action-bar-height)] items-center justify-between border-b-[0.5px] border-[var(--clue-border-neutral)] px-6">
+    <header className="flex h-14 items-center justify-between border-b-[0.5px] border-[var(--clue-border-neutral)] px-6">
       <div className="flex items-center gap-2.5">
-        <Link
-          aria-label="Close account preview"
-          className="flex size-6 items-center justify-center rounded-lg hover:bg-[var(--clue-background-hover)]"
-          href="/accounts"
-          prefetch={false}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt="" className="h-[9px] w-[9px] object-contain" src="/icons/detail/x.svg" />
-        </Link>
-        <span className={readability.uiMedium}>{account.name}</span>
+        {onClose ? (
+          <button aria-label="Close account preview" className={components.iconButton} onClick={onClose} type="button">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" className="h-[9px] w-[9px] object-contain" src="/icons/detail/x.svg" />
+          </button>
+        ) : (
+          <Link
+            aria-label="Close account preview"
+            className={components.iconButton}
+            href="/accounts"
+            prefetch
+            onNavigate={(event) => { event.preventDefault(); onNavigateTo("/accounts"); }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" className="h-[9px] w-[9px] object-contain" src="/icons/detail/x.svg" />
+          </Link>
+        )}
+        <span className={readability.uiMedium}>
+          {account.previewTitle}
+        </span>
       </div>
       <div className="flex items-center gap-3">
         <Link
-          className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[var(--clue-content-subtle)] hover:bg-[var(--clue-background-hover)] hover:text-[var(--clue-content-neutral)]"
+          className={`${readability.actionMedium} flex h-[var(--clue-ds-product-component-button-sm-height)] items-center gap-[var(--clue-ds-product-component-button-gap)] rounded-[var(--clue-ds-product-component-button-sm-radius)] px-[var(--clue-ds-product-component-button-sm-padding-inline)] text-[var(--clue-content-subtle)] hover:bg-[var(--clue-background-hover)] hover:text-[var(--clue-content-neutral)]`}
           href={`/accounts/${account.id}`}
-          prefetch={false}
+          prefetch
+          onNavigate={(event) => { event.preventDefault(); onNavigateTo(`/accounts/${account.id}`); }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img alt="" className="size-2.5 object-contain" src="/icons/detail/maximize.svg" />
@@ -355,7 +417,7 @@ export function PreviewToolbar({ account }: { account: AccountDetail }) {
         </Link>
         <button
           aria-label="Copy account link"
-          className="flex size-[26px] items-center justify-center rounded-md hover:bg-[var(--clue-background-hover)]"
+          className={components.iconButton}
           type="button"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -363,7 +425,7 @@ export function PreviewToolbar({ account }: { account: AccountDetail }) {
         </button>
         <button
           aria-label="More account actions"
-          className="flex size-[26px] items-center justify-center rounded-md hover:bg-[var(--clue-background-hover)]"
+          className={components.iconButton}
           type="button"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}

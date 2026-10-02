@@ -1,0 +1,855 @@
+{
+  "model": "openai/gpt-5-mini",
+  "reasoning": {
+    "effort": "minimal"
+  },
+  "claims": [
+    {
+      "entity": "account:probook",
+      "field_key": "core.account_name",
+      "value_json": "Probook",
+      "evidence_span": "Operating name: Probook. The company\u2019s own site calls it \u201cProbook \u00b7 The AI Operating System for Home Services.\u201d",
+      "source_url": "https://www.probook.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "core.primary_domain",
+      "value_json": "probook.ai",
+      "evidence_span": "Domains: probook.ai and www.probook.ai are the company web properties found.",
+      "source_url": "https://www.probook.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.95,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "core.company_linkedin_url",
+      "value_json": "https://linkedin.com/company/probook-ai",
+      "evidence_span": "The company LinkedIn URL is https://linkedin.com/company/probook-ai.",
+      "source_url": "https://linkedin.com/company/probook-ai",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "core.hq_location",
+      "value_json": {
+        "raw": "New York, NY",
+        "city": "New York",
+        "region": "NY",
+        "country": "US",
+        "country_code": "US"
+      },
+      "evidence_span": "Headquarters: New York, NY. The funding release datelines the announcement \u201cNew York, NY,\u201d and an indexed company record gives \u201cNew York, NY 10022, US.\u201d",
+      "source_url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "core.company_about",
+      "value_json": "The AI Operating System for home services; built around dispatch to unify intake, data cleaning, chat, outbound, and dispatch so operators can run customer experience as one connected system.",
+      "evidence_span": "Probook describes itself as \u201cthe AI Operating System for home services,\u201d \u201cbuilt around dispatch.\u201d",
+      "source_url": "https://www.probook.ai/letter",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "core.industry",
+      "value_json": "Home services software (HVAC, plumbing, electrical)",
+      "evidence_span": "Exact vertical sold into: US home-service contractors/businesses\u2014specifically HVAC, plumbing, and electrical.",
+      "source_url": "https://www.probook.ai/letter",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 34000000,
+        "round": "Series A"
+      },
+      "evidence_span": "a16z is leading Probook\u2019s $34 million Series A",
+      "source_url": "https://a16z.com/announcement/investing-in-probook/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.95,
+      "priority": 1
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "account.total_funding",
+      "value_json": {
+        "amount_usd": 40000000,
+        "estimate_kind": "reported"
+      },
+      "evidence_span": "Probook raised $40M from Andreessen Horowitz and Sequoia Capital.",
+      "source_url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.95,
+      "priority": 1
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "core.primary_tech_stack",
+      "value_json": [
+        "ServiceTitan"
+      ],
+      "evidence_span": "Integrations: ServiceTitan is explicitly named.",
+      "source_url": "https://yespress.io/probook",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "core.employee_range",
+      "value_json": {
+        "label": "14 open positions listed",
+        "min": 14,
+        "max": 14
+      },
+      "evidence_span": "Open Positions (14)",
+      "source_url": "https://jobs.ashbyhq.com/probook",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.6,
+      "priority": 2
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "account.hiring_velocity_eng",
+      "value_json": 3,
+      "evidence_span": "Engineering (3)",
+      "source_url": "https://jobs.ashbyhq.com/probook",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.7,
+      "priority": 1
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "account.strategic_moves",
+      "value_json": "Scale go-to-market team against surging demand; grow engineering and customer success",
+      "evidence_span": "Probook says it will \"scale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.\"",
+      "source_url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.95,
+      "priority": 1
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "account.resonance.culture",
+      "value_json": "Built by people from the trades; small team with diverse backgrounds; deploys in person and configures alongside customers.",
+      "evidence_span": "Built by the Trades.For the Trades. ... We deploy in person, configure alongside your team, and stay on the hook for the outcomes we sell.",
+      "source_url": "https://www.probook.ai/",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "priority": 3
+    },
+    {
+      "entity": "account:probook",
+      "field_key": "account.recent_funding",
+      "value_json": {
+        "amount_usd": 6000000,
+        "round": "Seed"
+      },
+      "evidence_span": "a $6 million Seed round led by Sequoia Capital.",
+      "source_url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 1
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.current_title",
+      "value_json": "Co-Founder & CEO, Probook",
+      "evidence_span": "Co-Founder & CEO at Probook",
+      "source_url": "https://www.linkedin.com/in/george-eliadis",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Probook",
+          "role": "Co-Founder & CEO",
+          "start": "Nov 2021",
+          "end": "Present"
+        },
+        {
+          "org": "A2Z Exterior Pressure Washing",
+          "role": "Contractor",
+          "start": "Jun 2018",
+          "end": "Aug 2023"
+        },
+        {
+          "org": "Eliadis Numismatics",
+          "role": "Numismatist",
+          "start": "Jun 2015",
+          "end": "Aug 2021"
+        }
+      ],
+      "evidence_span": "Co-Founder & CEO - Probook\" and \"Nov 2021 - Present",
+      "source_url": "https://www.linkedin.com/in/george-eliadis",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.alma_mater",
+      "value_json": [
+        "University of Pennsylvania",
+        "Wharton School",
+        "Jerome Fisher M&T Program",
+        "Newburgh Free Academy",
+        "Yale Young Global Scholars"
+      ],
+      "evidence_span": "Bachelor of Science in Engineering, Electrical/Systems Engineering\" and \"2020\u00032024",
+      "source_url": "https://www.linkedin.com/in/george-eliadis",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.8,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "personal-public-non-sensitive"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Today, we're announcing $40M in funding from Sequoia and Andreessen Horowitz to solve a problem I faced in my own business.",
+      "evidence_span": "Today, we're announcing $40M in funding from Sequoia and Andreessen Horowitz to solve a problem I faced in my own business.",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_today-were-announcing-40m-in-funding-from-activity-7475172924774293504-mVOB",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:george-eliadis",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Until December, our 'sales team' was just me",
+      "evidence_span": "Until December, our 'sales team' was just me",
+      "source_url": "https://www.linkedin.com/posts/george-eliadis_until-december-our-sales-team-was-just-activity-7441840906384683008-3s7v",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.88,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:mark-hoffman",
+      "field_key": "contact.current_title",
+      "value_json": "Chief Revenue Officer, Probook",
+      "evidence_span": "Chief Revenue Officer - Probook (Current).",
+      "source_url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:mark-hoffman",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Probook",
+          "role": "Chief Revenue Officer",
+          "start": "Feb 2026",
+          "end": "Present"
+        },
+        {
+          "org": "Tennr",
+          "role": "Chief Sales Officer",
+          "start": "Dec 2024",
+          "end": "Feb 2026"
+        },
+        {
+          "org": "VTS",
+          "role": "Senior Vice President of Sales",
+          "start": "Aug 2021",
+          "end": "Dec 2024"
+        },
+        {
+          "org": "VTS",
+          "role": "Vice President of Sales",
+          "start": "Jul 2019",
+          "end": "Aug 2021"
+        },
+        {
+          "org": "VTS",
+          "role": "Director of Sales",
+          "start": "Jan 2017",
+          "end": "Jul 2019"
+        },
+        {
+          "org": "Hightower Inc.",
+          "role": "Director of Inside Sales",
+          "start": "Jun 2016",
+          "end": "Dec 2016"
+        },
+        {
+          "org": "ZocDoc",
+          "role": "Inside Sales Manager",
+          "start": "May 2014",
+          "end": "Apr 2016"
+        }
+      ],
+      "evidence_span": "Chief Revenue Officer - Probook (Current).",
+      "source_url": "https://www.linkedin.com/in/mark-hoffman-582a5741",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:mark-hoffman",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz",
+      "evidence_span": "Today is a big day at Probook. We're announcing our $40M raise from Sequoia and Andreessen Horowitz",
+      "source_url": "https://www.linkedin.com/posts/mark-hoffman-582a5741_today-is-a-big-day-at-probook-were-announcing-activity-7475232474495725568--2KU",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.current_title",
+      "value_json": "Director of Growth, Probook",
+      "evidence_span": "Director of Growth - Probook (Current)",
+      "source_url": "https://www.linkedin.com/in/kibrady12",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Probook",
+          "role": "Director of Growth",
+          "start": "Jun 2026",
+          "end": "Present"
+        },
+        {
+          "org": "BuildOps",
+          "role": "Director of Demand Generation",
+          "start": "Jun 2024",
+          "end": "Apr 2026"
+        },
+        {
+          "org": "Middesk",
+          "role": "Head of Growth",
+          "start": "Jan 2023",
+          "end": "Jun 2024"
+        },
+        {
+          "org": "SafeGraph",
+          "role": "Director of Demand Generation",
+          "start": "Jan 2022",
+          "end": "Dec 2022"
+        },
+        {
+          "org": "Survata",
+          "role": "Head of Demand Generation",
+          "start": "Jul 2018",
+          "end": "Jan 2020"
+        },
+        {
+          "org": "Branch",
+          "role": "ABM Manager",
+          "start": "Jul 2017",
+          "end": "Jun 2018"
+        }
+      ],
+      "evidence_span": "Director of Growth - Probook (Current)\" and \"Jun 2026 - Present",
+      "source_url": "https://www.linkedin.com/in/kibrady12",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.86,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "I\u00039m excited to share that I\u00039ve joined Probook to lead growth and build out the marketing organization",
+      "evidence_span": "I\u00039m excited to share that I\u00039ve joined Probook to lead growth and build out the marketing organization",
+      "source_url": "https://www.linkedin.com/posts/kibrady12_im-excited-to-share-that-ive-joined-probook-activity-7475235473679077376-nv9z",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:kate-blumberg",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "Glad to see new tools like Riveter gaining traction and cutting through the noise",
+      "evidence_span": "Glad to see new tools like Riveter gaining traction and cutting through the noise",
+      "source_url": "https://www.linkedin.com/posts/kibrady12_the-martech-hype-cycle-is-relentless-and-activity-7488693969325846528-STdm",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.8,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.current_title",
+      "value_json": "Director of Sales & Development, Probook",
+      "evidence_span": "Director of Sales & Development - Probook (Current)",
+      "source_url": "https://www.linkedin.com/in/aaronloganchurba",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Probook",
+          "role": "Director of Sales & Development",
+          "start": "Feb 2026",
+          "end": "Present"
+        },
+        {
+          "org": "Bite",
+          "role": "Director of Sales",
+          "start": "May 2024",
+          "end": "Aug 2025"
+        },
+        {
+          "org": "Electric",
+          "role": "Manager, Sales",
+          "start": "May 2022",
+          "end": "Jun 2023"
+        },
+        {
+          "org": "VTS, Inc.",
+          "role": "Business Development",
+          "start": "Aug 2017",
+          "end": "Jan 2019"
+        },
+        {
+          "org": "SinglePlatform",
+          "role": "Senior Business Analyst",
+          "start": "May 2016",
+          "end": "Aug 2017"
+        }
+      ],
+      "evidence_span": "Director of Sales & Development - Probook (Current)\" and \"Feb 2026 - Present",
+      "source_url": "https://www.linkedin.com/in/aaronloganchurba",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:aaron-churba",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "I'm excited to share that I've joined Probook as Director of Sales & Development.",
+      "evidence_span": "I'm excited to share that I've joined Probook as Director of Sales & Development.",
+      "source_url": "https://www.linkedin.com/posts/aaronloganchurba_excited-to-finally-share-what-ive-been-activity-7472702212801056768-sbVT",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 1,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:lewis-zhang",
+      "field_key": "contact.current_title",
+      "value_json": "Co-Founder & CTO, Probook",
+      "evidence_span": "Co-Founder & CTO at Probook",
+      "source_url": "https://www.linkedin.com/in/lewisfzhang",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.9,
+      "priority": 2,
+      "identity_binding": "strong"
+    },
+    {
+      "entity": "contact:lewis-zhang",
+      "field_key": "contact.facet.career_history",
+      "value_json": [
+        {
+          "org": "Probook",
+          "role": "Co-Founder & CTO",
+          "start": "Jan 2024",
+          "end": "Present"
+        },
+        {
+          "org": "Roblox",
+          "role": "Senior ML Engineer",
+          "start": "Jan 2021",
+          "end": "Jan 2024"
+        },
+        {
+          "org": "Berkeley Artificial Intelligence Research",
+          "role": "Research Intern",
+          "start": "Aug 2019",
+          "end": "May 2020"
+        },
+        {
+          "org": "Confluent",
+          "role": "Software Engineer Intern",
+          "start": "Mar 2021",
+          "end": "May 2021"
+        }
+      ],
+      "evidence_span": "Co-Founder CTO - Probook (Current) Jan 2024 - Present.",
+      "source_url": "https://www.linkedin.com/in/lewisfzhang",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.86,
+      "priority": 2,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    },
+    {
+      "entity": "contact:lewis-zhang",
+      "field_key": "contact.facet.alma_mater",
+      "value_json": [
+        "University of California, Berkeley",
+        "Bellarmine College Preparatory"
+      ],
+      "evidence_span": "Bachelor of Science, EECS at University of California, Berkeley",
+      "source_url": "https://www.linkedin.com/in/lewisfzhang",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.85,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "personal-public-non-sensitive"
+    },
+    {
+      "entity": "contact:lewis-zhang",
+      "field_key": "contact.facet.recent_post",
+      "value_json": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.",
+      "evidence_span": "I'm certainly not the best writer (way better at math) but I am going to start to be more active on LinkedIn and share the small wins.",
+      "source_url": "https://www.linkedin.com/posts/lewisfzhang_im-certainly-not-the-best-writer-way-better-activity-7387118180609085442-UJ-d",
+      "source_key": "exa_research",
+      "source_tier": 4,
+      "extraction_method": "llm_synthesis",
+      "verification_status": "unverified",
+      "claim_flavor": "field",
+      "reuse_scope": "tenant_private",
+      "workspace_id": "workspace:clue-sample",
+      "confidence": 0.8,
+      "priority": 3,
+      "identity_binding": "strong",
+      "use_class": "professional-public"
+    }
+  ],
+  "proposed_fields": [
+    {
+      "field_key": "core.founding_year",
+      "entity_type": "account",
+      "value_type": "int",
+      "value_schema": {
+        "type": "integer"
+      },
+      "description": "Founding year when available (not in provided catalog).",
+      "reuse_scope": "account",
+      "hypothesis": "Founding year helps qualify company maturity for ABM ICPs and affects go-to-market strategies; younger startups may prioritize hiring and GTM expansion post-funding.",
+      "example_value": 2024,
+      "example_evidence_span": "Founding year: 2024. A third-party company profile states \u201cFounded: 2024\u201d",
+      "example_source_url": "https://yespress.io/probook",
+      "priority": 2
+    },
+    {
+      "field_key": "account.named_customers",
+      "entity_type": "account",
+      "value_type": "list",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "description": "List of named customers mentioned in sources (not in catalog).",
+      "reuse_scope": "account",
+      "hypothesis": "Named customers help identify referenceability, buyer similarity, and credibility signals for ABM targeting and sales plays.",
+      "example_value": [
+        "Del-Air",
+        "Peterman Brothers",
+        "Summers Plumbing, Heating & Cooling"
+      ],
+      "example_evidence_span": "Named customers additionally visible in company materials: Lion Home Service, Del-Air, Peterman Brothers, Cardinal, Summers Plumbing, Anthony Plumbing, and TR Miller.",
+      "example_source_url": "https://www.probook.ai/customer-outcomes",
+      "priority": 2
+    }
+  ],
+  "usage_account": {
+    "prompt_tokens": 17659,
+    "completion_tokens": 1947,
+    "total_tokens": 19606,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 17536,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.00436315,
+      "upstream_inference_prompt_cost": 0.00046915,
+      "upstream_inference_completions_cost": 0.003894
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "usage_contacts": {
+    "prompt_tokens": 22437,
+    "completion_tokens": 3423,
+    "total_tokens": 25860,
+    "cost": 0,
+    "is_byok": true,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.01245525,
+      "upstream_inference_prompt_cost": 0.00560925,
+      "upstream_inference_completions_cost": 0.006846
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "defects": {
+    "wrong_value_key": 0,
+    "string_confidence": 0,
+    "missing_priority": 0,
+    "unregistered_field": [],
+    "missing_source_url": [],
+    "unquoted_evidence": [
+      "account.strategic_moves@account:probook",
+      "account.resonance.culture@account:probook",
+      "contact.facet.career_history@contact:george-eliadis",
+      "contact.facet.career_history@contact:kate-blumberg",
+      "contact.facet.recent_post@contact:kate-blumberg",
+      "contact.facet.career_history@contact:aaron-churba"
+    ],
+    "unknown_entity": []
+  }
+}

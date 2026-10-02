@@ -160,6 +160,8 @@ def _document_from_row(row: Any) -> JsonObject:
         "account_id": row.account_id,
         "created_at": iso(row.created_at),
         "updated_at": iso(row.updated_at),
+        # Artifacts-page spec §3.4: the library's archive state; None when live.
+        "archived_at": None if row.archived_at is None else iso(row.archived_at),
     }
 
 
@@ -349,6 +351,62 @@ async def set_web_noindex(
     await conn.execute(
         text(
             "UPDATE design_document SET web_noindex = :e, updated_at = now()"
+            " WHERE id = :d AND workspace_id = :w"
+        ),
+        {"e": enabled, "d": document_id, "w": workspace_id},
+    )
+    return await get_document(conn, workspace_id=workspace_id, document_id=document_id)
+
+
+async def rename_document(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str, title: str
+) -> JsonObject:
+    """Rename one document: the row's ``title`` AND the document JSON's own title, together.
+
+    Every state write (``replace_scene``, ``update_document_state``, ``update_web_document``)
+    rewrites the column from the JSON, so a column-only rename would be reverted by the next
+    save; and a JSON edit without a version bump would be overwritten by an editor holding the
+    old title. So this bumps ``current_version`` under the row lock: an open editor's next
+    write fails its compare-and-set and takes its quiet-reload path (``replace_scene`` already
+    bumps without a history row — not a new pattern).
+    """
+    clean = title.strip()
+    if not clean:
+        raise ValueError("title must not be blank")
+    document = await get_document(
+        conn, workspace_id=workspace_id, document_id=document_id, for_update=True
+    )
+    # The jsonb path to the document's own title: a web doc carries it at the top level, a
+    # scene under ``meta``. Passed as a list, not the ``{a,b}`` literal — the driver binds a
+    # text[] argument from a sized iterable and refuses a string.
+    path = ["title"] if document["doc_kind"] == "web" else ["meta", "title"]
+    await conn.execute(
+        text(
+            "UPDATE design_document"
+            " SET title = :title,"
+            "     current_scene_json = jsonb_set(current_scene_json, CAST(:path AS text[]),"
+            "         to_jsonb(CAST(:title AS text)), true),"
+            "     current_version = current_version + 1, updated_at = now()"
+            " WHERE id = :d AND workspace_id = :w"
+        ),
+        {"title": clean, "path": path, "d": document_id, "w": workspace_id},
+    )
+    return await get_document(conn, workspace_id=workspace_id, document_id=document_id)
+
+
+async def set_document_archived(
+    conn: AsyncConnection, *, workspace_id: str, document_id: str, enabled: bool
+) -> JsonObject:
+    """Archive (or restore) one document — a gallery/library state, independent of publish.
+
+    Converges: archiving twice keeps the first timestamp. No version bump and no ``updated_at``
+    touch: archiving is not an edit, and the library's "last edited" must stay honest.
+    """
+    await get_document(conn, workspace_id=workspace_id, document_id=document_id, for_update=True)
+    await conn.execute(
+        text(
+            "UPDATE design_document"
+            " SET archived_at = CASE WHEN :e THEN COALESCE(archived_at, now()) ELSE NULL END"
             " WHERE id = :d AND workspace_id = :w"
         ),
         {"e": enabled, "d": document_id, "w": workspace_id},

@@ -1,0 +1,141 @@
+You convert free-form research reports into typed claim rows for a claim store.
+
+ABSOLUTE RULES
+1. You may ONLY use a field_key from the catalog given to you. If a fact does not fit any catalog
+   key, DO NOT force it — put it in proposed_fields instead.
+2. value_json MUST validate against that field's value_schema exactly (right JSON type, required
+   properties present, enum values exact).
+3. evidence_span MUST be a VERBATIM substring of the material given to you — copy the quoted text
+   exactly as it appears. Never paraphrase into evidence_span. If there is no quote for a fact,
+   omit the fact entirely.
+4. source_url MUST be the URL the material attributes that fact to. Every row needs one. Never
+   invent a URL and never reuse an unrelated one.
+5. NEVER emit a row for anything marked "NOT FOUND". Never emit an automated/LinkedIn REVENUE
+   ESTIMATE as core.annual_revenue — an estimate is not a reported number; skip it or use
+   core.revenue_band only if the material states a band.
+6. NEVER emit special-category personal data (health, religion, politics, sexual orientation,
+   ethnicity, union membership, criminal matters, family/bereavement, home address, personal
+   phone/email).
+7. Do NOT emit provenance fields (source_key, tier, extraction_method, verification_status): the
+   caller stamps those. Emit only field_key, value_json, evidence_span, source_url, confidence,
+   priority, and for contact.facet.* also use_class.
+8. Prefer fewer, well-evidenced rows over many thin ones. One row per field per distinct fact.
+
+SIGNAL PRIORITY — every claim MUST carry `priority`: 1, 2 or 3.
+  priority 1 (top; shown first): ACTIVE BUYING INTENT. Go-to-market/marketing hiring (quote the
+    req), fresh funding (amount/date/investors), a vacant or newly-filled marketing/growth seat, a
+    tooling gap (no ABM/intent platform), an executive publicly naming a GTM bottleneck or growth
+    commitment, and any timing event less than 6 months old.
+  priority 2 (supporting): firmographics that QUALIFY the account (headcount, vertical, customers,
+    outcome metrics), committee composition, titles and personas, tech stack.
+  priority 3 (context): history, culture and resonance, background facts, personal hooks.
+
+Return ONLY a JSON object with the keys the user message asks for.
+Each proposed field: {"field_key","entity_type","value_type","value_schema","description",
+"reuse_scope","hypothesis","example_value","example_evidence_span","example_source_url",
+"priority"} where description is agent-facing and hypothesis is one paragraph on why an ABM
+platform needs this field.
+
+=====
+
+# FIELD CATALOG (the ONLY keys you may use)
+ACCOUNT FIELDS (entity = the account):
+  core.account_name | value_type=str | Canonical account name observation. | value_schema={'type': 'string'}
+  core.primary_domain | value_type=str | Primary web domain. | value_schema={'type': 'string'}
+  core.company_linkedin_url | value_type=str | Public LinkedIn company page URL. | value_schema={'type': 'string'}
+  core.industry | value_type=str | Primary industry classification. | value_schema={'type': 'string'}
+  core.company_about | value_type=str | Public company description/about text. | value_schema={'type': 'string'}
+  core.employee_count | value_type=int | Total headcount. | value_schema={'type': 'integer'}
+  core.employee_range | value_type=object | Employee range, used only when exact headcount is unavailable. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string'}, 'min': {'type': 'integer'}, 'max': {'type': 'integer'}}}
+  core.hq_location | value_type=object | Normalized HQ/primary location plus the source's raw value. | value_schema={'type': 'object', 'required': ['raw'], 'properties': {'raw': {'type': 'string'}, 'city': {'type': 'string'}, 'region': {'type': 'string'}, 'country': {'type': 'string'}, 'country_code': {'type': 'string'}}}
+  core.annual_revenue | value_type=object | Annual revenue with currency, as-of date and reported/estimate semantics. | value_schema={'type': 'object', 'required': ['amount', 'currency', 'as_of', 'estimate_kind'], 'properties': {'amount': {'type': 'number'}, 'currency': {'type': 'string'}, 'as_of': {'type': 'string'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  core.revenue_band | value_type=enum | Bounded revenue band when exact sourced revenue is absent. | value_schema={'type': 'string', 'enum': ['under_1m', '1m_10m', '10m_50m', '50m_100m', '100m_500m', '500m_1b', '1b_plus']}
+  core.company_email | value_type=str | Public general company contact email. | value_schema={'type': 'string'}
+  core.company_phone | value_type=str | Public general company contact phone. | value_schema={'type': 'string'}
+  core.primary_tech_stack | value_type=list[str] | Detected primary technologies. | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  account.recent_funding | value_type=object | Most recent funding round. | value_schema={'type': 'object', 'required': ['amount_usd'], 'properties': {'amount_usd': {'type': 'number'}, 'round': {'type': 'string'}}}
+  account.total_funding | value_type=object | Total funding in USD with explicit estimate semantics. | value_schema={'type': 'object', 'required': ['amount_usd', 'estimate_kind'], 'properties': {'amount_usd': {'type': 'number'}, 'estimate_kind': {'type': 'string', 'enum': ['reported', 'provider_estimate', 'third_party_estimate']}}}
+  account.hiring_velocity_eng | value_type=number | Engineering hiring velocity (count of open engineering roles). | value_schema={'type': 'number'}
+  account.operational_pain | value_type=str | Synthesized operational pain. | value_schema={'type': 'string'}
+  account.strategic_moves | value_type=str | Strategic moves / initiatives. | value_schema={'type': 'string'}
+  account.resonance.culture | value_type=str | Cultural resonance signal. | value_schema={'type': 'string'}
+  account.resonance.employee_sentiment | value_type=object | Aggregate employee sentiment. | value_schema={'type': 'object', 'required': ['label'], 'properties': {'label': {'type': 'string', 'enum': ['positive', 'neutral', 'negative', 'mixed']}, 'polarity': {'type': 'number'}, 'summary': {'type': 'string'}}}
+  account.resonance.attrition_signal | value_type=object | Morale / attrition / layoff signal. | value_schema={'type': 'object', 'required': ['signal_type'], 'properties': {'signal_type': {'type': 'string', 'enum': ['morale', 'attrition', 'layoff']}, 'direction': {'type': 'string', 'enum': ['improving', 'stable', 'worsening']}, 'summary': {'type': 'string'}}}
+  account.resonance.eng_blog_tone | value_type=object | Tone/voice of the company's engineering or company blog. | value_schema={'type': 'object', 'required': ['tone_label'], 'properties': {'tone_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  account.resonance.public_frustrations | value_type=list[object] | Publicly aired frustrations about the account. | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['frustration'], 'properties': {'frustration': {'type': 'string'}, 'summary': {'type': 'string'}}}}
+  account.resonance.buying_culture | value_type=object | 'What it's like to buy here' - procurement culture. | value_schema={'type': 'object', 'required': ['culture_label'], 'properties': {'culture_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+
+CONTACT FIELDS (entity = the contact; plain contact.*):
+  core.work_email | value_type=str | Selected contact's observed work email. | value_schema={'type': 'string'}
+  core.direct_phone | value_type=str | Selected contact's observed direct phone. | value_schema={'type': 'string'}
+  contact.current_title | value_type=str | Current professional title. | value_schema={'type': 'string'}
+  contact.job_function | value_type=str | Current job function. | value_schema={'type': 'string'}
+  contact.job_level | value_type=str | Current job level. | value_schema={'type': 'string'}
+  contact.current_location | value_type=object | Current professional location/country. | value_schema={'type': 'object', 'properties': {'raw': {'type': 'string'}, 'country': {'type': 'string'}}}
+  contact.persona | value_type=str | Buying-committee persona key (CLOSED enum - only these four values exist). | value_schema={'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}
+  contact.role_on_committee | value_type=object | Inferred buying-committee role + plausibility rationale. | value_schema={'type': 'object', 'required': ['role'], 'properties': {'role': {'type': 'string', 'enum': ['champion', 'economic_buyer', 'technical_evaluator', 'blocker']}, 'rationale': {'type': 'string'}}}
+
+CONTACT FACET FIELDS (entity = the contact; GOVERNED - every claim MUST carry identity_binding and use_class):
+  contact.facet.career_history | value_type=list[object] | Professional history beyond the current title. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['org'], 'properties': {'org': {'type': 'string'}, 'role': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}}}
+  contact.facet.alma_mater | value_type=list[str] | School(s) / university the person attended. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.stated_interests | value_type=list[str] | Publicly stated interests / topics. | default use_class=personal-public-non-sensitive | value_schema={'type': 'array', 'items': {'type': 'string'}}
+  contact.facet.communication_style | value_type=object | Inferred communication style / tone from public activity. | default use_class=professional-public | value_schema={'type': 'object', 'required': ['style_label'], 'properties': {'style_label': {'type': 'string'}, 'summary': {'type': 'string'}}}
+  contact.facet.public_appearances | value_type=list[object] | Podcasts / talks / panels the person appeared in. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.publications | value_type=list[object] | Articles / papers / books the person authored. | default use_class=professional-public | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['title'], 'properties': {'title': {'type': 'string'}, 'venue': {'type': 'string'}, 'url': {'type': 'string'}, 'date': {'type': 'string'}}}}
+  contact.facet.recent_post | value_type=str | Recent public post (personal hook). | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.nickname | value_type=str | Preferred / known-by name beyond the legal first name. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.hobby | value_type=str | Publicly stated hobby. | default use_class=personal-public-non-sensitive | value_schema={'type': 'string'}
+  contact.facet.recent_award | value_type=str | Recent award or recognition. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.conference_talk | value_type=str | Conference talk given by the person. | default use_class=professional-public | value_schema={'type': 'string'}
+  contact.facet.causes | value_type=list[object] | Publicly supported causes (sensitive by default). | default use_class=sensitive | value_schema={'type': 'array', 'items': {'type': 'object', 'required': ['cause'], 'properties': {'cause': {'type': 'string'}, 'context': {'type': 'string'}}}}
+
+# CONTACT: Vari Kaur (Varinder Kaur), currently at Zafran Security. Entity id: contact:vari-kaur
+# Vari Kaur is the CHAMPION (she owns the vacant ABM seat). Nick Fisher, VP Marketing, is her manager and the ECONOMIC_BUYER.
+# The client selling to them is Clue (cluehq.ai), an AI-native ABM orchestration platform. Judge priority against THAT sale. contact.persona is a CLOSED enum: champion | economic_buyer | technical_evaluator | blocker.
+
+# PER-PERSON DEEP RESEARCH REPORT (Exa deep-reasoning, one call)
+# Vari Kaur (also published as Varinder Kaur) Research cutoff: 2026-08-31. I treated the LinkedIn profile at https://www.linkedin.com/in/varinderkaur as the target because its indexed profile identifies “Vari Kaur” and lists “Head of Growth Marketing” at “Zafran Security,” while also giving Easton, Pennsylvania as location. Verbatim profile evidence: “Demand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth”; “### Head of Growth Marketing - Zafran Security (Current)”; “May 2025 - Present (1 year and 3 months) in New York, United States”; “location: Easton, Pennsylvania, United States.” URL: https://www.linkedin.com/in/varinderkaur ## 1. Identity - Full/current professional name: Vari Kaur; the public post is authored/displayed as Varinder Kaur. Verbatim: “AUTHOR: Varinder Kaur” and “TITLE: Vari Kaur.” URLs: https://www.linkedin.com/in/varinderkaur ; https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G ; https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X
+- Exact current title: Head of Growth Marketing. Verbatim: “### Head of Growth Marketing - Zafran Security (Current).” URL: https://www.linkedin.com/in/varinderkaur
+- Employer: Zafran Security. Verbatim: “Head of Growth Marketing - Zafran Security (Current).” URL: https://www.linkedin.com/in/varinderkaur
+- Start date: May 2025 (the indexed profile gives month/year, not a day). Verbatim: “May 2025 - Present.” URL: https://www.linkedin.com/in/varinderkaur
+- Location: Easton, Pennsylvania, United States; the role itself is indexed as New York, United States. Verbatim: “location: Easton, Pennsylvania, United States” and “May 2025 - Present (1 year and 3 months) in New York, United States.” URL: https://www.linkedin.com/in/varinderkaur
+- LinkedIn: https://www.linkedin.com/in/varinderkaur
+- Same-name people excluded: Vari Kaur in Perth, Australia, whose profile says “Office and Accounts Administrator” at “Etherington,” not Zafran Security; Varinder Kaur in Brampton, Canada, whose profile says “Digital Marketing Intern” at “Webcooks Technologies Pvt Ltd”; Varinder Kaur in the United States whose profile says “Founder & Content Marketing Strategist” at “Kaur Realtor Brands”; and Varinder Kaur in Mohali, India, whose profile says “SEO Engineer”/“Digital Marketing Specialist.” URLs: https://www.linkedin.com/in/vari-kaur-95a176102 ; https://www.linkedin.com/in/varinder-kaur-digitalmarketer ; https://www.linkedin.com/in/varinderkaur001 ; https://www.linkedin.com/in/varinder-kaur-237b69121 ## 2. Career history The indexed target profile supplies the following history. Dates below reproduce the indexed month/year ranges; overlapping or inconsistent month ranges in the source are retained rather than reconciled. - Secureworks — Director, Demand Generation & Technology, Jun 2022–May 2025. Verbatim: “### Director, Demand Generation & Technology - Secureworks”; “Jun 2022 - May 2025 (2 years and 11 months).” URL: https://www.linkedin.com/in/varinderkaur
+- ReSource Pro — Director Demand Generation, Apr 2021–Jun 2022. Verbatim: “### Director Demand Generation - ReSource Pro”; “Apr 2021 - Jun 2022 (1 year and 2 months).” URL: https://www.linkedin.com/in/varinderkaur
+- Axiom — Director Demand Generation and Technology, 2019–2021. Verbatim indexed work history: “Director Demand Generation and Technology” at “Axiom,” “2019-01-01” to “2021-01-01.” URL: https://www.linkedin.com/in/varinderkaur
+- Tangoe — Director Digital Marketing, 2018–2019. Verbatim: “Director Digital Marketing” at “Tangoe,” “2018-03-01” to “2019-05-01.” URL: https://www.linkedin.com/in/varinderkaur
+- Ivanti — Online Marketing Manager, 2011–2013; Manager, Global Marketing, 2013–2015; Senior Manager, Global Marketing Operations, 2015–2017; Senior Manager, Global Marketing Operations, 2017–2018. Verbatim indexed history lists those titles and ranges. URLs: https://www.linkedin.com/in/varinderkaur ; https://rocketreach.co/varinder-kaur-email_4388733
+- Grazitti — Online Marketing Manager, 2008–2011. Verbatim: “Online Marketing Manager @ Grazitti.” URL: https://rocketreach.co/varinder-kaur-email_4388733
+- Milestone Global Solutions — SEO Analyst and Content Writer, 2006–2008. Verbatim indexed history: “SEO Analyst and Content Writer” at “Milestone Global Solutions,” “2006-01-01” to “2008-01-01.” URL: https://www.linkedin.com/in/varinderkaur ## 3. What they own today - Scope: growth marketing, demand generation, ABM, digital marketing, pipeline acceleration, revenue growth, full-funnel strategy, paid media, email nurture, lead scoring, lifecycle marketing, and intent-based targeting. Verbatim profile summary: “Results-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs”; “I specialize in full-funnel strategy development—from top-of-funnel lead acquisition to pipeline acceleration and sales enablement”; “Skilled in managing paid media (LinkedIn, Google, programmatic), email nurture, lead scoring, lifecycle marketing, and intent-based targeting.” URL: https://www.linkedin.com/in/varinderkaur
+- Current hiring remit: “building ABM end-to-end,” “lead our integrated campaign strategy,” and working “shoulder-to-shoulder with Sales to go after the accounts that matter most.” URL: https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X
+- Reports to: The user supplied this as a target-lock fact, but I did not find a public indexed source with a verbatim reporting-line statement. NOT FOUND.
+- Direct reports: NOT FOUND.
+- Team size: NOT FOUND. The profile describes Zafran as “100-150 employees,” but that is company size, not her team size. URL: https://www.linkedin.com/in/varinderkaur ## 4. Public voice — located professional posts ### 2026-05-18 — ABM hiring post “Our marketing team at Zafran Security is expanding! 🚀 I'm hiring a Senior Manager, ABM & Integrated Campaigns. Looking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.
+If that's you, let's talk. Excellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.
+https://lnkd.in/eWYbq_Mw” URL: https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X ### 2025-12-02 — Zafran funding post “Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!
+#AgenticAI #ExposureManagement #VulnerabilityManagement #CTEM” URL: https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G ### 2025-06-20 — Zafran sales hiring post “Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to make an intro.
+💥 Zafran Security is hiring Account Executives!💥 NYC • Pacific Northwest • SoCal • TOLA • Georgia/Alabama Zafran is building something special: a category-defining cybersecurity platform and team where AEs can thrive. Here’s what you can expect: 💼 Seasoned leadership that invests in your growth
+📈 Clear path to success, in a high-growth market
+🤝 A supportive, no-ego sales culture that wins as a team
+🚀 A product that cuts through security noise and solves real customer pain” URL: https://www.linkedin.com/posts/varinderkaur_great-opportunity-for-aes-looking-to-join-activity-7341868030299127808-Z2ln Every other public post, talk, podcast, article, or quote: NOT FOUND in the indexed sources searched. In particular, no qualifying indexed item was found that provides a verbatim statement by her about budgets, small-team operations, vendor pet peeves, or campaign-production philosophy. NOT FOUND. ## 5. Communication style (evidence-based) - Tone: enthusiastic and recruiting-oriented, evidenced by “Thrilled to share,” “Proud to be part of this journey!!!,” “🚀,” and “💥.”
+- Length: the located posts range from a short announcement plus hashtags to a multi-paragraph recruiting post with bullets.
+- Humour: NOT FOUND. The located material is upbeat but contains no clear joke or humorous line.
+- Emoji: frequent use in the located posts, including “🚀,” “💥,” “💼,” “📈,” “🤝,” and “🚀.”
+- Formality: conversational-professional, evidenced by “If that's you, let's talk” and “I am happy to make an intro,” alongside formal company and role descriptions. ## 6. Stated professional interests and priorities The profile states: “building and scaling demand generation, account-based marketing (ABM), and digital marketing programs”; “aligning marketing with sales to drive pipeline, revenue growth, and customer acquisition”; “AI and automation to optimize performance, enhance personalization, and improve campaign ROI.” URL: https://www.linkedin.com/in/varinderkaur The Secureworks description states priorities of “new logo acquisition, expansion and retention,” “Tracking key KPIs and conversion rates through the lead flow funnel,” improving “conversion rates,” “optimization of the website,” and owning the “MarTech stack.” URL: https://www.linkedin.com/in/varinderkaur ## 7. Cold-approach hooks 1. The ABM/integrated-campaigns hire: reference her exact stated remit — “building ABM end-to-end” and “work[ing] shoulder-to-shoulder with Sales to go after the accounts that matter most.” URL: https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X
+2. Agentic AI positioning: reference her announcement that Zafran raised “$60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks.” URL: https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G
+3. Her growth/pipeline orientation: reference her stated specialization in “full-funnel strategy development—from top-of-funnel lead acquisition to pipeline acceleration and sales enablement.” URL: https://www.linkedin.com/in/varinderkaur ## 8. What would annoy them / specific questions - Stated vendor/outreach pet peeve: NOT FOUND.
+- Demand generation: publicly stated expertise includes “building and scaling demand generation” and, at Secureworks, integrating “all marketing channels including paid advertising, email nurture, webinars, website” to “generate qualified leads and drive conversions.” URL: https://www.linkedin.com/in/varinderkaur
+- ABM: “account-based marketing (ABM)” is a stated expertise; her hiring post asks for someone who loves “building ABM end-to-end.” URLs: https://www.linkedin.com/in/varinderkaur ; https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X
+- Account research: NOT FOUND as a verbatim public statement.
+- Campaign production: her public profile says ReSource Pro work included “multi-channel marketing campaigns across email, webinars, paid media, content syndication, events, and other channels” and collaboration “to create compelling marketing assets and content, including landing pages, emails, ads, and social media posts.” URL: https://www.linkedin.com/in/varinderkaur
+- Small teams: NOT FOUND.
+- Budgets: NOT FOUND.
+- AI in marketing: “Passionate about using AI and automation to optimize performance, enhance personalization, and improve campaign ROI.” URL: https://www.linkedin.com/in/varinderkaur
+- Secureworks: she described targeting “cybersecurity personas,” building a “B2B demand generation engine” across paid advertising, email nurture, webinars and website, supporting “new logo acquisition, expansion and retention,” measuring “MQL ->SALs -> SQLs -> Opportunities,” improving website conversion, and owning the MarTech stack and campaign/email-nurture performance. URL: https://www.linkedin.com/in/varinderkaur
+- Scale of Secureworks programs: no numeric budget, lead volume, account count, campaign count, team size, or revenue/pipeline figure was found. NOT FOUND.
+- Publicly named tools: the profile explicitly names “Marketo, HubSpot, Salesforce, 6sense, Demandbase, ZoomInfo, Google Ads, LinkedIn Campaign Manager”; another indexed profile summary names “Pardot,” “Reachforce,” “Brightedge,” and “SEMrush.” URLs: https://www.linkedin.com/in/varinderkaur ; https://me.sh/profile/varinder-kaur
+- Events/podcasts: NOT FOUND for a talk or podcast by the target in the indexed search results.
+- ABM role she is hiring for: “Senior Manager, ABM & Integrated Campaigns,” responsible per her wording for “building ABM end-to-end,” leading “our integrated campaign strategy,” and partnering “shoulder-to-shoulder with Sales.” URL: https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X
+
+Emit ONLY contact-entity claims for contact:vari-kaur now. Each claim: {"field_key","value_json","evidence_span","source_url","confidence","priority"} (+ "use_class" for contact.facet.*).
+Return {"contact_claims":[...], "proposed_fields":[...]}.

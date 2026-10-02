@@ -1,0 +1,481 @@
+{
+  "requestId": "9d4ed78f91229873715b68fa90f670e1",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://a16z.com/announcement/investing-in-probook/",
+      "title": "Investing in Probook | Andreessen Horowitz",
+      "url": "https://a16z.com/announcement/investing-in-probook/",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "image": "https://d1lamhf6l6yk6d.cloudfront.net/uploads/2026/06/Probook-Yoast-LI-A.png",
+      "favicon": "https://d1lamhf6l6yk6d.cloudfront.net/uploads/2025/06/Favicon-%E2%80%94-48x48px.png"
+    },
+    {
+      "id": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "title": "Probook Raises $40M from Andreessen Horowitz and Sequoia to",
+      "url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "author": "Probook",
+      "image": "https://ml-eu.globenewswire.com/Resource/Download/04569f1a-bdc8-44b5-80be-94017c68b7c6",
+      "favicon": "https://www.globenewswire.com/Content/logo/favicon.ico"
+    },
+    {
+      "id": "https://www.probook.ai/company",
+      "title": "Probook \u00b7 The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/company",
+      "image": "https://www.probook.ai/v5/company/wall-team-1.jpg",
+      "favicon": "https://www.probook.ai/favicon.ico?favicon.0q8dxn6zqy7ot.ico?dpl=dpl_CNjsY4sWP7U9Nc4gg2pRhRyRKTVP"
+    },
+    {
+      "id": "https://www.probook.ai/careers",
+      "title": "Probook",
+      "url": "https://www.probook.ai/careers",
+      "image": "https://www.probook.ai/probook.svg",
+      "favicon": "https://www.probook.ai/icon.svg?1f6a6a7b2a3160a7"
+    },
+    {
+      "id": "https://www.probook.ai/",
+      "title": "Probook \u00b7 The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/",
+      "image": "https://www.probook.ai/v5/hero-wrench.png",
+      "favicon": "https://www.probook.ai/favicon.ico?favicon.0q8dxn6zqy7ot.ico?dpl=dpl_CNjsY4sWP7U9Nc4gg2pRhRyRKTVP",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Probook",
+            "foundedYear": 2024,
+            "description": "Dispatch makes or breaks the customer experience. Probook is the only AI built around it.\n\nProbook unifies intake, data cleaning, chat, outbound, and dispatch. Operators add points to their EBITDA and run their customer experience as one connected system. Built by people from the trades and backed by a16z and Sequoia, hundreds of the largest home service brands in America are on Probook. Learn more at probook.ai. ",
+            "workforce": {
+              "total": 36
+            },
+            "headquarters": {
+              "address": "New York, NY 10022, US",
+              "city": "New York",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": null,
+            "webTraffic": {
+              "visitsMonthly": 6208,
+              "countryRank": 845739,
+              "avgDurationSeconds": 64,
+              "history": [
+                {
+                  "value": 8273,
+                  "dateFrom": "2026-02",
+                  "dateTo": "2026-02"
+                },
+                {
+                  "value": 12156,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 12961,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10365,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10906,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 6208,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.probook.ai/letter",
+      "title": "Probook \u00b7 The AI Operating System for Home Services",
+      "url": "https://www.probook.ai/letter",
+      "image": "https://www.probook.ai/v5/letter/byline-founders.jpg",
+      "favicon": "https://www.probook.ai/favicon.ico?favicon.0q8dxn6zqy7ot.ico?dpl=dpl_CNjsY4sWP7U9Nc4gg2pRhRyRKTVP"
+    },
+    {
+      "id": "https://yespress.io/probook",
+      "title": "Probook - The AI Operating System for Home Services",
+      "url": "https://yespress.io/probook",
+      "publishedDate": "2026-07-18T00:00:00.000Z",
+      "image": "https://storage.googleapis.com/yespress-4ecdc.firebasestorage.app/previews/probook.jpg?v=1784359040875",
+      "favicon": "https://yespress.io/favicon.svg"
+    },
+    {
+      "id": "https://www.foxbusiness.com/technology/wharton-grad-who-used-pressure-wash-homes-raises-40m-help-plumbers-electricians-run-businesses-ai",
+      "title": "Probook founder George Eliadis has boosted profits for small businesses with AI | Fox Business",
+      "url": "https://www.foxbusiness.com/technology/wharton-grad-who-used-pressure-wash-homes-raises-40m-help-plumbers-electricians-run-businesses-ai",
+      "publishedDate": "2026-06-23T00:00:00.000Z",
+      "author": "James Cirrone",
+      "image": "https://a57.foxnews.com/static.foxbusiness.com/foxbusiness.com/content/uploads/2026/06/0/0/hvac-stock.png?ve=1&tl=1",
+      "favicon": "https://static.foxnews.com/static/orion/styles/img/fox-business/favicons/favicon-32x32.png"
+    },
+    {
+      "id": "https://exa.ai/library/person/p2pvyzskhh6",
+      "title": "George Eliadis",
+      "url": "https://www.linkedin.com/in/george-eliadis",
+      "publishedDate": "2026-07-10T00:00:00.000Z",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQExfBy4fCtVjQ/profile-displayphoto-scale_200_200/B4EZ8lTZ68JkAc-/0/1783037272692?e=2147483647&v=beta&t=206-rfa9Qg1oZekTuIcyUdT8uTgJLo1oySzd-HcqrmI",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/p2pvyzskhh6",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "George Eliadis",
+            "firstName": "George",
+            "lastName": "Eliadis",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "Co-Founder & CEO",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2021-11-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Contractor",
+                "location": "Orange County, New York, United States",
+                "dates": {
+                  "from": "2018-06-01",
+                  "to": "2023-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/r1ww8n2nnvk",
+                  "name": "A2Z Exterior Pressure Washing"
+                }
+              },
+              {
+                "title": "Numismatist",
+                "location": "Newburgh, New York, United States",
+                "dates": {
+                  "from": "2015-06-01",
+                  "to": "2021-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/772yzjy5x8m",
+                  "name": "Eliadis Numismatics"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "High School Student",
+                "dates": {
+                  "from": "2016",
+                  "to": "2020"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/mlt2j5vr9xt",
+                  "name": "Newburgh Free Academy"
+                }
+              },
+              {
+                "degree": "Bachelor of Science in Economics, Business Analytics",
+                "dates": {
+                  "from": "2020",
+                  "to": "2024"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/9tgwp2y71mh",
+                  "name": "The Wharton School"
+                }
+              },
+              {
+                "degree": "Frontiers of Science and Technology",
+                "dates": {
+                  "from": "2018",
+                  "to": null
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/md2v0nf0217",
+                  "name": "Yale Young Global Scholars"
+                }
+              },
+              {
+                "degree": "Bachelor of Science in Engineering and Bachelor of Science in Economics, Systems Engineering and Business Analytics",
+                "dates": {
+                  "from": "2020",
+                  "to": "2024"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/6jzrhl97gdb",
+                  "name": "Jerome Fisher M&T Program"
+                }
+              },
+              {
+                "degree": "Bachelor of Science in Engineering, Electrical/Systems Engineering",
+                "dates": {
+                  "from": "2020",
+                  "to": "2024"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/3dg1d500r4b",
+                  "name": "University of Pennsylvania"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/r47kz76z72m",
+      "title": "lewis z. | Co-Founder CTO",
+      "url": "https://www.linkedin.com/in/lewisfzhang",
+      "author": "Exa",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/r47kz76z72m",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Lewis Z.",
+            "firstName": "Lewis",
+            "lastName": "Z.",
+            "location": "New York City Metropolitan Area",
+            "workHistory": [
+              {
+                "title": "Co-Founder CTO",
+                "location": null,
+                "dates": {
+                  "from": "2024-01-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/pxmjkhy58hl",
+                  "name": "Probook"
+                }
+              },
+              {
+                "title": "Senior ML Engineer",
+                "location": null,
+                "dates": {
+                  "from": "2021-01-01",
+                  "to": "2024-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dq4rxyb63fk",
+                  "name": "Roblox"
+                }
+              },
+              {
+                "title": "Software Engineer Intern",
+                "location": null,
+                "dates": {
+                  "from": "2021-03-01",
+                  "to": "2021-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/n9m2kx297gp",
+                  "name": "Confluent"
+                }
+              },
+              {
+                "title": "Software Engineer Intern",
+                "location": null,
+                "dates": {
+                  "from": "2020-12-01",
+                  "to": "2021-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hx0ssfw4ld9",
+                  "name": "Rubrik, Inc."
+                }
+              },
+              {
+                "title": "Software Engineer Intern",
+                "location": null,
+                "dates": {
+                  "from": "2020-08-01",
+                  "to": "2020-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/4983q1gb4nh",
+                  "name": "Tesla"
+                }
+              },
+              {
+                "title": "Software Engineer Intern",
+                "location": null,
+                "dates": {
+                  "from": "2020-05-01",
+                  "to": "2020-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/2fc38pxgjv8",
+                  "name": "Intel Corporation"
+                }
+              },
+              {
+                "title": "Research Intern",
+                "location": null,
+                "dates": {
+                  "from": "2019-08-01",
+                  "to": "2020-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/fx84qf1lp3n",
+                  "name": "Berkeley Artificial Intelligence Research"
+                }
+              },
+              {
+                "title": "Research Intern",
+                "location": null,
+                "dates": {
+                  "from": "2018-06-01",
+                  "to": "2019-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/12jzvmdv31x",
+                  "name": "Stanford University"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "2019",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/gfn06r334ys",
+                  "name": "Bellarmine College Preparatory"
+                }
+              },
+              {
+                "degree": "Bachelor of Science, EECS",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/kvpy8f9k554",
+                  "name": "University of California, Berkeley"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    }
+  ],
+  "searchTime": 37481.9,
+  "costDollars": {
+    "total": 0.015
+  },
+  "output": {
+    "content": {
+      "report": "# Probook (probook.ai) \u2014 evidence dossier Research date: 2026-08-27. Scope locked to Probook, the AI operating system for home-services businesses\u2014not similarly named products. ## 1. Identity & disambiguation - Operating name: Probook. The company\u2019s own site calls it \u201cProbook \u00b7 The AI Operating System for Home Services.\u201d URL: https://www.probook.ai/\n- Legal entity name: NOT FOUND in the reviewed public sources. No reviewed source supplied a corporate suffix, incorporation jurisdiction, or legal-entity record.\n- Headquarters: New York, NY. The funding release datelines the announcement \u201cNew York, NY,\u201d and an indexed company record gives \u201cNew York, NY 10022, US.\u201d URLs: https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html ; https://linkedin.com/company/probook-ai\n- Founding year: 2024. A third-party company profile states \u201cFounded: 2024\u201d; the company/funding materials identify the founders but do not themselves visibly state the year in the reviewed excerpts. URL: https://yespress.io/probook\n- Domains: probook.ai and www.probook.ai are the company web properties found. The company LinkedIn URL is https://linkedin.com/company/probook-ai.\n- Founders/identity anchor: George Eliadis (co-founder and CEO), Lewis Zhang (co-founder and CTO), and Ben Cervantez (co-founder). URL: https://yespress.io/probook. George Eliadis\u2019s LinkedIn result describes him as \u201cCo-Founder & CEO\u201d; Lewis Zhang\u2019s describes \u201cCo-Founder CTO.\u201d URLs: https://www.linkedin.com/in/george-eliadis ; https://www.linkedin.com/in/lewisfzhang\n- Excluded same-name entities: (a) HP ProBook, the unrelated HP laptop line\u2014discarded because it is computer hardware, not the New York home-services AI company; (b) unrelated \u201cProbook\u201d/\u201cProBook\u201d bookkeeping and accounting tools\u2014discarded because they provide bookkeeping/accounting rather than home-services dispatch/operations; (c) unrelated booking software using the ProBook name\u2014discarded because it is booking software, not this company. Specific corporate names/URLs for those excluded products: NOT FOUND in the reviewed search results; the exclusions are entity-class exclusions required by the target lock, not evidence that they are affiliates. ## 2. Product and target vertical - Product: Probook describes itself as \u201cthe AI Operating System for home services,\u201d \u201cbuilt around dispatch.\u201d URLs: https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html ; https://www.probook.ai/letter\n- What it does: the company says it \u201cunifies intake, data cleaning, chat, outbound, and dispatch\u201d so operators can run customer experience as \u201cone connected system.\u201d URL: https://www.probook.ai/\n- Functional description from a third-party profile: it \u201coverlays existing tools like ServiceTitan to automatically match the right technician to each job, re-optimize the dispatch board in real time, and handle customer intake and messaging.\u201d URL: https://yespress.io/probook\n- Exact vertical sold into: US home-service contractors/businesses\u2014specifically HVAC, plumbing, and electrical. The company\u2019s founder letter calls out \u201chome services\u201d and examples in \u201cHVAC, plumbing & electrical\u201d; the third-party profile says it serves \u201cHVAC, plumbing and electrical contractors.\u201d URLs above.\n- Buyer-base fragmentation: NOT FOUND for an explicit count of US home-service businesses or contractors in the reviewed sources. The company does say it serves \u201chundreds of locations nationwide\u201d and includes \u201cindependently owned shops\u201d and \u201cprivate equity-backed platforms,\u201d which demonstrates customer-type breadth but is not a count of the total market. URL: https://www.probook.ai/letter\n- Integrations: ServiceTitan is explicitly named. The third-party profile calls the product a \u201cServiceTitan Overlay,\u201d and Fox Business reports that Probook is \u201clisted as a ServiceTitan partner.\u201d URLs: https://yespress.io/probook ; https://www.foxbusiness.com/technology/wharton-grad-who-used-pressure-wash-homes-raises-40m-help-plumbers-electricians-run-businesses-ai\n- Other integrations: NOT FOUND. The reviewed sources did not name another external system integration.\n- Pricing: NOT FOUND. No public price, rate card, per-technician fee, usage fee, or published pricing model appeared in the reviewed sources. ## 3. Traction All metrics below are company-reported unless explicitly identified otherwise. - Scale: Probook\u2019s founder says it \u201cnow serves hundreds of locations nationwide,\u201d spanning independent shops and PE-backed platforms. URL: https://www.probook.ai/letter\n- Summers Plumbing, Heating & Cooling: the company names \u201c14 locations and 260 technicians across the Midwest\u201d; it says the customer \u201cbooked 2,873 jobs in their first month on Probook with zero human intervention.\u201d URL: https://www.probook.ai/letter\n- Anthony Plumbing, Heating, Cooling & Electric: the company says it \u201cran 10% more revenue per job on a 40% leaner team in eight months on Probook.\u201d URL: https://www.probook.ai/letter\n- Del-Air: Probook\u2019s customer-outcomes page says Del-Air has \u201ceight locations and more than 220 service technicians\u201d; \u201c22 dispatchers\u201d were reduced to \u201ca central team of 10,\u201d about \u201c90% of its call assignment happens automatically,\u201d and in May Probook handled \u201c16,000 calls,\u201d containing \u201c74%\u201d without human intervention. URL: https://www.probook.ai/customer-outcomes/del-air\n- Peterman Brothers: Probook\u2019s outcomes page says it centralized dispatch \u201cacross 11 markets and 200 technicians without adding overhead.\u201d URL: https://www.probook.ai/customer-outcomes\n- Cardinal: Probook says Cardinal tucked in \u201cfour acquisitions,\u201d added \u201cmore than 13,000 customers\u201d and \u201c14 technicians\u201d; its AI CSR booked \u201cover 850 jobs\u201d and generated \u201cmore than $715,000 in revenue\u201d in four months, at an \u201c82% true booking rate.\u201d URL: https://www.probook.ai/customer-outcome-detail-4\n- TR Miller: the company identifies it as its \u201cfirst customer\u201d; a case-study excerpt describes \u201c40 service technicians and two dispatchers.\u201d URLs: https://www.probook.ai/letter ; https://www.probook.ai/case-studies/tr-miller\n- Named customers additionally visible in company materials: Lion Home Service, Del-Air, Peterman Brothers, Cardinal, Summers Plumbing, Heating & Cooling, Anthony Plumbing, Heating, Cooling & Electric, and TR Miller. URLs: https://www.probook.ai/case-studies/lion ; other URLs above.\n- ARR/revenue: Company ARR, total company revenue, growth rate, and number of paying accounts: NOT FOUND. The Cardinal \u201c$715,000\u201d is explicitly customer-generated revenue, not Probook ARR.\n- Attribution caveat: the operational metrics above are published on Probook-owned pages or in the founder\u2019s letter and therefore are company/customer-testimonial claims, not independently audited figures. The a16z announcement independently confirms the financing and describes its thesis, but does not provide audited traction. URL: https://a16z.com/announcement/investing-in-probook/ ## 4. Funding - Seed: $6 million, led by Sequoia Capital. The company funding release says the $40 million comprises \u201ca $34 million Series A led by Andreessen Horowitz (a16z) and a $6 million Seed round led by Sequoia Capital.\u201d URL above.\n- Series A: $34 million, announced 2026-06-23, led by Andreessen Horowitz/a16z; Sequoia also participated. a16z\u2019s announcement says it is \u201cleading Probook\u2019s $34 million Series A\u201d; Probook\u2019s release says \u201cSequoia also participated in the Series A.\u201d URLs above.\n- Other Series A participants: NOT FOUND beyond Sequoia\u2019s participation in the reviewed primary announcements.\n- Total raised: $40 million.\n- Earlier rounds: NOT FOUND in the primary materials reviewed. A PitchBook search result shows an \u201cAccelerator/Incubator\u201d entry dated 2022, but it does not state an amount and conflicts with the target\u2019s 2024 founding anchor; it is not treated as confirmed Probook financing. URL: https://pitchbook.com/profiles/company/608659-12\n- Use of proceeds: Probook says it will \u201cscale its go-to-market team against surging demand, and grow engineering and customer success to deliver on it.\u201d\n- Public founder growth commitment/target: NOT FOUND. No founder commitment to a numeric growth target was located. ## 5. Hiring The company careers page visibly lists these roles as open/current at research time; department labels are quoted from the page. URLs: https://www.probook.ai/company ; https://www.probook.ai/careers - GTM: Sales Development Representative \u2014 New York.\n- GTM: Enterprise Account Executive \u2014 New York.\n- Sales: Founding Account Executive \u2014 full-time, New York City.\n- Customer: Enterprise Customer Success Manager \u2014 New York.\n- Customer: Forward Deployed Engineer \u2014 New York.\n- Operations: Business Operations Lead \u2014 New York.\n- Operations: Head of Talent \u2014 New York.\n- Operations: Deployment Strategist \u2014 full-time, New York City.\n- Engineering: Software Engineer (Backend), Software Engineer (Machine Learning), Software Engineer (Product).\n- Other: General Application.\n- Product marketing, events marketing, solutions consultant, Head of Sales, CRO: NOT FOUND as open roles on the reviewed careers/company pages.\n- Detailed GTM job-description language about target lists, account research, outbound, cold email, territory/patch planning: NOT FOUND in the indexed excerpts and reviewed public job-page results. The existence of SDR and enterprise/founding AE roles supports a developing sales organization, but does not establish the exact prospecting process or tooling.\n- Reporting lines for every role: NOT FOUND. The reviewed public excerpts do not state who each role reports to. ## 6. Go-to-market motion and tooling - Publicly evidenced motion: founder-led origin and customer discovery. George Eliadis says, \u201cI spent a summer inside TR Miller,\u201d cycling through \u201ccall center, dispatch, and inside sales\u201d; TR Miller became \u201cProbook\u2019s first customer.\u201d URL: https://www.probook.ai/letter\n- Deployment motion: the company says, \u201cWe deploy in person, configure alongside your team, and stay on the hook for the outcomes we sell.\u201d URL: https://www.probook.ai/?krain_ref=24290\n- Segment/motion: the founder says customers range from \u201cindependently owned shops to private equity-backed platforms.\u201d This supports PE-platform/roll-up relevance, but a formal PE partnership or referral program is NOT FOUND.\n- Events, channel partners, and systematic outbound: NOT FOUND in the reviewed public sources. ServiceTitan partnership/listing is evidenced, but the commercial terms or lead-sharing arrangement are NOT FOUND.\n- Tooling visibly disclosed: ServiceTitan is the only named operating-system integration found. CRM, sales-engagement, ABM/intent, data-provider, sequencing, enrichment, marketing-automation, and event platforms: NOT FOUND. Absence here means not publicly disclosed in reviewed material, not proof the company does not use them. ## 7. Leadership and GTM organization - George Eliadis \u2014 Co-Founder & CEO. LinkedIn search result identifies \u201cCo-Founder & CEO\u201d; the company founder letter is written by \u201cGeorge\u201d and identifies the founding/customer-origin story. URLs above.\n- Lewis Zhang \u2014 Co-Founder & CTO. URLs above.\n- Ben Cervantez \u2014 Co-Founder. URL above.\n- CRO and director-level growth/sales leaders: NOT FOUND in the reviewed company pages, funding announcements, and indexed LinkedIn results.\n- Join dates: George\u2019s indexed LinkedIn record shows Probook work history from \u201c2021-11-01,\u201d while Lewis\u2019s shows \u201cJan 2024 - Present\u201d; these are third-party profile data and are not reconciled with the target\u2019s 2024 founding anchor. Ben\u2019s join date: NOT FOUND.\n- Vacant leadership seat being recruited: Head of Sales is NOT FOUND as an open posting; no explicit vacant CRO or sales-director seat was found. The company is recruiting an Enterprise Account Executive, Founding Account Executive, and SDR. ## 8. Operational pain and strategic moves - Pain described by the company/founder: home-services workflows were \u201craw,\u201d including calls, setting the board, and following up on unsold estimates; the founder says he experienced this even at \u201cone of the best-run shops in the country.\u201d\n- Product thesis: dispatch \u201cmakes or breaks the customer experience,\u201d and Probook is \u201cthe only AI built around it.\u201d\n- Strategic move after financing: increase GTM capacity against \u201csurging demand,\u201d while expanding engineering and customer success.\n- Operating model move: deploy in person, configure with customers, and remain accountable for sold outcomes.\n- Additional constraints explicitly described by the company: NOT FOUND beyond workflow complexity/operational rawness and the stated need to scale delivery capacity. ## 9. Culture and resonance - Company self-description: \u201cWe\u2019re a small, cracked team with diverse professional backgrounds focused on transforming the home services industry\u201d and \u201cthe fastest-growing AI startup in New York.\u201d URL: https://www.probook.ai/careers\n- Founder resonance: \u201cMost AI vendors flocked to home services because it looked attractive on a spreadsheet. We came to it because we grew up in it.\u201d The letter says Ben \u201cgrew up helping his dad plumb in San Francisco,\u201d while George worked inside a customer operation.\n- Work identity: the company says it was \u201cbuilt by people from the trades.\u201d\n- Publicly aired founder/company frustration: NOT FOUND in the reviewed sources. Fox Business reports that ServiceTitan is a major strategic challenge/adjacent competitor, but that source does not establish a public emotional \u201cfrustration\u201d statement by Probook.\n- Employee sentiment/attrition signal: NOT FOUND. No reliable reviewed source supplied employee-review sentiment, layoffs, attrition, or retention data. ## 10. Timing events, newest first \u2014 last six months - 2026-06-28: An indexed LinkedIn company result dated 2026-06-28 reports the company profile and describes Probook as serving \u201chundreds of the largest home service brands in America.\u201d This is third-party/indexed company-profile data, not an audited filing. URL: https://linkedin.com/company/probook-ai\n- 2026-06-23: Probook announced $40 million total funding: $34 million Series A led by a16z and $6 million seed led by Sequoia; Sequoia participated in the A. URL above.\n- 2026-06-23: a16z announced it was leading the $34 million Series A and said total funding reached $40 million. URL above.\n- 2026-06-23: Probook stated the capital would scale GTM, engineering, and customer success. This is the clearest recent event changing buying posture: public intent to expand sales coverage and delivery capacity against \u201csurging demand.\u201d\n- 2026-07-18: A third-party profile dated 2026-07-18 describes the company as a New York startup serving contractors across \u201c35+ states,\u201d but that state count and its additional product/outcome figures were not corroborated by the reviewed primary pages; treat them as third-party reported, not confirmed company metrics. URL: https://yespress.io/probook\n- Other dated events in the six-month window: NOT FOUND in the reviewed sources. ## Bottom line The evidence supports a New York-founded-in-2024 vertical-AI company selling dispatch, intake, messaging, and related operating automation into HVAC, plumbing, and electrical contractors, with ServiceTitan as the explicitly named integration. Its public buying posture is expansionary after the 2026-06-23 $34 million a16z-led Series A: it is hiring SDR/AE capacity and expanding delivery, engineering, and customer success. Publicly missing are legal entity details, pricing, TAM fragmentation count, ARR, complete financing participant list, detailed prospecting playbooks, reporting lines, named CRO/GTM executives, and employee/attrition data."
+    },
+    "grounding": [
+      {
+        "field": "report",
+        "citations": [
+          {
+            "url": "https://a16z.com/announcement/investing-in-probook/",
+            "title": "Investing in Probook | Andreessen Horowitz"
+          },
+          {
+            "url": "https://www.globenewswire.com/news-release/2026/06/23/3316215/0/en/Probook-Raises-40M-from-Andreessen-Horowitz-and-Sequoia-to-Scale-the-AI-Operating-System-for-Home-Services.html",
+            "title": "Probook Raises $40M from Andreessen Horowitz and Sequoia to"
+          },
+          {
+            "url": "https://www.probook.ai/company",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.probook.ai/careers",
+            "title": "Probook"
+          },
+          {
+            "url": "https://www.probook.ai/",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.probook.ai/letter",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://yespress.io/probook",
+            "title": "Probook - The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.foxbusiness.com/technology/wharton-grad-who-used-pressure-wash-homes-raises-40m-help-plumbers-electricians-run-businesses-ai",
+            "title": "Probook founder George Eliadis has boosted profits for small businesses with AI | Fox Business"
+          },
+          {
+            "url": "https://www.linkedin.com/in/george-eliadis",
+            "title": "George Eliadis"
+          },
+          {
+            "url": "https://www.linkedin.com/in/lewisfzhang",
+            "title": "lewis z. | Co-Founder CTO"
+          },
+          {
+            "url": "https://www.probook.ai/case-studies/tr-miller",
+            "title": "Probook"
+          },
+          {
+            "url": "https://www.probook.ai/case-studies/lion",
+            "title": "Probook"
+          },
+          {
+            "url": "https://www.probook.ai/customer-outcomes/del-air",
+            "title": "Del-Air \u00b7 Consolidated dispatch from 22 to 10 \u00b7 Probook Customer Outcomes"
+          },
+          {
+            "url": "https://www.probook.ai/customer-outcomes",
+            "title": "Probook \u00b7 The AI Operating System for Home Services"
+          },
+          {
+            "url": "https://www.probook.ai/customer-outcome-detail-1",
+            "title": "Peterman Brothers \u00b7 Centralized dispatch for 200 technicians \u00b7 Probook Customer Outcomes"
+          },
+          {
+            "url": "https://www.probook.ai/customer-outcome-detail-4",
+            "title": "Cardinal \u00b7 Lifted average ticket 20% \u00b7 Probook Customer Outcomes"
+          }
+        ],
+        "confidence": "medium"
+      }
+    ]
+  },
+  "_http_status": 200,
+  "_elapsed_s": 37.8,
+  "_request": {
+    "query": "Produce an exhaustive, cited markdown dossier on Probook (probook.ai) covering:\n\n1. IDENTITY & DISAMBIGUATION \u2014 legal/operating name, HQ address, founding year, domain(s), company\n   LinkedIn, and an explicit list of the same-name entities you excluded and why.\n2. PRODUCT & TARGET VERTICAL \u2014 what the product actually does, the exact vertical it sells INTO,\n   how fragmented that buyer base is (quote any count of US home-service businesses / contractors),\n   what systems it integrates with (ServiceTitan and any others), pricing model if published.\n3. TRACTION \u2014 named customers, number of locations/technicians served, revenue or ARR if stated,\n   per-customer outcome metrics, and who claimed each number (company vs investor vs press).\n4. FUNDING \u2014 every round with exact amount, date, lead investor and participants; total raised;\n   any stated use of proceeds or growth target the founders committed to publicly.\n5. HIRING \u2014 every currently open role you can find and its department, with special attention to\n   go-to-market roles (SDR, account executive, product marketing, events marketing, solutions\n   consultant, head of sales). Quote the parts of GTM job descriptions that describe HOW they plan\n   to find and reach target customers (target lists, account research, outbound, cold email,\n   territory/patch planning). Note who each role reports to.\n6. GO-TO-MARKET MOTION & TOOLING \u2014 how they acquire customers today (founder-led? outbound?\n   events? partners? private-equity roll-up relationships?), and what sales/marketing tooling is\n   visible or conspicuously absent (CRM, sales engagement, ABM/intent platforms, data providers).\n7. LEADERSHIP & GTM ORG \u2014 every named executive and GTM leader with their exact title and the\n   source naming them, including the CRO and any director-level growth/sales leaders, and when\n   each joined. Note any leadership seat that is currently VACANT or being recruited.\n8. OPERATIONAL PAIN & STRATEGIC MOVES \u2014 the constraints the company itself describes, and the\n   moves it is making next.\n9. CULTURE & RESONANCE \u2014 how the company and its founders talk about themselves and their work;\n   any publicly aired frustration, employee sentiment or attrition signal.\n10. TIMING EVENTS, newest first, each dated \u2014 anything in the last 6 months that changes the\n    company's buying posture.\n",
+    "type": "deep-reasoning",
+    "systemPrompt": "You are a B2B account researcher producing an evidence-grounded dossier on ONE company.\n\nTARGET LOCK \u2014 the ONLY subject is:\n  Probook, the AI operating system for home-services businesses (plumbing, HVAC, electrical),\n  domain probook.ai, headquartered in New York, NY, founded 2024, co-founded by George Eliadis\n  (CEO), Lewis Zhang (CTO) and Ben Cervantez. Raised a $34M Series A led by Andreessen Horowitz\n  announced 2026-06-23, on top of a $6M seed led by Sequoia Capital.\n\nEXCLUDE and explicitly name any same-name entity you encounter: ProBook is also a well-known HP\nlaptop line (HP ProBook), and there are unrelated \"Probook\"/\"ProBook\" bookkeeping, accounting and\nbooking-software products. NONE of those are the subject. If a source is about HP laptops or a\nbookkeeping tool, say so and discard it.\n\nRULES\n  * Every factual assertion carries a verbatim quote and the URL it came from.\n  * If you cannot find something, write \"NOT FOUND\" for it. Never estimate, never infer a number.\n  * Distinguish what the company claims about itself from what a third party reports.\n  * Prefer primary sources: probook.ai's own pages, the company's job postings, the funding wire\n    release, the investors' announcement posts, the founders' own writing.\n",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "report"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "type": "string",
+          "description": "The exhaustive cited markdown dossier answering every numbered section of the charter, with a verbatim quote and URL behind every assertion and explicit NOT FOUND markers."
+        }
+      }
+    }
+  }
+}

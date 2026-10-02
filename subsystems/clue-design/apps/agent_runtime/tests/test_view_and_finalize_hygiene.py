@@ -27,7 +27,7 @@ from PIL import Image
 from lumen_agent.tools.substrate import LumenDesignTools
 from lumen_agent.tools import view as view_mod
 
-from agent_fixtures import FakeCoreClient, runtime_config
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 
 
 # --- helpers ----------------------------------------------------------------
@@ -365,12 +365,48 @@ def test_view_preview_refuses_when_scene_changed_since_render(tmp_path, monkeypa
     assert any(b["type"] == "image" for b in fresh.content)
 
     # The scene mutates (a compile/edit) without a re-render.
+    tools.scene["meta"]["title"] = "Changed scene"
     tools.scene_update_sources.append("compile_dsl_block")
     stale = view.invoke({"name": "view", "args": {"target": "preview"}, "id": "c2", "type": "tool_call"})
     assert isinstance(stale.content, list)
     assert len(stale.content) == 1
     assert "STALE" in stale.content[0]["text"]
     assert "render_preview" in stale.content[0]["text"]
+
+
+def test_view_preview_survives_core_response_with_no_scene_change(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes(640))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "path": str(png_path), "valid": True}],
+    }
+    tools._stamp_preview_rendered()
+    # A rejected compile/preflight still returns the same canonical scene.
+    # Logging that response is not a change to the pixels the agent must review.
+    tools._replace_scene_from_core_response({"scene": tools.scene}, "compile_dsl_block")
+    message = view_mod.make_view_tool(tools).invoke(
+        {"name": "view", "args": {"target": "preview"}, "id": "noop", "type": "tool_call"}
+    )
+    assert any(block["type"] == "image" for block in message.content), message.content
+
+
+def test_view_preview_refuses_changed_rendered_bytes(tmp_path, monkeypatch):
+    tools = _tools(tmp_path, monkeypatch)
+    png_path = tools.trace_dir / "preview.png"
+    png_path.write_bytes(_png_bytes(640))
+    tools.latest_export_summary = {
+        "status": "ok",
+        "artifacts": [{"format": "png", "path": str(png_path), "valid": True}],
+    }
+    tools._stamp_preview_rendered()
+    png_path.write_bytes(_png_bytes(320))
+    message = view_mod.make_view_tool(tools).invoke(
+        {"name": "view", "args": {"target": "preview"}, "id": "changed", "type": "tool_call"}
+    )
+    assert not any(block["type"] == "image" for block in message.content)
+    assert "STALE" in message.content[0]["text"]
 
 
 def test_view_preview_fresh_after_rerender(tmp_path, monkeypatch):
@@ -407,6 +443,12 @@ def test_finalize_prunes_empty_pages_with_announced_note(tmp_path, monkeypatch):
         "assets": {},
     }
 
+    prepare_acceptance_evidence(tools)
+    # Finalize hygiene changes the reviewed scene; a fresh review is required.
+    refused = tools.finalize_run("succeeded", "done", "Delivered the ad.")
+    assert refused.startswith("REFUSED")
+    assert not (tools.trace_dir / "final.json").exists()
+    prepare_acceptance_evidence(tools)
     result = json.loads(tools.finalize_run("succeeded", "done", "Delivered the ad."))
 
     assert "empty" not in tools.scene["pages"]
@@ -430,6 +472,7 @@ def test_finalize_keeps_a_single_empty_page(tmp_path, monkeypatch):
         "slots": {},
         "assets": {},
     }
+    prepare_acceptance_evidence(tools)
     result = json.loads(tools.finalize_run("succeeded", "done", "Delivered."))
     # Never strip to zero pages: a lone empty page is kept, no prune note.
     assert "only" in tools.scene["pages"]
@@ -472,7 +515,16 @@ def test_finalize_refuses_acceptance_while_a_blocking_export_error_stands(
 
 def test_finalize_allows_acceptance_with_only_advisory_lints(tmp_path, monkeypatch):
     tools = _tools(tmp_path, monkeypatch)
-    tools._latest_preflight_diagnostics = [_diagnostic("LUMV0820")]
+    real_preflight = tools.core.preflight_scene
+
+    def advisory_preflight(*args, **kwargs):
+        result = real_preflight(*args, **kwargs)
+        result["diagnostics"] = [_diagnostic("LUMV0820")]
+        result["preflight"]["has_errors"] = True
+        return result
+
+    monkeypatch.setattr(tools.core, "preflight_scene", advisory_preflight)
+    prepare_acceptance_evidence(tools)
 
     result = json.loads(tools.finalize_run("accepted", "done", "Delivered the ad."))
 
@@ -493,13 +545,16 @@ def test_finalize_guard_only_binds_accepted_runs(tmp_path, monkeypatch):
     assert result["status"] == "failed"
 
 
-def test_finalize_guard_is_inert_when_preflight_never_ran(tmp_path, monkeypatch):
+def test_finalize_refuses_acceptance_when_preflight_never_ran(tmp_path, monkeypatch):
     tools = _tools(tmp_path, monkeypatch)
+    prepare_acceptance_evidence(tools, preflight=False)
     assert tools._latest_preflight_diagnostics is None
 
-    result = json.loads(tools.finalize_run("accepted", "done", "Delivered."))
+    result = tools.finalize_run("accepted", "done", "Delivered.")
 
-    assert result["status"] == "accepted"
+    assert result.startswith("REFUSED")
+    assert "preflight" in result.lower()
+    assert not (tools.trace_dir / "final.json").exists()
 
 
 # --- Task 3: brand_logo_auto place-once (no re-injection) -------------------

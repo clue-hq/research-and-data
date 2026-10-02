@@ -1,0 +1,23 @@
+{
+  "name": "design-06-does-this-speak-to-account",
+  "kind": "clearly_design",
+  "artifact": "design \"Premier Gastroenterology LinkedIn ad\" (scene ad), for account \"Premier Gastroenterology\"",
+  "tags": [
+    "account \"Premier Gastroenterology\""
+  ],
+  "brief": "A 1:1 LinkedIn ad for Premier Gastroenterology selling the GI front-door bundle.",
+  "history": [],
+  "message": "Does this actually speak to @Premier Gastroenterology's open-access colonoscopy program?",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "reasoning": "A question about whether the current ad works for its own account."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false
+  },
+  "why": "A tagged account that IS this artifact's account, in a question about the current artifact, is still about it."
+}

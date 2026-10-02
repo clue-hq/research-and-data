@@ -1,0 +1,300 @@
+{
+  "requestId": "383d55cb78ed39eb5c1fae3991a6696a",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/organization/n7jkwg24sfq",
+      "title": "Snout",
+      "url": "https://linkedin.com/company/snoutplans",
+      "text": "# Snout (Snout, Inc.)\n\nSnout is a Veterinary Services company. Snout helps veterinary clinics offer affordable monthly pet wellness plans, making preventive care accessible and stress-free for pet owners. Snout employs 33 people (+76.7% YoY, +23 people), founded in 2021. Headquartered in Troy, Michigan, United States, with an office in San Francisco. Its workforce is distributed across United States, Poland, and Canada. Has $120.2M in total funding, with 8 prior funding rounds.\n\n## About\n\nSnout makes veterinary care accessible to all pet owners through instant, universal financing - with no credit checks, breed, or age restrictions. Pet owners enroll through their veterinarian and receive immediate coverage, while Snout pays the practice directly. \n\n## Company Details\n- Industry: Veterinary Services\n- Type: Privately Held\n- Headquarters: Troy, United States\n- Founded Year: 2021\n- Homepage: snout.com\n- Status: active\n- Aliases: Pawprint, Inc., snout, snout, inc.\n- SEC CIK: 0001722182\n- EIN: 471847105\n- LinkedIn: linkedin.com/company/snoutplans\n- Linkedin Followers: 2,294 (Monthly: +1.4%, Yearly: +79.6%)\n\n## Financials\n- Fiscal Year End: 1231\n- Total Funding: USD 120,192,870\n  - Seed Round (2019-06-01) - 2 investors\n  - Debt Financing (2026-01-01): USD 100.0M - 1 investor, led by Clear Haven Capital Management\n  - Venture Round (2021-04-01): USD 3.4M - 1 investor\n  - Series A (2026-01-01): USD 10.0M - 4 investors, led by Footwork\n  - Seed Round (2021-03-12): USD 3.4M - 3 investors\n\n## Workforce\n- Employees: 33 (11-50 employees)\n  - Monthly Growth: +3.9%\n  - Yearly Growth: +76.7%\n- Key Executives:\n  - Ashley Tocco: Head of CX\n  - Garrett Smallwood: Angel Investor\n  - Emily Dong: CEO and Founder\n  - Kyle Cartmell: Chief Technology Officer\n  - Nikhil Basu Trivedi: Series A Lead, Board Member\n  - David Nietzke: Chief Operating Officer\n  - Katie Gill: Head of Clinic Success\n- Breakdown:\n  - By Country: United States: 31 (58%), Poland: 1 (2%), Canada: 1 (2%)\n  - By Department: Customer Service: 8 (15%), Technical: 7 (13%), Other Department: 5 (9%), General Management: 4 (8%), Sales: 4 (8%), Medical: 2 (4%), Administrative: 1 (2%), Consulting: 1 (2%), Design: 1 (2%)\n  - By Seniority: Specialist: 10 (19%), Manager: 7 (13%), Other Management: 6 (11%), C-Level: 3 (6%), Head: 3 (6%), Senior: 3 (6%), Founder: 1 (2%)\n- Talent Sources: The Indie-stry (2), Simpixl (1), Splashtop Inc. (1), Karat Financial (2), BrightEdge (1), AT&T (1), Ay\u00e9ya (1), Hazlnut (2), Paradigm Science Inc (1), Grace Delsuc Brand Partner with PaperPie since 1992 (1)\n- Alumni Go To: Perspective Investimentos (1), Tubular Labs (1), pawTree (1), Westwood Design (1), Banfield Pet Hospital (1), NRGTree LLC (1), USC Viterbi School of Engineering (1), Dogdrop (1), Kinotek (1), Paradigm Science Inc (1)\n\n## Products & Technology\n- Tech Stack: microsoft office, microsoft, freshdesk, fintech, pascal, koa, win32, postgresql, react, javascript, stripe, bash, linux, sql, impact, slack, c, box, notion, gr",
+      "image": "https://media.licdn.com/dms/image/v2/C560BAQH5ZQpaclSHAg/company-logo_200_200/company-logo_200_200/0/1630653848167?e=2147483647&v=beta&t=o8iBI1fhf562mSkVIff1bjtOaQSTSViufh_6VcUhLVs",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/n7jkwg24sfq",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Snout",
+            "foundedYear": 2021,
+            "description": "Snout makes veterinary care accessible to all pet owners through instant, universal financing - with no credit checks, breed, or age restrictions. Pet owners enroll through their veterinarian and receive immediate coverage, while Snout pays the practice directly. ",
+            "workforce": {
+              "total": 33
+            },
+            "headquarters": {
+              "address": "340 E Big Beaver Rd, Suite 550, Building C, Troy, Michigan 48083, US",
+              "city": "Troy",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": null,
+              "fundingTotal": 120192870,
+              "fundingLatestRound": null
+            },
+            "webTraffic": {
+              "visitsMonthly": 9432,
+              "countryRank": 651896,
+              "avgDurationSeconds": 36,
+              "history": [
+                {
+                  "value": 12029,
+                  "dateFrom": "2026-02",
+                  "dateTo": "2026-02"
+                },
+                {
+                  "value": 14569,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 13811,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10565,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 12004,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 9432,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.prnewswire.com/news-releases/snout-secures-over-110-million-in-capital-to-make-preventive-pet-care-accessible-for-every-pet-302672412.html",
+      "title": "Snout Secures Over $110 Million in Capital to Make Preventive Pet Care Accessible for Every Pet",
+      "url": "https://www.prnewswire.com/news-releases/snout-secures-over-110-million-in-capital-to-make-preventive-pet-care-accessible-for-every-pet-302672412.html",
+      "publishedDate": "2026-01-28T00:00:00.000Z",
+      "author": "Snout, Inc",
+      "text": "Snout Secures Over $110 Million in Capital to Make Preventive Pet Care Accessible for Every Pet\n\n# Snout Secures Over $110 Million in Capital to Make Preventive Pet Care Accessible for Every Pet\n\n Snout, Inc \n\nJan 28, 2026, 09:00 ET\n\nNew funding accelerates nationwide expansion and builds a modern, prevention-first infrastructure for veterinary clinics\n\nNEW YORK, Jan. 28, 2026 /PRNewswire/ -- Snout, the pet healthcare financing platform trusted by veterinary teams nationwide, today announced it has secured over $110 million in total capital to expand access to affordable, proactive pet care across the U.S. The funding includes $100 million in financing from Clear Haven Capital Management and a $10 million Series A round led by Footwork, with participation from existing investors Pear, Bread and Butter Ventures, Restive Ventures, veterinary industry experts, and others.\n\nSnout partners directly with veterinary clinics to offer prevention-first wellness plans that help pet parents afford essential care without compromising clinical standards. By eliminating credit checks, age and breed discrimination, and reimbursement delays, Snout ensures more pets receive routine care through easy, interest free monthly payments. .\n\nSnout was founded around a simple belief: no one should have to make a medical decision for their pet based on the cash in their bank account.\n\n\"The scariest part of veterinary care shouldn't be the bill,\" said Emily Dong, Founder and CEO of Snout. \"This capital allows us to bring preventive care to millions more pets and give veterinary teams the financial infrastructure they need to practice medicine the way it was meant to be practiced.\"\n\nMaking Preventive Care Possible\n\nSnout works in close partnership with veterinary clinics to offer wellness plans that bundle recommended preventive services designed to keep pets healthy and detect disease early. Plans typically include unlimited exams, vaccinations, bloodwork, flea and tick prevention, and more.\n\nUnlike traditional pet healthcare financing options, Snout removes credit checks and eliminates reimbursement workflows entirely\u2014making it the first financing solution built specifically for preventive veterinary care at scale.\n\n\"We're giving clinics a tool that helps pet owners manage rising costs without adding operational burden to veterinary teams,\" said David Nietzke, Chief Operating Officer of Snout. \"When cost is no longer the barrier, veterinarians can focus on what matters most: delivering the best possible care.\"\n\nWhat This Funding Fuels\n\nSnout's new capital will support growth across three key pillars:\n\n- Expanding Snout's national network of veterinary clinic partners\n- Deepening operational support resources for veterinary teams\n- Enhancing the pet owner experience and driving long-term cost savings\n\n\"We're pleased to support Snout at a pivotal stage in its growth,\" said Brian Smith, Director of Investments at Clear Haven Capital Management. \"Together, we've built a new fi",
+      "image": "https://mma.prnewswire.com/media/2871478/Snout_Logo.jpg?p=facebook"
+    },
+    {
+      "id": "https://www.snout.com/blog/11om-capital-secured-to-make-vet-care-affordable",
+      "title": "Snout",
+      "url": "https://www.snout.com/blog/11om-capital-secured-to-make-vet-care-affordable",
+      "publishedDate": "2026-01-28T00:00:00.000Z",
+      "text": "Snout\n\n# $11OM Capital Secured to Make Vet Care Affordable\n\nJanuary 28, 2026\n\nToday, we announced that Snout has secured over $110M in total capital: a $10M Series A led by Footwork and a $100M financing facility from Clear Haven Capital Management.\n\nThe news is covered by Fortune\u2019s Term Sheet [here \u2192].\n\nBut this isn\u2019t really a story about fundraising. I\u2019ve never written about our funding and it\u2019s never felt newsworthy until now. This is a story about how capital can reframe care.\n\n### The state of veterinary medicine\n\nVeterinary prices are rising at double the rate of inflation, which is already high. Vet visits are down. Millions of pets are quietly missing basic care - not because their families don\u2019t love them, but because they\u2019re afraid of the bill waiting at the front desk.\n\nMost people can\u2019t absorb a $500 surprise expense. A routine vet visit for a healthy pet can easily cost that, and more in cities. When money becomes unpredictable, people delay. They wait. And sometimes, they never come in at all.\n\nThat\u2019s the part we don\u2019t talk about enough.\n\n### Veterinarians vs. pet owners\n\nWhen I first came into the veterinary industry, I was struck by how deeply money shaped care decisions.\n\nNearly 30% of pet owners avoid the vet because of cost. The industry is still cash-based. Invoices often arrive at the worst moment, with few options and little transparency. As a pet owner, I remember feeling ripped off and a growing distrust for the care provider in front of me.\n\nAs I got to know veterinarians, the disconnect was impossible to ignore.\n\nVets are among the most compassionate people I\u2019ve met. Their teams absorb enormous financial and emotional pressure. Staff are asked to be caregivers, bankers, and counselors. We have hired many former clinic staff members for our own team at Snout who have surfaced horrible stories, including clients who yell, throw money at them, and accuse them of killing their fur babies.\n\nThat person wasn\u2019t a bad person. People behave badly when they\u2019re pushed past their edge.\n\nAnd right now, too many families and veterinary teams are being let down by a broken system.\n\nWhat we believe\n\nOur belief is simple and non-negotiable:\n\nNo one should have to make a health decision for their pet based on the cash in their bank account.\n\nWellness plans aren\u2019t new. But historically, they\u2019ve asked vets to finance care themselves - shouldering risk, admin, and collections on top of practicing medicine. That model doesn\u2019t scale and it\u2019s unsustainable, particularly for independent practices.\n\n### The power of capital and what makes Snout different\n\nSnout provides the capital so veterinarians don\u2019t have to. With this Series A and our new financing partnership with Clear Haven, we have the ability to support veterinary practices nationwide and create savings for pet parents.\n\nSnout is the first financing platform to offer universal preventive care to any pet:\n\n- No credit checks\n- No interest payments\n- No discrimination by pet age or breed ",
+      "image": "https://cdn.prod.website-files.com/693bd4682e5af459ea2aba6c/695d00c8ae855a8150ea83ac_658985104c98cb73c4f40199_snout-logo-color%201.svg"
+    },
+    {
+      "id": "https://www.snout.com/",
+      "title": "Snout \u2013 Affordable Pet Wellness Plans for Veterinary Clinics",
+      "url": "https://www.snout.com/",
+      "text": "Snout \u2013 Affordable Pet Wellness Plans for Veterinary Clinics\n\nSupporting millions of pets across the\n\n# Affordable Vet Care, for Every Pet.\n\nSnout helps clinics offer monthly wellness plans so pet owners can say \u201cyes\u201d to recommended care without financial stress.\n\n Your browser does not support the video tag. \n\n### ~40% Increase in Vet Care Cost Since Jan 2020\n\nRising prices have led to a decline in visit frequency and compliance.\n\n## Pet owners avoid the vet due to cost. that changes now.\n\nMeanwhile, clinics shoulder the emotional and financial fallout \u2014 write-offs, payment plans, and heartbreaking conversations at the front desk.\n\nWith Snout, pet owners enroll with no credit checks, clinics are paid upfront at the time of care, and you never have to watch a pet go untreated.\n\n## How Snout works\n\nWe believe every pet deserves care. Every vet deserves support. Every family deserves to say \"yes\" without fear. Snout is the infrastructure that makes that possible.\n\n#### Create Your Plans\n\nSnout partners with veterinarians to create wellness plans that fit your pricing, codes, and practice.\n\n#### Pet Owners Choose\n\nPet owners confidently say \u201cyes\u201d to your recommendations and choose a plan seamlessly with zero-cost hesitation.\n\n#### Get Paid Seamlessly \n\nYou\u2019re paid as services are performed, and Snout handles all monthly payments from pet owners. No billing, no chasing, no risk.\n\n## Wellness Plans That Actually Work\n\nUnlimited exams + up-front payments = \u2764\ufe0f\n\nFor Independent Clinics\n\nFor Enterprises\n\nFor Pet Owners\n\n### Built for local practices with big hearts.\n\nSnout handles the finances so you can focus on caring for pets, not spreadsheets.\n\nPersonalized support from people who care\n\nDedicated Clinic Success Manager (CSM) for your practice\n\nCustom marketing materials\n\nHands-on training for your whole team\n\nFast, reliable support whenever you need it\n\n### The average Snout member spends 2.5\u00d7 more in their first year\n\nPowered by higher visit frequency and increased average invoice.\n\nDedicated Clinic Success Manager (CSM) for your practice\n\nCustom marketing materials\n\nHands-on training for your whole team\n\nFast, reliable support whenever you need it\n\n### Because money shouldn\u2019t get in the way of your pet health\n\nFinally, peace of mind\n\nSnout gives you unlimited exams plus preventative care, so small concerns never go unaddressed.\n\nYou can say yes to care without worrying about unexpected costs.\n\nPet Owner Support\n\n## Snout Raises Series A to Expand Access to Preventive Care.\n\nBecause every pet deserves care\u2014not just the ones whose families can afford it.\n\n### We've Been Featured In",
+      "image": "https://cdn.prod.website-files.com/693bd4682e5af459ea2aba6c/695d00c8ae855a8150ea83ac_658985104c98cb73c4f40199_snout-logo-color%201.svg",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/organization/n7jkwg24sfq",
+          "type": "company",
+          "version": 1,
+          "properties": {
+            "name": "Snout",
+            "foundedYear": 2021,
+            "description": "Snout makes veterinary care accessible to all pet owners through instant, universal financing - with no credit checks, breed, or age restrictions. Pet owners enroll through their veterinarian and receive immediate coverage, while Snout pays the practice directly. ",
+            "workforce": {
+              "total": 33
+            },
+            "headquarters": {
+              "address": "340 E Big Beaver Rd, Suite 550, Building C, Troy, Michigan 48083, US",
+              "city": "Troy",
+              "postalCode": null,
+              "country": "United States"
+            },
+            "financials": {
+              "revenueAnnual": null,
+              "fundingTotal": 120192870,
+              "fundingLatestRound": null
+            },
+            "webTraffic": {
+              "visitsMonthly": 9432,
+              "countryRank": 651896,
+              "avgDurationSeconds": 36,
+              "history": [
+                {
+                  "value": 12029,
+                  "dateFrom": "2026-02",
+                  "dateTo": "2026-02"
+                },
+                {
+                  "value": 14569,
+                  "dateFrom": "2026-03",
+                  "dateTo": "2026-03"
+                },
+                {
+                  "value": 13811,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 10565,
+                  "dateFrom": "2026-04",
+                  "dateTo": "2026-04"
+                },
+                {
+                  "value": 12004,
+                  "dateFrom": "2026-05",
+                  "dateTo": "2026-05"
+                },
+                {
+                  "value": 9432,
+                  "dateFrom": "2026-06",
+                  "dateTo": "2026-06"
+                }
+              ]
+            },
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.snout.com/about",
+      "title": "About",
+      "url": "https://www.snout.com/about",
+      "text": "About\n\n## Our Values\n\n##### Honesty\n\nOpen, transparent communication is the foundation of everything we do. We prioritize honesty in all of our interactions, and we will never bury important details in fine print or obscure the truth.\n\n##### Adaptability\n\nThe world is constantly changing. We keep our ears to the ground, always learning about the needs of our customers. Our commitment to adaptability ensures that we can react quickly, staying ahead of the curve and remaining competitive.\n\n##### Dependability\n\nWe are dedicated to doing the right thing. You can depend on us to deliver on our promises, and to keep our word. If we ever come across a \"gray area,\" we will always err in the clinic and pet owner's favor.\n\n## Female Founded Business. Pet & Vet First, Always.\n\nEmily Dong, Founder & CEO of Snout, started the company around a simple truth: no one should ever have to make a health decision for their pet based on the cash in their bank account. After seeing how rising costs and unpredictable bills prevent millions of pets from receiving routine veterinary care, Emily set out to solve the real problem pet owners face\u2014not accidents or emergencies, but the cost of everyday, essential preventive care.\n\nUnder her leadership, Snout was built as a modern, prevention-first pet healthcare platform that helps clinics offer wellness plans covering the predictable care pets need most, from exams and vaccinations to bloodwork and medications, without credit checks or reimbursement hurdles. Today, Snout is trusted by veterinary teams nationwide and is helping make preventive care accessible for every pet.\n\n## Trusted For 10+ Years. Backed By Leading Investors.\n\nSnout has built the most durable infrastructure for preventive pet care. Emily founded Snout to bridge the capital gap in veterinary care\u2014without forcing clinics to act as lenders or take on financial risk, and without excluding pets based on age or pre-existing conditions.\n\nToday, Snout is backed by leading institutional investors, including Clear Haven Capital Management and Footwork, alongside long-time partners Pear, Bread and Butter Ventures, and Restive Ventures. Snout is here to grow\u2014with clinics, with pet owners, and with the industry.\n\nBecome a part of our team\n\n## Snout is hiring!\n\nMeet some of the amazing humans behind Snout \u2014 all who love animals and supporting veterinarians!\n\n## Meet the team\n\nMeet some of the amazing humans behind Snout \u2014 all who love animals and supporting veterinarians!\n\n### Emily\n\nFounder & CEO\n\n### David\n\nChief Operating Officer\n\n### Kyle\n\nChief Technology Officer\n\n### Eric\n\nEngineering\n\n### Jess\n\nProduct\n\n### Ashley\n\nMember Experience\n\n### Katie G\n\nClinic Success\n\n### Monica\n\nRecruiting\n\nAnd many more incredible team members...\n\nYour browser does not support the video tag.\n\nYour browser does not support the video tag.\n\n## Let\u2019s make vet care accessible - to everyone\n\nClinics, Start Here Pet Owner Support",
+      "image": "https://cdn.prod.website-files.com/693bd4682e5af459ea2aba6c/695d00c8ae855a8150ea83ac_658985104c98cb73c4f40199_snout-logo-color%201.svg",
+      "favicon": "https://cdn.prod.website-files.com/693bd4682e5af459ea2aba6c/69713789befd4e053d31ea91_Group%202147229344%20(2).png"
+    },
+    {
+      "id": "https://fortune.com/2026/01/28/vet-bills-jump-40-startup-snout-raises-110-million-membership-model/",
+      "title": "As vet bills jump, startup Snout raises $110 million for \u2018membership\u2019 model to defray costs | Fortune",
+      "url": "https://fortune.com/2026/01/28/vet-bills-jump-40-startup-snout-raises-110-million-membership-model/",
+      "publishedDate": "2026-01-28T10:50:08.000Z",
+      "author": "Allie Garfinkle",
+      "text": "As vet bills jump, startup Snout raises $110 million for \u2018membership\u2019 model to defray costs | Fortune\nSearch\n[](https://fortune.com/)\n[Subscribe](https://fortune.com/subscribe/?itm_source=Site_0_HCL_NAV_CTA_0_2025_ZZ&redirect=/2026/01/28/vet-bills-jump-40-startup-snout-raises-110-million-membership-model/)[Subscribe](https://fortune.com/subscribe/?itm_source=Site_0_HCL_NAV_CTA_0_2025_ZZ&redirect=/2026/01/28/vet-bills-jump-40-startup-snout-raises-110-million-membership-model/)\n[Sign in](https://fortune.com/signin/?signin_redirect=/2026/01/28/vet-bills-jump-40-startup-snout-raises-110-million-membership-model/)\n*\n[Home](https://fortune.com/)\n*\n[Latest](https://fortune.com/section/latest/)\n*\n[Fortune 500](https://fortune.com/section/fortune-500/)\n*\n[Finance](https://fortune.com/section/finance/)\n*\n[Tech](https://fortune.com/section/tech/)\n*\n[Leadership](https://fortune.com/section/leadership/)\n*\n[Lifestyle](https://fortune.com/section/lifestyle/)\n*\n[Rankings](https://fortune.com/ranking/)\n*\n[Multimedia](#)\n# Trendingnow\n# 1\n[Billionaire Home Depot cofounder Bernie Marcus\u2019s foundation donates nearly $30 million toward stem cell research for heart attacks](https://fortune.com/2026/08/14/billionaire-home-depot-cofounder-bernie-marcus-foundation-donates-nearly-30-million-toward-stem-cell-research-for-heart-attacks/?itm_source=parsely-api)\n# 2\n[Iran\u2019s oil is trapped while rivals\u2019 exports from the Persian Gulf are poised to surge, but Tehran could do whatever it takes to break the chokehold](https://fortune.com/2026/08/16/iran-oil-exports-hormuz-us-naval-blockade-missiles-aircraft-carrier-lincoln/?itm_source=parsely-api)\n# 3\n[\u2018Godfather of AI\u2019 says billionaires like Elon Musk are right about the future of work\u2014but he predicts mass unemployment is on its way](https://fortune.com/article/godfather-of-ai-geoffrey-hinton-massive-unemployment-warning-big-tech-replacing-workers/?itm_source=parsely-api)\n# 1\n[Billionaire Home Depot cofounder Bernie Marcus\u2019s foundation donates nearly $30 million toward stem cell research for heart attacks](https://fortune.com/2026/08/14/billionaire-home-depot-cofounder-bernie-marcus-foundation-donates-nearly-30-million-toward-stem-cell-research-for-heart-attacks/?itm_source=parsely-api)\n# 2\n[Iran\u2019s oil is trapped while rivals\u2019 exports from the Persian Gulf are poised to surge, but Tehran could do whatever it takes to break the chokehold](https://fortune.com/2026/08/16/iran-oil-exports-hormuz-us-naval-blockade-missiles-aircraft-carrier-lincoln/?itm_source=parsely-api)\n# 3\n[\u2018Godfather of AI\u2019 says billionaires like Elon Musk are right about the future of work\u2014but he predicts mass unemployment is on its way](https://fortune.com/article/godfather-of-ai-geoffrey-hinton-massive-unemployment-warning-big-tech-replacing-workers/?itm_source=parsely-api)\n[Newsletters](https://fortune.com/section/newsletters/)[Term Sheet](https://fortune.com/tag/term-sheet/)\n# As vet bills jump 40% in recent years, startup Snout raises $110 million for its \u2018me",
+      "image": "https://fortune.com/img-assets/wp-content/uploads/2026/01/Unknown.jpeg?resize=1200,600"
+    }
+  ],
+  "searchTime": 1645.1,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "output": {
+    "content": {
+      "verdict": "pass",
+      "evidence_url": "https://linkedin.com/company/snoutplans",
+      "evidence_quote": "Headquartered in Troy, Michigan, United States",
+      "evidence_date": "2026-09-10",
+      "reasoning": "The company's LinkedIn profile explicitly states it is headquartered in Troy, Michigan, United States."
+    },
+    "grounding": [
+      {
+        "field": "verdict",
+        "citations": [
+          {
+            "url": "https://linkedin.com/company/snoutplans",
+            "title": "Snout"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "evidence_url",
+        "citations": [
+          {
+            "url": "https://linkedin.com/company/snoutplans",
+            "title": "Snout"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "evidence_quote",
+        "citations": [
+          {
+            "url": "https://linkedin.com/company/snoutplans",
+            "title": "Snout"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "evidence_date",
+        "citations": [
+          {
+            "url": "https://linkedin.com/company/snoutplans",
+            "title": "Snout"
+          }
+        ],
+        "confidence": "high"
+      },
+      {
+        "field": "reasoning",
+        "citations": [
+          {
+            "url": "https://linkedin.com/company/snoutplans",
+            "title": "Snout"
+          }
+        ],
+        "confidence": "high"
+      }
+    ]
+  },
+  "_http_status": 200,
+  "_elapsed_s": 3.11,
+  "_request": {
+    "query": "Company: Snout (website https://snout.com).\nTest to verify: US-headquartered.\nHow it is tested: The HQ city and state on the company's own site, its LinkedIn page, or its funding announcement dateline is in the United States.\nDecide pass, fail or unclear for THIS company today, citing the freshest relevant source.",
+    "type": "auto",
+    "numResults": 6,
+    "contents": {
+      "text": {
+        "maxCharacters": 3000
+      }
+    },
+    "systemPrompt": "Today is 2026-09-10. You are verifying one qualification test for one specific company. Use only what the sources say. The most recent dated announcement of an event is the authority on the company's current state; older announcements are history; company profile pages (LinkedIn, Crunchbase, CB Insights, Tracxn) are secondary to the company's own pages and to dated news. Never confuse the company with a same-name company on a different website. Answer pass only when a source states the fact; fail only when a source contradicts the test; otherwise unclear. The evidence_quote must be copied verbatim from the cited source.",
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "verdict",
+        "reasoning",
+        "evidence_quote",
+        "evidence_url",
+        "evidence_date"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "unclear"
+          ]
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "One or two sentences: what the freshest relevant source says and how it decides the test."
+        },
+        "evidence_quote": {
+          "type": "string",
+          "description": "A verbatim sentence or fragment from the cited source that decides the verdict; empty if unclear."
+        },
+        "evidence_url": {
+          "type": "string",
+          "description": "The URL the quote comes from; empty if unclear."
+        },
+        "evidence_date": {
+          "type": "string",
+          "description": "The date of that source as shown on it (YYYY-MM-DD if known); empty if unknown."
+        }
+      }
+    }
+  }
+}

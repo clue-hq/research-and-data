@@ -1,0 +1,82 @@
+{
+  "id": "webset_01m25g3f3azqf2x5ya3gpra5kz",
+  "object": "webset",
+  "status": "running",
+  "externalId": "arv2-r4-hybrid-1789038538",
+  "title": "ARV2 R4 hybrid PoC 2026-09-10",
+  "searches": [
+    {
+      "id": "wsearch_01m25g3ff3f4bpzp4azbhnamq2",
+      "object": "webset_search",
+      "websetId": "webset_01m25g3f3azqf2x5ya3gpra5kz",
+      "status": "running",
+      "query": "US B2B vertical SaaS or AI startup that raised a Series A or Series A extension within the last 24 months (not seed, not Series B or later), selling software to independent small businesses in a fragmented vertical (dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants, trucking), actively hiring go-to-market roles now, and showing buying-intent signals for outbound or account-based prospecting.",
+      "entity": {
+        "type": "company"
+      },
+      "criteria": [
+        {
+          "description": "Company is headquartered in the United States",
+          "successRate": 0
+        },
+        {
+          "description": "Company's most recent funding round is a Series A or Series A extension, announced within the last 24 months (not seed, not pre-seed, not Series B or later, not a growth round)",
+          "successRate": 0
+        },
+        {
+          "description": "Company sells B2B software or AI to independent small businesses in one fragmented vertical such as dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants or trucking",
+          "successRate": 0
+        }
+      ],
+      "count": 35,
+      "maxPeoplePerCompany": null,
+      "behavior": "override",
+      "exclude": [],
+      "scope": [],
+      "progress": {
+        "found": 0,
+        "analyzed": 0,
+        "completion": 0,
+        "timeLeft": null
+      },
+      "recall": null,
+      "metadata": {},
+      "canceledAt": null,
+      "canceledReason": null,
+      "createdAt": "2026-09-10T11:09:02.307Z",
+      "updatedAt": "2026-09-10T11:09:02.536Z"
+    }
+  ],
+  "imports": [],
+  "enrichments": [],
+  "monitors": [],
+  "excludes": [],
+  "metadata": {},
+  "dashboardUrl": "https://websets.exa.ai/websets/webset_01m25g3f3azqf2x5ya3gpra5kz",
+  "createdAt": "2026-09-10T11:09:01.930Z",
+  "updatedAt": "2026-09-10T11:09:02.536Z",
+  "_http_status": 201,
+  "_elapsed_s": 4.34,
+  "_request": {
+    "title": "ARV2 R4 hybrid PoC 2026-09-10",
+    "externalId": "arv2-r4-hybrid-1789038538",
+    "search": {
+      "query": "US B2B vertical SaaS or AI startup that raised a Series A or Series A extension within the last 24 months (not seed, not Series B or later), selling software to independent small businesses in a fragmented vertical (dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants, trucking), actively hiring go-to-market roles now, and showing buying-intent signals for outbound or account-based prospecting.",
+      "count": 35,
+      "entity": {
+        "type": "company"
+      },
+      "criteria": [
+        {
+          "description": "Company is headquartered in the United States"
+        },
+        {
+          "description": "Company's most recent funding round is a Series A or Series A extension, announced within the last 24 months (not seed, not pre-seed, not Series B or later, not a growth round)"
+        },
+        {
+          "description": "Company sells B2B software or AI to independent small businesses in one fragmented vertical such as dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants or trucking"
+        }
+      ]
+    }
+  }
+}

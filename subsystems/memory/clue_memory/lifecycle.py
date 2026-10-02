@@ -98,6 +98,36 @@ async def enforce_store_cap(
     return evicted
 
 
+async def retire(
+    conn: AsyncConnection, *, memory_id: str, workspace_id: str, actor: str, cause: str
+) -> bool:
+    """A human removes a note: ``active → invalidated``, journaled. Never deletes (Doc M §5).
+
+    Fail-closed and idempotent-by-refusal: returns ``False`` — writing nothing — when the row is
+    absent, belongs to another workspace, or is not currently active, so a repeat click and a
+    cross-tenant caller are indistinguishable from the outside.
+    """
+    memory = await _store.get_memory(conn, memory_id)
+    if (
+        memory is None
+        or memory.workspace_id != workspace_id
+        or memory.status is not MemoryStatus.ACTIVE
+    ):
+        return False
+    await _store.set_status(conn, memory_id, MemoryStatus.INVALIDATED)
+    await _store.insert_event(
+        conn,
+        memory_id=memory_id,
+        workspace_id=workspace_id,
+        event_type=MemoryEventType.INVALIDATED,
+        actor=actor,
+        from_status=MemoryStatus.ACTIVE,
+        to_status=MemoryStatus.INVALIDATED,
+        cause=cause,
+    )
+    return True
+
+
 async def backfill_slot(
     conn: AsyncConnection,
     *,

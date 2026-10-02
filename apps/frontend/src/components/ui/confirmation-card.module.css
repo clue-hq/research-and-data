@@ -1,0 +1,20 @@
+.card {
+  position: fixed;
+  inset-inline-end: 24px;
+  bottom: 24px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(600px, calc(100vw - 48px));
+  padding: 12px 16px;
+  border: var(--clue-ds-product-component-button-border-width) solid var(--clue-ds-color-border-neutral);
+  border-radius: var(--clue-ds-product-component-button-md-radius);
+  color: var(--clue-ds-color-primitives-white);
+  background: var(--clue-ds-color-primitives-gray-950);
+  font-size: var(--clue-ds-typography-text-sm-font-size);
+  box-shadow: var(--clue-shadow-low);
+}
+.card > svg { flex-shrink: 0; }
+.card button { display:flex; padding:0; color:inherit; background:none; border:0; cursor:pointer; }
+.success { color: var(--clue-ds-color-primitives-positive-500); }

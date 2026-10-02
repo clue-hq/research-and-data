@@ -46,10 +46,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Awaitable, Callable
+from uuid import UUID
 
+from clue_agents.ports import AgentModelProvider
 from clue_api.agent_cleanup import AgentWorkspaceCleanupJob
+from clue_api.agent_execution_wiring import DbAgentPlanJournal
 from clue_api.agent_model_wiring import build_agent_model_provider
-from clue_api.agent_platform_wiring import build_agent_platform_components
+from clue_api.agent_platform_wiring import (
+    AgentPlatformComponents,
+    build_agent_platform_components,
+)
 from clue_api.agent_turn_fleet_wiring import (
     AgentTurnWorkHandler,
     build_agent_turn_work_handler,
@@ -57,12 +63,39 @@ from clue_api.agent_turn_fleet_wiring import (
     sweep_thread_dispatch,
     sweep_turn_stream_retention,
 )
+from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.agent_workspace_wiring import build_agent_workspace_factory
+from clue_api.arv2.account_research_driver import (
+    Arv2AccountResearchWorkHandler,
+    build_arv2_account_research_handler,
+)
+from clue_api.arv2.account_research_launch import DbArv2LaunchService
+from clue_api.arv2.discovery_driver import (
+    Arv2DiscoveryWorkHandler,
+    build_arv2_discovery_handler,
+)
+from clue_api.arv2.discovery_launch import DbArv2DiscoveryService
+from clue_api.arv2.display.fleet_handler import build_arv2_display_page_handler
+from clue_api.arv2.icp_authoring import DbIcpAuthoringService
+from clue_api.arv2.onboarding_driver import (
+    IcpRef,
+    IcpSynthesisOutcome,
+    OnboardingRunWorkHandler,
+    SynthesisLauncher,
+    SynthesisOutcome,
+    build_onboarding_exa_client_factory,
+    build_onboarding_provider_caller,
+)
+from clue_api.arv2.onboarding_reconcile import CatalogReconciler, OpenRouterCatalogReconciler
+from clue_api.arv2.read_tools import DbArv2ReadService
+from clue_api.arv2.sinks import LedgerSink, RawSink
+from clue_api.arv2_wiring import register_arv2_wiring
 from clue_api.chat.turn_stream import TurnStreamPolicy
 from clue_api.compliance_wiring import register_compliance_wiring
 from clue_api.composition import build_pre_spend_gate, load_research_packs
 from clue_api.contact_content_handoff import ContactContentHandoffService
 from clue_api.contact_research_fleet_launch import ContactResearchSelectionApprover
+from clue_api.conversation_naming import build_conversation_namer
 from clue_api.design_fleet import (
     build_design_job_handler,
     build_design_leg_lane_driver,
@@ -70,6 +103,9 @@ from clue_api.design_fleet import (
     start_design_reaper,
 )
 from clue_api.design_leg_wiring import build_design_leg_finisher
+from clue_api.design_memory_runtime import build_configured_design_preference_resolver_factory
+from clue_api.design_platform_reads import build_design_platform_reads_factory
+from clue_api.discovery_wake import DbDiscoveryWake
 from clue_api.entity_research_launch_tools import EntityResearchLaunchServices
 from clue_api.entity_research_parallel import EntityResearchBatchWakeService
 from clue_api.entity_research_provider_wiring import build_production_entity_research_fleet
@@ -102,12 +138,28 @@ from clue_api.fleet_wiring import build_multi_work_worker, enqueue_run_drive, re
 from clue_api.memory_wiring import memory_assembly_factory, memory_write_factory_builder
 from clue_api.narrative_wiring import build_client_knowledge_retriever, register_narrative_wiring
 from clue_api.official_site_crawl_wiring import build_official_site_crawl_fleet
+from clue_api.onboarding_client_binding import Stage0ClientEntityBinder
+from clue_api.onboarding_synthesis_wiring import (
+    OnboardingSynthesisLauncher,
+    RegisteredIcp,
+    build_onboarding_synthesis_launcher,
+)
+from clue_api.persona_request_tools import DbPersonaRequestService
 from clue_api.phase_c_wiring import Stage0ScrapeBinder, build_stage0_scrape_binder
+from clue_api.product_path_preflight import assert_product_path_composition
 from clue_api.production_metrics import production_metrics_lifespan
+from clue_api.production_tracing import (
+    install_production_langfuse,
+    install_production_sentry,
+    install_production_tracing,
+    production_tracing_lifespan,
+)
+from clue_api.project_document_tools import DbProjectDocumentService
 from clue_api.project_execution_router import (
     DeferredProjectExecutionRouter,
     Recipe1ProjectExecutionRouter,
 )
+from clue_api.project_library_refresh import ProjectLibraryRefresher
 from clue_api.prose_synthesis_step import ProseSynthesisStep
 from clue_api.prose_synthesis_tools import ProseSynthesisServices
 from clue_api.recipe_wiring import (
@@ -123,6 +175,7 @@ from clue_api.run_composition import (
     build_stage0_claim_extractor,
 )
 from clue_api.run_events_wiring import build_run_event_emitter
+from clue_api.sandbox.workspaces import SandboxWorkspaces
 from clue_api.stage0_setup_fleet import Stage0ReconWorkHandler
 from clue_api.storage_wiring import build_storage_backend, run_orphan_blob_sweep
 from clue_api.sumble_discovery_gaps import build_production_sumble_discovery_gap_resolver
@@ -130,6 +183,7 @@ from clue_api.supervisor_wiring import DeferredSupervisorActions, ToolbeltSuperv
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_api.value_narrative_tools import ValueNarrativeServices
 from clue_config import Secrets, Settings, default_gateway_config, get_config, load_settings
+from clue_config.gateway import GatewayConfig
 from clue_core import ProjectPhase
 from clue_core.gateway import LLMGateway
 from clue_db import ConnFactory, db_lifespan, transaction
@@ -144,9 +198,10 @@ from clue_execution import (
     RecipeExecutor,
     sweep_stream_tokens,
 )
-from clue_fleet import DbTaskQueue, DbWorkQueue, run_worker
+from clue_fleet import DbTaskQueue, DbWorkQueue, WorkQueue, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
+from clue_obs.sentry import capture
 from clue_research.adapters import default_scrape_backend
 from clue_research.adapters.exa_websets import ExaWebsetsClient
 from clue_research.narrative import ProseSynthesizer
@@ -192,8 +247,9 @@ async def _orphan_sweep_loop(
                 deleted = await run_orphan_blob_sweep(conn, storage=storage)
             if deleted:
                 log.info("fleet.orphan_sweep.deleted", count=len(deleted))
-        except Exception:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
+        except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.orphan_sweep.error", exc_info=True)
+            capture(exc)
 
 
 def _start_orphan_sweep(settings: Settings, storage: StorageBackend) -> asyncio.Task[None] | None:
@@ -227,8 +283,9 @@ async def _stream_token_sweep_loop(
                 deleted = await sweep_stream_tokens(conn)
             if deleted:
                 log.info("fleet.stream_token_sweep.deleted", count=deleted)
-        except Exception:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
+        except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.stream_token_sweep.error", exc_info=True)
+            capture(exc)
 
 
 def _start_stream_token_sweep(settings: Settings) -> asyncio.Task[None] | None:
@@ -267,8 +324,9 @@ async def _chat_sweep_loop(
             )
             if dispatched or pruned:
                 log.info("fleet.chat_sweep.done", dispatched=dispatched, pruned=pruned)
-        except Exception:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
+        except Exception as exc:  # noqa: BLE001 — a sweep fault is non-fatal to the worker
             log.warning("fleet.chat_sweep.error", exc_info=True)
+            capture(exc)
 
 
 def _start_chat_sweep(settings: Settings) -> asyncio.Task[None] | None:
@@ -295,8 +353,9 @@ async def _agent_cleanup_loop(
                     removed=result.removed,
                     already_absent=result.already_absent,
                 )
-        except Exception:  # noqa: BLE001 — cleanup failure must not sink run execution
+        except Exception as exc:  # noqa: BLE001 — cleanup failure must not sink run execution
             log.warning("fleet.agent_cleanup.error", exc_info=True)
+            capture(exc)
 
 
 def _start_agent_cleanup(
@@ -326,8 +385,9 @@ async def _external_research_wake_loop(
             completed = await worker.run_due()
             if completed:
                 log.info("fleet.external_research.woke", run_count=completed)
-        except Exception:  # noqa: BLE001 - one wake scan must not sink the fleet
+        except Exception as exc:  # noqa: BLE001 - one wake scan must not sink the fleet
             log.warning("fleet.external_research.wake_error", exc_info=True)
+            capture(exc)
         await sleep(settings.external_research_wake_worker_interval_s)
 
 
@@ -502,7 +562,8 @@ def _build_stage0_scrape_binder(
 ) -> Stage0ScrapeBinder | None:
     """The worker's live Stage-0 scrape composition — the HTTP root's, with the same extractor.
 
-    Flag-gated exactly as ``projections_main`` is: with ``self_serve_provisioning_enabled`` off
+    Flag-gated exactly as ``projections_main`` is: with ``legacy_stage0_recon_enabled`` off
+    (the default since 2026-09-12 — ledger A4 split it off ``self_serve_provisioning_enabled``)
     there is no binder and ``start_recon`` keeps refusing before any spend. The ``gateway`` is the
     one ``_serve`` already built for every other model consumer in this process — this seam takes it
     rather than building a second client for the same credential.
@@ -511,7 +572,8 @@ def _build_stage0_scrape_binder(
     instance and the same account lookup, so the background research lane the worker drives can
     fill ``client.competitor`` / ``client.buyer_profile``. Bound only with an Exa credential.
     """
-    if not settings.self_serve_provisioning_enabled:
+    # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer implies it.
+    if not settings.legacy_stage0_recon_enabled:
         return None
     extractor = build_stage0_claim_extractor(gateway)
     binder = build_stage0_scrape_binder(
@@ -523,13 +585,279 @@ def _build_stage0_scrape_binder(
     return binder
 
 
+class _SynthesisSeam:
+    """Join O4's launcher to O3's ``SynthesisLauncher`` seam at the composition root.
+
+    The two lanes were built apart: the driver reads four fields of a step outcome, the launcher
+    returns those four plus the document ids it registered. Nothing else differs, so the join is a
+    field-for-field copy here rather than a shared type either lane would have had to import from
+    the other before it existed.
+
+    Both turns cross here. The ICP turn's ``RegisteredIcp`` rows become the driver's ``IcpRef``s on
+    the way out, and each one comes back as its own ``RegisteredIcp`` when the driver opens that
+    ICP's persona turn — the same fields, copied in both directions. ``project_id`` is one of them:
+    a persona is written in the scope of the ICP it is about, and a personas-only run carries that
+    scope in from its fleet payload rather than deriving it here.
+    """
+
+    def __init__(self, launcher: OnboardingSynthesisLauncher) -> None:
+        self._launcher = launcher
+
+    async def launch_icps(
+        self, *, workspace_id: str, brand_id: str, run_id: UUID, step_id: UUID
+    ) -> IcpSynthesisOutcome:
+        result = await self._launcher.launch_icps(
+            workspace_id=workspace_id, brand_id=brand_id, run_id=run_id, step_id=step_id
+        )
+        return IcpSynthesisOutcome(
+            status=result.status,
+            failure_code=result.failure_code,
+            failure_message=result.failure_message,
+            cost_usd=result.cost_usd,
+            icps=tuple(
+                IcpRef(
+                    document_id=icp.document_id,
+                    icp_key=icp.icp_key,
+                    version=icp.version,
+                    path=icp.path,
+                    project_id=icp.project_id,
+                )
+                for icp in result.icps
+            ),
+        )
+
+    async def launch_persona(
+        self, *, workspace_id: str, brand_id: str, run_id: UUID, step_id: UUID, icp: IcpRef
+    ) -> SynthesisOutcome:
+        result = await self._launcher.launch_persona(
+            workspace_id=workspace_id,
+            brand_id=brand_id,
+            run_id=run_id,
+            step_id=step_id,
+            icp=RegisteredIcp(
+                document_id=icp.document_id,
+                icp_key=icp.icp_key,
+                version=icp.version,
+                path=icp.path,
+                project_id=icp.project_id,
+            ),
+        )
+        return SynthesisOutcome(
+            status=result.status,
+            failure_code=result.failure_code,
+            failure_message=result.failure_message,
+            cost_usd=result.cost_usd,
+        )
+
+
+def _build_onboarding_handler(
+    settings: Settings,
+    secrets: Secrets,
+    *,
+    storage: StorageBackend,
+    synthesis: SynthesisLauncher | None = None,
+) -> OnboardingRunWorkHandler | None:
+    """The ARV2 onboarding lane (Track O, O3) on this worker, behind ``onboarding_v2_enabled``.
+
+    The client-entity seam is injected from *outside* ``clue_api.arv2`` (the lane may not import
+    ``clue_research.stage0``). ``synthesis`` is O4's launcher behind :class:`_SynthesisSeam`, or
+    ``None`` when the agent platform is not composed — then the synthesis step settles ``empty``
+    with its reason rather than pretending it ran.
+
+    A deployment that turns the flag on without ``CLUE_EXA_API_KEY`` gets a loud warning and **no
+    handler**: the enqueued runs then wait in the queue for a correctly-credentialed worker,
+    which is the honest outcome. Failing the boot instead would take every other kind of work on
+    this process down with it, and composing a keyless handler would fail each run at its first
+    provider call.
+    """
+    if not settings.onboarding_v2_enabled:
+        return None
+    try:
+        exa = build_onboarding_exa_client_factory(secrets)
+    except ValueError:
+        log.warning(
+            "onboarding.handler_not_composed",
+            reason="CLUE_EXA_API_KEY is not configured",
+            detail=(
+                "CLUE_ONBOARDING_V2_ENABLED is on but this worker has no Exa credential; "
+                "onboarding runs stay queued until a worker with CLUE_EXA_API_KEY drains them"
+            ),
+        )
+        return None
+    return OnboardingRunWorkHandler(
+        settings=settings,
+        conn_factory=transaction,
+        artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        exa=exa,
+        client_binder=Stage0ClientEntityBinder(),
+        synthesis=synthesis,
+        reconciler_factory=_build_catalog_reconciler_factory(settings, secrets),
+    )
+
+
+def _build_catalog_reconciler_factory(
+    settings: Settings, secrets: Secrets
+) -> Callable[[RawSink, LedgerSink], CatalogReconciler] | None:
+    """The catalog identity ladder's model stage, behind the reconcile flag.
+
+    (``CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED``, model ``CLUE_ONBOARDING_RECONCILE_MODEL``.)
+
+    A **factory of one reconciler per run**, not a reconciler: the call spends through R1's
+    ``ProviderCaller`` built over the catalog step's own buffered sinks, so its one call lands on
+    ``provider_call_ledger`` with the run's stamp (slice 1b) — the driver hands the factory the
+    sinks.
+
+    Missing credential ≠ missing handler here (unlike the Exa key one level up): without the model
+    stage the ladder still runs its deterministic rungs, which is exactly what it did before the
+    stage existed. So a keyless worker composes normally and says so once, at composition, rather
+    than either refusing to drain onboarding work or failing every run at the reconcile call.
+    """
+    if not settings.onboarding_catalog_reconcile_enabled:
+        # Deliberate, so it is stated rather than warned about — but stated, because "why did this
+        # run mint a near-miss product row?" should be answerable from the boot log alone.
+        log.info(
+            "onboarding.reconciler_not_composed",
+            reason="CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED is off",
+            detail="the catalog sync runs its deterministic rungs only",
+        )
+        return None
+    key = secrets.openrouter_api_key
+    if key is None or not key.get_secret_value().strip():
+        log.warning(
+            "onboarding.reconciler_not_composed",
+            reason="CLUE_OPENROUTER_API_KEY is not configured",
+            detail=(
+                "CLUE_ONBOARDING_CATALOG_RECONCILE_ENABLED is on but this worker has no model "
+                "credential; the catalog sync runs its deterministic rungs only, so a lineup "
+                "entry no spelling key matches mints a new product row"
+            ),
+        )
+        return None
+    base_url = GatewayConfig().base_url
+
+    def factory(raw: RawSink, ledger: LedgerSink) -> CatalogReconciler:
+        return OpenRouterCatalogReconciler(
+            caller_factory=lambda: build_onboarding_provider_caller(raw=raw, ledger=ledger),
+            api_key=key,
+            model=settings.onboarding_reconcile_model,
+            base_url=base_url,
+        )
+
+    return factory
+
+
+def _build_arv2_account_research_handler(
+    settings: Settings,
+    secrets: Secrets,
+    *,
+    storage: StorageBackend,
+    model_provider: AgentModelProvider | None,
+    queue: WorkQueue,
+) -> Arv2AccountResearchWorkHandler | None:
+    """The ARV2 account-research lane (Track R, R2) on this worker, behind its own flag.
+
+    Same posture as onboarding above, and for the same reason: a worker that is missing a
+    credential (or the model provider that needs one) gets a named warning and **no handler**, so
+    the enqueued jobs wait for a correctly-configured worker instead of failing one by one after
+    they have already spent model rounds.
+
+    The artifact sink and the model provider are injected from *outside* the lane — ARV2 may not
+    open a second write path into the artifact table, and it may not reach the vendor SDK behind
+    ``clue_gateway``. What the lane itself decides is which credentials a job needs and which
+    model id it runs on (``build_arv2_account_research_handler``).
+    """
+    if not settings.arv2_account_research_enabled:
+        return None
+    if model_provider is None:
+        log.warning(
+            "arv2.account_handler_not_composed",
+            reason="CLUE_OPENROUTER_API_KEY is not configured",
+            detail=(
+                "CLUE_ARV2_ACCOUNT_RESEARCH_ENABLED is on but this worker has no model "
+                "credential; account research jobs stay queued until a worker with "
+                "CLUE_OPENROUTER_API_KEY drains them"
+            ),
+        )
+        return None
+    from clue_api.quality_research_wiring import build_quality_job_runner
+
+    return build_arv2_account_research_handler(
+        settings,
+        secrets,
+        storage=storage,
+        artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
+        model_provider=model_provider,
+        quality_runner=build_quality_job_runner(
+            settings=settings, storage=storage, connections=transaction, models=model_provider
+        ),
+        # R3: an account job that resolves a committee creates one person job per member and offers
+        # it here, on this process's own queue — the same one the launch service uses, so a fanned
+        # out person job is queued through exactly the machinery that drains it.
+        queue=queue,
+    )
+
+
+async def _quality_reconcile_loop(
+    handler: Arv2AccountResearchWorkHandler, settings: Settings
+) -> None:
+    while True:
+        try:
+            offered = await handler.sweep_quality()
+            if offered:
+                log.info("arv2.quality.continuations_offered", count=offered)
+        except Exception as error:
+            log.warning("arv2.quality.continuation_sweep_failed", exc_info=True)
+            capture(error)
+        await asyncio.sleep(settings.arv2_quality_reconcile_interval_s)
+
+
+def _build_arv2_discovery_handler(
+    settings: Settings,
+    secrets: Secrets,
+    *,
+    storage: StorageBackend,
+) -> Arv2DiscoveryWorkHandler | None:
+    """The ARV2 discovery lane (Track R, R4) on this worker, behind its own flag.
+
+    Same posture as the account lane above: a worker that is missing the Exa credential gets a
+    named warning and **no handler**, so launched runs wait for a correctly-configured worker
+    instead of claiming a row and failing at their first provider call. The artifact sink is
+    injected from *outside* the lane — ARV2 may not open a second write path into the artifact
+    table — and what the lane itself decides is which credential a run needs and the refusal when
+    it is missing (``build_arv2_discovery_handler``).
+    """
+    if not settings.arv2_discovery_enabled:
+        return None
+    artifacts = DurableAgentArtifactStore(storage=storage, conn_factory=transaction)
+    return build_arv2_discovery_handler(
+        settings,
+        secrets,
+        storage=storage,
+        artifacts=artifacts,
+        # Spec 2026-09-30 §4: a run launched from a thread ends by queuing the Head of ABM's turn
+        # there. Built here, outside the lane, because it writes a turn submission.
+        wake=DbDiscoveryWake(artifacts),
+    )
+
+
 async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
     settings = load_settings()
     secrets = Secrets()
+    # Startup gate: a declared product path that is missing a provider credential refuses here,
+    # before any lifecycle is opened or handler composed (see ``product_path_preflight``).
+    assert_product_path_composition(settings, secrets)
+    # Lane 3 slice 2: the worker's tracer provider (and Sentry) before any lifecycle is opened, so
+    # every task span belongs to one provider. Both are no-ops without an endpoint / a DSN.
+    tracing = install_production_tracing(settings, secrets, service_name="clue-worker-fleet")
+    install_production_sentry(settings, secrets, service_name="clue-worker-fleet")
+    install_production_langfuse(
+        settings, secrets, runtime=tracing, service_name="clue-worker-fleet"
+    )
     storage = build_storage_backend(settings)
     async with (
+        production_tracing_lifespan(tracing),
         production_metrics_lifespan(
             settings,
             service_name="clue-worker-fleet",
@@ -539,6 +867,7 @@ async def _serve() -> None:
     ):
         register_compliance_wiring()
         register_narrative_wiring()
+        register_arv2_wiring()
         async with transaction() as conn:
             await load_research_packs(conn)
         project_execution_router = DeferredProjectExecutionRouter()
@@ -641,9 +970,84 @@ async def _serve() -> None:
             secrets=secrets,
             storage=storage,
         )
+        # ARV2 Track R, R2 (seam 1). The launch service is composed only where the lane is: with
+        # the flag off the two tools still register and refuse
+        # ``arv2_account_research_not_composed`` before any spend. It shares this process's work
+        # queue, so a launched job is queued through exactly the machinery that drains it.
+        arv2_account_launch = (
+            DbArv2LaunchService(settings, storage, queue=work_queue)
+            if settings.arv2_account_research_enabled
+            else None
+        )
+        # ARV2 Track R, R4, on exactly the same terms: composed only behind
+        # ``arv2_discovery_enabled``, sharing this process's work queue so a launched run is
+        # offered through the machinery that drains it.
+        arv2_discovery_launch = (
+            DbArv2DiscoveryService(settings, storage, queue=work_queue)
+            if settings.arv2_discovery_enabled
+            else None
+        )
+        # The project library's refresher (2026-09-14): the two writing tools below rebuild this
+        # project's library once their write has committed, so the settled state the frontend reads
+        # is the state the tool just wrote rather than the state of the last turn. The factory is
+        # this worker's own, on the shared root — the tree replace is atomic across processes — and
+        # it is the same one the workspace cleanup job closes below. Without a configured workspace
+        # root there is no refresher and both hooks are no-ops.
+        agent_workspace_factory = (
+            build_agent_workspace_factory(storage=storage, settings=settings)
+            if settings.agent_workspace_root is not None
+            else None
+        )
+        project_library = (
+            ProjectLibraryRefresher(
+                storage=storage,
+                artifacts=DurableAgentArtifactStore(storage=storage),
+                workspaces=agent_workspace_factory,
+                conn_factory=transaction,
+            )
+            if agent_workspace_factory is not None
+            else None
+        )
+        # ICP authoring needs no flag of its own: writing a proposal spends nothing and confirms
+        # nothing. What it needs is the storage the knowledge documents live in, so it composes
+        # where the composed backend is. Without a service the tool registers and refuses by name.
+        icp_authoring = DbIcpAuthoringService(storage, library=project_library)
+        # The persona request DOES need the onboarding flag: what it opens is an onboarding run,
+        # and with the lane off no worker would ever drive it — the row would sit ``queued``
+        # forever, holding that ICP document's one open slot. Off, the tool refuses by name.
+        persona_requests = (
+            DbPersonaRequestService(queue=work_queue) if settings.onboarding_v2_enabled else None
+        )
+        # The project plan has no flag of its own either: writing it down spends nothing and
+        # confirms nothing, and it needs only the storage the knowledge documents live in.
+        # Without a service the tool registers and refuses by name.
+        project_documents = DbProjectDocumentService(storage, library=project_library)
+        # The ARV2 reads have no flag at all, and need no storage: they read rows that exist on
+        # every deployment (account membership, display blocks, claims, discovery runs) and reading
+        # them spends nothing. Composed unconditionally; the tools refuse by name only where the
+        # read surface itself is absent. ``settings`` is here for one predicate: the claims read
+        # mirrors the account page's display gate, whose tier-4 arm is armed by
+        # ``verification_enabled``.
+        arv2_reads = DbArv2ReadService(settings=settings)
+        # The code sandbox's one registry (spec 2026-09-19 §3.4), built HERE because two
+        # composition steps need the SAME object: the toolbelt, whose ``run_python@1`` looks a
+        # turn up in it, and the platform components, whose conversation engine registers the
+        # turn in it while it holds the lease. Two instances would mean a tool that can never
+        # find the turn the engine bound. With the sandbox off nothing is composed, both sides
+        # get ``None``, and the tool refuses by name.
+        sandbox_workspaces = (
+            SandboxWorkspaces(max_runs_per_turn=settings.sandbox_max_runs_per_turn)
+            if settings.sandbox_enabled
+            else None
+        )
         registry = build_toolbelt(
             storage=storage,
             settings=settings,
+            # ARV2 O4: ``build_toolbelt(secrets=...)`` is fail-closed — the default ``None`` means
+            # *no credentials*, and ``exa_search_evidence@1`` would then refuse
+            # ``exa_not_configured`` before any spend. This production root passes the real
+            # secrets so the synthesis turn's one evidence call can actually reach Exa.
+            secrets=secrets,
             gateway=gateway,
             # FI-4 slice 2 / slice 3: same live scrape composition as projections_main, behind the
             # same flag, and now with the same REAL extractor — reusing the gateway built above, so
@@ -666,8 +1070,15 @@ async def _serve() -> None:
             research_view_recheck=(research_views.recheck if research_views is not None else None),
             contact_content_handoff=contact_content_handoff,
             entity_research_launches=entity_research_launches,
+            arv2_account_launch=arv2_account_launch,
+            arv2_discovery_launch=arv2_discovery_launch,
+            arv2_reads=arv2_reads,
+            icp_authoring=icp_authoring,
+            persona_requests=persona_requests,
+            project_documents=project_documents,
             prose_synthesis=prose_synthesis,
             value_narrative=value_narrative,
+            sandbox_workspaces=sandbox_workspaces,
         )
         pin_registry = build_recipe_pin_registry(tool_registry=registry)
         compatibility = CompatibilityLoader(pin_registry)
@@ -713,7 +1124,6 @@ async def _serve() -> None:
             controls=controls,
             max_concurrency=settings.recipe_executor_max_concurrency,
         )
-        agent_workspace_factory = None
         # The project DEEP phase remains the R1 loud quarantine. M8D entity runs are independently
         # launched through the promoted tool surfaces and drained by the handler below.
         driver = ComposingRunDriver(
@@ -739,14 +1149,55 @@ async def _serve() -> None:
         # run-control tools registered below are the human/API run-control plane sharing this
         # registry object, not model-surface tools, and composing after them fails the audit
         # at boot.
+        # ARV2 O4: the onboarding synthesis turn needs the SAME agent platform components as the
+        # conversation turn (profiles, models, workspaces, artifacts, turn journal), so the one
+        # composition is shared by both switches rather than duplicated per surface.
         agent_turn_handler: AgentTurnWorkHandler | None = None
-        if settings.chat_enabled:
+        memory = (
+            memory_assembly_factory(settings, transaction)
+            if settings.chat_enabled
+            or (settings.design_runtime_enabled and settings.design_preference_context_enabled)
+            else None
+        )
+        design_preference_resolver_factory = (
+            build_configured_design_preference_resolver_factory(
+                settings=settings, memory=memory, conn_factory=transaction
+            )
+            if memory is not None
+            else None
+        )
+        # Design note 2026-09-19: what a design LEG turn may read from the platform mid-turn —
+        # the target account's research through the governed tools, and the seller's pinned
+        # knowledge. Composed HERE, with this worker's journaled invoker and storage, because the
+        # design runtime opens no platform database; gated on the same switch as the lane below,
+        # since a deployment that runs no design work has nothing to read for.
+        design_platform_reads_factory = (
+            build_design_platform_reads_factory(
+                invoker=tool_invoker, storage=storage, conn_factory=transaction
+            )
+            if settings.design_runtime_enabled
+            else None
+        )
+        platform_components: AgentPlatformComponents | None = None
+        if settings.chat_enabled or settings.onboarding_v2_enabled:
             platform_components = build_agent_platform_components(
                 settings=settings,
                 secrets=secrets,
                 gateway_config=gateway_config,
                 storage=storage,
                 tools=registry,
+                sandbox_workspaces=sandbox_workspaces,
+            )
+        if settings.chat_enabled and platform_components is not None:
+            assert memory is not None
+            # Conversation naming (2026-09-18 §4.1): composed once at boot. It states its own
+            # absence — off by flag, or no OpenRouter key — and a worker without one simply
+            # leaves every chat and Home project on its placeholder name.
+            namer = build_conversation_namer(
+                settings=settings,
+                secrets=secrets,
+                artifacts=platform_components.artifacts,
+                conn_factory=transaction,
             )
             agent_turn_handler = build_agent_turn_work_handler(
                 components=platform_components,
@@ -757,12 +1208,19 @@ async def _serve() -> None:
                 recipes=recipe_reader,
                 starter=starter,
                 parameters=execution_parameters,
-                memory=memory_assembly_factory(settings, transaction),
+                memory=memory,
                 queue=work_queue,
+                # ARV2 onboarding O6: the same backend the onboarding synthesis seam receives —
+                # the turn reads its pinned brand-knowledge documents from it.
+                storage=storage,
                 # P3.4: the design-leg lane. Same switch as the design_job handler below —
                 # a worker that drains design work can also drive a leg's design turns
                 # inline; one that does not composes the fail-loud unavailable lane.
-                design_lane=build_design_leg_lane_driver(enabled=settings.design_runtime_enabled),
+                design_lane=build_design_leg_lane_driver(
+                    enabled=settings.design_runtime_enabled,
+                    preference_resolver_factory=design_preference_resolver_factory,
+                    platform_reads_factory=design_platform_reads_factory,
+                ),
                 # P3.7: the §2.2 exit bridge — the design role's own catalog model judges
                 # each leg message pre-dispatch, and the governed finish tool executes a
                 # finish verdict. Same switch as the lane: without the design runtime the
@@ -776,6 +1234,8 @@ async def _serve() -> None:
                     else None
                 ),
                 design_leg_finisher=build_design_leg_finisher(invoker=tool_invoker),
+                design_preference_context_enabled=settings.design_preference_context_enabled,
+                namer=namer,
                 streaming=settings.chat_turn_streaming_enabled,
                 stream_policy=TurnStreamPolicy(
                     batch_max_chars=settings.chat_turn_stream_batch_max_chars,
@@ -789,6 +1249,31 @@ async def _serve() -> None:
                 ),
                 stop_poll_interval_s=settings.chat_turn_stop_poll_interval_s,
             )
+        # ARV2 O4: the onboarding synthesis turn's production seam. Composed under the same
+        # ordering rule as the conversation turn above — before ``register_execution_control_tools``
+        # widens the shared registry, because the launcher resolves the ONBOARDING_SYNTHESIS
+        # profile against the model-facing toolbelt the C6 authority audit covers.
+        synthesis_launcher: OnboardingSynthesisLauncher | None = None
+        if settings.onboarding_v2_enabled and platform_components is not None:
+            synthesis_launcher = build_onboarding_synthesis_launcher(
+                settings=settings,
+                secrets=secrets,
+                storage=storage,
+                components=platform_components,
+                tools=registry,
+                tool_invoker=tool_invoker,
+                executor=executor,
+                compatibility=compatibility,
+                plans=DbAgentPlanJournal(conn_factory=transaction),
+                recipes=recipe_reader,
+                starter=starter,
+                parameters=execution_parameters,
+            )
+        # O3's OnboardingRunWorkHandler takes this below, through ``_SynthesisSeam``.
+        log.info(
+            "onboarding_synthesis.launcher_composed",
+            enabled=synthesis_launcher is not None,
+        )
         register_execution_control_tools(
             ExecutionControlServices(
                 starter=starter,
@@ -834,8 +1319,44 @@ async def _serve() -> None:
                 crawl_enqueuer=official_site_crawl.enqueuer,
                 settings=settings,
             )
-            if settings.self_serve_provisioning_enabled
+            # 2026-09-12: the old recon is its own switch (ledger A4); provisioning no longer
+            # implies it.
+            if settings.legacy_stage0_recon_enabled
             else None
+        )
+        onboarding_handler = _build_onboarding_handler(
+            settings,
+            secrets,
+            storage=storage,
+            synthesis=(
+                _SynthesisSeam(synthesis_launcher) if synthesis_launcher is not None else None
+            ),
+        )
+        # R2: the same model provider the other governed agents use, built here only when the lane
+        # is on and this process has the credential — ``build_agent_model_provider`` raises without
+        # one, and a fleet worker must not fail its boot over an optional lane.
+        arv2_account_models = (
+            build_agent_model_provider(config=gateway_config, secrets=secrets)
+            if settings.arv2_account_research_enabled and secrets.openrouter_api_key is not None
+            else None
+        )
+        arv2_account_research_handler = _build_arv2_account_research_handler(
+            settings,
+            secrets,
+            storage=storage,
+            model_provider=arv2_account_models,
+            queue=work_queue,
+        )
+        # R4: the discovery drain. No model provider — a discovery run is Websets plus Exa Answer
+        # and a pile of arithmetic, not an agent loop.
+        arv2_discovery_handler = _build_arv2_discovery_handler(settings, secrets, storage=storage)
+        # Spec 2026-09-12: the page writer. No model provider object — the runner reads the key
+        # itself, the way the web seam's production factory does. The artifact sink is injected
+        # from outside the lane, like the discovery lane's (Global Constraint 7).
+        arv2_display_page_handler = build_arv2_display_page_handler(
+            settings,
+            secrets,
+            artifacts=DurableAgentArtifactStore(storage=storage, conn_factory=transaction),
         )
         worker = build_multi_work_worker(
             settings,
@@ -847,8 +1368,18 @@ async def _serve() -> None:
             agent_turn_handler=agent_turn_handler,
             stage0_recon_handler=stage0_recon_handler,
             official_site_crawl_handler=official_site_crawl.handler,
+            onboarding_handler=onboarding_handler,
+            arv2_account_research_handler=arv2_account_research_handler,
+            arv2_discovery_handler=arv2_discovery_handler,
+            arv2_display_page_handler=arv2_display_page_handler,
             # Part II D5 Round B: design agent turns drain on THIS worker when the switch is on.
-            design_handler=build_design_job_handler(enabled=settings.design_runtime_enabled),
+            design_handler=build_design_job_handler(
+                enabled=settings.design_runtime_enabled,
+                preference_resolver_factory=design_preference_resolver_factory,
+                # The same reads the inline leg lane above composes: a queued design job and an
+                # inline leg turn are one unit of work and must see one platform.
+                platform_reads_factory=design_platform_reads_factory,
+            ),
             queue=work_queue,
         )
         sweep = _start_orphan_sweep(settings, storage)
@@ -870,11 +1401,6 @@ async def _serve() -> None:
             interval_s=settings.design_run_event_prune_interval_s,
             retention_s=settings.design_run_event_retention_s,
         )
-        if agent_workspace_factory is None and settings.agent_workspace_root is not None:
-            agent_workspace_factory = build_agent_workspace_factory(
-                storage=storage,
-                settings=settings,
-            )
         agent_cleanup = _start_agent_cleanup(
             settings,
             (
@@ -897,6 +1423,11 @@ async def _serve() -> None:
             storage=storage,
         )
         external_research_wake = _start_external_research_wake(settings)
+        quality_reconcile = (
+            asyncio.create_task(_quality_reconcile_loop(arv2_account_research_handler, settings))
+            if arv2_account_research_handler is not None
+            else None
+        )
         try:
             await run_worker(worker)
         finally:
@@ -910,6 +1441,7 @@ async def _serve() -> None:
                 exa_discovery,
                 exa_targeted_enrichment,
                 external_research_wake,
+                quality_reconcile,
             ):
                 if background is None:
                     continue

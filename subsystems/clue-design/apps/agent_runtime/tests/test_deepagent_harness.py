@@ -4,9 +4,9 @@ Covers the IMPLEMENTATION-BRIEF §8 test list: workspace scaffolding, the `view`
 tool's content structure, the D5 tool-surface contract, the D6 prompt contract,
 the constitution state schema, and the runner's honest-failure guarantees.
 
-deepagents is stubbed (as the existing factory test stubs it) so `create_deep_agent`
-never builds a real model and no network call fires. `init_model` is monkeypatched
-to a sentinel for the same reason.
+Only `create_deep_agent` and `init_model` are stubbed, so no real model is built
+and no network call fires. Filesystem and state classes stay real: replacing a
+filesystem module would permanently change a lazily imported backend base class.
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import sys
 import threading
 import types
 from dataclasses import replace
@@ -39,32 +38,10 @@ from lumen_agent.prompts import (
 from lumen_agent.prompts import BATCHING_RULE, SHARED_SURFACE_CONTRACT
 from lumen_agent.tools.substrate import LumenDesignTools
 
-from agent_fixtures import FakeCoreClient, runtime_config
+from agent_fixtures import FakeCoreClient, prepare_acceptance_evidence, runtime_config
 
 
 # --- deepagents stub --------------------------------------------------------
-
-
-class _FakeFilesystemBackend:
-    # Accept the RIDER-1 kwargs (RepoRootedFilesystemBackend subclasses this stub
-    # when deepagents is monkeypatched, and forwards virtual_mode/max_file_size_mb
-    # to super().__init__).
-    def __init__(self, root_dir: str, virtual_mode=None, max_file_size_mb: int = 10) -> None:
-        self.root_dir = root_dir
-        self.virtual_mode = virtual_mode
-        self.max_file_size_mb = max_file_size_mb
-
-
-class _FakeFilesystemPermission:
-    def __init__(self, operations, paths, mode="allow") -> None:
-        self.operations = operations
-        self.paths = paths
-        self.mode = mode
-
-
-class _FakeDeepAgentState(dict):
-    """Stand-in for deepagents.DeepAgentState — a dict subclass, like the real
-    one (which is a TypedDict over dict)."""
 
 
 def _install_deepagents_stub(monkeypatch, capture: dict):
@@ -72,16 +49,7 @@ def _install_deepagents_stub(monkeypatch, capture: dict):
         capture["kwargs"] = kwargs
         return types.SimpleNamespace(invoke=lambda *a, **k: {"messages": []}, kwargs=kwargs)
 
-    module = types.ModuleType("deepagents")
-    module.create_deep_agent = fake_create_deep_agent
-    module.FilesystemPermission = _FakeFilesystemPermission
-    module.DeepAgentState = _FakeDeepAgentState
-    backends_module = types.ModuleType("deepagents.backends")
-    filesystem_module = types.ModuleType("deepagents.backends.filesystem")
-    filesystem_module.FilesystemBackend = _FakeFilesystemBackend
-    monkeypatch.setitem(sys.modules, "deepagents", module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
+    monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     monkeypatch.setattr(
         "lumen_agent.harness.init_model",
@@ -126,6 +94,15 @@ def seeded_scene() -> dict:
 
 def _tools_only(config, prompt="Make a poster", initial_scene=None):
     return LumenDesignTools(config, prompt, initial_scene=initial_scene)
+
+
+def _give_page(tools):
+    """Editor Quality Plan 2 (item C): generate_image refuses on a pageless scene
+    BEFORE it calls the model, so an imagery test needs the page the real author
+    would have compiled first. FakeCoreClient.compile_dsl_into_scene plants
+    `page_test`; any source will do."""
+    tools.compile_dsl_block("page page_test size(1080,1080,px)")
+    assert tools.scene["pages"], "fixture must have planted a page"
 
 
 # --- 1. workspace scaffolding -----------------------------------------------
@@ -174,6 +151,24 @@ def test_prompts_receive_virtual_workspace_path(tmp_path, monkeypatch):
     assert virtual_ws in author["system_prompt"]
 
 
+def test_a_session_turn_prompts_the_persistent_session_workspace(tmp_path, monkeypatch):
+    """Design session continuity (2026-09-18): on a continued thread the prompt
+    must name `/sessions/<session_id>/workspace` — the folder that SURVIVES the
+    turn — and never a per-turn `/run_<id>/` path that will not exist next turn."""
+    capture: dict = {}
+    _install_deepagents_stub(monkeypatch, capture)
+
+    config = replace(runtime_config(tmp_path), session_id="dsess_prompt")
+    _agent, tools = create_design_deepagent("Make a poster", config)
+    kwargs = capture["kwargs"]
+    author = next(s for s in kwargs["subagents"] if s["name"] == "lumen-dsl-author")
+
+    assert tools.workspace_scope_id == "sessions/dsess_prompt"
+    for system_prompt in (kwargs["system_prompt"], author["system_prompt"]):
+        assert "/sessions/dsess_prompt/workspace" in system_prompt
+        assert f"/{tools.run_id}/workspace" not in system_prompt
+
+
 def test_run_artifacts_land_under_isolated_workspace(tmp_path, monkeypatch):
     """W-isolation (D9 acceptance #2): every produced artifact lands under
     `<workspace_root>/run_<id>/`, the skills + knowledge trees are materialized,
@@ -202,7 +197,7 @@ def test_run_artifacts_land_under_isolated_workspace(tmp_path, monkeypatch):
 
     # Nothing was written OUTSIDE the workspace root: the only top-level entries
     # are the run dir and the materialized trees (+ any asset-store default).
-    allowed = {tools.run_id, ".deepagent", "knowledge_docs", "asset-store"}
+    allowed = {tools.run_id, ".deepagent", ".materialize.lock", "knowledge_docs", "asset-store"}
     assert {child.name for child in ws_root.iterdir()} <= allowed
 
 
@@ -708,16 +703,7 @@ def test_runner_honest_failure_on_invoke_exception(tmp_path, monkeypatch):
 
         return types.SimpleNamespace(invoke=_boom, kwargs=kwargs)
 
-    module = types.ModuleType("deepagents")
-    module.create_deep_agent = fake_create_deep_agent
-    module.FilesystemPermission = _FakeFilesystemPermission
-    module.DeepAgentState = _FakeDeepAgentState
-    backends_module = types.ModuleType("deepagents.backends")
-    filesystem_module = types.ModuleType("deepagents.backends.filesystem")
-    filesystem_module.FilesystemBackend = _FakeFilesystemBackend
-    monkeypatch.setitem(sys.modules, "deepagents", module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
+    monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
 
@@ -754,16 +740,7 @@ def test_runner_honest_failure_on_api_timeout_error(tmp_path, monkeypatch):
 
         return types.SimpleNamespace(invoke=_timeout, kwargs=kwargs)
 
-    module = types.ModuleType("deepagents")
-    module.create_deep_agent = fake_create_deep_agent
-    module.FilesystemPermission = _FakeFilesystemPermission
-    module.DeepAgentState = _FakeDeepAgentState
-    backends_module = types.ModuleType("deepagents.backends")
-    filesystem_module = types.ModuleType("deepagents.backends.filesystem")
-    filesystem_module.FilesystemBackend = _FakeFilesystemBackend
-    monkeypatch.setitem(sys.modules, "deepagents", module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends", backends_module)
-    monkeypatch.setitem(sys.modules, "deepagents.backends.filesystem", filesystem_module)
+    monkeypatch.setattr("deepagents.create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
 
@@ -866,7 +843,8 @@ def test_finalize_refuses_accepted_reference_turn_without_fidelity(tmp_path, mon
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
-    result = _finalize(tools, critique='{"accepted": true, "summary": "looks good"}')
+    critique = prepare_acceptance_evidence(tools)
+    result = _finalize(tools, critique=json.dumps(critique))
     assert result.startswith("REFUSED")
     assert "reference_fidelity" in result
     assert not (tools.trace_dir / "final.json").exists()
@@ -877,11 +855,15 @@ def test_finalize_refuses_accepted_reference_turn_with_low_fidelity(tmp_path, mo
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
-    result = _finalize(
-        tools,
-        critique='{"reference_fidelity": {"score": 1, "reasons": "ignored", "regressed_to_house_style": true}}',
-    )
+    critique = prepare_acceptance_evidence(tools, {
+        "accepted": True, "summary": "Only the palette carried over.", "issues": [],
+        "reference_fidelity": {
+            "score": 1, "reasons": "ignored", "regressed_to_house_style": True,
+        },
+    })
+    result = _finalize(tools, critique=json.dumps(critique))
     assert result.startswith("REFUSED")
+    assert "reference_fidelity" in result
     assert not (tools.trace_dir / "final.json").exists()
 
 
@@ -890,20 +872,27 @@ def test_finalize_accepts_reference_turn_with_explicit_fidelity(tmp_path, monkey
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
-    result = _finalize(
-        tools,
-        critique='{"reference_fidelity": {"score": 3, "reasons": "adopts the qualities", "regressed_to_house_style": false}}',
-    )
+    critique = prepare_acceptance_evidence(tools, {
+        "accepted": True, "summary": "The current render adopts the reference qualities.",
+        "issues": [], "reference_fidelity": {
+            "score": 3, "reasons": "adopts the qualities", "regressed_to_house_style": False,
+        },
+    })
+    result = _finalize(tools, critique=json.dumps(critique))
     assert not result.startswith("REFUSED")
+    assert json.loads(result)["status"] == "accepted"
     assert (tools.trace_dir / "final.json").exists()
 
 
 def test_finalize_without_references_never_requires_fidelity(tmp_path, monkeypatch):
-    """The guard is reference-turn-only: a plain turn accepts exactly as before."""
+    """A fully reviewed plain turn requires no reference-fidelity judgment."""
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     tools = _tools_only(runtime_config(tmp_path))
-    result = _finalize(tools, critique='{"accepted": true}')
+    critique = prepare_acceptance_evidence(tools)
+    result = _finalize(tools, critique=json.dumps(critique))
     assert not result.startswith("REFUSED")
+    assert json.loads(result)["status"] == "accepted"
+    assert json.loads(result)["critique"] == critique
     assert (tools.trace_dir / "final.json").exists()
 
 
@@ -932,6 +921,7 @@ def test_finalize_accepts_when_the_fidelity_judgment_was_written_as_prose(tmp_pa
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
+    prepare_acceptance_evidence(tools, json.loads(_PROSE_ONLY_CRITIQUE))
     result = _finalize(tools, critique=_PROSE_ONLY_CRITIQUE)
     assert not result.startswith("REFUSED")
 
@@ -947,18 +937,18 @@ def test_finalize_still_refuses_when_the_prose_score_is_low(tmp_path, monkeypatc
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
     )
-    result = _finalize(
-        tools,
-        critique=json.dumps(
-            {"accepted": True, "acceptance_notes": ["reference_fidelity: 1 — palette only"]}
-        ),
-    )
+    critique = prepare_acceptance_evidence(tools, {
+        "accepted": True, "summary": "Palette alone matches.", "issues": [],
+        "acceptance_notes": ["reference_fidelity: 1 — palette only"],
+    })
+    result = _finalize(tools, critique=json.dumps(critique))
     assert result.startswith("REFUSED")
+    assert "reference_fidelity" in result
     assert not (tools.trace_dir / "final.json").exists()
 
 
 def test_a_non_accepted_reference_finalize_still_records_the_typed_field(tmp_path, monkeypatch):
-    """Metrics need the field on EVERY reference turn, not only accepted ones."""
+    """Unbound feedback retains typed metrics without becoming a current review."""
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
     tools = _tools_only(
         _reference_config(tmp_path, [{"asset_id": "asset_r1", "png": _solid_png(), "order": 0}])
@@ -967,7 +957,11 @@ def test_a_non_accepted_reference_finalize_still_records_the_typed_field(tmp_pat
     assert not result.startswith("REFUSED")
 
     final = json.loads((tools.trace_dir / "final.json").read_text())
-    assert final["critique"]["reference_fidelity"]["score"] == 0
+    assert final["critique"] == {}
+    assert final["historical_critique"]["status"] == "unbound"
+    assert final["historical_critique"]["critique"]["reference_fidelity"]["score"] == 0
+    assert final["draft_verification"]["review"]["status"] == "missing"
+    assert final["acceptance_receipt"] is None
 
 
 def test_finalize_non_accepted_reference_turn_needs_no_fidelity(tmp_path, monkeypatch):
@@ -1114,6 +1108,7 @@ def test_generate_image_conditions_on_references(tmp_path, monkeypatch):
     _install_image_model(monkeypatch, captured, prov)
 
     tools = _tools_only(config, prompt="hero")
+    _give_page(tools)
     result = json.loads(tools.generate_image("a calm clinic reception"))
     assert result["image"]["status"] == "ok"
     assert result["image"]["mode"] == "model"
@@ -1146,6 +1141,7 @@ def test_generate_image_condition_on_references_false_skips(tmp_path, monkeypatc
     _install_image_model(monkeypatch, captured, prov)
 
     tools = _tools_only(config, prompt="hero")
+    _give_page(tools)
     result = json.loads(
         tools.generate_image("a calm clinic reception", condition_on_references=False)
     )
@@ -1163,6 +1159,7 @@ def test_generate_image_without_references_byte_identical_call(tmp_path, monkeyp
     _install_image_model(monkeypatch, captured, prov)
 
     tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    _give_page(tools)
     tools.generate_image("a serene mountain lake at dawn", brand_notes=["deep navy"])
     assert captured.pop("request_id").startswith("asset_img_")
     assert captured == {
@@ -1198,6 +1195,7 @@ def test_generate_image_missing_reference_blob_skipped_not_fatal(tmp_path, monke
     _install_image_model(monkeypatch, captured, prov)
 
     tools = _tools_only(config, prompt="hero")
+    _give_page(tools)
     result = json.loads(tools.generate_image("a calm clinic reception"))
     assert result["image"]["status"] == "ok"  # never dead-ends on a missing blob
 
@@ -1257,6 +1255,7 @@ def test_w17c_generation_failure_does_not_fail_the_turn(tmp_path, monkeypatch):
     )
 
     tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    _give_page(tools)
     result = json.loads(tools.generate_image("an abstract holographic yellow wash"))
 
     # NOT blocked: the tool returns a usable asset, not an error status.
@@ -1289,6 +1288,7 @@ def test_w17c_unconfigured_model_is_a_distinct_typed_fallback(tmp_path, monkeypa
     )
 
     tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    _give_page(tools)
     image = json.loads(tools.generate_image("an abstract wash"))["image"]
 
     assert image["status"] == "ok"  # still never blocks
@@ -1311,6 +1311,7 @@ def test_w17c_reference_conditioned_failure_reports_conditioning_lost(
     _install_failing_image_model(monkeypatch, RuntimeError("upstream exploded"))
 
     tools = _tools_only(config, prompt="hero")
+    _give_page(tools)
     image = json.loads(tools.generate_image("a calm clinic reception"))["image"]
 
     assert image["status"] == "ok"
@@ -1348,6 +1349,7 @@ def test_w17b_turn_sees_real_output_dimensions_not_its_own_request(
     )
 
     tools = _tools_only(runtime_config(tmp_path), prompt="hero")
+    _give_page(tools)
     image = json.loads(
         tools.generate_image("a holographic wash", aspect_ratio="16:9")
     )["image"]

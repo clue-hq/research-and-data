@@ -1,0 +1,30 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Ad designing — Clue output pane</title>
+<link rel="stylesheet" href="preview.css"><link rel="stylesheet" href="../handoff/generating.css">
+<style>.ad svg path{fill:currentColor}</style></head><body>
+<main class="output">
+ <div class="tabs"><span>▦ Gallery</span><span>target accounts</span><span class="active">revenue ad</span></div>
+ <div class="toolbar"><span>revenue ad</span><span class="dots">···</span><span class="spacer"></span><span class="zoom">23% ⌄</span><button id="edit" disabled>Edit</button><button class="dark" id="export" disabled>Export</button></div>
+ <div class="pane clue-gen-host">
+  <div class="ad" id="ad">
+   <div class="who"><div class="av"><svg viewBox="249 264 659 629" aria-hidden="true"><path d="M647.703 391.49C647.703 354.354 646.825 326.848 636.444 292.53C627.871 264 573.591 264 573.591 264C400.007 264 251.937 404.756 249.045 576.91C247.547 666.906 283.751 748.501 342.99 807.252C361.789 825.896 382.964 842.287 405.946 855.81C414.571 860.881 425.469 860.112 433.061 853.658C564.449 742.15 647.703 576.449 647.703 391.49Z"/><path d="M907.999 486.146V286.947C907.999 274.295 897.67 264 884.862 264H691.911C676.727 264 665.829 278.188 669.445 292.838C695.32 396.509 775.681 478.873 878.716 508.274C893.383 512.474 907.948 501.308 907.948 486.146H907.999Z"/><path d="M907.999 869.64V579.882C907.999 565.642 895.088 554.886 880.936 557.293C703.376 587.002 562.536 711.725 509.289 862.162C504.021 877.016 515.28 892.587 531.135 892.587H884.862C897.618 892.587 907.999 882.343 907.999 869.691V869.64Z"/></svg></div><div><b>Clue</b><small>Promoted</small></div></div>
+   <div class="copy">Zafran's revenue team is covering 40 target accounts with three SDRs. Here's what changes when the platform already knows each account.</div>
+   <div class="hero"><em id="headline">Stop guessing which accounts are ready. Start knowing.</em></div>
+   <div class="cta"><b>See the accounts that are ready to buy</b><span>Learn more</span></div>
+  </div>
+  <div class="clue-gen-glow" data-active="true" aria-hidden="true"></div>
+  <div class="clue-gen-lock" data-active="true" data-placement="top-left" role="status" aria-live="polite">
+   <div class="clue-gen-lock__pill"><svg class=clue-gen-spinner viewBox="249 264 659 629" aria-hidden="true"><path d="M647.703 391.49C647.703 354.354 646.825 326.848 636.444 292.53C627.871 264 573.591 264 573.591 264C400.007 264 251.937 404.756 249.045 576.91C247.547 666.906 283.751 748.501 342.99 807.252C361.789 825.896 382.964 842.287 405.946 855.81C414.571 860.881 425.469 860.112 433.061 853.658C564.449 742.15 647.703 576.449 647.703 391.49Z"/><path d="M907.999 486.146V286.947C907.999 274.295 897.67 264 884.862 264H691.911C676.727 264 665.829 278.188 669.445 292.838C695.32 396.509 775.681 478.873 878.716 508.274C893.383 512.474 907.948 501.308 907.948 486.146H907.999Z"/><path d="M907.999 869.64V579.882C907.999 565.642 895.088 554.886 880.936 557.293C703.376 587.002 562.536 711.725 509.289 862.162C504.021 877.016 515.28 892.587 531.135 892.587H884.862C897.618 892.587 907.999 882.343 907.999 869.691V869.64Z"/></svg><span class="clue-gen-lock__text">Currently designing. Please wait to edit.</span></div>
+  </div>
+ </div>
+</main>
+<div class="controls"><span class="label">Ad · live canvas, input locked</span><button id="replay">Replay</button><button id="finish">Agent finished</button></div>
+<script>
+// The canvas keeps changing while locked: the agent iterates on the headline.
+const lines=["Stop guessing which accounts are ready. Start knowing.","Three SDRs. Forty accounts. One platform that already knows them.","Know which accounts are ready before your SDRs do."];
+const glow=document.querySelector('.clue-gen-glow'),lock=document.querySelector('.clue-gen-lock'),h=document.getElementById('headline');let i=0,timer;
+function swap(){h.classList.add('swap');setTimeout(()=>{i=(i+1)%lines.length;h.textContent=lines[i];h.classList.remove('swap');},380);}
+const set=(on)=>{glow.dataset.active=on;lock.dataset.active=on;document.getElementById('edit').disabled=on;document.getElementById('export').disabled=on;clearInterval(timer);if(on)timer=setInterval(swap,2600);};
+document.getElementById('finish').onclick=()=>set(false);
+document.getElementById('replay').onclick=()=>set(true);
+set(true);
+</script></body></html>

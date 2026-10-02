@@ -1,0 +1,246 @@
+SUBJECT (identity already locked, do not re-derive):
+  name: Alexander Semien (aka Alex Semien)
+  title: Head of Growth
+  company: Cogent Security (cogent.com)
+  linkedin: https://www.linkedin.com/in/alexander-semien
+
+CLOSED FIELD-KEY LIST — use ONLY these:
+  contact.facet.career_history
+  contact.facet.alma_mater
+  contact.facet.stated_interests
+  contact.facet.communication_style
+  contact.facet.public_appearances
+  contact.facet.publications
+  contact.facet.recent_post
+  contact.facet.nickname
+  contact.facet.hobby
+  contact.facet.recent_award
+  contact.facet.conference_talk
+  contact.facet.causes
+  contact.facet.hooks   [PROPOSED — new field]
+  contact.facet.openers   [PROPOSED — new field]
+  contact.facet.voice_quote   [PROPOSED — new field]
+
+CHARTER CATEGORIES for `charter_category`: background, life_outside_work, voice, professional_identity, unique_insight, opener
+
+Return STRICT JSON, no prose, shaped exactly:
+{
+  "claims": [
+    {"field_key": "<one of the closed list>",
+      "value": <string, or array of strings, or object — whatever suits the field>,
+      "evidence_quote": "<VERBATIM, copied exactly from the material below>",
+      "source_url": "<a URL that appears in the material>",
+      "source_timestamp": "<MM:SS or null>",
+      "source_type": "<linkedin_profile|linkedin_post|youtube_transcript|podcast_transcript|podcast_shownotes|press|company_site|university|blog|directory|other>",
+      "charter_category": "<one of the charter categories>",
+      "priority": "P1|P2|P3",
+      "use_class": "professional-public|personal-public-non-sensitive",
+      "identity_binding": "STRONG",
+      "outreach_safe": true,
+      "note": "<optional short caveat, or empty>"}
+  ],
+  "unique_insight": {"text": "<one paragraph, or 'NOT FOUND — thin public footprint'>",
+                      "evidence_quote": "<verbatim or empty>", "source_url": "<or empty>"},
+  "not_found": ["<charter category or sub-item that came back empty>", "..."],
+  "same_name_contamination": ["<url — why it was ruled out>", "..."]
+}
+
+=== MATERIAL 1: DEEP-RESEARCH DOSSIER (Exa deep-reasoning, personal charter) ===
+Personal dossier — Alexander Semien / Alex Semien
+As-of date: September 2, 2026. 1. Identity and target match
+- Name: Alexander Semien; published variant: Alex Semien. LinkedIn identifies the profile as “Alexander Semien,” while SC Media labels the contributor “Alexander (Alex) Semien.” URLs: https://www.linkedin.com/in/alexander-semien ; https://www.scworld.com/contributor/alexander-alex-semien
+- Current employer/title: Cogent Security, Head of Growth. LinkedIn headline states “Head of Growth | Cogent,” and Cogent’s author byline states “Alexander Semien, Head of Growth.” URLs: https://www.linkedin.com/in/alexander-semien ; https://www.cogent.com/blog/applied-ai-for-vulnerability-management
+- Stated location: New York, New York, United States. Verbatim LinkedIn result: “New York, New York, United States (US).” URL: https://www.linkedin.com/in/alexander-semien
+- Identity caution: the TBF racing page is a name match only and does not identify an employer; no employment attribution is made from it. It states “Alexander Semien” in the “2022 REAL Super Sprint #2” results. URL: https://totalbodyfitness.com/site/results/2022-tri-for-real-super-sprint-2/ 2. Current role and responsibilities
+- THREATCON1 lists him as “Head of Marketing, Cogent Security.” URL: https://www.threatcon1.org/speakers/alexander-semien
+- His LinkedIn profile describes him as “a marketer by title but a builder at heart” and says he has worked “across product, strategy, and analytics to architect GTM motions that actually work.” URL: https://www.linkedin.com/in/alexander-semien
+- His profile says his work includes “positioning, launches, demand, partnerships, analyst relations.” URL: https://www.linkedin.com/in/alexander-semien
+- In his own LinkedIn post, he says, “At Cogent, we built the entire growth function on a custom in-house AI operating system. Every decision we make is rooted in data.” URL: https://www.linkedin.com/posts/alexander-semien_im-back-with-another-role-this-time-for-activity-7456429674232156160-lb8B
+- In another first-person post, he says, “We started building an in-house AI operating system from day one,” and “I set strategy and build the models.” URL: https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF 3. Career history
+- Cogent Security: LinkedIn-indexed profile lists “Marketing - Cogent Security (Current)” and “Aug 2025 - Present.” URL: https://www.linkedin.com/in/alexander-semien
+- Sevco Security: LinkedIn-indexed profile lists “VP, Product Marketing - Sevco Security” from “Aug 2023 - Aug 2025.” URL: https://www.linkedin.com/in/alexander-semien
+- Sevco’s own author page identifies “Alex Semien” as the author of its June 12, 2025 article. URL: https://www.sevcosecurity.com/three-takeaways-from-gartner-security-and-risk-management-summit/
+- His own Sevco launch post says, “I’m very excited to launch Sevco Security’s new Exposure Management Platform.” URL: https://www.linkedin.com/posts/alexander-semien_introducing-sevcos-exposure-management-activity-7191136911535546368-RLKJ
+- Abnormal Security: THREATCON1 says, “he helped scale Abnormal Security from early stage to hypergrowth while running Strategy and Analytics.” URL: https://www.threatcon1.org/speakers/alexander-semien
+- LinkedIn-indexed profile lists “Director, Strategy & Analytics - Abnormal Security” from “Aug 2020 - Aug 2023.” URL: https://www.linkedin.com/in/alexander-semien
+- Zyper: LinkedIn-indexed profile lists “Manager, Finance & Operations - Zyper (Acquired by Discord)” from “Nov 2019 - Aug 2020.” URL: https://www.linkedin.com/in/alexander-semien
+- Forward: LinkedIn-indexed profile lists “Associate - Forward” from “Nov 2018 - Oct 2019.” URL: https://www.linkedin.com/in/alexander-semien
+- Accenture: THREATCON1 says, “He began his career at Accenture, advising Fortune 500 companies on advanced automation, AI, and emerging technologies.” URL: https://www.threatcon1.org/speakers/alexander-semien
+- LinkedIn-indexed profile lists Accenture roles “Senior Analyst” from “Dec 2017 - Nov 2018” and “Analyst” from “Jul 2016 - Dec 2017.” URL: https://www.linkedin.com/in/alexander-semien 4. Education
+- Duke University: LinkedIn-indexed profile states “Bachelor of Arts (B.A.) Public Policy Analysis Psychology at Duke University.” URL: https://www.linkedin.com/in/alexander-semien
+- ContactOut independently states “Duke University, Bachelor of Arts (B.A.).” URL: https://contactout.com/Alexander-Semien-16719908
+- Graduation date, campus activities, academic honors, and postgraduate education: NOT FOUND. 5. Publicly expressed professional viewpoints
+- On AI marketing, his LinkedIn post says, “AI marketing is everywhere,” and “those who actually execute on their ambitious visions will win.” URL: https://www.linkedin.com/posts/alexander-semien_i-just-got-back-from-the-gartner-security-activity-7338916389497298947-TLdO
+- On vendor differentiation, he writes, “Clear messaging and real-world use cases are what will cut through.” URL: https://www.linkedin.com/posts/alexander-semien_i-just-got-back-from-the-gartner-security-activity-7338916389497298947-TLdO
+- On AI and security operations, he writes, “The hard part actually lies in what comes next: closing the loop on an exposure, across a real enterprise, in an AI-compressed time window.” URL: https://www.linkedin.com/posts/alexander-semien_yesterday-openais-marketing-team-made-a-activity-7460429923153948672-kV7K
+- He describes Cogent’s answer as: “That’s what we built Cogent to answer.” URL: https://www.linkedin.com/posts/alexander-semien_yesterday-openais-marketing-team-made-a-activity-7460429923153948672-kV7K
+- His Cogent article says, “Cogent sits at the intersection of applied AI and cybersecurity.” URL: https://www.cogent.com/blog/applied-ai-for-vulnerability-management
+- His Cogent CTEM article says, “Finding problems is easy. Finishing the work is hard.” URL: https://www.cogent.com/blog/ai-ctem-how-cogent-makes-it-practical
+- His Cogent article about AI-assisted development says, “The real story isn’t the headline. It’s a bug class no scanner can catch.” URL: https://www.cogent.com/blog/hardcoded-trust-translated 6. Public speaking and authored content
+- THREATCON1 lists the presentation title “We Can’t Wait for Patch Tuesdays: The Case for AI Blue Teaming.” URL: https://www.threatcon1.org/speakers/alexander-semien
+- Cogent’s site lists him as author of “Applied AI for Vulnerability Management,” dated “Oct 10, 2025,” with the byline “Alexander Semien, Head of Growth.” URL: https://www.cogent.com/blog/applied-ai-for-vulnerability-management
+- Cogent’s site lists him as author of “AI CTEM: How Cogent Makes It Practical,” dated “Oct 14, 2025,” with the byline “Alexander Semien, Head of Growth.” URL: https://www.cogent.com/blog/ai-ctem-how-cogent-makes-it-practical
+- Cogent’s site lists him as author of “Cogent Community’s Agent vs. General LLMs: A Head-to-Head Comparison of Accuracy,” dated “Nov 3, 2025,” with the byline “Alexander Semien, Head of Growth.” URL: https://www.cogent.com/blog/cogent-community-s-agent-vs-general-llms-a-head-to-head-comparison-of-accuracy
+- Cogent’s site lists him as author of “Hardcoded Trust, Translated,” dated “May 14, 2026,” with the byline “Alexander Semien, Head of Growth.” URL: https://www.cogent.com/blog/hardcoded-trust-translated
+- Cogent’s site lists him as author of “The Question Mythos and Daybreak Don’t Answer,” dated “May 13, 2026,” with the byline “Alexander Semien, Head of Growth.” URL: https://www.cogent.com/blog/the-question-mythos-and-daybreak-don-t-answer 7. Outreach-relevant professional themes (not sensitive)
+- Early-stage building: he says, “I like the early stages; no playbook, just a vision and a lot to figure out.” URL: https://www.linkedin.com/in/alexander-semien
+- Data-driven growth: he says, “growth is an equation to be understood and optimized, not just gut feeling.” URL: https://www.linkedin.com/posts/alexander-semien_im-back-with-another-role-this-time-for-activity-7456429674232156160-lb8B
+- Small-team leverage: he says, “With AI, two people have the output of a team of ten.” URL: https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF
+- Brand/community approach: he says, “We’re also very intentional about our brand. We build community through hospitality, honest conversations, and human connection.” URL: https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF
+- Security-market focus: he says his experience is “mostly” in cybersecurity and describes helping startups grow “from $0 to over $100M in ARR.” URL: https://www.linkedin.com/in/alexander-semien 8. Sport and arts background
+- Sport: a public race-results page records “Alexander Semien” finishing the 2022 Real Super Sprint #2 in “00:26:13.4.” The page does not establish that the racer is the professional identified above; treat as an unconfirmed name match, not a dossier fact. URL: https://totalbodyfitness.com/site/results/2022-tri-for-real-super-sprint-2/
+- Arts participation or arts career: NOT FOUND. 9. Contact details
+- Publicly verifiable direct email, phone number, or mailing address: NOT FOUND. ContactOut and RocketReach search results advertise contact information, but the accessible evidence does not provide a verified direct value suitable for this dossier. URLs: https://contactout.com/Alexander-Semien-16719908 ; https://rocketreach.co/es/correo-electr%C3%B3nico-y-tel%C3%A9fono-de-alexander-semien_76248214 10. Sensitive/personal categories and family information
+- Family details: NOT FOUND.
+- Family milestones personally announced by the subject: NOT FOUND.
+- Health or medical information: NOT FOUND.
+- Religion or faith: NOT FOUND.
+- Political opinions, party affiliation, or activism: NOT FOUND.
+- Sexuality or gender identity: NOT FOUND.
+- Family tragedy, bereavement, divorce, or illness: NOT FOUND.
+- Children or other minors: NOT FOUND.
+- Trade-union membership: NOT FOUND.
+- Criminal or legal matters: NOT FOUND. 11. Same-name exclusions
+- No evidence in the reviewed results attributes this subject to Cogent Communications, Cogent Infotech, Cogent Analytics, Cogent Bank, or Cogent Systems. The reviewed subject sources explicitly identify “Cogent Security” and cybersecurity/vulnerability management. URLs: https://www.threatcon1.org/speakers/alexander-semien ; https://www.cogent.com/blog/applied-ai-for-vulnerability-management 12. NOT FOUND summary
+- Date of birth: NOT FOUND.
+- Home address: NOT FOUND.
+- Personal email or phone: NOT FOUND.
+- National origin or migration story: NOT FOUND.
+- Languages: NOT FOUND.
+- Hobbies other than the unconfirmed race-result name match: NOT FOUND.
+- Personal social accounts other than the supplied LinkedIn profile: NOT FOUND.
+- Compensation, net worth, or financial details: NOT FOUND.
+- Detailed employer metrics personally attributable to him: NOT FOUND.
+
+=== MATERIAL 2: LINKEDIN PROFILE (indexed copy) ===
+# Alexander Semien
+
+Head of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps
+
+New York, New York, United States (US)
+
+500 connections • 2,770 followers
+
+## About
+
+Hey 👋 I’m Alex. I like the early stages; no playbook, just a vision and a lot to figure out. I’m a marketer by title but a builder at heart. I've worked across product, strategy, and analytics to architect GTM motions that actually work. That usually means finding the story that resonates, turning it into programs that drive traction, and leveraging data to stay focused on what matters. Most of my experience is in cybersecurity, helping startups grow from $0 to over $100M in ARR. I’ve done the work—positioning, launches, demand, partnerships, analyst relations. But, my alpha is bringing clarity in the chaos, and creating momentum where there was none.
+
+Total Experience: 10 years and 1 month
+
+## Experience
+
+### Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)
+
+Aug 2025 - Present (1 year)
+
+Department: Marketing
+
+Cogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.
+
+### VP, Product Marketing - [Sevco Security](https://www.linkedin.com/company/sevcosecurity)
+
+Aug 2023 - Aug 2025 (2 years) in New York, New York, United States
+
+Department: Marketing • Level: President/Vice President
+
+Sevco Security is a IT Services and IT Consulting company. Sevco provides solutions in asset intelligence, vulnerability management, exposure management, and cloud security posture management. They offer a platform that provides a unified view of assets, merging on-prem, cloud, and user data into a single source of truth. Sevco Security has 10-20 employees (-50% YoY) and has annual revenue in the $1M-$10M range, founded in 2020. Headquartered in Austin, Texas, United States. Its workforce is distributed across United States and Saudi Arabia. Has $55.7M in total funding, with 4 prior funding rounds.
+
+### Director, Strategy & Analytics - [Abnormal Security](https://www.linkedin.com/company/abnormal-ai)
+
+Aug 2020 - Aug 2023 (3 years) in New York, New York, United States
+
+Department: Consulting • Level: Director
+
+Abnormal AI is a Computer and Network Security company. Abnormal AI has 1,000-2,000 employees (+20% YoY) and has annual revenue in the $200M-$300M range. Headquartered in Las Vegas, Nevada, United States, with an office in San Francisco. Its workforce is distributed across 19 countries (including United States, India, United Kingdom, Canada, and Singapore). Has $534M in total funding, with 4 prior funding rounds.
+
+### Manager, Finance & Operations - [Zyper (Acquired by Discord)](https://www.linkedin.com/company/zyper.)
+
+Nov 2019 - Aug 2020 (9 months) in San Francisco, California, United States
+
+Department: Finance & Accounting • Level: Manager
+
+Zyper (Acquired by Discord) is a Software Development company. zyper is a company that aims to bring people together around the brands they love and interests they share. They have been creating communities for over three and a half years and plan to continue to create communities for their users. Zyper (Acquired by Discord) has 1-10 employees (-10% YoY) and has annual revenue in the $1M-$10M range, founded in 2017. Headquartered in San Francisco, California, United States, with presence in United Kingdom. Its workforce is distributed across United Kingdom, South Africa, and United States. Has $8.7M in total funding, with 3 prior funding rounds.
+
+### Associate - [Forward](https://www.linkedin.com/company/forwardinc)
+
+Nov 2018 - Oct 2019 (11 months) in San Francisco, California, United States
+
+Department: Other
+
+Forward is a Software Development company. Forward is a revolutionary primary care focused on long-term health, with top-rated doctors supported by technology. Forward has 70-80 employees (4-5% YoY decline) and has annual revenue in the $10M-$20M range, founded in 2016. Headquartered in San Francisco, California, United States, with offices in Glendale, Newport Beach, Los Angeles, and New York. Its workforce is distributed across 8 countries (including United States, Pakistan, Egypt, China, and Poland). Has $325M in total funding, with 7 prior funding rounds.
+
+### [Accenture](https://www.linkedin.com/company/accenture)
+
+#### Senior Analyst
+
+Dec 2017 - Nov 2018 (11 months)
+
+Department: Research • Level: Specialist
+
+#### Analyst
+
+Jul 2016 - Dec 2017 (1 year and 5 months)
+
+Department: Other • Level: Specialist
+
+Accenture (ACN) is a Business Consulting and Services company. Accenture is a global professional services company that provides a range of services and solutions in technology, consulting, and operations. They help clients embrace change and achieve shared success. Accenture has 400,000-500,000 employees (+9-10% YoY) and has annual revenue in the $60B-$70B range. Headquartered in Ireland, operates in 20 countries (including United States, Philippines, Malaysia, Poland, and Australia). Its workforce is distributed across 174 countries (including India, United States, Philippines, Italy, and Spain). Has a market cap in the $200B-$300B range. IPO 2001.
+
+## Education
+
+### Bachelor of Arts (B.A.) Public Policy Analysis Psychology at [Duke University](https://www.linkedin.com/school/duke-university)
+
+Durham, North Carolina, United States
+
+Duke University is a higher education institution. Duke University is a university that offers academics, research, and admissions. Duke University has 9,000-10,000 employees (less than 1% YoY growth) and has annual revenue in the $10B-$20B range, founded in 1924. Headquartered in Durham, North Carolina, United States. Its workforce is distributed across 69 countries (including United States, China, United Kingdom, Canada, and India). Has $71.2M in total funding, with 7 prior funding rounds. Research output of 200,000-300,000 works, primarily in Medicine, Biochemistry, Genetics and Molecular Biology, and Social Sciences. Funds research behind 300-400 works.
+
+## Skills
+
+across • agile methodologies • analyst • analytical skills • analytics • analytics architecture • analytics lead • architect • artificial intelligence • blue prism • business development • business intelligence (bi) • business operations • business process • business process design • business process improvement • business strategy • capacity planning • clarity • cloud applications • consulting • conversion • conversion rate • crm • cybersecurity • data • data analysis • data modeling • design • design thinking • digital marketing • digital strategy • finance • finance & operations • finance operations • financial analysis • fixed income • fixed income sales • go-to-market (gtm) • go-to-market strategy • growth • iot • it strategy • lead strategy • leadership • lean startup • management • management consulting • market analysis • market research • marketer • marketing • mentoring • operating models • operations • operations and finance • operations lead • operations management • operations manager • planning • process • process design • process improvement • product marketing • product strategy • project management • public speaking • research • revenue • revenue operations • roadmapping • robotic process automation • sales • sales & trading • senior analyst • seo • social media • social media marketing • startups • strategy • strategy & analytics • strategy & operations • trading • turning
+
+## Social
+
+### Linkedin
+
+- [2026-08-21 · Posted · 40 reactions] [Me posting about new roles at Cogent is low key becoming a trend…...](https://www.linkedin.com/posts/alexander-semien_me-posting-about-new-roles-at-cogent-is-low-activity-7496647259854581760-Fk3C)
+  > Me posting about new roles at Cogent is low key becoming a trend…
+  >
+  > I’m back with two more opportunities to join the Growth team! And, this time, we’re searching for the operators the make the revenue engine hum.
+  >
+  > 1) Field Marketing Manager
+  > Help scale our field presence: executive events, regional programs, partner activations, and AI-powered systems for logistics, tracking, follow-up, and pipeline impact.
+  >
+  > 2) Sales Operations Analyst
+  > Help build our AI-native revenue engine: trusted data, pipeline reporting, forecast support, workflows that gives time back to Sales.
+  >
+  > All FOUR open roles are linked in the comments. Referrals welcome 🥳
+
+- [2026-08-14 · Posted · 30 reactions] [Chat, who should I hire for Growth @ Cogent? Black Hat made it very...](https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk)
+  > Chat, who should I hire for Growth @ Cogent?
+  >
+  > Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. S
+
+=== MATERIAL 3: LONG-FORM MEDIA TRANSCRIPTS (where this person verifiably speaks) ===
+NONE — no long-form media in which this person verifiably speaks was located.
+
+=== MATERIAL 4: CONFIRMED SOURCE URLS FROM THE SWEEP ===
+- https://www.linkedin.com/in/alexander-semien (Alexander Semien)
+- https://www.threatcon1.org/speakers/alexander-semien (THREATCON1)
+- https://contactout.com/Alexander-Semien-16719908 (Alexander Semien)
+- https://www.linkedin.com/posts/alexander-semien_when-i-describe-cogent-i-always-say-that-activity-7458221350793576448-2xNq (When I describe Cogent, I always say that we're an AI company with a focus on cy)
+- https://www.linkedin.com/posts/alexander-semien_im-back-with-another-role-this-time-for-activity-7456429674232156160-lb8B (I'm back with another role! This time for Revenue Operations. | Alexander Semien)
+- https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b (Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative o)
+- https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF (When I interviewed with Vineet Edupuganti, I told him I wanted to create a marke)
+- https://www.linkedin.com/posts/alexander-semien_theres-nothing-like-starting-a-new-chapter-activity-7361796281381339136-JgKt (There’s nothing like starting a new chapter in the middle of Black Hat. My first)
+- https://rocketreach.co/es/correo-electr%C3%B3nico-y-tel%C3%A9fono-de-alexander-semien_76248214 (Correo electrónico y teléfono de Alexander Semien | Información de contacto de C)
+- https://www.cogent.com/blog/applied-ai-for-vulnerability-management (Applied AI for Vulnerability Management)
+- https://www.linkedin.com/posts/alexander-semien_incredibly-proud-to-share-the-launch-of-cogent-activity-7391155151652233216-3Jow (Incredibly proud to share the launch of Cogent Community, a free solution for se)
+- https://www.linkedin.com/posts/alexander-semien_introducing-sevcos-exposure-management-activity-7191136911535546368-RLKJ (I'm very excited to launch Sevco Security's new Exposure Management Platform. | )
+- https://www.linkedin.com/posts/alexander-semien_bringing-this-vibey-ice-cream-shop-to-life-activity-7490871334894231552-dAxa (Bringing this vibey ice cream shop to life on the Black Hat floor was an absolut)
+- https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk (Chat, who should I hire for Growth @ Cogent? | Alexander Semien)
+- https://www.linkedin.com/posts/alexander-semien_proud-friend-moment-grace-huas-first-podcast-activity-7468019775160524800-rvgj (Proud friend moment! Grace Hua's first podcast appearance brought the candid tak)
+- https://www.cogent.com/blog/ai-ctem-how-cogent-makes-it-practical ()
+- https://www.cogent.com/blog/hardcoded-trust-translated ()
+- https://www.cogent.com/blog/the-question-mythos-and-daybreak-don-t-answer (The Question Mythos and Daybreak Don't Answer - Blog)
+- https://www.linkedin.com/posts/alexander-semien_cue-the-unnecessary-panic-google-threat-activity-7461086749440745473-QdcE (Cue the (unnecessary) panic! Google Threat Intelligence Group attributed a zero-)
+- https://www.linkedin.com/posts/cogentsecurity_growth-worked-ot-this-week-trying-to-keep-activity-7461090900417585152-6orO (Google Threat Intelligence Group's AI-assisted zero-day ...)
+- https://www.linkedin.com/posts/alexander-semien_yesterday-openais-marketing-team-made-a-activity-7460429923153948672-kV7K (Yesterday, OpenAI's marketing team made a great play: they annouced Daybreak alo)

@@ -629,6 +629,12 @@ export interface CornerRadii {
 export interface ComputedGeometry {
   layout_bounds: Rect;
   render_bounds: Rect;
+  /** Plan 4 item F: the PAINTED line boxes of a text node, page-space and
+   * unrotated (the frame `layout_bounds` is in), placed by the engine exactly
+   * as the painters place the glyphs. Absent on non-text nodes, on stored
+   * scenes, and on nodes the engine has not placed — never an empty array on
+   * the wire (`skip_serializing_if`). */
+  text_lines?: Rect[];
 }
 
 export interface Rect {
@@ -842,9 +848,19 @@ export type OptionalFieldPatch<T> =
       kind: "clear";
     };
 
+/** Token channels explicitly addressed by a text-kind update, even when unchanged. */
+export interface ExplicitTextTokens {
+  style?: boolean;
+  font_size?: boolean;
+  line_height?: boolean;
+  letter_spacing?: boolean;
+}
+
 export interface NodePatch {
   name: OptionalFieldPatch<string>;
   kind: FieldPatch<NodeKind>;
+  /** Absent on raw inspector edits, which detach stale bindings. */
+  explicit_text_tokens?: ExplicitTextTokens | null;
   transform: FieldPatch<Transform>;
   size: FieldPatch<SizeSpec>;
   fills: FieldPatch<Fill[]>;

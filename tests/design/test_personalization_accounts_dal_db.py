@@ -498,3 +498,50 @@ def test_web_batch_create_and_manifest_progress_round_trip(require_design_db: No
             await txn.rollback()
 
     run_async(_check())
+
+
+def test_ensure_web_account_for_entity_reuses_the_entitys_row_and_mints_once(
+    require_design_db: None,
+) -> None:
+    """The inverse of the D3 domain join: the research entity is known, the design row derived.
+
+    Spec 2026-09-19 §3.6 — a document born for a research account needs a design-plane account,
+    and a second document for the SAME account must reuse it rather than mint a twin.
+    """
+
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            entity_id = (
+                await conn.execute(
+                    text(
+                        "INSERT INTO account_entity "
+                        "(canonical_name, primary_domain, status, workspace_id) "
+                        "VALUES ('Apollo Clinics', 'apollo.example', 'candidate', :w) "
+                        "RETURNING id"
+                    ),
+                    {"w": ws},
+                )
+            ).scalar_one()
+            first = await design_accounts.ensure_web_account_for_entity(
+                conn,
+                workspace_id=ws,
+                account_entity_id=str(entity_id),
+                name="Apollo Clinics",
+                domain="apollo.example",
+            )
+            again = await design_accounts.ensure_web_account_for_entity(
+                conn,
+                workspace_id=ws,
+                account_entity_id=str(entity_id),
+                name="Apollo Clinics",
+                domain="apollo.example",
+            )
+            assert first == again
+            row = await design_accounts.require_web_account(conn, workspace_id=ws, account_id=first)
+            assert row["account_entity_id"] == str(entity_id)
+            assert row["name"] == "Apollo Clinics"
+            assert row["domain"] == "apollo.example"
+            await txn.rollback()
+
+    run_async(_check())

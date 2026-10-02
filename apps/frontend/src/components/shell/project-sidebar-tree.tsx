@@ -4,6 +4,7 @@ import styles from "./project-sidebar-tree.module.css";
 import { ProjectSidebarActionsMenu } from "./project-sidebar-actions-menu";
 import { SidebarConversationStatus } from "./sidebar-conversation-status";
 import { SidebarFigmaIcon } from "./sidebar-figma-icon";
+import { SidebarMarqueeLabel } from "./sidebar-marquee-label";
 
 function pathnameOf(href: string) {
   return href.split("?")[0];
@@ -43,7 +44,7 @@ export function ProjectSidebarTree({
                         : "sidebar-folder-closed"
                     }
                   />
-                  <span className={styles.projectTitle}>{project.title}</span>
+                  <SidebarMarqueeLabel text={project.title} />
                 </button>
 
                 <div className={styles.projectRowActions}>
@@ -70,13 +71,11 @@ export function ProjectSidebarTree({
                 {menuOpen ? (
                   <ProjectSidebarActionsMenu
                     onArchive={() => controller.archiveProjectChats(project.id)}
-                    onEdit={controller.projectMutationsAvailable
+                    onEdit={controller.projectRenameAvailable
                       ? () => controller.beginEditProject(project.id)
                       : undefined}
                     onNewChat={() => controller.createConversation(project.id)}
-                    onTogglePinned={controller.projectMutationsAvailable
-                      ? () => controller.togglePinned(project.id)
-                      : undefined}
+                    onTogglePinned={() => controller.togglePinned(project.id)}
                     project={project}
                   />
                 ) : null}
@@ -98,9 +97,7 @@ export function ProjectSidebarTree({
                           onClick={controller.closeMenu}
                           prefetch={false}
                         >
-                          <span className={styles.conversationTitle}>
-                            {conversation.title}
-                          </span>
+                          <SidebarMarqueeLabel text={conversation.title} />
                           <SidebarConversationStatus status={conversation.status} />
                         </Link>
                       );

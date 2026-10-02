@@ -1,0 +1,466 @@
+{
+  "requestId": "7e4a7ca36a24509b29a91a7be819b757",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/k8v7k1nq9rk",
+      "title": "Vari Kaur",
+      "url": "https://www.linkedin.com/in/varinderkaur",
+      "publishedDate": "2026-08-22T05:43:02.000Z",
+      "text": "# Vari Kaur\n\nDemand Generation & ABM Expert | B2B SaaS Marketing Leader | GTM Strategist | Pipeline Acceleration, and Revenue Growth\n\nEaston, Pennsylvania, United States (US)\n\n500 connections \u2022 2,553 followers\n\n## About\n\nResults-driven marketing leader with expertise in building and scaling demand generation, account-based marketing (ABM), and digital marketing programs for B2B SaaS companies across industries, including cybersecurity, healthcare, enterprise software, and AI. Strong track record in aligning marketing with sales to drive pipeline, revenue growth, and customer acquisition. I specialize in full-funnel strategy development\u2014from top-of-funnel lead acquisition to pipeline acceleration and sales enablement. Skilled in managing paid media (LinkedIn, Google, programmatic), email nurture, lead scoring, lifecycle marketing, and intent-based targeting. Hands-on experience with tools like Marketo, HubSpot, Salesforce, 6sense, Demandbase, ZoomInfo, Google Ads, LinkedIn Campaign Manager, and more. Passionate about using AI and automation to optimize performance, enhance personalization, and improve campaign ROI.\n\nTotal Experience: 20 years and 1 month\n\n## Experience\n\n### Head of Growth Marketing - [Zafran Security](https://www.linkedin.com/company/zafran-security) (Current)\n\nMay 2025 - Present (1 year and 3 months) in New York, United States\n\nDepartment: Research\n\nZafran Security is a Computer and Network Security company. Zafran is an AI-Native Threat Exposure Management P",
+      "image": "https://media.licdn.com/dms/image/v2/D4D03AQGz4bKms87erA/profile-displayphoto-scale_200_200/B4DZzTH0kzKYAc-/0/1773068569609?e=2147483647&v=beta&t=WNZOGn9BIQgmMJFT81R3j4OAeH-qcq9IRj46ytsSeHQ",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/k8v7k1nq9rk",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Vari Kaur",
+            "firstName": "Vari",
+            "lastName": "Kaur",
+            "location": "Easton, Pennsylvania, United States",
+            "workHistory": [
+              {
+                "title": "Head of Growth Marketing",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2025-05-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h5w450p0h1f",
+                  "name": "Zafran Security"
+                }
+              },
+              {
+                "title": "Director, Demand Generation & Technology",
+                "location": null,
+                "dates": {
+                  "from": "2022-06-01",
+                  "to": "2025-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/sjv34jtkp38",
+                  "name": "Secureworks"
+                }
+              },
+              {
+                "title": "Director Demand Generation",
+                "location": "New York, United States",
+                "dates": {
+                  "from": "2021-04-01",
+                  "to": "2022-06-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wk8smddfsny",
+                  "name": "ReSource Pro"
+                }
+              },
+              {
+                "title": "Director Demand Generation and Technology",
+                "location": "New York",
+                "dates": {
+                  "from": "2019-01-01",
+                  "to": "2021-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/dw23h2b0f43",
+                  "name": "Axiom"
+                }
+              },
+              {
+                "title": "Director Digital Marketing",
+                "location": "Parsippany, NJ",
+                "dates": {
+                  "from": "2018-03-01",
+                  "to": "2019-05-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/3lpyggky4c8",
+                  "name": "Tangoe"
+                }
+              },
+              {
+                "title": "Senior Manager, Global Marketing Operations",
+                "location": "Salt Lake City Metropolitan Area",
+                "dates": {
+                  "from": "2017-01-01",
+                  "to": "2018-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Senior Manager, Global Marketing Operations",
+                "location": "Greater Philadelphia",
+                "dates": {
+                  "from": "2015-03-01",
+                  "to": "2017-07-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Manager, Global Marketing",
+                "location": "Greater Philadelphia",
+                "dates": {
+                  "from": "2013-01-01",
+                  "to": "2015-02-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Online Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2011-02-01",
+                  "to": "2013-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/hrxdz3mbjxl",
+                  "name": "Ivanti"
+                }
+              },
+              {
+                "title": "Online Marketing Manager",
+                "location": null,
+                "dates": {
+                  "from": "2008-01-01",
+                  "to": "2011-01-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Grazitti"
+                }
+              },
+              {
+                "title": "SEO Analyst and Content Writer",
+                "location": null,
+                "dates": {
+                  "from": "2006-01-01",
+                  "to": "2008-01-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yq7klqngdfs",
+                  "name": "Milestone Global Solutions"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Master of Business Administration (M.B.A) Marketing",
+                "dates": {
+                  "from": "2008",
+                  "to": "2010"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y2f9xxsbx1p",
+                  "name": "Punjab Technical University"
+                }
+              },
+              {
+                "degree": "Master of Computer Application (M.C.A)",
+                "dates": {
+                  "from": "2001",
+                  "to": "2004"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/y2f9xxsbx1p",
+                  "name": "Punjab Technical University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "title": "Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. | Vari Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_our-marketing-team-at-zafran-security-is-activity-7462208819037691907-EQ8X",
+      "publishedDate": "2026-05-18T00:00:00.000Z",
+      "author": "Vari Kaur",
+      "text": "# Our marketing team at Zafran Security is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns. | Vari Kaur \u00b7 LinkedIn \u00b7 2026-05-18\n\n**Vari Kaur**: Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nOur marketing team at [Zafran Security](https://linkedin.com/company/zafran-security) is expanding! \ud83d\ude80 I'm hiring a Senior Manager, ABM & Integrated Campaigns.\n\nLooking for someone who loves building ABM end-to-end, lead our integrated campaign strategy, and work shoulder-to-shoulder with Sales to go after the accounts that matter most.\nIf that's you, let's talk.\n\nExcellent opportunity to join one of the fastest-growing companies in cybersecurity, backed by Sequoia Capital and Cyberstarts, on a mission to stop the exploitation of vulnerabilities everywhere.\nhttps://lnkd.in/eWYbq_Mw\n\n## Comments\n\n**[Jaime Oliver](https://linkedin.com/in/jmwheeler11)** \u00b7 2026-05-18\n> Exciting times Vari!!! Sounds like everything is going well!!\n\n**[CyberExecConnect](https://linkedin.com/company/cyberexecconnect)** \u00b7 2026-05-27\n> Exciting growth at Zafran Security. The alignment between ABM, integrated campaigns, and sales execution continues to become increasingly important for cybersecuri"
+    },
+    {
+      "id": "https://me.sh/profile/varinder-kaur",
+      "title": "Varinder Kaur - LinkedIn, Twitter",
+      "url": "https://me.sh/profile/varinder-kaur",
+      "author": "Mesh",
+      "text": "Varinder Kaur - LinkedIn, Twitter\n\nGet Mesh Free \u2192\n\n#### Suggestions\n\n# Varinder Kaur\n\n## Director Demand Generation and Marketing Operations at Secureworks\n\nAbout\n\nVarinder Kaur is a professional with sound technical and analytical capabilities, specializing in marketing operations and automation. With expertise in Marketo and Pardot, Varinder manages website operations, CRM, web analytics, and oversees marketing operations strategies for global campaigns. Varinder collaborates with corporate and regional teams to execute, monitor, and measure campaigns. Specializing in SEO/SEM, Varinder is experienced in PPC campaign management and utilizes tools like Reachforce, Brightedge, SEMrush, and more. Furthermore, Varinder has experience in email marketing, demand generation, social media marketing, website management, and CMS platforms including Drupal, Joomla, Plone, and Wordpress. Educationally, Varinder holds an M.B.A in Marketing and an M.C.A from Punjab Technical University. Formerly, Varinder held positions at Secureworks, Falcon Institute of Health and Science, ReSource Pro, Axiom, Tangoe, Ivanti, and Grazitti, with roles ranging from Director to Manager in marketing operations, demand generation, digital marketing, and online marketing.\n\nRead More\n\nAdd to my network\n\n### Location\n\nEaston, Pennsylvania, United States\n\n### People also viewed\n\nJordan LinfordHead of Demand Generation\n\nMarkus ReutnerMarketing Ops & Demand Gen at Reachdesk\n\nRyan McCurdySVP of Marketing, Demand G",
+      "image": "https://ondemand.bannerbear.com/simpleurl/1YyaWpo8z1PBjqDKgM/image/title/text/Varinder%20Kaur/subtitle/text/Director%20Demand%20Generation%2C%20Digital%2C%20Marketing%20Operations%2C%20Reporting%20and%20Analytics/photo/image_url/https%3A%2F%2Fassets.clay.earth%2Fapi%2Fimages%2Favatars%2Factive%2FNTI1NDY3LTg0MDkwMzc0Mg%3D%3D"
+    },
+    {
+      "id": "https://rocketreach.co/varinder-kaur-email_4388733",
+      "title": "Varinder Kaur Email & Phone Number",
+      "url": "https://rocketreach.co/varinder-kaur-email_4388733",
+      "text": "Varinder Kaur Email & Phone Number | Secureworks Director Digital and Demand Marketing Contact Information\n[![Varinder Kaur Email & Phone Number](https://d2gjqh9j26unp0.cloudfront.net/profilepic/97dfbc4cb8bea444e93f183ffc277e86)](https://rocketreach.co/person?link=https://www.linkedin.com/in/varinderkaur)\n# [Varinder Kaur Email & Phone Number](https://rocketreach.co/varinder-kaur-email_4388733)\n### Director Digital and Demand Marketing\n@[Secureworks](https://rocketreach.co/secureworks-profile_b5c63ae9f42e0c59)\n[**Preparing profile\u2026View Varinder's Email & Phone Number(It's Free)](https://rocketreach.co/person?link=https://www.linkedin.com/in/varinderkaur)\n![Arrow](https://static.rocketreach.co/images/landing/profile/arrow.svg)\n5 free lookup(s) per month.\nNo credit card required.\n* **\n* **\n* **\n* **\n### **Varinder Kaur Location\nEaston, PA, US\n### **Varinder Kaur Work\n* 2022 - nowDirector Digital and Demand Marketing @[Secureworks](https://rocketreach.co/secureworks-profile_b5c63ae9f42e0c59)\n* 2017 - nowMember Board Of Advisors @ Falcon Institute of Health and Science\n* 2021 - 2022Director Demand Generation @[ReSource Pro](https://rocketreach.co/resource-pro-profile_b5c37a7af42e0f54)\n[View Department](https://rocketreach.co/resource-pro-marketing-department_b5c37a7af42e0f54)\nsee more\n* 2019 - 2021Director Demand Generation and Technology @[Axiom](https://rocketreach.co/axiom-profile_b5c65f0bf42e0cac)\n* 2018 - 2019Director Digital Marketing @[Tangoe](https://rocketreach.co/tangoe",
+      "image": "https://d2gjqh9j26unp0.cloudfront.net/profilepic/97dfbc4cb8bea444e93f183ffc277e86",
+      "favicon": "https://static.rocketreach.co/images/favicons/apple-icon-57x57.png?v=2020120"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_ben-seri-on-cnbc-activity-7407416128987299840-4LMA",
+      "title": "Zafran Security on CNBC this week. Our Co-Founder & CTO, Ben Seri, shares why security teams must keep pace with AI-powered exploitation by adopting AI-driven defenses that automate and accelerate security operations. | Varinder Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_ben-seri-on-cnbc-activity-7407416128987299840-4LMA",
+      "publishedDate": "2025-12-18T00:00:00.000Z",
+      "author": "Varinder Kaur",
+      "text": "# Zafran Security on CNBC this week. Our Co-Founder & CTO, Ben Seri, shares why security teams must keep pace with AI-powered exploitation by adopting AI-driven defenses that automate and accelerate security operations. | Varinder Kaur \u00b7 LinkedIn \u00b7 2025-12-18\n\n**Varinder Kaur**: Vari Kaur currently works as Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\n[Zafran Security](https://linkedin.com/company/zafran-security) on CNBC this week. Our Co-Founder & CTO,\u00a0[Ben Seri](https://linkedin.com/in/ben-seri), shares why security teams must keep pace with\u00a0AI-powered exploitation\u00a0by adopting\u00a0AI-driven defenses\u00a0that automate and accelerate security operations.\n\n**Reshared from [Zafran Security](https://linkedin.com/company/zafran-security):**\n> \ud83e\udd29 Zafran is back on CNBC this week!\n>\n> Co-Founder and CTO [Ben Seri](https://linkedin.com/in/ben-seri) explains why defenders must keep pace with AI-powered exploitation by adopting AI-driven tools that automate and accelerate security operations.\n>\n> \ud83d\udc47 Watch the full video in the comments.\n>\n> Thank you for the thoughtful discussion Dan Murphy!\n>\n> Sanaz Yashar Snir Havdala\n\n## Engagement\n\n- Reactions: 9"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G",
+      "title": "Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this \u2026 | Varinder Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_agenticai-exposuremanagement-vulnerabilitymanagement-activity-7401630503994441728-1g1G",
+      "publishedDate": "2025-12-02T00:00:00.000Z",
+      "author": "Varinder Kaur",
+      "text": "# Thrilled to share that Zafran Security has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this \u2026 | Varinder Kaur \u00b7 LinkedIn \u00b7 2025-12-02\n\n**Varinder Kaur**: Vari Kaur currently works as Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nThrilled to share that [Zafran Security](https://linkedin.com/company/zafran-security) has raised a $60M to bring agentic AI to exposure management and help defenders stay ahead of AI powered attacks. Proud to be part of this journey!!!\n#AgenticAI #ExposureManagement #VulnerabilityManagement #CTEM\n\n**Reshared from [Zafran Security](https://linkedin.com/company/zafran-security):**\n> \ud83d\ude80 [Zafran Security](https://linkedin.com/company/zafran-security) just hit a huge milestone in our mission to stop vulnerability exploitation everywhere. \ud835\udde7\ud835\uddfc\ud835\uddf1\ud835\uddee\ud835\ude06 \ud835\ude04\ud835\uddf2 \ud835\uddee\ud835\uddff\ud835\uddf2 \ud835\uddee\ud835\uddfb\ud835\uddfb\ud835\uddfc\ud835\ude02\ud835\uddfb\ud835\uddf0\ud835\uddf6\ud835\uddfb\ud835\uddf4 \ud835\ude01\ud835\uddf5\ud835\uddee\ud835\ude01 \ud835\udded\ud835\uddee\ud835\uddf3\ud835\uddff\ud835\uddee\ud835\uddfb \ud835\uddf5\ud835\uddee\ud835\ude00 \ud835\ude01\ud835\uddff\ud835\uddf6\ud835\uddfd\ud835\uddf9\ud835\uddf2\ud835\uddf1 \ud835\uddd4\ud835\udde5\ud835\udde5 \ud835\uddee\ud835\uddfb\ud835\uddf1 \ud835\uddff\ud835\uddee\ud835\uddf6\ud835\ude00\ud835\uddf2\ud835\uddf1 $\ud835\udff2\ud835\udfec\ud835\udde0 \ud835\ude01\ud835\uddfc \ud835\uddf9\ud835\uddf2\ud835\uddee\ud835\uddf1 \ud835\uddf2\ud835\ude05\ud835\uddfd\ud835\uddfc\ud835\ude00\ud835\ude02\ud835\uddff\ud835\uddf2 \ud835\uddfa\ud835\uddee\ud835\uddfb\ud835\uddee\ud835\uddf4\ud835\uddf2\ud835\uddfa\ud835\uddf2\ud835\uddfb\ud835\ude01 \ud835\uddf6\ud835\uddfb\ud835\ude01\ud835\uddfc \ud835\ude01\ud835\uddf5\ud835\uddf2 \ud835\uddd4\ud835\udddc \ud835\uddd8\ud835\uddff\ud835\uddee.\n>\n> \ud83d\udca1 We are also unveiling \ud835\uddd4\ud835\uddf4\ud835\uddf2\ud835\uddfb\ud835\ude01\ud835\uddf6\ud835\uddf0 \ud835\uddd8\ud835\ude05\ud835\uddfd\ud835\uddfc\ud835\ude00\ud835\ude02\ud835\uddff\ud835\uddf2 \ud835\udde0\ud835\uddee\ud835\uddfb\ud835\uddee\ud835\uddf4\ud835\uddf2\ud835\uddfa\ud835\uddf2\ud835\uddfb\ud835\ude01, the next evolution of #CTEM. These are autonomous AI "
+    },
+    {
+      "id": "https://www.linkedin.com/posts/varinderkaur_great-opportunity-for-aes-looking-to-join-activity-7341868030299127808-Z2ln",
+      "title": "Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to \u2026 | Varinder Kaur",
+      "url": "https://www.linkedin.com/posts/varinderkaur_great-opportunity-for-aes-looking-to-join-activity-7341868030299127808-Z2ln",
+      "publishedDate": "2025-06-20T00:00:00.000Z",
+      "author": "Varinder Kaur",
+      "text": "# Great opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to \u2026 | Varinder Kaur \u00b7 LinkedIn \u00b7 2025-06-20\n\n**Varinder Kaur**: Vari Kaur currently works as Head of Growth Marketing at Zafran Security for 1 year 3 months with 20 years of total professional experience. Previous roles include Director, Demand Generation & Technology at Secureworks, Director Demand Generation at ReSource Pro, and Director Demand Generation and Technology at Axiom. Based in Easton, Pennsylvania, United States [US].\n\n---\n\nGreat opportunity for AEs looking to join a stellar company and work with an exceptional sales leader. If you're curious or know someone who might be a fit, I am happy to make an intro.\n\ud83d\udca5 Zafran Security is hiring Account Executives!\ud83d\udca5\n\nNYC \u2022 Pacific Northwest \u2022 SoCal \u2022 TOLA \u2022 Georgia/Alabama\n\nLooking to join a company with real leadership, real momentum, and real opportunity?\n\nZafran is building something special: a category-defining cybersecurity platform\u00a0and team where AEs can thrive. Here\u2019s what you can expect:\n\n\ud83d\udcbc Seasoned leadership that invests in your growth\n\ud83d\udcc8 Clear path to success, in a high-growth market\n\ud83e\udd1d A supportive, no-ego sales culture that wins as a team\n\ud83d\ude80 A product that cuts through security noise and solves real customer pain\n\nWe\u2019re growing fast and hiring top talent who want to grow with us. If you\u2019re hungry, curious, and ready to win, let\u2019s talk.\n\nAda",
+      "image": "https://media.licdn.com/dms/image/v2/D5622AQHHOhr4FlHbmQ/feedshare-shrink_800/B56ZeK.TuFGoAk-/0/1750383281594?e=2147483647&v=beta&t=tfgyL_5ogTZHqN6xfD0g1wmoqqBD3D8SqbdPT4Bq9KU"
+    },
+    {
+      "id": "https://exa.ai/library/person/57j0hcyzrqz",
+      "title": "varinder kaur",
+      "url": "https://www.linkedin.com/in/varinderkaur001",
+      "publishedDate": "2026-08-09T03:03:33.000Z",
+      "text": "# Varinder Kaur\n\nFounder, Kaur Listing Concierge \u00b7 Done-for-You Listing Marketing for Agents Selling $1M+ Homes \u00b7 Produced in 2 Business Days\n\nUnited States (US)\n\n172 connections \u2022 247 followers\n\n## About\n\nI\u2019m the founder of Kaur Listing Concierge \u2014 a premium, done-for-you listing marketing\u2026\n\nTotal Experience: 7 years and 5 months\n\n## Experience\n\n### Founder & Content Marketing Strategist - Kaur Realtor Brands (Current)\n\nApr 2022 - Present (4 years and 4 months)\n\n\u2022\u00a0Owned end-to-end content and campaign execution: positioning, editorial planning, production, QA, and distribution across email, landing pages, and social. \u2022\u00a0Built and delivered webinars/workshops and speaking engagements, including topic development, decks/scripts, promotion, and follow-up communications. \u2022\u00a0Produced conversion-focused assets including landing pages, nurture emails, lead magnets, and campaign messaging to support inbound interest and client acquisition. \u2022\u00a0Built repeatable production workflows and AI-assisted drafting with human QA to improve consistency and turnaround speed. \u2022\u00a0Managed a content pipeline; tracked performance and iterated on topics, CTAs, and distribution based on results.\n\nDepartment: General Management \u2022 Level: Founder\n\n### Content Writer - [Bluemark](https://www.linkedin.com/company/bluemarkinc)\n\nNov 2021 - Apr 2022 (5 months)\n\n- Led SaaS-focused rebrand: refreshed positioning, brand voice, and messaging to support a clearer market narrative. \u2028\n- Owned website relaunch content wit",
+      "image": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/57j0hcyzrqz",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Varinder Kaur",
+            "firstName": "Varinder",
+            "lastName": "Kaur",
+            "location": "United States",
+            "workHistory": [
+              {
+                "title": "Founder & Content Marketing Strategist",
+                "location": null,
+                "dates": {
+                  "from": "2022-04-01",
+                  "to": null
+                },
+                "company": {
+                  "id": null,
+                  "name": "Kaur Realtor Brands"
+                }
+              },
+              {
+                "title": "Content Writer",
+                "location": null,
+                "dates": {
+                  "from": "2021-11-01",
+                  "to": "2022-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/h71tr1dkn2p",
+                  "name": "Bluemark"
+                }
+              },
+              {
+                "title": "Content Writer",
+                "location": null,
+                "dates": {
+                  "from": "2021-03-01",
+                  "to": "2021-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/6mbhfqpmwkk",
+                  "name": "Rahi Systems"
+                }
+              },
+              {
+                "title": "Marketing & Content Strategist (Contract Role)",
+                "location": null,
+                "dates": {
+                  "from": "2020-12-01",
+                  "to": "2021-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/2yfrp1kygyr",
+                  "name": "Mighty Buildings"
+                }
+              },
+              {
+                "title": "Content Coordinator",
+                "location": null,
+                "dates": {
+                  "from": "2019-08-01",
+                  "to": "2020-03-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yj8tyk1lpsz",
+                  "name": "Hanson Bridgett LLP"
+                }
+              },
+              {
+                "title": "Copywriter, Luxury Real Estate Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2018-05-01",
+                  "to": "2018-10-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "Solomon Page Group (Coldwell Banker Project, Contract Role)"
+                }
+              },
+              {
+                "title": "Marketing Coordinator",
+                "location": null,
+                "dates": {
+                  "from": "2017-09-01",
+                  "to": "2018-04-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/38c2bbv75ll",
+                  "name": "Fidelity National Home Warranty"
+                }
+              },
+              {
+                "title": "Content Writer",
+                "location": null,
+                "dates": {
+                  "from": "2016-10-01",
+                  "to": "2016-12-01"
+                },
+                "company": {
+                  "id": null,
+                  "name": "SOMAmetrics"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts - BA, English Language and Literature/Letters",
+                "dates": {
+                  "from": null,
+                  "to": "2016"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/kvpy8f9k554",
+                  "name": "University of California, Berkeley"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://exa.ai/library/person/ynkvjwt98pn",
+      "title": "Varinder Kaur",
+      "url": "https://www.linkedin.com/in/varinder-kaur-digitalmarketer",
+      "publishedDate": "2026-08-07T08:52:10.000Z",
+      "text": "# Varinder Kaur\n\nDigital Marketer\n\nBrampton, Ontario, Canada (CA)\n\n22 connections \u2022 54 followers\n\n## About\n\nDigital Marketer\n\nTotal Experience: 2 months\n\n## Experience\n\n### Digital Marketing Intern - [Webcooks Technologies Pvt Ltd](https://www.linkedin.com/company/webcooks-technologies)\n\nSep 2024 - Nov 2024 (2 months) in India\n\nDuring my tenure at Webcooks, I was responsible for developing and implementing social media marketing strategies, optimizing website content for SEO, and analyzing key performance metrics to enhance marketing effectiveness. Additionally, my blog writing skills allowed me to create engaging and informative content aligned with marketing goals, strengthening the brand's online presence. Beyond technical expertise, I am highly adaptable and proactive in learning new tools and techniques to stay updated with the latest digital marketing trends. My ability to work both independently and collaboratively has enabled me to contribute effectively to cross-functional teams. I take pride in my strong communication, analytical mindset, and problem-solving skills, which help me drive results in dynamic marketing environments. Show less\n\nDepartment: Marketing \u2022 Level: Intern\n\nWebcooks Technologies Pvt Ltd is a Professional Training and Coaching company. Webcooks is a comprehensive digital marketing course that aims to equip candidates with practical skills to bridge the gap between the skill and demand of skilled digital marketers in the market. Webcooks Technologi",
+      "image": "https://media.licdn.com/dms/image/v2/D5603AQFhDFyZboVJ6w/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1704101238075?e=2147483647&v=beta&t=8TfqI9RZcY04sh58vvzgqX4rLhbd32K2dFq_s0QSPd4",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/ynkvjwt98pn",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Varinder Kaur",
+            "firstName": "Varinder",
+            "lastName": "Kaur",
+            "location": "Brampton, Ontario, Canada",
+            "workHistory": [
+              {
+                "title": "Digital Marketing Intern",
+                "location": "India",
+                "dates": {
+                  "from": "2024-09-01",
+                  "to": "2024-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/yy1w2cxnr6q",
+                  "name": "Webcooks Technologies Pvt Ltd"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Commerce - BCom, BUSINESS, MANAGEMENT, MARKETING, AND RELATED SUPPORT SERVICES, 7.99 CGPA",
+                "dates": {
+                  "from": "2020",
+                  "to": "2023"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/ltg1d2126p1",
+                  "name": "Guru Nanak Dev University"
+                }
+              },
+              {
+                "degree": "Digital Marketing, Digital marketing, A",
+                "dates": {
+                  "from": "2023",
+                  "to": "2024"
+                },
+                "institution": {
+                  "id": null,
+                  "name": "Webcooks technologies pvt ltd."
+                }
+              },
+              {
+                "degree": "Master of Business Administration - MBA, Business, Management, Marketing",
+                "dates": {
+                  "from": "2025",
+                  "to": "2026"
+                },
+                "institution": {
+                  "id": "https://exa.ai/library/organization/x5y8z5351xk",
+                  "name": "International Business University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.linkedin.com/posts/hr-varinder-kaur_leadgeneration-digitalmarketing-b2bmarketing-activity-7473034930294464512-FcJr",
+      "title": "Looking for Lead Generation & Digital Marketing Expertise? | Varinder Kaur",
+      "url": "https://www.linkedin.com/posts/hr-varinder-kaur_leadgeneration-digitalmarketing-b2bmarketing-activity-7473034930294464512-FcJr",
+      "publishedDate": "2026-06-17T00:00:00.000Z",
+      "author": "Varinder Kaur",
+      "text": "# Looking for Lead Generation & Digital Marketing Expertise? | Varinder Kaur \u00b7 LinkedIn \u00b7 2026-06-17\n\n**Varinder Kaur**: Varinder Kaur has held roles including Manager-HR at Aeren LPO, Manager-HR at DigiMantra, and Team Lead- TA at Escalon Services, Inc.. Based in India [IN].\n\n---\n\nLooking for Lead Generation & Digital Marketing Expertise?\n\nOne of my professional connection brings extensive experience in Lead Generation and Digital Marketing, with a strong track record of generating high-quality leads through multiple platforms and channels.\n\nExpertise in:\n\n* Lead Generation Strategy\n* Paid Marketing Campaigns\n* B2B & B2C Marketing\n* Direct Client Acquisition\n* Multi-channel Outreach & Demand Generation\n\nDomain Experience:\n\n* IT Services\n* Salesforce Consulting\n* Legal Services\n* Global Accounting & Finance\n\nRegional Exposure:\n\n* EMEA\n* APAC\n* Australia & New Zealand\n\nIf your organization is looking to accelerate business growth, generate qualified leads, or expand into international markets, feel free to connect.\n\nComment below or send me a message, and I\u2019ll be happy to share the details.\n\n#LeadGeneration #DigitalMarketing #B2BMarketing #B2CMarketing #Salesforce #ITServices #BusinessDevelopment #DemandGeneration #EMEA #APAC #Australia #NewZealand #Networking #GrowthMarketing #Hiring #BusinessGrowth\n\n## Comments\n\n**[Anmolpreet Singh](https://linkedin.com/in/anmolpreet-singh-636351141)** \u00b7 2026-06-22\n> CFBR\n\n**[Oyaon Sultan](https://linkedin.com/in/oyaonsultan07)** \u00b7 2026-06-2"
+    }
+  ],
+  "searchTime": 1023.5,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.12,
+  "_request": {
+    "query": "\"Vari Kaur\" OR \"Varinder Kaur\" Secureworks Ivanti demand generation webinar panel speaker interview quote",
+    "type": "auto",
+    "numResults": 10,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

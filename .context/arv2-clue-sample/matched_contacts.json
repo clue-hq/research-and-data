@@ -1,0 +1,623 @@
+{
+  "step6a_match_tpunteney": {
+    "id": "6a8e800333952b00141258ca",
+    "first_name": "Thomas",
+    "last_name": "Punteney",
+    "name": "Thomas Punteney",
+    "linkedin_url": null,
+    "title": null,
+    "photo_url": null,
+    "twitter_url": null,
+    "github_url": null,
+    "facebook_url": null,
+    "extrapolated_email_confidence": null,
+    "headline": null,
+    "organization_id": "5500af3d7369642de9450100",
+    "employment_history": [
+      {
+        "_id": "6a8e800433952b00141258ce",
+        "created_at": null,
+        "current": true,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": null,
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": null,
+        "organization_id": "5500af3d7369642de9450100",
+        "organization_name": null,
+        "raw_address": null,
+        "start_date": null,
+        "title": null,
+        "updated_at": null,
+        "id": "6a8e800433952b00141258ce",
+        "key": "6a8e800433952b00141258ce"
+      }
+    ],
+    "street_address": "",
+    "city": "Charleston",
+    "state": "South Carolina",
+    "country": "United States",
+    "postal_code": null,
+    "formatted_address": "Charleston, SC, USA",
+    "time_zone": "America/New_York",
+    "email": "tommy.punteney@charlestongi.com",
+    "email_status": "verified",
+    "organization": {
+      "id": "5500af3d7369642de9450100",
+      "name": "Charleston GI Specialists",
+      "website_url": "http://www.charlestongi.com",
+      "angellist_url": null,
+      "linkedin_url": "http://www.linkedin.com/company/charleston-gastroenterology",
+      "twitter_url": null,
+      "facebook_url": "https://www.facebook.com/CHSGI/",
+      "languages": [
+        "English"
+      ],
+      "alexa_ranking": null,
+      "phone": "+1 843-722-8000",
+      "linkedin_uid": "6152012",
+      "founded_year": 2002,
+      "publicly_traded_symbol": null,
+      "publicly_traded_exchange": null,
+      "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/673205fbc71a43000111cd94/picture",
+      "crunchbase_url": null,
+      "primary_domain": "charlestongi.com",
+      "sic_codes": [
+        "8011",
+        "8093"
+      ],
+      "naics_codes": [
+        "621111",
+        "621493"
+      ],
+      "primary_phone": {
+        "number": "+1 843-722-8000",
+        "sanitized_number": "+18437228000"
+      },
+      "sanitized_phone": "+18437228000",
+      "industry": "hospital & health care",
+      "estimated_num_employees": 76,
+      "keywords": [
+        "gastroenterology",
+        "hospitals & health care",
+        "medical services",
+        "regional healthcare provider",
+        "procedures and conditions",
+        "lowcountry south carolina",
+        "comprehensive digestive care",
+        "medical expertise",
+        "hemorrhoid banding",
+        "offices of physicians",
+        "services",
+        "gastrointestinal diseases",
+        "patient care",
+        "patient experience",
+        "diagnostic testing",
+        "capsule endoscopy",
+        "medical staff",
+        "b2c",
+        "medical team",
+        "diagnostic and therapeutic procedures",
+        "digestive health",
+        "patient testimonials",
+        "board-certified gastroenterologists",
+        "gastrointestinal conditions",
+        "state-licensed endoscopy centers",
+        "digestive health management",
+        "eus",
+        "gastroenterology practice",
+        "endoscopy centers",
+        "patient portal",
+        "patient-centered care",
+        "gastroenterologist",
+        "medical centers",
+        "healthcare services",
+        "healthcare",
+        "gastroenterologists",
+        "digestive diseases",
+        "diagnostic procedures",
+        "colonoscopy",
+        "specialized gi procedures",
+        "diagnosis and treatment",
+        "endoscopy",
+        "digestive system",
+        "hospital & health care",
+        "health care",
+        "health, wellness & fitness",
+        "doctors",
+        "health & medical",
+        "pediatricians"
+      ],
+      "organization_revenue_printed": "34.9M",
+      "organization_revenue": 34928000.0,
+      "industries": [
+        "hospital & health care",
+        "medical practice",
+        "health, wellness & fitness"
+      ],
+      "secondary_industries": [
+        "medical practice",
+        "health, wellness & fitness"
+      ],
+      "snippets_loaded": true,
+      "industry_tag_id": "5567cdde73696439812c0000",
+      "industry_tag_hash": {
+        "hospital & health care": "5567cdde73696439812c0000",
+        "medical practice": "5567d0467369645dbc200000",
+        "health, wellness & fitness": "5567cddb7369644d250c0000"
+      },
+      "retail_location_count": 1,
+      "raw_address": "1962 Charlie Hall Blvd, Charleston, South Carolina 29414, US",
+      "street_address": "1962 Charlie Hall Blvd",
+      "city": "Charleston",
+      "state": "South Carolina",
+      "postal_code": "29414",
+      "country": "United States",
+      "owned_by_organization_id": null,
+      "short_description": "As the first and largest independent group of GI specialists in Charleston, our qualified team includes eleven outstanding board-certified gastroenterologists. With combined experience of over 100 years, our staff is wholeheartedly committed to providing the highest standard of care \u2013 close to home! With four convenient locations and two state-of-the-art endoscopy centers, relief is never far away.",
+      "suborganizations": [],
+      "num_suborganizations": 0,
+      "annual_revenue_printed": "34.9M",
+      "annual_revenue": 34928000.0,
+      "total_funding": null,
+      "total_funding_printed": null,
+      "latest_funding_round_date": null,
+      "latest_funding_stage": null,
+      "funding_events": [],
+      "technology_names": [
+        "Amazon AWS",
+        "Amazon S3",
+        "Amazon S3",
+        "Apple iOS",
+        "Bootstrap",
+        "Clarity SDM",
+        "CloudFlare",
+        "Cloudflare Rocket Loader",
+        "Contact Form 7",
+        "Font Awesome",
+        "Google Analytics",
+        "Google Analytics 4",
+        "Google Cloud Hosting",
+        "Google Font API",
+        "Google Maps",
+        "Google Maps (Non Paid Users)",
+        "Google Maps Platform",
+        "Google Tag Manager",
+        "Google Tag Manager for WordPress",
+        "Klara",
+        "Microsoft 365",
+        "Microsoft 365 Apps & Services",
+        "Microsoft Clarity",
+        "Microsoft Email Providers",
+        "Microsoft Exchange",
+        "Microsoft Exchange Online",
+        "Mobile Friendly",
+        "MonsterInsights",
+        "MySQL",
+        "Network Solutions",
+        "Nginx",
+        "OWL Carousel",
+        "Open Graph",
+        "Outlook",
+        "PHP",
+        "PrimeNG",
+        "Priority Hints",
+        "RSS",
+        "SiteGround",
+        "Underscore.js",
+        "Understrap",
+        "Viewport Meta",
+        "WPMU DEV Smush",
+        "WordPress.org",
+        "Wordpress",
+        "Yoast",
+        "Yoast SEO",
+        "YouTube",
+        "cdnjs",
+        "jQuery",
+        "jQuery Migrate"
+      ],
+      "current_technologies": [
+        {
+          "uid": "amazon_aws",
+          "name": "Amazon AWS",
+          "category": "Hosting"
+        },
+        {
+          "uid": "amazon_s3",
+          "name": "Amazon S3",
+          "category": "Content Delivery Networks"
+        },
+        {
+          "uid": "amazon_s3",
+          "name": "Amazon S3",
+          "category": "Content Delivery Networks"
+        },
+        {
+          "uid": "apple_ios",
+          "name": "Apple iOS",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "bootstrap",
+          "name": "Bootstrap",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "clarity_sdm",
+          "name": "Clarity SDM",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "cloudflare",
+          "name": "CloudFlare",
+          "category": "Web Accelerators"
+        },
+        {
+          "uid": "cloudflare_rocket_loader",
+          "name": "Cloudflare Rocket Loader",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "contact_form_7",
+          "name": "Contact Form 7",
+          "category": "CMS"
+        },
+        {
+          "uid": "font_awesome",
+          "name": "Font Awesome",
+          "category": "Fonts"
+        },
+        {
+          "uid": "google_analytics",
+          "name": "Google Analytics",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_analytics_4_ga4",
+          "name": "Google Analytics 4",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "google_cloud_hosting",
+          "name": "Google Cloud Hosting",
+          "category": "Hosting"
+        },
+        {
+          "uid": "google_font_api",
+          "name": "Google Font API",
+          "category": "Fonts"
+        },
+        {
+          "uid": "google_maps",
+          "name": "Google Maps",
+          "category": "Other"
+        },
+        {
+          "uid": "google_maps_non_paid_users",
+          "name": "Google Maps (Non Paid Users)",
+          "category": "Other"
+        },
+        {
+          "uid": "google_maps_platform",
+          "name": "Google Maps Platform",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "google_tag_manager",
+          "name": "Google Tag Manager",
+          "category": "Tag Management"
+        },
+        {
+          "uid": "google_tag_manager_for_wordpress",
+          "name": "Google Tag Manager for WordPress",
+          "category": "CMS"
+        },
+        {
+          "uid": "klara",
+          "name": "Klara",
+          "category": "Chats"
+        },
+        {
+          "uid": "microsoft_365",
+          "name": "Microsoft 365",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "microsoft_365_apps_services",
+          "name": "Microsoft 365 Apps & Services",
+          "category": "Communication and Collaboration"
+        },
+        {
+          "uid": "microsoft_clarity",
+          "name": "Microsoft Clarity",
+          "category": "Analytics and Tracking"
+        },
+        {
+          "uid": "microsoft_email_providers",
+          "name": "Microsoft Email Providers",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "microsoft_exchange",
+          "name": "Microsoft Exchange",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "microsoft_exchange_online",
+          "name": "Microsoft Exchange Online",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "mobile_friendly",
+          "name": "Mobile Friendly",
+          "category": "Other"
+        },
+        {
+          "uid": "monsterinsights",
+          "name": "MonsterInsights",
+          "category": "CMS"
+        },
+        {
+          "uid": "mysql",
+          "name": "MySQL",
+          "category": "Database"
+        },
+        {
+          "uid": "network_solutions",
+          "name": "Network Solutions",
+          "category": "Hosting"
+        },
+        {
+          "uid": "nginx",
+          "name": "Nginx",
+          "category": "Load Balancers"
+        },
+        {
+          "uid": "owl_carousel",
+          "name": "OWL Carousel",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "open_graph",
+          "name": "Open Graph",
+          "category": "Other"
+        },
+        {
+          "uid": "outlook",
+          "name": "Outlook",
+          "category": "Email Providers"
+        },
+        {
+          "uid": "php",
+          "name": "PHP",
+          "category": "Frameworks and Programming Languages"
+        },
+        {
+          "uid": "primeng",
+          "name": "PrimeNG",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "priority_hints",
+          "name": "Priority Hints",
+          "category": "Web Performance Monitoring"
+        },
+        {
+          "uid": "rss",
+          "name": "RSS",
+          "category": "Content Syndication Networks"
+        },
+        {
+          "uid": "siteground",
+          "name": "SiteGround",
+          "category": "Cloud Services"
+        },
+        {
+          "uid": "underscore.js",
+          "name": "Underscore.js",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "understrap",
+          "name": "Understrap",
+          "category": "CMS"
+        },
+        {
+          "uid": "viewport_meta",
+          "name": "Viewport Meta",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "wpmu_dev_smush",
+          "name": "WPMU DEV Smush",
+          "category": "CMS"
+        },
+        {
+          "uid": "wordpress_org",
+          "name": "WordPress.org",
+          "category": "CMS"
+        },
+        {
+          "uid": "wordpress",
+          "name": "Wordpress",
+          "category": "CMS"
+        },
+        {
+          "uid": "yoast",
+          "name": "Yoast",
+          "category": "Content Management Platform"
+        },
+        {
+          "uid": "yoast_seo",
+          "name": "Yoast SEO",
+          "category": "Search Marketing"
+        },
+        {
+          "uid": "youtube",
+          "name": "YouTube",
+          "category": "Online Video Platforms"
+        },
+        {
+          "uid": "cdnjs",
+          "name": "cdnjs",
+          "category": "Content Delivery Networks"
+        },
+        {
+          "uid": "jquery",
+          "name": "jQuery",
+          "category": "CSS and JavaScript Libraries"
+        },
+        {
+          "uid": "jquery_migrate",
+          "name": "jQuery Migrate",
+          "category": "CSS and JavaScript Libraries"
+        }
+      ],
+      "org_chart_root_people_ids": [],
+      "org_chart_sector": null,
+      "org_chart_removed": null,
+      "org_chart_show_department_filter": null,
+      "is_placeholder_organization": null,
+      "organization_headcount_six_month_growth": -0.06451612903225806,
+      "organization_headcount_twelve_month_growth": -0.09375,
+      "organization_headcount_twenty_four_month_growth": -0.1714285714285714
+    },
+    "departments": [],
+    "subdepartments": [],
+    "seniority": null,
+    "functions": [],
+    "intent_strength": null,
+    "show_intent": false,
+    "email_domain_catchall": false,
+    "email_domain_catchall_verdict": "allow",
+    "revealed_for_current_team": true
+  },
+  "step6b_match_wpunteney": {
+    "id": "66f54fcc962ce60001a2a3f3",
+    "first_name": "Wanda",
+    "last_name": "Punteney",
+    "name": "Wanda Punteney",
+    "linkedin_url": "http://www.linkedin.com/in/wanda-punteney-5a503a6",
+    "title": "Administrator, CEO",
+    "photo_url": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+    "twitter_url": null,
+    "github_url": null,
+    "facebook_url": null,
+    "extrapolated_email_confidence": null,
+    "headline": "Administrator, CEO at Charleston GI",
+    "organization_id": "66e6b7de0062340001c9ea58",
+    "employment_history": [
+      {
+        "_id": "6a7bf4831f7cc700018e40cf",
+        "created_at": null,
+        "current": true,
+        "degree": null,
+        "description": null,
+        "emails": null,
+        "end_date": null,
+        "grade_level": null,
+        "kind": null,
+        "major": null,
+        "org_matched_by_name": true,
+        "organization_id": "66e6b7de0062340001c9ea58",
+        "organization_name": "Charleston GI",
+        "raw_address": null,
+        "start_date": null,
+        "title": "Administrator, CEO",
+        "updated_at": null,
+        "id": "6a7bf4831f7cc700018e40cf",
+        "key": "6a7bf4831f7cc700018e40cf"
+      }
+    ],
+    "street_address": "",
+    "city": "Charleston",
+    "state": "South Carolina",
+    "country": "United States",
+    "postal_code": null,
+    "formatted_address": "Charleston, SC, USA",
+    "time_zone": "America/New_York",
+    "email": "wanda.punteney@charlestongi.com",
+    "email_status": "verified",
+    "organization": {
+      "id": "66e6b7de0062340001c9ea58",
+      "name": "Charleston GI",
+      "website_url": null,
+      "angellist_url": null,
+      "linkedin_url": "http://www.linkedin.com/company/charleston-gi",
+      "twitter_url": null,
+      "facebook_url": null,
+      "languages": [],
+      "alexa_ranking": null,
+      "phone": null,
+      "linkedin_uid": "58995091",
+      "founded_year": null,
+      "publicly_traded_symbol": null,
+      "publicly_traded_exchange": null,
+      "logo_url": "https://zenprospect-production.s3.amazonaws.com/uploads/pictures/63edac0a998f12000100b12d/picture",
+      "crunchbase_url": null,
+      "primary_domain": null,
+      "industry": "medical practice",
+      "estimated_num_employees": 4,
+      "keywords": [
+        "medical practices",
+        "hospital & health care"
+      ],
+      "organization_revenue_printed": null,
+      "organization_revenue": 0.0,
+      "industries": [
+        "medical practice"
+      ],
+      "secondary_industries": [],
+      "snippets_loaded": true,
+      "industry_tag_id": "5567d0467369645dbc200000",
+      "industry_tag_hash": {
+        "medical practice": "5567d0467369645dbc200000"
+      },
+      "retail_location_count": 0,
+      "raw_address": "Summerville, South Carolina",
+      "street_address": "",
+      "city": "Summerville",
+      "state": "South Carolina",
+      "postal_code": null,
+      "country": "United States",
+      "owned_by_organization_id": null,
+      "short_description": null,
+      "suborganizations": [],
+      "num_suborganizations": 0,
+      "total_funding": null,
+      "total_funding_printed": null,
+      "latest_funding_round_date": null,
+      "latest_funding_stage": null,
+      "funding_events": [],
+      "technology_names": [],
+      "current_technologies": [],
+      "org_chart_root_people_ids": [
+        "66f54fcc962ce60001a2a3f3"
+      ],
+      "org_chart_sector": null,
+      "org_chart_removed": null,
+      "org_chart_show_department_filter": null,
+      "is_placeholder_organization": null,
+      "organization_headcount_six_month_growth": 0.0,
+      "organization_headcount_twelve_month_growth": 0.0,
+      "organization_headcount_twenty_four_month_growth": 0.0
+    },
+    "departments": [
+      "c_suite"
+    ],
+    "subdepartments": [
+      "executive"
+    ],
+    "seniority": "c_suite",
+    "functions": [],
+    "intent_strength": null,
+    "show_intent": false,
+    "email_domain_catchall": false,
+    "email_domain_catchall_verdict": "allow",
+    "revealed_for_current_team": true
+  }
+}

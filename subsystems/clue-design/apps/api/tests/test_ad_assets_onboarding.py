@@ -43,6 +43,19 @@ TINY_PNG = bytes.fromhex(
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_asset_describer(monkeypatch):
+    from asset_analysis_fixture import analysis
+    from lumen_ingestion import pipeline
+    from lumen_ingestion.describe import DescribeResult
+    class Describer:
+        active = True
+        def describe(self, items):
+            return [DescribeResult(item.asset_id, "Ad", "Ad", "Reference", [],
+                                   analysis=analysis("Ad", item.source_occurrences)) for item in items]
+    monkeypatch.setattr(pipeline, "resolve_describer", lambda: Describer())
+
+
 def _pages() -> list[AdLibraryPage]:
     provider = AdyntelProvider(api_key="k", email="e@example.com")
     return [
@@ -183,6 +196,9 @@ def _fetch_creative(url: str) -> tuple[bytes, str]:
 @pytest.fixture
 def lane_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "lumen_brand_ad_assets", True, raising=False)
+    # Pipeline tests drive the offered job with injected providers in _run_job;
+    # an embedded worker would race that drive with the production providers.
+    monkeypatch.setattr(settings, "lumen_embedded_fleet_worker", False, raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -216,7 +232,10 @@ def _no_live_http(monkeypatch: pytest.MonkeyPatch) -> None:
             "an injected seam and one of them was missed"
         )
 
-    for name in ("get", "post", "request", "stream"):
+    # ``Client`` is on the list since lane 3 slice 5: the lane's paid calls go through
+    # ``clue_spend.HttpxTransport``, which builds an ``httpx.Client`` rather than calling the
+    # module-level ``post``. Without it the guard would pass while the lane really dialled out.
+    for name in ("get", "post", "request", "stream", "Client", "AsyncClient"):
         monkeypatch.setattr(httpx, name, refuse, raising=False)
 
 
@@ -377,6 +396,7 @@ def _offer(
     brand_kit_id: str,
     max_creatives: int = 4,
     max_pages: int = 2,
+    harvest_only: bool = False,
 ) -> str:
     offered = client.post(
         "/brand-ad-assets/onboard",
@@ -387,6 +407,7 @@ def _offer(
             "advertiser_name": "Ramp",
             "max_pages": max_pages,
             "max_creatives": max_creatives,
+            "harvest_only": harvest_only,
         },
     )
     assert offered.status_code == 200, offered.text
@@ -404,6 +425,7 @@ def _run_job(
     provider: Any = None,
     max_creatives: int = 4,
     max_pages: int = 2,
+    harvest_only: bool = False,
 ) -> dict:
     """Offer one job through the route, then DRIVE it here, and return the terminal row.
 
@@ -421,7 +443,8 @@ def _run_job(
     from lumen_ingestion.ad_library.onboarding import run_ad_assets_onboarding
 
     job_id = _offer(
-        client, brand_kit_id=brand_kit_id, max_creatives=max_creatives, max_pages=max_pages
+        client, brand_kit_id=brand_kit_id, max_creatives=max_creatives, max_pages=max_pages,
+        harvest_only=harvest_only,
     )
     run_ad_assets_onboarding(
         str(tmp_path / "engine-cache" / client.headers["X-Workspace-Id"]),
@@ -436,6 +459,36 @@ def _run_job(
     job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
     job["evidence"] = _evidence(client, job_id)
     return job
+
+
+def test_manual_harvest_keeps_originals_without_calling_creative_models(
+    tmp_path: Path, lane_on: None,
+) -> None:
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+
+    class NoModelCalls:
+        active = True
+
+        def distil(self, previews):
+            raise AssertionError("harvest-only must not analyze or generate imagery")
+
+    def no_generation(*args, **kwargs):
+        raise AssertionError("harvest-only must not generate imagery")
+
+    job = _run_job(
+        client, tmp_path, brand_kit_id=brand_kit_id,
+        distiller=NoModelCalls(), generate=no_generation, harvest_only=True,
+    )
+    assert job["status"] == "succeeded", job
+    steps = job["evidence"]["steps"]
+    assert steps["record"]["count"] > 0
+    assert steps["distill"]["status"] == "skipped"
+    assert steps["pregenerate"]["status"] == "skipped"
+    assert "harvest-only" in steps["distill"]["reason"]
+    assert job["outcome"]["status"] == "partial"
+    assert job["outcome"]["card_written"] is False
+    assert job["outcome"]["assets_generated"] == 0
 
 
 def test_a_full_run_harvests_distils_and_pregenerates(
@@ -516,7 +569,7 @@ def test_an_empty_harvest_says_so_at_the_top_level(
     assert outcome["card_written"] is False
     assert outcome["assets_generated"] == 0
     # The steps that never ran are NAMED, rather than being absent keys nobody notices.
-    assert outcome["steps_not_reached"] == ["custody", "record", "distill", "pregenerate"]
+    assert outcome["steps_not_reached"] == ["custody", "record", "enrich", "distill", "pregenerate"]
     assert "0 ad(s) kept" in outcome["summary"]
     assert "No ad-DNA card was written." in outcome["summary"]
 
@@ -779,6 +832,7 @@ def test_the_fleet_worker_executes_an_ad_assets_job(
     lease and fence as every other design job. Everything the pipeline does is asserted by the
     tests above, which drive the runner directly (see ``_run_job``).
     """
+    monkeypatch.setattr(settings, "lumen_embedded_fleet_worker", True, raising=False)
     client = _client(tmp_path)
     brand_kit_id = _seed_brand_kit(client)
     _install_stub_runner(
@@ -868,3 +922,270 @@ def test_a_deliberate_second_onboarding_still_mints_a_fresh_version(
     lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
     assert lane["card"]["version"] == 2  # deliberate re-run = genuinely new version
     assert len(lane["pregenerated_assets"]) == 2  # linked to the NEW version, still visible
+
+
+# --- auto ad ingestion at onboarding (2026-09-28): harvest now, card when a kit exists ---------
+#
+# Onboarding offers a HARVEST phase with no kit, in parallel with the website ingestion. The
+# harvest custodies and describes the ads; the CARD phase (distil + pre-generate) is offered as its
+# own job the moment both a finished harvest and a kit exist, by whichever of the two finishes
+# second, exactly once per harvest.
+
+
+class _NoLibraryCalls:
+    """The card phase reuses the stored ads: any ad-library call is a double spend."""
+
+    name = "no-library-calls"
+
+    def fetch_page(self, **kwargs: Any) -> AdLibraryPage:
+        raise AssertionError("the card phase must never call the ad library")
+
+
+def _no_creative_fetch(url: str) -> tuple[bytes, str]:
+    raise AssertionError("the card phase must never re-download a creative")
+
+
+def _offer_harvest(client: TestClient, *, max_creatives: int = 4, max_pages: int = 2) -> str:
+    offered = client.post(
+        "/brand-ad-assets/onboard",
+        json={
+            "phase": "harvest",
+            "company_domain": "ramp.com",
+            "advertiser_name": "Ramp",
+            "max_pages": max_pages,
+            "max_creatives": max_creatives,
+        },
+    )
+    assert offered.status_code == 200, offered.text
+    job_id: str = offered.json()["job"]["job_id"]
+    return job_id
+
+
+def _drive(client: TestClient, tmp_path: Path, job_id: str, **seams: Any) -> dict:
+    from lumen_ingestion.ad_library.onboarding import run_ad_assets_onboarding
+
+    run_ad_assets_onboarding(
+        str(tmp_path / "engine-cache" / client.headers["X-Workspace-Id"]),
+        job_id,
+        workspace_id=client.headers["X-Workspace-Id"],
+        now=lambda: datetime(2026, 8, 26, tzinfo=UTC),
+        **seams,
+    )
+    job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
+    job["evidence"] = _evidence(client, job_id)
+    return job
+
+
+def _run_harvest(client: TestClient, tmp_path: Path, **kwargs: Any) -> dict:
+    def no_card_models(**_kwargs: Any) -> Any:
+        raise AssertionError("the harvest phase must not generate imagery")
+
+    class NoDistiller:
+        active = True
+
+        def distil(self, previews: list[Any]) -> Any:
+            raise AssertionError("the harvest phase must not distil a card")
+
+    return _drive(
+        client,
+        tmp_path,
+        _offer_harvest(client, **kwargs),
+        provider=_StubProvider(),
+        distiller=NoDistiller(),
+        generate=no_card_models,
+        fetch_creative=_fetch_creative,
+    )
+
+
+def _finish_a_kit_ingestion(client: TestClient, brand_kit_id: str) -> str:
+    """A website ingestion that ended with a kit — the row the card offer looks for."""
+    from lumen_ingestion.jobs import IngestionJobStore
+
+    store = IngestionJobStore(workspace_id=client.headers["X-Workspace-Id"])
+    job = store.create("website", {"url": "https://ramp.com"})
+    store.complete(job["job_id"], brand_kit_id, BRAND_KIT_VERSION, "{}")
+    return str(job["job_id"])
+
+
+def _ad_jobs(client: TestClient) -> list[dict]:
+    from lumen_ingestion.jobs import IngestionJobStore
+
+    store = IngestionJobStore(workspace_id=client.headers["X-Workspace-Id"])
+    return store.list_recent(50, kinds=("ad_assets",))
+
+
+def test_a_harvest_is_offered_with_no_brand_kit(tmp_path: Path, lane_on: None) -> None:
+    client = _client(tmp_path)
+    job_id = _offer_harvest(client)
+    job = client.get(f"/brand-kits/ingest/{job_id}").json()["job"]
+    assert job["kind"] == "ad_assets"
+    assert job["brand_kit_id"] is None
+
+
+def test_the_card_phase_is_not_a_public_request_and_full_still_needs_a_kit(
+    tmp_path: Path, lane_on: None
+) -> None:
+    client = _client(tmp_path)
+    card = client.post(
+        "/brand-ad-assets/onboard", json={"phase": "card", "company_domain": "ramp.com"}
+    )
+    assert card.status_code == 422
+    assert card.json()["detail"]["code"] == "ad_assets.card_phase_is_internal"
+    full = client.post("/brand-ad-assets/onboard", json={"company_domain": "ramp.com"})
+    assert full.status_code == 422
+    assert full.json()["detail"]["code"] == "ad_assets.brand_kit_required"
+
+
+def test_the_harvest_phase_keeps_and_describes_the_ads_and_defers_the_card(
+    tmp_path: Path, lane_on: None
+) -> None:
+    client = _client(tmp_path)
+    job = _run_harvest(client, tmp_path)
+
+    assert job["status"] == "succeeded", job
+    assert job["brand_kit_id"] is None
+    steps = job["evidence"]["steps"]
+    assert steps["harvest"]["kept"] == 4
+    assert steps["custody"]["custodied"] == 4
+    assert steps["enrich"]["status"] == "ok"
+    assert steps["distill"]["status"] == "deferred"
+    assert steps["pregenerate"]["status"] == "deferred"
+    # The vendor's own order (most recent first) is kept for the card phase to follow.
+    assert len(steps["record"]["creative_ids"]) == 4
+    assert job["evidence"]["phase"] == "harvest"
+    assert job["outcome"]["creatives_custodied"] == 4
+    # No kit yet, so no card job was offered.
+    assert [j["job_id"] for j in _ad_jobs(client)] == [job["job_id"]]
+
+
+def test_a_kit_that_finishes_second_offers_exactly_one_card_job(
+    tmp_path: Path, lane_on: None
+) -> None:
+    from lumen_ingestion.ad_library.auto_card import offer_card_if_ready
+
+    client = _client(tmp_path)
+    workspace_id = client.headers["X-Workspace-Id"]
+    harvest = _run_harvest(client, tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+
+    card_job_id = offer_card_if_ready(workspace_id)
+    assert card_job_id is not None
+    again = offer_card_if_ready(workspace_id)
+    assert again is None
+
+    from lumen_ingestion.jobs import IngestionJobStore
+
+    card_job = IngestionJobStore(workspace_id=workspace_id).require(card_job_id)
+    assert card_job["request"] == {
+        "phase": "card",
+        "harvest_job_id": harvest["job_id"],
+        "brand_kit_id": brand_kit_id,
+        "brand_kit_version": BRAND_KIT_VERSION,
+    }
+    assert len(_ad_jobs(client)) == 2
+
+
+def test_a_harvest_that_finishes_second_offers_the_card_itself(
+    tmp_path: Path, lane_on: None
+) -> None:
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+
+    harvest = _run_harvest(client, tmp_path)
+    jobs = _ad_jobs(client)
+    assert len(jobs) == 2
+    card = next(j for j in jobs if j["job_id"] != harvest["job_id"])
+    assert card["request"]["phase"] == "card"
+    assert card["request"]["harvest_job_id"] == harvest["job_id"]
+
+
+def test_an_empty_harvest_never_offers_a_card(tmp_path: Path, lane_on: None) -> None:
+    from lumen_ingestion.ad_library.auto_card import offer_card_if_ready
+
+    client = _client(tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+    empty = _drive(
+        client,
+        tmp_path,
+        _offer_harvest(client),
+        provider=_EmptyProvider(),
+        distiller=_StubDistiller(),
+        generate=_stub_generate,
+        fetch_creative=_fetch_creative,
+    )
+    assert empty["status"] == "succeeded", empty
+    assert offer_card_if_ready(client.headers["X-Workspace-Id"]) is None
+    assert len(_ad_jobs(client)) == 1
+
+
+def test_with_the_lane_off_no_card_is_offered(
+    tmp_path: Path, lane_on: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lumen_ingestion.ad_library.auto_card import offer_card_if_ready
+
+    client = _client(tmp_path)
+    _run_harvest(client, tmp_path)
+    _finish_a_kit_ingestion(client, _seed_brand_kit(client))
+    monkeypatch.setattr(settings, "lumen_brand_ad_assets", False, raising=False)
+    assert offer_card_if_ready(client.headers["X-Workspace-Id"]) is None
+
+
+def test_the_card_phase_reuses_the_stored_ads_and_pins_the_kit(
+    tmp_path: Path, lane_on: None
+) -> None:
+    from lumen_ingestion.ad_library.auto_card import offer_card_if_ready
+
+    client = _client(tmp_path)
+    harvest = _run_harvest(client, tmp_path)
+    brand_kit_id = _seed_brand_kit(client)
+    _finish_a_kit_ingestion(client, brand_kit_id)
+    card_job_id = offer_card_if_ready(client.headers["X-Workspace-Id"])
+    assert card_job_id is not None
+
+    distiller = _StubDistiller()
+    job = _drive(
+        client,
+        tmp_path,
+        card_job_id,
+        provider=_NoLibraryCalls(),
+        distiller=distiller,
+        generate=_stub_generate,
+        fetch_creative=_no_creative_fetch,
+    )
+
+    assert job["status"] == "succeeded", job
+    assert job["brand_kit_id"] == brand_kit_id
+    assert job["evidence"]["phase"] == "card"
+    assert job["evidence"]["harvest_job_id"] == harvest["job_id"]
+    # The previews follow the harvest's own order, from the stored bytes.
+    previewed = [p.creative_id for p in distiller.seen[0]]
+    assert previewed == harvest["evidence"]["steps"]["record"]["creative_ids"]
+    steps = job["evidence"]["steps"]
+    assert steps["distill"]["status"] == "ok"
+    assert steps["pregenerate"]["generated"] == 2
+    # The outcome describes the whole lane, harvest included.
+    assert job["outcome"]["status"] == "ok"
+    assert job["outcome"]["creatives_custodied"] == 4
+
+    lane = client.get(f"/brand-ad-assets/{brand_kit_id}").json()
+    assert lane["card"]["version"] == 1
+    assert len(lane["pregenerated_assets"]) == 2
+
+
+def test_the_website_pipeline_hands_its_completion_to_the_card_offer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Whichever finishes second: a kit ingestion finishing must also look for a harvest."""
+    from lumen_ingestion import pipeline
+
+    seen: dict[str, Any] = {}
+
+    def capture(store: Any, job_id: str, work: Any, *, on_complete: Any = None) -> None:
+        seen["on_complete"] = on_complete
+
+    monkeypatch.setattr(pipeline, "run_ingestion_job", capture)
+    pipeline.run_website_ingestion(str(tmp_path), "ingest_x", workspace_id="ws_x")
+    assert callable(seen["on_complete"])

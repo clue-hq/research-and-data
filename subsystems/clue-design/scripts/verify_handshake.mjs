@@ -20,11 +20,18 @@ try {
 }
 const moduleVersion = JSON.parse(module.engineVersion());
 
-const helperOutput = execFileSync(
-  "cargo",
-  ["run", "--quiet", "--manifest-path", path.join(root, "Cargo.toml"), "-p", "lumen-api-helper"],
-  { input: JSON.stringify({ action: "build_info" }), encoding: "utf8" }
-);
+// HANDSHAKE_HELPER_CMD (deploy workflow, first deployment spec §9.5): ask the helper INSIDE the
+// built image, so the check compares exactly the two artifacts that will be deployed. Unset =
+// build and run it locally, as before.
+const request = JSON.stringify({ action: "build_info" });
+const helperCmd = process.env.HANDSHAKE_HELPER_CMD;
+const helperOutput = helperCmd
+  ? execFileSync("bash", ["-c", helperCmd], { input: request, encoding: "utf8" })
+  : execFileSync(
+      "cargo",
+      ["run", "--quiet", "--manifest-path", path.join(root, "Cargo.toml"), "-p", "lumen-api-helper"],
+      { input: request, encoding: "utf8" }
+    );
 const helperInfo = JSON.parse(helperOutput).build_info;
 
 console.log("wasm module :", JSON.stringify(moduleVersion));

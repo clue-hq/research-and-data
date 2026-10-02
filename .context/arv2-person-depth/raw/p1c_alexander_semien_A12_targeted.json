@@ -1,0 +1,222 @@
+{
+  "requestId": "b38e3d24f11bec496e2a4c59d5b85695",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://exa.ai/library/person/nw4myqxy85p",
+      "title": "Alexander Semien",
+      "url": "https://www.linkedin.com/in/alexander-semien",
+      "publishedDate": "2026-08-24T14:35:50.000Z",
+      "text": "# Alexander Semien\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\nNew York, New York, United States (US)\n\n500 connections \u2022 2,770 followers\n\n## About\n\nHey \ud83d\udc4b I\u2019m Alex. I like the early stages; no playbook, just a vision and a lot to figure out. I\u2019m a marketer by title but a builder at heart. I've worked across product, strategy, and analytics to architect GTM motions that actually work. That usually means finding the story that resonates, turning it into programs that drive traction, and leveraging data to stay focused on what matters. Most of my experience is in cybersecurity, helping startups grow from $0 to over $100M in ARR. I\u2019ve done the work\u2014positioning, launches, demand, partnerships, analyst relations. But, my alpha is bringing clarity in the chaos, and creating momentum where there was none.\n\nTotal Experience: 10 years and 1 month\n\n## Experience\n\n### Marketing - [Cogent Security](https://www.linkedin.com/company/cogentsecurity) (Current)\n\nAug 2025 - Present (1 year)\n\nDepartment: Marketing\n\nCogent is a Computer and Network Security company. Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n### VP, Product Marketing - [Sevco Security](https://www.linkedin.com/company/sevcosecurity)\n\nAug 2023 - Aug",
+      "image": "https://media.licdn.com/dms/image/v2/D4E03AQHtneuJcyH0zw/profile-displayphoto-scale_200_200/B4EZ.BYoQIJEAc-/0/1784582147445?e=2147483647&v=beta&t=er1xkwURitjocOsoGenskCtILyW2bUqL3SwhX1Q5TRk",
+      "entities": [
+        {
+          "id": "https://exa.ai/library/person/nw4myqxy85p",
+          "type": "person",
+          "version": 1,
+          "properties": {
+            "name": "Alexander Semien",
+            "firstName": "Alexander",
+            "lastName": "Semien",
+            "location": "New York, New York, United States",
+            "workHistory": [
+              {
+                "title": "Marketing",
+                "location": null,
+                "dates": {
+                  "from": "2025-08-01",
+                  "to": null
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/p5c1zdbdxyc",
+                  "name": "Cogent Security"
+                }
+              },
+              {
+                "title": "VP, Product Marketing",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2023-08-01",
+                  "to": "2025-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/ngl5g2pj795",
+                  "name": "Sevco Security"
+                }
+              },
+              {
+                "title": "Director, Strategy & Analytics",
+                "location": "New York, New York, United States",
+                "dates": {
+                  "from": "2020-08-01",
+                  "to": "2023-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/wp1tjg4fdtv",
+                  "name": "Abnormal Security"
+                }
+              },
+              {
+                "title": "Manager, Finance & Operations",
+                "location": "San Francisco, California, United States",
+                "dates": {
+                  "from": "2019-11-01",
+                  "to": "2020-08-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/nz8gl9w3hf5",
+                  "name": "Zyper (Acquired by Discord)"
+                }
+              },
+              {
+                "title": "Associate",
+                "location": "San Francisco, California, United States",
+                "dates": {
+                  "from": "2018-11-01",
+                  "to": "2019-10-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/w9qcxlghrmt",
+                  "name": "Forward"
+                }
+              },
+              {
+                "title": "Senior Analyst",
+                "location": null,
+                "dates": {
+                  "from": "2017-12-01",
+                  "to": "2018-11-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/78mr3snf7zv",
+                  "name": "Accenture"
+                }
+              },
+              {
+                "title": "Analyst",
+                "location": null,
+                "dates": {
+                  "from": "2016-07-01",
+                  "to": "2017-12-01"
+                },
+                "company": {
+                  "id": "https://exa.ai/library/organization/78mr3snf7zv",
+                  "name": "Accenture"
+                }
+              }
+            ],
+            "educationHistory": [
+              {
+                "degree": "Bachelor of Arts (B.A.) Public Policy Analysis Psychology",
+                "dates": null,
+                "institution": {
+                  "id": "https://exa.ai/library/organization/s4zwkrq85l0",
+                  "name": "Duke University"
+                }
+              }
+            ],
+            "research": null
+          }
+        }
+      ]
+    },
+    {
+      "id": "https://www.threatcon1.org/speakers/alexander-semien",
+      "title": "THREATCON1",
+      "url": "https://www.threatcon1.org/speakers/alexander-semien",
+      "text": "THREATCON1\n\nSkip to main content\n\n# Alexander Semien\n\nHead of Marketing, Cogent Security\n\nPresentation Title:\n\nWe Can\u2019t Wait for Patch Tuesdays: The Case for AI Blue Teaming\n\nAlexander Semien leads Marketing at Cogent Security - telling Cogent\u2019s story as it builds the first AI taskforce for vulnerability management. Previously, he led Product Strategy and Product Marketing at Sevco Security in the CAASM and exposure management space. Prior to that, he helped scale Abnormal Security from early stage to hypergrowth while running Strategy and Analytics. He began his career at Accenture, advising Fortune 500 companies on advanced automation, AI, and emerging technologies.\n\nCraig P. Abod is president and founder of Carahsoft Technology Corp. Now in its 21st year, Carahsoft has grown from $0 to $19.5 billion in bookings and employs more than 3,800 team members.\n\nWorking with a robust ecosystem of thousands of resellers, integrators, solutions providers and a deep portfolio of contracts, Carahsoft proactively markets, sells, and distributes IT to government markets in the U.S. & Canada, as well as education, healthcare, critical infrastructure, not-for-profit and commercial markets.\n\nIn recognition of these accomplishments, the company is consistently recognized as the top performing partner for its vendor partners and Abod has received the EY Entrepreneur of the Year Award for Greater Washington, The Federal 100 Award twice, the FCW Eagle Award, and is a ten-time winner of the Exec",
+      "image": "https://cdn.prod.website-files.com/67eedef1cac62c9eeb248fc1/680b96faba0d95c751a3109c_threatcon1-logo.svg",
+      "favicon": "https://cdn.prod.website-files.com/67eedef1cac62c9eeb248fc1/68262be8b1569d0ef7087533_tc1-favicon.png"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF",
+      "title": "When I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_when-i-interviewed-with-vineet-edupuganti-activity-7453534986965565440-YOGF",
+      "publishedDate": "2026-04-24T20:07:00.000Z",
+      "author": "Alexander Semien",
+      "text": "When I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. We started building an in-house AI\u2026 | Alexander Semien | 13 comments\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Alexander Semien\u2019s Post\n\nhttps://www.linkedin.com/in/alexander-semien\n\nAlexander Semien\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n2mo\n\n- Report this post\n\nWhen I interviewed with Vineet Edupuganti, I told him I wanted to create a marketing team that B2B SaaS hadn't seen before. Especially in cyber. He said, go do it. We started building an in-house AI operating system from day one. A rich data layer and multi-agent platform that executes revenue marketing, sales ops, field logistics, pipeline operations, and more. Andrew Cuzzone, our GTM Engineer, builds the AI architecture. I set strategy and build the models. With AI, two people have the output of a team of ten. That said, the tech isn't the only thing that makes us different. We're also very intentional about our brand. We build community through hospitality, honest conversations, and human connection. And we look cool doing it with premium experiences, branded moments, and TikTok-ad-level swag. \ud83d\udc85 We want to test the limits of what's possible wi",
+      "image": "https://static.licdn.com/aero-v1/sc/h/c45fy346jw096z9pbphyyhdz7",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_theres-nothing-like-starting-a-new-chapter-activity-7361796281381339136-JgKt",
+      "title": "There\u2019s nothing like starting a new chapter in the middle of Black Hat. My first week at Cogent Security was a whirlwind, and that\u2019s exactly the kind of energy I was hoping \u2026 | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_theres-nothing-like-starting-a-new-chapter-activity-7361796281381339136-JgKt",
+      "publishedDate": "2025-08-14T00:00:00.000Z",
+      "author": "Alexander Semien",
+      "text": "# There\u2019s nothing like starting a new chapter in the middle of Black Hat. My first week at Cogent Security was a whirlwind, and that\u2019s exactly the kind of energy I was hoping \u2026 | Alexander Semien \u00b7 LinkedIn \u00b7 2025-08-14\n\n**Alexander Semien**: Marketing at Cogent Security for 1 year with 10 years of total professional experience. Previous roles include VP, Product Marketing at Sevco Security, Director, Strategy & Analytics at Abnormal Security, and Manager, Finance & Operations at Zyper (Acquired by Discord). Based in New York, New York, United States [US].\n\n---\n\nThere\u2019s nothing like starting a new chapter in the middle of Black Hat. My first week at [Cogent Security](https://linkedin.com/company/cogentsecurity) was a whirlwind, and that\u2019s exactly the kind of energy I was hoping for.\n\nI\u2019ve joined my former [Abnormal AI](https://linkedin.com/company/abnormal-ai) colleagues [Vineet Edupuganti](https://linkedin.com/in/vineetedupuganti) and [Geng Sng](https://linkedin.com/in/geng-sng), along with new teammates [Thanos Baskous](https://linkedin.com/in/thanosbaskous) and [Aziz Kapadia](https://linkedin.com/in/aziz-kapadia) to take on one of the toughest challenges in security: vulnerability management.\n\nWe\u2019re building a task force of intelligent agents to tackle persistent problems like asset inventory, vulnerability prioritization, remediation, and mitigation.\nI\u2019m excited to help shape and share Cogent\u2019s story, so please follow along for the journey!\n\nSpecial thanks to [Natalia Keo",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQF_1-qgP70hUA/feedshare-shrink_800/B4EZinxI6NHoAk-/0/1755161337766?e=2147483647&v=beta&t=spYeJKHowHGxB1zVC18CUgnrx8VSkrE0W8CF31NzIEY"
+    },
+    {
+      "id": "https://contactout.com/Alexander-Semien-16719908",
+      "title": "Alexander Semien",
+      "url": "https://contactout.com/Alexander-Semien-16719908",
+      "text": "Alexander Semien Email & Phone Number | Marketing @ Cogent | Ex-Abnormal AI, Accenture - ContactOut\n\n# Alexander Semien\n\nSenior Analyst at Accenture | New York, New York, United States\n\nAlexander Semien Socials\n\nMarketing at Cogent Security in August 2025 to Present\n\nVP, Product Marketing at Sevco Security in August 2023 to August 2025\n\nDirector, Strategy & Analytics at Abnormal Security in August 2020 to August 2023\n\nSee more\n\nDuke University, Bachelor of Arts (B.A.)\n\nManagement Consulting\n\nSocial Media Marketing\n\nPublic Speaking\n\nSee more\n\nAccenture\n\nDiscover more about Accenture\n\n### What is Alexander Semien email address?\n\nEmail Alexander Semien at [email protected] and [email protected]. This email is the most updated Alexander Semien's email found in 2025.\n\n### How to contact Alexander Semien?\n\nTo contact Alexander Semien send an email to [email protected] or [email protected].\n\nWhat company does Alexander Semien work for?\n\nAlexander Semien works for Accenture\n\nWhat is Alexander Semien's role at Accenture?\n\nAlexander Semien is Senior Analyst\n\n## What is Alexander Semien's Phone Number?\n\nAlexander Semien's phone (212) ***-*531\n\nWhat industry does Alexander Semien work in?\n\nAlexander Semien works in the Internet industry.\n\n## Alexander Semien Email Addresses\n\nEmail Alexander Semien at [email protected] and [email protected]. This email is the most updated Alexander Semien's email found in 2025.\n\n## Alexander Semien Phone Numbers\n\n## View Alexander Semien's Email &&nbsp;Ph",
+      "image": "https://contactout.com/images/logo-square-200px.png",
+      "favicon": "https://contactout.com/favicon.ico"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b",
+      "title": "Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent",
+      "url": "https://www.linkedin.com/posts/cogentsecurity_cogents-head-of-growth-alexander-semien-activity-7460432880989712385-GM3b",
+      "publishedDate": "2026-05-13T00:00:00.000Z",
+      "author": "Cogent",
+      "text": "# Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent \u00b7 LinkedIn \u00b7 2026-05-13\n\n**Cogent**: Cogent has 40-50 employees, founded in 2024. Headquartered in San Francisco, California, United States. Its workforce is distributed across United States and India. Has $53M in total funding, with 2 prior funding rounds.\n\n---\n\n[Cogent](https://linkedin.com/company/cogentsecurity)'s Head of Growth, [Alexander Semien](https://linkedin.com/in/alexander-semien), breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs.\n\nYesterday's announcement from [OpenAI](https://linkedin.com/company/openai) positioned Daybreak as a defensive partnership story with legacy cybersecurity companies. [Anthropic](https://linkedin.com/company/anthropicresearch)'s Mythos, however, landed as offensive proof of maturing models - with early access given exclusively to mega-enterprises.\n\nBoth rest on the same underlying capabilities, and both stop short of the actual hard part: turning findings into fixes, on the time scale modern adversaries operate on.\n\nCheck out the original post and comments for the link!\n\n![Cogent's Head of Growth, Alexander Semien, breaks down the diverging narrative of AI-in-cybersecurity across two of the frontier labs. | Cogent image](https://media.licdn.com/dms/image/v2/D4E22AQFpqocLkmt_CA/feedshare-image-high-res/B4EZ4jFer5KgAU-/0/1778705099953?e=2147483647&v=beta",
+      "image": "https://media.licdn.com/dms/image/v2/D4E22AQFpqocLkmt_CA/feedshare-image-high-res/B4EZ4jFer5KgAU-/0/1778705099953?e=2147483647&v=beta&t=5oMEgNHpNKXgQl7cnqWIc0DXWqY2Te6SvEhFwBLlxwU"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_bringing-this-vibey-ice-cream-shop-to-life-activity-7490871334894231552-dAxa",
+      "title": "Bringing this vibey ice cream shop to life on the Black Hat floor was an absolute dream for my creativity. | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_bringing-this-vibey-ice-cream-shop-to-life-activity-7490871334894231552-dAxa",
+      "publishedDate": "2026-08-05T00:00:00.000Z",
+      "author": "Alexander Semien",
+      "text": "# Bringing this vibey ice cream shop to life on the Black Hat floor was an absolute dream for my creativity. | Alexander Semien \u00b7 LinkedIn \u00b7 2026-08-05\n\n**Alexander Semien**: Marketing at Cogent Security for 1 year with 10 years of total professional experience. Previous roles include VP, Product Marketing at Sevco Security, Director, Strategy & Analytics at Abnormal Security, and Manager, Finance & Operations at Zyper (Acquired by Discord). Based in New York, New York, United States [US].\n\n---\n\nBringing this vibey ice cream shop to life on the [Black Hat](https://linkedin.com/company/black-hat) floor was an absolute dream for my creativity.\n\nBig thanks to the combo [Cogent](https://linkedin.com/company/cogentsecurity) x [Hill & Partners Brand Environments](https://linkedin.com/company/hill-&-partners) for making it possible! \ud83e\udef6\ud83c\udffd\n\n[Victoria Lin](https://linkedin.com/in/victoria-lin17) [Grace Hua](https://linkedin.com/in/graceehua) [Zach Van Keulen](https://linkedin.com/in/zach-van-keulen) [Lauren Wood](https://linkedin.com/in/lauren-woodhillandpartners) #5536\n\n**Reshared from [Cogent](https://linkedin.com/company/cogentsecurity):**\n> Need a break from the [Black Hat](https://linkedin.com/company/black-hat) hustle?\n>\n> We're serving:\n> \ud83c\udf66 Ice cream: 11 AM\u20134 PM\n> \u2728 Good vibes: 24/7\n>\n> Find us at Booth #5536!\n\n## Comments\n\n**[Vignesh Shankar](https://linkedin.com/in/vig-sh)** \u00b7 2026-08-07\n> Looks so good!\n\n**[Ben Siegel](https://linkedin.com/in/benjaminnsiegel328)** \u00b7 2026-08-"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk",
+      "title": "Chat, who should I hire for Growth @ Cogent? | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_chat-who-should-i-hire-for-growth-cogent-activity-7494136608376655873-8Rmk",
+      "publishedDate": "2026-08-14T21:03:21.000Z",
+      "author": "Alexander Semien",
+      "text": "Chat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles \ud83e\udd73 1. Head of Demand\u2026 | Alexander Semien\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n1w\n\nEdited\n\nChat, who should I hire for Growth @ Cogent? Black Hat made it very clear that Zach Van Keulen, Andrew Cuzzone, and I need more teammates. So, here are the new roles \ud83e\udd73 1. Head of Demand Generation Help Cogent win the market: turn attention into pipeline across field, channel, digital, content, outbound, and creative plays. 2. Sales Enablement Lead Make the sales team elite: curriculum, product education, assets, insights, and tool adoption. We\u2019re creative, operational, AI-first, and (clearly) having a lot of fun with it. -- CC: Aziz Kapadia Traci Byrne Ryan Marasco Justin Whitcomb Justin Jancaric Omer Haider Kimberli Nichols Brian Ruth Bala Prasad Choubey Garrett Oliver Rebecca Brock\n\nTranscript Transcript\n\n##### Transcript\n\nI will not go turn the lights off. Carry me home.\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n1w\n\nHead of Demand Generation - https://jobs.ashbyh",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D5605AQFW2SM3Ow9XiA/thumbnail-with-play-button-overlay-high/B56aACFgLTGcC0-/0/1786741395297?e=2147483647&v=beta&t=VPnIH37pzB_VEt-VM52Hua87sFjEDTZPcddSeto_iZ8",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_when-i-describe-cogent-i-always-say-that-activity-7458221350793576448-2xNq",
+      "title": "When I describe Cogent, I always say that we're an AI company with a focus on cybersecurity. This is exactly why. \n\nWe're proud to (publicly) announce Cogent Research - our applied AI research lab\u2026 | Alexander Semien",
+      "url": "https://www.linkedin.com/posts/alexander-semien_when-i-describe-cogent-i-always-say-that-activity-7458221350793576448-2xNq",
+      "publishedDate": "2026-05-07T18:28:57.000Z",
+      "text": "When I describe Cogent, I always say that we're an AI company with a focus on cybersecurity. This is exactly why. We're proud to (publicly) announce Cogent Research - our applied AI research lab\u2026 | Alexander Semien\n\nAgree & Join LinkedIn\n\nBy clicking Continue to join or sign in, you agree to LinkedIn\u2019s User Agreement, Privacy Policy, and Cookie Policy.\n\n# Alexander Semien\u2019s Post\n\nHead of Growth | Cogent | Cybersecurity Exposure Management | Ex-Abnormal AI, Accenture | AI-GTM | Revenue Marketing | Go-to-Market Strategy | RevOps\n\n1mo\n\nWhen I describe Cogent, I always say that we're an AI company with a focus on cybersecurity. This is exactly why. We're proud to (publicly) announce Cogent Research - our applied AI research lab. Candidly, the security industry needs this: not another product, but a dedicated research team that exists to improve outcomes for an AI-enabled defense. The team behind this has some insane credentials, and I'm excited to see how they continue to push the boundaries of what's possible.\n\nCo-founder & CTO @ Cogent Security | ex-Abnormal AI\n\n1mo\n\nToday we're launching Cogent Research, an applied AI research lab focused on the hardest unsolved problems in AI-driven security. We\u2019ve reached the point where AI is necessary to defend against AI. The step-function improvements defenders need to keep pace will require dedicated, sustained research, not just better products. There's a structural gap between where frontier AI talent sits and where the richest securi",
+      "image": "https://dms.licdn.com/playlist/vid/v2/D5605AQG1rEn_Vn8mdg/thumbnail-with-play-button-overlay-high/B56Z4DmzDLIQC0-/0/1778176980297?e=2147483647&v=beta&t=Ic7W6yTZEcx2nFkPKV2VMyY_mm-1-xodyZZhsiHkn0Y",
+      "favicon": "https://static.licdn.com/aero-v1/sc/h/al2o9zrvru7aqj8e1x2rzsrca"
+    },
+    {
+      "id": "https://www.linkedin.com/posts/alexander-semien_im-back-with-another-role-this-time-for-activity-7456429674232156160-lb8B",
+      "title": "Alexander Semien's Post",
+      "url": "https://www.linkedin.com/posts/alexander-semien_im-back-with-another-role-this-time-for-activity-7456429674232156160-lb8B",
+      "publishedDate": "2026-05-02T06:03:52.849Z",
+      "author": "Alexander Semien",
+      "text": "# I'm back with another role! This time for Revenue Operations. | Alexander Semien \u00b7 LinkedIn \u00b7 2026-05-02\n\n**Alexander Semien**: Marketing at Cogent Security for 1 year with 10 years of total professional experience. Previous roles include VP, Product Marketing at Sevco Security, Director, Strategy & Analytics at Abnormal Security, and Manager, Finance & Operations at Zyper (Acquired by Discord). Based in New York, New York, United States [US].\n\n---\n\nI'm back with another role! This time for Revenue Operations.\n\nSome of the best GTM operators I've worked with came up in banking or consulting and pivoted to tech. They think in models, conversion math, and frameworks. They understand that growth is an equation to be understood and optimized, not just gut feeling.\n\nAt Cogent, we built the entire growth function on a custom in-house AI operating system. Every decision we make is rooted in data. We already have the automation and agents. Now we need the human to interpret what they're showing, find the so what, and drive the change across the sales org.\n\nIf you're nerdy like me and like using math every day, this might be the job for you! JD in the comments. \ud83d\ude0a\n\n## Comments\n\n**[Suvansh Bansal](https://linkedin.com/in/suvansh-bansal)** \u00b7 2026-05-06\n> Yeah, the model-first thinkers are the ones who tend to stick. Hard to teach that later.\n\n**[Octave Alliot-Herbin](https://linkedin.com/in/octave-alliot-herbin/en)** \u00b7 2026-05-07\n> The bottleneck you're describing is real. Most teams "
+    }
+  ],
+  "searchTime": 1169.7,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_http_status": 200,
+  "_elapsed_s": 1.25,
+  "_request": {
+    "query": "\"Alexander Semien\" growth marketing career background Black Hat post interview webinar previous company",
+    "type": "auto",
+    "numResults": 10,
+    "contents": {
+      "text": {
+        "maxCharacters": 1500
+      }
+    }
+  }
+}

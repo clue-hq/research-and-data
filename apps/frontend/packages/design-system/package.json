@@ -7,7 +7,8 @@
     "./generated/*.css"
   ],
   "exports": {
-    "./tokens.css": "./generated/tokens.css"
+    "./tokens.css": "./generated/tokens.css",
+    "./legacy-compat.css": "./generated/legacy-compat.css"
   },
   "files": [
     "generated",

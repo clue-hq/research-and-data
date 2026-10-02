@@ -30,6 +30,7 @@ erased turn.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -41,6 +42,9 @@ from clue_api.agent_turn_wiring import AgentPrivacyService
 from clue_db import ConnFactory, transaction
 from clue_projections.production_context import Stage0ProjectStateCard
 from clue_projections.stage0 import Stage0ProjectCard
+
+if TYPE_CHECKING:  # the refresher's module imports this one's neighbours; only the type is needed
+    from clue_api.project_library_refresh import ProjectLibraryRefresher
 
 #: The ``agent_artifact_subject.binding_kind`` a card carries for each statement it quotes. It is
 #: ``derived`` (one of the six values the table's CHECK admits) because the card holds a *derived
@@ -150,9 +154,11 @@ class Stage0StatementEraser:
         *,
         privacy: AgentPrivacyService,
         conn_factory: ConnFactory = transaction,
+        library: ProjectLibraryRefresher | None = None,
     ) -> None:
         self._privacy = privacy
         self._conn_factory = conn_factory
+        self._library = library
 
     async def erase_statement(
         self,
@@ -162,7 +168,7 @@ class Stage0StatementEraser:
         reason_code: str = STAGE0_STATEMENT_ERASURE_REASON,
     ) -> Stage0StatementErasure:
         async with self._conn_factory() as conn:
-            evidence_key = await self._evidence_key(
+            evidence_key, project_id = await self._evidence_key(
                 conn, workspace_id=workspace_id, statement_id=statement_id
             )
             affected = await self._statements_citing(
@@ -182,6 +188,14 @@ class Stage0StatementEraser:
             artifact_keys=(evidence_key, *sorted(card_keys)),
             reason_code=reason_code,
         )
+        # The project library quotes these words in ``decisions.md``, and it is a *rendering*, not
+        # an artifact — nothing tombstones it, so it has to be rewritten. Forced, because erasure
+        # moves no row the library's digest hashes: the ``volunteered_statement`` row survives as
+        # audit and only its evidence is gone, so an unforced refresh would find nothing to do.
+        if self._library is not None and project_id is not None:
+            await self._library.refresh(
+                workspace_id=workspace_id, project_id=project_id, force=True
+            )
         return Stage0StatementErasure(
             workspace_id=workspace_id,
             statement_id=statement_id,
@@ -192,22 +206,32 @@ class Stage0StatementEraser:
         )
 
     @staticmethod
-    async def _evidence_key(conn: AsyncConnection, *, workspace_id: str, statement_id: UUID) -> str:
+    async def _evidence_key(
+        conn: AsyncConnection, *, workspace_id: str, statement_id: UUID
+    ) -> tuple[str, str | None]:
+        """The captured turn this statement's quote was sliced from, and its project.
+
+        The project comes along because the erasure has one more rendering to correct than the
+        artifact set describes: this project's library quotes the statement in ``decisions.md``.
+        It is nullable on the row (a client-level statement belongs to no project) and then there
+        is no project library to refresh.
+        """
+
         row = (
             await conn.execute(
                 text(
-                    "SELECT i.artifact_key FROM volunteered_statement s "
+                    "SELECT i.artifact_key, s.project_id FROM volunteered_statement s "
                     "JOIN onboarding_input i ON i.id = s.onboarding_input_id "
                     "WHERE s.id = :statement AND s.workspace_id = :workspace"
                 ),
                 {"statement": statement_id, "workspace": workspace_id},
             )
-        ).scalar_one_or_none()
+        ).first()
         if row is None:
             raise Stage0StatementNotFound(
                 "no interview statement with that id exists in this workspace"
             )
-        return str(row)
+        return str(row[0]), None if row[1] is None else str(row[1])
 
     @staticmethod
     async def _statements_citing(

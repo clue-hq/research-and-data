@@ -1,0 +1,368 @@
+{
+  "_http_status": 200,
+  "_elapsed_s": 0.51,
+  "_request_path": "/v1/people",
+  "_request_body": {
+    "contact": {
+      "fullName": {
+        "any": {
+          "include": {
+            "mode": "STRICT",
+            "content": [
+              "Ben Seri"
+            ]
+          }
+        }
+      }
+    },
+    "account": {
+      "domain": {
+        "any": {
+          "include": [
+            "zafran.io"
+          ]
+        }
+      }
+    },
+    "page": 0,
+    "size": 3
+  },
+  "_body": {
+    "content": [
+      {
+        "id": "88f5f40a-c65c-1141-6186-c54a81b95d51",
+        "identifier": "ben-seri",
+        "profile": {
+          "first_name": "Ben",
+          "middle_name": null,
+          "last_name": "Seri",
+          "full_name": "Ben Seri",
+          "headline": "Co-Founder & CTO @ Zafran Security",
+          "title": "Co-Founder & CTO",
+          "picture": {
+            "source": "https://images.ai-ark.com/3ce7CThPhFXoblxTOdqv890_i_liJj_X_Pp_L1Ufn0g/exp:1790899199/rs:fill:80:80/plain/s3://ark-person/images/88f5f40a-c65c-1141-6186-c54a81b95d51.jpg"
+          },
+          "background": {
+            "source": "https://media.licdn.com/dms/image/v2/D4D16AQGBigBSHO761g/profile-displaybackgroundimage-shrink_350_1400/profile-displaybackgroundimage-shrink_350_1400/0/1711615813682?e=1786579200&v=beta&t=RQpl4yjxJYNr5Ia__bUj_VkDEyke5pfPpAt3gjMX6m0"
+          },
+          "summary": null
+        },
+        "link": {
+          "linkedin": "https://www.linkedin.com/in/ben-seri",
+          "twitter": null,
+          "github": null,
+          "facebook": null
+        },
+        "location": {
+          "default": "Tel Aviv District, Israel, Asia",
+          "short": "Tel Aviv District",
+          "country": "Israel",
+          "state": null,
+          "city": "Tel Aviv District",
+          "position": null
+        },
+        "languages": {
+          "primary_locale": {
+            "country": "US",
+            "language": "en"
+          },
+          "supported_locales": [
+            {
+              "country": "US",
+              "language": "en"
+            }
+          ],
+          "profile_languages": null
+        },
+        "industry": "Computer & Network Security",
+        "position_groups": [
+          {
+            "company": {
+              "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+              "name": "Zafran Security",
+              "logo": "https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg",
+              "url": "https://www.linkedin.com/company/zafran-security",
+              "employees": {
+                "start": 51,
+                "end": 200
+              }
+            },
+            "date": {
+              "start": "2022-11-01",
+              "end": null
+            },
+            "profile_positions": [
+              {
+                "company": "Zafran Security",
+                "description": "Zafran's Threat Exposure Management Platform integrates with your security tools to reveal, remediate, and mitigate risk",
+                "title": "Co-Founder & CTO",
+                "employment_type": null,
+                "location": null,
+                "date": {
+                  "start": "2022-11-01",
+                  "end": null
+                }
+              }
+            ]
+          },
+          {
+            "company": {
+              "id": "9fee414a-83a3-8d2c-6e4f-c2d264f69ded",
+              "name": "Armis",
+              "logo": "https://images.ai-ark.com/7vexPpOOdG9LwLJkg_XkFfJpNH80vAPzYDKfOtx0KNk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/9fee414a-83a3-8d2c-6e4f-c2d264f69ded.jpg",
+              "url": "https://www.linkedin.com/company/armis-security",
+              "employees": {
+                "start": 501,
+                "end": 1000
+              }
+            },
+            "date": {
+              "start": "2016-02-01",
+              "end": "2022-02-28"
+            },
+            "profile_positions": [
+              {
+                "company": "Armis",
+                "description": null,
+                "title": "VP of Research",
+                "employment_type": "Full-time",
+                "location": null,
+                "date": {
+                  "start": "2016-02-01",
+                  "end": "2022-02-28"
+                }
+              }
+            ]
+          }
+        ],
+        "member_badges": {
+          "premium": false,
+          "creator": true,
+          "open_to_work": false,
+          "hiring": false,
+          "verified": false,
+          "influencer": false
+        },
+        "statistics": {
+          "network": {
+            "influencer": false,
+            "followable": null,
+            "followers_count": 3517,
+            "connections_count": 761
+          },
+          "experience": {
+            "prev_job_titles": null,
+            "tenure": {
+              "company": "2022-11-01",
+              "start": "2016-10-03",
+              "title": "2022-11-01"
+            }
+          }
+        },
+        "company": {
+          "id": "4d204374-9b1e-69fe-6840-539eacb7a436",
+          "summary": {
+            "name": "Zafran Security",
+            "legal_name": "Zafran Security Ltd.",
+            "description": "Zafran is an AI-native exposure management platform that eliminates the manual toil of vulnerability management by cutting through noise, revealing what is truly exploitable, and automating mitigation and remediation using the security controls teams already have.\n\nWe are a team of practitioners and builders shaped by high-stakes security moments, where clarity and speed mattered, and manual processes came at a real cost.\n\nWe\u2019re on a mission to proactively stop the exploitation of vulnerabilities, everywhere.",
+            "overview": "Zafran Security is a cybersecurity startup specializing in vulnerability prioritization and threat exposure management, aiming to identify, remediate, and mitigate risks within organizations. The AI-native exposure management platform developed by the company aims to proactively avert the exploitation of vulnerabilities by incorporating autonomous agents throughout all stages of the vulnerability management lifecycle. With threat actors rapidly exploiting newly revealed security vulnerabilities through AI automation, Zafran's platform enables organizations to take action before these vulnerabilities result in incidents. The company\u2019s solutions work alongside current security tools, utilizing AI agents to pinpoint weaknesses, provide contextual information, and address these issues by linking them to controls and evaluating the potential for exploitation.",
+            "founded_year": 2022,
+            "type": "PRIVATELY_HELD",
+            "industry": "computer and network security",
+            "staff": {
+              "total": 167,
+              "range": {
+                "start": 51,
+                "end": 200
+              }
+            },
+            "logo": {
+              "source": "https://images.ai-ark.com/RpiIBozJWCMNQANKs8JmoEPrgxmC-k6InHogkK2sszk/exp:1790899199/rs:fill:80:80/plain/s3://ark-company/images/4d204374-9b1e-69fe-6840-539eacb7a436.jpg"
+            }
+          },
+          "link": {
+            "website": "https://www.zafran.io",
+            "domain": "zafran.io",
+            "domain_ltd": "zafran.io",
+            "linkedin": "https://www.linkedin.com/company/zafran-security",
+            "twitter": "https://x.com/Zafran_io",
+            "crunchbase": "https://www.crunchbase.com/organization/zafran"
+          },
+          "financial": {
+            "revenue": {
+              "annual": {
+                "start": 10000000,
+                "end": 25000000,
+                "amount": "10000000-25000000"
+              }
+            },
+            "funding": {
+              "type": "SERIES_C",
+              "total_amount": 130500000,
+              "last_amount": 60000000,
+              "num_investor": 9,
+              "num_funding_rounds": 4,
+              "rounds": [
+                {
+                  "announced_at": "2025-12-02",
+                  "raised_amount": 60000000,
+                  "type": "SERIES_C",
+                  "investors": [
+                    "Vintage Investment Partners",
+                    "Cyberstarts",
+                    "Amex Ventures",
+                    "PSP Growth",
+                    "Knollwood Investment Advisory",
+                    "Sequoia Capital",
+                    "Menlo Ventures"
+                  ]
+                },
+                {
+                  "announced_at": "2024-09-08",
+                  "raised_amount": 40000000,
+                  "type": "SERIES_B",
+                  "investors": [
+                    "Penny Jar Capital",
+                    "Cerca Partners",
+                    "Cyberstarts"
+                  ]
+                },
+                {
+                  "announced_at": "2024-03-28",
+                  "raised_amount": 25000000,
+                  "type": "VENTURE_ROUND"
+                },
+                {
+                  "announced_at": "2024-03-28",
+                  "raised_amount": 5500000,
+                  "type": "SEED_ROUND"
+                }
+              ],
+              "date": "2025-12-02"
+            },
+            "aberdeen": {
+              "it_spend": 7626866
+            }
+          },
+          "location": {
+            "headquarter": {
+              "continent": "North America",
+              "country": "United States",
+              "city": "New York, New York",
+              "raw_address": "New York, New York, United States, North America",
+              "position": {
+                "lng": -73.98556,
+                "lat": 40.748295
+              }
+            },
+            "locations": [
+              {
+                "continent": "North America",
+                "country": "United States",
+                "city": "New York, New York",
+                "raw_address": "New York, New York, United States, North America",
+                "position": {
+                  "lng": -73.98556,
+                  "lat": 40.748295
+                }
+              }
+            ]
+          },
+          "technologies": [
+            {
+              "name": "dnssec",
+              "category": "ns"
+            },
+            {
+              "name": "google cloud",
+              "category": "hosting"
+            },
+            {
+              "name": "amazon s3",
+              "category": "cdn"
+            },
+            {
+              "name": "envoy",
+              "category": "server"
+            },
+            {
+              "name": "floc opt-out",
+              "category": "ads"
+            },
+            {
+              "name": "cloudflare automatic challenge",
+              "category": "cdn"
+            },
+            {
+              "name": "cloudflare challenge",
+              "category": "cdn"
+            },
+            {
+              "name": "hubspot hosted",
+              "category": "hosting"
+            },
+            {
+              "name": "amazon oregon region",
+              "category": "hosting"
+            },
+            {
+              "name": "zendesk mail",
+              "category": "mx"
+            }
+          ],
+          "industries": [
+            "risk management",
+            "cyber security",
+            "information technology",
+            "network security",
+            "software",
+            "computer and network security"
+          ],
+          "languages": [
+            "english"
+          ],
+          "last_updated": "2026-08-22"
+        },
+        "department": {
+          "departments": [
+            "information_technology"
+          ],
+          "sub_departments": [
+            "cybersecurity_operations"
+          ],
+          "functions": [
+            "entrepreneurship"
+          ],
+          "seniority": "founder"
+        },
+        "last_updated": "2026-08-22"
+      }
+    ],
+    "size": 3,
+    "totalElements": 1,
+    "pageable": {
+      "pageNumber": 0,
+      "pageSize": 3,
+      "sort": {
+        "sorted": true,
+        "empty": false,
+        "unsorted": false
+      },
+      "offset": 0,
+      "paged": true,
+      "unpaged": false
+    },
+    "last": true,
+    "totalPages": 1,
+    "sort": {
+      "sorted": true,
+      "empty": false,
+      "unsorted": false
+    },
+    "numberOfElements": 1,
+    "trackId": "344af34f-025d-42cd-a741-1de98429a9cf",
+    "first": true,
+    "number": 0,
+    "empty": false
+  }
+}

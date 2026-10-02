@@ -2204,6 +2204,7 @@ fn scene_with_pinned_badge(parent_origin: lumen_core::Rect, badge_box: lumen_cor
     frame.computed = Some(ComputedGeometry {
         layout_bounds: parent_origin.clone(),
         render_bounds: parent_origin.clone(),
+        text_lines: Vec::new(),
     });
     scene
         .apply_operation(Operation::InsertNode {
@@ -3079,6 +3080,89 @@ fn summary_diag<'a>(
         .find(|diag| diag.diagnostic.code == "LUMD0263")
 }
 
+#[test]
+fn reconcile_wraps_existing_child_in_new_containers() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reconcile_wrap"), "Wrap");
+    let seed = compile_dsl_into_scene(
+        "page p size(200,200,px)\n  artboard fr s(200,200)\n    logo rect s(20,20)\n    caption text \"Brand\" s(80,20)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+    let source = "reconcile(artboard)\n  chip fr s(80,80)\n    inset fr s(40,40)\n      logo rect s(20,20)\n  caption text \"Brand\" s(80,20)";
+    let result = compile_dsl_into_scene(source, &mut scene);
+
+    assert_no_dsl_errors(&result.compile_output.diagnostics);
+    assert!(result.operation_error.is_none());
+    assert_eq!(
+        scene.nodes[&NodeId::from("artboard")].children,
+        vec![NodeId::from("chip"), NodeId::from("caption")]
+    );
+    assert_eq!(
+        scene.parent_of(&NodeId::from("logo")),
+        Some(lumen_core::ParentRef::Node(NodeId::from("inset")))
+    );
+    assert_eq!(scene.nodes.len(), 5);
+    let repeat = compile_dsl_into_scene(source, &mut scene);
+    assert_no_dsl_errors(&repeat.compile_output.diagnostics);
+    assert!(repeat.compile_output.operations.is_empty());
+}
+
+#[test]
+fn documented_parent_directive_compiles() {
+    let docs = include_str!(
+        "../../../apps/agent_runtime/knowledge_docs/knowledge/lumen-dsl/directives.md"
+    );
+    let row = docs
+        .lines()
+        .find(|line| line.starts_with("| `parent` |"))
+        .unwrap();
+    let form = row.split('`').nth(3).unwrap();
+    let required = form.split(" [").next().unwrap();
+    let source = format!(
+        "{})",
+        required.replace("(id,", "(logo,").replace("pid", "chip")
+    );
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_parent_docs"), "Parent");
+    let seed = compile_dsl_into_scene(
+        "page p size(200,200,px)\n  artboard fr s(200,200)\n    logo rect s(20,20)\n    chip fr s(40,40)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    let result = compile_dsl_into_scene(&source, &mut scene);
+
+    assert_no_dsl_errors(&result.compile_output.diagnostics);
+    assert!(result.operation_error.is_none());
+    assert_eq!(
+        scene.parent_of(&NodeId::from("logo")),
+        Some(lumen_core::ParentRef::Node(NodeId::from("chip")))
+    );
+}
+
+#[test]
+fn reconcile_tracks_sibling_positions_after_each_move_and_insert() {
+    let mut scene = Scene::new(lumen_core::DocumentId::from("doc_reconcile_order"), "Order");
+    let seed = compile_dsl_into_scene(
+        "page p size(200,200,px)\n  root fr s(200,200)\n    aa rect s(10,10)\n    bb rect s(10,10)\n    cc rect s(10,10)\n    dd rect s(10,10)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&seed.compile_output.diagnostics);
+
+    let result = compile_dsl_into_scene(
+        "reconcile(root)\n  aa rect s(10,10)\n  dd rect s(10,10)\n  cc rect s(10,10)\n  new_rect rect s(10,10)\n  bb rect s(10,10)",
+        &mut scene,
+    );
+
+    assert_no_dsl_errors(&result.compile_output.diagnostics);
+    assert!(result.operation_error.is_none());
+    assert_eq!(
+        scene.nodes[&NodeId::from("root")].children,
+        ["aa", "dd", "cc", "new_rect", "bb"]
+            .map(NodeId::from)
+            .to_vec()
+    );
+}
+
 // Test 8 — P3r3's intent in reconcile form: a container `cta` holding an
 // agent-born `cta_text`; a reconcile block that omits `cta_text` and adds an
 // image + caption → remove + 2 inserts, compiles clean, LUMD0263 present.
@@ -3389,6 +3473,7 @@ fn scene_p1r6_pin_then_managed_mark() -> Scene {
     pin.computed = Some(ComputedGeometry {
         layout_bounds: pin_box.clone(),
         render_bounds: pin_box.clone(),
+        text_lines: Vec::new(),
     });
     scene
         .apply_operation(Operation::InsertNode {
@@ -3411,6 +3496,7 @@ fn scene_p1r6_pin_then_managed_mark() -> Scene {
     mark.computed = Some(ComputedGeometry {
         layout_bounds: mark_box.clone(),
         render_bounds: mark_box.clone(),
+        text_lines: Vec::new(),
     });
     scene
         .apply_operation(Operation::InsertNode {
@@ -4139,4 +4225,33 @@ fn slot_modify_image_policy_refuses_values_preflight_would_reject() {
         "{:#?}",
         bad_fit.compile_output.diagnostics
     );
+}
+
+#[test]
+fn unsized_text_element_hugs_both_axes_and_an_explicit_size_still_wins() {
+    // Editor Quality Plan 4 (item F, ruling R7): a text element with no s(...)
+    // used to inherit Node::new's 0×0 fixed box (LUMV0901 collapsed bounds).
+    // It now hugs its copy; an authored size — fixed height included — is
+    // never rewritten.
+    let mut scene = Scene::new(
+        lumen_core::DocumentId::from("doc_text_default"),
+        "Text default",
+    );
+    let output = compile_dsl_into_scene(
+        "page page_a4 preset(a4,portrait)\n  copy text \"Hi\" p(0,0)\n  boxed text \"Hi\" p(0,40) s(300,80)\n  wide text \"Hi\" p(0,140) s(fill,hug)",
+        &mut scene,
+    );
+    assert_no_dsl_errors(&output.compile_output.diagnostics);
+
+    let copy = &scene.nodes[&NodeId::from("copy")];
+    assert_eq!(copy.size.width, Dimension::Hug);
+    assert_eq!(copy.size.height, Dimension::Hug);
+
+    let boxed = &scene.nodes[&NodeId::from("boxed")];
+    assert_eq!(boxed.size.width, Dimension::Fixed(300.0));
+    assert_eq!(boxed.size.height, Dimension::Fixed(80.0));
+
+    let wide = &scene.nodes[&NodeId::from("wide")];
+    assert_eq!(wide.size.width, Dimension::Fill { weight: 1.0 });
+    assert_eq!(wide.size.height, Dimension::Hug);
 }

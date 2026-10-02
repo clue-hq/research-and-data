@@ -240,7 +240,17 @@ def test_product_result_binds_every_body_and_streams_only_refs() -> None:
     assert "brief_value" not in str(projected)
 
 
-def test_product_tools_are_model_visible_only_with_the_exact_product_kb_artifact() -> None:
+def test_product_tools_are_not_model_visible_on_the_new_stage0_surface() -> None:
+    """ARV2 onboarding O6 replaced S5-D's conditional visibility with an absolute one.
+
+    S5-D's rule was that the product readers appear only when the turn's constitution carries the
+    exact Product-KB artifact — a card-gated surface. `head-of-abm@v44` does not pin them at all,
+    nor the Client-KB readers beside them: the new lane's Stage-0 knowledge is brand knowledge
+    documents the agent reads off its workspace. So the strongest form of the S5-D property holds
+    now — the tools are invisible on BOTH constitutions — and the gating code below is what would
+    have to change first if any profile ever re-pinned them.
+    """
+
     toolbelt = build_toolbelt(storage=None, gateway=None)
     resolved = build_agent_profile_registry(toolbelt).resolve(AgentRole.HEAD_OF_ABM)
 
@@ -265,6 +275,9 @@ def test_product_tools_are_model_visible_only_with_the_exact_product_kb_artifact
 
     full = names(with_product_knowledge=True)
     profile_only = names(with_product_knowledge=False)
-    assert {"list_product_knowledge", "inspect_product_claim"} <= full
-    assert {"list_product_knowledge", "inspect_product_claim"}.isdisjoint(profile_only)
-    assert "list_client_knowledge" in full & profile_only
+    retired = {"list_product_knowledge", "inspect_product_claim", "list_client_knowledge"}
+    assert retired.isdisjoint(full)
+    assert retired.isdisjoint(profile_only)
+    # The surface the constitution now serves: the gates and the ARV2 launch, on both shapes.
+    assert {"open_product_set_selection_gate", "open_icp_confirmation_gate"} <= full & profile_only
+    assert "launch_arv2_account_research" in full & profile_only

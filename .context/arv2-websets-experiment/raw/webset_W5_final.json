@@ -1,0 +1,69 @@
+{
+  "id": "webset_01m245khk2n469ryjtjw86e15m",
+  "object": "webset",
+  "status": "idle",
+  "externalId": "arv2-r4-discovery-w5-2026-09-10",
+  "title": "US B2B SaaS/AI Startup: Series A within 24 months, vertical focus, active hiring",
+  "searches": [
+    {
+      "id": "wsearch_01m245khvdwypycx2k729xnkc4",
+      "object": "webset_search",
+      "websetId": "webset_01m245khk2n469ryjtjw86e15m",
+      "status": "completed",
+      "query": "US B2B vertical SaaS or AI startup that raised a Series A or Series A extension within the last 24 months (not seed, not Series B or later), selling software to independent small businesses in a fragmented vertical (dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants, trucking), actively hiring go-to-market roles now, and showing buying-intent signals for outbound or account-based prospecting.",
+      "entity": {
+        "type": "company"
+      },
+      "criteria": [
+        {
+          "description": "Company is headquartered in the United States",
+          "successRate": 82.06
+        },
+        {
+          "description": "Company announced a Series A or Series A extension funding round within the last 24 months (not seed, not Series B or later, not a growth round)",
+          "successRate": 6.64
+        },
+        {
+          "description": "Company sells B2B software or AI to independent small businesses in one fragmented vertical such as dental practices, veterinary clinics, HVAC and plumbing contractors, auto repair shops, law firms, pharmacies, restaurants or trucking",
+          "successRate": 16.28
+        },
+        {
+          "description": "Company currently lists at least one open go-to-market job (sales, marketing, growth, SDR or BDR, demand generation, partnerships) on its own careers page or ATS board",
+          "successRate": 3.65
+        },
+        {
+          "description": "Company shows a buying-intent signal for outbound or account-based prospecting: a GTM job description mentioning list-building or outbound, a founder stating founder-led sales is at its limit, or no ABM platform in use",
+          "successRate": 2.66
+        }
+      ],
+      "count": 25,
+      "maxPeoplePerCompany": null,
+      "behavior": "override",
+      "exclude": [],
+      "scope": [],
+      "progress": {
+        "found": 1,
+        "analyzed": 334,
+        "completion": 100,
+        "timeLeft": 0
+      },
+      "recall": null,
+      "metadata": {},
+      "canceledAt": null,
+      "canceledReason": null,
+      "createdAt": "2026-09-09T22:46:20.269Z",
+      "updatedAt": "2026-09-09T22:54:27.553Z"
+    }
+  ],
+  "imports": [],
+  "enrichments": [],
+  "monitors": [],
+  "excludes": [],
+  "metadata": {},
+  "dashboardUrl": "https://websets.exa.ai/websets/webset_01m245khk2n469ryjtjw86e15m",
+  "createdAt": "2026-09-09T22:46:20.002Z",
+  "updatedAt": "2026-09-09T22:54:27.553Z",
+  "items": [],
+  "_http_status": 200,
+  "_elapsed_s": 0.56
+}

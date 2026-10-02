@@ -1,20 +1,27 @@
 "use client";
 
-import type { ContactEmailLookup } from "../../model/account-contact";
-import { useEmailLookupController } from "../hooks/use-email-lookup-controller";
+import type { EmailLookupController } from "../hooks/use-email-lookup-controller";
+import readability from "../../components/account-readability.module.css";
 
-function LookupControl({
-  label,
-  onClick,
+/**
+ * The design build's lookup control, driven by the real lookup.
+ *
+ * The presentation is unchanged — same height, same icon, same type scale. Only
+ * its words come from the backend's own outcome now (`presentEmailLookup`), and
+ * a control that cannot do anything (a lookup already running, a withheld or
+ * empty result) is disabled rather than inviting a pointless second request.
+ */
+export function LookupEmailButton({
+  controller,
 }: {
-  label: string;
-  onClick?: () => void;
+  controller: EmailLookupController;
 }) {
   return (
     <button
-      className="flex h-5 items-center gap-1 rounded-lg text-[12px] leading-4 font-medium text-[var(--clue-content-subtle)] transition-colors hover:bg-[var(--clue-background-hover)] hover:text-[var(--clue-content-neutral)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#cdd5c4] disabled:cursor-default disabled:hover:bg-transparent"
-      disabled={onClick === undefined}
-      onClick={onClick}
+      aria-live="polite"
+      className={`${readability.uiMedium} flex h-[26px] items-center gap-1 rounded-[var(--clue-ds-product-component-button-sm-radius)] px-1 text-[var(--clue-content-subtle)] transition-colors hover:bg-[var(--clue-background-hover)] hover:text-[var(--clue-content-neutral)] focus-visible:outline-none focus-visible:shadow-[var(--clue-ds-product-component-button-effect-focus-transparent)] disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-[var(--clue-content-subtle)]`}
+      disabled={!controller.actionable}
+      onClick={() => void controller.lookup()}
       type="button"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -24,80 +31,7 @@ function LookupControl({
         className="size-3 object-contain"
         src="/icons/contact-email-search.svg"
       />
-      <span className="py-0.5">{label}</span>
+      <span>{controller.label}</span>
     </button>
   );
-}
-
-export function LookupEmailButton({
-  accountId,
-  contactId,
-  initialLookup,
-}: {
-  accountId: string;
-  contactId: string;
-  initialLookup: ContactEmailLookup | null;
-}) {
-  const controller = useEmailLookupController({
-    accountId,
-    contactId,
-    initialLookup,
-  });
-  const lookup = controller.state.lookup;
-  const emails = lookup?.emails ?? [];
-
-  if (emails.length > 0) {
-    const conflicting = emails.length > 1;
-    return (
-      <div className="flex min-w-0 flex-col gap-0.5" aria-live="polite">
-        {emails.map((email) => (
-          <a
-            className="truncate text-[var(--clue-content-neutral)] hover:underline"
-            href={`mailto:${email.value}`}
-            key={email.value}
-          >
-            {email.value}
-            {conflicting ? (
-              <span className="ml-1 text-[var(--clue-content-subtle)]">
-                ({email.sources.map((source) => source.label).join(", ")})
-              </span>
-            ) : null}
-          </a>
-        ))}
-        {lookup?.state === "pending" ? (
-          <span className="sr-only">Checking the remaining email source</span>
-        ) : null}
-      </div>
-    );
-  }
-
-  if (controller.state.kind === "requesting" || lookup?.state === "pending") {
-    return <LookupControl label="Looking up…" />;
-  }
-  if (lookup?.state === "not_found") {
-    return <span aria-label="No email found">—</span>;
-  }
-  if (lookup?.state === "withheld") {
-    return <span aria-label="Email withheld">Unavailable</span>;
-  }
-  if (lookup?.state === "unavailable") {
-    return <LookupControl label="Try again" onClick={controller.lookup} />;
-  }
-  if (controller.state.kind === "error") {
-    return (
-      <LookupControl
-        label={lookup?.retryable ? "Try again" : controller.state.message}
-        onClick={lookup?.retryable ? controller.lookup : undefined}
-      />
-    );
-  }
-  if (lookup?.state === "failed") {
-    return (
-      <LookupControl
-        label={lookup.retryable ? "Try again" : "Lookup failed"}
-        onClick={lookup.retryable ? controller.lookup : undefined}
-      />
-    );
-  }
-  return <LookupControl label="Look up" onClick={controller.lookup} />;
 }

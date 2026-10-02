@@ -1,0 +1,30 @@
+{
+  "name": "addressing-03-general-all",
+  "kind": "addressing",
+  "artifacts": [
+    "1. \"Apollo ad\" (scene ad) [account: Apollo Clinics]",
+    "2. \"Mercy ad\" (scene ad) [account: Mercy Health]",
+    "3. \"Premier ad\" (scene ad) [account: Premier Gastro]"
+  ],
+  "artifact_count": 3,
+  "tags": [],
+  "brief": "Three launch ads for the Q3 clinic campaign, one per account.",
+  "history": [],
+  "message": "make all the headlines shorter",
+  "judgment": {
+    "close_this_session": false,
+    "hand_message_to_strategy_agent": false,
+    "current_artifact_accepted": false,
+    "addressed_artifacts": "all",
+    "clarifying_question": null,
+    "reasoning": "A general change that applies to every ad in the session."
+  },
+  "expected": {
+    "action": "continue",
+    "reason": null,
+    "fail_safe": false,
+    "addressed": null,
+    "ask": null
+  },
+  "why": "A general statement that plausibly applies to every artifact addresses all of them; 'all' and a one-artifact session both come out as addressed=None, so the dispatch reads one rule."
+}

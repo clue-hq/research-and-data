@@ -27,12 +27,18 @@ from clue_agents.contracts import (
     AgentTurnRequest,
     ArtifactRef,
     ContextBundleManifest,
+    ContinuationRef,
     DelegationRequest,
     DelegationResult,
     ValidatedPlan,
     normalize_virtual_path,
 )
 from clue_core import ExecutionId
+
+INTERRUPTED_ASSISTANT_NOTICE = (
+    "The following assistant message was interrupted by the user. "
+    "It is an incomplete response, not a completed action or final answer."
+)
 
 __all__ = [
     "AgentArtifactSink",
@@ -47,6 +53,7 @@ __all__ = [
     "ExecutionProgress",
     "HistoryMessageRef",
     "OperationFailure",
+    "SpillSink",
     "WorkspaceEntry",
 ]
 
@@ -74,6 +81,11 @@ class HistoryMessageRef(PortValue):
     sequence: int = Field(ge=1)
     role: Literal["system", "user", "assistant", "tool"]
     body_ref: ArtifactRef
+    #: The attachments this message was sent with (spec 2026-09-18, ruling 2). History loaders
+    #: that can read them fill this; the ones that cannot leave it empty, and the conversation
+    #: layer then carries no images for that message rather than guessing.
+    attachment_refs: tuple[ArtifactRef, ...] = ()
+    interrupted: bool = False
 
 
 class ContextMaterialization(PortValue):
@@ -112,6 +124,8 @@ class AssembledAgentContext(PortValue):
     manifest: ContextBundleManifest
     messages: tuple[BaseMessage, ...]
     materializations: tuple[ContextMaterialization, ...] = ()
+    #: Set when the turn continues a saved conversation instead of opening a fresh one.
+    continuation: ContinuationRef | None = None
 
 
 class OperationFailure(PortValue):
@@ -161,6 +175,24 @@ class AgentArtifactReader(Protocol):
 
 
 @runtime_checkable
+class SpillSink(Protocol):
+    """Somewhere for a governed result that will not fit inside its own receipt to land.
+
+    A receipt is bounded on purpose, and a read whose references overflow that bound used to be
+    discarded *after* the read had already run — the model asked for an account and was told the
+    platform could not show it one.  A sink turns that into a file: the runtime hands over the
+    result's canonical bytes, the sink stores them somewhere the model is allowed to read, and
+    the receipt carries the returned path instead of the payload.
+
+    The thread's own workspace is the implementation (``reads/<operation_id>.json``); the write
+    is the runtime's, never the model's, so the sink is deliberately *not* part of
+    :class:`AgentWorkspaceBackend`'s model-visible surface.
+    """
+
+    def write_spill(self, operation_id: str, data: bytes) -> str: ...
+
+
+@runtime_checkable
 class AgentModelProvider(Protocol):
     """Build a provider-neutral LangChain tool-calling model behind the gateway boundary."""
 
@@ -201,7 +233,7 @@ class AgentWorkspaceBackend(Protocol):
 
     async def edit_text(self, path: str, *, old: str, new: str) -> WorkspaceEntry: ...
 
-    async def snapshot_outputs(self) -> Sequence[ArtifactRef]: ...
+    async def snapshot_outputs(self, *, empty_after: bool = False) -> Sequence[ArtifactRef]: ...
 
 
 @runtime_checkable

@@ -40,7 +40,7 @@ from clue_agents import (
 from clue_agents.ports import ExecutionProgress
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.agent_turn_wiring import DbAgentTurnJournal, DurableAgentArtifactStore
-from clue_api.specialist_wiring import FreshWakeSpecialistRunner
+from clue_api.specialist_wiring import FreshWakeSpecialistRunner, SpecialistRuntimeBindings
 from clue_api.toolbelt_wiring import build_toolbelt
 from clue_core import ExecutionId, new_execution_id
 from clue_storage.protocol import ArtifactNotFound
@@ -162,23 +162,32 @@ class _Workspaces:
     def __init__(self, factory: AgentWorkspaceFactory) -> None:
         self.factory = factory
         self.leases: list[AgentWorkspaceLease] = []
+        self._last: dict[str, Any] = {}
 
     def acquire(
         self,
         *,
         workspace_id: str,
         project_id: str,
+        thread_id: str,
         execution_id: ExecutionId,
         resolved_profile: ResolvedAgentProfile,
     ) -> AgentWorkspaceLease:
-        lease = self.factory.create(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            execution_id=execution_id,
-            policy=resolved_profile.profile.workspace,
-        )
+        self._last = {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "thread_id": thread_id,
+            "execution_id": execution_id,
+            "policy": resolved_profile.profile.workspace,
+        }
+        lease = self.factory.create(**self._last)
         self.leases.append(lease)
         return lease
+
+    def reopen(self) -> AgentWorkspaceLease:
+        """Take a fresh lease over the child thread, after the run released its own."""
+
+        return self.factory.acquire(**self._last)
 
 
 class _Spend:
@@ -246,11 +255,27 @@ class _ChildExecution(AgentExecutionAdapter):
         return self.recovered
 
 
+@pytest.mark.parametrize("authorized_rounds", [None, 200])
 def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
     tmp_path: Path,
     require_c66_db: None,
+    monkeypatch: pytest.MonkeyPatch,
+    authorized_rounds: int | None,
 ) -> None:
     del require_c66_db
+    from clue_api import specialist_wiring
+
+    real_runtime = specialist_wiring.DeepAgentTurnRuntime
+    observed_rounds: list[int] = []
+
+    def capture_runtime(**kwargs: Any):
+        observed_rounds.append(kwargs["max_rounds"])
+        return real_runtime(**kwargs)
+
+    monkeypatch.setattr(specialist_wiring, "DeepAgentTurnRuntime", capture_runtime)
+
+    async def bindings(*args: Any) -> SpecialistRuntimeBindings:
+        return SpecialistRuntimeBindings(max_model_rounds=authorized_rounds)
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -396,6 +421,7 @@ def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
                 workspaces=workspaces,
                 execution_factory=build_child_execution,
                 spend=_Spend(),
+                bindings=bindings,
                 conn_factory=conn_factory,
             )
 
@@ -406,6 +432,7 @@ def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
             )
 
             assert contexts.histories == [()]
+            assert observed_rounds == [authorized_rounds or reviewer.profile.max_model_rounds]
             assert result.status == "completed"
             assert len(child_executions) == 1
             assert result.spend_millicents == 125
@@ -414,7 +441,7 @@ def test_fresh_wake_reviewer_has_no_history_and_returns_only_durable_refs(
                 b"# Verdict\n\nrevise: missing evidence"
             )
             assert (
-                await workspaces.leases[0].backend.read_text(
+                await workspaces.reopen().backend.read_text(
                     "context/delegated/00-content-exemplar.md"
                 )
                 == "# Exemplar\n\nExact canonical copy."

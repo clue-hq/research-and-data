@@ -1,0 +1,39 @@
+{
+  "requestId": "2a144d443d08e48991173d0c69e6638b",
+  "resolvedSearchType": "",
+  "results": [
+    {
+      "id": "https://gaocg.com/",
+      "title": "Gastroenterology Associates of Central Georgia",
+      "url": "https://gaocg.com/"
+    },
+    {
+      "id": "https://www.southern-gastro.com/endoscopy-center.php",
+      "title": "Southern Endoscopy Suite - Southern Gastroenterology Associates",
+      "url": "https://www.southern-gastro.com/endoscopy-center.php"
+    },
+    {
+      "id": "https://gaocg.com/about/",
+      "title": "About Gastroenterology Associates of Central Georgia LLC \u2013 Gastroenterology Associates of Central Georgia",
+      "url": "https://gaocg.com/about/"
+    },
+    {
+      "id": "https://www.atlgastrospec.com/index.php",
+      "title": "Atlanta Gastroeneterology Specialists | Gastroenterologists",
+      "url": "https://www.atlgastrospec.com/index.php"
+    },
+    {
+      "id": "https://www.gigeorgia.com/",
+      "title": "Digestive & Gastroenterology Specialists in Atlanta, GA",
+      "url": "https://www.gigeorgia.com/"
+    }
+  ],
+  "searchTime": 1414.7,
+  "costDollars": {
+    "total": 0.007,
+    "search": {
+      "neural": 0.007
+    }
+  },
+  "_elapsed_s": 1.7
+}
