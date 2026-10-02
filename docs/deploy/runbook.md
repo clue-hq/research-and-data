@@ -36,22 +36,47 @@ fetch images through the frontend's narrow public proxy
 (`https://app.cluehq.ai/api/clue/design-public/asset-store/<digest>`).
 
 1. Project (Pro plan); every service's region **US East (Virginia)**. Leave **"Wait for CI" off**.
-2. Add **Postgres** from the pgvector template (Postgres 16) and **name the service `Postgres`** (the
-   variable files reference `${{Postgres.…}}`). In its query shell, as the owner role:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ALTER SYSTEM SET max_connections = 200;   -- then restart the Postgres service
-   CREATE ROLE clue_worker LOGIN PASSWORD '<long random>';
-   GRANT CONNECT ON DATABASE railway TO clue_worker;
-   GRANT USAGE ON SCHEMA public TO clue_worker;
-   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO clue_worker;
-   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO clue_worker;
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO clue_worker;
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO clue_worker;
-   ```
-   (`openssl rand -hex 24` makes a safe password.) Enable the **TCP proxy** (record host and port;
-   the VM uses it) and scheduled **volume backups**. Migrations run as the owner role; `design-api`,
-   `page-origin` and the VM workers run as `clue_worker`.
+2. **Postgres 16 + pgvector, with encryption enforced.** Not a marketplace template: the pgvector
+   ones run Postgres 18 (our backup/restore tools are 16) or omit the `PG*` variables, and the plain
+   image runs with SSL **off** while the VM connects over the public TCP proxy with `ssl=require`.
+   - **+ Create → Docker Image** → `pgvector/pgvector:pg16`. Rename the service (click its name in the
+     panel header) to exactly **`Postgres`**; region US East.
+   - **Volume** mounted at `/var/lib/postgresql/data`; set its size with room to grow (long-used
+     lane databases reached ~2.5 GB, almost all agent checkpoints).
+   - **Variables:**
+     ```
+     POSTGRES_USER=postgres
+     POSTGRES_PASSWORD=<openssl rand -hex 24>
+     POSTGRES_DB=railway
+     PGDATA=/var/lib/postgresql/data/pgdata
+     PGUSER=${{POSTGRES_USER}}
+     PGPASSWORD=${{POSTGRES_PASSWORD}}
+     PGDATABASE=${{POSTGRES_DB}}
+     ```
+     (`PGDATA` is a subfolder: a fresh volume holds `lost+found`, and `initdb` refuses a non-empty dir.)
+   - **Settings → Deploy → Custom Start Command:** the one line in
+     `deploy/railway-postgres-start-command.txt`. On first start it creates a self-signed certificate
+     on the volume (kept across restarts), turns SSL on, refuses every non-SSL connection from another
+     host (`hostssl` only), and sets `max_connections=200`, `shared_buffers=1GB`,
+     `effective_cache_size=3GB`, `work_mem=8MB`, `maintenance_work_mem=256MB`, `random_page_cost=1.1`,
+     a 10-minute idle-in-transaction timeout and a 2-second slow-query log. Memory limit **4 GB**.
+     (Tested 2026-10-02 on this image: SSL in use, plaintext and wrong password refused, same after a
+     restart.)
+   - Deploy, then **Settings → Networking → TCP Proxy** on port **5432** (record host and port; the
+     VM uses it) and scheduled **backups** on the volume.
+   - From your Mac (`psql "<TCP-proxy URL>?sslmode=require"`), as `postgres`:
+     ```sql
+     CREATE EXTENSION IF NOT EXISTS vector;
+     CREATE ROLE clue_worker LOGIN PASSWORD '<long random>';
+     GRANT CONNECT ON DATABASE railway TO clue_worker;
+     GRANT USAGE ON SCHEMA public TO clue_worker;
+     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO clue_worker;
+     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO clue_worker;
+     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO clue_worker;
+     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO clue_worker;
+     ```
+     Migrations run as `postgres`; `design-api`, `page-origin` and the VM workers run as `clue_worker`.
+     Every Railway database URL in the variable files carries `?ssl=require`.
 3. Add **Redis** (7 or newer), **name it `Redis`**, enable its TCP proxy (the VM uses it).
 4. **Clerk production instance** (Clerk dashboard → Create production instance, domain
    `cluehq.ai`). Add every DNS record its **Domains** page lists to Cloudflare as **DNS only (grey
