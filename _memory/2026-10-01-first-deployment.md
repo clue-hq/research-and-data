@@ -86,3 +86,20 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
   file-layout `source_navigation`; recipe pin → "default = newest recipe file"; import guard
   allowlists `clue_api.quality_research_artifacts` + `clue_api.execution_wiring`. arv2+deploy:
   1222 pass, 0 fail (406 DB skips — lane DB on 55040 down).
+
+## 2026-10-02 — Railway variables prepared; design API made private; Clerk production
+- **Design API gets NO public domain** (security): it trusts X-Workspace-Id with no login. Frontend
+  BFF + platform-api use http://design-api.railway.internal:8010 (PORT=8010, CLUE_BIND_HOST=::);
+  the VM's previews use LUMEN_API_ORIGIN=https://app.cluehq.ai/api/clue/design-public (the
+  unauthenticated, 64-hex-locked /asset-store proxy). uvicorn on :: is IPv6-only (measured on macOS).
+- check_prod_env: page-origin role (edge secret only there), region required, production auth for
+  app roles (also what arms the dev-lens startup refusal — VM workers need it), production Clerk on
+  platform-api, both dev lenses off, bare ${...} refused (.env.example's OPENROUTER/IMAGE key lines
+  would have reached Railway/docker as literal text), worker LUMEN_API_ORIGIN public https.
+- compose: LUMEN_AGENT_WORKSPACE_ROOT=/srv/clue/workspaces/lumen-agent (else design session memory
+  lived inside the image and every redeploy wiped it).
+- Variable files generated to ~/clue-deploy/{railway,vm}/ (outside repo, 0600): shared secrets as
+  <FILL>, service files reference ${{shared.X}}; all three service files pass check_prod_env as
+  generated; the VM file passes with dummy secrets. Generator: session scratchpad gen_railway_env.py.
+- Founder chose Clerk PRODUCTION; JWKS/issuer assumed https://clerk.cluehq.ai (verify in Clerk).
+- Lane .env differs from example: ARV2 discovery ON and Langfuse US host — carried into production.

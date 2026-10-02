@@ -231,9 +231,12 @@ Founder ask 2026-10-01: catch a broken build before it reaches a server, not aft
 
 ## 11. Domains and monitoring
 
-- `app.cluehq.ai` → frontend; `api.cluehq.ai` → platform API; `design-api.cluehq.ai` → design
-  API (the frontend's `CLUE_API_BASE_URL` / design API base URL and the APIs' CORS and Clerk
-  authorized-party settings follow these names). Pages: the S0 runbook's Cloudflare Worker + edge secret + Cloudflare for SaaS,
+- `app.cluehq.ai` → frontend; `api.cluehq.ai` → platform API. **The design API has no public
+  domain** (2026-10-02): it trusts an `X-Workspace-Id` header with no login, so the frontend's
+  server and `platform-api` reach it over Railway's private network
+  (`design-api.railway.internal:8010`), and the VM's preview renders fetch images through the
+  frontend's narrow public proxy (`/api/clue/design-public/asset-store/<digest>`). Auth is a
+  **production** Clerk instance (Frontend API `clerk.cluehq.ai`). Pages: the S0 runbook's Cloudflare Worker + edge secret + Cloudflare for SaaS,
   with `<label>.pages.cluehq.ai` served by the page origin.
 - Sentry and Langfuse on every service under `production`.
 - Uptime checks on each public hostname; alerts on VM memory above 85%, disk above 80%, and any worker

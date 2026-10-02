@@ -24,8 +24,20 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    SaaS on `pages.cluehq.ai`). Record `CLUE_PAGES_EDGE_SECRET`.
 
 ## 2. Railway [FOUNDER]
-1. Project region: **US East**.
-2. Add **Postgres** from the pgvector template (Postgres 16). In its query shell, as the owner role:
+The variable files are generated from `.env.example` into `~/clue-deploy/` (outside the repo):
+`railway/1-shared-secrets.env` (secrets only, `<FILL: …>` placeholders), `2-platform-api.env`,
+`3-design-api.env`, `4-page-origin.env` (no secrets: they reference `${{shared.NAME}}`), and
+`vm/srv-clue-env.env` for §4. Every service file passes `check_prod_env.py` as generated.
+
+**The design API is never public.** It decides the workspace from an `X-Workspace-Id` header with
+no login check, so it has **no public domain**: the frontend's server and `platform-api` reach it on
+Railway's private network (`http://design-api.railway.internal:8010`), and the VM's preview renders
+fetch images through the frontend's narrow public proxy
+(`https://app.cluehq.ai/api/clue/design-public/asset-store/<digest>`).
+
+1. Project (Pro plan); every service's region **US East (Virginia)**. Leave **"Wait for CI" off**.
+2. Add **Postgres** from the pgvector template (Postgres 16) and **name the service `Postgres`** (the
+   variable files reference `${{Postgres.…}}`). In its query shell, as the owner role:
    ```sql
    CREATE EXTENSION IF NOT EXISTS vector;
    ALTER SYSTEM SET max_connections = 200;   -- then restart the Postgres service
@@ -37,36 +49,47 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO clue_worker;
    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO clue_worker;
    ```
-   Enable the **TCP proxy** (record host and port) and scheduled **volume backups**. Migrations run
-   as the owner role; the workers run as `clue_worker`.
-3. Add **Redis** (Redis 7). Enable its TCP proxy; record host, port and password.
-4. Add three services from this repo, branch **`main`**, each built by Railway with
-   `RAILWAY_DOCKERFILE_PATH=/docker/backend/Dockerfile` (the same Dockerfile CI builds for the VM):
+   (`openssl rand -hex 24` makes a safe password.) Enable the **TCP proxy** (record host and port;
+   the VM uses it) and scheduled **volume backups**. Migrations run as the owner role; `design-api`,
+   `page-origin` and the VM workers run as `clue_worker`.
+3. Add **Redis** (7 or newer), **name it `Redis`**, enable its TCP proxy (the VM uses it).
+4. **Clerk production instance** (Clerk dashboard → Create production instance, domain
+   `cluehq.ai`). Add every DNS record its **Domains** page lists to Cloudflare as **DNS only (grey
+   cloud)**; wait until Clerk shows them verified and deploys its certificates. Its Frontend API is
+   then `https://clerk.cluehq.ai` — the variable files assume that issuer and JWKS URL; if Clerk
+   shows a different one, change both lines in `2-platform-api.env`. In production, social sign-in
+   needs your own OAuth credentials; email-code sign-up needs bot protection off and email
+   verification by code on (as on the development instance).
+5. **Shared Variables** (Project Settings): fill every `<FILL>` in `1-shared-secrets.env`, paste it.
+6. Three services from this repo, branch **`main`**; paste each one's file into Variables → Raw
+   Editor, then:
    - `platform-api` — start command `clue platform-api`, **pre-deploy command `clue migrate`** (the
-     only place migrations run), memory limit 1 GB, health check path `/healthz`, domain
-     `api.cluehq.ai`.
-   - `design-api` — start command `clue design-api`, memory limit 1.5 GB, health check `/healthz`,
-     domain `design-api.cluehq.ai`, **`LUMEN_EMBEDDED_FLEET_WORKER=0`** (design jobs run on the VM).
-   - `page-origin` — `RAILWAY_DOCKERFILE_PATH=/platform/page_origin/Dockerfile.railway`, memory
-     256 MB, health check `/healthz`.
-5. **Frontend** service (already exists): change its branch from
-   `integration/frontend-design-part-iv-v4` to **`main`**; set
-   `CLUE_API_BASE_URL=https://api.cluehq.ai`, `LUMEN_API_BASE_URL=https://design-api.cluehq.ai`,
-   `CLUE_APP_ORIGIN=https://app.cluehq.ai`,
-   `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`. Its build now runs the editor wasm
-   check in strict mode (`WASM_PREFLIGHT_STRICT=1`): a stale browser engine fails the build.
-6. Variables for `platform-api` and `design-api`: every key in `.env.example` with its production
-   value (spec §10). **Leave out the three paths the image sets** (here and on the VM):
-   `LUMEN_CORE_HELPER`, `LUMEN_FONT_LIBRARY_MANIFEST_PATH`, `CLUE_ARV2_RAW_ROOT`. Any line for them —
-   even an empty one — overrides the image: a blank helper falls back to `cargo run` (not in the
-   image, so every design render fails), the font path is a checkout placeholder, and the raw root
-   is relative (podcast downloads fail). `check_prod_env.py` refuses them. `CLUE_DATABASE_URL` and `CLUE_REDIS_URL` use Railway's **private** hostnames.
-   Before saving, paste each service's variables into a local file and check it:
+     only place migrations run), memory 1 GB, health check `/healthz`, domain `api.cluehq.ai`
+     (Cloudflare CNAME, **DNS only**). Add the zone id and Cloudflare token references once Part C
+     exists (they are already in the file).
+   - `design-api` — start command `clue design-api`, memory 1.5 GB, health check `/healthz`,
+     **no domain**. Its file sets `PORT=8010` and `CLUE_BIND_HOST=::` (Railway's private network is
+     IPv6; uvicorn on `::` is IPv6-only). If its health check fails, delete `CLUE_BIND_HOST` (falls
+     back to `0.0.0.0`) and tell the frontend's server to use the same URL.
+   - `page-origin` — no start command (its Dockerfile has one), memory 256 MB, health check
+     `/healthz`, domain `page-origin.cluehq.ai` (**DNS only**).
+7. **Frontend** service (already exists): branch **`main`**, and set
+   `CLUE_AUTH_ENABLED=true`, `CLUE_API_BASE_URL=https://api.cluehq.ai`,
+   `LUMEN_API_BASE_URL=http://design-api.railway.internal:8010` (private — never a public URL),
+   `CLUE_APP_ORIGIN=https://app.cluehq.ai`, `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`,
+   `CLUE_PROJECTS_API_BASE_URL=/api/clue`, and the production Clerk pair
+   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_…` / `CLERK_SECRET_KEY=sk_live_…` (the publishable key
+   is baked in at build, so redeploy after changing it). Domain `app.cluehq.ai`, **DNS only**. Its
+   build runs the editor wasm check in strict mode (`WASM_PREFLIGHT_STRICT=1`).
+8. Check the service files (they pass as generated; re-run after any edit):
    ```bash
-   python3 deploy/check_prod_env.py platform-api /path/to/platform-api.env
-   python3 deploy/check_prod_env.py design-api /path/to/design-api.env
+   python3 deploy/check_prod_env.py platform-api ~/clue-deploy/railway/2-platform-api.env
+   python3 deploy/check_prod_env.py design-api ~/clue-deploy/railway/3-design-api.env
+   python3 deploy/check_prod_env.py page-origin ~/clue-deploy/railway/4-page-origin.env
    ```
-   Both must print `OK`.
+   The image sets `LUMEN_CORE_HELPER`, `LUMEN_FONT_LIBRARY_MANIFEST_PATH` and `CLUE_ARV2_RAW_ROOT`;
+   the check refuses any line for them. Until the release PR merges `main`, every backend build
+   fails (the code is not on `main` yet) — expected; Railway rebuilds on the merge.
 
 ## 3. OVHcloud VPS-4 [FOUNDER]
 1. Order a **VPS-4** (8 vCores / 24 GB / 200 GB NVMe) from the **US** Control Panel
@@ -152,7 +175,8 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 4. **Only after Railway is green**, on the VM as `clue`:
    `/srv/clue/app/deploy/vm/deploy.sh <sha>` — it refuses if the database is not at head.
 5. Uptime checks (Better Stack or UptimeRobot free tier) on `https://app.cluehq.ai`,
-   `https://api.cluehq.ai/healthz`, `https://design-api.cluehq.ai/healthz`, and one published page.
+   `https://api.cluehq.ai/healthz`, and one published page. (The design API has no public domain; Railway's
+   health check covers it.)
 
 ## 7. Every later ship
 Merge a pull request from `research-streaming` into `main` once staging is tested; wait for
