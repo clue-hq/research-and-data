@@ -138,3 +138,20 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
   needs `pages` CNAME → page-origin.cluehq.ai, PROXIED, as the fallback origin. Before that step,
   move or retire the Conduit page (and remove its Railway custom domain), or that page goes dark.
   `*.pages` (workspace hostnames) does not conflict.
+
+### 2026-10-03 — image builds in CI; fifth/sixth gaps: alembic + S3 SDK were dev-only
+- CI run 37059071573: backend image built (36 min cold), engine handshake passed, static smoke
+  passed everything up to `alembic --help` → not in the image: alembic lived only in the root `dev`
+  group and the image syncs `--no-dev`. Same line held aioboto3 — and NO member depends on
+  `clue-storage[s3]`, so production (R2) would have had no S3 client; the boot smoke uses fs storage
+  and could never catch it.
+- Fix: root `deploy` dependency group (alembic, clue-storage[s3]; `[tool.uv.sources]` clue-storage =
+  workspace), `dev` includes it; image `uv sync --frozen --no-dev --group deploy --all-packages`;
+  smoke.sh imports aioboto3. uv.lock +5 lines, no version changes. Local proof: alembic runs,
+  aioboto3 15.5.0 imports, `clue migrate` on fresh pgvector pg16 → 290 migrations, head 0a3a88c7e5ed.
+- INCIDENT (local): repeated image builds filled Docker Desktop's 36 GB VM disk → the shared dev
+  Postgres `clue-pg-papeete` (:55040, many lanes) crashed ~20:58 UTC on ENOSPC. Freed my dangling
+  images + trimmed build cache to 4 GB (7.6 GB free), restarted it; WAL recovery clean. Lanes' writes
+  in that window failed. Docker Desktop here is 4.16.1 (Jan 2023, kernel 5.15.49): the cryptography
+  SIGILL comes from that kernel; updating is the founder's call. Watch `docker run --rm alpine df -h /`
+  before big builds.
