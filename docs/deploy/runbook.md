@@ -116,9 +116,9 @@ fetch images through the frontend's narrow public proxy
      (Cloudflare CNAME, **DNS only**). Add the zone id and Cloudflare token references once Part C
      exists (they are already in the file).
    - `design-api` — start command `clue design-api`, memory 1.5 GB, health check `/healthz`,
-     **no domain**. Its file sets `PORT=8010` and `CLUE_BIND_HOST=::` (Railway's private network is
-     IPv6; uvicorn on `::` is IPv6-only). If its health check fails, delete `CLUE_BIND_HOST` (falls
-     back to `0.0.0.0`) and tell the frontend's server to use the same URL.
+     **no domain**. Its file sets `PORT=8010`; it listens on IPv4 (`0.0.0.0`), which this project's
+     private network supports (Railway shows "IPv4 & IPv6" under Private Networking). Only in an
+     IPv6-only environment would it need `CLUE_BIND_HOST=::` (uvicorn on `::` is IPv6-only).
    - `page-origin` — no start command (its Dockerfile has one), memory 256 MB, health check
      `/healthz`, domain `page-origin.cluehq.ai` (**DNS only**).
 7. **Frontend** service (already exists): branch **`main`**, and set
