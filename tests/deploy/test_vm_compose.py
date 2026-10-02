@@ -101,3 +101,12 @@ def test_the_controller_url_is_documented_with_an_empty_default() -> None:
     for example in (root / ".env.example", root / "subsystems/clue-design/.env.example"):
         lines = example.read_text(encoding="utf-8").splitlines()
         assert "LUMEN_INGESTION_CONTROLLER_DATABASE_URL=" in lines, example
+
+
+def test_design_session_memory_lives_on_the_mounted_workspace_volume() -> None:
+    """Unset, the design agent keeps session memory and compaction history under the image's own
+    /app/subsystems/clue-design/.deepagent-workspace, which every redeploy replaces."""
+    services = _services()
+    for name in (*SLOTS, "ingestion"):
+        root = _env(services[name]).get("LUMEN_AGENT_WORKSPACE_ROOT", "")
+        assert root.startswith(WORKSPACE_ROOT + "/"), name

@@ -24,49 +24,122 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    SaaS on `pages.cluehq.ai`). Record `CLUE_PAGES_EDGE_SECRET`.
 
 ## 2. Railway [FOUNDER]
-1. Project region: **US East**.
-2. Add **Postgres** from the pgvector template (Postgres 16). In its query shell, as the owner role:
-   ```sql
-   CREATE EXTENSION IF NOT EXISTS vector;
-   ALTER SYSTEM SET max_connections = 200;   -- then restart the Postgres service
-   CREATE ROLE clue_worker LOGIN PASSWORD '<long random>';
-   GRANT CONNECT ON DATABASE railway TO clue_worker;
-   GRANT USAGE ON SCHEMA public TO clue_worker;
-   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO clue_worker;
-   GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO clue_worker;
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO clue_worker;
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO clue_worker;
-   ```
-   Enable the **TCP proxy** (record host and port) and scheduled **volume backups**. Migrations run
-   as the owner role; the workers run as `clue_worker`.
-3. Add **Redis** (Redis 7). Enable its TCP proxy; record host, port and password.
-4. Add three services from this repo, branch **`main`**, each built by Railway with
-   `RAILWAY_DOCKERFILE_PATH=/docker/backend/Dockerfile` (the same Dockerfile CI builds for the VM):
+The variable files are generated from `.env.example` into `~/clue-deploy/` (outside the repo):
+`railway/1-shared-secrets.env` (secrets only, `<FILL: …>` placeholders), `2-platform-api.env`,
+`3-design-api.env`, `4-page-origin.env` (no secrets: they reference `${{shared.NAME}}`), and
+`vm/srv-clue-env.env` for §4. Every service file passes `check_prod_env.py` as generated.
+
+**The design API is never public.** It decides the workspace from an `X-Workspace-Id` header with
+no login check, so it has **no public domain**: the frontend's server and `platform-api` reach it on
+Railway's private network (`http://design-api.railway.internal:8010`), and the VM's preview renders
+fetch images through the frontend's narrow public proxy
+(`https://app.cluehq.ai/api/clue/design-public/asset-store/<digest>`).
+
+1. Project (Pro plan); every service's region **US East (Virginia)**. Leave **"Wait for CI" off**.
+2. **Postgres 16 + pgvector, with encryption enforced.** Not a marketplace template: the pgvector
+   ones run Postgres 18 (our backup/restore tools are 16) or omit the `PG*` variables, and the plain
+   image runs with SSL **off** while the VM connects over the public TCP proxy with `ssl=require`.
+   - **+ Create → Docker Image** → `pgvector/pgvector:pg16`. Rename the service (click its name in the
+     panel header) to exactly **`Postgres`**; region US East.
+   - **Volume** mounted at `/var/lib/postgresql/data`; set its size with room to grow (long-used
+     lane databases reached ~2.5 GB, almost all agent checkpoints).
+   - **Variables:**
+     ```
+     POSTGRES_USER=postgres
+     POSTGRES_PASSWORD=<openssl rand -hex 24>
+     POSTGRES_DB=railway
+     PGDATA=/var/lib/postgresql/data/pgdata
+     PGUSER=${{POSTGRES_USER}}
+     PGPASSWORD=${{POSTGRES_PASSWORD}}
+     PGDATABASE=${{POSTGRES_DB}}
+     ```
+     (`PGDATA` is a subfolder: a fresh volume holds `lost+found`, and `initdb` refuses a non-empty dir.)
+   - **Settings → Deploy → Custom Start Command:** the one line in
+     `deploy/railway-postgres-start-command.txt`. On first start it creates a self-signed certificate
+     on the volume (kept across restarts), turns SSL on, refuses every non-SSL connection from another
+     host (`hostssl` only), and sets `max_connections=200`, `shared_buffers=1GB`,
+     `effective_cache_size=3GB`, `work_mem=8MB`, `maintenance_work_mem=256MB`, `random_page_cost=1.1`,
+     a 10-minute idle-in-transaction timeout and a 2-second slow-query log. Memory limit **4 GB**.
+     (Tested 2026-10-02 on this image: SSL in use, plaintext and wrong password refused, same after a
+     restart.)
+   - Deploy, then **Settings → Networking → TCP Proxy** on port **5432** (record host and port; the
+     VM uses it) and scheduled **backups** on the volume.
+   - From your Mac (`psql "<TCP-proxy URL>?sslmode=require"`), as `postgres`:
+     ```sql
+     CREATE EXTENSION IF NOT EXISTS vector;
+     CREATE ROLE clue_worker LOGIN PASSWORD '<long random>';
+     GRANT CONNECT ON DATABASE railway TO clue_worker;
+     GRANT USAGE ON SCHEMA public TO clue_worker;
+     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO clue_worker;
+     GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO clue_worker;
+     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO clue_worker;
+     ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO clue_worker;
+     ```
+     Migrations run as `postgres`; `design-api`, `page-origin` and the VM workers run as `clue_worker`.
+     Every Railway database URL in the variable files carries `?ssl=require`.
+3. **Redis 7, TLS for the VM.** Railway's Redis serves no TLS, and the VM reaches Redis over the
+   public TCP proxy, so the password and lock traffic would cross the internet in clear text.
+   - **+ Create → Docker Image** → `redis:7`, named exactly **`Redis`**, region US East. No volume
+     needed (locks and rate-limit buckets are short-lived).
+   - On your Mac, make its certificate once (the image has no `openssl`):
+     ```bash
+     openssl req -new -x509 -days 3650 -nodes -subj "/CN=redis" -keyout redis.key -out redis.crt
+     base64 < redis.crt | tr -d '\n' | pbcopy   # → REDIS_TLS_CERT_B64
+     base64 < redis.key | tr -d '\n' | pbcopy   # → REDIS_TLS_KEY_B64 (then delete both files)
+     ```
+   - **Variables:**
+     ```
+     REDIS_PASSWORD=<openssl rand -hex 24>
+     REDIS_TLS_CERT_B64=<one line>
+     REDIS_TLS_KEY_B64=<one line>
+     REDIS_URL=redis://default:${{REDIS_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:6380/0
+     ```
+   - **Custom Start Command:** the one line in `deploy/railway-redis-start-command.txt`. Redis serves
+     **TLS on 6379** and plain **6380** for the private network only (Railway's WireGuard mesh; the
+     services use `${{Redis.REDIS_URL}}`), with `requirepass` and `noeviction`. TLS sits on the
+     standard port because Railway's **Add Public Access** detects Redis and proxies 6379 without
+     asking.
+   - **Public Access** (the TCP proxy) on **6379** — the TLS port. The VM's
+     `CLUE_REDIS_URL=rediss://default:<REDIS_PASSWORD>@<proxy-host>:<proxy-port>/0?ssl_cert_reqs=none`
+     (`check_prod_env.py worker` refuses anything else). Tested 2026-10-02 with redis-py: private
+     plain and public TLS connect; plain on the TLS port and a wrong password are refused.
+4. **Clerk production instance** (Clerk dashboard → Create production instance, domain
+   `cluehq.ai`). Add every DNS record its **Domains** page lists to Cloudflare as **DNS only (grey
+   cloud)**; wait until Clerk shows them verified and deploys its certificates. Its Frontend API is
+   then `https://clerk.cluehq.ai` — the variable files assume that issuer and JWKS URL; if Clerk
+   shows a different one, change both lines in `2-platform-api.env`. In production, social sign-in
+   needs your own OAuth credentials; email-code sign-up needs bot protection off and email
+   verification by code on (as on the development instance).
+5. **Shared Variables** (Project Settings): fill every `<FILL>` in `1-shared-secrets.env`, paste it.
+6. Three services from this repo, branch **`main`**; paste each one's file into Variables → Raw
+   Editor, then:
    - `platform-api` — start command `clue platform-api`, **pre-deploy command `clue migrate`** (the
-     only place migrations run), memory limit 1 GB, health check path `/healthz`, domain
-     `api.cluehq.ai`.
-   - `design-api` — start command `clue design-api`, memory limit 1.5 GB, health check `/healthz`,
-     domain `design-api.cluehq.ai`, **`LUMEN_EMBEDDED_FLEET_WORKER=0`** (design jobs run on the VM).
-   - `page-origin` — `RAILWAY_DOCKERFILE_PATH=/platform/page_origin/Dockerfile.railway`, memory
-     256 MB, health check `/healthz`.
-5. **Frontend** service (already exists): change its branch from
-   `integration/frontend-design-part-iv-v4` to **`main`**; set
-   `CLUE_API_BASE_URL=https://api.cluehq.ai`, `LUMEN_API_BASE_URL=https://design-api.cluehq.ai`,
-   `CLUE_APP_ORIGIN=https://app.cluehq.ai`,
-   `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`. Its build now runs the editor wasm
-   check in strict mode (`WASM_PREFLIGHT_STRICT=1`): a stale browser engine fails the build.
-6. Variables for `platform-api` and `design-api`: every key in `.env.example` with its production
-   value (spec §10). **Leave out the three paths the image sets** (here and on the VM):
-   `LUMEN_CORE_HELPER`, `LUMEN_FONT_LIBRARY_MANIFEST_PATH`, `CLUE_ARV2_RAW_ROOT`. Any line for them —
-   even an empty one — overrides the image: a blank helper falls back to `cargo run` (not in the
-   image, so every design render fails), the font path is a checkout placeholder, and the raw root
-   is relative (podcast downloads fail). `check_prod_env.py` refuses them. `CLUE_DATABASE_URL` and `CLUE_REDIS_URL` use Railway's **private** hostnames.
-   Before saving, paste each service's variables into a local file and check it:
+     only place migrations run), memory 1 GB, health check `/healthz`, domain `api.cluehq.ai`
+     (Cloudflare CNAME, **DNS only**). Add the zone id and Cloudflare token references once Part C
+     exists (they are already in the file).
+   - `design-api` — start command `clue design-api`, memory 1.5 GB, health check `/healthz`,
+     **no domain**. Its file sets `PORT=8010`; it listens on IPv4 (`0.0.0.0`), which this project's
+     private network supports (Railway shows "IPv4 & IPv6" under Private Networking). Only in an
+     IPv6-only environment would it need `CLUE_BIND_HOST=::` (uvicorn on `::` is IPv6-only).
+   - `page-origin` — no start command (its Dockerfile has one), memory 256 MB, health check
+     `/healthz`, domain `page-origin.cluehq.ai` (**DNS only**).
+7. **Frontend** service (already exists): branch **`main`**, and set
+   `CLUE_AUTH_ENABLED=true`, `CLUE_API_BASE_URL=https://api.cluehq.ai`,
+   `LUMEN_API_BASE_URL=http://design-api.railway.internal:8010` (private — never a public URL),
+   `CLUE_APP_ORIGIN=https://app.cluehq.ai`, `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`,
+   `CLUE_PROJECTS_API_BASE_URL=/api/clue`, and the production Clerk pair
+   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_…` / `CLERK_SECRET_KEY=sk_live_…` (the publishable key
+   is baked in at build, so redeploy after changing it). Domain `app.cluehq.ai`, **DNS only**. Its
+   build runs the editor wasm check in strict mode (`WASM_PREFLIGHT_STRICT=1`).
+8. Check the service files (they pass as generated; re-run after any edit):
    ```bash
-   python3 deploy/check_prod_env.py platform-api /path/to/platform-api.env
-   python3 deploy/check_prod_env.py design-api /path/to/design-api.env
+   python3 deploy/check_prod_env.py platform-api ~/clue-deploy/railway/2-platform-api.env
+   python3 deploy/check_prod_env.py design-api ~/clue-deploy/railway/3-design-api.env
+   python3 deploy/check_prod_env.py page-origin ~/clue-deploy/railway/4-page-origin.env
    ```
-   Both must print `OK`.
+   The image sets `LUMEN_CORE_HELPER`, `LUMEN_FONT_LIBRARY_MANIFEST_PATH` and `CLUE_ARV2_RAW_ROOT`;
+   the check refuses any line for them. Until the release PR merges `main`, every backend build
+   fails (the code is not on `main` yet) — expected; Railway rebuilds on the merge.
 
 ## 3. OVHcloud VPS-4 [FOUNDER]
 1. Order a **VPS-4** (8 vCores / 24 GB / 200 GB NVMe) from the **US** Control Panel
@@ -152,7 +225,8 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 4. **Only after Railway is green**, on the VM as `clue`:
    `/srv/clue/app/deploy/vm/deploy.sh <sha>` — it refuses if the database is not at head.
 5. Uptime checks (Better Stack or UptimeRobot free tier) on `https://app.cluehq.ai`,
-   `https://api.cluehq.ai/healthz`, `https://design-api.cluehq.ai/healthz`, and one published page.
+   `https://api.cluehq.ai/healthz`, and one published page. (The design API has no public domain; Railway's
+   health check covers it.)
 
 ## 7. Every later ship
 Merge a pull request from `research-streaming` into `main` once staging is tested; wait for
