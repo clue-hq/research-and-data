@@ -115,3 +115,9 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
   libfontconfig1-dev. Cold build +15–25 min; CI caches the layer (gha), Railway builds it per service.
   Rejected: adding `vulkan` to match a prebuilt (changes the engine's pinned features for packaging).
   Follow-up idea: Railway pulls the CI-built GHCR image instead of building (one Skia compile).
+- Third failure (found by local smoke.sh): runtime had no libpq → psycopg (langgraph's
+  AsyncPostgresSaver) "no pq wrapper available" at the first platform import. Fix: libpq5 in the
+  runtime apt line (psycopg-binary is not in uv.lock). After it, psycopg imports.
+- Local smoke cannot go further on this Mac: cryptography 49's Rust bindings SIGILL (exit 132) on
+  Docker Desktop's 5.15.49-linuxkit kernel (same as the sandbox image's pin note), and every service
+  imports it. The real amd64 smoke + boot smoke run in the PR's deploy-images job.

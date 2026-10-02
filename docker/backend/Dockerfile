@@ -37,6 +37,7 @@ ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 PYTHONUNBUFFERED=1 \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates fontconfig libfontconfig1 libstdc++6 \
+       libpq5 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . /app
