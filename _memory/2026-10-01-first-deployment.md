@@ -103,3 +103,14 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
   generated; the VM file passes with dummy secrets. Generator: session scratchpad gen_railway_env.py.
 - Founder chose Clerk PRODUCTION; JWKS/issuer assumed https://clerk.cluehq.ai (verify in Clerk).
 - Lane .env differs from example: ARV2 discovery ON and Langfuse US host — carried into production.
+
+### 2026-10-03 — backend image never built (skia from source)
+- Release PR #84 merged 2026-10-02 before CI finished; both deploy-images runs (37033670590 PR,
+  37033905636 push main) failed in `Backend image`: rust-skia 0.97.2 has no prebuilt Skia for our
+  feature set (textlayout+svg+webp, no vulkan) on Linux x86_64 or aarch64 → 404 → full source
+  build → `ninja` missing. First CI build of the image ever; deterministic, a rerun cannot help.
+  Railway platform-api/design-api build the same Dockerfile → same failure. No tag moved.
+- Fix (branch deploy/skia-build-deps): helper stage installs clang, libclang-dev, ninja-build,
+  libfontconfig1-dev. Cold build +15–25 min; CI caches the layer (gha), Railway builds it per service.
+  Rejected: adding `vulkan` to match a prebuilt (changes the engine's pinned features for packaging).
+  Follow-up idea: Railway pulls the CI-built GHCR image instead of building (one Skia compile).

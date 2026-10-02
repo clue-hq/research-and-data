@@ -5,6 +5,12 @@
 
 # --- Rust design-engine helper -------------------------------------------------------------
 FROM rust:1-bookworm AS helper
+# rust-skia publishes no prebuilt Skia for our feature set (textlayout + svg + webp, no vulkan) on
+# Linux, so skia-bindings compiles Skia from source: it needs clang, libclang (bindgen), ninja and
+# the fontconfig headers (textlayout).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends clang libclang-dev ninja-build libfontconfig1-dev \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY subsystems/clue-design/Cargo.toml subsystems/clue-design/Cargo.lock ./
 COPY subsystems/clue-design/crates ./crates
