@@ -22,24 +22,6 @@ jobs:
   images:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: clue
-          POSTGRES_PASSWORD: clue
-          POSTGRES_DB: clue
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U clue -d clue"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
     steps:
       # The backend image (Skia compiled from source, Chromium, the Python environment) does not fit
       # in the runner's default free disk; drop preinstalled toolchains this job never uses.
@@ -91,7 +73,7 @@ jobs:
         run: docker/backend/smoke.sh "$BACKEND:${{ github.sha }}"
       - name: Boot smoke (every service starts)
         run: |
-          PGPASSWORD=clue psql -h 127.0.0.1 -U clue -d clue -c "CREATE EXTENSION IF NOT EXISTS vector"
+          # Self-contained: starts its own Postgres (pgvector), Redis and MinIO on a private network.
           docker/backend/boot_smoke.sh "$BACKEND:${{ github.sha }}" "$SANDBOX:${{ github.sha }}"
       - name: Move the production tags (only after every check above passed)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
