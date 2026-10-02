@@ -155,3 +155,15 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
   in that window failed. Docker Desktop here is 4.16.1 (Jan 2023, kernel 5.15.49): the cryptography
   SIGILL comes from that kernel; updating is the founder's call. Watch `docker run --rm alpine df -h /`
   before big builds.
+
+### 2026-10-03 — Docker Desktop 4.93 + one boot smoke everywhere + local gate (committed, NOT pushed)
+- Docker Desktop updated 4.16.1 → 4.93.0 (kernel 7.0.14; Rosetta disabled — VZ "failed to install
+  Rosetta"; 8 CPU / 7.7 GB / 78 GB disk). The cryptography SIGILL is gone: full smokes run on the Mac.
+  `clue-pg-papeete` (:55040) has restart=no — start it by hand after every Docker restart.
+- boot_smoke.sh is now self-contained (own pgvector/Redis/MinIO on a private network, ports published
+  to 127.0.0.1, socket gid read from a container) → same script on Mac and CI; workflow `services:`
+  removed. New check: S3 round trip through `storage_from_settings()` against MinIO.
+- docker/backend/local_gate.sh: disk ≥15 GB check, builds both images (label clue.local-gate=1),
+  smoke.sh, boot_smoke.sh, prunes only its own dangling images. First run: PASSED in 7m41s.
+- Boot-smoke env needs CLUE_GATEWAY_ALLOW_STUB=true AND a placeholder CLUE_OPENROUTER_API_KEY
+  (the agent model provider is built at worker boot; no request until a turn runs).

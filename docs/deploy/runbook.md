@@ -216,10 +216,16 @@ OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is d
 Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 
 ## 6. First ship
-1. Open a pull request from `research-streaming` into `main` and merge it [FOUNDER]. (The first one
-   merges cleanly — checked 2026-10-01.)
-2. Watch the `deploy-images` workflow: it builds both images, checks the engine handshake, runs the
-   static and boot smoke tests, and only then moves the `production` tags. It must be green.
+0. **Before pushing any change to the images** (`docker/`, `pyproject.toml`/`uv.lock`, the
+   `deploy-images` workflow): run `docker/backend/local_gate.sh` from the repository root. It refuses
+   to build with under 15 GB of Docker disk free, builds both images, and runs `smoke.sh` and
+   `boot_smoke.sh` — the checks CI runs — in about 8 minutes cached. CI then confirms on amd64.
+1. Open a pull request from `research-streaming` into `main` [FOUNDER]. Its `deploy-images` run builds
+   both images, checks the engine handshake, and runs the static and boot smoke tests (migrations, both
+   APIs' health, the S3 storage round trip, worker start, the sandbox). **Merge only once that check
+   is green** — merging while it runs is how 2026-10-02's release shipped an image that never built.
+2. The merge's own `deploy-images` run repeats every check and only then moves the `production` tags.
+   It must be green.
 3. Railway rebuilds and redeploys from `main`; `platform-api`'s pre-deploy `clue migrate` runs
    `alembic upgrade head` once.
 4. **Only after Railway is green**, on the VM as `clue`:
@@ -229,8 +235,9 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
    health check covers it.)
 
 ## 7. Every later ship
-Merge a pull request from `research-streaming` into `main` once staging is tested; wait for
-`deploy-images` and Railway to go green; then `deploy.sh <sha>` on the VM.
+Merge a pull request from `research-streaming` into `main` once staging is tested and the pull
+request's `deploy-images` check is green (image changes: `local_gate.sh` first); wait for the
+merge's `deploy-images` run and Railway to go green; then `deploy.sh <sha>` on the VM.
 
 ## 7a. Known gap — accepted for now, to be closed later
 Railway rebuilds the frontend and the design API separately, so for a minute or two during a deploy
