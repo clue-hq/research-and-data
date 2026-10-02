@@ -56,6 +56,7 @@ GOOD_PLATFORM = {
 GOOD_DESIGN = {**GOOD_APP, "LUMEN_EMBEDDED_FLEET_WORKER": "0"}
 GOOD_WORKER = {
     **GOOD_APP,
+    "CLUE_REDIS_URL": "rediss://default:p@proxy.example:41235/0?ssl_cert_reqs=none",
     "LUMEN_INGESTION_CONTROLLER_DATABASE_URL": (
         "postgresql+asyncpg://clue_worker:p@proxy.example:41234/railway?ssl=require"
     ),
@@ -288,6 +289,19 @@ def test_the_workers_asset_origin_must_be_public_https(value: str) -> None:
     reach /asset-store/<digest> through the frontend's public proxy."""
     env = {**GOOD_WORKER, "LUMEN_API_ORIGIN": value}
     assert any("LUMEN_API_ORIGIN" in p for p in check.problems(env, "worker"))
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["redis://default:p@proxy.example:41235/0", "rediss://default:p@proxy.example:41235/0"],
+)
+def test_the_workers_redis_goes_over_tls_to_a_self_signed_server(url: str) -> None:
+    """The VM reaches Redis over Railway's public TCP proxy: plain redis:// would send the password
+    and lock traffic in clear text, and the Railway Redis TLS port serves a self-signed
+    certificate, so redis-py must be told not to verify it (ssl_cert_reqs=none), as Postgres'
+    sslmode=require does not verify either."""
+    env = {**GOOD_WORKER, "CLUE_REDIS_URL": url}
+    assert any("CLUE_REDIS_URL" in p for p in check.problems(env, "worker"))
 
 
 def test_an_unknown_role_is_refused() -> None:

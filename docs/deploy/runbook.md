@@ -77,7 +77,30 @@ fetch images through the frontend's narrow public proxy
      ```
      Migrations run as `postgres`; `design-api`, `page-origin` and the VM workers run as `clue_worker`.
      Every Railway database URL in the variable files carries `?ssl=require`.
-3. Add **Redis** (7 or newer), **name it `Redis`**, enable its TCP proxy (the VM uses it).
+3. **Redis 7, TLS for the VM.** Railway's Redis serves no TLS, and the VM reaches Redis over the
+   public TCP proxy, so the password and lock traffic would cross the internet in clear text.
+   - **+ Create → Docker Image** → `redis:7`, named exactly **`Redis`**, region US East. No volume
+     needed (locks and rate-limit buckets are short-lived).
+   - On your Mac, make its certificate once (the image has no `openssl`):
+     ```bash
+     openssl req -new -x509 -days 3650 -nodes -subj "/CN=redis" -keyout redis.key -out redis.crt
+     base64 < redis.crt | tr -d '\n' | pbcopy   # → REDIS_TLS_CERT_B64
+     base64 < redis.key | tr -d '\n' | pbcopy   # → REDIS_TLS_KEY_B64 (then delete both files)
+     ```
+   - **Variables:**
+     ```
+     REDIS_PASSWORD=<openssl rand -hex 24>
+     REDIS_TLS_CERT_B64=<one line>
+     REDIS_TLS_KEY_B64=<one line>
+     REDIS_URL=redis://default:${{REDIS_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:6379/0
+     ```
+   - **Custom Start Command:** the one line in `deploy/railway-redis-start-command.txt`. Redis serves
+     plain **6379** on the private network (Railway's WireGuard mesh; the services use
+     `${{Redis.REDIS_URL}}`) and **TLS on 6380**, with `requirepass` and `noeviction`.
+   - **TCP Proxy → port 6380** (never 6379). The VM's
+     `CLUE_REDIS_URL=rediss://default:<REDIS_PASSWORD>@<proxy-host>:<proxy-port>/0?ssl_cert_reqs=none`
+     (`check_prod_env.py worker` refuses anything else). Tested 2026-10-02 with redis-py: private
+     plain and public TLS connect; plain on the TLS port and a wrong password are refused.
 4. **Clerk production instance** (Clerk dashboard → Create production instance, domain
    `cluehq.ai`). Add every DNS record its **Domains** page lists to Cloudflare as **DNS only (grey
    cloud)**; wait until Clerk shows them verified and deploys its certificates. Its Frontend API is

@@ -156,6 +156,12 @@ def _worker_problems(env: dict[str, str]) -> list[str]:
         found.append("LUMEN_INGESTION_CONTROLLER_DATABASE_URL must bypass PgBouncer")
     elif _local(controller):
         found.append("LUMEN_INGESTION_CONTROLLER_DATABASE_URL points at localhost")
+    redis = env.get("CLUE_REDIS_URL", "")
+    if redis and not (redis.startswith("rediss://") and "ssl_cert_reqs=none" in redis):
+        found.append(
+            "CLUE_REDIS_URL must be rediss://…?ssl_cert_reqs=none: the VM reaches Redis over "
+            "Railway's public TCP proxy (TLS port 6380, self-signed certificate)"
+        )
     origin = env.get("LUMEN_API_ORIGIN", "")
     if not origin.startswith("https://") or ".railway.internal" in origin:
         found.append(
