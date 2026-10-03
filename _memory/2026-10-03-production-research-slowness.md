@@ -138,3 +138,43 @@ job; model time (~10 min) is unchanged. An estimate only.
   claim import, when no parallel wave was running, so it showed no lock waits).
 - No local timing baseline was ever recorded in `_memory/`, so "faster locally" is the founder's
   observation, not a measured comparison. Record one on the next local run.
+
+## Confirmation, 16:40 UTC — the queueing is real, and the lock is a different one
+
+Sampled production while all ten person jobs ran (Mortenson's account job had completed at
+16:17:45 after ~53 min; McKee's account job ended `needs_review`, `failure_code=workspace_conflict`,
+at 16:32:33 — not yet investigated).
+
+- **Every sample had lock waits** (236/236 over 60 s, ~58 waiters per sample, one wait of 280 s).
+  Waiters sit in `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`.
+- **One hot key**: `pg_locks` advisory key `5898789434722834039` = `hashtextextended(
+  'agent-project-artifacts:ws_0503532073454a10ab541c3fa9bf3e81:prj_92c55a86e82859a1ba0e655fb8c9894b',0)`
+  — a lock over the **whole project** (`platform/api/clue_api/agent_turn_wiring.py:289`, inside
+  `DurableAgentArtifactStore.persist_body`). Up to 14 transactions queued on it at once; every other
+  granted advisory lock's holder was itself waiting on this one. (Method checked: reconstructing
+  `classid<<32|objid` from `pg_locks` reproduces `hashtextextended` for a probe key.)
+- **Who holds it**: over 45 s, ten different `clue_worker` transactions took turns, each holding it
+  3–18 s, almost always `idle in transaction` with last statement
+  `INSERT INTO artifact_derivation …` (107 samples) or `INSERT INTO agent_artifact_project …` (21),
+  idle up to ~1 s at a time (consistent with R2 calls between statements). So the project lock is
+  being held inside longer evidence/page-writing transactions, not only for `persist_body`'s few
+  inserts. The exact code path that puts the project lock and the evidence writes in one
+  transaction is **not yet pinned** — `fleet_main.py` builds the store with `conn_factory=transaction`
+  (its own transaction), and no borrowed-connection store was found in the arv2 path on a first
+  read. `quality_pages.publish_page` writes `agent_artifact_project` without the lock, so it is not
+  the holder. Pin this first in the fix (e.g. `application_name` per code path, or log lock
+  acquisition).
+- **A second, in-process queue**: `platform/api/clue_api/arv2/account_research_driver.py` gives the
+  agent's tools the driver's own guarded factory — "at most one data connection at a time (the O3
+  `_db_lock`)" (module docstring; `_connection`, line ~907). Every tool's database work in one job,
+  including transactions that wait on R2, runs behind one `asyncio.Lock`, so a job's parallel tools
+  are serial. This, not the evidence-manifest `FOR UPDATE`, is the likeliest cause of the 18–28 s
+  admission stagger seen at 15:40; the manifest lock was not observed contended.
+- Also seen: one transaction 317 s old on `UPDATE artifact SET expires_at=LEAST(…)`.
+
+Revised fix order: (1) one R2 client per process; (2) no R2 call inside any transaction that holds
+a shared lock (project artifact lock, job `_db_lock`, manifest lock) — upload content-addressed
+bytes first, then do the short DB transaction; (3) narrow the project-wide
+`agent-project-artifacts` lock (it exists to serialise against project erasure; a per-artifact or
+shared/exclusive scheme would let writers run in parallel); (4) revisit the single-connection
+`_db_lock` once R2 is out of the critical sections; (5) claim import concurrency.
