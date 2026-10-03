@@ -111,6 +111,16 @@ fetch images through the frontend's narrow public proxy
    needs your own OAuth credentials; email-code sign-up needs bot protection off and email
    verification by code on (as on the development instance).
 5. **Shared Variables** (Project Settings): fill every `<FILL>` in `1-shared-secrets.env`, paste it.
+   Production also needs, as shared variables referenced by `platform-api` and `design-api` (and in
+   the VM's `/srv/clue/env`) — settings refuse the in-memory metrics sink in production:
+   `CLUE_METRICS_EXPORTER=otlp`, `CLUE_METRICS_OTLP_ENDPOINT=<Grafana Cloud OTLP endpoint>/v1/metrics`
+   (the full path: the exporter uses it as written) and
+   `OTEL_EXPORTER_OTLP_METRICS_HEADERS=Authorization=Basic%20<base64 of instanceID:token>` (the
+   metrics-only header, so traces keep going to Langfuse). Grafana Cloud stack `curiousferret2524`,
+   us-east-3 (chosen 2026-10-03). **Sumble is off in production:**
+   `CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED=false` and
+   `CLUE_SUMBLE_DISCOVERY_GAP_ENRICHMENT_ENABLED=false` (each switch on without `CLUE_SUMBLE_API_KEY`
+   makes the service refuse to start).
 6. Three services; paste each one's file into Variables → Raw Editor. **`platform-api` and `design-api`
    run the image CI built and tested** — they never build it themselves (2026-10-03): Settings → Source →
    Docker image `ghcr.io/clue-hq/clue-backend:production`, and under **Registry Credentials** a GitHub
@@ -130,14 +140,22 @@ fetch images through the frontend's narrow public proxy
    - `page-origin` — no start command (its Dockerfile has one), memory 256 MB, health check
      `/healthz`, domain `page-origin.cluehq.ai` (**DNS only**).
 7. **Frontend** service (already exists): branch **`main`**, and set
-   `CLUE_AUTH_ENABLED=true`, `CLUE_API_BASE_URL=https://api.cluehq.ai`,
+   **`RAILWAY_DOCKERFILE_PATH=/apps/frontend/Dockerfile.railway`** (without it Railway's auto-builder
+   detects the repository root as Python and fails — 2026-10-03, when replacing the variables dropped
+   it), `CLUE_AUTH_ENABLED=true`, `CLUE_API_BASE_URL=http://platform-api.railway.internal:8020` (the
+   frontend's server reaches the API privately; the public `https://api.cluehq.ai` also works),
    `LUMEN_API_BASE_URL=http://design-api.railway.internal:8010` (private — never a public URL),
    `CLUE_APP_ORIGIN=https://app.cluehq.ai`, `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`,
    `CLUE_PROJECTS_API_BASE_URL=/api/clue`, and the production Clerk pair
    `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_…` / `CLERK_SECRET_KEY=sk_live_…` (the publishable key
    is baked in at build, so redeploy after changing it). Domain `app.cluehq.ai`, **DNS only**. Its
    build runs the editor wasm check in strict mode (`WASM_PREFLIGHT_STRICT=1`).
-8. Check the service files (they pass as generated; re-run after any edit):
+8. Check the service files (they pass as generated; re-run after any edit), and before deploying
+   boot each backend locally with its **real** Railway variables — only the database and Redis are
+   swapped for throwaway ones; no value is printed — so every startup refusal shows at once instead
+   of one failed deploy at a time (from a directory `railway link`ed to the project):
+   `deploy/railway_boot_check.sh platform-api platform-api ghcr.io/clue-hq/clue-backend:production`
+   (and `design-api design-api …`).
    ```bash
    python3 deploy/check_prod_env.py platform-api ~/clue-deploy/railway/2-platform-api.env
    python3 deploy/check_prod_env.py design-api ~/clue-deploy/railway/3-design-api.env
