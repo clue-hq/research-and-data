@@ -1,8 +1,9 @@
 """Langfuse at the process roots (lane 3 slice 3, R4): the agent-tree viewer.
 
-One client per process, attached to the tracer provider slice 2 built (D1), so the agent tree
-the LangChain handler reports, the platform-side observations opened here, the FastAPI and httpx
-spans and the worker's ``fleet.task`` span are one trace. Every payload passes :func:`make_mask`
+One client per process, attached to the tracer provider slice 2 built (D1), exporting only the
+agent harness: the agent tree the LangChain handler reports and the platform-side observations
+opened here. The FastAPI, httpx and ``fleet.task`` spans on the same provider stay out of Langfuse
+(2026-10-03 spec, R1). Every payload passes :func:`make_mask`
 before export (R3: the secret-key rule and the blob rule, plus truncation — never the claim-value
 rule: this is the surface for debugging exactly those values). Nothing here does anything until
 :func:`install_langfuse` was given both keys; every helper is a no-op otherwise, so an
@@ -21,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
+from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SpanExporter
 
 from clue_obs.redact import is_secret_key, mask_blob, redact_value
@@ -67,9 +68,6 @@ Level = Literal["DEBUG", "DEFAULT", "WARNING", "ERROR"]
 #: Longest string any exported payload may carry; the turn's receipt limit is the same order.
 DEFAULT_MASK_LIMIT = 8_000
 
-#: Server spans for these routes are health probes: dropped before export.
-HEALTH_ROUTES: frozenset[str] = frozenset({"/healthz", "/health", "/readyz", "/livez"})
-
 # The SDK client, typed ``Any`` on purpose: the platform never depends on its exact typed
 # surface, and every helper below tolerates ``None`` (not installed).
 _client: Any | None = None
@@ -111,14 +109,6 @@ def make_mask(limit: int = DEFAULT_MASK_LIMIT) -> Callable[..., Any]:
     return mask
 
 
-def _not_a_health_check(span: ReadableSpan) -> bool:
-    attributes = span.attributes or {}
-    route = (
-        attributes.get("http.route") or attributes.get("url.path") or attributes.get("http.target")
-    )
-    return route not in HEALTH_ROUTES
-
-
 # --- install / lifecycle ---------------------------------------------------------------------
 
 
@@ -141,6 +131,7 @@ def install_langfuse(
     if not (public_key or "").strip() or not (secret_key or "").strip():
         return False
     from langfuse import Langfuse
+    from langfuse.span_filter import is_default_export_span
 
     _client = Langfuse(
         public_key=public_key,
@@ -150,7 +141,11 @@ def install_langfuse(
         release=release or None,
         tracer_provider=tracer_provider,
         mask=make_mask(mask_limit),
-        should_export_span=_not_a_health_check,
+        # Langfuse holds the agent harness and nothing else (2026-10-03 spec, R1): the SDK's own
+        # default keeps ``langfuse-sdk`` observations, ``gen_ai.*`` spans and known LLM
+        # instrumentors, and drops the FastAPI, httpx and plain ``clue_research`` spans that share
+        # this provider. The first production day had ~1,195 request traces in ~1,200.
+        should_export_span=is_default_export_span,
         span_exporter=span_exporter,
         tracing_enabled=True,
     )

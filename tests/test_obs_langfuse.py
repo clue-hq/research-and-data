@@ -121,15 +121,28 @@ def test_the_installed_client_masks_payloads_before_export() -> None:
     assert '"q": "hi"' in payload
 
 
-def test_health_check_server_spans_are_not_exported() -> None:
+def test_only_agent_harness_spans_are_exported_and_all_carry_the_environment() -> None:
+    """R1/R2 (2026-10-03 spec): web requests, raw HTTP calls and our plain pipeline spans never
+    reach Langfuse; an observation under them is exported (as the trace root, its parents gone),
+    and every exported span carries the client's environment, so the trace is not ``default``."""
     with langfuse_installed() as (exporter, provider):
-        tracer = provider.get_tracer("test")
-        with tracer.start_as_current_span("GET /healthz", attributes={"http.route": "/healthz"}):
+        server = provider.get_tracer("opentelemetry.instrumentation.fastapi")
+        client = provider.get_tracer("opentelemetry.instrumentation.httpx")
+        ours = provider.get_tracer("clue_research")
+        with server.start_as_current_span(
+            "POST /turns", attributes={"http.route": "/turns"}
+        ), ours.start_as_current_span("fleet.task"):
+            with observation("head-of-abm.turn", as_type="agent"):
+                with ours.start_as_current_span("llm.gateway_call", attributes={"model": "m"}):
+                    with client.start_as_current_span("POST"):
+                        pass
+                with observation("search_web", as_type="tool"):
+                    pass
+        with server.start_as_current_span("GET /auth/v1/session"):
             pass
-        with tracer.start_as_current_span("GET /accounts", attributes={"http.route": "/accounts"}):
-            pass
-        names = [span.name for span in finished_spans(exporter)]
-    assert names == ["GET /accounts"]
+        spans = finished_spans(exporter)
+    assert sorted(span.name for span in spans) == ["head-of-abm.turn", "search_web"]
+    assert {_attrs(span).get("langfuse.environment") for span in spans} == {"lane-test"}
 
 
 def test_the_run_registry_remembers_and_pops_by_run_id() -> None:
