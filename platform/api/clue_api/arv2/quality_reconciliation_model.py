@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 from clue_api.arv2.calls import CallSpec, ProviderCaller, SpendEstimate
 from clue_api.arv2.openrouter import (
@@ -18,6 +20,7 @@ from clue_api.arv2.openrouter import (
     openrouter_message_text,
 )
 from clue_api.arv2.provider_ledger import (
+    ArtifactSink,
     BufferedLedger,
     BufferedRawSink,
     LedgerStamp,
@@ -25,11 +28,21 @@ from clue_api.arv2.provider_ledger import (
 )
 from clue_api.arv2.structuring_client import parse_reply_text
 from clue_api.arv2.transport import HttpxTransport
-from clue_config import GatewayConfig
+from clue_config import GatewayConfig, Secrets, Settings
+from clue_db import ConnFactory
 
 
-def build_generator(settings, secrets, conn_factory, artifacts):
-    async def generate(scope, packet):
+def build_generator(
+    settings: Settings,
+    secrets: Secrets,
+    conn_factory: ConnFactory,
+    artifacts: ArtifactSink | None,
+) -> Callable[[Any, dict[str, Any]], Awaitable[Mapping[str, object]]]:
+    api_key = secrets.openrouter_api_key
+    if api_key is None:
+        raise RuntimeError("account reconciliation needs CLUE_OPENROUTER_API_KEY")
+
+    async def generate(scope: Any, packet: dict[str, Any]) -> Mapping[str, object]:
         raw, ledger = BufferedRawSink(), BufferedLedger()
         caller = ProviderCaller(
             transport=HttpxTransport(), raw_sink=raw, ledger=ledger, now=lambda: datetime.now(UTC)
@@ -38,7 +51,7 @@ def build_generator(settings, secrets, conn_factory, artifacts):
         public_packet = {k: v for k, v in packet.items() if not k.startswith("_")}
         request = openrouter_chat_request(
             base_url=GatewayConfig().base_url,
-            api_key=secrets.openrouter_api_key,
+            api_key=api_key,
             model=settings.arv2_display_model,
             messages=[
                 {"role": "system", "content": system},

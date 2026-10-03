@@ -55,7 +55,7 @@ from clue_api.arv2.discovery_store import (
 )
 from clue_api.arv2.discovery_store import read_discovery_run as read_discovery_run_row
 from clue_api.arv2.display.blocks import live_blocks
-from clue_api.arv2.display.recipes import read_recipes
+from clue_api.arv2.display.recipes import Page, read_recipes
 from clue_api.arv2.errors import Arv2Error
 from clue_config import Settings
 from clue_core import Claim, EntityId, UseClass, VerificationStatus
@@ -427,7 +427,7 @@ def _take_within_budget(items: Sequence[dict[str, Any]], *, budget: int) -> tupl
 #: What a clipped string ends with. One character, so the cap is the cap.
 _ELLIPSIS = "…"
 
-_OVERVIEW_PAGE = "overview"
+_OVERVIEW_PAGE: Page = "overview"
 
 
 def _clip(value: str, limit: int) -> tuple[str, bool]:

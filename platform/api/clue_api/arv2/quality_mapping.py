@@ -84,7 +84,10 @@ class QualityProviderWriter(LenientClaimWriter):
         draft: ClaimDraft,
         *,
         derivation: DerivedClaimInput | None = None,
+        claim_id: ClaimId | None = None,
     ) -> WriteReceipt:
+        if claim_id is not None:
+            raise ValueError("the provider mapper's claim ids come from its quality proposal")
         if derivation is not None or draft.extraction_method is not ExtractionMethod.API:
             raise ValueError(
                 "quality profile requires the typed claim specialist for interpretations"
