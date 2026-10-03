@@ -785,7 +785,9 @@ def test_the_production_turn_pins_seeds_and_indexes_the_brand_knowledge(tmp_path
                     "status.md": (
                         "ICP, products, plan, accounts, discovery and research, as of this turn."
                     ),
-                    "decisions.md": "What the human told this project, in their words.",
+                    "decisions.md": (
+                        "Recorded project decisions with source, scope and correction references."
+                    ),
                     "artifacts/index.json": ("Design artifacts of this project, by reference."),
                 }
                 files_digest = (
