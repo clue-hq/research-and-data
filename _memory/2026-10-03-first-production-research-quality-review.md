@@ -62,3 +62,23 @@ leader's identity (Comparably lists Athena as "Benefits Manager") were not pursu
 the "13,000 team members" quote appears ~6 times; (7) presentation slips — buying-signals "in-network"
 item quotes a mental-health-stigma line, why-now heading "...same benefits seat on job boards" has a
 CFO-only body.
+
+## Walked the live app (app.cluehq.ai, 2026-10-04) — Mortenson account + contacts
+Rendered text matches `display_block` exactly; the app adds uncited claims to a contact's
+Miscellaneous section (Ritter: "HR experience…", "Belonging and walk the walk"). Claim usage:
+210 of 288 Mortenson claims are cited on pages; the account claim "Traveling workforce in-network
+access problem (2024)" is NOT cited anywhere (the "in-network" buying signal cites the stigma quote).
+Found on screen:
+- **Sensitive personal data rendered to every viewer** under "Internal notes — Do not use in outreach":
+  Bachhuber's therapist + daily antidepressant use (health, special category); Ritter's state
+  financial-disclosure income sources and share holdings, plus home location; Locken's 2018 Board of
+  Accountancy order for a "Patrick Allan Locken" whose identity is unconfirmed. A label is not a control —
+  these should never be collected/stored/displayed.
+- Contact header "Research: No signals yet" on Bachhuber despite the account's best signal being his.
+- Account sidebar "Headcount 3958" matches none of the researched figures (4,492 / 10,000+ / 13,000).
+- Overview "Why they fit": raw ICP string ("ICP (us-employer-core-new-logo v6) … not met") and an empty
+  "Reason / Evidence" table; buying-committee "Why they matter" column just repeats title · persona and
+  is clipped off the right edge; "Acknowledge Spring Health, 2nd.MD, and WTW" cites only comparably.com.
+- Insights: Sources panel says 41 but lists 7 bare domains (three "linkedin.com"); Internal notes list
+  truncates its last item mid-sentence.
+- Accounts table: McKee "Researched" though its job ended needs_review; Industry blank for every account.
