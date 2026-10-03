@@ -12,16 +12,27 @@ ufw default deny incoming
 ufw allow OpenSSH
 ufw --force enable
 
-id clue > /dev/null 2>&1 || useradd --uid 1000 --create-home --shell /bin/bash clue
+# `clue` runs deploy.sh and docker compose. It takes UID 1000 only when free: OVHcloud's Ubuntu image
+# already gives 1000 to `ubuntu`.
+if ! id clue > /dev/null 2>&1; then
+  if getent passwd 1000 > /dev/null; then
+    useradd --create-home --shell /bin/bash clue
+  else
+    useradd --uid 1000 --create-home --shell /bin/bash clue
+  fi
+fi
 usermod -aG docker clue
 mkdir -p /srv/clue/workspaces /srv/clue/engine-cache
-chown 1000:1000 /srv/clue /srv/clue/workspaces /srv/clue/engine-cache
+# The checkout and env files belong to clue; the two directories the containers write belong to
+# UID 1000, which every container runs as (compose.yaml `user: "1000:1000"`).
+chown clue:clue /srv/clue
+chown 1000:1000 /srv/clue/workspaces /srv/clue/engine-cache
 chmod 700 /srv/clue/workspaces
 
 [ -d /srv/clue/app/.git ] || sudo -u clue git clone --branch main git@github.com:clue-hq/research-and-data.git /srv/clue/app
 for f in env pgbouncer.env backup.env compose.env; do
   touch "/srv/clue/$f"
-  chown 1000:1000 "/srv/clue/$f"
+  chown clue:clue "/srv/clue/$f"
   chmod 600 "/srv/clue/$f"
 done
 DOCKER_GID="$(stat -c %g /var/run/docker.sock)"

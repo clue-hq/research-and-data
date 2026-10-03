@@ -103,6 +103,13 @@ function annotationFor(steps: readonly SetupStep[], group: SetupGroup): string {
  * | `queued` / `running` | `running` | the fleet holds real work for this workspace |
  * | `succeeded` | `complete` | a draft kit was published |
  * | `failed` | `queued` + failure annotation | see below |
+ * | in flight, run halted | `queued` | see below |
+ *
+ * Once the run has HALTED (`failed` / `unavailable` — polling stops and recovery controls show),
+ * an in-flight job reads `queued`: its last-seen `running` is stale, exactly as a halted run's
+ * step rows stop spinning (`groupStatus`). Finished outcomes still show as they are. (First
+ * production onboarding, 2026-10-03: research failed mid-ingestion and the row spun forever after
+ * the kit had succeeded.)
  *
  * A failed job is NOT `complete`: that would claim a kit exists when nothing was produced. The
  * row vocabulary has no failed state, so the failure rides the detail line exactly as a failed
@@ -110,13 +117,17 @@ function annotationFor(steps: readonly SetupStep[], group: SetupGroup): string {
  * unrecognized (future) status reads as in-flight — the same degradation the per-step status
  * takes (review FE-N2) — never as a kit that exists.
  */
-function brandKitItem(row: SetupItem, job: SetupBrandKitJobSnapshot | null): SetupItem {
+function brandKitItem(
+  row: SetupItem,
+  job: SetupBrandKitJobSnapshot | null,
+  progress: { status: string },
+): SetupItem {
   if (job === null) return { ...row, status: "queued" };
   if (job.status === "succeeded") return { ...row, status: "complete" };
   if (job.status === "failed") {
     return { ...row, status: "queued", detail: `${row.detail}${FAILED_MEMBER_ANNOTATION}` };
   }
-  return { ...row, status: "running" };
+  return { ...row, status: HALTED_OVERALL.has(progress.status) ? "queued" : "running" };
 }
 
 /**
@@ -161,7 +172,9 @@ export function deriveSetupItems(
 
   const brandKit = fixtureSetup.items.find((item) => item.id === BRAND_KIT_ITEM_ID);
   if (brandKit) {
-    items.push(brandKitItem(brandKit, progress?.brand_kit_ingestion ?? null));
+    items.push(
+      brandKitItem(brandKit, progress?.brand_kit_ingestion ?? null, progress ?? { status: "" }),
+    );
   }
   return items;
 }

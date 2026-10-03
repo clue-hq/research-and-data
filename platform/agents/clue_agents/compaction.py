@@ -18,7 +18,7 @@ any profile, while ``work`` is for every role that can write files at all.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from deepagents.middleware.summarization import (
     SummarizationToolMiddleware,
@@ -108,18 +108,19 @@ def build_compaction_middleware(
     model: Any, backend: Any, settings: CompactionSettings
 ) -> tuple[ClueSummarizationMiddleware, SummarizationToolMiddleware]:
     """Our summariser and the ``compact_conversation`` tool, sized from ``settings``."""
+    trigger: tuple[Literal["tokens"], int]
+    keep: tuple[Literal["tokens"], int] | tuple[Literal["messages"], int]
     if settings.context_window is not None:
-        trigger: tuple[str, int] = (
-            "tokens",
-            int(settings.context_window * settings.trigger_fraction),
-        )
-        keep: tuple[str, int] = ("tokens", int(settings.context_window * settings.keep_fraction))
+        trigger = ("tokens", int(settings.context_window * settings.trigger_fraction))
+        keep = ("tokens", int(settings.context_window * settings.keep_fraction))
     else:
         trigger = ("tokens", settings.trigger_tokens)
         keep = ("messages", settings.keep_messages)
+    # ``backend`` arrives untyped (deepagents' backend objects); the wrapper forwards to it.
+    history_backend: Any = HistoryPathBackend(backend) if backend is not None else None
     summariser = ClueSummarizationMiddleware(
         model=model,
-        backend=HistoryPathBackend(backend) if backend is not None else backend,
+        backend=history_backend,
         trigger=trigger,
         keep=keep,
         # The summary is built from the whole evicted part (founder ruling 2026-09-29), not

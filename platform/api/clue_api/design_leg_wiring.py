@@ -1590,11 +1590,11 @@ class DesignLegTurnRunner:
             # OWN clarification part — one per document, derived from the run's terminal
             # result, never from anything the client echoed back.
             clarifications: list[dict[str, Any]] = []
-            for document, run in dispatched:
+            for asking_document, run in dispatched:
                 result = run.get("result") or {}
                 if str(result.get("status") or "") != "clarification_requested":
                     continue
-                key = str(document.get("document_id") or "")
+                key = str(asking_document.get("document_id") or "")
                 # §2.5: the card's header names the document's account ("<title> · <account>")
                 # whenever it has one. The G2 card above is resolved for WEB documents only, so
                 # a tagged SCENE ad resolves its own name here — one read per ASKING document,
@@ -1604,9 +1604,9 @@ class DesignLegTurnRunner:
                 card_name = (account_cards.get(key) or {}).get("name")
                 account_name: str | None = str(card_name) if card_name else None
                 if account_name is None:
-                    account_id = (document_rows.get(key) or {}).get("account_id") or document.get(
+                    account_id = (document_rows.get(key) or {}).get(
                         "account_id"
-                    )
+                    ) or asking_document.get("account_id")
                     if account_id:
                         async with self._conn_factory() as conn:
                             account = await design_accounts.get_web_account(
@@ -1616,10 +1616,10 @@ class DesignLegTurnRunner:
                             account_name = str(account["name"])
                 clarifications.append(
                     {
-                        "document_id": document["document_id"],
+                        "document_id": asking_document["document_id"],
                         "document_title": _document_title(document),
                         "doc_kind": str(
-                            result.get("doc_kind") or document.get("doc_kind") or "scene"
+                            result.get("doc_kind") or asking_document.get("doc_kind") or "scene"
                         ),
                         "account_name": account_name,
                         "run_id": str(run["run_id"]),

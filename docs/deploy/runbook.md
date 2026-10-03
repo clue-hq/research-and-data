@@ -76,6 +76,11 @@ fetch images through the frontend's narrow public proxy
      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO clue_worker;
      ```
      Migrations run as `postgres`; `design-api`, `page-origin` and the VM workers run as `clue_worker`.
+   `clue_worker` has no CREATE on schema public. LangGraph's checkpoint tables therefore come from a
+   migration (`4a94970221e9`), and the runtime runs LangGraph's `setup()` only when they are behind.
+   (2026-10-03: before that migration existed, a temporary `GRANT CREATE ON SCHEMA public TO
+   clue_worker` unblocked production; once a release containing `4a94970221e9` is deployed, run
+   `REVOKE CREATE ON SCHEMA public FROM clue_worker;` as the owner.)
      Every Railway database URL in the variable files carries `?ssl=require`.
 3. **Redis 7, TLS for the VM.** Railway's Redis serves no TLS, and the VM reaches Redis over the
    public TCP proxy, so the password and lock traffic would cross the internet in clear text.
@@ -111,6 +116,16 @@ fetch images through the frontend's narrow public proxy
    needs your own OAuth credentials; email-code sign-up needs bot protection off and email
    verification by code on (as on the development instance).
 5. **Shared Variables** (Project Settings): fill every `<FILL>` in `1-shared-secrets.env`, paste it.
+   Production also needs, as shared variables referenced by `platform-api` and `design-api` (and in
+   the VM's `/srv/clue/env`) — settings refuse the in-memory metrics sink in production:
+   `CLUE_METRICS_EXPORTER=otlp`, `CLUE_METRICS_OTLP_ENDPOINT=<Grafana Cloud OTLP endpoint>/v1/metrics`
+   (the full path: the exporter uses it as written) and
+   `OTEL_EXPORTER_OTLP_METRICS_HEADERS=Authorization=Basic%20<base64 of instanceID:token>` (the
+   metrics-only header, so traces keep going to Langfuse). Grafana Cloud stack `curiousferret2524`,
+   us-east-3 (chosen 2026-10-03). **Sumble is off in production:**
+   `CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED=false` and
+   `CLUE_SUMBLE_DISCOVERY_GAP_ENRICHMENT_ENABLED=false` (each switch on without `CLUE_SUMBLE_API_KEY`
+   makes the service refuse to start).
 6. Three services; paste each one's file into Variables → Raw Editor. **`platform-api` and `design-api`
    run the image CI built and tested** — they never build it themselves (2026-10-03): Settings → Source →
    Docker image `ghcr.io/clue-hq/clue-backend:production`, and under **Registry Credentials** a GitHub
@@ -130,14 +145,22 @@ fetch images through the frontend's narrow public proxy
    - `page-origin` — no start command (its Dockerfile has one), memory 256 MB, health check
      `/healthz`, domain `page-origin.cluehq.ai` (**DNS only**).
 7. **Frontend** service (already exists): branch **`main`**, and set
-   `CLUE_AUTH_ENABLED=true`, `CLUE_API_BASE_URL=https://api.cluehq.ai`,
+   **`RAILWAY_DOCKERFILE_PATH=/apps/frontend/Dockerfile.railway`** (without it Railway's auto-builder
+   detects the repository root as Python and fails — 2026-10-03, when replacing the variables dropped
+   it), `CLUE_AUTH_ENABLED=true`, `CLUE_API_BASE_URL=http://platform-api.railway.internal:8020` (the
+   frontend's server reaches the API privately; the public `https://api.cluehq.ai` also works),
    `LUMEN_API_BASE_URL=http://design-api.railway.internal:8010` (private — never a public URL),
    `CLUE_APP_ORIGIN=https://app.cluehq.ai`, `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES=https://app.cluehq.ai`,
    `CLUE_PROJECTS_API_BASE_URL=/api/clue`, and the production Clerk pair
    `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_…` / `CLERK_SECRET_KEY=sk_live_…` (the publishable key
    is baked in at build, so redeploy after changing it). Domain `app.cluehq.ai`, **DNS only**. Its
    build runs the editor wasm check in strict mode (`WASM_PREFLIGHT_STRICT=1`).
-8. Check the service files (they pass as generated; re-run after any edit):
+8. Check the service files (they pass as generated; re-run after any edit), and before deploying
+   boot each backend locally with its **real** Railway variables — only the database and Redis are
+   swapped for throwaway ones; no value is printed — so every startup refusal shows at once instead
+   of one failed deploy at a time (from a directory `railway link`ed to the project):
+   `deploy/railway_boot_check.sh platform-api platform-api ghcr.io/clue-hq/clue-backend:production`
+   (and `design-api design-api …`).
    ```bash
    python3 deploy/check_prod_env.py platform-api ~/clue-deploy/railway/2-platform-api.env
    python3 deploy/check_prod_env.py design-api ~/clue-deploy/railway/3-design-api.env
@@ -217,6 +240,15 @@ OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is d
    ```
 7. Sentry → Crons [FOUNDER]: monitor `clue-db-backup` (daily, 26-hour margin) and `clue-watchdog`
    (every 5 minutes, 10-minute margin), alerting the founder. A missed check-in is the alert.
+8. **CI deploys the VM** (one time). On your Mac:
+   `ssh-keygen -t ed25519 -N "" -C clue-ci-deploy -f ci_deploy_key`. On the VM, append to
+   `/home/clue/.ssh/authorized_keys` (owned by clue, mode 600):
+   `command="/srv/clue/app/deploy/vm/ci_deploy.sh",restrict <contents of ci_deploy_key.pub>` —
+   the key can then only ask `deploy/vm/ci_deploy.sh` to deploy one full commit sha. In GitHub
+   (repo Settings → Secrets and variables → Actions): secret **`VM_SSH_KEY`** = `ci_deploy_key`
+   (the private key), secret **`VM_SSH_KNOWN_HOSTS`** = `ssh-keyscan -t ed25519 <vm-ip>` (pins the
+   host key), variable **`VM_HOST`** = the VM's IP. Delete the local key files afterwards. Until
+   all three exist, `deploy-images` warns and skips the VM step.
 
 ## 5. Vendors [FOUNDER]
 Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
@@ -233,8 +265,9 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 2. The merge's own `deploy-images` run repeats every check and only then moves the `production` tags.
    It must be green.
 3. That run then redeploys `platform-api` from the new image and waits until it is live — its
-   pre-deploy `clue migrate` runs `alembic upgrade head` once — and then `design-api`. `page-origin`
-   and the frontend rebuild from `main` on Railway as before.
+   pre-deploy `clue migrate` runs `alembic upgrade head` once — and then `design-api`, then
+   `page-origin` (which also builds from `main` on its own and can fail before the migration lands;
+   this redeploy puts it on the migrated schema). The frontend rebuilds from `main` as before.
 4. **Only after Railway is green**, on the VM as `clue`:
    `/srv/clue/app/deploy/vm/deploy.sh <sha>` — it refuses if the database is not at head.
 5. Uptime checks (Better Stack or UptimeRobot free tier) on `https://app.cluehq.ai`,
@@ -243,8 +276,10 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 
 ## 7. Every later ship
 Merge a pull request from `research-streaming` into `main` once staging is tested and the pull
-request's `deploy-images` check is green (image changes: `local_gate.sh` first); wait for the
-merge's `deploy-images` run and Railway to go green; then `deploy.sh <sha>` on the VM.
+request's `deploy-images` check is green (image changes: `local_gate.sh` first). The merge's
+`deploy-images` run moves the tags, redeploys Railway (`platform-api` first) and then the worker VM
+(§4 step 8). Without that step configured, or if it fails: `deploy.sh <sha>` on the VM as `clue`.
+A release that adds a variable the workers need: add it to `/srv/clue/env` first.
 
 ## 7a. Known gap — accepted for now, to be closed later
 Railway rebuilds the frontend and the design API separately, so for a minute or two during a deploy

@@ -16,8 +16,10 @@ from types import MappingProxyType
 from typing import Protocol, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+import psycopg
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel, JsonValue
 from sqlalchemy import text
 
@@ -201,8 +203,34 @@ async def postgres_agent_checkpointer(
     """
 
     async with AsyncPostgresSaver.from_conn_string(_psycopg_dsn(database_url())) as saver:
-        await saver.setup()
+        await ensure_checkpoint_tables(saver)
         yield saver
+
+
+async def ensure_checkpoint_tables(saver: AsyncPostgresSaver) -> None:
+    """Run LangGraph's ``setup()`` only when the database is behind the installed library.
+
+    The tables are created by an Alembic migration as the owner (``4a94970221e9``). Production
+    opens this saver as ``clue_worker``, which has no CREATE on schema public, and ``setup()``
+    always issues ``CREATE TABLE IF NOT EXISTS`` — PostgreSQL checks the schema privilege before
+    existence — so calling it unconditionally failed every turn (2026-10-03). A database the
+    migration has not reached, or one behind a newer LangGraph, still gets ``setup()``.
+    """
+
+    latest = len(saver.MIGRATIONS) - 1
+    try:
+        # LangGraph's own read in setup(); its connections return dict rows.
+        query = "SELECT v FROM checkpoint_migrations ORDER BY v DESC LIMIT 1"
+        if isinstance(saver.conn, AsyncConnectionPool):
+            async with saver.conn.connection() as pooled:
+                row = await (await pooled.execute(query)).fetchone()
+        else:
+            row = await (await saver.conn.execute(query)).fetchone()
+        recorded = row["v"] if row is not None else None
+    except psycopg.errors.UndefinedTable:
+        recorded = None
+    if recorded is None or recorded < latest:
+        await saver.setup()
 
 
 def _canonical_bytes(value: object) -> bytes:
