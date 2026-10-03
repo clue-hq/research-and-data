@@ -29,6 +29,8 @@ APP_EXACT = {
     "CLUE_AUTH_ENABLED": "true",
     "CLUE_AUTH_ENVIRONMENT": "production",
     "CLUE_AUTH_MODE": "clerk",
+    # Settings refuses the in-memory metrics sink in production (first deploy, 2026-10-03).
+    "CLUE_METRICS_EXPORTER": "otlp",
 }
 #: names that must be set to something non-empty, for every role.
 REQUIRED = (
@@ -39,7 +41,14 @@ REQUIRED = (
     "CLUE_STORAGE_S3_ACCESS_KEY_ID",
     "CLUE_STORAGE_S3_SECRET_ACCESS_KEY",
 )
-APP_REQUIRED = ("CLUE_REDIS_URL", "CLUE_OPENROUTER_API_KEY")
+APP_REQUIRED = ("CLUE_REDIS_URL", "CLUE_OPENROUTER_API_KEY", "CLUE_METRICS_OTLP_ENDPOINT")
+#: Sumble switches that make a service refuse to start without CLUE_SUMBLE_API_KEY, and whether
+#: CLUE_PRODUCT_PATH=integration_pilot turns them on when unset (clue_config.settings overlay).
+SUMBLE_SWITCHES = {
+    "CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED": True,
+    "CLUE_SUMBLE_DISCOVERY_GAP_ENRICHMENT_ENABLED": False,
+    "CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED": True,
+}
 #: Paths the backend image sets (docker/backend/Dockerfile ENV) to what is actually inside it. A
 #: production env must leave them out: .env.example's values are lane values (a blank
 #: LUMEN_CORE_HELPER falls back to `cargo run`, which the image lacks; a relative
@@ -115,6 +124,16 @@ def problems(env: dict[str, str], role: str) -> list[str]:
         for name in PRODUCTION_LABELS:
             if name in env and env[name] != "production":
                 found.append(f"{name} must be 'production' (is {env[name]!r})")
+        if not env.get("CLUE_SUMBLE_API_KEY"):
+            pilot = env.get("CLUE_PRODUCT_PATH") == "integration_pilot"
+            for name, pilot_default in SUMBLE_SWITCHES.items():
+                value = env.get(name)
+                on = value.lower() in ("1", "true", "yes") if value else pilot and pilot_default
+                if on:
+                    found.append(
+                        f"{name} is on but CLUE_SUMBLE_API_KEY is not set: the service refuses "
+                        "to start; set it false or provide the key"
+                    )
     if role == "platform-api":
         found.extend(_platform_api_problems(env))
     if role == "design-api" and env.get("LUMEN_EMBEDDED_FLEET_WORKER") != "0":

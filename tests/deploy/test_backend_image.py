@@ -36,7 +36,7 @@ def test_the_arv2_raw_root_is_created_for_uid_1000_before_the_user_switch() -> N
 
 def test_the_smoke_test_writes_to_the_arv2_raw_root_as_the_image_user() -> None:
     assert "CLUE_ARV2_RAW_ROOT" in SMOKE
-    assert "ok: arv2 raw root writable" in SMOKE
+    assert 'check "arv2 raw root writable"' in SMOKE
 
 
 def test_release_prs_run_every_image_check_but_only_a_push_to_main_moves_the_tags() -> None:
@@ -52,10 +52,35 @@ def test_release_prs_run_every_image_check_but_only_a_push_to_main_moves_the_tag
     assert triggers["pull_request"]["branches"] == ["main"]
     steps = workflow["jobs"]["images"]["steps"]
     movers = [s for s in steps if "production" in s.get("run", "") and "imagetools" in s["run"]]
-    assert len(movers) == 1 and movers[0] is steps[-1]
-    assert movers[0]["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
-    for step in steps[:-1]:
+    assert len(movers) == 1
+    on_main = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    at = steps.index(movers[0])
+    for step in steps[:at]:
         assert "if" not in step, f"every check must run on PRs too: {step.get('name')}"
+    # The tag move and what follows it (the Railway redeploy) happen only on main.
+    for step in steps[at:]:
+        assert step.get("if") == on_main, step.get("name")
+
+
+def test_railway_redeploys_after_the_tags_move_platform_api_first() -> None:
+    """Railway runs the image CI tagged; platform-api goes first so its pre-deploy migration
+    lands before design-api and page-origin start on the schema."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "deploy-images.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["images"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    mover = next(i for i, s in enumerate(steps) if "imagetools" in s.get("run", ""))
+    redeploy = next(i for i, n in enumerate(names) if n.startswith("Redeploy the Railway"))
+    assert redeploy > mover
+    run = steps[redeploy]["run"]
+    order = [
+        run.index(f"railway_redeploy.sh {s}") for s in ("platform-api", "design-api", "page-origin")
+    ]
+    assert order == sorted(order)
+    assert steps[redeploy]["env"]["RAILWAY_TOKEN"] == "${{ secrets.RAILWAY_TOKEN }}"
 
 
 def test_both_apis_listen_on_a_configurable_host_defaulting_to_ipv4() -> None:

@@ -43,6 +43,8 @@ GOOD_APP = {
     "CLUE_OPENROUTER_API_KEY": "${{shared.CLUE_OPENROUTER_API_KEY}}",
     "CLUE_SENTRY_ENVIRONMENT": "production",
     "CLUE_LANGFUSE_ENVIRONMENT": "production",
+    "CLUE_METRICS_EXPORTER": "otlp",
+    "CLUE_METRICS_OTLP_ENDPOINT": "https://otlp-gateway.example/otlp/v1/metrics",
 }
 GOOD_PLATFORM = {
     **GOOD_APP,
@@ -338,3 +340,48 @@ def test_the_cli_exits_0_on_a_clean_file(tmp_path: Path) -> None:
     )
     assert result.returncode == 0, result.stdout
     assert result.stdout.strip().endswith("OK")
+
+
+@pytest.mark.parametrize("role", APP_ROLES)
+def test_app_roles_must_export_metrics_over_otlp(role: str) -> None:
+    # Settings refuses to start in production on the in-memory sink (first deploy, 2026-10-03).
+    env = {k: v for k, v in GOOD[role].items() if not k.startswith("CLUE_METRICS_")}
+    found = check.problems(env, role)
+    assert any("CLUE_METRICS_EXPORTER" in p for p in found)
+    assert any("CLUE_METRICS_OTLP_ENDPOINT" in p for p in found)
+    assert check.problems({**env, "CLUE_METRICS_EXPORTER": "memory"}, role) != []
+
+
+def test_page_origin_needs_no_metrics_exporter() -> None:
+    assert check.problems(GOOD_PAGE_ORIGIN, "page-origin") == []
+
+
+@pytest.mark.parametrize("role", APP_ROLES)
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED",
+        "CLUE_SUMBLE_DISCOVERY_GAP_ENRICHMENT_ENABLED",
+        "CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED",
+    ],
+)
+def test_a_sumble_switch_on_needs_the_sumble_key(role: str, flag: str) -> None:
+    # Each switch makes the service refuse to start without the key (first deploy, 2026-10-03).
+    found = check.problems({**GOOD[role], flag: "true"}, role)
+    assert any(flag in p and "CLUE_SUMBLE_API_KEY" in p for p in found)
+    assert check.problems({**GOOD[role], flag: "true", "CLUE_SUMBLE_API_KEY": "k"}, role) == []
+    assert check.problems({**GOOD[role], flag: "false"}, role) == []
+
+
+@pytest.mark.parametrize("role", APP_ROLES)
+def test_the_integration_pilot_path_turns_sumble_on_by_default(role: str) -> None:
+    env = {**GOOD[role], "CLUE_PRODUCT_PATH": "integration_pilot"}
+    found = check.problems(env, role)
+    assert any("CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED" in p for p in found)
+    assert any("CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED" in p for p in found)
+    off = {
+        **env,
+        "CLUE_SUMBLE_ACCOUNT_GAP_ENRICHMENT_ENABLED": "false",
+        "CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED": "false",
+    }
+    assert check.problems(off, role) == []
