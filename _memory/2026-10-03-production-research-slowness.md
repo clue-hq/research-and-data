@@ -207,3 +207,27 @@ completed.
 The 317 s transaction on `UPDATE artifact SET expires_at` is from `arv2/media_store.py:284`
 (`subjects`, person-job media). Not yet explained: the media download itself runs outside the
 transaction, so it was most likely waiting on a lock held by another job. Unconfirmed.
+
+## Implementation (branch perf/research-slowness-fixes, 2026-10-04)
+
+Spec `docs/superpowers/specs/2026-10-03-research-slowness-fixes-design.md`, plan
+`docs/superpowers/plans/2026-10-03-research-slowness-fixes.md`. Commits (base `1ad82b6be`):
+- T1 `critical_section` timing log (`CLUE_DB_CRITICAL_SECTION_LOG_MS`, default 500).
+- T2 `dea0a05c1` one shared S3 client per (event loop, config); one rebuild+retry on connection errors; `CLUE_STORAGE_S3_MAX_POOL_CONNECTIONS=50`; closed at shutdown in fleet/projections/page-origin.
+- T3 `8130bcbb1` artifact writers take `agent-project-artifacts:*` SHARED; project erasure keeps it exclusive.
+- T4 `9537d7c06` research artifact saves: record row → upload → bind under the shared lock; derivations in one `INSERT … unnest`.
+- T5 `93cf7dfd7` evidence: `prepare_source` uploads outside the account manifest lock, `publish_sources` assigns revisions for a batch under one lock; recovery pages by 100 and publishes once.
+- T6 `6047b3e22` dossier import: `ImportStorage` prefetches reads, sends uploads together after the row checks.
+- T7 `f057ce334` fleet worker skips a kind at its in-flight limit (`InFlightLimited`); account research = `arv2_account_max_parallel_jobs`.
+- T8 `9f0d8b51e` `check_finalizable` runs before the completion guard and the outputs snapshot (McKee's refused-finalize bug).
+- T9 `a70acad29` `CLUE_DB_POOL_SIZE`/`CLUE_DB_MAX_OVERFLOW`/`CLUE_DB_POOL_TIMEOUT_S`; runbook: pgbouncer `STATS_USERS`, SHOW POOLS, pool 20→40 only after measuring.
+- Stale tests fixed (pre-existing on base, not this branch): `acd0b90bb`, `774f6b139`, `2827e7995` — runtime ×2, nomination ×5, owned narrative ×1, driver ×1.
+
+Verification: ruff/format/mypy (499 files)/lint-imports (29 kept) clean. Focused suites on throwaway DB
+`clue_dushanbe_test`, no keys (`tests/storage tests/fleet tests/agents tests/clue_obs tests/db/test_db_engine.py
+tests/api/{project_artifact_lock,research_artifacts,agent_turn_wiring,agent_runtime_wiring}_db.py tests/api/test_fleet_wiring.py tests/arv2`):
+first run 9 failures (all pre-existing, reproduced on `1ad82b6be`); after the stale-test fixes **2206 passed, 13 skipped, 0 failed**.
+
+Residual: the recovery path's `index_transcripts` still uploads under the lock taken by the recovery publish (rare path).
+Not yet proven: end-to-end speedup. Owed — an R2-backed before/after load run against a dev bucket, and the
+post-deploy production measurement against spec §1 success criteria 1–5 (founder triggers the run).
