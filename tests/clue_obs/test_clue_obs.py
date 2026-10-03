@@ -104,6 +104,27 @@ def test_log_span_failure_emits_failed_and_reraises() -> None:
     assert failed["error_type"] == "ValueError"
 
 
+def test_log_span_logs_an_expected_refusal_at_warning_and_anything_else_at_error() -> None:
+    """R6 (2026-10-03 spec): a refusal the caller expects (a tool precondition the agent repairs)
+    is a warning, so Sentry's logging integration (which reports error and above) never pages on
+    it; an unexpected exception stays an error with its traceback."""
+
+    class Refused(RuntimeError):
+        pass
+
+    with capture_events(mode="info") as cap:
+        for exc in (Refused("no_discovery_run"), ValueError("boom")):
+            try:
+                with log_span("tool", expected=(Refused,)):
+                    raise exc
+            except (Refused, ValueError):
+                pass
+    refused, crashed = cap.events("tool_failed")
+    assert refused["level"] == "warning" and refused["error_type"] == "Refused"
+    assert refused["error"] == "no_discovery_run" and "exception" not in refused
+    assert crashed["level"] == "error" and crashed["error_type"] == "ValueError"
+
+
 def test_info_mode_truncates_long_strings() -> None:
     with capture_events(mode="info") as cap:
         get_logger("t").info("big_payload", body="long prose word " * 100)

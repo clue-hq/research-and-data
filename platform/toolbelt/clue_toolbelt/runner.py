@@ -35,7 +35,12 @@ from pydantic_core import PydanticSerializationError
 
 from clue_obs import get_logger, log_span
 from clue_toolbelt.envelope import Tool, ToolContext, ToolOutput, ToolResult
-from clue_toolbelt.errors import IdempotencyConflict, PreconditionFailed, ToolContractViolation
+from clue_toolbelt.errors import (
+    IdempotencyConflict,
+    PreconditionFailed,
+    ToolAwaitingInput,
+    ToolContractViolation,
+)
 from clue_toolbelt.idempotency import IdempotencyStore, StoredInvocation, body_sha256
 from clue_toolbelt.registry import ToolRegistry
 
@@ -134,6 +139,9 @@ async def invoke_tool(
     with log_span(
         f"toolbelt.{name}",
         logger=log,
+        # A refused precondition is the agent's to repair and an awaited input is a wait, not a
+        # fault: warnings, so they never become Sentry issues (2026-10-03 spec, R6).
+        expected=(PreconditionFailed, ToolAwaitingInput),
         actor=ctx.actor,
         workspace_id=ctx.workspace_id,
         quality_mode=ctx.quality_mode,
