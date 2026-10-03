@@ -65,14 +65,15 @@ This is how success criteria 1–2 are checked after deploy, and how part 4's de
 
 ### Part 1 — One S3 client per storage backend
 
-`S3Storage` keeps one long-lived `aioboto3` client:
+The process keeps one long-lived `aioboto3` client per (event loop, S3 configuration), shared by
+every `S3Storage` instance — many call sites (notably the design subsystem) build a fresh backend
+per call, so a client per backend object would leak a connection pool per call:
 
-- Created on first use under an `asyncio.Lock`, bound to the event loop that created it. A call on
-  a different loop (tests) creates that loop's own client; the backend never shares a client across
-  loops.
+- Created on first use under an `asyncio.Lock`, per event loop. A call on a different loop (tests)
+  gets that loop's own client; no client crosses loops.
 - Reused by `put`, `get`, `exists`, `delete`, `list_blobs` and `presign`.
-- Closed by a new `async close()` on the backend, called from the process shutdown paths that
-  already close the database engine (fleet worker, API lifespans).
+- Closed by `close_shared_s3_clients()`, called from the process shutdown paths that already close
+  the database engine (fleet worker, projections API, page origin).
 - Rebuilt once, transparently, if a call fails with a connection-level error (not a 404 and not an
   access error); a second failure surfaces as today's `StorageError`.
 - Connection pool size from `CLUE_STORAGE_S3_MAX_POOL_CONNECTIONS` (default `50`) via botocore
@@ -96,14 +97,19 @@ row lock serialises writers against erasure":
 it with `pg_advisory_xact_lock_shared`; the two erasure sites keep the exclusive
 `pg_advisory_xact_lock`. Writers never block each other; erasure still excludes every writer.
 
-**2b. The upload leaves the transaction.** Today `ResearchArtifacts.persist_body` hands the inner
-store its own open connection (`same_transaction`), so the inner store's upload — normally after its
-commit — runs inside the outer transaction while the project lock is held. Change: the outer method
-records everything in its transaction and returns; the upload happens after that transaction
-commits, exactly as the plain `DurableAgentArtifactStore.persist_body` already does ("the row is
-committed before external storage mutation; a crash here is body-unavailable and fail-closed; retry
-converges on the same content-addressed key"). The inner store gets a variant of `persist_body` that
-records without uploading, so both paths share one implementation of the recording.
+**2b. No upload while the project lock is held.** Today `ResearchArtifacts.persist_body` hands the
+inner store its own open connection (`same_transaction`), so the inner store's upload — normally
+after its commit — runs inside the outer transaction after the project lock was taken. And
+`ResearchArtifacts` is often given a *borrowed* connection (inside a dossier save's own transaction:
+`quality_json_dossier.py:96`, `quality_dossier.py:195`, `person_research_brief.py:39`), so it cannot
+always upload after commit. Change: `DurableAgentArtifactStore` splits its recording into two
+helpers — `_record_body` (per-key lock, tombstone check, artifact row, subject bindings) and
+`_bind_projects` (shared project lock, project binding rows). `ResearchArtifacts.persist_body` then
+runs, in its transaction: the evidence/context reads and `FOR SHARE` checks, `_record_body` (the row
+first, per the storage rule), the upload, and only then `_bind_projects`, the batched derivation
+insert and the retention. The project lock is taken last, for a few database-only statements. The
+plain `DurableAgentArtifactStore.persist_body` keeps its order (record and bind in its transaction,
+upload after commit).
 
 **2c. Derivation edges in one statement.** The per-parent loop of
 `INSERT INTO artifact_derivation ... ON CONFLICT DO NOTHING` becomes one
@@ -115,28 +121,42 @@ The number of derivation rows does not change in this PR (see §5, follow-up 1).
 **Tests (real Postgres, throwaway DB):**
 - Two concurrent research saves in the same project both proceed while each holds the shared lock
   (neither waits on the other); a project erasure waits for both and then excludes a third.
-- The upload happens after commit: a storage stub that records whether a transaction is open at
-  `put` time sees none.
-- A crash between commit and upload leaves the row without a blob, and a retry of the same bytes
-  converges (the existing fail-closed behaviour, now covered for the research path).
+- The upload happens before the project lock is taken: a storage stub that, at `put` time, asks
+  `pg_locks` whether this backend holds the project lock sees that it does not.
+- A failing upload rolls the save back (no binding row, no derivation rows), and a retry of the same
+  bytes succeeds.
 - Derivation rows written are identical to today's for a fixture with 300 parents, in one statement.
 
 ### Part 3 — Evidence saving: the account-wide lock covers only the final writes
 
-In `persist_source` the account-wide manifest lock (`SELECT ... FOR UPDATE` on
-`arv2_evidence_manifest`) moves from the start to the end, around the two statements that need it:
-the revision increment and the `arv2_evidence_source` insert. The artifact row is still recorded
-before the upload (per-key row lock, unchanged), and the upload and the `original_key`
-verification read happen before the manifest lock is taken.
+`persist_source` runs on its caller's transaction, and the main caller,
+`_index_receipts` (`arv2/quality_acquisition.py`), saves many sources — every result, page text and
+highlight of up to 100 provider responses — in **one** transaction. Moving the lock inside each save
+would still hold it across the next save's upload. So `persist_source` splits in two:
 
-The early "already recorded?" check stays before the work, and the final insert becomes
-`ON CONFLICT (source_id) DO NOTHING` followed by a re-read, so two concurrent saves of the same
-source converge on one row and one revision (today the lock prevents that race by serialising
-everything).
+- `prepare_source(conn, storage, scope, ...) -> PreparedSource` — computes the deterministic
+  `source_id`, returns early with the existing `SourceRef` when the source is already recorded,
+  otherwise records the artifact row (before the upload, per-key row lock, unchanged), uploads,
+  verifies the `original_key`, retains, and links the derivation. **No manifest lock.**
+- `publish_sources(conn, scope, prepared) -> tuple[SourceRef, ...]` — takes the account-wide
+  manifest lock (`INSERT ... ON CONFLICT DO NOTHING` then `SELECT ... FOR UPDATE` on
+  `arv2_evidence_manifest`) once, and for each prepared source in order: re-checks
+  `arv2_evidence_source` (a concurrent save may have published it), otherwise increments the
+  revision and inserts the row.
 
-**Tests:** concurrent saves of different sources for one account overlap their uploads (a storage
-stub with a 200 ms delay; total time well under N × 200 ms); concurrent saves of the same source
-produce one row; revisions stay gap-free and strictly increasing in commit order.
+`persist_source` stays as `prepare` + `publish` of one source, for its other caller
+(`arv2/quality_media.py`). `_index_receipts` prepares and returns `PreparedSource`s; its caller
+`recover_acquisitions` pages through ledger rows in batches of 100 on one transaction, today
+selecting rows "not yet published". With publication deferred, it instead excludes the ledger ids
+it has already prepared in this call (`AND l.ledger_id <> ALL(:prepared)`), prepares every batch,
+and publishes everything once at the end — so the lock is held for database-only statements just
+before its caller commits.
+
+**Tests:** prepared saves of different sources for one account, in two concurrent transactions,
+overlap their uploads (a storage stub with a 200 ms delay; total time well under N × 200 ms);
+concurrent saves of the same source produce one row; revisions stay gap-free and strictly
+increasing in publication order; `_index_receipts` publishes the same sources, with the same
+`source_id`s and order, as before.
 
 ### Part 3b — Claim import reads its sources before the transaction
 
@@ -145,16 +165,37 @@ and for every finding `resolve_source` / `submit_proposal` (`arv2/quality_claims
 sources from R2 with `read_verified_artifact` inside it — one at a time, ~2.5 s per finding, the
 transaction open for minutes.
 
-Change: before the transaction opens, collect every source the dossier cites and fetch their bytes
-concurrently (bounded by `CLUE_ARV2_IMPORT_PREFETCH_CONCURRENCY`, default `8`, added to
-`.env.example`) into an in-memory map keyed by storage key. Inside the transaction, the verified
-read keeps every row check (row present, same workspace, not erased/expired/purged, digest and size
-match the bytes) but takes the bytes from the map instead of R2. A key missing from the map — not
-expected — falls back to today's direct read. The transaction stays one all-or-nothing unit.
+Per finding that is not reused or replayed, the import today does, all inside the caller's tool
+transaction: one read of the research-context manifest (the same key every time), one read per cited
+source's `artifact_key`, one upload of the proposal record (`quality_claims.py` ~490) and, for a
+written claim, per cited source a read of its `original_key` and `artifact_key` plus one upload of
+a disposition receipt (`record_disposition`, `quality_evidence.py` ~628-642).
 
-**Tests:** a dossier citing 40 sources with a 200 ms storage stub imports in well under 40 × 200 ms;
-an artifact erased between prefetch and transaction is still refused (the row check runs inside the
-transaction); a digest mismatch in the prefetched bytes is still refused.
+Change: `import_research_dossier` runs its work through an `ImportStorage` wrapper around the real
+backend:
+
+- **Reads:** at the start of the import, collect the keys it will read — the context manifest key,
+  and the `artifact_key` and `original_key` of every source the dossier cites (resolved the same way
+  the import resolves them: through `source_aliases` when given, otherwise the cited paths) — and
+  fetch them concurrently (at most 8 at once, a module constant). `get` serves those bytes from
+  memory; any other key falls back to the real
+  backend. Every row check in `read_verified_artifact` still runs inside the transaction (row
+  present, same workspace, not erased/expired/purged, digest and size match), so an erasure between
+  prefetch and use is still refused.
+- **Uploads:** `put` records the bytes (and serves later `get`s of that key from memory) instead of
+  uploading; just before `import_research_dossier` returns, the wrapper uploads them all
+  concurrently (same bound). The artifact rows were already recorded before each `put` call, as the
+  storage rule requires, and the uploads finish before the caller's transaction commits — a failed
+  upload raises and rolls the import back, exactly as a failed upload does today.
+
+The transaction stays one all-or-nothing unit; only where the bytes come from and when they leave
+change.
+
+**Tests:** a dossier with 20 findings citing 40 sources, over a storage stub with a 200 ms delay on
+every call, imports in well under today's serial time; the context manifest is fetched once; an
+artifact erased after prefetch is still refused; a digest mismatch in prefetched bytes is still
+refused; a failing upload rolls the import back; the claims, proposals and dispositions written are
+identical to an import without the wrapper.
 
 ### Part 4 — The per-job connection: keep it, measure it
 
