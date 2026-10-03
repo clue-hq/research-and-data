@@ -8,6 +8,8 @@ import sentry_sdk
 from sentry_sdk.transport import Transport
 
 from clue_obs import bound_context
+from clue_obs.otel import collect_spans, traced_step
+from clue_obs.otel.trace_ids import remember_trace
 from clue_obs.sentry import capture, install_sentry, sentry_is_installed
 
 
@@ -58,5 +60,76 @@ def test_an_event_carries_the_bound_ids_as_tags_no_locals_and_redacted_extras() 
         assert event["extra"]["count"] == 3
         frames = event["exception"]["values"][0]["stacktrace"]["frames"]
         assert all("vars" not in frame for frame in frames)
+    finally:
+        sentry_sdk.get_client().close()
+
+
+def _install_with_langfuse(transport: StubTransport) -> None:
+    assert install_sentry(
+        dsn="https://public@o0.ingest.sentry.io/1",
+        environment="lane-test",
+        release=None,
+        process_name="clue-test",
+        transport=transport,
+        langfuse_host="https://us.cloud.langfuse.com/",
+    )
+
+
+def _events(transport: StubTransport) -> list[Any]:
+    sentry_sdk.flush(timeout=5)
+    return [env.get_event() for env in transport.envelopes if env.get_event() is not None]
+
+
+def test_an_event_carries_the_opentelemetry_trace_id_and_a_langfuse_link() -> None:
+    """R5 (2026-10-03 spec): the trace id on a Sentry event is the one in the logs and Langfuse."""
+    transport = StubTransport()
+    _install_with_langfuse(transport)
+    try:
+        with collect_spans(), traced_step("fleet.task") as span:
+            try:
+                raise RuntimeError("boom")
+            except RuntimeError as exc:
+                capture(exc)
+        (event,) = _events(transport)
+        trace_id = format(span.get_span_context().trace_id, "032x")
+        assert event["contexts"]["trace"]["trace_id"] == trace_id
+        assert event["contexts"]["trace"]["span_id"] == format(
+            span.get_span_context().span_id, "016x"
+        )
+        assert event["tags"]["trace_id"] == trace_id
+        assert event["contexts"]["langfuse"] == {
+            "trace_url": f"https://us.cloud.langfuse.com/trace/{trace_id}"
+        }
+    finally:
+        sentry_sdk.get_client().close()
+
+
+def test_an_error_reported_after_its_span_closed_carries_the_remembered_trace() -> None:
+    transport = StubTransport()
+    _install_with_langfuse(transport)
+    try:
+        with collect_spans(), traced_step("fleet.task") as span:
+            error = RuntimeError("boom")
+            remember_trace(error)
+        try:
+            raise error
+        except RuntimeError as exc:
+            capture(exc)
+        (event,) = _events(transport)
+        trace_id = format(span.get_span_context().trace_id, "032x")
+        assert event["contexts"]["trace"]["trace_id"] == trace_id
+        assert event["tags"]["trace_id"] == trace_id
+    finally:
+        sentry_sdk.get_client().close()
+
+
+def test_an_event_with_no_trace_has_no_trace_tag_or_link() -> None:
+    transport = StubTransport()
+    _install_with_langfuse(transport)
+    try:
+        capture(RuntimeError("boom"))
+        (event,) = _events(transport)
+        assert "trace_id" not in event.get("tags", {})
+        assert "langfuse" not in event.get("contexts", {})
     finally:
         sentry_sdk.get_client().close()
