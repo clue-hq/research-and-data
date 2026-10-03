@@ -28,6 +28,7 @@ from clue_obs.otel.attributes import (
     ATTR_ACTOR,
     ATTR_FLEET_KIND,
     ATTR_JOB_ID,
+    ATTR_LAUNCHED_BY_TRACE_ID,
     ATTR_PROFILE_VERSION,
     ATTR_PROJECT_ID,
     ATTR_REQUEST_ID,
@@ -71,6 +72,7 @@ RUN_CONTEXT_KEYS: frozenset[str] = frozenset(
         ATTR_FLEET_KIND,
         ATTR_TASK_ATTEMPT,
         ATTR_WORKER_ID,
+        ATTR_LAUNCHED_BY_TRACE_ID,
     }
 )
 

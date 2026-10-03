@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
+import structlog
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SpanExporter
 
@@ -64,6 +65,10 @@ ObservationType = Literal[
     "guardrail",
 ]
 Level = Literal["DEBUG", "DEFAULT", "WARNING", "ERROR"]
+
+#: The run-context key the fleet worker binds to the enqueuing trace's id
+#: (``ATTR_LAUNCHED_BY_TRACE_ID``).
+_LAUNCHED_BY_KEY = "launched_by_trace_id"
 
 #: Longest string any exported payload may carry; the turn's receipt limit is the same order.
 DEFAULT_MASK_LIMIT = 8_000
@@ -323,6 +328,8 @@ def propagate_trace(
     """Name the trace and stamp session, user, metadata and tags on every span opened inside.
 
     Metadata values are stringified (the SDK takes primitives) and ``None`` values are dropped.
+    Inside a fleet task the launcher's trace id (bound by the worker as ``launched_by_trace_id``)
+    is added, so a job's trace leads back to the turn that launched it (2026-10-03 spec, R3).
     """
     if _client is None:
         yield
@@ -330,7 +337,9 @@ def propagate_trace(
     from langfuse import propagate_attributes
 
     _seed_entities()
-    cleaned = {k: str(v) for k, v in (metadata or {}).items() if v is not None}
+    launched_by = structlog.contextvars.get_contextvars().get(_LAUNCHED_BY_KEY)
+    merged = {_LAUNCHED_BY_KEY: launched_by, **(metadata or {})}
+    cleaned = {k: str(v) for k, v in merged.items() if v is not None}
     with propagate_attributes(
         trace_name=trace_name,
         session_id=session_id,

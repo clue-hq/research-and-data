@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from opentelemetry.sdk.trace import ReadableSpan
 
+from clue_obs import bound_context
 from clue_obs.langfuse import (
     DEFAULT_MASK_LIMIT,
     LangfuseIds,
@@ -129,15 +130,18 @@ def test_only_agent_harness_spans_are_exported_and_all_carry_the_environment() -
         server = provider.get_tracer("opentelemetry.instrumentation.fastapi")
         client = provider.get_tracer("opentelemetry.instrumentation.httpx")
         ours = provider.get_tracer("clue_research")
-        with server.start_as_current_span(
-            "POST /turns", attributes={"http.route": "/turns"}
-        ), ours.start_as_current_span("fleet.task"):
-            with observation("head-of-abm.turn", as_type="agent"):
-                with ours.start_as_current_span("llm.gateway_call", attributes={"model": "m"}):
-                    with client.start_as_current_span("POST"):
-                        pass
-                with observation("search_web", as_type="tool"):
-                    pass
+        with (
+            server.start_as_current_span("POST /turns", attributes={"http.route": "/turns"}),
+            ours.start_as_current_span("fleet.task"),
+            observation("head-of-abm.turn", as_type="agent"),
+        ):
+            with (
+                ours.start_as_current_span("llm.gateway_call", attributes={"model": "m"}),
+                client.start_as_current_span("POST"),
+            ):
+                pass
+            with observation("search_web", as_type="tool"):
+                pass
         with server.start_as_current_span("GET /auth/v1/session"):
             pass
         spans = finished_spans(exporter)
@@ -211,3 +215,21 @@ def test_tag_entities_from_child_tasks_shares_one_accumulator() -> None:
         _attrs(s)["langfuse.trace.metadata.entities"] for s in spans if s.name == "entities.tagged"
     ]
     assert sets == ["acc-1", "acc-1,con-2"]
+
+
+def test_a_trace_opened_in_a_launched_task_names_the_trace_that_launched_it() -> None:
+    """R3 (2026-10-03 spec): a fleet task is its own trace; the worker binds the launcher's trace
+    id, and the Langfuse trace carries it so a research job's trace leads back to its turn."""
+    launcher = "df90b7ebcd28d5b6489e4e6f830761fc"
+    with langfuse_installed() as (exporter, _provider):
+        with (
+            bound_context(launched_by_trace_id=launcher),
+            propagate_trace(trace_name="arv2.account_research"),
+            observation("job"),
+        ):
+            pass
+        with propagate_trace(trace_name="head-of-abm.turn"), observation("turn"):
+            pass
+        by_name = {span.name: _attrs(span) for span in finished_spans(exporter)}
+    assert by_name["job"]["langfuse.trace.metadata.launched_by_trace_id"] == launcher
+    assert "langfuse.trace.metadata.launched_by_trace_id" not in by_name["turn"]
