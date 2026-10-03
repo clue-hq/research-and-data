@@ -4,7 +4,7 @@
 # S3 storage backend round-trips an object, and the sandbox runs a trivial script through the
 # image's Docker CLI.
 # Usage: boot_smoke.sh <backend-image> <sandbox-image>
-# Self-contained: starts its own throwaway Postgres (pgvector), Redis and MinIO on a private Docker
+# Self-contained: starts its own throwaway Postgres (pgvector), Redis and S3 server on a private Docker
 # network and removes everything on exit, so it runs the same on a Mac (Docker Desktop) and in CI.
 set -Eeuo pipefail
 IMAGE="${1:?usage: boot_smoke.sh <backend-image> <sandbox-image>}"
@@ -15,7 +15,7 @@ DESIGN_PORT=18010
 ENVF=""
 
 cleanup() {
-  docker rm -f smoke-platform smoke-design smoke-worker smoke-pg smoke-redis smoke-minio > /dev/null 2>&1 || true
+  docker rm -f smoke-platform smoke-design smoke-worker smoke-pg smoke-redis smoke-s3 > /dev/null 2>&1 || true
   docker network rm "$NET" > /dev/null 2>&1 || true
   rm -f "$ENVF"
 }
@@ -43,8 +43,9 @@ docker network create "$NET" > /dev/null
 docker run -d --name smoke-pg --network "$NET" \
   -e POSTGRES_USER=clue -e POSTGRES_PASSWORD=clue -e POSTGRES_DB=clue pgvector/pgvector:pg16 > /dev/null
 docker run -d --name smoke-redis --network "$NET" redis:7 > /dev/null
-docker run -d --name smoke-minio --network "$NET" \
-  -e MINIO_ROOT_USER=smoke-access -e MINIO_ROOT_PASSWORD=smoke-secret-key quay.io/minio/minio server /data > /dev/null
+# SeaweedFS as the S3 server (MinIO no longer publishes pullable images); with no identities
+# configured it accepts any credentials.
+docker run -d --name smoke-s3 --network "$NET" chrislusf/seaweedfs:4.48 server -s3 -dir=/data > /dev/null
 ready=no
 for _ in $(seq 1 60); do
   # pg_isready over TCP: the image's init phase answers on the socket before the real server is up.
@@ -86,22 +87,26 @@ wait_http "http://127.0.0.1:$DESIGN_PORT/healthz" smoke-design
 # shellcheck disable=SC2016  # the inner script is single-quoted on purpose: it runs in the container
 docker run --rm --network "$NET" --entrypoint "" \
   -e CLUE_STORAGE_BACKEND=s3 -e CLUE_STORAGE_S3_BUCKET=boot-smoke -e CLUE_STORAGE_S3_REGION=us-east-1 \
-  -e CLUE_STORAGE_S3_ENDPOINT_URL=http://smoke-minio:9000 \
+  -e CLUE_STORAGE_S3_ENDPOINT_URL=http://smoke-s3:8333 \
   -e CLUE_STORAGE_S3_ACCESS_KEY_ID=smoke-access -e CLUE_STORAGE_S3_SECRET_ACCESS_KEY=smoke-secret-key \
   "$IMAGE" python -c '
 import asyncio, os, aioboto3
 from clue_storage import S3Storage, storage_from_settings
 
 async def main():
-    for _ in range(30):  # MinIO may still be starting
+    last = None
+    for _ in range(60):  # the S3 server may still be starting
         try:
             async with aioboto3.Session().client("s3", endpoint_url=os.environ["CLUE_STORAGE_S3_ENDPOINT_URL"],
                     aws_access_key_id="smoke-access", aws_secret_access_key="smoke-secret-key",
                     region_name="us-east-1") as s3:
                 await s3.create_bucket(Bucket="boot-smoke")
             break
-        except Exception:
+        except Exception as exc:
+            last = exc
             await asyncio.sleep(1)
+    else:
+        raise SystemExit(f"FAILED: the throwaway S3 server never accepted a bucket: {last}")
     store = storage_from_settings()
     assert isinstance(store, S3Storage), type(store)
     key, body = "boot-smoke/probe.txt", b"boot smoke\n"

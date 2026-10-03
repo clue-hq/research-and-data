@@ -73,7 +73,7 @@ jobs:
         run: docker/backend/smoke.sh "$BACKEND:${{ github.sha }}"
       - name: Boot smoke (every service starts)
         run: |
-          # Self-contained: starts its own Postgres (pgvector), Redis and MinIO on a private network.
+          # Self-contained: starts its own Postgres (pgvector), Redis and an S3 server on a private network.
           docker/backend/boot_smoke.sh "$BACKEND:${{ github.sha }}" "$SANDBOX:${{ github.sha }}"
       - name: Move the production tags (only after every check above passed)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
