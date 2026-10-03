@@ -62,3 +62,18 @@
   setup()); its spend IS on provider_call_ledger. Add the production installers (service
   clue-ingestion-pool).
 - Langfuse MCP in this workspace is attached to the DEV project (lane environments), not production.
+- Correction (2026-10-03, while fixing #7): the ingestion COORDINATOR already had telemetry — it
+  installed it lazily as `clue-design-api` when it first imported lumen_api.main for a job; the
+  controller and the analysis workers had none. Pool children log to files, not container stdout:
+  /srv/clue/engine-cache/ingestion-pool-logs/{coordinator,analysis}.log on the VM (unbounded growth —
+  watch it). Coordinator warnings seen: gateway.cost_lookup_failed (http_404) for the brand-brief
+  generation (its ledger cost may be the estimate, not settled); 3x ingest.mime_mismatch; hero video
+  not rehosted (fragment.unrehosted_reference).
+- Pre-existing test failures met while verifying (not caused by these changes; each also fails with
+  the changes set aside): tests/agents/test_runtime.py::test_real_deepagent_tool_call_uses_exact_
+  governed_descriptor_wrapper; tests/api/test_reference_images_contract.py::test_scene_leg_envelope_
+  snapshots_reference_asset_ids; tests/api/test_product_knowledge_tools_s5d.py::test_product_tools_
+  are_not_model_visible_on_the_new_stage0_surface; design tests/test_web_turns.py::test_web_turn_
+  refuses_an_annotation_path_outside_the_closed_grammar. Also: an accidental broad pytest run (empty
+  file list, -x) and two DB test files ran against the lane DB clue_addis-ababa — keys unset, no
+  live tests; DB test data may be in that lane DB.
