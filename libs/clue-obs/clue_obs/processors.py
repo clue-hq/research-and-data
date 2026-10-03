@@ -5,7 +5,7 @@ Two layers, matching the stdlib-bridge design:
 * **shared pre-chain** (``build_shared_processors``) — runs for BOTH native
   structlog events and foreign stdlib records (uvicorn, alembic,
   ``logging.getLogger``), so the whole process emits one uniform stream:
-  ``merge_contextvars → add_log_level → add_logger_name → ISO TimeStamper →
+  ``merge_contextvars → add_trace_ids → add_log_level → add_logger_name → ISO TimeStamper →
   callsite (debug only) → redact``.
 * **per-handler tail** (``build_processor_formatter``) — the
   ``ProcessorFormatter`` bolted onto each stdlib handler:
@@ -26,6 +26,7 @@ import structlog
 from structlog.typing import Processor
 
 from clue_obs.config_types import LogFormat, LogMode
+from clue_obs.otel.trace_ids import add_trace_ids
 from clue_obs.redact import redact_processor
 from clue_obs.truncate import make_truncate_processor
 
@@ -34,6 +35,7 @@ def build_shared_processors(mode: LogMode) -> list[Processor]:
     """The pre-render chain shared by structlog + the stdlib bridge."""
     procs: list[Processor] = [
         structlog.contextvars.merge_contextvars,
+        add_trace_ids,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso", utc=True),

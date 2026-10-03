@@ -29,6 +29,7 @@ from clue_fleet.queue import (
 )
 from clue_obs import bound_context, get_logger
 from clue_obs.otel import CARRIER_KEYS, get_tracer, safe_attributes, task_trace_start
+from clue_obs.otel.trace_ids import remember_trace
 from clue_obs.sentry import capture
 
 log = get_logger("clue_fleet.work_worker")
@@ -328,7 +329,13 @@ class LeasedWorkWorker:
                 attributes=safe_attributes(bound),
             ),
         ):
-            return await handler.handle(context)
+            try:
+                return await handler.handle(context)
+            except BaseException as exc:
+                # ``worker.work_error`` is logged and reported after this span closes; the
+                # exception carries the task's trace there (2026-10-03 spec, R4/R5).
+                remember_trace(exc)
+                raise
 
     async def _run_task(
         self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None

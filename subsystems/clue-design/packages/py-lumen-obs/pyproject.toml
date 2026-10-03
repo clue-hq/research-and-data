@@ -27,11 +27,12 @@ version = "0.0.0"
 description = "Design subsystem structured-logging shim (merged havana tree) — minimal D5 packaging."
 requires-python = ">=3.12"
 license = { text = "Proprietary" }
-# Grepped, not guessed: every non-stdlib import in the package is `structlog`. `pytest` appears
+# Grepped, not guessed: the non-stdlib imports in the package are `structlog` and, since
+# 2026-10-03, `opentelemetry-api` (log lines carry the current span's trace id). `pytest` appears
 # only as a lazy in-function import inside `testing.pytest_fixture`, which by construction runs
 # only under a test session that already has pytest — declaring it would drag a test dependency
 # into every deployment.
-dependencies = ["structlog>=24,<26"]
+dependencies = ["structlog>=24,<26", "opentelemetry-api>=1.20"]
 
 [build-system]
 requires = ["hatchling"]

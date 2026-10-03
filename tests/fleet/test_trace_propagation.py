@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
+import pytest
 import structlog
 from opentelemetry import trace
 from pydantic import JsonValue
@@ -26,6 +27,7 @@ from clue_fleet import (
     WorkId,
     WorkResult,
     WorkTaskRow,
+    work_worker,
 )
 from clue_fleet.work_worker import PAYLOAD_CONTEXT_KEYS
 from clue_obs.otel import (
@@ -34,6 +36,7 @@ from clue_obs.otel import (
     collect_spans,
     traced_step,
 )
+from clue_obs.otel.trace_ids import remembered_trace
 
 
 class _Seeing:
@@ -161,3 +164,26 @@ def test_the_handler_sees_no_carrier_keys_while_the_span_still_links_to_them() -
         api_span.get_span_context().span_id
     ]
     assert handler.trace_ids == [fleet_span.get_span_context().trace_id]
+
+
+class _Failing:
+    kind = FleetTaskKind.AGENT_TURN
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        del context
+        raise RuntimeError("handler blew up")
+
+
+def test_an_error_escaping_a_task_remembers_the_tasks_trace_for_the_late_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R4/R5 (2026-10-03 spec): ``worker.work_error`` is logged and reported after the
+    ``fleet.task`` span closed, so the exception carries the task's trace with it."""
+    reported: list[BaseException] = []
+    monkeypatch.setattr(work_worker, "capture", reported.append)
+    with collect_spans() as exporter:
+        _drain(_Failing(), _row({"workspace_id": "ws-1"}))  # type: ignore[arg-type]
+    fleet_span = next(s for s in exporter.get_finished_spans() if s.name == "fleet.task")
+    (error,) = reported
+    assert remembered_trace(error) is not None
+    assert remembered_trace(error)[0] == format(fleet_span.context.trace_id, "032x")
