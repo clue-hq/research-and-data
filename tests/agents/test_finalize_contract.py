@@ -218,6 +218,9 @@ class _RecordingFinalization:
         self.envelopes.append(envelope)
         return artifact("finalization-envelope.json")
 
+    async def check_finalizable(self, *, status: Any) -> None:
+        del status
+
 
 def test_the_model_is_told_the_status_contract_it_will_be_held_to() -> None:
     # A plain object schema cannot express "failure_code iff status='failed'", so the only place
@@ -317,8 +320,9 @@ def _run(
     required_output_path: str | None = None,
     backend: object | None = None,
     completion_guard: Any | None = None,
+    execution: _FinalizingExecutionAdapter | None = None,
 ) -> tuple[Any, _FinalizingExecutionAdapter, Any]:
-    execution = _FinalizingExecutionAdapter()
+    execution = execution if execution is not None else _FinalizingExecutionAdapter()
     registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
     resolved = registry.resolve(AgentRole.HEAD_OF_ABM)
     request = AgentTurnRequest(
@@ -516,3 +520,65 @@ def test_a_guard_raised_inside_the_finalize_tool_reaches_the_model_and_the_opera
     assert outcome.status is AgentExecutionStatus.FAILED
     assert outcome.failure_code == "missing_finalize"
     assert execution.envelopes == []
+
+
+# --- refusals before outputs are frozen (McKee, production 2026-10-03) --------------------------
+
+
+class _RefuseOnceExecutionAdapter(_FinalizingExecutionAdapter):
+    """Refuses the first completed finalize the way the executor does for unresolved failures."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.checks = 0
+
+    async def check_finalizable(self, *, status: FinalizeStatus) -> None:
+        self.checks += 1
+        if status is FinalizeStatus.COMPLETED and self.checks == 1:
+            raise ValueError(
+                "Unresolved failed tool attempts remain: agent_search_evidence_1. "
+                "Correct using retry_of, or finalize with an honest blocked status."
+            )
+
+
+class _FreezingBackend(_EmptyOutputBackend):
+    """Counts snapshots of outputs/."""
+
+    def __init__(self) -> None:
+        self.snapshots = 0
+
+    async def snapshot_outputs(self, *, empty_after: bool = False) -> tuple[ArtifactRef, ...]:
+        del empty_after
+        self.snapshots += 1
+        return ()
+
+
+def test_a_refused_finalize_freezes_nothing_and_the_repaired_finalize_completes() -> None:
+    backend = _FreezingBackend()
+    guard_calls: list[FinalizeStatus] = []
+
+    async def writes_outputs_guard(model_input: ModelFinalizeRequest) -> None:
+        # The real research guard writes outputs/research.json; after a snapshot that write
+        # raises WorkspaceConflict (a RuntimeError the repair loop cannot recover from).
+        from clue_agents.workspace_policy import WorkspaceConflict
+
+        if backend.snapshots:
+            raise WorkspaceConflict("snapshotted outputs are immutable")
+        guard_calls.append(model_input.status)
+
+    execution = _RefuseOnceExecutionAdapter()
+    outcome, recorded, _calls = _run(
+        (
+            _finalize_call("finalize-refused", status="completed", user_message="Done."),
+            _finalize_call("finalize-repaired", status="completed", user_message="Done."),
+        ),
+        backend=backend,
+        completion_guard=writes_outputs_guard,
+        execution=execution,
+    )
+    assert outcome.status is AgentExecutionStatus.COMPLETED
+    assert recorded is execution
+    assert execution.checks == 2
+    assert backend.snapshots == 1
+    assert guard_calls == [FinalizeStatus.COMPLETED]
+    assert [e.status for e in execution.envelopes] == [FinalizeStatus.COMPLETED]

@@ -38,6 +38,7 @@ from clue_agents import (
     DelegationRequest,
     DelegationResult,
     DomainObjectRef,
+    FinalizeStatus,
     GovernedOperationReceipt,
     ResolvedAgentProfile,
     ValidatedOperation,
@@ -2092,24 +2093,29 @@ class C5AgentExecutionAdapter(AgentExecutionAdapter):
     async def delegate(self, *, request: DelegationRequest) -> DelegationResult:
         raise ValueError("delegation must execute as a validated plan operation")
 
+    async def check_finalizable(self, *, status: FinalizeStatus) -> None:
+        if status is not FinalizeStatus.COMPLETED:
+            return
+        unresolved = await self._executor.unresolved_interaction_failures(
+            execution_id=self._constitution.execution_id,
+            workspace_id=self._constitution.workspace_id,
+            slot_key=self._slot_key,
+        )
+        if unresolved:
+            raise ValueError(
+                "Unresolved failed tool attempts remain: "
+                + ", ".join(unresolved)
+                + ". Correct using retry_of, or finalize with an honest blocked status."
+            )
+
     async def finalize(self, *, envelope: AgentFinalizeEnvelope) -> ArtifactRef:
         # The honest finalization authority is composed in agent_runtime_wiring and injected here
         # after construction to keep this adapter focused on plan/tool execution.
         authority = getattr(self, "_finalization_authority", None)
         if authority is None:
             raise RuntimeError("finalization authority is not composed")
-        if envelope.status.value == "completed":
-            unresolved = await self._executor.unresolved_interaction_failures(
-                execution_id=self._constitution.execution_id,
-                workspace_id=self._constitution.workspace_id,
-                slot_key=self._slot_key,
-            )
-            if unresolved:
-                raise ValueError(
-                    "Unresolved failed tool attempts remain: "
-                    + ", ".join(unresolved)
-                    + ". Correct using retry_of, or finalize with an honest blocked status."
-                )
+        # Backstop: finalize_turn already ran this check before freezing outputs.
+        await self.check_finalizable(status=FinalizeStatus(envelope.status.value))
         return await authority.finalize(  # type: ignore[no-any-return]
             turn_id=self._turn_id,
             workspace_id=self._constitution.workspace_id,
