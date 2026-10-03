@@ -75,6 +75,7 @@ def build_design_job_handler(
     preference_resolver_factory: PreferenceResolverFactory | None = None,
     turn_callbacks_factory: Any = None,
     platform_reads_factory: Any = None,
+    named_trace: bool = True,
 ) -> WorkHandler | None:
     """The ``design_job`` handler for :func:`build_multi_work_worker`, or ``None`` when off.
 
@@ -114,6 +115,9 @@ def build_design_job_handler(
         # side owns the connection and the transaction; this only says what to do with them.
         "spend_drain": _drain_design_spend,
         "turn_callbacks_factory": turn_callbacks_factory,
+        # Every drained design job is one named Langfuse trace (2026-10-03 spec, R7); the inline
+        # leg lane turns it off because its turns already run inside ``design-leg.turn``.
+        "named_trace": named_trace,
     }
     if platform_reads_factory is not None:
         # The design side puts it on the host it builds, whichever host that is — so this rides
@@ -604,6 +608,7 @@ def build_design_leg_lane_driver(
         purpose="design_leg_inline_lane",
         preference_resolver_factory=preference_resolver_factory,
         turn_callbacks_factory=turn_callbacks,
+        named_trace=False,
         # Design note 2026-09-19: the SAME reads the queued drain handler gets — a leg turn
         # driven inline and one taken over by a design_job worker are one unit of work.
         platform_reads_factory=platform_reads_factory,

@@ -63,6 +63,7 @@ from clue_design.errors import DesignJobFencedError, DesignRunFencedError
 from clue_fleet.enums import FleetTaskKind
 from clue_fleet.queue import TaskCapability
 from clue_fleet.work_worker import WorkContext, WorkResult
+from clue_obs.langfuse import observation, propagate_trace
 from lumen_ingestion.jobs import IngestionJobStore
 from py_lumen_config import settings
 from py_lumen_obs import get_logger
@@ -176,6 +177,7 @@ class DesignJobWorkHandler:
         spend_drain: Any = None,
         turn_callbacks_factory: Any = None,
         ingestion_only: bool = False,
+        named_trace: bool = True,
     ) -> None:
         # Callables, not values: the embedded worker's host reads ``app.state`` at execution
         # time, so a test that swaps ``app.state.agent_turn_runner`` between turns is honoured.
@@ -191,6 +193,10 @@ class DesignJobWorkHandler:
         # takes none (it is a pipeline, not a graph).
         self._turn_callbacks_factory = turn_callbacks_factory
         self._ingestion_only = ingestion_only
+        # Every drained job is one named Langfuse trace (2026-10-03 agent-scoped tracing spec,
+        # R7). The platform's inline leg lane turns this off: its turns already run inside
+        # ``design-leg.turn``, and a second trace name would rename the leg's trace.
+        self._named_trace = named_trace
 
     @property
     def task_capabilities(self) -> "tuple[TaskCapability, ...]":
@@ -227,10 +233,52 @@ class DesignJobWorkHandler:
         """
         if "kind" in context.payload and not self.task_capabilities[0].permits(context.payload):
             raise DesignTurnJobError("design task is outside this worker's execution pool")
-        try:
-            return await self._handle(context)
-        except Exception as error:
-            return await self._contain_preamble_failure(context, error)
+        with self._job_trace(context.payload):
+            try:
+                return await self._handle(context)
+            except Exception as error:
+                return await self._contain_preamble_failure(context, error)
+
+    @contextlib.contextmanager
+    def _job_trace(self, payload: Dict[str, Any]) -> Any:
+        """Open this job's named Langfuse trace, so the design graph's steps and the job's model
+        calls land in one trace per job (R7). A no-op when Langfuse is not installed, when the
+        lane opted out, or for a payload with no recognisable kind (the preamble refuses it)."""
+        shape = _TRACE_SHAPES.get(str(payload.get("kind"))) if self._named_trace else None
+        if shape is None:
+            yield
+            return
+        name, as_type, keys, session_key, tag_keys = shape
+
+        def text(key: str) -> Optional[str]:
+            value = payload.get(key)
+            return value if isinstance(value, str) and value else None
+
+        tags = ("design", *(t for t in (text(k) for k in tag_keys) if t is not None))
+        with (
+            propagate_trace(
+                trace_name=name,
+                session_id=text(session_key) if session_key else None,
+                user_id=text("workspace_id"),
+                metadata={key: text(key) for key in keys},
+                tags=tags,
+            ),
+            observation(name, as_type=as_type),
+        ):
+            yield
+
+    def _turn_callbacks(self) -> Any:
+        """This turn's LangChain callbacks: the injected factory's, else the platform's Langfuse
+        handler (the fleet drain and the ingestion pool inject none), else none at all."""
+        if self._turn_callbacks_factory is not None:
+            return self._turn_callbacks_factory()
+        from clue_gateway.langfuse_handler import build_langfuse_callbacks
+        from lumen_agent.usage_collector import TurnCallbacks
+
+        built = build_langfuse_callbacks()
+        if built is None:
+            return TurnCallbacks()
+        return TurnCallbacks(handlers=(built.handler,), langfuse_ids=built.registry)
 
     async def _contain_preamble_failure(
         self, context: WorkContext, error: Exception
@@ -380,7 +428,7 @@ class DesignJobWorkHandler:
             host,
             self._checkpointer_factory,
             spend_drain=self._spend_drain,
-            turn_callbacks_factory=self._turn_callbacks_factory,
+            turn_callbacks_factory=self._turn_callbacks,
         )
 
     def _parse(self, context: WorkContext) -> DesignTurnEnvelope | DesignIngestionEnvelope:
@@ -401,6 +449,34 @@ async def _first_of(*events: asyncio.Event) -> None:
         for waiter in waiters:
             waiter.cancel()
         await asyncio.gather(*waiters, return_exceptions=True)
+
+
+#: Per envelope kind: the trace name, its observation type, the payload keys copied into the trace
+#: metadata, the key used as the Langfuse session, and the keys added as tags beside ``design``.
+_TRACE_SHAPES: Dict[str, tuple[str, Any, tuple[str, ...], Optional[str], tuple[str, ...]]] = {
+    kind: (
+        "design.turn",
+        "agent",
+        ("run_id", "document_id", "project_id"),
+        "checkpoint_thread_id",
+        ("kind",),
+    )
+    for kind in ("agent_turn", "web_turn")
+}
+_TRACE_SHAPES["ingestion"] = (
+    "design.ingestion",
+    "chain",
+    ("job_id",),
+    None,
+    ("kind", "ingestion_kind"),
+)
+_TRACE_SHAPES["asset_analysis"] = (
+    "design.asset_analysis",
+    "chain",
+    ("job_id", "asset_id"),
+    None,
+    ("kind",),
+)
 
 
 def _subject(envelope: Any) -> Dict[str, str]:
@@ -734,6 +810,7 @@ def build_design_job_handler(
     turn_callbacks_factory: Any = None,
     platform_reads_factory: Any = None,
     ingestion_only: bool = False,
+    named_trace: bool = True,
 ) -> DesignJobWorkHandler:
     """The ONE factory both deployments compose — the embedded worker and ``fleet_main``.
 
@@ -742,9 +819,12 @@ def build_design_job_handler(
     connection per turn). Ingestion never has one — it is a pipeline, not a graph.
 
     ``turn_callbacks_factory`` (lane 3 slice 5) is called once per TURN envelope and returns that
-    turn's ``lumen_agent.usage_collector.TurnCallbacks``. The platform composes one that opens a
-    Langfuse observation for the design leg; the design API's own embedded worker passes none,
-    so its runs still collect receipts into ``result_json`` without the platform's cost update.
+    turn's ``lumen_agent.usage_collector.TurnCallbacks``. With none, a turn gets the platform's
+    Langfuse handler when Langfuse is installed (2026-10-03 spec, R7), so every path that runs the
+    design graph reports it; receipts are collected into ``result_json`` either way.
+
+    ``named_trace=False`` is for a caller that already runs the job inside its own named trace
+    (the platform's inline leg lane, inside ``design-leg.turn``).
 
     ``platform_reads_factory`` (design note 2026-09-19) rides the HOST rather than the frozen
     job, like the preference resolver: it is a live callable the platform composes with its own
@@ -766,6 +846,7 @@ def build_design_job_handler(
         spend_drain=spend_drain,
         turn_callbacks_factory=turn_callbacks_factory,
         ingestion_only=ingestion_only,
+        named_trace=named_trace,
     )
 
 
