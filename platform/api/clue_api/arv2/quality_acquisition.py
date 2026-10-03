@@ -16,7 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.exa_client import _read_output, _read_report, read_deep_report
 from clue_api.arv2.provider_ledger import DrainReport, ledger_id_for
-from clue_api.arv2.quality_evidence import SourceRef, persist_source
+from clue_api.arv2.quality_evidence import (
+    PreparedSource,
+    SourceRef,
+    prepare_source,
+    publish_sources,
+)
 from clue_api.arv2.research_operations import OperationScope
 from clue_storage import StorageBackend, read_verified_artifact
 
@@ -29,7 +34,7 @@ async def index_acquisition(
     *,
     operation_id: UUID | None = None,
 ) -> tuple[SourceRef, ...]:
-    return await _index_receipts(
+    prepared = await _index_receipts(
         conn,
         storage,
         scope,
@@ -48,6 +53,10 @@ async def index_acquisition(
             if row.provider not in ("openrouter", "model")
         ),
     )
+    return await publish_sources(conn, scope, prepared)
+
+
+_RECOVERY_BATCH = 100
 
 
 @dataclass(frozen=True)
@@ -65,8 +74,15 @@ class AcquisitionReceipt:
 async def recover_acquisitions(
     conn: AsyncConnection, storage: StorageBackend, scope: OperationScope
 ) -> tuple[SourceRef, ...]:
-    """Rebuild missing descriptors from settled ledger artifacts, never from another purchase."""
-    sources: list[SourceRef] = []
+    """Rebuild missing descriptors from settled ledger artifacts, never from another purchase.
+
+    Every batch is prepared (stored, verified, retained) first and everything is published once
+    at the end, so the account lock is never held across an upload (research slowness fix
+    2026-10-03). Rows already prepared in this call are excluded by id: they are not published
+    yet, so "no evidence source for this ledger row" alone would page over them forever.
+    """
+    prepared: list[PreparedSource] = []
+    seen: list[UUID] = []
     while True:
         rows = (
             (
@@ -80,17 +96,24 @@ async def recover_acquisitions(
             AND l.provider NOT IN ('openrouter','model')
             AND NOT EXISTS(SELECT 1 FROM arv2_evidence_source s
                            WHERE s.workspace_id=l.workspace_id AND s.ledger_id=l.ledger_id)
-          ORDER BY l.recorded_at,l.ledger_id LIMIT 100
+            AND NOT (l.ledger_id = ANY(CAST(:seen AS uuid[])))
+          ORDER BY l.recorded_at,l.ledger_id LIMIT :batch
         """),
-                    {"ws": scope.workspace_id, "job": scope.job_id},
+                    {
+                        "ws": scope.workspace_id,
+                        "job": scope.job_id,
+                        "seen": seen,
+                        "batch": _RECOVERY_BATCH,
+                    },
                 )
             )
             .mappings()
             .all()
         )
         if not rows:
-            return tuple(sources)
-        sources.extend(
+            return await publish_sources(conn, scope, prepared)
+        seen.extend(row["ledger_id"] for row in rows)
+        prepared.extend(
             await _index_receipts(
                 conn, storage, scope, tuple(AcquisitionReceipt(**dict(r)) for r in rows)
             )
@@ -102,13 +125,13 @@ async def _index_receipts(
     storage: StorageBackend,
     scope: OperationScope,
     rows: tuple[AcquisitionReceipt, ...],
-) -> tuple[SourceRef, ...]:
+) -> tuple[PreparedSource, ...]:
     sources = []
     for row in rows:
         key, operation_id = row.key, row.operation_id
         if key is None:
             sources.append(
-                await persist_source(
+                await prepare_source(
                     conn,
                     storage,
                     scope,
@@ -138,7 +161,7 @@ async def _index_receipts(
         ledger = row.ledger_id
 
         save = partial(
-            persist_source,
+            prepare_source,
             conn,
             storage,
             scope,
