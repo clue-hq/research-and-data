@@ -213,7 +213,9 @@ def test_governed_person_agent_receives_missing_version_feedback_and_recovers(
 
     monkeypatch.setattr(ScriptedAgentChatModel, "_generate", generate)
     monkeypatch.setattr(native, "draft", draft_with_one_omission)
+    # report_mode "legacy" is what this scenario did before the parameter existed (bde9c65f9,
+    # 2026-09-28): the researcher writes its full report. This test is about narrative versions.
     native.test_native_researcher_writes_pages_without_specialist_and_replays(
-        tmp_path, monkeypatch, person=True, version=24
+        tmp_path, monkeypatch, person=True, version=24, report_mode="legacy"
     )
     assert len(writes) == 2 and feedback
