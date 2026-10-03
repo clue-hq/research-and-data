@@ -99,9 +99,10 @@ def test_the_bind_host_is_documented() -> None:
 
 
 def test_the_release_deploys_the_vm_last_with_a_pinned_host_and_only_the_sha() -> None:
-    """After Railway (platform-api migrates first), CI deploys the worker VM over SSH: the host key is
-    pinned, nothing interactive, and the only thing sent is the commit sha — on the VM the key is
-    forced to deploy/vm/ci_deploy.sh, which accepts nothing else. Unconfigured, it warns and skips."""
+    """After Railway (platform-api migrates first), CI deploys the worker VM over SSH: the host
+    key is pinned, nothing interactive, and the only thing sent is the commit sha — on the VM the
+    key is forced to deploy/vm/ci_deploy.sh, which accepts nothing else. Unconfigured, it warns
+    and skips."""
     import yaml
 
     workflow = yaml.safe_load(
