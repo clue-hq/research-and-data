@@ -474,7 +474,12 @@ def test_artifact_erasure_clears_derived_evidence_and_tombstones_source():
                 )
             row = (
                 await conn.execute(
-                    text("SELECT title,metadata,privacy_erased FROM arv2_media_item")
+                    # Scoped to this test's item: DB tests that commit leave other rows behind.
+                    text(
+                        "SELECT title,metadata,privacy_erased FROM arv2_media_item "
+                        "WHERE item_id=:id"
+                    ),
+                    {"id": item["item_id"]},
                 )
             ).one()
             assert row.title == "" and row.metadata == {} and row.privacy_erased
