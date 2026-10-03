@@ -22,6 +22,8 @@ import sys
 from typing import Any, Callable
 
 import structlog
+from opentelemetry import trace
+from opentelemetry.trace import format_span_id, format_trace_id
 
 from .config_types import LogFormat, LogMode
 from .redact import redact_processor
@@ -30,10 +32,46 @@ from .truncate import make_truncate_processor
 Processor = Callable[[Any, str, dict], Any]
 
 
+#: The attribute the platform's fleet worker stamps an escaping exception's ``(trace_id,
+#: span_id)`` under (``clue_obs.otel.trace_ids.EXCEPTION_TRACE_ATTR``). Duplicated, not imported:
+#: the two obs packages share no imports; keep the two literals in step.
+_EXCEPTION_TRACE_ATTR = "__clue_trace_ids__"
+
+
+def _logged_exception(event_dict: Any) -> BaseException | None:
+    exc_info = event_dict.get("exc_info")
+    if isinstance(exc_info, BaseException):
+        return exc_info
+    if isinstance(exc_info, tuple) and len(exc_info) == 3:
+        return exc_info[1] if isinstance(exc_info[1], BaseException) else None
+    if exc_info is True:
+        return sys.exc_info()[1]
+    return None
+
+
+def add_trace_ids(logger: Any, method_name: str, event_dict: Any) -> Any:
+    """Stamp ``trace_id``/``span_id`` (32/16 lowercase hex, the ids Langfuse shows) from the
+    current OpenTelemetry span, else from the logged exception's platform stamp — the twin of
+    ``clue_obs.otel.trace_ids.add_trace_ids`` (2026-10-03 agent-scoped tracing spec, R4)."""
+    del logger, method_name
+    context = trace.get_current_span().get_span_context()
+    ids: Any = None
+    if context.is_valid:
+        ids = (format_trace_id(context.trace_id), format_span_id(context.span_id))
+    else:
+        logged = _logged_exception(event_dict)
+        ids = getattr(logged, _EXCEPTION_TRACE_ATTR, None) if logged is not None else None
+    if isinstance(ids, tuple) and len(ids) == 2:
+        event_dict.setdefault("trace_id", ids[0])
+        event_dict.setdefault("span_id", ids[1])
+    return event_dict
+
+
 def build_shared_processors(mode: LogMode) -> list[Processor]:
     """The pre-render chain shared by structlog + the stdlib bridge."""
     procs: list[Processor] = [
         structlog.contextvars.merge_contextvars,
+        add_trace_ids,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso", utc=True),

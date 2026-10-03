@@ -496,6 +496,46 @@ def test_the_brief_model_is_built_with_its_own_reasoning_effort(
     assert built["role"] == "ingestion-brief"
 
 
+def test_the_brief_agent_reports_to_langfuse_through_the_platform_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R7 (2026-10-03 agent-scoped tracing spec): the brief agent's model rounds are agent work,
+    so the agent runs with the platform's LangChain handler on its invoke config — it lands in
+    the ingestion job's trace — and its cost collector is told the generation ids."""
+    import clue_gateway.langfuse_handler as langfuse_handler
+    import langchain.agents
+    import lumen_agent.llm as llm
+    from lumen_ingestion import brief_agent
+    from py_lumen_config import settings
+
+    monkeypatch.setattr(settings, "lumen_ingestion_brief", True)
+    monkeypatch.setattr(settings, "openrouter_api_key", "sk-test")
+    handler, registry = object(), langfuse_handler.LangfuseRunRegistry()
+    monkeypatch.setattr(
+        langfuse_handler,
+        "build_langfuse_callbacks",
+        lambda: langfuse_handler.LangfuseCallbacks(handler=handler, registry=registry),  # type: ignore[arg-type]
+    )
+
+    class _Model:
+        callbacks: list = []
+
+    seen: dict = {}
+
+    class _Agent:
+        def invoke(self, state: dict, config: dict) -> dict:
+            seen["config"] = config
+            return {"structured_response": None}
+
+    monkeypatch.setattr(llm, "init_model", lambda model, **kwargs: _Model())
+    monkeypatch.setattr(langchain.agents, "create_agent", lambda **kwargs: _Agent())
+    with pytest.raises(brief_agent.BriefRefused):
+        brief_agent.OpenRouterBriefAgent().write_brief(build_brief_request(_evidence(), _kit()))
+    assert seen["config"]["callbacks"] == [handler]
+    (collector,) = [cb for cb in _Model.callbacks if type(cb).__name__ == "ModelCallCollector"]
+    assert collector._langfuse_ids is registry
+
+
 # --- the pipeline ride-along --------------------------------------------------------
 
 

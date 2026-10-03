@@ -440,7 +440,9 @@ async def run_account_agent(
                 "subject_kind": scope.subject_kind,
                 "attempt": attempt,
             },
-            tags=("arv2", scope.subject_kind),
+            # ``account:<domain>``: each job is its own trace (2026-10-03 spec, R3), and this is
+            # how the Traces list finds the one for an account.
+            tags=("arv2", scope.subject_kind, f"account:{scope.account_domain}"),
         ),
         observation(
             "arv2.account_research",

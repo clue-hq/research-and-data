@@ -938,6 +938,7 @@ dependencies = [
     { name = "clue-core" },
     { name = "clue-obs" },
     { name = "langchain-openai" },
+    { name = "langfuse" },
     { name = "openai" },
 ]
 
@@ -947,6 +948,7 @@ requires-dist = [
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "langchain-openai", specifier = "==1.4.1" },
+    { name = "langfuse", specifier = ">=4.15,<5" },
     { name = "openai", specifier = ">=2.45,<3" },
 ]
 
@@ -3354,11 +3356,15 @@ name = "py-lumen-obs"
 version = "0.0.0"
 source = { editable = "subsystems/clue-design/packages/py-lumen-obs" }
 dependencies = [
+    { name = "opentelemetry-api" },
     { name = "structlog" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "structlog", specifier = ">=24,<26" }]
+requires-dist = [
+    { name = "opentelemetry-api", specifier = ">=1.20" },
+    { name = "structlog", specifier = ">=24,<26" },
+]
 
 [[package]]
 name = "pyasn1"
