@@ -18,7 +18,8 @@ from clue_api.arv2.quality_evidence import (
     EvidenceUnavailable,
     SourceRef,
     TextSupport,
-    persist_source,
+    prepare_source,
+    publish_sources,
     resolve_source,
     validate_support,
 )
@@ -73,36 +74,44 @@ async def index_transcripts(
         .scalars()
         .all()
     )
-    refs = []
+    # Every transcript is prepared (read, stored, retained) first and all are published once at
+    # the end: this runs after every media tool call, and publishing as it went held the account
+    # lock across each later transcript's storage round trips (research slowness review
+    # 2026-10-04).
+    prepared, segments = [], []
     for version in rows:
         saved = await media_store.load_transcript(TranscriptReader(scope, storage), conn, version)
-        ref = await persist_source(
-            conn,
-            storage,
-            scope,
-            kind="transcript",
-            body=saved["text"],
-            original_key=saved["text_key"],
-            origin_locator=f"transcript:{version}",
-            observed_at=saved["created_at"],
-            source_url=saved["source_url"],
-            metadata={
-                "version_ref": str(version),
-                "item_ref": str(saved["item_id"]),
-                "quality": saved["quality"],
-                "segments_key": saved["segments_key"],
-                "transcript_view": f"/research/transcripts/{version}/0.json",
-            },
+        segments.append(saved["segments_key"])
+        prepared.append(
+            await prepare_source(
+                conn,
+                storage,
+                scope,
+                kind="transcript",
+                body=saved["text"],
+                original_key=saved["text_key"],
+                origin_locator=f"transcript:{version}",
+                observed_at=saved["created_at"],
+                source_url=saved["source_url"],
+                metadata={
+                    "version_ref": str(version),
+                    "item_ref": str(saved["item_id"]),
+                    "quality": saved["quality"],
+                    "segments_key": saved["segments_key"],
+                    "transcript_view": f"/research/transcripts/{version}/0.json",
+                },
+            )
         )
+    refs = await publish_sources(conn, scope, prepared)
+    for ref, segments_key in zip(refs, segments, strict=True):
         await retain_artifact(
             conn,
             workspace_id=scope.workspace_id,
-            storage_key=saved["segments_key"],
+            storage_key=segments_key,
             reference_kind="research_source",
             reference_id=str(ref.source_id),
         )
-        refs.append(ref)
-    return tuple(refs)
+    return refs
 
 
 async def read_transcript(

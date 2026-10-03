@@ -113,7 +113,7 @@ ignore_missing_imports = true
 # Scrapling + markdownify (B2.4) are the credit-free ScrapeBackend's libraries, likewise lazy
 # behind adapters/concrete (Rule 4).
 [[tool.mypy.overrides]]
-module = ["aioboto3", "curl_cffi.*", "scrapling.*", "markdownify"]
+module = ["aioboto3", "aiobotocore.*", "curl_cffi.*", "scrapling.*", "markdownify"]
 follow_imports = "skip"
 ignore_missing_imports = true
 
@@ -493,10 +493,11 @@ source_modules = [
 ]
 forbidden_modules = ["aioboto3", "aiobotocore", "boto3", "botocore"]
 # The ONE sanctioned SDK edge (mirrors the firecrawl exemption above): the SDK import is lazy,
-# inside S3Storage._client. import-linter follows lazy edges, so without severing this one the
+# inside S3Storage._new_client_context. import-linter follows lazy edges, so without severing this one the
 # in-package composition (factory/__init__ -> s3) would transitively trip the contract for every
 # source module that imports clue_storage. A *direct* SDK import anywhere else is still caught.
-ignore_imports = ["clue_storage.s3 -> aioboto3"]
+# The pool-size config class (aiobotocore.config) is imported at that same lazy site.
+ignore_imports = ["clue_storage.s3 -> aioboto3", "clue_storage.s3 -> aiobotocore"]
 
 # Rule S1 — subsystems are independent: they communicate only through the shared substrates
 # (claim store; memory seams), never by importing each other (repo charter).

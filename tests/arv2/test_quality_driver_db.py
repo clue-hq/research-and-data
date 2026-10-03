@@ -7,7 +7,6 @@ from uuid import uuid4
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
-from sqlalchemy import text
 
 from clue_agents import AgentWorkspaceFactory, ScriptedAgentChatModel, WorkspaceRootPolicy
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -143,7 +142,15 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
 
             async def runner(*, scope, context_id, runtime, objective, model_id, unit_key=None):
                 calls.append(unit_key)
-                assert scope.input_refs["quality_recipe_version"] == 22
+                # The recipe the current account launch bundle pins (it moves on every recipe
+                # revision; a literal here went stale at revision 24, 2026-09-28).
+                from clue_api.arv2.quality_catalog import load_quality_resources
+
+                current = load_quality_resources("arv2-account").profile.body
+                assert (
+                    scope.input_refs["quality_recipe_version"]
+                    == json.loads(current)["recipe_version"]
+                )
                 assert (
                     scope.persona_markdown
                     == "---\nkind: audience-persona\nicp_key: clue-abm-buyers\n"
@@ -297,7 +304,10 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             # This scripted worker finalizes a report without publishing pages. Measured
             # completion must retain that gap rather than accepting the model's status.
             assert initial.finalization["coverage"]["missing_pages"] == ["insights", "overview"]
-            assert initial.finalization["spend"]["unpriced_model_calls"] == 5
+            # Five scripted calls, plus the turn the refused finalize asks for: since the
+            # 2026-09-28 completion contract, a completed finalize with owned pages unpublished is
+            # refused (repairably), and this script has no answer left for that turn.
+            assert initial.finalization["spend"]["unpriced_model_calls"] == 6
             assert initial.finalization["spend"]["cost_complete"] is False
             assert initial.finalization["schema_version"] == "quality-job-v1"
             assert await handler.sweep_quality() == 1
@@ -306,28 +316,13 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             assert offer["payload"]["continuation"] == "quality_reconciliation"
             assert offer["payload"]["job_id"] == str(jid)
             assert offer["payload"]["run_id"] == str(initial.run_id)
-            continuation = WorkContext(
-                task_id=uuid4(),
-                work_id=offer["work_id"],
-                worker_id="offline-quality",
-                lease_generation=LeaseGeneration(1),
-                payload=offer["payload"],
-                stop_requested=asyncio.Event(),
-                lease_lost=asyncio.Event(),
-            )
-            assert (await handler.handle(continuation)).outcome == "completed"
-            assert (await read_job(conn, job_id=jid)).finalization == initial.finalization
-            assert (
-                await conn.execute(
-                    text(
-                        "SELECT state FROM arv2_account_research_generation "
-                        "WHERE initial_job_id=:id"
-                    ),
-                    {"id": jid},
-                )
-            ).scalar_one() == "needs_review"
-            assert (await handler.handle(continuation)).outcome == "completed"
-            assert len(calls) == 2
+            # What the offered continuation does is owned elsewhere since recipe revision 20: it
+            # is the focused account reconciliation
+            # (docs/specs/arv4-focused-account-reconciliation.md), driven by its own editor and
+            # tested in test_reconciliation_continuation_db.py and
+            # test_quality_reconciliation_db.py. This test's scripted researcher only covered the
+            # earlier researcher continuation, so it stops at the offer.
+            assert len(calls) == 1
             # No legacy Luna display or repeat initial task was offered.
             assert len(queue.offers) == 1
             workspaces.close()

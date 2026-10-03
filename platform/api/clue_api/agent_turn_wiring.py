@@ -64,7 +64,7 @@ from clue_core import ExecutionId
 from clue_db import ConnFactory, transaction
 from clue_execution.run_events import emit_design_run_event
 from clue_obs import get_logger
-from clue_storage import StorageBackend, artifact_key, content_address
+from clue_storage import ArtifactRecord, StorageBackend, artifact_key, content_address
 from clue_storage.artifacts import mark_erased, purge_erased_artifacts, record_artifact
 from clue_storage.protocol import ArtifactNotFound
 
@@ -88,6 +88,21 @@ _REF_NAMESPACE = UUID("9431adab-a359-59ee-b2f3-af522f93016b")
 _PRIVACY_NAMESPACE = UUID("f4d51cff-a92e-5ed6-a07f-826cb2348241")
 _PROJECT_PRIVACY_NAMESPACE = UUID("cd318be1-c3cf-50c1-9ddd-826cd63fa5b3")
 log = get_logger("clue_api.agent_turn")
+
+# Serialises project-artifact binding against project erasure. Writers take it SHARED (they never
+# block each other — production 2026-10-03 showed all research jobs of a project queueing on the
+# exclusive form); erase_project and its binding cleanup take it EXCLUSIVE.
+PROJECT_ARTIFACTS_LOCK = "agent-project-artifacts:{workspace_id}:{project_id}"
+
+
+def _artifact_ref(workspace_id: str, key: str, record: ArtifactRecord) -> ArtifactRef:
+    return ArtifactRef(
+        workspace_id=workspace_id,
+        artifact_key=key,
+        sha256=record.content_sha256,
+        media_type=record.media_type,
+        byte_count=record.size_bytes,
+    )
 
 
 async def is_agent_turn_privacy_tombstoned(
@@ -245,101 +260,133 @@ class DurableAgentArtifactStore(AgentArtifactSink, AgentArtifactReader):
         digest = content_address(data)
         key = artifact_key(workspace_id, digest)
         async with self._conn_factory() as conn:
-            await conn.execute(
-                text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
-                {"key": key},
-            )
-            tombstone = await conn.execute(
-                text(
-                    "SELECT 1 FROM agent_artifact_tombstone "
-                    "WHERE workspace_id = :workspace_id AND artifact_key = :key LIMIT 1"
-                ),
-                {"workspace_id": workspace_id, "key": key},
-            )
-            if tombstone.first() is not None:
-                raise ValueError("erased agent artifact bytes cannot be resurrected")
-            record = await record_artifact(
+            record = await self._record_body(
                 conn,
-                storage_key=key,
                 workspace_id=workspace_id,
-                content_sha256=digest,
+                key=key,
+                digest=digest,
+                size=len(data),
                 media_type=media_type,
-                size_bytes=len(data),
+                subject_bindings=subject_bindings,
             )
-            for subject_entity_id, binding_kind in sorted(
-                subject_bindings,
-                key=lambda item: (str(item[0]), item[1]),
-            ):
-                await conn.execute(
+            await self._bind_projects(
+                conn, workspace_id=workspace_id, key=key, project_bindings=project_bindings
+            )
+        # The row is committed before external storage mutation. A crash here is body-unavailable
+        # and therefore fail-closed; retry converges on this same content-addressed key.
+        await self._storage.put(key, data, media_type=record.media_type)
+        return _artifact_ref(workspace_id, key, record)
+
+    async def _record_body(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        key: str,
+        digest: str,
+        size: int,
+        media_type: str,
+        subject_bindings: Sequence[tuple[UUID, str]],
+    ) -> ArtifactRecord:
+        """Record the artifact row (before any upload — the storage rule) and its subjects."""
+        await conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": key},
+        )
+        tombstone = await conn.execute(
+            text(
+                "SELECT 1 FROM agent_artifact_tombstone "
+                "WHERE workspace_id = :workspace_id AND artifact_key = :key LIMIT 1"
+            ),
+            {"workspace_id": workspace_id, "key": key},
+        )
+        if tombstone.first() is not None:
+            raise ValueError("erased agent artifact bytes cannot be resurrected")
+        record = await record_artifact(
+            conn,
+            storage_key=key,
+            workspace_id=workspace_id,
+            content_sha256=digest,
+            media_type=media_type,
+            size_bytes=size,
+        )
+        for subject_entity_id, binding_kind in sorted(
+            subject_bindings,
+            key=lambda item: (str(item[0]), item[1]),
+        ):
+            await conn.execute(
+                text(
+                    "INSERT INTO agent_artifact_subject "
+                    "(workspace_id, artifact_key, subject_entity_id, binding_kind) "
+                    "VALUES (:workspace_id, :key, :subject, :kind) "
+                    "ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "key": key,
+                    "subject": subject_entity_id,
+                    "kind": binding_kind,
+                },
+            )
+        return record
+
+    async def _bind_projects(
+        self,
+        conn: AsyncConnection,
+        *,
+        workspace_id: str,
+        key: str,
+        project_bindings: Sequence[tuple[str, str]],
+    ) -> None:
+        """Bind the artifact to its projects under the SHARED project lock (erasure: exclusive)."""
+        for project_id, binding_kind in sorted(set(project_bindings)):
+            await conn.execute(
+                text("SELECT pg_advisory_xact_lock_shared(hashtextextended(:scope, 0))"),
+                {
+                    "scope": PROJECT_ARTIFACTS_LOCK.format(
+                        workspace_id=workspace_id, project_id=project_id
+                    )
+                },
+            )
+            inserted = await conn.execute(
+                text(
+                    "INSERT INTO agent_artifact_project "
+                    "(workspace_id, project_id, artifact_key, binding_kind) "
+                    "SELECT :workspace_id, :project_id, :key, :kind FROM project "
+                    "WHERE project_id=:project_id AND workspace_id=:workspace_id "
+                    "ON CONFLICT DO NOTHING RETURNING artifact_key"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "project_id": project_id,
+                    "key": key,
+                    "kind": binding_kind,
+                },
+            )
+            if inserted.first() is None:
+                # The PK is (workspace, project, artifact_key) — binding_kind is metadata,
+                # not identity. The existence check therefore must NOT filter by kind: a
+                # content-addressed payload legitimately recurs across turn kinds (found
+                # live 2026-08-29 — a design-leg card byte-identical to an earlier
+                # conversation card conflicted on insert, and the kind-filtered check then
+                # misread a valid same-project binding as "absent or cross-workspace",
+                # failing the founder's leg turn). The binding's guarantee — this artifact
+                # belongs to this project in this workspace — is proven by the PK row,
+                # whichever kind first wrote it.
+                existing = await conn.execute(
                     text(
-                        "INSERT INTO agent_artifact_subject "
-                        "(workspace_id, artifact_key, subject_entity_id, binding_kind) "
-                        "VALUES (:workspace_id, :key, :subject, :kind) "
-                        "ON CONFLICT DO NOTHING"
-                    ),
-                    {
-                        "workspace_id": workspace_id,
-                        "key": key,
-                        "subject": subject_entity_id,
-                        "kind": binding_kind,
-                    },
-                )
-            for project_id, binding_kind in sorted(set(project_bindings)):
-                await conn.execute(
-                    text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
-                    {"scope": f"agent-project-artifacts:{workspace_id}:{project_id}"},
-                )
-                inserted = await conn.execute(
-                    text(
-                        "INSERT INTO agent_artifact_project "
-                        "(workspace_id, project_id, artifact_key, binding_kind) "
-                        "SELECT :workspace_id, :project_id, :key, :kind FROM project "
-                        "WHERE project_id=:project_id AND workspace_id=:workspace_id "
-                        "ON CONFLICT DO NOTHING RETURNING artifact_key"
+                        "SELECT 1 FROM agent_artifact_project "
+                        "WHERE workspace_id=:workspace_id AND project_id=:project_id "
+                        "AND artifact_key=:key"
                     ),
                     {
                         "workspace_id": workspace_id,
                         "project_id": project_id,
                         "key": key,
-                        "kind": binding_kind,
                     },
                 )
-                if inserted.first() is None:
-                    # The PK is (workspace, project, artifact_key) — binding_kind is metadata,
-                    # not identity. The existence check therefore must NOT filter by kind: a
-                    # content-addressed payload legitimately recurs across turn kinds (found
-                    # live 2026-08-29 — a design-leg card byte-identical to an earlier
-                    # conversation card conflicted on insert, and the kind-filtered check then
-                    # misread a valid same-project binding as "absent or cross-workspace",
-                    # failing the founder's leg turn). The binding's guarantee — this artifact
-                    # belongs to this project in this workspace — is proven by the PK row,
-                    # whichever kind first wrote it.
-                    existing = await conn.execute(
-                        text(
-                            "SELECT 1 FROM agent_artifact_project "
-                            "WHERE workspace_id=:workspace_id AND project_id=:project_id "
-                            "AND artifact_key=:key"
-                        ),
-                        {
-                            "workspace_id": workspace_id,
-                            "project_id": project_id,
-                            "key": key,
-                        },
-                    )
-                    if existing.first() is None:
-                        raise ValueError(
-                            "agent artifact project binding is absent or cross-workspace"
-                        )
-        # The row is committed before external storage mutation. A crash here is body-unavailable
-        # and therefore fail-closed; retry converges on this same content-addressed key.
-        await self._storage.put(key, data, media_type=record.media_type)
-        return ArtifactRef(
-            workspace_id=workspace_id,
-            artifact_key=key,
-            sha256=record.content_sha256,
-            media_type=record.media_type,
-            byte_count=record.size_bytes,
-        )
+                if existing.first() is None:
+                    raise ValueError("agent artifact project binding is absent or cross-workspace")
 
     async def bind_subject(
         self,
@@ -1794,7 +1841,11 @@ class AgentPrivacyService:
         async with self._conn_factory() as conn:
             await conn.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
-                {"scope": f"agent-project-artifacts:{workspace_id}:{project_id}"},
+                {
+                    "scope": PROJECT_ARTIFACTS_LOCK.format(
+                        workspace_id=workspace_id, project_id=project_id
+                    )
+                },
             )
             rows = tuple(
                 (
@@ -1826,7 +1877,11 @@ class AgentPrivacyService:
         async with self._conn_factory() as conn:
             await conn.execute(
                 text("SELECT pg_advisory_xact_lock(hashtextextended(:scope, 0))"),
-                {"scope": f"agent-project-artifacts:{workspace_id}:{project_id}"},
+                {
+                    "scope": PROJECT_ARTIFACTS_LOCK.format(
+                        workspace_id=workspace_id, project_id=project_id
+                    )
+                },
             )
             await conn.execute(
                 text(

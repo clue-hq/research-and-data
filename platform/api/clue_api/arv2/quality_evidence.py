@@ -7,7 +7,7 @@ sources. Agent briefs and catalog descriptions never pass through this writer as
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.evidence_paths import INDEX_PATH, SOURCE_PATH, source_path
 from clue_api.arv2.research_operations import OperationScope, job_available
-from clue_obs import get_logger
+from clue_obs import critical_section, get_logger
 from clue_storage import (
     ArtifactIntegrityError,
     StorageBackend,
@@ -108,7 +108,32 @@ async def _subject(conn: AsyncConnection, scope: OperationScope) -> UUID:
     return UUID(str(row["subject_id"]))
 
 
-async def persist_source(
+@dataclass(frozen=True)
+class PreparedSource:
+    """A source whose bytes are stored and retained but not yet published (no revision yet).
+
+    ``existing`` is set when the deterministic source id was already recorded; otherwise
+    ``pending`` holds every ``SourceRef`` field except ``revision``.
+    """
+
+    existing: SourceRef | None
+    pending: Mapping[str, Any] | None
+
+
+async def _existing_source(conn: AsyncConnection, sid: UUID) -> SourceRef | None:
+    row = (
+        (
+            await conn.execute(
+                text("SELECT * FROM arv2_evidence_source WHERE source_id=:id"), {"id": sid}
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    return None if row is None else SourceRef.model_validate(dict(row))
+
+
+async def prepare_source(
     conn: AsyncConnection,
     storage: StorageBackend,
     scope: OperationScope,
@@ -123,11 +148,13 @@ async def persist_source(
     operation_id: UUID | None = None,
     metadata: Mapping[str, JsonValue] | None = None,
     normalizer_version: str = "v1",
-) -> SourceRef:
-    """Trusted acquisition only. Commit before returning this handle to an agent.
+) -> PreparedSource:
+    """Store, verify and retain one source's bytes WITHOUT the account-wide manifest lock.
 
-    A provider report and its individual pages are separate descriptors; repeat observations have
-    distinct ledger IDs even when bytes match. Re-draining one observation reuses its source ID.
+    The artifact row is still recorded before the upload (the storage rule); only publication —
+    the revision and the ``arv2_evidence_source`` row — needs the account lock
+    (:func:`publish_sources`). Research slowness fix 2026-10-03: acquisition saves many sources in
+    one transaction, and taking the lock per source held it across every later upload.
     """
     subject = await _subject(conn, scope)
     raw = (
@@ -151,35 +178,10 @@ async def persist_source(
         separators=(",", ":"),
     )
     sid = uuid5(NAMESPACE_URL, "research-source:" + identity)
-    params = _params(scope)
-    await conn.execute(
-        text(
-            "INSERT INTO arv2_evidence_manifest(workspace_id,run_id,account_id) "
-            "VALUES(:ws,:run,:account) ON CONFLICT DO NOTHING"
-        ),
-        params,
-    )
-    # One account's sequence lock gives manifest revision a real publication order.
-    await conn.execute(
-        text(
-            "SELECT revision FROM arv2_evidence_manifest WHERE workspace_id=:ws "
-            "AND run_id=:run AND account_id=:account FOR UPDATE"
-        ),
-        params,
-    )
-    existing = (
-        (
-            await conn.execute(
-                text("SELECT * FROM arv2_evidence_source WHERE source_id=:id"), {"id": sid}
-            )
-        )
-        .mappings()
-        .one_or_none()
-    )
+    existing = await _existing_source(conn, sid)
     if existing is not None:
-        ref = SourceRef.model_validate(dict(existing))
-        await _body(conn, storage, ref)
-        return ref
+        await _body(conn, storage, existing)
+        return PreparedSource(existing=existing, pending=None)
     await record_artifact(
         conn,
         storage_key=key,
@@ -209,50 +211,135 @@ async def persist_source(
             ),
             {"ws": scope.workspace_id, "parent": original_key, "child": key},
         )
-    revision = (
+    return PreparedSource(
+        existing=None,
+        pending={
+            "source_id": sid,
+            "workspace_id": scope.workspace_id,
+            "run_id": scope.run_id,
+            "account_id": scope.account_id,
+            "job_id": scope.job_id,
+            "subject_id": subject,
+            "kind": kind,
+            "artifact_key": key,
+            "artifact_sha256": sha,
+            "byte_size": len(raw),
+            "media_type": media,
+            "original_key": original_key,
+            "source_url": source_url,
+            "observed_at": observed_at,
+            "ledger_id": ledger_id,
+            "operation_id": operation_id,
+            "origin_locator": origin_locator,
+            "normalizer_version": normalizer_version,
+            "metadata": dict(metadata or {}),
+        },
+    )
+
+
+async def publish_sources(
+    conn: AsyncConnection, scope: OperationScope, prepared: Sequence[PreparedSource]
+) -> tuple[SourceRef, ...]:
+    """Publish prepared sources: one account-lock acquisition, revisions in the given order."""
+    if all(item.existing is not None for item in prepared):
+        return tuple(item.existing for item in prepared if item.existing is not None)
+    params = _params(scope)
+    refs: list[SourceRef] = []
+    with critical_section("arv2.evidence.publish", job_id=str(scope.job_id), sources=len(prepared)):
         await conn.execute(
             text(
-                "UPDATE arv2_evidence_manifest SET revision=revision+1 "
-                "WHERE workspace_id=:ws AND run_id=:run AND account_id=:account RETURNING revision"
+                "INSERT INTO arv2_evidence_manifest(workspace_id,run_id,account_id) "
+                "VALUES(:ws,:run,:account) ON CONFLICT DO NOTHING"
             ),
             params,
         )
-    ).scalar_one()
-    ref = SourceRef(
-        source_id=sid,
-        workspace_id=scope.workspace_id,
-        run_id=scope.run_id,
-        account_id=scope.account_id,
-        job_id=scope.job_id,
-        subject_id=subject,
-        revision=revision,
+        # One account's sequence lock gives manifest revision a real publication order.
+        await conn.execute(
+            text(
+                "SELECT revision FROM arv2_evidence_manifest WHERE workspace_id=:ws "
+                "AND run_id=:run AND account_id=:account FOR UPDATE"
+            ),
+            params,
+        )
+        for item in prepared:
+            if item.existing is not None:
+                refs.append(item.existing)
+                continue
+            assert item.pending is not None
+            already = await _existing_source(conn, item.pending["source_id"])
+            if already is not None:  # published by a concurrent save while this one prepared
+                refs.append(already)
+                continue
+            revision = (
+                await conn.execute(
+                    text(
+                        "UPDATE arv2_evidence_manifest SET revision=revision+1 "
+                        "WHERE workspace_id=:ws AND run_id=:run AND account_id=:account "
+                        "RETURNING revision"
+                    ),
+                    params,
+                )
+            ).scalar_one()
+            ref = SourceRef(revision=revision, **item.pending)
+            values = ref.model_dump()
+            values["metadata"] = json.dumps(values["metadata"])
+            columns = ",".join(values)
+            binds = ",".join(
+                "CAST(:metadata AS jsonb)" if k == "metadata" else ":" + k for k in values
+            )
+            await conn.execute(
+                text(f"INSERT INTO arv2_evidence_source({columns}) VALUES({binds})"), values
+            )
+            log.info(
+                "arv2.evidence_recorded",
+                source_id=str(ref.source_id),
+                job_id=str(scope.job_id),
+                revision=revision,
+                ledger_id=str(ref.ledger_id) if ref.ledger_id else None,
+                kind=ref.kind,
+            )
+            refs.append(ref)
+    return tuple(refs)
+
+
+async def persist_source(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    scope: OperationScope,
+    *,
+    kind: SourceKind,
+    body: str | Mapping[str, Any] | list[Any],
+    original_key: str | None,
+    origin_locator: str,
+    observed_at: datetime,
+    source_url: str | None = None,
+    ledger_id: UUID | None = None,
+    operation_id: UUID | None = None,
+    metadata: Mapping[str, JsonValue] | None = None,
+    normalizer_version: str = "v1",
+) -> SourceRef:
+    """Trusted acquisition only. Commit before returning this handle to an agent.
+
+    A provider report and its individual pages are separate descriptors; repeat observations have
+    distinct ledger IDs even when bytes match. Re-draining one observation reuses its source ID.
+    One source: :func:`prepare_source`, then :func:`publish_sources`.
+    """
+    prepared = await prepare_source(
+        conn,
+        storage,
+        scope,
         kind=kind,
-        artifact_key=key,
-        artifact_sha256=sha,
-        byte_size=len(raw),
-        media_type=media,
+        body=body,
         original_key=original_key,
-        source_url=source_url,
+        origin_locator=origin_locator,
         observed_at=observed_at,
+        source_url=source_url,
         ledger_id=ledger_id,
         operation_id=operation_id,
-        origin_locator=origin_locator,
+        metadata=metadata,
         normalizer_version=normalizer_version,
-        metadata=dict(metadata or {}),
     )
-    values = ref.model_dump()
-    values["metadata"] = json.dumps(values["metadata"])
-    columns = ",".join(values)
-    binds = ",".join("CAST(:metadata AS jsonb)" if k == "metadata" else ":" + k for k in values)
-    await conn.execute(text(f"INSERT INTO arv2_evidence_source({columns}) VALUES({binds})"), values)
-    log.info(
-        "arv2.evidence_recorded",
-        source_id=str(sid),
-        job_id=str(scope.job_id),
-        revision=revision,
-        ledger_id=str(ledger_id) if ledger_id else None,
-        kind=kind,
-    )
+    (ref,) = await publish_sources(conn, scope, (prepared,))
     return ref
 
 

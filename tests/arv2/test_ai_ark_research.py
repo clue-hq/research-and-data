@@ -112,7 +112,7 @@ def test_acquisition_projects_research_evidence_only_and_preserves_audit(monkeyp
     reader = AsyncMock(return_value=(None, envelope))
     save = AsyncMock(return_value="source")
     monkeypatch.setattr(quality_acquisition, "read_verified_artifact", reader)
-    monkeypatch.setattr(quality_acquisition, "persist_source", save)
+    monkeypatch.setattr(quality_acquisition, "prepare_source", save)
     row = quality_acquisition.AcquisitionReceipt(
         uuid4(), provider, "lookup", datetime.now(UTC), 200, None, "audit-key", uuid4()
     )

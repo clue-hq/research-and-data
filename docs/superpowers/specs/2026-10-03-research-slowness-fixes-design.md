@@ -1,0 +1,284 @@
+# Research slowness fixes — design
+
+**Status:** draft for founder review (2026-10-03). Design agreed in chat the same day; this file is
+the written spec. One PR on branch `perf/research-slowness-fixes`.
+
+**Evidence:** `_memory/2026-10-03-production-research-slowness.md` (diagnosis and production
+measurements) and `_memory/2026-10-03-first-production-research-quality-review.md` (quality review,
+the stuck person jobs). Every number below was measured in production on run
+`8e80c2c7-2492-5124-ae7e-0c5248caeab1` unless it says otherwise.
+
+## 1. Goal
+
+Research jobs take 50–70 minutes in production, of which about 10 minutes is model work. Make the
+waiting go away **without changing what the research produces** and **without weakening any
+existing guarantee** (content-addressed artifacts, erasure/DSAR safety, idempotent retries).
+
+Also fix one correctness bug found on the same run: a refused `finalize_turn` can make the agent's
+own repair impossible (McKee's job ended `needs_review` for this reason).
+
+**Success, measured in production after deploy** (the same method as the diagnosis note):
+
+1. For an account or person job, wall time minus model time minus tool time ("waiting") is under
+   10% of wall time (today ~50% for accounts, ~90% for persons).
+2. No advisory-lock waits longer than 1 second in a 60-second `pg_stat_activity` sample taken while
+   at least 8 research jobs run (today: waits in every sample, the longest 280 s).
+3. No fleet task sits `claimed` without its handler running (today: two person jobs claimed for
+   50+ minutes while another worker was idle).
+4. A refused finalize followed by the requested repair finishes the job (today: `needs_review`).
+5. `artifact_derivation` rows written per research artifact are written in one statement, not one
+   per parent.
+
+## 2. What we measured (summary)
+
+| Finding | Where | Effect |
+|---|---|---|
+| A new S3 client and TLS connection for every storage call | `libs/clue-storage/clue_storage/s3.py` `_client()` | ~200 ms per R2 call from the VM (database: 3 ms) |
+| Every research artifact save takes the project-wide lock, uploads to R2 and inserts one derivation row per evidence source, all inside one transaction | `platform/api/clue_api/quality_research_artifacts.py` `ResearchArtifacts.persist_body`, which calls `DurableAgentArtifactStore.persist_body` (`agent_turn_wiring.py:236`) on the same transaction | Lock `agent-project-artifacts:{ws}:{project}` held 3–18 s per save; up to 14 transactions queued on it; 280 s waits; all jobs in a project serialise |
+| One derivation row per (artifact, evidence source) | same | 1,169,646 rows, 759 MB for one day's research in one workspace; up to 1,835 parents per artifact; each save gets slower as evidence grows |
+| Evidence saving uploads to R2 under the account-wide manifest lock | `platform/api/clue_api/arv2/quality_evidence.py` `persist_source` | ~650 ms per evidence item, strictly serial |
+| Claim import reads sources from R2 one finding at a time inside one transaction | `arv2/dossier_import.py` → `resolve_source` / `submit_proposal` (`arv2/quality_claims.py`) | ~2.5 s per finding; one transaction open 150 s |
+| A worker claims up to 10 tasks but runs at most 4 research jobs | `platform/fleet/clue_fleet/work_worker.py` `drain_once` vs `arv2/account_research_driver.py` `self._jobs` semaphore | Tasks held but not run while another worker is idle |
+| A job's tools share one database connection behind one lock | `arv2/account_research_driver.py` `_connection` / `_db_lock` | "Parallel" tools run one at a time |
+| `finalize_turn` freezes and empties `outputs/` before a check that can still refuse | `agent_runtime_wiring.py` `finalize_turn` (snapshot ~line 1348) → `agent_execution_wiring.py` `finalize` (unresolved-failure check ~line 2101) | The repair the refusal asks for crashes with `WorkspaceConflict` |
+| Lock waiters occupy pgbouncer's 20 server connections | `/srv/clue/pgbouncer.env` `DEFAULT_POOL_SIZE=20` | Unrelated transactions queue inside pgbouncer during contention (inferred; pgbouncer stats are not readable today) |
+
+Not a cause: CPU (workers at 4–24% on an 8-core VM), the database link (3 ms), paid providers.
+
+## 3. Design
+
+Each part is independent and testable on its own. Parts 1–3b remove the waiting; part 4 is a
+deliberate non-change, measured; part 5 removes
+the hoarding; part 6 is the correctness bug; part 7 is connection capacity and visibility; part 0
+gives us the numbers to judge the rest.
+
+### Part 0 — Measure lock-holding sections
+
+A small helper times a critical section and logs one structured line when it ends:
+`db.critical_section` with `name`, `held_ms`, and `statements` (when cheap to count). Wrap:
+`ResearchArtifacts.persist_body`, `DurableAgentArtifactStore.persist_body`, `persist_source`, and
+the dossier import transaction. Log at `info` only when `held_ms` exceeds a threshold
+(`CLUE_DB_CRITICAL_SECTION_LOG_MS`, default `500`, added to `.env.example`), so normal operation
+stays quiet.
+
+This is how success criteria 1–2 are checked after deploy, and how part 4's decision is made.
+
+### Part 1 — One S3 client per storage backend
+
+The process keeps one long-lived `aioboto3` client per (event loop, S3 configuration), shared by
+every `S3Storage` instance — many call sites (notably the design subsystem) build a fresh backend
+per call, so a client per backend object would leak a connection pool per call:
+
+- Created on first use under an `asyncio.Lock`, per event loop. A call on a different loop (tests)
+  gets that loop's own client; no client crosses loops.
+- Reused by `put`, `get`, `exists`, `delete`, `list_blobs` and `presign`.
+- Closed by `close_shared_s3_clients()`, called from the process shutdown paths that already close
+  the database engine (fleet worker, projections API, page origin).
+- Rebuilt once, transparently, if a call fails with a connection-level error (not a 404 and not an
+  access error); a second failure surfaces as today's `StorageError`.
+- Connection pool size from `CLUE_STORAGE_S3_MAX_POOL_CONNECTIONS` (default `50`) via botocore
+  `Config(max_pool_connections=...)`, added to `.env.example`.
+
+The module docstring's reasoning ("snapshot traffic is low volume, per-call setup is noise") is no
+longer true and is rewritten.
+
+**Tests:** a stub client factory counts client creations — N calls create 1 client; a simulated
+connection reset rebuilds once; `close()` closes it; two event loops get two clients. A timing check
+against real R2 is part of the post-deploy measurement, not CI.
+
+### Part 2 — Research artifact saves: short, shared, batched
+
+Three changes, all keeping the storage rule "record the artifact row before the blob upload; the
+row lock serialises writers against erasure":
+
+**2a. The project lock becomes shared for writers.** The lock
+`agent-project-artifacts:{workspace}:{project}` exists so project erasure (`agent_turn_wiring.py`
+~1797 and ~1829) cannot race a new binding. Writers in `DurableAgentArtifactStore.persist_body` take
+it with `pg_advisory_xact_lock_shared`; the two erasure sites keep the exclusive
+`pg_advisory_xact_lock`. Writers never block each other; erasure still excludes every writer.
+
+**2b. No upload while the project lock is held.** Today `ResearchArtifacts.persist_body` hands the
+inner store its own open connection (`same_transaction`), so the inner store's upload — normally
+after its commit — runs inside the outer transaction after the project lock was taken. And
+`ResearchArtifacts` is often given a *borrowed* connection (inside a dossier save's own transaction:
+`quality_json_dossier.py:96`, `quality_dossier.py:195`, `person_research_brief.py:39`), so it cannot
+always upload after commit. Change: `DurableAgentArtifactStore` splits its recording into two
+helpers — `_record_body` (per-key lock, tombstone check, artifact row, subject bindings) and
+`_bind_projects` (shared project lock, project binding rows). `ResearchArtifacts.persist_body` then
+runs, in its transaction: the evidence/context reads and `FOR SHARE` checks, `_record_body` (the row
+first, per the storage rule), the upload, and only then `_bind_projects`, the batched derivation
+insert and the retention. The project lock is taken last, for a few database-only statements. The
+plain `DurableAgentArtifactStore.persist_body` keeps its order (record and bind in its transaction,
+upload after commit).
+
+**2c. Derivation edges in one statement.** The per-parent loop of
+`INSERT INTO artifact_derivation ... ON CONFLICT DO NOTHING` becomes one
+`INSERT ... SELECT :ws, unnest(:parents), :key ON CONFLICT DO NOTHING`. Same rows, one round trip
+instead of hundreds.
+
+The number of derivation rows does not change in this PR (see §5, follow-up 1).
+
+**Tests (real Postgres, throwaway DB):**
+- Two concurrent research saves in the same project both proceed while each holds the shared lock
+  (neither waits on the other); a project erasure waits for both and then excludes a third.
+- The upload happens before the project lock is taken: a storage stub that, at `put` time, asks
+  `pg_locks` whether this backend holds the project lock sees that it does not.
+- A failing upload rolls the save back (no binding row, no derivation rows), and a retry of the same
+  bytes succeeds.
+- Derivation rows written are identical to today's for a fixture with 300 parents, in one statement.
+
+### Part 3 — Evidence saving: the account-wide lock covers only the final writes
+
+`persist_source` runs on its caller's transaction, and the main caller,
+`_index_receipts` (`arv2/quality_acquisition.py`), saves many sources — every result, page text and
+highlight of up to 100 provider responses — in **one** transaction. Moving the lock inside each save
+would still hold it across the next save's upload. So `persist_source` splits in two:
+
+- `prepare_source(conn, storage, scope, ...) -> PreparedSource` — computes the deterministic
+  `source_id`, returns early with the existing `SourceRef` when the source is already recorded,
+  otherwise records the artifact row (before the upload, per-key row lock, unchanged), uploads,
+  verifies the `original_key`, retains, and links the derivation. **No manifest lock.**
+- `publish_sources(conn, scope, prepared) -> tuple[SourceRef, ...]` — takes the account-wide
+  manifest lock (`INSERT ... ON CONFLICT DO NOTHING` then `SELECT ... FOR UPDATE` on
+  `arv2_evidence_manifest`) once, and for each prepared source in order: re-checks
+  `arv2_evidence_source` (a concurrent save may have published it), otherwise increments the
+  revision and inserts the row.
+
+`persist_source` stays as `prepare` + `publish` of one source, for its other caller
+(`arv2/quality_media.py`). `_index_receipts` prepares and returns `PreparedSource`s; its caller
+`recover_acquisitions` pages through ledger rows in batches of 100 on one transaction, today
+selecting rows "not yet published". With publication deferred, it instead excludes the ledger ids
+it has already prepared in this call (`AND l.ledger_id <> ALL(:prepared)`), prepares every batch,
+and publishes everything once at the end — so the lock is held for database-only statements just
+before its caller commits.
+
+**Tests:** prepared saves of different sources for one account, in two concurrent transactions,
+overlap their uploads (a storage stub with a 200 ms delay; total time well under N × 200 ms);
+concurrent saves of the same source produce one row; revisions stay gap-free and strictly
+increasing in publication order; `_index_receipts` publishes the same sources, with the same
+`source_id`s and order, as before.
+
+### Part 3b — Claim import reads its sources before the transaction
+
+`import_research_dossier` (`arv2/dossier_import.py`) runs one transaction for the whole dossier,
+and for every finding `resolve_source` / `submit_proposal` (`arv2/quality_claims.py`) read the cited
+sources from R2 with `read_verified_artifact` inside it — one at a time, ~2.5 s per finding, the
+transaction open for minutes.
+
+Per finding that is not reused or replayed, the import today does, all inside the caller's tool
+transaction: one read of the research-context manifest (the same key every time), one read per cited
+source's `artifact_key`, one upload of the proposal record (`quality_claims.py` ~490) and, for a
+written claim, per cited source a read of its `original_key` and `artifact_key` plus one upload of
+a disposition receipt (`record_disposition`, `quality_evidence.py` ~628-642).
+
+Change: `import_research_dossier` runs its work through an `ImportStorage` wrapper around the real
+backend:
+
+- **Reads:** at the start of the import, collect the keys it will read — the context manifest key,
+  and the `artifact_key` and `original_key` of every source the dossier cites (resolved the same way
+  the import resolves them: through `source_aliases` when given, otherwise the cited paths) — and
+  fetch them concurrently (at most 8 at once, a module constant). `get` serves those bytes from
+  memory; any other key falls back to the real
+  backend. Every row check in `read_verified_artifact` still runs inside the transaction (row
+  present, same workspace, not erased/expired/purged, digest and size match), so an erasure between
+  prefetch and use is still refused.
+- **Uploads:** `put` records the bytes (and serves later `get`s of that key from memory) instead of
+  uploading; just before `import_research_dossier` returns, the wrapper uploads them all
+  concurrently (same bound). The artifact rows were already recorded before each `put` call, as the
+  storage rule requires, and the uploads finish before the caller's transaction commits — a failed
+  upload raises and rolls the import back, exactly as a failed upload does today.
+
+The transaction stays one all-or-nothing unit; only where the bytes come from and when they leave
+change.
+
+**Tests:** a dossier with 20 findings citing 40 sources, over a storage stub with a 200 ms delay on
+every call, imports in well under today's serial time; the context manifest is fetched once; an
+artifact erased after prefetch is still refused; a digest mismatch in prefetched bytes is still
+refused; a failing upload rolls the import back; the claims, proposals and dispositions written are
+identical to an import without the wrapper.
+
+### Part 4 — The per-job connection: keep it, measure it
+
+The research driver's rule — one database connection per job, behind `_db_lock` — stays. It bounds
+each job to one connection, which keeps pgbouncer demand predictable (§3 part 7). After parts 1–3
+the work inside that lock is database-only.
+
+Part 0's log tells us how long tools wait for it. **Only if** the post-deploy measurement shows
+tool waits on `_db_lock` above 10% of wall time do we change it, as a follow-up, to a configurable
+per-job limit (`CLUE_ARV2_JOB_MAX_DB_CONNECTIONS`, default 1). No code change to it in this PR.
+
+### Part 5 — A worker claims only what it can start
+
+Each work handler may declare `max_in_flight: int | None` — how many tasks of its kind one process
+runs at once. `drain_once` skips a kind whose local in-flight count has reached its limit and moves
+to the next kind (the round-robin is unchanged); a slot that finds nothing claimable sleeps as
+today. The in-flight count is incremented before `claim_next` and released when the task finishes
+or the claim comes back empty.
+
+The ARV2 research handler declares `max_in_flight = settings.arv2_account_max_parallel_jobs`. Its
+internal semaphore stays as a backstop and, by construction, never waits.
+
+This makes concurrency a deliberate setting rather than an accident of two numbers:
+`CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS` is how many research jobs one process runs, and
+`CLUE_FLEET_WORKER_CONCURRENCY` is how many tasks of all kinds it runs. The `.env.example` comments
+for both say so, and the runbook states the fleet-wide research capacity
+(batch workers × research limit; today 3 × 4 = 12).
+
+**Tests:** one worker, concurrency 10, research limit 4, six research tasks queued — it claims
+exactly 4; a second worker claims the other 2. A worker at its research limit still claims a
+display-page task. A failed task releases its slot.
+
+### Part 6 — Finalize refuses before it freezes outputs
+
+`finalize_turn` (`agent_runtime_wiring.py`) runs, in order: the required-output check, the
+completion guard (which writes `outputs/research.json`), artifact persistence, then
+`snapshot_outputs(empty_after=True)` (freezes and empties `outputs/`), and only then
+`AgentExecution.finalize`, which can still refuse ("Unresolved failed tool attempts remain").
+
+Change: every check that can refuse runs before the completion guard and before the snapshot. The
+execution adapter gains `check_finalizable(status)`, which runs the unresolved-failure check;
+`finalize_turn` calls it first. `finalize` keeps the same check as a backstop (it can no longer fire
+after a passing pre-check within the same turn, because nothing between them creates a failed
+attempt).
+
+**Tests:** reproduce McKee's sequence — a failed tool attempt, a `finalize_turn(completed)` that is
+refused, a `retry_of` repair, a second `finalize_turn(completed)` — and assert the job completes,
+`outputs/research.json` is written once by the second call, and no `WorkspaceConflict` occurs. A
+refused finalize leaves `outputs/` untouched.
+
+### Part 7 — Connection capacity and visibility
+
+- **App pool settings made explicit.** `clue_db.create_engine` reads `CLUE_DB_POOL_SIZE` (default
+  `5`), `CLUE_DB_MAX_OVERFLOW` (`10`) and `CLUE_DB_POOL_TIMEOUT_S` (`30`) — today's library defaults,
+  now visible — from the environment (the existing `clue_db` contract reads env directly), added to
+  `.env.example`.
+- **pgbouncer visibility.** A read-only stats user is added (`STATS_USERS`) so `SHOW POOLS` shows
+  clients waiting for a server connection. The runbook (`docs/deploy/runbook.md`) gets the check.
+- **pgbouncer pool 20 → 40, after parts 1–3 are deployed.** Postgres allows 200 and the Railway
+  services use about 10. Raising it before the lock fixes would only let more transactions wait on
+  the same lock. This is an operator change to `/srv/clue/pgbouncer.env`, documented in the runbook
+  with the order: deploy, measure, then raise.
+
+## 4. Rollout
+
+One PR to `research-streaming`, then a release to `main`. The VM deploy restarts the workers, so
+deploy when no research is running (a running job is interrupted and retried). After deploy, a
+founder-triggered research run on one account plus its committee is measured with the diagnosis
+note's method against success criteria 1–5. This spends money and is the founder's to start.
+
+No database migration.
+
+Later (not in this PR): VM deploys move to a scheduled maintenance window, so worker restarts never
+interrupt research by surprise. Recorded in the follow-up note.
+
+## 5. Out of scope — follow-ups
+
+1. **The derivation data model.** Every research artifact records one edge to every evidence source
+   of its account (1.17M rows in a day). Erasure cascades walk these edges, so changing the model
+   changes DSAR semantics and needs its own design. This PR only makes the writes one statement.
+   The follow-up PR is described in `_memory/2026-10-03-follow-up-pr-artifact-derivation.md`.
+2. **Recording unread search results.** About 89% of recorded sources were never read by the agent.
+   Recording lazily changes the evidence model; parts 1–3 make each recording cheap meanwhile.
+3. **More, smaller worker processes.** Decide from part 0's numbers and process CPU after deploy.
+4. **The per-job connection limit** (part 4), only if measured.
+5. **Committee nomination on an unverified identity** and **mis-pointed citations** (quality review).

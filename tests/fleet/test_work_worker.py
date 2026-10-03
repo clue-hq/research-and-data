@@ -787,3 +787,141 @@ def test_concurrency_below_one_is_a_construction_error() -> None:
             lease_ttl=timedelta(seconds=30),
             concurrency=0,
         )
+
+
+# --- per-kind in-flight limit (research slowness fix 2026-10-03) ------------------------------
+
+
+class _LimitedBarrierHandler(_BarrierHandler):
+    def __init__(self, kind: FleetTaskKind, *, expected: int, limit: int) -> None:
+        super().__init__(kind, expected=expected)
+        self._limit = limit
+
+    @property
+    def max_in_flight(self) -> int:
+        return self._limit
+
+
+def _limited_worker(
+    name: str, handlers: tuple[object, ...], queue: _Queue, *, concurrency: int
+) -> LeasedWorkWorker:
+    return LeasedWorkWorker(
+        handlers=handlers,  # type: ignore[arg-type]
+        queue=queue,
+        leases=_Leases(),
+        worker_id=name,
+        poll_interval=0.001,
+        heartbeat_interval=10,
+        lease_ttl=timedelta(seconds=30),
+        concurrency=concurrency,
+    )
+
+
+async def _shutdown(
+    workers: list[LeasedWorkWorker], runs: list[asyncio.Task[None]], *handlers: object
+) -> None:
+    """Release every barrier and stop every worker, so a failing assertion fails fast."""
+    for handler in handlers:
+        release = getattr(handler, "release", None)
+        if release is not None:
+            release.set()
+    for worker in workers:
+        worker.stop()
+    _done, pending = await asyncio.wait(runs, timeout=2.0)
+    for task in pending:
+        task.cancel()
+
+
+def test_a_worker_never_claims_past_a_kinds_in_flight_limit() -> None:
+    """A worker with 10 slots and a research limit of 4 leaves the other tasks for other workers
+    (production: two person jobs sat claimed for 50+ minutes while another worker was idle)."""
+
+    async def scenario() -> None:
+        tasks = [_task(FleetTaskKind.ARV2_ACCOUNT_RESEARCH) for _ in range(6)]
+        queue = _Queue(list(tasks))
+        handler = _LimitedBarrierHandler(FleetTaskKind.ARV2_ACCOUNT_RESEARCH, expected=4, limit=4)
+        worker = _limited_worker("worker:limited", (handler,), queue, concurrency=10)
+        running = asyncio.create_task(worker.run())
+        try:
+            await asyncio.wait_for(handler.expected_reached.wait(), timeout=2.0)
+            for _ in range(200):
+                await asyncio.sleep(0)
+            assert handler.peak == 4
+            assert len(queue.rows) == 2  # two tasks stay unclaimed for another worker
+        finally:
+            await _shutdown([worker], [running], handler)
+
+    asyncio.run(scenario())
+
+
+def test_a_second_worker_takes_the_overflow() -> None:
+    async def scenario() -> None:
+        tasks = [_task(FleetTaskKind.ARV2_ACCOUNT_RESEARCH) for _ in range(6)]
+        queue = _Queue(list(tasks))
+        first = _LimitedBarrierHandler(FleetTaskKind.ARV2_ACCOUNT_RESEARCH, expected=4, limit=4)
+        second = _LimitedBarrierHandler(FleetTaskKind.ARV2_ACCOUNT_RESEARCH, expected=2, limit=4)
+        a = _limited_worker("worker:a", (first,), queue, concurrency=10)
+        b = _limited_worker("worker:b", (second,), queue, concurrency=10)
+        runs = [asyncio.create_task(a.run())]
+        try:
+            await asyncio.wait_for(first.expected_reached.wait(), timeout=2.0)
+            runs.append(asyncio.create_task(b.run()))
+            await asyncio.wait_for(second.expected_reached.wait(), timeout=2.0)
+            assert first.peak == 4
+            assert second.peak == 2
+        finally:
+            await _shutdown([a, b], runs, first, second)
+
+    asyncio.run(scenario())
+
+
+def test_a_kind_at_its_limit_does_not_stop_other_kinds() -> None:
+    async def scenario() -> None:
+        research = [_task(FleetTaskKind.ARV2_ACCOUNT_RESEARCH) for _ in range(2)]
+        pages = [_task(FleetTaskKind.ARV2_DISPLAY_PAGE)]
+        queue = _Queue(list(research + pages))
+        limited = _LimitedBarrierHandler(FleetTaskKind.ARV2_ACCOUNT_RESEARCH, expected=1, limit=1)
+        other = _Handler(FleetTaskKind.ARV2_DISPLAY_PAGE)
+        worker = _limited_worker("worker:mixed", (limited, other), queue, concurrency=4)
+        running = asyncio.create_task(worker.run())
+        try:
+            await asyncio.wait_for(limited.expected_reached.wait(), timeout=2.0)
+            await _spin(lambda: len(other.contexts) == 1)
+            for _ in range(200):
+                await asyncio.sleep(0)
+            assert limited.peak == 1
+        finally:
+            await _shutdown([worker], [running], limited)
+
+    asyncio.run(scenario())
+
+
+class _FailingLimitedHandler(_Handler):
+    def __init__(self, kind: FleetTaskKind) -> None:
+        super().__init__(kind)
+        self.calls = 0
+
+    @property
+    def max_in_flight(self) -> int:
+        return 1
+
+    async def handle(self, context: WorkContext) -> WorkResult:
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("first task fails")
+        return await super().handle(context)
+
+
+def test_a_failing_task_releases_its_slot() -> None:
+    async def scenario() -> None:
+        tasks = [_task(FleetTaskKind.ARV2_ACCOUNT_RESEARCH) for _ in range(2)]
+        queue = _Queue(list(tasks))
+        handler = _FailingLimitedHandler(FleetTaskKind.ARV2_ACCOUNT_RESEARCH)
+        worker = _limited_worker("worker:fail", (handler,), queue, concurrency=3)
+        running = asyncio.create_task(worker.run())
+        try:
+            await _spin(lambda: handler.calls == 2)
+        finally:
+            await _shutdown([worker], [running])
+
+    asyncio.run(scenario())

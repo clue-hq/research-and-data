@@ -113,6 +113,22 @@ class CapabilityGated(Protocol):
     def task_capabilities(self) -> tuple[TaskCapability, ...]: ...
 
 
+@runtime_checkable
+class InFlightLimited(Protocol):
+    """A handler that runs at most ``max_in_flight`` tasks at once in one process.
+
+    The worker does not claim a task of this kind while that many are already running here, so
+    a claimed task is always a running task and another worker can take the rest (research
+    slowness fix 2026-10-03: a worker claimed 10 research tasks while able to run 4, and two
+    person jobs sat claimed for 50 minutes while another worker was idle). ``None`` means no
+    per-kind limit. Its own protocol, like ``CapabilityGated``, so the worker detects it with one
+    ``isinstance``.
+    """
+
+    @property
+    def max_in_flight(self) -> int | None: ...
+
+
 class LeasedWorkWorker:
     """Claim any registered work kind and supervise it under a generated lease fence.
 
@@ -170,6 +186,7 @@ class LeasedWorkWorker:
         self._concurrency = concurrency
         self._stop = asyncio.Event()
         self._active_work: set[WorkId] = set()
+        self._in_flight: dict[FleetTaskKind, int] = {}
 
     def stop(self) -> None:
         self._stop.set()
@@ -262,6 +279,16 @@ class LeasedWorkWorker:
             return ()
         return tuple(handler.task_capabilities)
 
+    def _at_limit(self, kind: FleetTaskKind) -> bool:
+        handler = self._handlers[kind]
+        if not isinstance(handler, InFlightLimited):
+            return False
+        limit = handler.max_in_flight
+        return limit is not None and self._in_flight.get(kind, 0) >= limit
+
+    def _release(self, kind: FleetTaskKind) -> None:
+        self._in_flight[kind] = self._in_flight.get(kind, 0) - 1
+
     async def drain_once(self, *, slot: int | None = None) -> bool:
         """Fair round-robin claim across registered top-level task kinds.
 
@@ -282,16 +309,30 @@ class LeasedWorkWorker:
                     kind=kind.value,
                 )
                 continue
-            task = await self._queue.claim_next(
-                kind=kind,
-                worker_id=self.worker_id,
-                stale_after=self._task_stale_after,
-                capabilities=capabilities,
-            )
-            if task is not None:
-                self._next_kind = (index + 1) % len(self._kind_order)
+            if self._at_limit(kind):
+                continue
+            # Reserve before awaiting the claim: slots share this loop, and between this check
+            # and the claim's return another slot could otherwise pass the same check.
+            self._in_flight[kind] = self._in_flight.get(kind, 0) + 1
+            try:
+                task = await self._queue.claim_next(
+                    kind=kind,
+                    worker_id=self.worker_id,
+                    stale_after=self._task_stale_after,
+                    capabilities=capabilities,
+                )
+            except BaseException:
+                self._release(kind)
+                raise
+            if task is None:
+                self._release(kind)
+                continue
+            self._next_kind = (index + 1) % len(self._kind_order)
+            try:
                 await self._run_task(task, self._handlers[kind], slot=slot)
-                return True
+            finally:
+                self._release(kind)
+            return True
         return False
 
     async def _handle_in_context(

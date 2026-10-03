@@ -113,6 +113,9 @@ class _ExecutionPort:
     async def delegate(self, *, request: DelegationRequest) -> DelegationResult:
         raise NotImplementedError
 
+    async def check_finalizable(self, *, status: object) -> None:
+        del status
+
     async def finalize(self, *, envelope: AgentFinalizeEnvelope) -> ArtifactRef:
         raise NotImplementedError
 
