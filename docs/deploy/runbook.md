@@ -76,6 +76,11 @@ fetch images through the frontend's narrow public proxy
      ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO clue_worker;
      ```
      Migrations run as `postgres`; `design-api`, `page-origin` and the VM workers run as `clue_worker`.
+   `clue_worker` has no CREATE on schema public. LangGraph's checkpoint tables therefore come from a
+   migration (`4a94970221e9`), and the runtime runs LangGraph's `setup()` only when they are behind.
+   (2026-10-03: before that migration existed, a temporary `GRANT CREATE ON SCHEMA public TO
+   clue_worker` unblocked production; once a release containing `4a94970221e9` is deployed, run
+   `REVOKE CREATE ON SCHEMA public FROM clue_worker;` as the owner.)
      Every Railway database URL in the variable files carries `?ssl=require`.
 3. **Redis 7, TLS for the VM.** Railway's Redis serves no TLS, and the VM reaches Redis over the
    public TCP proxy, so the password and lock traffic would cross the internet in clear text.
