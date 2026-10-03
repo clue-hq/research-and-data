@@ -479,7 +479,8 @@ def test_the_discovery_handler_is_off_unless_the_lane_flag_and_the_key_are_both_
     keyed = Secrets(_env_file=None, exa_api_key=SecretStr("exa-test"))  # type: ignore[call-arg]
     keyless = Secrets(_env_file=None)  # type: ignore[call-arg]
 
-    assert _build_arv2_discovery_handler(_settings(), keyed, storage=storage) is None
+    off = _settings(arv2_discovery_enabled=False)  # on by default since 2026-10-04
+    assert _build_arv2_discovery_handler(off, keyed, storage=storage) is None
 
     on = _settings(arv2_discovery_enabled=True)
     assert _build_arv2_discovery_handler(on, keyless, storage=storage) is None

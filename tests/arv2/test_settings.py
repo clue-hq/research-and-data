@@ -205,7 +205,7 @@ def test_discovery_settings_defaults_and_env_names(monkeypatch: pytest.MonkeyPat
     for field_name in ARV2_DISCOVERY_SETTINGS:
         monkeypatch.delenv(_env_name(field_name), raising=False)
     settings = Settings(_env_file=None)
-    assert settings.arv2_discovery_enabled is False
+    assert settings.arv2_discovery_enabled is True
     # At most three top-up searches after the first (spec 2026-09-30 §4).
     assert settings.arv2_discovery_max_topups == 3
     assert settings.arv2_discovery_answer_model == "exa"
@@ -246,7 +246,7 @@ def test_the_relaxed_and_gate_key_settings_are_gone() -> None:
 def test_every_discovery_setting_is_in_env_example() -> None:
     example = ENV_EXAMPLE.read_text(encoding="utf-8")
     for key in (
-        "CLUE_ARV2_DISCOVERY_ENABLED=false",
+        "CLUE_ARV2_DISCOVERY_ENABLED=true",
         "CLUE_ARV2_DISCOVERY_MAX_TOPUPS=3",
         "CLUE_ARV2_DISCOVERY_ANSWER_MODEL=exa",
         "CLUE_ARV2_DISCOVERY_POLL_INTERVAL_S=15",

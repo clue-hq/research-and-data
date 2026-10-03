@@ -452,9 +452,10 @@ class Settings(BaseSettings):
     arv2_person_media_max_items: int = Field(default=3, ge=0)
 
     # --- ARV2 R4 verified account discovery (master plan §9 R4; spec §2–§4) -------------------
-    # Off by default: a worker composes the discovery handler only when this is on AND
-    # ``CLUE_EXA_API_KEY`` is configured. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
-    arv2_discovery_enabled: bool = False
+    # On by default (2026-10-04: no shipped feature is blocked behind a default-off switch). A
+    # worker still composes the discovery handler only when ``CLUE_EXA_API_KEY`` is configured too,
+    # so a deployment without the key runs no discovery. Env: ``CLUE_ARV2_DISCOVERY_ENABLED``.
+    arv2_discovery_enabled: bool = True
     #: Exa Answer model for gate verification (``exa``, ``exa-pro``, ``exa-fast``).
     arv2_discovery_answer_model: str = "exa"
     #: Seconds between Websets polls while a discovery run is in flight (spec §3).
