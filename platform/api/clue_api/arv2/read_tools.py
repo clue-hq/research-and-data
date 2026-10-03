@@ -79,7 +79,6 @@ from clue_toolbelt import (
 )
 
 __all__ = [
-    "BODY_CHARS",
     "EVIDENCE_CHARS",
     "MAX_ACCOUNTS",
     "MAX_CANDIDATES",
@@ -141,9 +140,8 @@ class Arv2ReadRefused(Arv2Error):
     ``code`` is stable and machine-readable; the toolbelt tools turn it straight into a
     :class:`~clue_toolbelt.PreconditionFailure`. Codes: ``project_not_found``,
     ``account_not_found``, ``overview_not_written``, ``account_not_researched``,
-    ``no_claims_under_prefix``, ``offset_past_end``, ``offset_not_paged``,
-    ``discovery_run_not_found``, ``no_discovery_run``, ``entity_not_found``,
-    ``since_invalid``.
+    ``no_claims_under_prefix``, ``offset_past_end``, ``discovery_run_not_found``,
+    ``no_discovery_run``, ``entity_not_found``, ``since_invalid``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -312,12 +310,12 @@ class AccountOverviewSection(BaseModel, frozen=True):
     """One written section of an account's overview page, as it was stored."""
 
     section_key: str
-    #: ``display_block.body_json`` as JSON text, capped at :data:`BODY_CHARS`. Text rather than a
-    #: nested object because the stored body has no bound of its own — nothing in the display
-    #: package limits how many items a section holds or how long one item is — and an unbounded
-    #: blob is context the model pays for on every later turn of the thread.
+    #: ``display_block.body_json`` as JSON text, whole. Text rather than a nested object because the
+    #: stored body has no bound of its own; the overview pages by whole section instead, so a long
+    #: overview spreads across reads rather than losing its tail.
     body_text: str
-    #: The body was longer than the cap and the tail is not here.
+    #: This one section is larger than a whole page on its own, so its tail is not here. Every
+    #: other section is served complete.
     body_truncated: bool
     cited_claim_ids: tuple[str, ...]
     generated_at: str
@@ -359,7 +357,7 @@ class AccountResearch:
     #: ``outreach_unsafe``. Counted rather than silently dropped, exactly as ``SectionInput`` does
     #: for the page — an empty answer with a count is a fact; an empty answer alone is a lie.
     excluded: dict[str, int]
-    #: Where this page started in the account's servable claims (``0`` for the overview).
+    #: Where this page started: a claim index for claims, a section index for the overview.
     offset: int
     #: Where the next page starts, or ``None`` when this page ends the list.
     next_offset: int | None
@@ -379,11 +377,6 @@ MAX_CLAIMS = 120
 #: from — and the full span is one evidence read away. A clipped span ends with the ellipsis and
 #: never exceeds this length, so the marker costs a character of the quote rather than adding one.
 EVIDENCE_CHARS = 240
-
-#: The cap on one overview section's serialized body. The stored body is ``{intro, items, checks,
-#: cited_flags, cost_usd, call:{…}}`` and nothing in the display package bounds ``items`` — so the
-#: honest answer to "how large can a section be?" was "unbounded" until this.
-BODY_CHARS = 6000
 
 #: The budget for one read's ``references``. The runtime records every governed result as a
 #: ``GovernedOperationReceipt`` whose canonical ``reference_values`` must stay under 16 KiB
@@ -561,14 +554,11 @@ async def _current_lane_overview(
             for key in ("h1", "intro", "items", "restricted")
             if key in section and section[key] not in (None, [])
         }
-        body_text, body_truncated = _clip(
-            json.dumps(body, sort_keys=True, ensure_ascii=False), BODY_CHARS
-        )
         sections.append(
             AccountOverviewSection(
                 section_key=str(section["key"]),
-                body_text=body_text,
-                body_truncated=body_truncated,
+                body_text=json.dumps(body, sort_keys=True, ensure_ascii=False),
+                body_truncated=False,
                 cited_claim_ids=_claim_ids_in(body),
                 generated_at="" if written_at is None else written_at.isoformat(),
             )
@@ -588,22 +578,19 @@ async def _overview_sections(
     workspace_id: str,
     account_uuid: UUID,
     project_id: str | None = None,
-) -> tuple[tuple[AccountOverviewSection, ...], bool]:
-    """The account's written overview in the order the overview page itself serves it, bounded by
-    the receipt's budget, plus whether anything was left out.
+) -> list[AccountOverviewSection]:
+    """The account's whole written overview, every section complete, in the order the overview
+    page itself serves it. :func:`_overview_page` cuts it into receipt-sized pages.
 
     The current research lane's project-scoped page is read first; the legacy display lane's
     unscoped blocks only when the account has no current-lane research.
-
-    :data:`BODY_CHARS` bounds one section; nothing bounded the *page*, and a handful of capped
-    sections is past the receipt on its own. What fits is served, and the cut is said out loud.
     """
 
     current = await _current_lane_overview(
         conn, workspace_id=workspace_id, account_uuid=account_uuid, project_id=project_id
     )
     if current is not None:
-        return _fit_overview(current)
+        return current
     blocks = await live_blocks(
         conn,
         workspace_id=workspace_id,
@@ -631,43 +618,67 @@ async def _overview_sections(
     for block in ordered:
         # ``sort_keys`` so two attempts of one turn serialize identical bytes, and
         # ``ensure_ascii=False`` so a quote the writer used stays the character the human typed.
-        body_text, body_truncated = _clip(
-            json.dumps(block.body_json, sort_keys=True, ensure_ascii=False), BODY_CHARS
-        )
         legacy.append(
             AccountOverviewSection(
                 section_key=block.section_key,
-                body_text=body_text,
-                body_truncated=body_truncated,
+                body_text=json.dumps(block.body_json, sort_keys=True, ensure_ascii=False),
+                body_truncated=False,
                 cited_claim_ids=block.cited_claim_ids,
                 generated_at=block.generated_at.isoformat(),
             )
         )
-    return _fit_overview(legacy)
+    return legacy
 
 
-def _fit_overview(
-    sections: list[AccountOverviewSection],
-) -> tuple[tuple[AccountOverviewSection, ...], bool]:
-    """The sections that fit the receipt's byte budget, and whether any were cut."""
-    fitted, cut = _take_within_budget(
-        [section.model_dump() for section in sections], budget=READ_REFERENCES_BUDGET_BYTES
-    )
-    if fitted == 1 and cut:
-        # The first section is all that fits. Clip its body to what the budget actually leaves it
-        # — a section whose own body is over budget would otherwise be served whole and thrown
-        # away by the receipt, which is the bug this bound exists for. When the body already fits
-        # the room, ``_clip`` is a no-op and the section is served exactly as it was built.
-        head = sections[0]
-        room = READ_REFERENCES_BUDGET_BYTES - receipt_bytes({**head.model_dump(), "body_text": ""})
-        body_text, body_clipped = _clip(head.body_text, max(room, 200))
-        sections[0] = head.model_copy(
-            update={
-                "body_text": body_text,
-                "body_truncated": head.body_truncated or body_clipped,
-            }
+def _overview_page(
+    sections: Sequence[AccountOverviewSection], *, offset: int
+) -> tuple[tuple[AccountOverviewSection, ...], bool, int | None]:
+    """One page of the overview: the whole sections from ``offset`` that fit the receipt's byte
+    budget, whether more remain, and the offset the next page starts at.
+
+    ``offset`` counts sections, so a page never splits one. The only section that is ever cut is
+    one that is larger than a whole page by itself: it is served alone, clipped to the page, and
+    says so with ``body_truncated`` — served whole, the receipt would discard the entire read.
+    """
+
+    if offset >= len(sections) and offset > 0:
+        raise Arv2ReadRefused(
+            "offset_past_end",
+            f"this overview has {len(sections)} sections; offset {offset} is past the end",
         )
-    return tuple(sections[:fitted]), cut
+    rest = list(sections[offset:])
+    fitted, _ = _take_within_budget(
+        [section.model_dump() for section in rest], budget=READ_REFERENCES_BUDGET_BYTES
+    )
+    page = rest[:fitted]
+    if page and receipt_bytes([page[0].model_dump()]) > READ_REFERENCES_BUDGET_BYTES:
+        page[0] = _clip_section_to_page(page[0])
+    end = offset + len(page)
+    more = end < len(sections)
+    return tuple(page), more, (end if more else None)
+
+
+def _clip_section_to_page(section: AccountOverviewSection) -> AccountOverviewSection:
+    """``section`` with its body cut to the longest prefix that still fits one page.
+
+    Measured in the receipt's own bytes, not characters, so a body of multi-byte text is held to
+    the same bound the runtime enforces.
+    """
+
+    def fits(length: int) -> bool:
+        body, _ = _clip(section.body_text, length)
+        trial = section.model_copy(update={"body_text": body, "body_truncated": True})
+        return receipt_bytes([trial.model_dump()]) <= READ_REFERENCES_BUDGET_BYTES
+
+    low, high = 1, len(section.body_text)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if fits(middle):
+            low = middle
+        else:
+            high = middle - 1
+    body, _ = _clip(section.body_text, low)
+    return section.model_copy(update={"body_text": body, "body_truncated": True})
 
 
 def _is_sensitive(claim: Claim) -> bool:
@@ -868,9 +879,9 @@ async def read_account_research(
     :data:`MAX_CLAIMS`, which is the shape ``read_account_research@1`` asks for: that version has
     no ``limit`` of its own, so the budget alone bounds its page, exactly as it always did.
 
-    The overview is not paged (a cut overview tells the model to read the claims instead), so an
-    offset on it is refused rather than ignored, and ``limit`` — like ``field_prefix`` — says
-    nothing about it.
+    The overview pages by whole section: ``offset`` counts sections and ``next_offset`` says where
+    the next page starts, so a long overview is read across several calls rather than cut.
+    ``limit`` — like ``field_prefix`` — says nothing about it.
     """
 
     account_uuid, name = await _account_in_workspace(
@@ -883,11 +894,10 @@ async def read_account_research(
     next_offset: int | None = None
     prefixes: dict[str, int] = {}
     if section == "overview":
-        if offset != 0:
-            raise Arv2ReadRefused("offset_not_paged", "the overview is not paged; omit offset")
-        overview, truncated = await _overview_sections(
+        sections = await _overview_sections(
             conn, workspace_id=workspace_id, account_uuid=account_uuid, project_id=project_id
         )
+        overview, truncated, next_offset = _overview_page(sections, offset=offset)
     else:
         claims, truncated, excluded, next_offset, prefixes = await _account_claims(
             conn,
@@ -1620,7 +1630,8 @@ class ReadAccountResearchInput(ToolInput):
     #: Claims only: ``account.resonance`` narrows a researched account's claims to one family
     #: rather than making the model read all of them to find three.
     field_prefix: str | None = Field(default=None, max_length=80)
-    #: Claims only: continue from ``next_offset`` of the previous page. ``0`` starts over.
+    #: Continue from ``next_offset`` of the previous page, for claims and overview alike.
+    #: ``0`` starts over.
     offset: int = Field(default=0, ge=0)
 
 
@@ -1632,13 +1643,13 @@ class ReadAccountResearchOutput(ToolOutput):
     overview: tuple[AccountOverviewSection, ...]
     #: The account's servable claims when ``section='claims'``, else empty.
     claims: tuple[AccountClaimView, ...]
-    #: More exists than this page holds: continue with ``offset = next_offset`` (claims), or read
-    #: the claims when a long overview was cut.
+    #: More exists than this page holds: continue with ``offset = next_offset``, for claims and
+    #: overview sections alike.
     truncated: bool
     #: What the account pages' own gate held back, by reason: ``sensitive``, ``unverified``,
     #: ``outreach_unsafe``. A non-zero count means "there is more here, and it is not servable".
     excluded: dict[str, int]
-    #: Where this page started in the account's servable claims.
+    #: Where this page started: a claim index for claims, a section index for the overview.
     offset: int
     #: Where the next page starts, or ``None`` when this page ends the list.
     next_offset: int | None

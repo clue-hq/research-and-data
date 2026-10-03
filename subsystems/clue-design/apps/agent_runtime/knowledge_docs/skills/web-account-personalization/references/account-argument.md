@@ -7,9 +7,10 @@ edits retain their narrower scope. Work in the existing plan, not a new schema.
 
 Read project membership and research through [identity and evidence](identity-and-evidence.md).
 A target may lack a card; use available scoped reads. Keep research and design
-account IDs distinct. Complete the bounded **overview**: follow every returned `next_offset` until null. Receipts are not
-sections. Assemble chunks by `section_key`/`chunk_index`/`chunk_count` before using
-that section. Include committee, approach and watch-outs as well as company/fit.
+account IDs distinct. Complete the **overview**: follow every returned `next_offset` until
+null. Each page holds whole sections. A section marked `body_truncated` was larger than a
+page on its own and its tail is missing, so treat it as partial. Include committee,
+approach and watch-outs as well as company/fit.
 For a contact page, read available professional evidence using the returned person
 entity ID. Then read only the claim families needed for the selected argument.
 In the plan record **read coverage**: sections/contact evidence read, outstanding

@@ -29,8 +29,8 @@ Read `web-source-readiness`: kit, candidate source bands, pixels, HTML/CSS,
 slots, overrides, lineage and behavior evidence. Continue reported pagination
 for relevant unseen material; stop searching when results repeat known IDs.
 Read `web-account-personalization` for scoped account evidence and, for a named
-person, `web-contact-personalization`. Complete the bounded research overview
-and required section chunks, then read only supporting claim families. Read
+person, `web-contact-personalization`. Read the whole research overview, following
+`next_offset` until it is null, then read only supporting claim families. Read
 relevant seller product/proof/voice documents from the supplied seller index.
 A source capture, research overview and genuine logo answer different questions.
 Record missing capture/research as an acquisition handoff to its real owner;

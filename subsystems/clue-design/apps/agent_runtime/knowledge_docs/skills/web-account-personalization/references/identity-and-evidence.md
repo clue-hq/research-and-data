@@ -15,8 +15,8 @@ When these tools are exposed on the current role, their actual signatures are:
 - `read_account_research(account_entity_id, section="overview", field_prefix=None,
   offset=0)` reads the selected account. If the returned refusal says
   `overview_not_written`, read `section="claims"`; it is not an instruction to
-  synthesize missing research. Follow `next_offset` for the needed evidence and
-  before any claim about complete coverage/counts.
+  synthesize missing research. Both sections come in pages: follow `next_offset`
+  until it is null before any claim about complete coverage/counts.
 - `read_claims(entity_id, field_prefix=None, tier=None, verification_status=None,
   since=None, offset=0)` reads account/contact claims. Use entity IDs and filter
   values actually supplied by the platform; do not guess a verification enum.

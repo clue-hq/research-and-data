@@ -79,9 +79,11 @@ def make_platform_read_tools(tools: Any, reads: Any) -> list:
     ) -> str:
         """What research found about one account. section="overview" returns the written
         sections; a researched account whose overview is not written yet answers
-        overview_not_written — then read section="claims". Claims come in pages: when
+        overview_not_written — then read section="claims". Both sections come in pages: when
         next_offset is not null, read again with offset=next_offset before you summarize or
-        count. field_prefix narrows to one family named in the answer's prefixes."""
+        count. An overview page holds whole sections; one marked body_truncated was larger than
+        a page and is partial. field_prefix narrows to one family named in the answer's
+        prefixes."""
         return _call(
             tools,
             reads,

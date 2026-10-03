@@ -25,7 +25,6 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.claim_writer import TIER_FOR_METHOD
 from clue_api.arv2.display.recipes import load_display_recipes
 from clue_api.arv2.read_tools import (
-    BODY_CHARS,
     EVIDENCE_CHARS,
     MAX_CANDIDATES,
     READ_REFERENCES_BUDGET_BYTES,
@@ -1130,8 +1129,68 @@ def test_the_claims_read_names_the_account_s_claim_families() -> None:
     run_async(scenario())
 
 
-def test_a_long_overview_body_is_capped_and_says_so() -> None:
-    """M4: the stored body has no bound of its own, so the read gives it one."""
+def test_a_long_overview_pages_by_whole_section_and_loses_nothing() -> None:
+    """A long overview is read across pages, never cut: each page holds whole sections."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+            # Nothing in the display package caps `items`. One of these is under a page on its
+            # own (the old 6000-character section cap clipped it); three are past one page.
+            long_body = {"items": [{"text": "They opened four ABM roles. " * 400}]}
+            keys = ("why-now", "why-they-fit", "buying-committee")
+            for section_key in keys:
+                await _seed_block(conn, project, account, section_key=section_key, body=long_body)
+
+            seen: list[str] = []
+            offset = 0
+            pages = 0
+            while True:
+                page = await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="overview",
+                    settings=VERIFYING,
+                    offset=offset,
+                )
+                pages += 1
+                assert page.offset == offset
+                assert receipt_bytes([s.model_dump() for s in page.overview]) <= (
+                    READ_REFERENCES_BUDGET_BYTES
+                )
+                for section in page.overview:
+                    # Served whole: the body is the stored JSON, untouched.
+                    assert section.body_truncated is False
+                    assert json.loads(section.body_text) == long_body
+                    seen.append(section.section_key)
+                assert page.truncated is (page.next_offset is not None)
+                if page.next_offset is None:
+                    break
+                offset = page.next_offset
+
+            assert sorted(seen) == sorted(keys)
+            assert len(seen) == len(set(seen))
+            assert pages > 1
+
+            with pytest.raises(Arv2ReadRefused) as past:
+                await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="overview",
+                    settings=VERIFYING,
+                    offset=len(keys),
+                )
+            assert past.value.code == "offset_past_end"
+
+    run_async(scenario())
+
+
+def test_a_section_larger_than_a_page_is_served_alone_and_says_it_was_clipped() -> None:
+    """The one cut left: a single section bigger than a whole page, clipped to fit and flagged."""
 
     async def scenario() -> None:
         async with rollback_conn(seed_pack=False) as conn:
@@ -1143,51 +1202,45 @@ def test_a_long_overview_body_is_capped_and_says_so() -> None:
                 project,
                 account,
                 section_key="why-now",
-                # Nothing in the display package caps `items`; one long section is enough.
-                body={"items": [{"text": "They opened four ABM roles. " * 400}]},
+                body={"items": [{"text": "Ölçeklenen ABM ekipleri. " * 900}]},
             )
-
-            research = await read_account_research(
+            await _seed_block(
                 conn,
-                workspace_id=project.workspace_id,
-                account_entity_id=str(account),
-                section="overview",
-                settings=VERIFYING,
+                project,
+                account,
+                section_key="why-they-fit",
+                body={"items": [{"text": "A short section."}]},
             )
 
-            section = research.overview[0]
-            assert len(section.body_text) == BODY_CHARS
-            assert section.body_text.endswith("…")
-            assert section.body_truncated is True
-            # One capped section still fits the receipt, so nothing was left out.
-            assert research.truncated is False
-
-            # Two more of the same: the per-section cap is not a bound on the *page*, and three
-            # capped sections are past the receipt's budget. The read serves what fits and says so.
-            for section_key in ("why-they-fit", "buying-committee"):
-                await _seed_block(
+            served: dict[str, Any] = {}
+            offset: int | None = 0
+            while offset is not None:
+                page = await read_account_research(
                     conn,
-                    project,
-                    account,
-                    section_key=section_key,
-                    body={"items": [{"text": "They opened four ABM roles. " * 400}]},
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="overview",
+                    settings=VERIFYING,
+                    offset=offset,
                 )
+                # Held to the receipt's own byte bound, multi-byte text included.
+                assert receipt_bytes([s.model_dump() for s in page.overview]) <= (
+                    READ_REFERENCES_BUDGET_BYTES
+                )
+                for section in page.overview:
+                    if section.body_truncated:
+                        # The oversized section rides alone on its page.
+                        assert len(page.overview) == 1
+                    served[section.section_key] = section
+                offset = page.next_offset
 
-            crowded = await read_account_research(
-                conn,
-                workspace_id=project.workspace_id,
-                account_entity_id=str(account),
-                section="overview",
-                settings=VERIFYING,
-            )
-
-            assert len(crowded.overview) < 3
-            assert crowded.truncated is True
-            assert receipt_bytes([s.model_dump() for s in crowded.overview]) <= (
-                READ_REFERENCES_BUDGET_BYTES
-            )
-            # The overview is not paged in this hotfix: a cut overview sends the model to claims.
-            assert (crowded.offset, crowded.next_offset) == (0, None)
+            assert set(served) == {"why-now", "why-they-fit"}
+            assert served["why-now"].body_truncated is True
+            assert served["why-now"].body_text.endswith("…")
+            assert served["why-they-fit"].body_truncated is False
+            assert json.loads(served["why-they-fit"].body_text) == {
+                "items": [{"text": "A short section."}]
+            }
 
     run_async(scenario())
 
