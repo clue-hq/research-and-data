@@ -177,6 +177,12 @@ or the claim comes back empty.
 The ARV2 research handler declares `max_in_flight = settings.arv2_account_max_parallel_jobs`. Its
 internal semaphore stays as a backstop and, by construction, never waits.
 
+This makes concurrency a deliberate setting rather than an accident of two numbers:
+`CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS` is how many research jobs one process runs, and
+`CLUE_FLEET_WORKER_CONCURRENCY` is how many tasks of all kinds it runs. The `.env.example` comments
+for both say so, and the runbook states the fleet-wide research capacity
+(batch workers × research limit; today 3 × 4 = 12).
+
 **Tests:** one worker, concurrency 10, research limit 4, six research tasks queued — it claims
 exactly 4; a second worker claims the other 2. A worker at its research limit still claims a
 display-page task. A failed task releases its slot.
@@ -221,12 +227,15 @@ note's method against success criteria 1–5. This spends money and is the found
 
 No database migration.
 
+Later (not in this PR): VM deploys move to a scheduled maintenance window, so worker restarts never
+interrupt research by surprise. Recorded in the follow-up note.
+
 ## 5. Out of scope — follow-ups
 
 1. **The derivation data model.** Every research artifact records one edge to every evidence source
    of its account (1.17M rows in a day). Erasure cascades walk these edges, so changing the model
-   (for example, one edge to a per-job evidence set) changes DSAR semantics and needs its own
-   design. This PR only makes the writes one statement.
+   changes DSAR semantics and needs its own design. This PR only makes the writes one statement.
+   The follow-up PR is described in `_memory/2026-10-03-follow-up-pr-artifact-derivation.md`.
 2. **Recording unread search results.** About 89% of recorded sources were never read by the agent.
    Recording lazily changes the evidence model; parts 1–3 make each recording cheap meanwhile.
 3. **More, smaller worker processes.** Decide from part 0's numbers and process CPU after deploy.
