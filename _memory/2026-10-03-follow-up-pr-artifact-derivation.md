@@ -51,6 +51,9 @@ an erasure relies on is unsafe.
 
 Recommendation: **A now, B later if precision matters to customers.**
 
+**Founder ruling 2026-10-03: option A approved** for the follow-up PR (same erasure semantics,
+revision-anchored link per output). B stays a later, separate decision.
+
 ## What the follow-up spec must cover
 
 - Migration: the anchor table, the new trigger branch (erasing a source erases outputs anchored to
