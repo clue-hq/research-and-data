@@ -10,6 +10,8 @@ const FORWARDED_RESPONSE_HEADERS = [
   "content-type",
   "cache-control",
   "content-disposition",
+  // Asset bytes revalidate by content digest (brand-context fix 2026-10-04).
+  "etag",
   "content-security-policy",
   "x-request-id",
   "x-content-type-options",

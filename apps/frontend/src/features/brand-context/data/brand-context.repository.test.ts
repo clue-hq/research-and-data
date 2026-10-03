@@ -479,3 +479,74 @@ test("a design-store outage still lists the onboarding documents", async () => {
   assert.deepEqual(workspace.colorGroups, []);
   assert.equal(kit, null);
 });
+
+function batchRecordsRoute(): Record<string, { body: unknown }> {
+  const ids = [...new Set(brandKitAssetIds(BrandKitDetailSchema.parse(HARVESTED_BRAND_KIT)))];
+  const assets = Object.fromEntries(
+    ids.filter(id => id in HARVESTED_ASSET_RECORDS).map(id => [id, HARVESTED_ASSET_RECORDS[id]]),
+  );
+  return {
+    [`/assets/records?asset_ids=${ids.map(encodeURIComponent).join(",")}`]: {
+      body: { schema_version: 1, assets },
+    },
+  };
+}
+
+test("kit asset records arrive in ONE batch read, not one request per asset", async () => {
+  const requested: string[] = [];
+  const { fetchImpl } = stubDesignApi(
+    {
+      "/brand-kits": { body: [{ id: KIT_ID, version: 1, name: "Stripe" }] },
+      [`/brand-kits/${KIT_ID}`]: { body: HARVESTED_BRAND_KIT },
+      ...batchRecordsRoute(),
+    },
+    requested,
+  );
+  const { workspace } = await httpBrandContextRepository({
+    clueFetch: () => noPlatformRead,
+    designFetch: async () => fetchImpl,
+  }).getWorkspace();
+  assert.equal(requested.filter(path => path.startsWith("/assets/records?")).length, 1);
+  assert.equal(requested.filter(path => /^\/assets\/[^/?]+$/.test(path)).length, 0);
+  assert.ok(workspace.assets.some(asset => asset.sizeLabel !== "—"));
+});
+
+test("a design API without the batch route still gets each record read", async () => {
+  const requested: string[] = [];
+  const { fetchImpl } = stubDesignApi(
+    {
+      "/brand-kits": { body: [{ id: KIT_ID, version: 1, name: "Stripe" }] },
+      [`/brand-kits/${KIT_ID}`]: { body: HARVESTED_BRAND_KIT },
+      ...assetRoutes(),
+    },
+    requested,
+  );
+  const { workspace } = await httpBrandContextRepository({
+    clueFetch: () => noPlatformRead,
+    designFetch: async () => fetchImpl,
+  }).getWorkspace();
+  assert.ok(requested.some(path => /^\/assets\/[^/?]+$/.test(path)));
+  assert.ok(workspace.assets.some(asset => asset.sizeLabel !== "—"));
+});
+
+test("the three registry asset kinds are listed concurrently", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const fetchImpl = (async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path === "/brand-kits") return Response.json([]);
+    if (path.startsWith("/assets?")) {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise(resolve => setTimeout(resolve, 20));
+      inFlight -= 1;
+      return Response.json({ assets: [] });
+    }
+    return Response.json({ descriptions: {} });
+  }) as typeof fetch;
+  await httpBrandContextRepository({
+    clueFetch: () => noPlatformRead,
+    designFetch: async () => fetchImpl,
+  }).getWorkspace();
+  assert.equal(peak, 3);
+});

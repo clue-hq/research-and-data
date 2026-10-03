@@ -11,7 +11,7 @@ function AssetVisual({ asset }: { asset: BrandAsset }) {
   if (asset.visual.kind === "image") {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img alt="" loading="lazy" className={styles.assetImage} src={asset.visual.imagePath} />
+      <img alt="" loading="lazy" className={styles.assetImage} src={asset.visual.thumbnailPath ?? asset.visual.imagePath} />
     );
   }
 

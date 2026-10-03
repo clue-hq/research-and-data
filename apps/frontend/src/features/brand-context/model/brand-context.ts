@@ -60,6 +60,9 @@ export const BrandAssetVisualSchema = z.discriminatedUnion("kind", [
   z.object({
     imagePath: z.string(),
     kind: z.literal("image"),
+    // The small stored preview, when one exists — what the asset grid loads (the full
+    // bytes are for the detail view). Absent → the grid falls back to `imagePath`.
+    thumbnailPath: z.string().optional(),
   }),
   z.object({
     colors: z.array(z.string()).min(2),
