@@ -39,3 +39,26 @@ Two McKee persons (Don Gladden Jr. `74eb5859`, Cindy Lyons `bc9bc12a`) never sta
 batch1 claimed all five McKee person tasks (`CLUE_FLEET_WORKER_CONCURRENCY=10`) but runs at most
 `CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS=4` research jobs, so two sit claimed (heartbeat refreshed)
 while batch2 has been idle since 16:32. Claim-without-capacity defect.
+
+## Mortenson display pages read in full (2026-10-04, founder asked for a judgement)
+Final person outcomes (18:28 UTC): 10 person jobs, 5 `completed`, 5 `needs_review/workspace_conflict`
+(same finalize bug); 70–125 min each; ~$43 total. Mortenson total ≈ $25.9 (account $6.75 + five people
+$19.11). Person quotes checked against stored sources: 154 of 157 found (3 misses look like dash /
+fragment formatting), so accuracy holds for people too.
+
+Judgement: research diligence high, seller usefulness medium. Problems in the WRITING layer, not
+the sourcing: (1) hedging on almost every item ("not a buying signal", "not proof") — the pages read
+as an audit memo; (2) the decisive facts are never joined — Bachhuber introduced a healthcare
+navigator via a medical/pharmacy RFP at Thrivent, Mortenson has "7000+ travelers", Risk & Insurance
+documented travelling workers failing to find in-network care, and his benefits leader left in Aug
+2026 — no page states that combined story; (3) openers do not bridge to Garner's offer (sabbatical
+2015, Second Harvest donation, an intern-welcome comment); (4) over-collection of personal data with
+no sales value: Ritter's state financial-disclosure holdings, Locken's possibly-misattributed CPA
+board order, Bachhuber's therapist/antidepressant self-disclosure stored as claims (flagged
+do-not-mention, but stored), Athena's likes of motherhood/ALS posts — conflicts with the data-minimisation
+principle; (5) two of five nominees (Ritter, Locken) are argued against by their own pages, while
+Lois Martin (enterprise CFO), Matthew Hochbrunn (Sr Benefits Specialist) and the departing benefits
+leader's identity (Comparably lists Athena as "Benefits Manager") were not pursued; (6) repetition —
+the "13,000 team members" quote appears ~6 times; (7) presentation slips — buying-signals "in-network"
+item quotes a mental-health-stigma line, why-now heading "...same benefits seat on job boards" has a
+CFO-only body.
