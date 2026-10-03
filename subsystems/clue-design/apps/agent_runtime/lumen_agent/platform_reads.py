@@ -1,8 +1,9 @@
 """The platform's reads, as the design agent sees them (design note 2026-09-19).
 
 Four tools — the three account reads head-of-abm has, and web_search, the open-web search used
-last — and the seller's pinned knowledge written into ``workspace/seller/`` once per session. The
-design runtime never learns where any of this comes from: ``reads`` is an object the platform
+last — and the seller's pinned knowledge written into ``workspace/seller/`` once per pin. Web legs
+also receive the original project instruction/decision snapshot in ``workspace/project-context/``.
+The design runtime never learns where any of this comes from: ``reads`` is an object the platform
 injected (config.platform_reads), and this module only calls it. Every tool answers a JSON string;
 a failure answers ``{"error": "<code>"}`` and is recorded, never raised — a read the agent could
 not make is a fact to design around, not a reason to kill the turn.
@@ -27,6 +28,7 @@ from py_lumen_obs import get_logger
 logger = get_logger("lumen_agent.platform_reads")
 
 SELLER_DIR = "seller"
+PROJECT_CONTEXT_DIR = "project-context"
 _PIN_FILE = ".pin"
 _REFUSED_PREFIX = "refused:"
 
@@ -222,4 +224,40 @@ def write_seller_knowledge(workspace: Path, reads: Any, *, record: Callable[...,
     return True
 
 
-__all__ = ["SELLER_DIR", "make_platform_read_tools", "write_seller_knowledge"]
+def write_project_design_context(
+    workspace: Path, reads: Any, *, record: Callable[..., Any]
+) -> None:
+    """Materialize original project sources, replacing stale bytes even on a failed read.
+
+    The adapter owns scope and artifact integrity. This fixed-path derived copy is read-only
+    to the agent; unavailable context is explicit, never an earlier turn's silent fallback.
+    """
+    try:
+        payload = reads.project_design_context()
+    except Exception:  # noqa: BLE001 - unavailable context must clear the previous snapshot
+        # Do not propagate arbitrary adapter exception text into agent context or traces.
+        payload = {"status": "unavailable", "is_live_project_view": False, "files": []}
+    root = workspace / PROJECT_CONTEXT_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "snapshot.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    record(
+        "orchestrator",
+        "project_design_context_written",
+        payload={
+            "status": payload["status"],
+            "source_turn_id": payload.get("source_turn_id"),
+            "source_pin_sha256": payload.get("source_pin_sha256"),
+            "files": [file["path"] for file in payload["files"]],
+        },
+    )
+
+
+__all__ = [
+    "PROJECT_CONTEXT_DIR",
+    "SELLER_DIR",
+    "make_platform_read_tools",
+    "write_project_design_context",
+    "write_seller_knowledge",
+]

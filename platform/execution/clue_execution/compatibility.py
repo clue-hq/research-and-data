@@ -196,7 +196,15 @@ class CompatibilityLoader:
             identity = (request.kind, request.key)
             prior = seen.get(identity)
             if prior is not None:
-                if prior != request:
+                if (
+                    prior.version is not None
+                    and request.version is not None
+                    and prior.version != request.version
+                ) or (
+                    prior.digest is not None
+                    and request.digest is not None
+                    and prior.digest != request.digest
+                ):
                     incompatibilities.append(
                         Incompatibility(
                             kind=request.kind,
@@ -206,8 +214,19 @@ class CompatibilityLoader:
                             reason="conflicting_requirement",
                         )
                     )
-                continue
+                    continue
+                # A dynamic node may refine a recipe's version-only pin with its exact digest.
+                # Combine constraints before observing the resource so neither the content hash
+                # nor a required=True declaration can be lost behind a weaker duplicate.
+                request = request.model_copy(
+                    update={
+                        "version": prior.version or request.version,
+                        "digest": prior.digest or request.digest,
+                        "required": prior.required or request.required,
+                    }
+                )
             seen[identity] = request
+        for request in seen.values():
             resolver = self._registry.get(request.kind)
             if resolver is None:
                 incompatibilities.append(

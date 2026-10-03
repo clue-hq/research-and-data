@@ -644,6 +644,12 @@ fn fluid_size(size: f64) -> String {
     format!("clamp({min}px, {preferred:.2}vw, {size}px)")
 }
 
+// Platform defaults apply to native nodes and the outer fragment container only.
+// Captured descendants retain their source rules and browser defaults. :where()
+// keeps the exclusion at zero specificity; unlike @scope it adds no proximity
+// priority and does not change native equal-specificity/layer conflicts.
+const NATIVE_SUBJECT: &str = ":not(:where([data-lumen-fragment=\"true\"] *))";
+
 fn type_rule(selector: &str, family: &str, resolved: &ResolvedType, fluid: bool) -> String {
     let size = if fluid {
         fluid_size(resolved.size)
@@ -655,7 +661,7 @@ fn type_rule(selector: &str, family: &str, resolved: &ResolvedType, fluid: bool)
         .map(|value| format!(" letter-spacing: {value}em;"))
         .unwrap_or_default();
     format!(
-        "{selector} {{ font-family: {family}; font-size: {size}; font-weight: {}; line-height: {};{letter_spacing} }}\n",
+        "{selector}{NATIVE_SUBJECT} {{ font-family: {family}; font-size: {size}; font-weight: {}; line-height: {};{letter_spacing} }}\n",
         resolved.weight, resolved.line_height
     )
 }
@@ -680,24 +686,24 @@ fn build_base_css(
         css.push('\n');
     }
     css.push_str(&format!(
-        "*, *::before, *::after {{ box-sizing: border-box; }}\n\
+        "*{NATIVE_SUBJECT}, *{NATIVE_SUBJECT}::before, *{NATIVE_SUBJECT}::after {{ box-sizing: border-box; }}\n\
          body {{ margin: 0; font-family: {body_family}; color: var(--color-dark); \
          background: var(--color-light); font-size: {}px; line-height: {}; \
          -webkit-font-smoothing: antialiased; }}\n\
-         img {{ max-width: 100%; display: block; }}\n\
-         [data-tv] {{ margin: 0; }}\n\
-         [data-tv=\"body\"] > :where(p, ul, ol), \
-         [data-tv=\"small\"] > :where(p, ul, ol) {{ margin: 0; }}\n\
-         [data-tv=\"body\"] > :where(p, ul, ol) + :where(p, ul, ol), \
-         [data-tv=\"small\"] > :where(p, ul, ol) + :where(p, ul, ol) {{ margin-top: 0.75em; }}\n\
-         [data-tv=\"body\"] :where(ul, ol), \
-         [data-tv=\"small\"] :where(ul, ol) {{ padding-left: 1.5em; }}\n\
-         [data-tv=\"body\"] :where(ul), \
-         [data-tv=\"small\"] :where(ul) {{ list-style-type: disc; }}\n\
-         [data-tv=\"body\"] :where(ol), \
-         [data-tv=\"small\"] :where(ol) {{ list-style-type: decimal; }}\n\
-         [data-tv=\"body\"] :where(li) + li, \
-         [data-tv=\"small\"] :where(li) + li {{ margin-top: 0.25em; }}\n",
+         img{NATIVE_SUBJECT} {{ max-width: 100%; display: block; }}\n\
+         [data-tv]{NATIVE_SUBJECT} {{ margin: 0; }}\n\
+         [data-tv=\"body\"] > :where(p, ul, ol){NATIVE_SUBJECT}, \
+         [data-tv=\"small\"] > :where(p, ul, ol){NATIVE_SUBJECT} {{ margin: 0; }}\n\
+         [data-tv=\"body\"] > :where(p, ul, ol) + :where(p, ul, ol){NATIVE_SUBJECT}, \
+         [data-tv=\"small\"] > :where(p, ul, ol) + :where(p, ul, ol){NATIVE_SUBJECT} {{ margin-top: 0.75em; }}\n\
+         [data-tv=\"body\"] :where(ul, ol){NATIVE_SUBJECT}, \
+         [data-tv=\"small\"] :where(ul, ol){NATIVE_SUBJECT} {{ padding-left: 1.5em; }}\n\
+         [data-tv=\"body\"] :where(ul){NATIVE_SUBJECT}, \
+         [data-tv=\"small\"] :where(ul){NATIVE_SUBJECT} {{ list-style-type: disc; }}\n\
+         [data-tv=\"body\"] :where(ol){NATIVE_SUBJECT}, \
+         [data-tv=\"small\"] :where(ol){NATIVE_SUBJECT} {{ list-style-type: decimal; }}\n\
+         [data-tv=\"body\"] :where(li) + li{NATIVE_SUBJECT}, \
+         [data-tv=\"small\"] :where(li) + li{NATIVE_SUBJECT} {{ margin-top: 0.25em; }}\n",
         body.size, body.line_height
     ));
 
@@ -744,9 +750,9 @@ fn build_base_css(
     css.push_str(&type_rule("[data-tv=\"h3\"]", display_family, &h3, false));
     css.push_str(&type_rule("[data-tv=\"h4\"]", display_family, &h4, false));
     css.push_str(&format!(
-        "[data-tv=\"body\"] {{ font-size: {}px; line-height: {}; }}\n\
-         [data-tv=\"small\"] {{ font-size: {}px; line-height: 1.5; }}\n\
-         [data-tv=\"overline\"] {{ font-size: {}px; font-weight: 600; text-transform: uppercase; \
+        "[data-tv=\"body\"]{NATIVE_SUBJECT} {{ font-size: {}px; line-height: {}; }}\n\
+         [data-tv=\"small\"]{NATIVE_SUBJECT} {{ font-size: {}px; line-height: 1.5; }}\n\
+         [data-tv=\"overline\"]{NATIVE_SUBJECT} {{ font-size: {}px; font-weight: 600; text-transform: uppercase; \
          letter-spacing: 0.08em; }}\n",
         body.size,
         body.line_height,
@@ -765,18 +771,18 @@ fn build_base_css(
     let cta_size = cta.map(|t| t.size).unwrap_or_else(|| body.size.min(17.0));
     let cta_weight = cta.map(|t| t.weight).unwrap_or(600);
     css.push_str(&format!(
-        "[data-btn] {{ display: inline-flex; align-items: center; justify-content: center; \
+        "[data-btn]{NATIVE_SUBJECT} {{ display: inline-flex; align-items: center; justify-content: center; \
          gap: 0.5rem; font-family: {body_family}; font-size: {cta_size}px; font-weight: {cta_weight}; \
          line-height: 1; text-decoration: none; border-radius: {radius}px; \
          padding: 0.75rem 1.5rem; border: 1px solid transparent; cursor: pointer; \
          transition: filter 0.15s ease, background-color 0.15s ease; }}\n\
-         [data-btn]:hover {{ filter: brightness(1.06); }}\n\
-         [data-btn=\"primary\"] {{ background: var(--color-primary); color: {primary_contrast}; }}\n\
-         [data-btn=\"secondary\"] {{ background: var(--color-dark); color: {dark_contrast}; }}\n\
-         [data-btn=\"outline\"] {{ border-color: var(--color-dark); color: var(--color-dark); background: transparent; }}\n\
-         [data-btn=\"ghost\"] {{ color: var(--color-dark); background: transparent; }}\n\
-         [data-btn=\"ghost\"]:hover {{ background: color-mix(in srgb, var(--color-dark) 8%, transparent); filter: none; }}\n\
-         [data-btn=\"link\"] {{ padding: 0; border: none; background: none; border-radius: 0; \
+         [data-btn]{NATIVE_SUBJECT}:hover {{ filter: brightness(1.06); }}\n\
+         [data-btn=\"primary\"]{NATIVE_SUBJECT} {{ background: var(--color-primary); color: {primary_contrast}; }}\n\
+         [data-btn=\"secondary\"]{NATIVE_SUBJECT} {{ background: var(--color-dark); color: {dark_contrast}; }}\n\
+         [data-btn=\"outline\"]{NATIVE_SUBJECT} {{ border-color: var(--color-dark); color: var(--color-dark); background: transparent; }}\n\
+         [data-btn=\"ghost\"]{NATIVE_SUBJECT} {{ color: var(--color-dark); background: transparent; }}\n\
+         [data-btn=\"ghost\"]{NATIVE_SUBJECT}:hover {{ background: color-mix(in srgb, var(--color-dark) 8%, transparent); filter: none; }}\n\
+         [data-btn=\"link\"]{NATIVE_SUBJECT} {{ padding: 0; border: none; background: none; border-radius: 0; \
          color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; }}\n"
     ));
     css.push_str(
@@ -784,10 +790,9 @@ fn build_base_css(
          animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; \
          transition-duration: 0.01ms !important; scroll-behavior: auto !important; }\n}\n",
     );
-    // LAST inside the base layer, on purpose: a cloned section's own rules
-    // must beat the platform's element-level defaults above (`img { … }`,
-    // `[data-tv] { … }`) so the clone looks like what was cloned. It stays
-    // inside the base layer, so a compiled utility still outranks it.
+    // Keep source CSS unchanged and last. Native defaults above exclude clone
+    // interiors; missing source declarations must retain browser defaults too.
+    // Source CSS stays in the base layer, below deliberate compiled utilities.
     if let Some(fragment_css) = &options.fragment_css {
         css.push_str("/* lumen-fragment css */\n");
         css.push_str(fragment_css);

@@ -286,7 +286,21 @@ GEOMETRY_JS = r"""
     if (previous && previous.focus) previous.focus({ preventScroll: true });
   } catch (e) { /* restoring focus is best-effort */ }
 
+  // Measure the browser's initial font independently of author/inherited styles.
+  // The probe runs after the frozen DOM and screenshot are collected; remove it
+  // immediately so no transient measurement node becomes source material.
+  let initialFontPx = null;
+  const fontProbe = document.createElement('span');
+  try {
+    fontProbe.style.cssText = 'all:initial!important;font-size:medium!important;'
+      + 'position:fixed!important;visibility:hidden!important;pointer-events:none!important';
+    document.documentElement.appendChild(fontProbe);
+    initialFontPx = num(getComputedStyle(fontProbe).fontSize) || null;
+  } finally { fontProbe.remove(); }
+
   return {
+    initial_font_px: initialFontPx,
+    root_font_px: num(getComputedStyle(document.documentElement).fontSize),
     url: location.href,
     viewport: innerWidth,
     surfaces: surfaces,
@@ -299,6 +313,18 @@ GEOMETRY_JS = r"""
   };
 }
 """
+
+
+def captured_font_context(raw: object) -> dict[str, float]:
+    """Bounded browser measurements retained for later fragment reconstruction."""
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        key: float(value)
+        for key in ("initial_font_px", "root_font_px")
+        if isinstance(value := raw.get(key), (int, float))
+        and not isinstance(value, bool) and 0 < value <= 256
+    }
 
 
 @dataclass

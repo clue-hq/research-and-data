@@ -4,7 +4,7 @@ vocabulary the engine resolves.
 G1 made ten utilities law in the web grammar: `GEOMETRY_UTILITIES` in
 `crates/lumen-web/src/theme.rs` is the single closed source of truth — one row
 per utility, carrying the kit token chain it resolves. G3 taught that vocabulary
-to the prompt, the create-website skill, and the recipe renderer, so the same ten
+to the prompt, the create-website typed reference, and the recipe renderer, so the same ten
 names now live in four places. They are only useful if they cannot drift apart:
 the Rust table is the source of truth and the three prose copies are checked
 against it, exactly as `test_web_icon_vocabulary.py` guards the icon registry.
@@ -21,20 +21,12 @@ from pathlib import Path
 
 from lumen_agent.brand_brief import GEOMETRY_TOKEN_UTILITIES
 from lumen_agent.prompts_web import WEB_GEOMETRY_UTILITIES, build_web_author_prompt
+from test_web_skill_family import read_required_skill_reference
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 THEME_RS = REPO_ROOT / "crates" / "lumen-web" / "src" / "theme.rs"
-SKILL_MD = (
-    REPO_ROOT
-    / "apps"
-    / "agent_runtime"
-    / "knowledge_docs"
-    / "skills"
-    / "create-website"
-    / "SKILL.md"
-)
 
-#: The heading the create-website skill's geometry block opens with. Split-on,
+#: The heading the required typed-authoring reference's geometry block opens with. Split-on,
 #: not searched for: the assertion is about THAT block, not the whole file.
 SKILL_BLOCK_MARKER = "**Brand geometry — ten utilities that resolve the kit's own shape.**"
 
@@ -89,18 +81,19 @@ def test_the_author_prompt_carries_the_geometry_vocabulary() -> None:
         assert utility in prompt, utility
 
 
-def test_the_create_website_skill_geometry_block_names_all_ten() -> None:
-    text = SKILL_MD.read_text(encoding="utf-8")
+def test_the_create_website_skill_geometry_block_names_all_ten(tmp_path) -> None:
+    text = read_required_skill_reference(
+        tmp_path, "create-website", "typed authoring reference",
+        before="Use the ", after=" before `author_web_page` / `author_web_subtree`.",
+    )
     assert SKILL_BLOCK_MARKER in text
     block = text.split(SKILL_BLOCK_MARKER, 1)[1].split("\n## ", 1)[0]
-    for utility, chain_head in _engine_rows():
-        assert f"`{utility}`" in block, utility
-        assert chain_head in block, chain_head
+    listed = re.findall(r"^\| `([a-z0-9-]+)` \| `([a-z0-9.]+)` \|", block, re.MULTILINE)
+    assert listed == _engine_rows()
 
 
 def test_the_recipe_mapping_table_is_exactly_the_engine_chain_heads() -> None:
     """A recipe slot names a KIT TOKEN; the author writes a CLASS. The mapping is
     that translation, and it is only sound while it matches the chains."""
-    assert GEOMETRY_TOKEN_UTILITIES == {
-        chain_head: utility for utility, chain_head in _engine_rows()
-    }
+    expected = {chain_head: utility for utility, chain_head in _engine_rows()}
+    assert expected == GEOMETRY_TOKEN_UTILITIES

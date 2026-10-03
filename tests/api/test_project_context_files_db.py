@@ -41,7 +41,7 @@ from clue_api.project_status import (
     render_status_markdown,
 )
 from clue_api.thread_store import create_thread
-from clue_core import EntityId, OnboardingInputKind, new_project_run_id
+from clue_core import EntityId, OnboardingInputKind, VolunteeredStatementId, new_project_run_id
 from clue_research.durable import ensure_project_run
 from clue_research.identity import insert_account_entity
 from clue_research.membership import ensure_project_account
@@ -549,7 +549,7 @@ def test_project_decisions_quote_a_recorded_statement_and_drop_erased_evidence()
                 actor="human",
             )
             start = _ANSWER.index(_QUOTE)
-            await record_statement(
+            statement_id = await record_statement(
                 conn,
                 onboarding_input_id=captured.onboarding_input_id,
                 workspace_id=ws,
@@ -560,7 +560,8 @@ def test_project_decisions_quote_a_recorded_statement_and_drop_erased_evidence()
                 quote=_QUOTE,
                 quote_start=start,
                 quote_end=start + len(_QUOTE),
-                created_by_actor="human",
+                created_by_actor="agent",
+                route_ref="account:example-target",
             )
 
             items = await load_project_decisions(
@@ -568,6 +569,15 @@ def test_project_decisions_quote_a_recorded_statement_and_drop_erased_evidence()
             )
             assert [(item.route_key, item.quote) for item in items] == [("target_segment", _QUOTE)]
             assert f'- **target_segment** — "{_QUOTE}"' in render_decisions_markdown(items)
+            # The agent records the human's captured words. Recorder and speaker are
+            # different authorities; neither the source nor its scope may disappear.
+            rendered = render_decisions_markdown(items)
+            assert str(statement_id) in rendered
+            assert str(captured.onboarding_input_id) in rendered
+            assert "account:example-target" in rendered
+            assert items[0].input_actor == "human"
+            assert items[0].recorded_by_actor == "agent"
+            assert items[0].input_kind is OnboardingInputKind.USER_TURN
 
             # DSAR erases the captured turn: the item drops, the file still compiles.
             await mark_erased(conn, ref.artifact_key)
@@ -578,6 +588,75 @@ def test_project_decisions_quote_a_recorded_statement_and_drop_erased_evidence()
                 == ()
             )
             assert "Nothing recorded yet." in render_decisions_markdown(())
+
+    run_async(scenario())
+
+
+def test_decision_correction_keeps_source_scope_without_rewriting_other_targets() -> None:
+    """A corrected layout instruction must disappear, while other targets keep their words."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await _seed_workspace_project(conn)
+            storage = _MemoryStorage()
+            artifacts = DurableAgentArtifactStore(
+                storage=storage, conn_factory=conn_session_factory(conn)
+            )
+            target = await _seed_account(conn, project, "Example Hotels")
+            other = await _seed_account(conn, project, "Other Hotels")
+
+            async def record(
+                quote: str, entity: EntityId, corrects: VolunteeredStatementId | None = None
+            ) -> VolunteeredStatementId:
+                ref = await artifacts.persist_body(
+                    workspace_id=project.workspace_id, data=quote.encode(), media_type="text/plain"
+                )
+                captured = await submit_onboarding_input(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    brand_id=project.brand_id,
+                    project_id=project.project_id,
+                    kind=OnboardingInputKind.USER_TURN,
+                    artifact_key=ref.artifact_key,
+                    content_sha256=ref.sha256,
+                    actor="human",
+                    source_ref="thread:layout-feedback",
+                )
+                return await record_statement(
+                    conn,
+                    onboarding_input_id=captured.onboarding_input_id,
+                    workspace_id=project.workspace_id,
+                    brand_id=project.brand_id,
+                    project_id=project.project_id,
+                    entity_id=entity,
+                    route_kind=StatementRoute.PROJECT_STATE,
+                    route_key="preference.logo",
+                    quote=quote,
+                    quote_start=0,
+                    quote_end=len(quote),
+                    correction_of_id=corrects,
+                    created_by_actor="agent",
+                )
+
+            old = await record("Use both logos in the navigation.", target)
+            await record("Use a partner header for Other Hotels.", other)
+            new = await record(
+                "Put the target logo above the hero, outside navigation.", target, old
+            )
+            items = await load_project_decisions(
+                conn, artifacts, workspace_id=project.workspace_id, project_id=project.project_id
+            )
+            rendered = render_decisions_markdown(items)
+            assert "Use both logos in the navigation." not in rendered
+            assert "Use a partner header for Other Hotels." in rendered
+            assert "Put the target logo above the hero, outside navigation." in rendered
+            # This is the information Head needs to correct by ID and retain account scope.
+            assert str(target) in rendered and str(other) in rendered
+            assert str(old) in rendered and str(new) in rendered
+            assert "thread:layout-feedback" in rendered
+            corrected = next(item for item in items if item.statement_id == new)
+            assert corrected.correction_of_id == old
+            assert corrected.entity_id == target
 
     run_async(scenario())
 

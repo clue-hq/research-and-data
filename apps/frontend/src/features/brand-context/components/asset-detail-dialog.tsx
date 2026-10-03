@@ -21,7 +21,7 @@ export function AssetDetailDialog({ controller }: { controller: BrandContextCont
         <div className={styles.assetDialogPreview} style={asset.visual.kind === "gradient" ? {background: `linear-gradient(135deg, ${asset.visual.colors.join(", ")})`} : undefined}>
           {asset.visual.kind === "image" ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img alt={asset.name} src={asset.visual.imagePath} />
+            <img alt={asset.name} data-vector={asset.type === "SVG" || undefined} src={asset.visual.imagePath} />
           ) : null}
         </div>
         <div className={styles.assetDialogDetails}>

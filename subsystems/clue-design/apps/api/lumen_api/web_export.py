@@ -32,6 +32,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
+import tinycss2
+from tinycss2 import ast
+
 from clue_design.publishes import PUBLISH_ASSET_MEDIA_TYPES, delivery_csp
 from clue_design.storage import SOURCE_KEY_ASSET, SOURCE_KEY_PUBLISH_ASSET
 
@@ -1283,6 +1286,73 @@ def _compile_static_css(
 SECTION_CSS_TIMEOUT_SECONDS = 20
 
 
+def _portable_repair_custom_css(css: str) -> str:
+    """Admit local, unlayered rules without pretending global CSS is isolated.
+
+    Native IDs change per pin. Global font/property/page rules and layer order
+    also have document-wide meaning the fragment scoper cannot preserve. Keep
+    the typed section on refusal; do not silently drop one of its dependencies.
+    Registered assets still pass the artifact builder's normal custody checks.
+    """
+    def refuse(reason: str) -> None:
+        raise WebExportCompileError(f"reusable section custom CSS cannot preserve {reason}")
+
+    def tokens(items: Any, *, selector: bool = False, animation: bool = False) -> None:
+        for token in items:
+            if isinstance(token, ast.ParseError):
+                refuse("invalid CSS")
+            if selector and isinstance(token, ast.HashToken) and token.is_identifier:
+                refuse("ID selectors; use section-local classes")
+            if selector and isinstance(token, ast.SquareBracketsBlock) and any(
+                isinstance(t, ast.IdentToken)
+                and t.lower_value in {"id", "aria-controls", "aria-labelledby"}
+                for t in token.content
+            ):
+                refuse("ID attribute selectors; use section-local classes")
+            if isinstance(token, ast.URLToken) and token.value.lstrip().startswith("#"):
+                refuse("local URL targets that may change per pin")
+            if isinstance(token, ast.FunctionBlock):
+                if animation and token.lower_name in {"var", "env", "attr"}:
+                    refuse("indirect animation names; keyframe identity must be explicit")
+                if token.lower_name == "url" and any(
+                    isinstance(t, ast.StringToken) and t.value.lstrip().startswith("#")
+                    for t in token.arguments
+                ):
+                    refuse("local URL targets that may change per pin")
+                tokens(token.arguments, selector=selector, animation=animation)
+            elif hasattr(token, "content"):
+                tokens(token.content, selector=selector, animation=animation)
+
+    def rules(items: Any) -> None:
+        for rule in items:
+            if isinstance(rule, ast.QualifiedRule):
+                tokens(rule.prelude, selector=True)
+                declarations = tinycss2.parse_declaration_list(
+                    rule.content, skip_comments=True, skip_whitespace=True,
+                )
+                for declaration in declarations:
+                    if not isinstance(declaration, ast.Declaration):
+                        refuse("nested or invalid declarations")
+                    tokens(declaration.value, animation=declaration.lower_name in {
+                        "animation", "animation-name", "-webkit-animation", "-webkit-animation-name",
+                    })
+            elif isinstance(rule, ast.AtRule):
+                # Keyframes are renamed by the existing artifact scoper.
+                if rule.lower_at_keyword not in {
+                    "media", "supports", "container", "keyframes", "-webkit-keyframes",
+                } or rule.content is None:
+                    refuse(f"@{rule.lower_at_keyword} across document boundaries")
+                tokens(rule.prelude, selector=True)
+                rules(tinycss2.parse_rule_list(
+                    rule.content, skip_comments=True, skip_whitespace=True,
+                ))
+            else:
+                refuse("invalid or unsupported rules")
+
+    rules(tinycss2.parse_stylesheet(css, skip_comments=True, skip_whitespace=True))
+    return css
+
+
 def compile_section_css(
     core: Any,
     web_doc: JsonObject,
@@ -1312,13 +1382,20 @@ def compile_section_css(
     than returning an empty sheet — a repair that cannot be styled refuses, rather than minting an
     artifact that looks fine until somebody publishes it.
     """
+    custom_css = _portable_repair_custom_css(str(web_doc.get("custom_css") or "").strip())
     require_static_css_toolchain(node_bin)
-    return _compile_static_css(
+    utilities = _compile_static_css(
         section_html,
         _theme_tokens(core, web_doc, brand_kit),
         node_bin,
         timeout_seconds=timeout_seconds,
     )
+    # A repair leaves the page that supplied its custom class rules. Keep those
+    # accepted unlayered rules after the utilities. Layer-dependent ordering is
+    # explicitly refused above. The artifact builder still validates URLs and
+    # scopes the complete sheet;
+    # this is not permission to replay source scripts or bypass asset custody.
+    return utilities + "\n" + custom_css if custom_css else utilities
 
 
 # --------------------------------------------------------------------------- #

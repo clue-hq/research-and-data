@@ -198,7 +198,7 @@
     },
     "name": "Ingested evidence_website_insight",
     "provenance": {
-      "confidence": 0.6964,
+      "confidence": 0.6375,
       "created_at": "2026-07-05",
       "created_by": "lumen_ingestion",
       "notes": [
@@ -1996,8 +1996,8 @@
         "type.body": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.body; measured=font_family,font_size,font_weight,line_height @ website:https://www.insighthealth.example :: paragraph"
           },
           "role": "body",
           "value": {
@@ -2017,8 +2017,8 @@
         "type.body.small": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.body.small; measured=none"
           },
           "role": "body.small",
           "value": {
@@ -2038,8 +2038,8 @@
         "type.caption": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.caption; measured=none"
           },
           "role": "caption",
           "value": {
@@ -2059,8 +2059,8 @@
         "type.cta": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.cta; measured=font_family,font_size,font_weight @ website:https://www.insighthealth.example :: CTA label"
           },
           "role": "cta",
           "value": {
@@ -2080,8 +2080,8 @@
         "type.display": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.display; measured=none"
           },
           "role": "display",
           "value": {
@@ -2101,8 +2101,8 @@
         "type.eyebrow": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.eyebrow; measured=none"
           },
           "role": "eyebrow",
           "value": {
@@ -2143,8 +2143,8 @@
         "type.label": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.label; measured=none"
           },
           "role": "label",
           "value": {
@@ -2164,8 +2164,8 @@
         "type.legal": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.legal; measured=none"
           },
           "role": "legal",
           "value": {
@@ -2185,8 +2185,8 @@
         "type.stat": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.stat; measured=none"
           },
           "role": "stat",
           "value": {
@@ -2206,8 +2206,8 @@
         "type.subtitle": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.subtitle; measured=none"
           },
           "role": "subtitle",
           "value": {
@@ -2227,8 +2227,8 @@
         "type.title": {
           "description": null,
           "provenance": {
-            "confidence": 0.9,
-            "source": "website:https://www.insighthealth.example :: hero h1"
+            "confidence": 0.6,
+            "source": "derived:type.title; measured=font_family,font_size,font_weight,line_height @ website:https://www.insighthealth.example :: section h2"
           },
           "role": "title",
           "value": {
@@ -2422,8 +2422,8 @@
         "value": "#009E76"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.display; measured=none",
         "token": "type.display",
         "value": "Aeonik 77.0"
       },
@@ -2434,62 +2434,62 @@
         "value": "Aeonik 48.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.title; measured=font_family,font_size,font_weight,line_height @ website:https://www.insighthealth.example :: section h2",
         "token": "type.title",
         "value": "Aeonik 32.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.subtitle; measured=none",
         "token": "type.subtitle",
         "value": "Aeonik 20.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.body; measured=font_family,font_size,font_weight,line_height @ website:https://www.insighthealth.example :: paragraph",
         "token": "type.body",
         "value": "Aeonik 16.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.body.small; measured=none",
         "token": "type.body.small",
         "value": "Aeonik 14.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.caption; measured=none",
         "token": "type.caption",
         "value": "Aeonik 12.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.eyebrow; measured=none",
         "token": "type.eyebrow",
         "value": "Aeonik 12.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.label; measured=none",
         "token": "type.label",
         "value": "Aeonik 13.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.cta; measured=font_family,font_size,font_weight @ website:https://www.insighthealth.example :: CTA label",
         "token": "type.cta",
         "value": "Aeonik 16.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.stat; measured=none",
         "token": "type.stat",
         "value": "Aeonik 60.0"
       },
       {
-        "basis": "evidence",
-        "pointer": "website:https://www.insighthealth.example :: hero h1",
+        "basis": "derived",
+        "pointer": "derived:type.legal; measured=none",
         "token": "type.legal",
         "value": "Aeonik 11.0"
       }

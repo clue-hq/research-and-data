@@ -1007,6 +1007,7 @@ def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
     """
 
     return {
+        "account_id": account["account_id"],
         "name": account["name"],
         "domain": account["domain"],
         "logo_asset_id": account["logo_asset_id"],

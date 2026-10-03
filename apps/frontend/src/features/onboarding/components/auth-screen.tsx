@@ -49,7 +49,9 @@ export function AuthScreen({
       </div>
 
       <Button
+        aria-busy={busy}
         className={styles.authButton}
+        disabled={busy}
         onClick={onChooseGoogle}
         size="lg"
         type="button"

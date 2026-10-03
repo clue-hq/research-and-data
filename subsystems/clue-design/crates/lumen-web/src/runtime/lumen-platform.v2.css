@@ -64,14 +64,6 @@ details[data-lumen-acc-item] > summary::-webkit-details-marker { display: none; 
 }
 .lumen-carousel-arrow[data-dir="prev"] { left: 0.75rem; }
 .lumen-carousel-arrow[data-dir="next"] { right: 0.75rem; }
-/* tabs */
-.lumen-tabs-list { display: flex; gap: 0.25rem; flex-wrap: wrap; }
-.lumen-tab {
-  border: none; background: transparent; cursor: pointer;
-  padding: 0.5rem 1rem; border-radius: 9999px; font: inherit; color: inherit;
-  opacity: 0.65;
-}
-.lumen-tab[aria-selected="true"] { opacity: 1; background: rgb(0 0 0 / 0.06); }
 /* embeds */
 .lumen-embed { border: 0; width: 100%; display: block; }
 /* P6.1 custom-component safe fallback. P6.3 replaces the contents with a

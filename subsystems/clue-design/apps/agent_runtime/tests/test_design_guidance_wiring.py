@@ -7,8 +7,8 @@ content; this suite guards the WIRING around it:
   materializer copies every skill dir, there is no manifest to forget);
 - the orchestrator and the author prompts name it must-read, in the same
   referencing idiom the existing skill/recipe pointers use;
-- the reviewer's brief-consumption hooks live in `review-website/SKILL.md`
-  (the reviewer prompt already points at that skill, so it stays as-is);
+- the reviewer's brief-consumption hooks are reached through the required
+  reference in the materialized `review-website` skill;
 - the knowledge tree's root doc (`AGENT.md`, materialized as the agent's
   `/.deepagent/AGENTS.md`) references it for website work;
 - the SCENE prompts are untouched — D4 scopes brief consumption to web
@@ -32,6 +32,7 @@ from lumen_agent.prompts_web import (
     build_web_orchestrator_prompt,
     build_web_reviewer_prompt,
 )
+from test_web_skill_family import read_required_skill_reference
 
 RUNTIME_ROOT = Path(__file__).resolve().parents[1]
 KNOWLEDGE_DOCS = RUNTIME_ROOT / "knowledge_docs"
@@ -100,14 +101,17 @@ def _web_orchestrator_prompt() -> str:
     )
 
 
-def test_the_web_orchestrator_prompt_names_design_guidance_must_read() -> None:
+def test_the_web_orchestrator_prompt_names_design_guidance_must_read(tmp_path) -> None:
     prompt = _web_orchestrator_prompt()
 
     assert SKILL_NAME in prompt
     # The pointer is a pointer, not a paraphrase of the skill: the orchestrator
     # is told to READ it, and the existing recipe pointer survives beside it.
     assert "read" in prompt.lower().split(SKILL_NAME)[0][-200:]
-    assert "knowledge_docs/knowledge/web/landing-page.md" in prompt
+    recipe = "knowledge_docs/knowledge/web/landing-page.md"
+    assert f"For landing-page composition, read {recipe}" in prompt
+    materialize_agent_workspace(types.SimpleNamespace(workspace_root=tmp_path))
+    assert (tmp_path / recipe).read_bytes() == (RUNTIME_ROOT / recipe).read_bytes()
 
 
 def test_the_web_author_prompt_names_design_guidance_beside_create_website() -> None:
@@ -138,8 +142,11 @@ def test_the_web_reviewer_prompt_still_delegates_to_its_skill_file() -> None:
 # ============================================================================
 
 
-def test_review_website_consumes_the_briefs_constraints_and_rhythm() -> None:
-    text = (SKILLS_DIR / "review-website" / "SKILL.md").read_text(encoding="utf-8")
+def test_review_website_consumes_the_briefs_constraints_and_rhythm(tmp_path) -> None:
+    assert "Read your skill:\nreview-website" in build_web_reviewer_prompt()
+    text = read_required_skill_reference(
+        tmp_path, "review-website", "fidelity and behavior checks",
+    )
     lowered = text.lower()
 
     assert "creative brief" in lowered
@@ -148,10 +155,13 @@ def test_review_website_consumes_the_briefs_constraints_and_rhythm() -> None:
     assert "defect" in lowered
     # (b) the background rhythm is checked against the brief's when present.
     assert "background rhythm" in lowered
-    # The pre-existing checks are untouched (the anchor check's advisory label
-    # wraps across a line in this file, hence the two-part assertion).
-    assert "**\"brand expression" in text
-    assert "Trace the contrast chain" in text
+    # Generic expression is advisory; violating a required source/brief property
+    # is a defect. Neither an anchor label nor a score can erase that distinction.
+    flat = " ".join(lowered.split())
+    assert '"brand expression generic"' in flat
+    assert "advisory unless" in flat
+    assert "a violation is a reportable defect" in flat
+    assert "trace the contrast chain" in flat
 
 
 # ============================================================================

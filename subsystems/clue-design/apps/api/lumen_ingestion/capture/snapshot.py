@@ -25,13 +25,18 @@ class Stylesheet(BaseModel):
 
     url: str
     text: str
+    raw_text: str | None = None
+    source_order: list[int] | None = None
+    media: str | None = None
+    disabled: bool = False
+    imported_from: str | None = None
 
 
 class Download(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: str
-    kind: Literal["font", "image", "logo", "screenshot", "og_image"]
+    kind: Literal["font", "image", "logo", "screenshot", "og_image", "video"]
     content_type: str | None = None
     bytes_b64: str
     sha256: str

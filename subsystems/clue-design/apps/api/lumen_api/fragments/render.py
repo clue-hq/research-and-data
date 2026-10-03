@@ -46,6 +46,7 @@ from typing import Any, Iterable, Mapping, Sequence
 from clue_storage import StorageBackend
 
 from ..database import NotFoundError
+from .native import native_render_fields
 from .refs import ASSET_URL_PREFIX, FRAGMENT_ID_RE, FragmentRefused, fragment_wrapper_class
 from .registry import read_web_fragment
 from .slots import SLOT_KINDS
@@ -158,7 +159,7 @@ def _reachable_nodes(web_doc: Any, page_id: str) -> list[dict[str, Any]]:
 
 
 def web_doc_page_section_count(web_doc: Any, page_id: str) -> int:
-    """How many top-level bands this page carries — sections AND pinned fragments.
+    """How many structural bands this page carries — native sections and pinned fragments.
 
     The behavioural gate probes only fragment-wrapped bands (`.lumen-frag-…`), so a draft
     repair or a composed section riding as a plain document node is invisible to it. This
@@ -178,12 +179,39 @@ def web_doc_page_section_count(web_doc: Any, page_id: str) -> int:
     children = root.get("children")
     if not isinstance(children, list):
         return 0
-    count = 0
-    for child_id in children:
-        child = nodes.get(child_id) if isinstance(child_id, str) else None
-        if isinstance(child, dict) and child.get("kind") in ("section", "fragment"):
-            count += 1
-    return count
+    # Source-flow envelopes are ordinary nested Section/Container nodes. Count the
+    # bands inside them, not just the outer envelope. A fragment is one opaque band;
+    # a native section with no nested band still counts as unmeasured native content.
+    pending = [(child, None) for child in reversed(children) if isinstance(child, str)]
+    seen = {root_id}
+    native_bands: set[str] = set()
+    fragment_count = 0
+    while pending:
+        node_id, containing_section = pending.pop()
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        node = nodes.get(node_id)
+        if not isinstance(node, dict):
+            continue
+        kind = node.get("kind")
+        if kind not in ("container", "section", "fragment"):
+            continue
+        if kind in ("section", "fragment"):
+            native_bands.discard(containing_section)
+            if kind == "fragment":
+                fragment_count += 1
+                continue
+            native_bands.add(node_id)
+            containing_section = node_id
+        nested = node.get("children")
+        if isinstance(nested, list):
+            pending.extend(
+                (child, containing_section)
+                for child in reversed(nested)
+                if isinstance(child, str)
+            )
+    return fragment_count + len(native_bands)
 
 
 def web_doc_fragment_ids(web_doc: Any, page_id: str) -> list[str]:
@@ -300,6 +328,7 @@ def build_fragment_render_package(
             package["missing"].append(fragment_id)
             continue
         package["fragments"][fragment_id] = {
+            **native_render_fields(loaded.payload),
             "html": loaded.html,
             "css": loaded.css,
             "slot_kinds": slot_kinds(loaded.slot_manifest),
@@ -314,6 +343,8 @@ def build_fragment_render_package(
             # and the artifact is the only thing that knows which they are.
             "asset_digests": list(loaded.asset_digests),
         }
+        if loaded.payload.get("native_dependencies"):
+            package["schema_version"] = 2
     return package
 
 
@@ -347,7 +378,9 @@ def build_fragment_render_package_for_document(
             page_id=page_id,
         )
         for key, value in page_package.items():
-            if key not in ("fragments", "missing"):
+            if key == "schema_version":
+                package[key] = max(package[key], value)
+            elif key not in ("fragments", "missing"):
                 package[key] = value
         package["fragments"].update(page_package["fragments"])
         for fragment_id in page_package["missing"]:
@@ -392,7 +425,7 @@ def fragment_package_schema_refusal(package: Any) -> dict[str, Any] | None:
     if not isinstance(package, Mapping) or not package:
         return None
     version = package.get("schema_version")
-    if version == FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION:
+    if version in (1, 2):
         return None
     return {
         "severity": "warning",
@@ -400,7 +433,7 @@ def fragment_package_schema_refusal(package: Any) -> dict[str, Any] | None:
         "code": "fragment.package_schema_unknown",
         "message": (
             f"the cloned-section package for this render carries schema_version {version!r}, "
-            f"and this build reads {FRAGMENT_RENDER_PACKAGE_SCHEMA_VERSION}. Every cloned "
+            "and this build reads 1 and 2. Every cloned "
             "section renders its placeholder rather than being read under the wrong rules."
         ),
         "subject": None,
@@ -447,7 +480,7 @@ def fragment_render_map(
     package: Mapping[str, Any],
     fragment_ids: Sequence[str],
     asset_base_url: str | None = None,
-) -> dict[str, dict[str, str]]:
+) -> dict[str, dict[str, Any]]:
     """The engine's ``RenderOptions.fragments`` — markup plus each slot's kind.
 
     CSS is deliberately absent: it reaches the page through the head, once per fragment, not once
@@ -462,6 +495,7 @@ def fragment_render_map(
     fragments = fragments if isinstance(fragments, Mapping) else {}
     return {
         fragment_id: {
+            **native_render_fields(fragments[fragment_id]),
             "html": rebase_artifact_assets(
                 str(fragments[fragment_id].get("html") or ""), asset_base_url
             ),

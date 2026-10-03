@@ -39,11 +39,13 @@ fail-closed answer an absent one gets.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from clue_design import site_snapshots as snapshot_dal
+from clue_design.web_fragments import fragment_has_kit_binding
 from py_lumen_config import settings
 
 from .asset_custody import cache_blob_path, ensure_materialized
@@ -78,8 +80,12 @@ from .fragments import (
     set_web_fragment_degraded,
     set_web_fragment_status,
 )
-from .fragments.cssscope import PRELUDE_REFERENCE_STRIP
+from .fragments.behavior import inspect_fragment_behavior
+from .fragments.native import native_render_fields
+from .fragments.cssscope import PRELUDE_REFERENCE_STRIP, scope_fragment_css
+from .fragments.isolation import IsolationFonts
 from .fragments.render import slot_kinds
+from .fragments.registry import create_href_repaired_fragment
 from .fragments.sanitize import sanitize_fragment_html
 
 # The SAME slot detector minting uses. Imported rather than reimplemented (and rather than
@@ -89,6 +95,8 @@ from .fragments.sanitize import sanitize_fragment_html
 # (`main.py`, `fleet_handler.py` do the same in the other direction) and `slotdetect` itself
 # pulls only `lumen_api.fragments`, so there is no cycle to be had here.
 from lumen_ingestion.sections.slotdetect import detect_slots
+from lumen_ingestion.sections.source_flow import SourceFlowUnavailable, compile_source_flow
+from lumen_ingestion.site_snapshot import read_site_snapshot
 
 JsonObject = Dict[str, Any]
 
@@ -451,7 +459,13 @@ def _slot_summary(slot_manifest: Any) -> List[JsonObject]:
 class DurableAgentClonedSectionRegistry:
     """The sole cloned-section capability exposed to one website-mode agent turn."""
 
-    def __init__(self, *, blobs: DesignBlobStore, cache_dir: str | Path) -> None:
+    def __init__(
+        self,
+        *,
+        blobs: DesignBlobStore,
+        cache_dir: str | Path,
+        isolation_fonts: Callable[[Mapping[str, Any]], IsolationFonts | None] | None = None,
+    ) -> None:
         # The byte store carries the tenant; the row store is built from it rather than
         # re-derived, so the two can never name different workspaces (the D4/D5 rule the
         # custom-component registry follows).
@@ -461,6 +475,7 @@ class DurableAgentClonedSectionRegistry:
         # own, and staging preview bytes in one tree while the runtime reads another would show
         # the agent nothing while every digest looked healthy.
         self.cache_dir = Path(cache_dir)
+        self._isolation_fonts = isolation_fonts
 
     def _repository(self) -> HybridRepository:
         return HybridRepository(self.workspace_id)
@@ -494,7 +509,15 @@ class DurableAgentClonedSectionRegistry:
         # bottom — nav, hero, proof, footer — and "newest first" scattered that into the order
         # the minter happened to write rows in, which carries no meaning a human can use. Page
         # first so a multi-page walk stays grouped, then the section's own index within it.
-        ordered = sorted(rows, key=self._document_order)
+        by_id = {str(row["fragment_id"]): row for row in all_rows}
+        # A repair keeps its family's captured source position, even if its own
+        # provenance intentionally lacks the original snapshot/layout identity.
+        def source_order(row):
+            verdict = lineages.get(str(row["fragment_id"]))
+            original = by_id.get(verdict.root, row) if verdict else row
+            return (*self._document_order(original)[:-1], str(row["fragment_id"]))
+
+        ordered = sorted(rows, key=source_order)
         sections = [
             self._section_row(row, repairs, lineages)
             for row in ordered[:CLONED_SECTION_LIST_MAX]
@@ -538,9 +561,24 @@ class DurableAgentClonedSectionRegistry:
         provenance = row.get("provenance")
         provenance = provenance if isinstance(provenance, dict) else {}
         index = provenance.get("section_index")
+        path: tuple = ()
+        recovery = provenance.get("recovery") or {}
+        parent = recovery.get("parent_dom_path")
+        member = provenance.get("dom_path")
+        recovered_index = recovery.get("parent_section_index")
+        if (
+            recovery.get("mode") == "authored-descendant-after-refusal"
+            and type(recovered_index) is int and recovered_index >= 0
+            and isinstance(parent, (list, tuple)) and isinstance(member, (list, tuple))
+            and parent and len(member) > len(parent)
+            and all(type(i) is int and i >= 0 for i in (*parent, *member))
+            and list(member[:len(parent)]) == list(parent)
+        ):
+            index, path = recovered_index, tuple(member[len(parent):])
         return (
             _page_url(row) or "",
-            int(index) if isinstance(index, int) else 1_000_000,
+            int(index) if type(index) is int else 1_000_000,
+            path,
             str(row.get("fragment_id") or ""),
         )
 
@@ -567,6 +605,7 @@ class DurableAgentClonedSectionRegistry:
             "source_url": row.get("source_url"),
             "source_kit_id": row.get("source_kit_id"),
             "source_kit_version": row.get("source_kit_version"),
+            "source_kit_bindings": row.get("source_kit_bindings", []),
             "preview_digest": row.get("preview_digest"),
             "slot_keys": [str(key) for key in slot_keys]
             if isinstance(slot_keys, list)
@@ -696,6 +735,18 @@ class DurableAgentClonedSectionRegistry:
         )
         row = loaded.row
         payload = loaded.payload
+        provenance = row.get("provenance")
+        provenance = provenance if isinstance(provenance, dict) else {}
+        # Only capture evidence, never arbitrary provider payloads or reconstructed facts.
+        # created_at is a registry timestamp, not a claim that the source was fetched then.
+        capture_evidence = {
+            key: provenance[key]
+            for key in (
+                "snapshot_id", "viewport_width", "preview_basis", "geometry",
+                "dead_height_check", "hidden_on_source", "recovery", "degraded",
+            )
+            if key in provenance
+        }
         return {
             "fragment_id": fragment_id,
             "section_role": row.get("section_role"),
@@ -703,6 +754,20 @@ class DurableAgentClonedSectionRegistry:
             "source_url": row.get("source_url"),
             "status": row.get("status"),
             "derived_from": row.get("derived_from"),
+            "source_kit_id": row.get("source_kit_id"),
+            "source_kit_version": row.get("source_kit_version"),
+            "source_kit_bindings": row.get("source_kit_bindings", []),
+            "page_url": _page_url(row),
+            "section_index": provenance.get("section_index"),
+            "created_at": row.get("created_at"),
+            "payload_digest": row.get("payload_digest"),
+            "degraded": bool(row.get("degraded")),
+            "degraded_reason": row.get("degraded_reason"),
+            "composed": provenance.get("composed"),
+            "capture_evidence": capture_evidence,
+            "behavior_evidence": inspect_fragment_behavior(
+                str(payload.get("html") or ""), payload.get("native_dependencies")
+            ),
             "slots": _slot_summary(loaded.slot_manifest),
             "html": str(payload.get("html") or ""),
             "css": str(payload.get("css") or ""),
@@ -793,6 +858,7 @@ class DurableAgentClonedSectionRegistry:
             # mid-turn renders in the agent's own preview through the map that is already
             # threaded — no second render path, and no shape for the two to disagree on.
             "render": {
+                **native_render_fields(loaded.payload),
                 "html": loaded.html,
                 "css": loaded.css,
                 "slot_kinds": slot_kinds(loaded.slot_manifest),
@@ -934,7 +1000,145 @@ class DurableAgentClonedSectionRegistry:
             )
         )
 
+    def prepare_source_flows(self, fragment_ids: Sequence[str]) -> JsonObject:
+        """Read exact captured envelopes after the ordinary per-fragment release gate.
+
+        No artifact, release state, snapshot or asset is written. Each snapshot is
+        loaded once per call. Missing/unsupported source context is returned as an
+        explicit assembly gap, never replaced by measured or invented spacing.
+        """
+        if (
+            len(fragment_ids) > CLONED_SECTION_LIST_MAX
+            or len(set(fragment_ids)) != len(fragment_ids)
+        ):
+            raise SourceFlowUnavailable("bound", "assembly ids exceed the supported bound")
+        repository = self._repository()
+        rows = {}
+        buckets = {}
+        gaps = []
+
+        def read(fid):
+            if fid not in rows:
+                rows[fid] = repository.find_web_fragment(fid)
+            return rows[fid]
+
+        for fid in fragment_ids:
+            repository.validate_fragment_reference_changes(
+                before_web_doc={}, after_web_doc=_probe_web_doc(fid)
+            )
+            row = read(fid)
+            original = row
+            seen = set()
+            while original.get("derived_from"):
+                parent_id = str(original["derived_from"])
+                if parent_id in seen or len(seen) >= 40:
+                    raise SourceFlowUnavailable(
+                        "lineage", "source lineage is cyclic or exceeds bound"
+                    )
+                seen.add(parent_id)
+                original = read(parent_id)
+            p = original.get("provenance") or {}
+            recovery = p.get("recovery") or {}
+            if recovery.get("mode") != "authored-descendant-after-refusal":
+                continue
+            path = recovery.get("parent_dom_path")
+            if (
+                not isinstance(path, (list, tuple))
+                or not path
+                or any(type(i) is not int or i < 0 for i in path)
+            ):
+                gaps.append(
+                    {
+                        "code": "source_flow.source_mismatch",
+                        "member_ids": [fid],
+                        "message": "captured parent path is absent or invalid",
+                    }
+                )
+                continue
+            key = (str(p.get("snapshot_id") or ""), tuple(path))
+            buckets.setdefault(key, []).append(row)
+
+        snapshots = {}
+        groups = []
+        for (snapshot_id, _), members in buckets.items():
+            ids = [str(row["fragment_id"]) for row in members]
+            try:
+                if any(row.get("derived_from") for row in members):
+                    raise SourceFlowUnavailable(
+                        "incompatible_repair",
+                        "repaired member has no verified shared source layout",
+                    )
+                if not snapshot_id:
+                    raise SourceFlowUnavailable(
+                        "snapshot_unavailable", "recovery has no immutable snapshot id"
+                    )
+                if snapshot_id not in snapshots:
+                    try:
+                        snapshots[snapshot_id] = read_site_snapshot(
+                            self.blobs.storage,
+                            workspace_id=self.workspace_id,
+                            snapshot_id=snapshot_id,
+                        )
+                    except Exception:  # custody boundary; do not leak storage paths or row details
+                        snapshots[snapshot_id] = None
+                snapshot = snapshots[snapshot_id]
+                if snapshot is None:
+                    raise SourceFlowUnavailable(
+                        "snapshot_unavailable", "immutable captured source could not be read"
+                    )
+                groups.append(compile_source_flow(snapshot, members))
+            except SourceFlowUnavailable as error:
+                gaps.append({"code": error.code, "member_ids": ids, "message": str(error)[:500]})
+        return {"groups": groups, "gaps": gaps, "fidelity_verified": False}
+
     # --- the repair mint (F3.1, ruling D-F6) --------------------------------------------------
+
+    def mint_href_repair(
+        self, *, replaces: str, replacements: Mapping[str, str] | None = None,
+        label_replacements: Mapping[str, str] | None = None, rung: int, note: str,
+        text_edits: list[dict[str, str]] | None = None,
+    ) -> JsonObject:
+        """Repair exact anchors/text from held source; preserve markup, assets and CSS."""
+        original = self._repository().find_web_fragment(replaces)
+        if original is None:
+            raise FragmentRefused("fragment.unresolved", "this workspace holds no such fragment")
+        reason = repair_reason(rung=rung, trigger=original.get("degraded_reason"), note=note)
+        provenance = _repair_provenance(original, rung=rung, note=note, replaces=replaces)
+        provenance["repair"]["source"] = (
+            "captured_text_repair" if text_edits is not None else
+            "captured_anchor_repair" if label_replacements is not None else "captured_href_repair"
+        )
+        row, repair, converged = create_href_repaired_fragment(
+            self.blobs.storage, workspace_id=self.workspace_id, replaces=replaces,
+            replacements=replacements, label=_repair_label(original), derived_reason=reason,
+            provenance=provenance, label_replacements=label_replacements, text_edits=text_edits,
+        )
+        fragment_id = repair.artifact.fragment_id
+        if row.get("status") == "draft":
+            try:
+                row = set_web_fragment_status(
+                    workspace_id=self.workspace_id, fragment_id=fragment_id, status="approved",
+                )
+            except Exception as error:
+                raise FragmentRefused(
+                    "repair.release_unconfirmed",
+                    f"repair {fragment_id} was minted, but release could not be confirmed; "
+                    "the page is unchanged",
+                    reference=fragment_id,
+                ) from error
+        return {
+            "fragment_id": fragment_id, "status": row.get("status"),
+            "derived_from": row.get("derived_from"), "match_counts": repair.match_counts,
+            "label_match_counts": repair.label_match_counts,
+            "text_match_paths": repair.text_match_paths,
+            "derived_reason": row.get("derived_reason"), "requested_derived_reason": reason,
+            "converged": converged,
+            "lineage_kept": (
+                row.get("derived_from") == replaces and row.get("derived_reason") == reason
+            ),
+            "slot_keys": list(repair.artifact.payload["slot_manifest"]),
+            "insertable": row.get("status") == "approved",
+        }
 
     def mint_repair(
         self,
@@ -945,6 +1149,7 @@ class DurableAgentClonedSectionRegistry:
         rung: int,
         note: str,
         release: bool = False,
+        native_dependencies: dict[str, Any] | None = None,
     ) -> JsonObject:
         """Mint the replacement for a broken clone as a NEW, lineage-carrying fragment.
 
@@ -1002,16 +1207,23 @@ class DurableAgentClonedSectionRegistry:
         else:
             slot_specs = list(detect_slots(sanitized.html).specs)
 
-        # What the original's markup literally is, for the "did this repair anything?" check
+        # The original's markup AND CSS, for the "did this repair anything?" check
         # below. Fail-SOFT on an unreadable original: a purged payload must not block repairing
         # the very fragment most in need of it, and nothing about preserving the original
         # depends on this read.
         try:
-            existing_html = read_web_fragment(
+            existing = read_web_fragment(
                 self.blobs.storage, workspace_id=self.workspace_id, fragment_id=replaces
-            ).html
+            )
         except (NotFoundError, FragmentRefused):
-            existing_html = None
+            existing = None
+
+        if existing is not None and existing.payload.get("native_dependencies") and native_dependencies is None:
+            raise FragmentRefused(
+                "fragment.native_dependency_unsupported",
+                "raw HTML/CSS repair of a native fragment cannot preserve its declared behavior; "
+                "use exact text/link edits or a checked vocabulary replacement",
+            )
 
         probe = build_fragment_artifact(
             html=sanitized.html,
@@ -1020,23 +1232,38 @@ class DurableAgentClonedSectionRegistry:
             slots=slot_specs,
             preview_digest=None,
             prelude_reference=PRELUDE_REFERENCE_STRIP,
+            source_fragment_id=replaces,
+            native_dependencies=native_dependencies,
         )
         already = repository.find_web_fragment(probe.fragment_id)
-        if existing_html is not None and probe.payload["html"] == existing_html:
+        original_css = None
+        if existing is not None:
+            original_css = scope_fragment_css(
+                existing.css, fragment_id=probe.fragment_id, source_fragment_id=replaces,
+                rehosted={}, prelude_reference=PRELUDE_REFERENCE_STRIP,
+            ).css
+        if (
+            existing is not None and probe.payload["html"] == existing.html
+            and probe.payload["css"] == original_css
+            and probe.payload["slot_manifest"] == existing.slot_manifest
+            and probe.payload.get("native_dependencies") == existing.payload.get("native_dependencies")
+        ):
             # A "repair" that reproduces the broken band is not one. Without this it would mint
             # as a NEW fragment holding the same markup — and NOT degraded, because the marker is
             # a row-level judgement rather than part of the content, so it does not follow the
             # bytes. A clean-looking duplicate of a band the pipeline has already measured as
             # broken is the one outcome D-F6 exists to prevent.
             #
-            # Compared on the STORED form (sanitized and slot-annotated), because that is what a
-            # fragment's markup literally is. The error direction is toward allowing a mint: an
+            # Compare stored markup and CSS under one namespace: changing CSS alone can repair
+            # real geometry, while an identical band with a new namespace is still a no-op.
+            # The error direction is toward allowing a mint: an
             # original whose slots were stamped by something other than this detector annotates
             # differently and is not caught. That is the safe way round — the original survives
             # either way, and refusing a genuine repair would be the worse mistake.
             raise FragmentRefused(
                 "fragment.repair_unchanged",
-                f"this repair's markup is identical to {replaces}, so it repairs nothing. Walk "
+                f"this repair's markup and effective CSS are identical to {replaces}, "
+                "so it repairs nothing. Walk "
                 "the ladder: reproduce the experience with supported primitives, build an "
                 "equivalent interaction, or compose a compact static fallback with the "
                 "artificial height removed.",
@@ -1067,6 +1294,8 @@ class DurableAgentClonedSectionRegistry:
             prelude_reference=PRELUDE_REFERENCE_STRIP,
             derived_from=replaces,
             derived_reason=reason,
+            source_fragment_id=replaces,
+            native_dependencies=native_dependencies,
         )
         converged = already is not None
         status = str(row.get("status") or "")
@@ -1090,6 +1319,12 @@ class DurableAgentClonedSectionRegistry:
             "requested_derived_reason": reason,
             "slot_keys": [spec.key for spec in slot_specs],
             "asset_digests": list(artifact.payload.get("asset_digests") or []),
+            # Private runtime fact: exact stored DOM equality preserves human override paths;
+            # identical keys alone would not. No second source read is needed at the swap.
+            "preserves_pin_content": bool(
+                existing is not None and artifact.payload["html"] == existing.html
+                and slot_kinds(artifact.payload["slot_manifest"]) == slot_kinds(existing.slot_manifest)
+            ),
             # The FIRST pass's notes are the real ones. `create_web_fragment` sanitizes again
             # (idempotently) over markup this method already cleaned, so the artifact's own notes
             # are silent about everything that was actually removed.
@@ -1239,12 +1474,12 @@ class DurableAgentClonedSectionRegistry:
         )
         if loaded.row.get("preview_digest"):
             return None
-        # No brand kit, for the route's own reason: a repair's artifact carries the stylesheet
-        # compiled against its kit at repair time, and handing one here would be a second opinion
-        # about how the section looks.
+        # Keep the sealed stylesheet; only its pinned kit's font-face declarations are supplied
+        # by the composition root, through the same font resolver the page render uses.
+        fonts = self._isolation_fonts(loaded.row) if self._isolation_fonts else None
         kwargs = {"shoot": shoot} if shoot is not None else {}
         png, page = render_isolation_preview(
-            core, loaded, read_blob=self.blobs.read_blob, **kwargs
+            core, loaded, read_blob=self.blobs.read_blob, fonts=fonts, **kwargs
         )
         row = attach_web_fragment_preview(
             self.blobs.storage,
@@ -1408,7 +1643,7 @@ class DurableAgentClonedSectionRegistry:
             for row in self._repository().list_web_fragments()
             if row.get("section_role") == "footer"
             and row.get("status") == "approved"
-            and (kit_id is None or row.get("source_kit_id") == kit_id)
+            and (kit_id is None or fragment_has_kit_binding(row, kit_id))
         ]
         evidence: List[tuple] = []
         for row in rows[: self.LEGAL_EVIDENCE_MAX]:

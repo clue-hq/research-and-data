@@ -644,6 +644,71 @@ def test_root_listing_shows_mounts_as_directories(tmp_path: Path) -> None:
         assert grepped.matches == [{"path": "library/plan.md", "line": 1, "text": "# Plan"}]
 
 
+@pytest.mark.parametrize("pattern", ["**/*", "**/*.md", "**/**/SKILL.md", "*.md"])
+def test_recursive_manual_search_includes_direct_and_nested_files(
+    tmp_path: Path, pattern: str
+) -> None:
+    harness = make_workspace(tmp_path)
+    backend = harness.lease.backend
+    prefix = ".deepagent/skills/manual-tools/v7"
+    try:
+        backend.materialize_bytes(f"{prefix}/SKILL.md", b"open_design_leg\n")
+        backend.materialize_bytes(f"{prefix}/nested/SKILL.md", b"open_design_leg\n")
+        backend.freeze_materialized_trees()
+
+        listed = backend.glob(pattern, prefix)
+        assert listed.error is None
+        assert {entry["path"] for entry in listed.matches or []} == {
+            f"{prefix}/SKILL.md",
+            f"{prefix}/nested/SKILL.md",
+        }
+        searched = backend.grep("open_design_leg", prefix, glob=pattern)
+        assert searched.error is None
+        assert {match["path"] for match in searched.matches or []} == {
+            f"{prefix}/SKILL.md",
+            f"{prefix}/nested/SKILL.md",
+        }
+    finally:
+        harness.close()
+
+
+@pytest.mark.parametrize("include", [None, "**/*", "*.md", "*.txt"])
+def test_grep_file_path_searches_only_that_file_and_honors_filter(
+    tmp_path: Path, include: str | None
+) -> None:
+    with _mounted_backend(tmp_path) as (backend, _mount_dir):
+        backend.write_text_sync("work/unrelated.md", "# Plan\n")
+        result = backend.grep("Plan", "/library/plan.md", glob=include)
+        assert result.error is None
+        assert result.matches == (
+            [] if include == "*.txt" else [{"path": "library/plan.md", "line": 1, "text": "# Plan"}]
+        )
+
+
+@pytest.mark.parametrize("unsafe", ["symlink", "hardlink", "public", "executable"])
+def test_grep_file_path_refuses_unsafe_files(tmp_path: Path, unsafe: str) -> None:
+    harness = make_workspace(tmp_path)
+    try:
+        backend = harness.lease.backend
+        backend.write_text_sync("work/secret.md", "private marker\n")
+        source = harness.thread_path / "work/secret.md"
+        target = harness.thread_path / "work/target.md"
+        if unsafe == "symlink":
+            target.symlink_to(source)
+        elif unsafe == "hardlink":
+            os.link(source, target)
+        else:
+            target.write_text("private marker\n")
+            target.chmod(0o644 if unsafe == "public" else 0o700)
+        result = backend.grep("private marker", "work/target.md")
+        assert result.error is not None
+        assert result.error.startswith("permission_denied")
+        assert not result.matches
+        assert str(harness.root) not in result.error
+    finally:
+        harness.close()
+
+
 def test_a_mount_cannot_be_escaped_or_shadowed(tmp_path: Path) -> None:
     # The shadowing half of this guarantee — a mount may not claim a layout name — is
     # proven by test_a_mount_name_may_not_shadow_the_layout_or_be_malformed below.

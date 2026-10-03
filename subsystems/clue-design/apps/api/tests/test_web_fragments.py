@@ -567,3 +567,19 @@ def test_a_document_with_no_fragment_nodes_touches_the_registry_not_at_all(
         _web_doc("doc_f6", {"id": "n1", "kind": "container", "children": []}), doc_kind="web"
     )
     assert document["id"] == "doc_f6"
+
+
+def test_duplicate_fragment_cannot_attach_a_foreign_kit(
+    workspace_id: str, design_storage: FsStorage
+) -> None:
+    """ON CONFLICT must not skip tenancy checks on a new capture association."""
+    row, _ = _create(workspace_id, design_storage)
+    with pytest.raises(Exception) as excinfo:
+        _create(workspace_id, design_storage, source_kit_id="foreign_kit", source_kit_version=1)
+    assert "design_web_fragment_kit_binding_kit_fk" in str(excinfo.value)
+    after = next(
+        r
+        for r in list_web_fragments(workspace_id=workspace_id)
+        if r["fragment_id"] == row["fragment_id"]
+    )
+    assert after["source_kit_bindings"] == []

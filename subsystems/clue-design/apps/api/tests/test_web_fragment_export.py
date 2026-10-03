@@ -725,7 +725,7 @@ def _fragment_row_over_a_hand_written_payload(
 
 FUTURE_PAYLOAD = json.dumps(
     {
-        "schema_version": 2,
+        "schema_version": 3,
         "fragment_id": "frag_" + "0" * 16,
         "html": "<section>from the future</section>",
         "css": "",

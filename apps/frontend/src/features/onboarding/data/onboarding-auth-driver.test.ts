@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  startGoogleSignIn,
   pendingVerificationEmail,
   resendPendingEmailCode,
   startPasswordSignIn,
@@ -198,4 +199,44 @@ test("sign-up verification still dispatches through the sign-up resource", async
     "verify-sign-up-code",
     "finalize",
   ]);
+});
+
+// Provider-boundary fake reproduces Clerk's expired-attempt no-op observed in the browser.
+test("Google starts a fresh redirect when an earlier OAuth attempt expired", async () => {
+  const redirects: unknown[] = [];
+  const signIn = {
+    async sso() { return { error: null }; },
+    async authenticateWithRedirect(params: unknown) { redirects.push(params); },
+  };
+  const result = await startGoogleSignIn(signIn);
+  assert.deepEqual(redirects, [{
+    strategy: "oauth_google",
+    redirectUrl: "/onboarding/sso-callback",
+    redirectUrlComplete: "/session/establish",
+    continueSignIn: false,
+  }]);
+  assert.deepEqual(result, { status: "redirecting" });
+});
+
+test("Google redirect failures become visible errors", async () => {
+  const result = await startGoogleSignIn({
+    async authenticateWithRedirect() {
+      throw new Error("OAuth provider unavailable");
+    },
+  });
+  assert.deepEqual(result, { status: "error", message: "OAuth provider unavailable" });
+});
+
+test("Google cannot report success before the auth client loads", async () => {
+  const result = await startGoogleSignIn(undefined);
+  assert.equal(result.status, "error");
+  assert.match(result.status === "error" ? result.message : "", /loading/i);
+});
+
+test("Google redirect timeout reports an error without activating a session", async () => {
+  const result = await startGoogleSignIn({
+    authenticateWithRedirect: () => new Promise<void>(() => {}),
+  }, 1);
+  assert.equal(result.status, "error");
+  assert.match(result.status === "error" ? result.message : "", /didn't respond/);
 });

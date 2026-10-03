@@ -108,9 +108,14 @@ ARTIFACT_INDEX_PATH: Final = "artifacts/index.json"
 #: (:func:`~clue_api.arv2.project_documents.lock_project`) is what serializes two workers, and the
 #: install is atomic either way — the loser rewrites a tree, never half of one.
 _MATERIALIZE_LOCK: Final = threading.Lock()
+# Include compiler changes in fresh-turn cache identity. Historical pins retain
+# their exact bytes; only the next unpinned generation gets the new rendering.
+_LIBRARY_FORMAT_VERSION: Final = 2
 
 _STATUS_SUMMARY: Final = "ICP, products, plan, accounts, discovery and research, as of this turn."
-_DECISIONS_SUMMARY: Final = "What the human told this project, in their words."
+_DECISIONS_SUMMARY: Final = (
+    "Recorded project decisions with source, scope and correction references."
+)
 _ARTIFACTS_SUMMARY: Final = "Design artifacts of this project, by reference."
 _INDEX_SUMMARY: Final = "Index of this project's library."
 
@@ -194,6 +199,9 @@ async def project_library_digest(
     8. **Every design document of this project** — ``(id, current_version, updated_at)``, the rows
        ``artifacts/index.json`` names.
 
+    The compiler format version also contributes: a new renderer must reach fresh turns even
+    when those rows have not changed. Historical per-turn pins keep their original file bytes.
+
     What it deliberately does *not* watch: a discovery run's per-candidate verdicts. Those move
     ``status.md``'s verified/shown/approved tallies while a run is *running*, and the run's own
     status and ``finished_at`` move when it settles — so the counts a finished run reports are
@@ -217,6 +225,7 @@ async def project_library_digest(
     design = await project_design_documents(conn, workspace_id=workspace_id, project_id=project_id)
 
     facts: dict[str, Any] = {
+        "format_version": _LIBRARY_FORMAT_VERSION,
         "documents": sorted([str(ref.document_id), ref.version, ref.status] for ref in documents),
         "icp_pin": None if pin is None else str(pin.document_id),
         "statements": [int(statements["total"]), _iso(statements["latest"])],

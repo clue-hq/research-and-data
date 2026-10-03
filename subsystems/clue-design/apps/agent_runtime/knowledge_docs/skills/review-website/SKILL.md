@@ -1,165 +1,94 @@
 ---
 name: review-website
-description: Visual review of a rendered website at desktop/tablet/phone widths — the checklist, what blocks shipping, and how to report actionable issues.
+description: Use when judging a rendered website, checking source fidelity, verifying a scoped web edit, or deciding whether the current page is accepted, a draft or failed.
 ---
 
-# Review a Website Page
+# Review the current rendered result
 
-You are shown full-page screenshots of the SAME page at three widths —
-1440 (desktop), 768 (tablet), 375 (phone). Judge what is actually in the
-pixels; never assume the markup is right because it should be.
+Review three responsibilities: source-visible layout/type/media fidelity;
+responsive behavior, interaction, conversion and evidence; honest final status.
+A successful operation, valid document or screenshot path proves none of these.
 
-## The checklist — run it at every width
+Apply the same [source and format contract](../create-website/references/source-format-contract.md)
+the builder received. For each selected/derived component, compare the plan's
+`Preserve` and `Type` records with the final section. A family-name match does not
+excuse a different face, weight, scale, hierarchy or layout. Target identity in
+navigation without an explicit user source for that placement fails this contract;
+an agent-authored brief claiming approval is insufficient. Report the concrete
+deviation even when clone geometry or another typography role passes.
 
-1. **Overflow & clipping** — any horizontal scrollbar, text escaping its
-   container, cards colliding, content cut at the viewport edge.
-2. **Hero** — headline readable in ≤2 lines at 1440 (≤4 at 375), visible
-   CTA above the fold, imagery not crushing the copy on narrow widths.
-3. **Images & icons** — every image renders (no missing/blank boxes), no
-   distorted aspect ratios, sibling cards visually uniform (same icon size,
-   same image treatment).
-4. **CTAs** — primary CTA present in header, hero, and closing band; buttons
-   look like the brand's buttons (not restyled ad hoc).
-5. **Rhythm** — one consistent content max-width; section paddings even;
-   band backgrounds alternate deliberately; nothing floats half-styled.
-6. **Type hierarchy** — exactly one h1; sizes step down monotonically;
-   overlines/eyebrows smaller than body, not shouting.
-7. **Contrast** — body text clearly readable on its band (dark-on-light or
-   inverse-on-dark); no mid-gray-on-gray, no accent-on-accent.
-8. **Phone-specific (375)** — header still usable (logo + CTA visible, no
-   overlapping links), grids collapsed to one column, tap targets not
-   crowded, no tiny (<14px-equivalent) body text.
-9. **Brand coherence** — palette and type feel like the brand card, accent
-   color used as signal (links, highlights) not flood fill.
+1. Establish the active page, current artifact/version context, requested scope,
+   preserved properties and unresolved requirements. Current previews must follow
+   the last relevant mutation. `render_web_preview()` captures 1440/768/375 and
+   supported states; inspect them with `view("preview:<width>")` and `view("state:<n>")`.
+   A tall full-page image is only an overview: inspect readable saved strips with
+   `view("preview:375:tile:0")`, following `coverage.next_target` for the mobile
+   page and using the same syntax for 768/1440 when details are too small. Check
+   required product imagery and copy in those pixels; a gradient placeholder is
+   not a working product visual. Match source hashes/version when combining
+   observations and report any required tiles left unseen.
+   Read `view("review")` before a verdict: it aggregates pixels actually returned
+   this turn and retains missing/stale views, source-comparison limits and capture
+   omissions. A report of `observations_recorded` is not a quality pass. For tall
+   state captures, use `view("state:<n>:tile:<i>")`. For a scoped edit, resolve the
+   relevant gaps without demanding a new full-page generation.
+   Reuse a verified unchanged render instead of repeating the loop.
+2. Read [fidelity and behavior checks](references/fidelity-and-behavior.md).
+   For reused/derived bands, inspect source pixels and compare their hierarchy,
+   geometry, typography, media and supported states with the final output.
+   The orchestrator/solo tool `review_cloned_page()` supplies measured clone
+   findings and advisory page findings; missing observations remain gaps. It can record library verdicts,
+   so use it within the authorized review scope, not as an assumed read-only test.
+   A walk's “6/6 observations” counts capture classes, not all tab states or all
+   responsive details. Check `reference_unavailable`, comparison abstentions and
+   unmeasured composed/draft sections even when `broken_clones` is empty. If only
+   the default and second of four panels were observed, report two states observed
+   and two unverified; never summarize that as a fully working four-panel experience.
+   `fragment.class_collision` or incomplete-isolation warnings require comparison
+   of the named bands/properties. Do not dismiss them from geometry alone or mutate
+   unrelated components merely to silence a warning. Reuse current evidence when
+   it actually covers the same property, viewport and final revision.
+   Compare affected bands with their recorded keeper properties. Preserving the
+   product asset but losing its branded background, crop, scale or phone visibility
+   is a regression. Read `web-product-story` when product staging or type hierarchy
+   is in scope; compiled tabs do not prove all their media states still work.
+3. Check copy against accessible evidence and inspect each primary CTA's actual
+   destination/behavior. Read `web-account-personalization` when targets or personal
+   facets appear. A name/logo alone is not verified relevance or relationship proof.
+   For an account-content build,
+   read [account argument](../web-account-personalization/references/account-argument.md) and compare its decision map with the visitor-visible page.
+   Compare each section's Words, Evidence and Actions record with the actual
+   rendered text and buttons, including captured unslotted labels. Name omitted
+   explanations, unsupported additions and repeated mechanisms by section. The
+   plan is a comparison aid, not evidence that its claims or promises are true.
+   Verify read coverage includes relevant overview/committee/approach/watch-outs;
+   then point to the real relevance, product mechanism, evidence and evaluation
+   material. Missing substance, internal provenance/disclaimer copy, or identity
+   placement that contradicts the shell brief is an actionable request-satisfaction
+   defect. Green geometry checks do not make a thin or incoherent account page acceptable.
+   For account builds, use `web-decision-material`: identify what the reader can
+   learn, inspect or decide from the exhibit beyond a company biography. For a
+   named reader, use `web-contact-personalization`: check the permitted contact
+   evidence and what materially differs from the account page. Read the campaign
+   action-selection guide when judging CTA intent; a valid URL alone cannot show
+   that a demo, assessment or download is the right promise.
+   For requested alternatives, compare the rendered pages against the campaign
+   skill's distinct-page-directions plan. Reworded copies of one layout do not
+   satisfy a request for different layouts; report undelivered pages separately.
+4. Use [verdict and tool contract](references/verdict-and-tools.md). If an independent
+   reviewer is exposed, give it the current brief, source evidence, preserved
+   requirements, previews/states and scope. If unavailable, identify self-review;
+   never invent a delegation or change runtime configuration to obtain one.
+5. Report observed defects with page/node, viewport/state and smallest repair.
+   For type/media/spacing defects, use cached
+   [layout evidence](../web-source-readiness/references/layout-evidence.md)
+   to locate the constraint; computed styles are not proof of font or visual fidelity.
+   After repair, judge new current evidence. For a small edit, certify only that
+   change and its affected neighbors; do not re-plan or re-generate the entire page.
+   Distinguish tool completion from request satisfaction. A saved draft can be
+   `completed_with_warnings` while required visual/interaction acceptance remains
+   open. Name those unmet requirements prominently rather than calling them polish.
 
-## Interactive states (when the page has components)
-
-State captures accompany the width screenshots — the same page with a dialog
-open or the accordions expanded (`view` lists them alongside the previews).
-Judge interactive states from pixels with the same discipline as widths:
-
-10. **Dialog** — opens centered over a dimmed backdrop; content readable and
-    on-brand at 1440 AND 375; the close control visible; the page behind it
-    not reflowed. A CTA wired to a missing dialog is a dead CTA — blocking.
-11. **Accordion** — expanded items show real content with no overflow;
-    summary rows read as tappable at 375; nothing double-renders.
-12. **Marquee** — the strip shows no gap or pile-up at either edge in the
-    base screenshots; content is legible at the pace implied by its length.
-13. **Wiring** — every command button targets a dialog that exists (a
-    LUMW0018 diagnostic is a blocking issue, same as a broken link).
-14. **Nav menu (375)** — the expanded capture shows every nav link readable
-    in the dropdown panel; the hamburger is visible in the base 375 shot;
-    at 1440 the links render inline, no hamburger.
-15. **Tabs** — the selected-tab capture shows the panel actually switched
-    (different content than the default tab); tab labels short enough not
-    to wrap into a second row at 375.
-16. **Carousel** — slides sized so a peek of the next slide is visible at
-    the viewport edge (affordance); arrows not overlapping content
-    illegibly.
-17. **Embeds** — a calendly embed has explicit height (not collapsed to a
-    sliver); inside a dialog it fits without double scrollbars at 375. An
-    embed showing the missing-content placeholder is blocking.
-
-## Brand expression — the anchor check
-
-You receive the director's **brand anchor** (2–3 creative-director words,
-e.g. "clinical calm precision"). Your job is structural, not vibes:
-
-- Point at ONE concrete element in the pixels that would only make sense
-  for THIS characterization — a composition choice, a type move, an image
-  treatment. If you cannot, report the advisory issue **"brand expression
-  generic"** and name the band that most needs the anchor.
-- Squint-test heuristics, at 1440: does one element clearly dominate each
-  band (hierarchy)? does the weight balance left/right feel deliberate? do
-  edges align to a consistent grid? are there 1–2 intentional color
-  moments rather than accent spread everywhere?
-- Trace the contrast chain: body text on band background, button label on
-  button fill, **logo on its band** (a dark logo on a dark band is a
-  blocking miss — no class fixes it), muted text still ≥ readable.
-
-## Imagery — the decision check
-
-Your brief carries the director's **imagery decision**: per band, place a
-real asset / generate one / deliberately none-with-a-reason. Judge the
-render against it, the same way you judge the anchor.
-
-- **Delivered?** A band the decision said would carry an asset, showing no
-  image in the pixels, is a reportable issue against that section id.
-- **The brand's mark.** A branded page shows its brand's real logo — in the
-  header at minimum. No logo anywhere is blocking, not advisory: it is the
-  single clearest sign the page does not belong to this company. A drawn or
-  typeset stand-in for a logo the kit actually ships is the same miss.
-- **Brand-generic imagery.** Look at each image and ask whether it could sit
-  unchanged on any competitor's site. If yes, report **"imagery
-  brand-generic"** and name the band — the same shape of finding as "brand
-  expression generic", and advisory unless it also breaks a brief
-  `constraint`.
-- **Unjustified absence.** A page with no imagery at all is correct when the
-  brief's imagery posture is text-forward and the composition earns it
-  through primitives (a stat wall, a dashboard scaffold, an editorial
-  stack). It is a finding when the page is simply bare — flat bands of type
-  with no composed content and no reason given. Say which it is; do not
-  score restraint as failure or bareness as restraint.
-- **Placeholders.** A flat grey rectangle where an image belongs is a
-  generation that failed, not a design choice. Blocking.
-
-## When a Creative Brief reaches you
-
-Some brands carry a per-brand **Creative Brief** (characterization, chromatic
-moment, background rhythm, postures, `constraints`) — it reaches you in the
-brand card or quoted in the director's brief. When one is present it is the
-spec the page was built to, so two extra checks apply:
-
-- **`constraints` are review criteria, not taste.** Each one is a hard rule
-  harvested from the brand's real presence ("mint is the sole saturated
-  color", "navy never as a mid-page background"). Read them, then look for
-  each in the pixels: a violation is a reportable **defect** — name the
-  constraint, the width, and the section id — never softened to a
-  preference. A deviation the user's own request forced is the director's to
-  reconcile: report what you see, plainly, and let them.
-- **Geometry that contradicts the brand's measured shape** — a control radius
-  unlike the brand's other controls, an elevation heavier than the brand's real
-  shadows, a card whose padding or a band whose vertical rhythm ignores the
-  spacing the brief measured. The page's shape is supposed to come from the
-  kit; where the pixels say otherwise, say so. This one is an **ADVISORY** note
-  in the Verdict-discipline sense below — never blocking, and NOT a
-  `constraints` defect (unless a constraint names that geometry itself, in
-  which case the bullet above governs). You are judging pixels, not classes, so
-  report what the shape looks like beside the brand's own, and let the author
-  find the class.
-- **Background rhythm** — compare the page's actual band sequence against
-  the brief's `background_rhythm` (a sequence plus a ratio, e.g. "1 dark
-  sliver : 20 cream"). Judge the ratio's spirit, not a mechanical section
-  count: a page that floods brand color where the brief says restraint, or
-  drops the statement band entirely, has missed the rhythm. With no brief,
-  the checklist's own Rhythm item is the bar.
-
-## Personalization check (1:1 account pages)
-
-When your brief names a target account, additionally verify in the pixels:
-
-- **No template fallback text** where the account's own content belongs — a
-  generic company name ("Acme", the template's example account) in a
-  headline, eyebrow, or CTA that should carry the target's name is blocking.
-- **The account's logo actually renders** (not the template's placeholder
-  logo, not a blank box) wherever the page co-brands.
-- **Quoted, not adopted**: the page stays in the seller's palette and type;
-  the target appears as name + logo. Any band restyled to the target's
-  colors is blocking.
-- An account-gated band that shows empty or half-populated content (a peer
-  strip with one lonely logo, an empty proof band) is blocking — it should
-  have been omitted instead.
-
-## Verdict discipline
-
-- **Blocking** (must-fix): overflow/clipping, unreadable contrast, broken or
-  missing images, a dead or missing primary CTA, unusable phone header.
-- **Advisory** (note, don't block): spacing nitpicks, copy tone, an image
-  that would be nicer cropped differently, and geometry that contradicts the
-  brand's measured shape (the Creative Brief section's bullet — a brand-shape
-  note is always advisory, however wrong the radius looks).
-
-Report each issue with: the width where it appears, the section id, what is
-wrong in the pixels, and the smallest concrete fix (a class change, a
-structure change, a copy trim). Never report an issue you cannot point to in
-a screenshot; never pass a page you have not looked at, at all three widths.
+`finalize_web_run` records the existing outcome, summary and observation report;
+it is not a new visual acceptance gate. No skill instruction recovers missing source React/JS/WebGL,
+imports frozen evaluations into a live workspace or proves publication.

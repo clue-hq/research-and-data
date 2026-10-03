@@ -19,7 +19,7 @@ import sqlite3
 import time
 import zipfile
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -83,6 +83,7 @@ from .custom_component_runtime import (
     default_runtime_host_path,
     web_doc_uses_custom_components,
 )
+from .fragments.isolation import ISOLATION_ORIGIN, IsolationFonts
 from .fragments.paths import resolve_structural_path
 from .fragments.render import (
     build_fragment_render_package,
@@ -1894,10 +1895,11 @@ def create_app(
         repo: HybridRepository = Depends(repository),
     ) -> JsonObject:
         guard = _resolve_guard_url()
-        try:
-            await guard(payload.url)
-        except Exception as error:  # CaptureError / ValueError from the guard
-            raise ingest_url_rejected(payload.url, error) from error
+        for page_url in [payload.url, *payload.page_urls]:
+            try:
+                await guard(page_url)
+            except Exception as error:  # CaptureError / ValueError from the guard
+                raise ingest_url_rejected(page_url, error) from error
 
         # D5 Round C: the ingestion is OFFERED, not started. The route creates the job row and
         # its ``design_job`` fleet task in ONE transaction and returns; a leased worker (detached
@@ -3707,6 +3709,7 @@ def create_app(
                     status_code=404, detail=not_found_detail(error)
                 ) from error
             account_card = {
+                "account_id": account["account_id"],
                 "name": account["name"],
                 "domain": account["domain"],
                 "logo_asset_id": account["logo_asset_id"],
@@ -5353,15 +5356,18 @@ def create_app(
                 "and never replaced, because a human's decision was made against the picture "
                 "that is there",
             )
-        # No brand kit is threaded in: a harvested clone carries all of its own styling, and a
-        # repair's artifact carries a stylesheet compiled against its kit at repair time —
-        # including the theme's own custom properties (F3.1 §1.3). Handing a kit here would be a
-        # second opinion about how the section looks.
+        # Do not replace the sealed stylesheet's theme. Its exact source kit supplies only
+        # custodied font faces, which generated sections can reference by alias just as a full
+        # page does. A missing pin never falls through to a newer/default kit.
+        preview_blobs = blob_store(repo)
         try:
             png, page = render_isolation_preview(
                 app.state.core,
                 loaded,
-                read_blob=blob_store(repo).read_blob,
+                read_blob=preview_blobs.read_blob,
+                fonts=fragment_isolation_fonts(
+                    loaded.row, repo, preview_blobs, request_cache_dir(repo)
+                ),
                 shoot=app.state.isolation_shooter,
             )
         except IsolationRenderFailed as failure:
@@ -9723,7 +9729,11 @@ def run_web_agent_turn(
         # against the artifact's stored HTML through `read_source`, and the runtime gets the
         # whole registry as a capability further down (see the F2.3 note at its `replace`).
         cloned_section_registry = DurableAgentClonedSectionRegistry(
-            blobs=turn_blobs, cache_dir=turn_cache_root
+            blobs=turn_blobs,
+            cache_dir=turn_cache_root,
+            isolation_fonts=lambda row: fragment_isolation_fonts(
+                row, HybridRepository(turn_workspace_id), turn_blobs, str(turn_cache_root)
+            ),
         )
         if target_node_ids:
             # R-A5: the TURN TARGET lines name the selection the way the human's layers
@@ -10555,13 +10565,17 @@ def _execute_agent_turn_job(
         else None
     )
     history_block = None if session_continued else leg_history
-    if bundle_block or history_block or drift_note:
-        composed_prompt = render_leg_turn_prompt(
-            bundle=bundle_block if isinstance(bundle_block, dict) else None,
-            history=history_block if isinstance(history_block, list) else None,
-            prompt=composed_prompt,
-            drift_note=drift_note,
-        )
+    # The brief can be cached, but this turn's assignment cannot: a batch user message may
+    # address several documents and an older checkpoint may contain a plan for a sibling.
+    composed_prompt = render_leg_turn_prompt(
+        bundle=bundle_block if isinstance(bundle_block, dict) else None,
+        history=history_block if isinstance(history_block, list) else None,
+        prompt=composed_prompt,
+        drift_note=drift_note,
+        artifact=(
+            delegation_bundle.get("artifact") if isinstance(delegation_bundle, dict) else None
+        ),
+    )
     if composed_prompt != payload.prompt:
         payload = payload.model_copy(update={"prompt": composed_prompt})
 
@@ -11171,15 +11185,14 @@ def _execute_web_turn_job(
             if leg_block
             else None
         )
-        prompt = (
-            render_leg_turn_prompt(
-                bundle=bundle_block if isinstance(bundle_block, dict) else None,
-                history=history_block if isinstance(history_block, list) else None,
-                prompt=user_message,
-                drift_note=drift_note,
-            )
-            if (bundle_block or history_block or drift_note)
-            else user_message
+        prompt = render_leg_turn_prompt(
+            bundle=bundle_block if isinstance(bundle_block, dict) else None,
+            history=history_block if isinstance(history_block, list) else None,
+            prompt=user_message,
+            drift_note=drift_note,
+            artifact=(
+                delegation_bundle.get("artifact") if isinstance(delegation_bundle, dict) else None
+            ),
         )
         if override is not None:
             # Backward-compatible seam: existing stubs take four positional args; only pass the
@@ -11680,6 +11693,29 @@ def build_web_font_face_css(
     if not rules:
         return None
     return "\n".join(rules)
+
+
+def fragment_isolation_fonts(
+    row: Mapping[str, Any], repo: HybridRepository, blobs: DesignBlobStore, cache_dir: str
+) -> IsolationFonts | None:
+    """Use the page-render font helpers for the fragment's exact, workspace-owned kit pin."""
+    if store_workspace_id(repo) != blobs.workspace_id:
+        raise ValueError("isolation font repository and blob custody disagree on workspace")
+    kit_id, version = row.get("source_kit_id"), row.get("source_kit_version")
+    if not isinstance(kit_id, str) or not kit_id or type(version) is not int:
+        return None
+    try:
+        kit = repo.require_brand_kit(kit_id, version)["brand_kit"]
+    except NotFoundError:
+        return None
+    spec = brand_kit_font_spec(repo, kit, blobs, cache_dir)
+    css = build_web_font_face_css(spec, ISOLATION_ORIGIN)
+    if not css:
+        return None
+    # Read only the digests actually emitted by the existing CSS builder, not source URLs or
+    # unvalidated face records. The screenshot's reader still enforces workspace custody.
+    digests = tuple(dict.fromkeys(re.findall(r"/asset-store/([0-9a-f]{64})", css)))
+    return IsolationFonts(css=css, asset_digests=digests)
 
 
 def resolve_web_turn_brand_kit(

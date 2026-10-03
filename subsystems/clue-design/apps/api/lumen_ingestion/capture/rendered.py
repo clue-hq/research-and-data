@@ -12,14 +12,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import time
-from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
 
 from .geometry import GEOMETRY_JS
-from .net import BoundedFetcher, CaptureError, FetchRequest, guard_url, require_complete_html
+from .net import BoundedFetcher, CaptureError, guard_url, require_complete_html
 from .snapshot import Download, SiteSnapshot, Stylesheet
-from .static import _collect_assets, _extract_meta, fetch_imported_sheets
+from .static import _collect_assets, _extract_meta
+from .stylesheets import collect_ordered_stylesheets
 
 # JS gathered in one page.evaluate: computed samples + custom props + stylesheets.
 _EVALUATE_JS = r"""
@@ -66,13 +66,14 @@ _EVALUATE_JS = r"""
 
   const sheets = [];
   for (const s of Array.from(document.styleSheets)) {
-    if (s.href) { sheets.push({href: s.href, text: null}); continue; }
+    const context = {media: s.media?.mediaText || "", disabled: !!s.disabled};
+    if (s.href) { sheets.push({href: s.href, text: null, ...context}); continue; }
     try {
       const text = Array.from(s.cssRules).map((r) => r.cssText).join('\n');
-      sheets.push({href: null, text});
+      sheets.push({href: null, text, ...context});
     } catch (e) { /* cross-origin without href — skip */ }
   }
-  return {samples, props, sheets};
+  return {samples, props, sheets, base_url: document.baseURI};
 }
 """
 
@@ -234,45 +235,10 @@ async def _scroll_until_settled(page) -> None:
 
 
 async def collect_stylesheets(
-    sheet_records: list[dict], fetcher: BoundedFetcher
+    sheet_records: list[dict], fetcher: BoundedFetcher, *, base_url: str = ""
 ) -> tuple[list[Stylesheet], list[dict]]:
-    """The rendered tier's stylesheets, from one ``document.styleSheets`` harvest.
-
-    Split out of :func:`fetch_rendered` so it is testable without a browser, and because since
-    the founder's 2026-08-20 always-render ruling it carries the static tier's ``@import``
-    follow as well: EVERY website ingestion now renders, so anything the static tier used to
-    contribute for a well-server-rendered site has to survive here or it is lost outright. The
-    CSSOM exposes an imported sheet only as the parent's one-line ``@import`` rule text, so
-    without :func:`fetch_imported_sheets` a brand whose ``@font-face`` or palette lives behind
-    an import would simply stop being read.
-
-    An inline record (``text`` present) is taken verbatim from the CSSOM — that is the rendered
-    tier's advantage over static, since it has the post-JS rules — and an ``href`` record is
-    fetched, both exactly as before.
-    """
-    stylesheets: list[Stylesheet] = []
-    diagnostics: list[dict] = []
-    href_requests: list[FetchRequest] = []
-    for index, sheet in enumerate(sheet_records):
-        if sheet.get("text") is not None:
-            stylesheets.append(Stylesheet(url=f"inline:{index}", text=sheet["text"]))
-        elif sheet.get("href"):
-            href_requests.append(FetchRequest(url=sheet["href"], kind="css"))
-    if href_requests:
-        results = await fetcher.fetch_many(href_requests)
-        for result in results:
-            diagnostics.extend(result.diagnostics)
-            if result.ok and result.body is not None:
-                stylesheets.append(
-                    Stylesheet(
-                        url=result.url, text=result.body.decode("utf-8", errors="replace")
-                    )
-                )
-
-    imported, import_diagnostics = await fetch_imported_sheets(stylesheets, fetcher)
-    stylesheets.extend(imported)
-    diagnostics.extend(import_diagnostics)
-    return stylesheets, diagnostics
+    """Retain CSSOM order, owner conditions and bounded in-place imports."""
+    return await collect_ordered_stylesheets(sheet_records, fetcher, base_url=base_url)
 
 
 #: The one viewport both render backends use; the probe also records the live
@@ -439,8 +405,10 @@ async def fetch_rendered(
             )
             return snapshot
         except Exception as error:  # noqa: BLE001 — fallback, loudly
-            if isinstance(error, CaptureError) and error.code == "LUMI0507":
-                # A size refusal is deterministic, not a broken browser backend.
+            if isinstance(error, CaptureError) and error.code in {
+                "LUMI0501", "LUMI0503", "LUMI0507"
+            }:
+                # URL, HTTP and size refusals are not broken browser backends.
                 raise
             fallback_note = {
                 "code": "LUMI0536",
@@ -485,13 +453,15 @@ async def _fetch_rendered_stealth(
     # constant broke it — sarvam.ai's WebGL hero refused to paint for a
     # 1440x2000 "screen" (live finding, 2026-08-30). The probe records the live
     # viewport width, so the census scale never depended on the constant.
-    await StealthyFetcher.async_fetch(
+    response = await StealthyFetcher.async_fetch(
         url,
         headless=True,
         network_idle=True,
         timeout=90_000,
         page_action=_drive,
     )
+    if response.status >= 400:
+        raise CaptureError("LUMI0503", f"page returned HTTP {response.status}: {url}")
     if not harvest.get("html"):
         raise RuntimeError("stealth backend returned no page harvest")
     return await _snapshot_from_harvest(
@@ -522,8 +492,9 @@ async def _fetch_rendered_chromium(
                 # hero — we are here to see what real visitors see.
                 reduced_motion="no-preference",
             )
+            response = None
             try:
-                await page.goto(url, wait_until="networkidle", timeout=30_000)
+                response = await page.goto(url, wait_until="networkidle", timeout=30_000)
             except Exception:  # noqa: BLE001 — networkidle timeout is non-fatal
                 diagnostics.append(
                     {
@@ -532,6 +503,8 @@ async def _fetch_rendered_chromium(
                         "message": "render wait_until=networkidle timed out; proceeding",
                     }
                 )
+            if response is not None and response.status >= 400:
+                raise CaptureError("LUMI0503", f"page returned HTTP {response.status}: {url}")
             harvest = await _harvest_page(page, diagnostics)
         finally:
             await browser.close()
@@ -569,7 +542,7 @@ async def _snapshot_from_harvest(
     )
 
     stylesheets, sheet_diagnostics = await collect_stylesheets(
-        data.get("sheets", []), fetcher
+        data.get("sheets", []), fetcher, base_url=data.get("base_url") or final_url
     )
     diagnostics.extend(sheet_diagnostics)
 

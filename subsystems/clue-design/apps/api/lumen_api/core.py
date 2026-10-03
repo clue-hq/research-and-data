@@ -483,9 +483,12 @@ class CoreClient:
         # `fragments` / `fragment_css` (clone-fidelity F1.3): API-resolved cloned-section
         # artifacts keyed by `frag_<16 hex>` id, and their concatenated already-scoped CSS.
         # The engine resolves neither — an id absent from the map renders the placeholder.
-        return self._run(
+        response = self._run(
             {
-                "action": "web_render",
+                # Older helpers must refuse rather than silently ignore a new dependency.
+                "action": "web_render_native_fragments" if any(
+                    "native_dependencies" in content for content in (fragments or {}).values()
+                ) else "web_render",
                 "doc": doc,
                 "page_id": page_id,
                 "mode": mode,
@@ -499,6 +502,23 @@ class CoreClient:
                 "fragment_css": fragment_css,
             }
         )
+
+        if mode == "editor" and isinstance(response.get("html"), str):
+            from .fragments.editor_candidates import isolate_fragment_candidates
+
+            html, diagnostics = isolate_fragment_candidates(response["html"])
+            # Inline preview callers qualify only after reading the actual runtime bytes.
+            if tailwind_runtime_src is not None:
+                from .fragments.editor_preflight import qualify_fragment_preflight
+
+                html, preflight_diagnostics = qualify_fragment_preflight(
+                    html, runtime_src=tailwind_runtime_src
+                )
+                diagnostics.extend(preflight_diagnostics)
+            response = {**response, "html": html}
+            if diagnostics:
+                response["diagnostics"] = list(response.get("diagnostics") or []) + diagnostics
+        return response
 
     def web_derive(
         self,

@@ -21,6 +21,7 @@ What is pinned here is the pair of properties that make an isolation render trus
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -55,6 +56,74 @@ HTML = (
 CSS = ".hidden-band { padding: 96px } .hidden-head { color: #0b3d2e }"
 SOURCE_URL = "https://insight.example/"
 PNG = b"\x89PNG\r\n\x1a\n-isolation-render-bytes"
+
+
+def test_isolation_preview_loads_pinned_kit_font_bytes_without_network() -> None:
+    from lumen_api.fragments.isolation import ISOLATION_ORIGIN, IsolationFonts
+
+    digest = "7e" * 32
+    font_url = f"{ISOLATION_ORIGIN}/asset-store/{digest}"
+    css = f'@font-face{{font-family:"brandAlias";font-weight:500;src:url("{font_url}")}}'
+    loaded = SimpleNamespace(
+        fragment_id="frag_" + "ab" * 8,
+        payload={},  # ordinary capture: no declared platform dependencies
+        html='<section><h2 style="font-family:brandAlias">Brand heading</h2></section>',
+        css=".section{padding:24px}",
+        slot_manifest={},
+        asset_digests=(),
+    )
+    core = _FakeCore()
+    seen: dict[str, Any] = {}
+
+    def shoot(page: IsolationPage, assets: Any) -> bytes:
+        seen["assets"] = assets
+        assert held_isolation_asset(font_url, assets) == ("font/woff2", b"custodied-font")
+        assert held_isolation_asset("https://font-vendor.example/font.woff2", assets) is None
+        return PNG
+
+    png, page = render_isolation_preview(
+        core,
+        loaded,
+        read_blob=lambda _digest: ("font/woff2", b"custodied-font"),
+        fonts=IsolationFonts(css=css, asset_digests=(digest,)),
+        shoot=shoot,
+    )
+    assert png == PNG
+    assert core.calls[0]["font_face_css"] == css
+    assert core.calls[0]["fragment_css"].endswith(loaded.css)
+    assert page.asset_digests == (digest,)
+    assert set(seen["assets"]) == {digest}
+    assert loaded.asset_digests == ()  # Preview does not rewrite the stored artifact.
+
+
+def test_missing_kit_font_cannot_escape_workspace_custody() -> None:
+    from lumen_api.fragments.isolation import IsolationFonts
+
+    digest = "7e" * 32
+    loaded = SimpleNamespace(
+        fragment_id="frag_" + "ab" * 8,
+        payload={},  # ordinary capture: no declared platform dependencies
+        html="<section>Heading</section>",
+        css="",
+        slot_manifest={},
+        asset_digests=(digest,),
+    )
+    reads: list[str] = []
+
+    def missing(value: str) -> tuple[str, bytes]:
+        reads.append(value)
+        raise LookupError("not held by this workspace")
+
+    seen: dict[str, Any] = {}
+    render_isolation_preview(
+        _FakeCore(),
+        loaded,
+        read_blob=missing,
+        fonts=IsolationFonts(css="@font-face{}", asset_digests=(digest, digest)),
+        shoot=lambda page, assets: seen.setdefault("assets", dict(assets)) or PNG,
+    )
+    assert reads == [digest]
+    assert seen["assets"] == {}
 
 
 class _FakeCore:

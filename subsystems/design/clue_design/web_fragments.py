@@ -148,7 +148,9 @@ async def insert_web_fragment(
     moves FORWARD: an unbound row takes the offered kit, and a row bound to an earlier version of
     the SAME lineage advances to the newer one. It never moves sideways into a different lineage
     (that is another brand's approval authority, not a newer version of this one's) and never
-    backwards. ``status`` is untouched by the rebinding — the new kit's own approval decides that.
+    backwards. Each offered capture ALSO records an independent kit/version binding;
+    a fresh ingestion id can release its identical captured bytes without taking
+    ownership of the original row. ``status`` is untouched by either binding write.
 
     **``status``, the degraded marker and the lineage pair are born here and only here** (F3.0).
     They are not content — the id is the sha256 of the artifact and none of them enters it — so
@@ -202,6 +204,24 @@ async def insert_web_fragment(
             "derived_reason": derived_reason,
         },
     )
+    if source_kit_id is not None and source_kit_version is not None:
+        # The content identity may converge across separate ingestion kit ids.
+        # Preserve both captures; a new association never inherits release merely
+        # because the kit or identical bytes were approved in an earlier capture.
+        await conn.execute(
+            text("""
+                INSERT INTO design_web_fragment_kit_binding
+                    (workspace_id, fragment_id, brand_kit_id, brand_kit_version)
+                VALUES (:workspace_id, :fragment_id, :kit_id, :version)
+                ON CONFLICT DO NOTHING
+            """),
+            {
+                "workspace_id": workspace_id,
+                "fragment_id": fragment_id,
+                "kit_id": source_kit_id,
+                "version": source_kit_version,
+            },
+        )
     row = await get_web_fragment(conn, workspace_id=workspace_id, fragment_id=fragment_id)
     if _kit_binding_advances(row, source_kit_id, source_kit_version):
         await conn.execute(
@@ -367,7 +387,45 @@ async def find_web_fragment(
             {"fragment_id": fragment_id, "workspace_id": workspace_id},
         )
     ).one_or_none()
-    return None if row is None else _from_row(row)
+    if row is None:
+        return None
+    return (await _attach_kit_bindings(conn, workspace_id, [_from_row(row)]))[0]
+
+
+async def _attach_kit_bindings(
+    conn: AsyncConnection, workspace_id: str, rows: list[JsonObject]
+) -> list[JsonObject]:
+    if not rows:
+        return rows
+    by_id = {row["fragment_id"]: row for row in rows}
+    for row in rows:
+        row["source_kit_bindings"] = []
+    bindings = await conn.execute(
+        text("""
+            SELECT fragment_id, brand_kit_id, brand_kit_version, approved
+            FROM design_web_fragment_kit_binding
+            WHERE workspace_id = :workspace_id
+                AND fragment_id = ANY(CAST(:fragment_ids AS text[]))
+            ORDER BY created_at, brand_kit_id, brand_kit_version
+        """),
+        {"workspace_id": workspace_id, "fragment_ids": list(by_id)},
+    )
+    for binding in bindings:
+        by_id[binding.fragment_id]["source_kit_bindings"].append(
+            {
+                "brand_kit_id": binding.brand_kit_id,
+                "version": binding.brand_kit_version,
+                "approved": bool(binding.approved),
+            }
+        )
+    return rows
+
+
+def fragment_has_kit_binding(row: JsonObject, kit_id: str) -> bool:
+    """Membership, not release authority; callers still enforce fragment status."""
+    return row.get("source_kit_id") == kit_id or any(
+        binding.get("brand_kit_id") == kit_id for binding in row.get("source_kit_bindings") or []
+    )
 
 
 async def list_web_fragments(
@@ -397,7 +455,7 @@ async def list_web_fragments(
         ),
         params,
     )
-    return [_from_row(row) for row in rows]
+    return await _attach_kit_bindings(conn, workspace_id, [_from_row(row) for row in rows])
 
 
 async def list_web_fragment_lineage(
@@ -454,7 +512,7 @@ async def list_web_fragment_lineage(
         ),
         {"workspace_id": workspace_id, "fragment_id": fragment_id},
     )
-    return [_from_row(row) for row in rows]
+    return await _attach_kit_bindings(conn, workspace_id, [_from_row(row) for row in rows])
 
 
 async def sync_kit_fragment_approval(
@@ -498,30 +556,51 @@ async def sync_kit_fragment_approval(
       more than an approval may release one nobody looked at. The symmetry is the point — a rule
       that only holds in the direction that happens to be dangerous today is a rule waiting to be
       surprised by tomorrow.
-    * the version matters. Approval is version-specific for kits (a newer draft does not shadow
-      an older approved version), and a fragment names the exact version it was minted from, so
-      approving v3 says nothing about the sections cloned into v2.
+    * the version matters. Only bindings from this capture are changed. Identical
+      content can belong to multiple captures; revoking one cannot revoke another
+      explicit release. Original row provenance is never reassigned across kit ids.
     """
-    target, current = ("approved", "draft") if approved else ("draft", "approved")
+    params = {
+        "workspace_id": workspace_id,
+        "brand_kit_id": brand_kit_id,
+        "brand_kit_version": brand_kit_version,
+        "approved": approved,
+    }
+    await conn.execute(
+        text("""
+            UPDATE design_web_fragment_kit_binding
+            SET approved = :approved
+            WHERE workspace_id = :workspace_id AND brand_kit_id = :brand_kit_id
+                AND brand_kit_version = :brand_kit_version
+        """),
+        params,
+    )
     result = await conn.execute(
-        text(
-            """
-            UPDATE design_web_fragment
-            SET status = :target, updated_at = now()
-            WHERE workspace_id = :workspace_id
-              AND source_kit_id = :brand_kit_id
-              AND source_kit_version = :brand_kit_version
-              AND status = :current
-              AND derived_from IS NULL
-            """
-        ),
-        {
-            "target": target,
-            "current": current,
-            "workspace_id": workspace_id,
-            "brand_kit_id": brand_kit_id,
-            "brand_kit_version": brand_kit_version,
-        },
+        text("""
+            WITH release_state AS (
+                SELECT f.fragment_id,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM design_web_fragment_kit_binding released
+                        WHERE released.workspace_id = f.workspace_id
+                            AND released.fragment_id = f.fragment_id AND released.approved
+                    ) THEN 'approved' ELSE 'draft' END AS target
+                FROM design_web_fragment f
+                WHERE f.workspace_id = :workspace_id
+                    AND f.status IN ('draft', 'approved') AND f.derived_from IS NULL
+                    AND EXISTS (
+                        SELECT 1 FROM design_web_fragment_kit_binding current_capture
+                        WHERE current_capture.workspace_id = f.workspace_id
+                            AND current_capture.fragment_id = f.fragment_id
+                            AND current_capture.brand_kit_id = :brand_kit_id
+                            AND current_capture.brand_kit_version = :brand_kit_version
+                    )
+            )
+            UPDATE design_web_fragment f SET status = r.target, updated_at = now()
+            FROM release_state r
+            WHERE f.workspace_id = :workspace_id AND f.fragment_id = r.fragment_id
+                AND f.status <> r.target
+        """),
+        params,
     )
     return int(result.rowcount or 0)
 

@@ -8,6 +8,14 @@ const CANVASKIT_STUB = "./src/features/design-editor/engine/scene/empty-module.t
 const localInstance = localWorkspaceInstance();
 
 const nextConfig: NextConfig = {
+  // The script runs in an opaque-origin sandboxed srcdoc. Anonymous CORS is
+  // required for its pinned SRI; this public file carries no user credentials.
+  async headers() {
+    return [{
+      source: "/vendor/tailwind-browser.js",
+      headers: [{ key: "Access-Control-Allow-Origin", value: "*" }],
+    }];
+  },
   // Parallel local instances must not share Next's compiler cache or dev lock.
   distDir: localInstance?.distDir ?? ".next",
   typescript: {

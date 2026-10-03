@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 from typing import List
+from lumen_api.agent_account_logos import is_fetched_logo
+
 from ..engine_mirror import record_pixel_dims
 
 JsonObject = dict
@@ -75,6 +77,14 @@ def _asset_kind_matches(record: JsonObject, requested: str) -> bool:
     if not requested:
         return True
     record_kind = str(record.get("kind") or "").lower()
+    # fetch_logo preserves the byte format as the storage kind. Reuse the same
+    # provenance classification as account binding, never guess from filenames.
+    if (
+        requested == "logo"
+        and record_kind in {"vector", "raster_image"}
+        and is_fetched_logo(record)
+    ):
+        return True
     return requested in {record_kind, _asset_display_kind(record)}
 
 

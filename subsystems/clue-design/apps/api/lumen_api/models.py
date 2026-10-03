@@ -490,6 +490,8 @@ class ValidateDocumentBrandGovernanceRequest(BaseModel):
 
 class IngestWebsiteRequest(BaseModel):
     url: str
+    page_urls: list[str] = Field(default_factory=list, max_length=19)
+    discover_pages: bool = True
     name: Optional[str] = None
     brand_kit_id: Optional[str] = None
     #: REDUNDANT since the founder ruling of 2026-08-20, and kept only so existing callers do

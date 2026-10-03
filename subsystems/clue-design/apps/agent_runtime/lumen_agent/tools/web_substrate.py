@@ -20,6 +20,7 @@ import asyncio
 import base64
 import copy
 import hashlib
+import io
 import json
 import os
 import re
@@ -38,6 +39,7 @@ from selectolax.parser import HTMLParser
 from py_lumen_obs import bind_run_id, get_logger
 
 from lumen_api.agent_account_logos import AccountLogoRefused, is_fetched_logo
+from lumen_api.capture_readiness import prepare_capture_media
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.database import FragmentReferenceError
 from lumen_api.clone_review import (
@@ -72,6 +74,7 @@ from lumen_api.fragments.campaign_shell import (
     discover_legal_links,
 )
 from lumen_api.fragments.degraded import REPAIR_RUNGS
+from lumen_api.fragments.native import native_dependencies_for_subtree, native_render_fields
 from lumen_api.fragments.refs import (
     ASSET_URL_PREFIX,
     FragmentRefused,
@@ -87,6 +90,12 @@ from lumen_api.fragments.render import (
     web_doc_page_section_count,
 )
 from lumen_api.fragments.slots import SLOT_KIND_TO_NODE_TAG
+from lumen_api.fragments.href_repair import validate_href_replacements, validate_label_replacements
+from lumen_api.fragments.text_repair import inspect_text_targets, validate_text_edits
+from .web_layout_capture import capture_layout, layout_targets
+from .web_typography_reference import (
+    TypographyReferenceError, TypographyReferences, typography_coverage, typography_inventory,
+)
 # The repair mint's styling half. NOTE the dependency this brings into the AGENT RUNTIME: the
 # compile shells out to `node` plus the EDITOR app's `node_modules` (F3.1, ruling R-I3). It is
 # checked by name before it is used and refuses typed when absent, so a worker without the
@@ -111,6 +120,12 @@ try:  # pragma: no cover - exercised only when the T2I model is configured
 except Exception:  # pragma: no cover
     image_provider = None  # type: ignore[assignment]
 
+from ..asset_renditions import (
+    decoded_dimensions,
+    family_summary,
+    rendition_families,
+    resolution_summary,
+)
 from ..brand_brief import read_brief, render_reviewer_brief
 from ..brand_card import build_brand_card, render_brand_card_text
 from ..config import AgentRuntimeConfig
@@ -120,7 +135,18 @@ from ..web_retokenize import build_web_retokenize_operations, summarize_class_pa
 from . import logo_fetch
 from .asset_preview import asset_preview_path, rasterize_vector_preview
 from .substrate import _CoreHelperProxy, _image_warning, blob_path_for_digest
-from .view import _VISION_MANY_IMAGE_MAX_PX, _image_block, _image_observation_label, _text_block
+from .view import (
+    _VISION_MANY_IMAGE_MAX_PX,
+    _asset_alpha_inspection_blocks,
+    _image_block,
+    _image_bytes_block,
+    _image_observation_label,
+    _text_block,
+)
+from .web_review_evidence import TILE_HEIGHT as _PREVIEW_TILE_HEIGHT
+from .web_review_evidence import TILE_OVERLAP as _PREVIEW_TILE_OVERLAP
+from .web_review_evidence import ReviewObservations, tile_count
+from .web_interaction_capture import capture_switchers
 
 logger = get_logger("lumen_agent.tools.web_substrate")
 
@@ -315,10 +341,6 @@ _STATE_WIDTHS = (1440, 375)
 # two extra Playwright pages); any beyond the cap are reported, never dropped
 # silently.
 _MAX_DIALOG_CAPTURES = 3
-
-# At most this many tabs components are captured per render (each costs one extra
-# Playwright page); any beyond the cap are reported, never dropped silently.
-_MAX_TABS_CAPTURES = 2
 
 # How many asset ids a view("asset:…") error string names per source (document
 # registry / kit manifest) before it says "+N more". A harvested brand kit
@@ -566,34 +588,47 @@ def _clears_style_reference_floor(record: JsonObject) -> bool:
     return max(sides) >= _BRAND_REFERENCE_MIN_LONG_SIDE_PX
 
 
-def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
+def _interactive_capture_plan(web_doc: JsonObject, page_id: str | None = None) -> JsonObject:
     """Pure scan of a WebDoc for the interactive components that need a STATE
     capture. Factored out of render so it is unit-testable without Playwright.
 
     Returns ``{"dialogs": [node_id, ...], "has_accordion": bool, "has_nav":
     bool, "tabs": [node_id, ...]}``:
     - ``dialogs`` — every dialog component's node id (opened → screenshot), in
-      page-then-node order across all pages.
+      reachable-node order on the selected page (first page when not specified).
     - ``has_accordion`` — any accordion component exists (details expanded →
       screenshot).
     - ``has_nav`` — any nav_menu component exists (hamburger opened →
       screenshot).
     - ``tabs`` — every tabs component's node id that has at least two children
-      (a single-tab strip has nothing to switch to), same page-then-node order.
+      (a single-tab strip has nothing to switch to), same reachable-node order.
 
     A node's role is its ``component`` value when ``kind == "component"``."""
     dialogs: List[str] = []
     has_accordion = False
     has_nav = False
     tabs: List[str] = []
-    for page in web_doc.get("pages") or []:
+    pages = web_doc.get("pages") or []
+    for page in pages:
         if not isinstance(page, dict):
+            continue
+        if page_id is not None and page.get("id") != page_id:
             continue
         nodes = page.get("nodes") or {}
         if not isinstance(nodes, dict):
             continue
-        for node_id, node in nodes.items():
-            if not isinstance(node, dict) or node.get("kind") != "component":
+        pending = [page.get("root")]
+        seen: set[str] = set()
+        while pending:
+            node_id = pending.pop(0)
+            if not isinstance(node_id, str) or node_id in seen:
+                continue
+            seen.add(node_id)
+            node = nodes.get(node_id)
+            if not isinstance(node, dict):
+                continue
+            pending.extend(node.get("children") or [])
+            if node.get("kind") != "component":
                 continue
             component = node.get("component")
             if component == "dialog":
@@ -605,6 +640,7 @@ def _interactive_capture_plan(web_doc: JsonObject) -> JsonObject:
             elif component == "tabs":
                 if len(node.get("children") or []) >= 2:
                     tabs.append(node_id)
+        break
     return {
         "dialogs": dialogs,
         "has_accordion": has_accordion,
@@ -867,6 +903,11 @@ def _fetch_grounded_page(url: str) -> JsonObject:
     return asyncio.run(fetch())
 
 
+# A node read is exact or refused, never a truncated edit payload. This bounds
+# UTF-8 tool output rather than node count; rich text/slot strings may be large.
+_WEB_NODE_VIEW_MAX_BYTES = 64 * 1024
+
+
 class LumenWebTools:
     def __init__(
         self,
@@ -986,10 +1027,13 @@ class LumenWebTools:
         self._review_iteration = 0
         # The latest screenshot path per width + the iteration that produced it.
         self._preview_by_width: Dict[int, str] = {}
+        self._layout_by_width: dict[int, JsonObject] = {}
+        self._typography_references = TypographyReferences()
         self._preview_iteration: Optional[int] = None
         # Interactive STATE captures from the latest render (dialog-open,
         # accordion-expanded), reset each render; view("state:<n>") indexes here.
         self._state_captures: List[JsonObject] = []
+        self._state_capture_failures: List[JsonObject] = []
         # Cached @font-face data-URL CSS (fonts cannot change mid-run). The
         # sentinel distinguishes "not computed" from a resolved None.
         self._font_face_css_cache: Any = _FONT_CSS_UNSET
@@ -1034,6 +1078,10 @@ class LumenWebTools:
         # refuses a preview older than the current doc.
         self._doc_version = 0
         self._preview_doc_version: Optional[int] = None
+        self._preview_media_ready = False
+        self._preview_media_readiness: Dict[str, JsonObject] = {}
+        self._review_observations = ReviewObservations()
+        self._state_capture_limits: JsonObject = {}
         # Between-renders edit budget (live failure 2026-07-29: an author round
         # never returned control — 16 blind subtree rewrites over 14 minutes).
         # Every MUTATING tool call charges it; once exhausted, mutating tools
@@ -2467,7 +2515,10 @@ class LumenWebTools:
         # author works next, and the standing previews are of the old one.
         self.page_id = clean_id
         self._preview_by_width = {}
+        self._layout_by_width = {}
         self._state_captures = []
+        self._state_capture_failures = []
+        self._state_capture_limits = {}
         self.record(
             "author",
             "web_page_added",
@@ -2517,7 +2568,10 @@ class LumenWebTools:
             self.page_id = remaining[0] if remaining else HOME_PAGE_ID
             # The standing previews are pixels of a page that no longer exists.
             self._preview_by_width = {}
+            self._layout_by_width = {}
             self._state_captures = []
+            self._state_capture_failures = []
+            self._state_capture_limits = {}
         self.record(
             "author",
             "web_page_removed",
@@ -2561,7 +2615,10 @@ class LumenWebTools:
         # to a page; and a switch is the start of a fresh page round, so the
         # between-renders edit budget opens again.
         self._preview_by_width = {}
+        self._layout_by_width = {}
         self._state_captures = []
+        self._state_capture_failures = []
+        self._state_capture_limits = {}
         self._mutations_since_render = 0
         self._round_budget_event_recorded = False
         self.record(
@@ -2606,8 +2663,11 @@ class LumenWebTools:
                items:[{children:[INLINE,...], nested:[BLOCK,...]?},...]}.
             INLINE is {type:"text",text,marks?,classes?,link?},
             {type:"variable",key,fallback,marks?,classes?,link?}, or
-            {type:"line_break",link?}. Read the current content with
-            view("doc"), preserve every unaffected block/list/mark/variable,
+            {type:"line_break",link?}. This needs the actual current content;
+            read view("node:<id>") and require complete=true. This is turn-local
+            state, not a checked persisted revision; view("doc") is only a summary.
+            On refusal, leave the node intact instead of reconstructing its payload.
+            For edits, preserve every unaffected block/list/mark/variable
             and use this operation whenever a human-authored structured body
             must survive the edit. Body and Small variants allow paragraphs
             and lists; heading variants accept exactly one paragraph.
@@ -4075,7 +4135,12 @@ class LumenWebTools:
         return candidates
 
     def search_assets(
-        self, q: str, kind: Optional[str] = None, limit: int = 8
+        self,
+        q: str,
+        kind: str | None = None,
+        limit: int = 8,
+        min_width_px: int | None = None,
+        min_height_px: int | None = None,
     ) -> str:
         """Search the REAL assets this turn can place. No result is invented.
 
@@ -4091,7 +4156,8 @@ class LumenWebTools:
         title, description and usage, and both tag lists.
 
         `kind` accepts the words you already use — "image" (a `raster_image` or a
-        `vector`) or "logo" — as well as a raw engine record kind. A record kind
+        `vector`) or "logo" (including provenance-identified fetched logos) — as well
+        as a raw engine record kind. A record kind
         with no such alias (`document`, `other`) matches only its own raw name,
         so `kind="image"` never hands back the brand-guide PDF. The filter NEVER
         silences an id you named: an asset whose id is in the query comes back
@@ -4124,9 +4190,21 @@ class LumenWebTools:
         Searching costs no source budget on a `brand_kit` or `document` row —
         only a library placement cites one.
 
+        RENDITIONS: general search returns the largest ready rendition of a
+        verified same-source family. Relevance comes from the best matching
+        member; `rendition_family.matched_asset_id` identifies it. Different
+        crops, deployments and capture dates remain distinct. An explicitly
+        named id ALWAYS returns its exact record plus available alternatives.
+
+        RESOLUTION: optional positive `min_width_px` and `min_height_px` state
+        the required SOURCE pixels (rendered CSS size times display density).
+        Rows report measured dimensions and `meets_requested_pixels`; an
+        insufficient or unknown source is still returned with guidance. A URL
+        width is never evidence of decoded resolution. This is advice, not a
+        placement gate. Inspect actual pixels via `view` before choosing.
+
         ZERO results always names the inventory that was searched, so "nothing
-        matched" is never confused with "nothing exists" — and because a matched
-        row is never dropped, zero results can only mean zero matches.
+        matched" is never confused with "nothing exists".
         """
         query = (q or "").strip()
         if not query:
@@ -4143,11 +4221,39 @@ class LumenWebTools:
                 "asset_search.bad_limit",
                 f"limit must be an integer from 1 to {_ASSET_SEARCH_LIMIT_MAX}.",
             )
+        for name, value in (("min_width_px", min_width_px), ("min_height_px", min_height_px)):
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 1
+            ):
+                return self._tool_error(
+                    "asset_search.bad_resolution", f"{name} must be a positive integer."
+                )
         candidates = self._asset_search_candidates()
+        families = rendition_families(candidates)
         normalized_kind = (kind or "").strip().lower()
         query_lower = query.lower()
-        ordered = rank_assets(candidates, query_lower, normalized_kind)
+        ranked = rank_assets(candidates, query_lower, normalized_kind)
         results: List[JsonObject] = []
+        # Collapse each rendition family to its preferred member, remembering
+        # which member actually matched. A named id is returned as itself and
+        # claims its whole family, so a sibling never reappears as a hit.
+        ordered: List[tuple] = []
+        matched_ids: dict = {}
+        seen: set = set()
+        for asset_id, entry, origin, id_match, note in ranked:
+            if id_match:
+                ordered.append((asset_id, entry, origin, True, note))
+                matched_ids[asset_id] = asset_id
+                seen.update(families.get(asset_id, (asset_id,)))
+                continue
+            if asset_id in seen:
+                continue
+            members = families.get(asset_id, (asset_id,))
+            preferred_id = members[0]
+            entry, origin = candidates[preferred_id]
+            ordered.append((preferred_id, entry, origin, False, None))
+            matched_ids[preferred_id] = asset_id
+            seen.update(members)
         unregistered = 0
         for asset_id, entry, origin, id_match, note in ordered[:limit]:
             source = self._asset_grounding_source(asset_id, entry)
@@ -4173,16 +4279,18 @@ class LumenWebTools:
                 registered = self._register_grounding_source(source)
                 if not registered:
                     unregistered += 1
-            results.append(
-                self._asset_search_result(
-                    source,
-                    entry,
-                    origin=origin,
-                    id_match=id_match,
-                    kind_note=note,
-                    registered=registered,
-                )
+            row = self._asset_search_result(
+                source, entry, origin=origin, id_match=id_match,
+                kind_note=note, registered=registered,
             )
+            row["resolution"] = resolution_summary(
+                entry["record"], min_width_px, min_height_px,
+            )
+            if asset_id in families:
+                row["rendition_family"] = family_summary(
+                    families[asset_id], candidates, matched_id=matched_ids[asset_id],
+                )
+            results.append(row)
         payload: JsonObject = {
             "status": "ok",
             "query": query,
@@ -4190,8 +4298,8 @@ class LumenWebTools:
             "count": len(results),
             "results": results,
         }
-        # A matched row is ALWAYS returned (see the loop), so zero results can
-        # only ever mean zero matches — the note never has to guess which.
+        # Grouping replaces a match with a real sibling; it cannot empty a
+        # nonempty match set. Source-budget exhaustion cannot hide results.
         if not results:
             payload["note"] = self._asset_search_empty_note(query, normalized_kind)
         elif unregistered:
@@ -4956,7 +5064,10 @@ class LumenWebTools:
         found.sort(key=lambda entry: (entry["page_id"], entry["node_id"], entry["path"]))
         return found
 
-    def inspect_cloned_section(self, fragment_id: str) -> str:
+    def inspect_cloned_section(
+        self, fragment_id: str, html_offset: int = 0, css_offset: int = 0,
+        text_only: bool = False, text_offset: int = 0,
+    ) -> str:
         """Read a cloned section's REAL SOURCE: its captured HTML and its scoped CSS, plus
         its slots. This is what a derived variant (`repair_cloned_section(..., css=…)`) and a
         raw composition (`compose_web_section`) remix — the client's actual class names,
@@ -4964,8 +5075,23 @@ class LumenWebTools:
         adapt, or on the ancestor of a band you are about to compose, BEFORE writing any
         markup; `view("cloned_section:<id>")` shows the picture, this shows the bytes.
         The clone's source lives in the library, never in the workspace filesystem —
-        searching files for it finds nothing. Long sources are truncated; the response
-        says so and gives the full sizes.
+        searching files for it finds nothing. Each call returns at most 12,000 characters
+        EACH of HTML and CSS, starting at independent zero-based character offsets (not byte
+        offsets). Defaults return the original first slices. Continue with `html_next_offset`
+        and/or `css_next_offset`; null means that stream is finished. To skip a finished or
+        unneeded stream while reading the other, pass its total (`html_chars` or `css_chars`)
+        as its offset. Offsets must be integers from zero through the stream's total, inclusive.
+        Each stream reports its total chars, slice chars, start/end offsets (end exclusive),
+        and whether more remains (`*_truncated`). Never reconstruct unseen source. Pagination
+        is inspection only; it does not patch links or preserve omitted CSS in a raw repair.
+
+        For copy changes, pass `text_only=True` for up to 16 text targets and no HTML/CSS.
+        Each target has an exact stored-fragment structural path, expected text and editability
+        reason. `text_inventory.next_offset` continues the target list via `text_offset`.
+        These are STORED coordinates, not rendered/editor coordinates: hidden slot siblings
+        remain counted. This inventory does not assert rendered visibility. Use editable
+        targets in `repair_cloned_section(text_edits_json=...)`; bind existing text slots
+        instead. Text mode requires zero html/css offsets; text_offset requires text mode.
 
         `text_overrides` lists the HUMAN's own edits to individual elements of the pins of this
         clone on the page — the one interior change a person may make to a cloned band — and
@@ -4976,6 +5102,19 @@ class LumenWebTools:
         if not clean_id:
             return self._tool_error(
                 "cloned_section.bad_request", "inspect_cloned_section requires a fragment id."
+            )
+        for field, offset in (("html_offset", html_offset), ("css_offset", css_offset)):
+            if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+                return self._tool_error(
+                    "cloned_section.bad_offset", f"{field} must be a non-negative integer."
+                )
+        if (not isinstance(text_only, bool) or not isinstance(text_offset, int)
+                or isinstance(text_offset, bool) or text_offset < 0
+                or (text_only and (html_offset or css_offset))
+                or (not text_only and text_offset)):
+            return self._tool_error(
+                "cloned_section.bad_offset", "text mode needs a nonnegative integer text_offset "
+                "and zero raw-source offsets; text_offset requires text_only=True.",
             )
         registry = self._cloned_section_registry()
         try:
@@ -4989,6 +5128,15 @@ class LumenWebTools:
         cap = 12_000
         html = source.get("html") or ""
         css = source.get("css") or ""
+        for field, offset, total in (
+            ("html_offset", html_offset, len(html)), ("css_offset", css_offset, len(css)),
+        ):
+            if offset > total:
+                return self._tool_error(
+                    "cloned_section.bad_offset", f"{field} must not exceed {total} characters."
+                )
+        html_end = min(html_offset + cap, len(html))
+        css_end = min(css_offset + cap, len(css))
         payload: JsonObject = {
             "status": "ok",
             "fragment_id": clean_id,
@@ -4999,39 +5147,82 @@ class LumenWebTools:
             "derived_from": source.get("derived_from"),
             "slots": source.get("slots"),
             "text_overrides": self._fragment_text_overrides(clean_id),
+            "page_char_limit": cap,
             "html_chars": len(html),
-            "html_truncated": len(html) > cap,
-            "html": html[:cap],
+            "html_offset": html_offset,
+            "html_end_offset": html_end,
+            "html_slice_chars": html_end - html_offset,
+            "html_next_offset": html_end if html_end < len(html) else None,
+            "html_truncated": html_end < len(html),
+            "html": html[html_offset:html_end],
             "css_chars": len(css),
-            "css_truncated": len(css) > cap,
-            "css": css[:cap],
+            "css_offset": css_offset,
+            "css_end_offset": css_end,
+            "css_slice_chars": css_end - css_offset,
+            "css_next_offset": css_end if css_end < len(css) else None,
+            "css_truncated": css_end < len(css),
+            "css": css[css_offset:css_end],
         }
+        if text_only:
+            try:
+                inventory = inspect_text_targets(
+                    html, manifest={slot["key"]: slot for slot in (source.get("slots") or [])},
+                    offset=text_offset,
+                )
+            except FragmentRefused as error:
+                return self._tool_error(str(error.code), str(error.message))
+            for key in list(payload):
+                if key in {"html", "css", "page_char_limit"} or (
+                    key.startswith(("html_", "css_")) and key not in {"html_chars", "css_chars"}
+                ):
+                    del payload[key]
+            payload.update(text_only=True, text_inventory=inventory)
+        for key in (
+            "source_kit_id", "source_kit_version", "source_kit_bindings", "page_url",
+            "section_index", "created_at", "payload_digest", "degraded",
+            "degraded_reason", "composed", "capture_evidence", "behavior_evidence",
+        ):
+            if key in source:
+                payload[key] = source[key]
+        if isinstance(source.get("behavior_evidence"), dict):
+            self._review_observations.sources[clean_id] = copy.deepcopy(source["behavior_evidence"])
         self.record(
             "author",
             "cloned_section_inspected",
             input_summary=clean_id,
-            output_summary=f"{len(html)} html chars, {len(css)} css chars",
+            output_summary=(f"text targets {text_offset}:{inventory['next_offset'] or inventory['total']} "
+                            f"of {inventory['total']}; source bytes omitted" if text_only
+                            else f"{len(html)} html chars, {len(css)} css chars"),
         )
         return json.dumps(payload, indent=2)
 
     def search_cloned_sections(
-        self, q: str = "", role: Optional[str] = None, limit: int = 8
+        self, q: str = "", role: str | None = None, limit: int = 8,
+        offset: int = 0, page_url: str | None = None,
     ) -> str:
-        """Find CLONED SECTIONS — real bands lifted verbatim off this client's own website.
+        """Find released reusable website sections in this workspace's library.
 
-        A cloned section is not a template and not generated markup: it is the client's actual
-        nav, footer, proof band or hero, with its own markup, its own CSS and its own images,
-        pinned by id. Reusing one is how a page gets chrome that is right by construction instead
-        of approximated.
+        Results may be captured source bands, authored compositions or derived repairs/variants.
+        Read source_url/page_url and kit associations, then use inspect_cloned_section for
+        origin, composed, lineage and capture_evidence; release is not a source-fidelity verdict.
+        Inspect the selected band's actual markup, CSS and preview before pinning/rebinding it.
+        A composed result is not recovered original website code.
 
         ONLY RELEASED SECTIONS ARE LISTED. Ingestion mints every section it clones as a draft; a
         human releases them by approving the brand kit they came from. A draft or a retired
         section is not offered here, because pinning one is refused.
 
-        `q` is optional — call it with no query to see everything this workspace has released.
+        `q` is optional — no query returns a bounded page of released sections. Continue with
+        the returned `next_offset`, keeping q/role/page_url unchanged; null ends this result set.
+        `limit` is 1–20. Restart at offset 0 after a library change; offsets are not snapshots.
+        `total` counts matches in the scanned inventory, not necessarily the entire library:
+        check `inventory_truncated` and `inventory_note` before claiming complete coverage.
         With a query it matches over the label, the role, the page it came from and the slot
         names. Naming a `frag_…` id anywhere in the query returns that section first.
         `role` filters to one section role (`nav`, `hero`, `footer`, `proof`, …).
+        `page_url` optionally filters by an EXACT returned page_url (source_url fallback),
+        including query parameters. It filters before pagination and includes repairs/variants
+        associated with that page; it does not certify captured origin. Inspect lineage.
 
         EACH ROW carries:
           - `fragment_id`   — what `insert_cloned_section` takes;
@@ -5041,7 +5232,9 @@ class LumenWebTools:
             A section with no slots is reusable exactly as it is;
           - `view`          — paste into `view("cloned_section:<id>")` to SEE the real band
             before choosing it. A row whose `preview` is `"none"` has no image to show;
-          - `source_url` and `brand_kit` — which page it came from and whose approval released it.
+          - `source_url`, `page_url`, `brand_kit` and `source_kit_bindings` — original
+            origin and known kit associations. Association does not prove freshness or fidelity.
+            `created_at` is registry creation time, not the source capture time.
 
         A row may also say the clone is BROKEN. `degraded: true` means something about this
         harvested band does not work in a clone — `degraded_note` says what, in words. Never put
@@ -5051,10 +5244,11 @@ class LumenWebTools:
         of this row; `repairs` lists every repair of it, including ones still waiting for a human
         to release them (so you do not compose the same replacement twice).
 
-        NEVER CASUALLY REWRITE A WORKING CLONED SECTION. Its markup is the client's, verbatim, and
-        its slots are the whole of what may change on a healthy one. When a clone is visibly or
-        functionally broken, preserve the original artifact and repair, rebuild or replace it
-        through `repair_cloned_section` — never by retyping the band into your own page markup.
+        Preserve healthy source structure and use slots for copy/image/link changes. A healthy
+        band needing a structural campaign change uses a source-based campaign variant through
+        repair_cloned_section; a broken band uses its defect-repair contract. Read the repair
+        skill for these distinct lanes. Preserve immutable originals and inspected source
+        grammar rather than retyping a healthy band as an unrelated imitation.
         """
         registry = self._cloned_section_registry()
         if registry is None:
@@ -5069,7 +5263,12 @@ class LumenWebTools:
                 "cloned_section.bad_limit",
                 f"limit must be an integer from 1 to {_CLONED_SECTION_SEARCH_LIMIT_MAX}.",
             )
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            return self._tool_error(
+                "cloned_section.bad_offset", "offset must be a non-negative integer.",
+            )
         requested_role = (role or "").strip().lower() or None
+        requested_page = (page_url or "").strip() or None
         try:
             listing = registry.list_sections(requested_role)
         except Exception as error:  # noqa: BLE001 - capability boundary
@@ -5089,8 +5288,20 @@ class LumenWebTools:
             for section in (listing or {}).get("sections") or []
             if isinstance(section, dict) and section.get("fragment_id")
         ]
+        inventory_scanned = len(candidates)
+        inventory_total = (listing or {}).get("total")
+        if type(inventory_total) is not int or inventory_total < inventory_scanned:
+            inventory_total = None
+        inventory_truncated = (
+            inventory_total > inventory_scanned if inventory_total is not None else None
+        )
+        if requested_page:
+            candidates = [
+                section for section in candidates
+                if (section.get("page_url") or section.get("source_url")) == requested_page
+            ]
         ranked = self._rank_cloned_sections(candidates, q or "")
-        ordered = ranked[:limit]
+        ordered = ranked[offset:offset + limit]
         # DESCRIBE ONLY WHAT IS RETURNED. The slot kinds live in each artifact's payload and the
         # preview lives in durable storage, so describing the whole library to answer one query
         # would read a blob per section the agent never sees.
@@ -5138,6 +5349,9 @@ class LumenWebTools:
                 "view": f"cloned_section:{fragment_id}",
                 "preview": "available" if preview_path else "none",
             }
+            for key in ("source_kit_bindings", "page_url", "section_index", "created_at"):
+                if key in section:
+                    row[key] = section[key]
             # D-F6: brokenness and lineage travel with the row, because a picker that shows a
             # degraded clone the same way it shows a healthy one is how a broken band ends up on
             # a page. Only present when there is something to say — an unbroken, never-repaired
@@ -5177,7 +5391,10 @@ class LumenWebTools:
                 row["composed_note"] = (
                     "composed for ABM pages, not lifted off the client's site: a page-local "
                     "shell with one call to action and no navigation. Use it on account pages "
-                    "instead of the cloned nav or footer."
+                    "when the page plan calls for that focused shell."
+                    if section.get("composed") == "campaign_shell"
+                    else "authored composition, not lifted off the client's site; inspect its "
+                    "role, source lineage and pixels before reuse."
                 )
             if section.get("repairs"):
                 row["repairs"] = section.get("repairs")
@@ -5192,29 +5409,68 @@ class LumenWebTools:
             "status": "ok",
             "query": q or None,
             "role": requested_role,
+            "page_url": requested_page,
+            "offset": offset,
+            "next_offset": offset + len(results) if offset + len(results) < len(ranked) else None,
             "count": len(results),
             # What MATCHED, beside what is shown (W5). `count` alone cannot tell a complete
             # answer from a truncated one, and the default limit is 8 — so on the F2 walk's own
             # site an unqualified call showed 8 of 13 with nothing saying the other 5 existed.
             "total": len(ranked),
+            "inventory_scanned": inventory_scanned,
+            "inventory_total": inventory_total,
+            "inventory_truncated": inventory_truncated,
             "results": results,
         }
-        if len(ranked) > len(results):
+        if inventory_truncated:
+            payload["inventory_note"] = (
+                f"The registry returned {inventory_scanned} of {inventory_total} released "
+                "sections for this role. Search total and pagination cover only those rows, "
+                "not complete library coverage. A narrower role may expose other rows; "
+                "changing q/page_url or raising offset cannot cross the registry cap."
+            )
+        elif inventory_truncated is None:
+            payload["inventory_note"] = (
+                "The registry did not supply a valid inventory total. Pagination covers the "
+                "returned rows only; complete library coverage is unknown."
+            )
+        if payload["next_offset"] is not None:
             payload["note"] = (
-                f"showing {len(results)} of {len(ranked)} matching cloned section(s) — raise "
-                "`limit` (max "
-                f"{_CLONED_SECTION_SEARCH_LIMIT_MAX}) or narrow the query to see the rest."
+                f"Showing matches {offset + 1}–{offset + len(results)} of {len(ranked)}. "
+                f"Continue with offset={payload['next_offset']} and the same q/role/page_url. "
+                "Restart at offset 0 if the library changes."
             )
         if not results:
-            payload["note"] = self._cloned_section_empty_note(
-                q or "", requested_role, len(candidates)
-            )
+            if offset and ranked:
+                payload["note"] = (
+                    f"offset {offset} is past the {len(ranked)} matching sections. "
+                    "This result set is exhausted; restart at offset 0 if the library changed."
+                )
+            elif requested_page:
+                payload["note"] = (
+                    f"No matches for this query on recorded page_url {requested_page!r} "
+                    f"within {inventory_scanned} scanned released sections. "
+                    "Clear page_url to inspect the available page URLs; this does not "
+                    "establish that the page has never been captured."
+                )
+            else:
+                payload["note"] = self._cloned_section_empty_note(
+                    q or "", requested_role, len(candidates)
+                )
         self.record(
             "author",
             "cloned_sections_searched",
-            input_summary=f"q={q!r} role={requested_role or '*'}",
+            input_summary=(
+                f"q={q!r} role={requested_role or '*'} page_url={requested_page!r} offset={offset}"
+            ),
             output_summary=f"{len(results)} released cloned section(s)",
-            payload={"fragment_ids": [row["fragment_id"] for row in results]},
+            payload={
+                "fragment_ids": [row["fragment_id"] for row in results],
+                **{key: payload[key] for key in (
+                    "offset", "next_offset", "total", "inventory_scanned",
+                    "inventory_total", "inventory_truncated",
+                )},
+            },
             sink_extra={"result_count": len(results)},
         )
         return json.dumps(payload, indent=2)
@@ -5237,7 +5493,7 @@ class LumenWebTools:
     ) -> List[tuple]:
         """`[(section, id_match), …]`, best first. The `search_assets` ranking, one library.
 
-        An EMPTY query keeps the registry's own order (newest first) rather than inventing one:
+        An EMPTY query keeps the registry's own document order rather than inventing one:
         "show me what I have" is a legitimate call, and reordering an unfiltered list by a
         relevance score computed from nothing would be noise dressed as ranking.
         """
@@ -5820,6 +6076,108 @@ class LumenWebTools:
                 }
             )
 
+        # Source envelopes are a read capability, reached only after every pin and
+        # slot passed its ordinary gate. A read failure never partially mutates the doc.
+        prepare_flows = getattr(registry, "prepare_source_flows", None)
+        source_flow: JsonObject = {"groups": [], "gaps": [], "fidelity_verified": False}
+        if callable(prepare_flows):
+            try:
+                prepared = prepare_flows([entry["fragment_id"] for entry in pinned])
+            except FragmentReferenceError as error:
+                return self._tool_error(str(error.code), error.message)
+            except Exception as error:  # noqa: BLE001 - source capability boundary
+                return self._tool_error(
+                    "source_flow.read_failed",
+                    f"captured source context could not be prepared: {type(error).__name__}. "
+                    "Nothing was pinned.",
+                )
+            source_flow["gaps"] = list(prepared.get("gaps") or [])
+            grouped = {}
+            consumed = set()
+            ids = [entry["fragment_id"] for entry in pinned]
+            for group in prepared.get("groups") or []:
+                members = list(group.get("member_ids") or [])
+                positions = [ids.index(fid) for fid in members if fid in ids]
+                if (
+                    not members
+                    or len(positions) != len(members)
+                    or positions != list(range(positions[0], positions[0] + len(members)))
+                    or consumed.intersection(positions)
+                ):
+                    return self._tool_error(
+                        "source_flow.order_mismatch",
+                        "captured envelope members do not match the gated source-order plan. "
+                        "Nothing was pinned.",
+                    )
+                descriptors = list(group.get("nodes") or [])
+                if not descriptors or len(descriptors) > 10:
+                    return self._tool_error(
+                        "source_flow.bound", "captured ancestor chain exceeds its bound"
+                    )
+                group_ids = [str(group["group_id"]) + "_" + str(i) for i in range(len(descriptors))]
+                if taken.intersection(group_ids):
+                    return self._tool_error(
+                        "source_flow.identity_collision", "source envelope node ids already exist"
+                    )
+                taken.update(group_ids)
+                group_nodes = [
+                    {
+                        "id": node_id,
+                        "kind": "section" if i == 0 else "container",
+                        "classes": descriptor["classes"],
+                        "name": "Captured source flow",
+                        "children": [group_ids[i + 1]]
+                        if i + 1 < len(group_ids)
+                        else [pinned[pos]["section_node_id"] for pos in positions],
+                    }
+                    for i, (node_id, descriptor) in enumerate(
+                        zip(group_ids, descriptors, strict=True)
+                    )
+                ]
+                for pos in positions:
+                    group_nodes.extend(operations[pos]["nodes"])
+                grouped[positions[0]] = {
+                    "kind": "insert_node",
+                    "page_id": self.page_id,
+                    "parent": root_id,
+                    "root": group_ids[0],
+                    "nodes": group_nodes,
+                }
+                consumed.update(positions)
+                source_flow["groups"].append(
+                    {
+                        **{k: v for k, v in group.items() if k not in ("nodes", "css")},
+                        "root_node_id": group_ids[0],
+                        "fidelity_verified": False,
+                    }
+                )
+            if grouped:
+                assembled = []
+                for pos, operation in enumerate(operations):
+                    if pos in grouped:
+                        operation = grouped[pos]
+                    elif pos in consumed:
+                        continue
+                    operation["index"] = len(assembled)
+                    assembled.append(operation)
+                css = "\n".join(str(group.get("css") or "") for group in prepared["groups"])
+                assembled.append(
+                    {
+                        "kind": "set_custom_css",
+                        "css": str(self.web_doc.get("custom_css") or "") + "\n" + css,
+                    }
+                )
+                operations = assembled
+        else:
+            source_flow["gaps"].append(
+                {
+                    "code": "source_flow.reader_unavailable",
+                    "member_ids": [entry["fragment_id"] for entry in pinned],
+                    "message": "shared source layout was not inspected; "
+                    "the registry has no snapshot reader",
+                }
+            )
+
         try:
             response = self.core.web_apply_ops(self.web_doc, operations)
         except CoreError as error:
@@ -5858,6 +6216,17 @@ class LumenWebTools:
 
         substituted = [entry for entry in pinned if entry["substituted_for"]]
         warnings, advice = _split_non_error_diagnostics(response.get("diagnostics"))
+        for gap in source_flow["gaps"]:
+            warnings.append(
+                {
+                    "severity": "warning",
+                    "phase": "source_flow",
+                    "code": gap["code"],
+                    "message": "Shared source layout remains unpreserved: "
+                    + str(gap.get("message") or ""),
+                    "hint": "",
+                }
+            )
         self.record(
             "author",
             "cloned_page_recreated",
@@ -5872,6 +6241,7 @@ class LumenWebTools:
                 "fragment_ids": [entry["fragment_id"] for entry in pinned],
                 "needs_repair": copy.deepcopy(degraded_pins),
                 "operations": copy.deepcopy(operations),
+                "source_flow": copy.deepcopy(source_flow),
             },
             sink_extra={"pinned_count": len(pinned)},
         )
@@ -5885,6 +6255,7 @@ class LumenWebTools:
             "ranked": ranked,
             "warnings": warnings,
             "advice": advice,
+            "source_flow": source_flow,
         }
         if ranked:
             # ADVICE, not a warning: the band is already reported as work through `needs_repair`
@@ -6287,6 +6658,13 @@ class LumenWebTools:
         sentence structure. The result is minted as a released library fragment and renders
         through the same path that gives clones their fidelity.
 
+        Before writing new text styles, use view("typography:node:<source-node-id>") on a
+        current render of the selected source skeleton. It joins exact source measurements
+        across desktop/tablet/phone. Freeze equivalent retained source roles to themselves with
+        set_web_typography_reference. After pinning and rendering this new section, bind its real
+        node/path to those frozen sources; do not guess a future target ID or a heading scale.
+        Measurements at three widths do not replace the source's real responsive CSS.
+
         FORMAT:
         - `html`: ONE section — `<section id="...">...</section>`. Real markup, any elements.
           Scripts/handlers are stripped by the sanitizer (same as every captured byte). Images
@@ -6348,15 +6726,131 @@ class LumenWebTools:
         )
         return json.dumps(result, indent=2)
 
+    def _repair_cloned_hrefs(
+        self, fragment_id: str, mapping_json: str | None, rung: int, note: str,
+        label_mapping_json: str | None = None,
+        text_edits_json: str | None = None,
+    ) -> str:
+        """Source-preserving, one-pin lane; the registry alone reads and derives the payload."""
+        pins = [
+            node for page in self.web_doc.get("pages", [])
+            for node in (page.get("nodes") or {}).values()
+            if node.get("kind") == "fragment" and node.get("fragment_id") == fragment_id
+        ]
+        if len(pins) != 1:
+            return self._tool_error("repair.ambiguous_pin", "exact source repair requires one pin")
+        if (label_mapping_json is not None or text_edits_json is not None) and pins[0].get("text_overrides"):
+            return self._tool_error(
+                "repair.text_override_conflict" if text_edits_json is not None else "repair.label_override_conflict",
+                "this pin has human text overrides; edit the existing text override instead "
+                "of deriving copy that may be masked by it. Nothing changed.",
+            )
+
+        def unique_pairs(pairs: list) -> dict:
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate replacement map key")
+                result[key] = value
+            return result
+
+        maps = {}
+        for key, encoded, validator, code in (
+            ("replacements", mapping_json, validate_href_replacements, "repair.bad_href_map"),
+            ("label_replacements", label_mapping_json, validate_label_replacements, "repair.bad_label_map"),
+            ("text_edits", text_edits_json, validate_text_edits, "repair.bad_text_edits"),
+        ):
+            if encoded is None:
+                continue
+            try:
+                if not isinstance(encoded, str) or len(encoded) > 40_000:
+                    raise ValueError("replacement map JSON must be at most 40000 characters")
+                maps[key] = validator(json.loads(encoded, object_pairs_hook=unique_pairs))
+            except (ValueError, FragmentRefused) as error:
+                return self._tool_error(code, str(error))
+        registry = self._cloned_section_registry()
+        try:
+            minted = registry.mint_href_repair(
+                replaces=fragment_id, **maps, rung=rung, note=note,
+            )
+        except FragmentRefused as error:
+            return self._tool_error(
+                str(error.code), str(error.message), fragment_id=error.reference or fragment_id,
+                pinned=False,
+            )
+        except Exception as error:
+            return self._tool_error(
+                "repair.mint_unconfirmed",
+                f"source repair mint could not be confirmed ({type(error).__name__}); page unchanged",
+            )
+        new_id = str(minted.get("fragment_id") or "")
+        if minted.get("status") != "approved":
+            return self._tool_error(
+                "repair.not_released",
+                "derived fragment exists but is not released; page unchanged",
+                fragment_id=new_id, released=False, pinned=False,
+            )
+        try:
+            resolved = registry.resolve_insertable(new_id)
+        except Exception as error:
+            return self._tool_error(
+                "repair.released_but_unpinnable",
+                f"released repair could not resolve ({type(error).__name__}); page unchanged",
+                fragment_id=new_id, released=True, pinned=False,
+            )
+        pin = pins[0]
+        operations = [{
+            "kind": "set_node_props", "page_id": self.page_id, "id": pin["id"],
+            "props": {"kind": "fragment", "fragment_id": new_id,
+                      "slots": copy.deepcopy(pin.get("slots") or {})},
+        }]
+        try:
+            response = self.core.web_apply_ops(self.web_doc, operations)
+        except CoreError as error:
+            return self._tool_error(
+                "repair.swap_rejected", "repair released but page swap failed; page unchanged",
+                fragment_id=new_id, released=True, pinned=False, diagnostics=[error.message],
+            )
+        if not response.get("ok"):
+            return self._tool_error(
+                "repair.swap_rejected", "repair released but page swap failed; page unchanged",
+                fragment_id=new_id, released=True, pinned=False,
+                diagnostics=response.get("diagnostics") or [],
+            )
+        self.web_doc = response["web_doc"]
+        self._record_operations(operations)
+        self._doc_version += 1
+        self._admit_fragment_artifact(new_id, resolved.get("render") or {})
+        self._cloned_section_previews[new_id] = resolved.get("preview_path")
+        self._cloned_section_seen[new_id] = {
+            "label": resolved.get("label"), "section_role": resolved.get("section_role"),
+            "composed": resolved.get("composed"),
+        }
+        self.record("author", "cloned_section_repaired", input_summary=f"{fragment_id} exact source edits",
+                    output_summary=f"{new_id} released; existing pin preserved", payload=minted)
+        return json.dumps({
+            "status": "ok", "repaired": fragment_id, "repair_fragment_id": new_id,
+            "released": True, "pinned": True, "node_id": pin["id"],
+            "href_only": label_mapping_json is None and text_edits_json is None,
+            "match_counts": minted.get("match_counts"), "converged": minted.get("converged"),
+            "label_match_counts": minted.get("label_match_counts", {}),
+            "text_match_paths": minted.get("text_match_paths", []),
+            "lineage_kept": minted.get("lineage_kept"), "note": note,
+            "report": "released repair; future pins follow stored lineage; existing pin preserved",
+        }, indent=2)
+
     def repair_cloned_section(
-        self, fragment_id: str, html: str, rung: int, note: str,
-        css: Optional[str] = None,
+        self, fragment_id: str, html: str | None = None, rung: int = 1, note: str = "",
+        css: str | None = None, href_replacements_json: str | None = None,
+        cta_label_replacements_json: str | None = None,
+        text_edits_json: str | None = None,
     ) -> str:
         """Replace a pinned cloned section with one you compose — original preserved, lineage kept.
 
         TWO INTENTS, one door. (1) REPAIR a BROKEN band — a defect you diagnosed. (2) DERIVE A
         CAMPAIGN VARIANT of a HEALTHY band whose slots can't carry the campaign — a CTA to
-        remove, a sub-element to hide, a new eyebrow, restructured emphasis. For a variant, use
+        remove, a sub-element to hide, a new eyebrow, restructured emphasis. For copy-only
+        variants prefer existing slots or EXACT TEXT EDITS below. For structural variants, use
         the RAW lane and remix the original's FULL markup and CSS, changing exactly what the
         campaign needs while keeping its geometry, type scale, surfaces, and responsive
         behavior — you inherit everything you don't touch because you started from the
@@ -6364,6 +6858,41 @@ class LumenWebTools:
         (derive once, rebind per page). A variant's note reads "campaign variant: …", its copy
         and cardinality MAY change, its visual system may NOT. The repair-cloned-sections
         skill's adaptation contract governs; read it first for either intent.
+
+        EXACT LINK REPAIR: for inherited anchor targets not exposed as slots, omit `html` and
+        `css` and pass `href_replacements_json` as an object of exact old href -> new href
+        strings (1-8 entries, at most 2048 characters per URL). Every old target must match;
+        all matching anchors change simultaneously. Full source stays in the workspace library.
+        This preserves captured CSS/assets, the one existing pin's layout, explicit slot values
+        and human text overrides. Multiple pins refuse as ambiguous. It uses the same released
+        repair lineage as raw repair, so report its effect on future pins. This is not a general
+        markup edit. Provide a precise `note`; `rung` defaults to 1 for restoring navigation.
+
+        EXACT LABEL REPAIR: for baked-in anchor labels with no text slot, pass
+        `cta_label_replacements_json` as exact old visible label -> new plain text (1-8 entries,
+        <=2048 characters each). Whitespace in old labels is normalized to single spaces.
+        This replaces only a single text node, preserving icons, wrappers, typography and CSS.
+        Matching aria-label/title text follows the label. It refuses separate accessible names,
+        split styled labels, existing text slots and pins with human text overrides;
+        use their existing binding/override or a reviewed raw variant instead. It can run alone
+        or with `href_replacements_json`, never with raw html/css. All matches change; each old
+        label must match. A label-only change keeps the destination: inspect that it still fits
+        the action. For a campaign-specific change use note="campaign variant: ..." to start
+        its own lineage. Otherwise this is a canonical released repair; state that future
+        original pins may resolve to it. Existing explicit href bindings still win over fallback.
+
+        EXACT TEXT EDITS: for unbound captured feature/FAQ copy, first inspect_cloned_section
+        with text_only=True. Pass text_edits_json as a list of 1-8 objects containing path,
+        expected and replacement. Copy the STORED structural path and normalized expected
+        text from that inventory, not from editor coordinates. Each edit changes one immediate
+        text leaf (<=2048 chars), retaining all markup, CSS, assets and the existing pin.
+        Stale text, unsupported/split content, existing text slots, accessible-name conflicts,
+        duplicate targets and pins with human overrides refuse. Use the binding or existing
+        human override instead. The whole batch validates before a new artifact is minted.
+        Use note="campaign variant: ..." for account copy; this starts separate lineage.
+        Canonical repairs affect future original pins. Can combine with exact anchor maps,
+        never raw html/css. Rendering must still verify wrapping and mobile height: preserving
+        CSS does not guarantee longer copy fits. It does not repair interactions or imagery.
 
         TWO REPAIR LANES (founder ruling A, 2026-08-30). Pass `css` to repair in RAW HTML +
         RAW CSS — the fidelity lane: `view` the broken original first and remix its actual
@@ -6451,6 +6980,21 @@ class LumenWebTools:
             )
         instances = pinned[clean_id]
 
+        if (href_replacements_json is not None or cta_label_replacements_json is not None
+                or text_edits_json is not None):
+            if html is not None or css is not None:
+                return self._tool_error(
+                    "repair.bad_text_edits" if text_edits_json is not None else "repair.bad_href_map",
+                    "exact source repair cannot also supply html or css",
+                )
+            return self._repair_cloned_hrefs(
+                clean_id, href_replacements_json, int(rung), cleaned_note,
+                label_mapping_json=cta_label_replacements_json,
+                text_edits_json=text_edits_json,
+            )
+        if html is None:
+            return self._tool_error("repair.html_missing", "provide html, href_replacements_json, cta_label_replacements_json or text_edits_json")
+
         if css is not None:
             # --- the RAW lane (founder ruling A, 2026-08-30) -------------------------------
             # Mint first, swap second: the persistence gate forbids draft pins, so the repair
@@ -6507,21 +7051,32 @@ class LumenWebTools:
                 frag_node_id,
             )
             index = children.index(old_section) if old_section in children else len(children)
-            slot_kinds = (resolved.get("render") or {}).get("slot_kinds") or {}
-            section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
-                new_id, {}, set(nodes), name=pin_display_name(resolved)
-            )
-            operations: List[JsonObject] = [
-                {"kind": "remove_node", "page_id": self.page_id, "id": old_section},
-                {
-                    "kind": "insert_node",
-                    "page_id": self.page_id,
-                    "parent": root_id,
-                    "index": index,
-                    "nodes": pin_nodes,
-                    "root": section_id,
-                },
-            ]
+            if minted.get("preserves_pin_content") is True:
+                # The registry compared full sanitized/annotated DOM and slot kinds. CSS-only
+                # changes therefore retain the active pin's bindings, human text paths and
+                # wrapper identity/layout. A copy/structure change must not carry stale text
+                # over the explicitly changed source; it keeps the replacement lane below.
+                section_id = old_section
+                operations: List[JsonObject] = [{
+                    "kind": "set_node_props", "page_id": self.page_id, "id": frag_node_id,
+                    "props": {"kind": "fragment", "fragment_id": new_id,
+                              "slots": copy.deepcopy(nodes[frag_node_id].get("slots") or {})},
+                }]
+            else:
+                section_id, node_id, pin_nodes = self._cloned_section_pin_nodes(
+                    new_id, {}, set(nodes), name=pin_display_name(resolved)
+                )
+                operations = [
+                    {"kind": "remove_node", "page_id": self.page_id, "id": old_section},
+                    {
+                        "kind": "insert_node",
+                        "page_id": self.page_id,
+                        "parent": root_id,
+                        "index": index,
+                        "nodes": pin_nodes,
+                        "root": section_id,
+                    },
+                ]
             try:
                 response = self.core.web_apply_ops(self.web_doc, operations)
             except CoreError as error:
@@ -6629,6 +7184,17 @@ class LumenWebTools:
                 "there is nothing to mint. The page still carries your replacement.",
             )
 
+        try:
+            native_dependencies = native_dependencies_for_subtree(
+                self.web_doc, self.page_id, roots[0]
+            )
+        except FragmentRefused as refusal:
+            return self._tool_error(
+                refusal.code,
+                f"{refusal.message}. The typed replacement remains on the page; "
+                "no reusable library artifact was minted.",
+            )
+
         # 3) Its styling, compiled by the SAME toolchain that compiles a published page, so the
         #    minted artifact carries its own sealed stylesheet and looks identical wherever it is
         #    pinned. A fragment's CSS is deliberately outside the page's utility scan, so an
@@ -6665,6 +7231,7 @@ class LumenWebTools:
                 css=css,
                 rung=int(rung),
                 note=cleaned_note,
+                **({"native_dependencies": native_dependencies} if native_dependencies else {}),
             )
         except FragmentRefused as refusal:
             self.record(
@@ -6931,10 +7498,10 @@ class LumenWebTools:
     def mint_campaign_shells(self) -> str:
         """Mint this brand's ABM page shells: a minimal header and a legal-only footer.
 
-        An ABM page NEVER wears the client's cloned global navigation. Every link in a nav is a
-        way off the one page that was written for this account — the visitor leaves for pricing,
-        for careers, for the blog, and the campaign is over. An ABM page wears a page-local shell
-        instead, and this is the tool that makes it.
+        Use this optional composition when the campaign brief calls for a minimal header
+        and legal footer. A named account alone does not mandate it: campaign-landing-page
+        owns the choice of native navigation, campaign chrome or another supported composition.
+        This tool creates the fixed shell described below; it does not offer layout variants.
 
         THE HEADER is a strip, not a hero: the seller's own mark, the words "Prepared for
         <account>", the target company's logo when we hold one, and exactly ONE call to action.
@@ -7324,14 +7891,14 @@ class LumenWebTools:
     # "Build the page for this account" is an ASSEMBLY with a shape, exactly as the recreate is:
     # the seller's campaign chrome around a personalized hero, with the page's other bands
     # between them — pinned clones with marker-bound slots, derived variants, and raw
-    # compositions remixing real ancestors (the vocabulary lane last, for attribute-bearing
-    # bands only; the 2026-09-04 Ramp run read an older "ordinary authoring vocabulary" wording
+    # compositions remixing real ancestors (the vocabulary lane last, for required typed
+    # behavior or attributes; the 2026-09-04 Ramp run read "ordinary authoring vocabulary"
     # here as the expected lane and built a generic page). Two of that shape's properties are the whole
     # reason this is a tool rather than a paragraph of prompt:
     #
-    #   * an ABM page NEVER wears the cloned nav, and a rule that lives only in a prompt is a
-    #     rule the model obeys most of the time;
-    #   * the page is a TEMPLATE — its slots hold `{{account.*}}` markers rather than one
+    #   * this optional recipe pins released campaign chrome; ordinary assembly serves
+    #     other campaign compositions, and existing navigation is retained with advice;
+    #   * this recipe builds a TEMPLATE — its slots hold `{{account.*}}` markers rather than one
     #     account's values — so Task 25's batch derive personalizes one document per account
     #     instead of the agent building fifty pages.
     #
@@ -7372,9 +7939,11 @@ class LumenWebTools:
         work: they are the values the derive builds. AN EMPTY TARGET LOGO IS CORRECT — we never
         invent a company's mark, and an account we hold none for renders a clean header.
 
-        `cta_href` / `cta_label` bind the header's one call to action for this campaign. Omit
-        them and the shell keeps its own default, which is page-local and can never be an escape
-        route.
+        `cta_href` / `cta_label` bind the header's one call to action for this campaign.
+        Supply both from the selected reader decision and actual destination. Omission keeps
+        compatibility defaults; it does not establish an appropriate offer or a real anchor
+        target. Inspect the result and verify the destination. For a page needing no header
+        action, choose another supported composition instead of inheriting the fallback.
 
         NEW SECTIONS ARE NAMED. Every section you compose for this page takes a section id
         beginning `abm_` (`<section id="abm_peer_proof">`), so a reviewer can tell a new band
@@ -8130,6 +8699,7 @@ class LumenWebTools:
             fragments = {}
             package["fragments"] = fragments
         fragments[fragment_id] = {
+            **native_render_fields(render),
             "html": str(render.get("html") or ""),
             "css": str(render.get("css") or ""),
             "slot_kinds": dict(render.get("slot_kinds") or {}),
@@ -8138,6 +8708,8 @@ class LumenWebTools:
             # exactly as it does at publish (ruling R-I1).
             "derived": bool(render.get("derived")),
         }
+        if render.get("native_dependencies"):
+            package["schema_version"] = 2
         missing = package.get("missing")
         if isinstance(missing, list) and fragment_id in missing:
             # It resolved. A stale "missing" entry beside a live artifact would make the
@@ -8386,6 +8958,21 @@ class LumenWebTools:
         the review, never a pass. Returns the structured critique, the capture paths, and
         the blind side-by-side artifact when a reference capture exists.
         """
+        try:
+            result = self._review_cloned_page()
+            payload = json.loads(result)
+        except Exception as error:
+            self._review_observations.record_walk_failure(
+                self.page_id, self._doc_version, type(error).__name__,
+            )
+            raise
+        if payload.get("status") != "ok":
+            self._review_observations.record_walk_failure(
+                self.page_id, self._doc_version, payload.get("error_code") or "review.failed",
+            )
+        return result
+
+    def _review_cloned_page(self) -> str:
         self._review_iteration += 1
         registry = self._cloned_section_registry()
         fragment_ids = self._fragment_ids()
@@ -8446,6 +9033,10 @@ class LumenWebTools:
         # so believing it would write unclearable `mobile_unusable` markers across a healthy
         # library — the exact damage R19-1 exists to prevent.
         settled = (critique.settled if critique is not None else False) and not tailwind_missing
+        media_reports = [
+            observation.notes["media_readiness"] for observation in walk.observations
+            if "media_readiness" in observation.notes
+        ]
         marked, mark_failures = (
             self._record_broken_clones(registry, broken) if settled else ([], [])
         )
@@ -8458,9 +9049,10 @@ class LumenWebTools:
                 observation.as_result() for observation in walk.observations
             ],
             "broken_clones": [item.as_result() for item in broken],
-            # False means the findings above are ADVICE ONLY this round: the page's styling had
-            # not settled when the walk measured it, so nothing was written down (R19-1).
+            # Unsettled styling or images makes these findings ADVICE ONLY this round;
+            # nothing was written down (R19-1).
             "evidence_settled": settled,
+            "media_readiness": media_reports,
             "marked_degraded": marked,
             "page_findings": (
                 [item.as_result() for item in critique.page_findings]
@@ -8489,8 +9081,18 @@ class LumenWebTools:
         if reference_note is not None:
             result["reference_unavailable"] = reference_note
         if tailwind_missing:
-            result["tailwind_runtime_missing"] = True
+            preflight_unverified = any(
+                str(item.get("code", "")).startswith("fragment.editor_preflight_")
+                for item in diagnostics
+            )
+            status_key = (
+                "tailwind_runtime_unverified"
+                if preflight_unverified
+                else "tailwind_runtime_missing"
+            )
+            result[status_key] = True
 
+        self._review_observations.record_walk(self.page_id, self._doc_version, result)
         self.record(
             "orchestrator",
             "web_review_walked",
@@ -8637,7 +9239,7 @@ class LumenWebTools:
                         (
                             "Each one is recorded on the section itself. "
                             if settled
-                            else "NOTHING was recorded: the page's styling had not settled when "
+                            else "NOTHING was recorded: styling or images had not settled when "
                             "the walk measured it, so these are advice this round and a re-run "
                             "is what settles them. "
                         )
@@ -9161,6 +9763,7 @@ class LumenWebTools:
         if (
             self._preview_doc_version is not None
             and self._preview_doc_version == self._doc_version
+            and self._preview_media_ready
             and all(width in self._preview_by_width for width in _PREVIEW_WIDTHS)
         ):
             paths = [self._preview_by_width[width] for width in _PREVIEW_WIDTHS]
@@ -9177,8 +9780,12 @@ class LumenWebTools:
                     "status": "ok",
                     "preview_paths": paths,
                     "state_captures": list(self._state_captures),
+                    "state_capture_failures": list(self._state_capture_failures),
+                    "state_captures_omitted": self._state_capture_limits.get("omitted", {}),
                     "diagnostics": [],
                     "unchanged": True,
+                    "media_readiness": dict(self._preview_media_readiness),
+                    "layout_views": [f"layout:{width}" for width in self._layout_by_width],
                 },
                 indent=2,
             )
@@ -9253,13 +9860,30 @@ class LumenWebTools:
             "status": "ok",
             "preview_paths": paths,
             "state_captures": list(self._state_captures),
+            "state_capture_failures": list(self._state_capture_failures),
             "diagnostics": diagnostics,
+            "media_readiness": dict(self._preview_media_readiness),
+            "layout_views": [f"layout:{width}" for width in self._layout_by_width],
         }
         if tailwind_missing:
-            result["tailwind_runtime_missing"] = True
+            preflight_unverified = any(
+                str(item.get("code", "")).startswith("fragment.editor_preflight_")
+                for item in diagnostics
+            )
+            status_key = (
+                "tailwind_runtime_unverified"
+                if preflight_unverified
+                else "tailwind_runtime_missing"
+            )
+            result[status_key] = True
         if state_capture_error is not None:
             result["state_capture_error"] = state_capture_error
         omitted_nonempty = {k: v for k, v in (state_omitted or {}).items() if v}
+        self._state_capture_limits = {
+            "version": self._doc_version, "page_id": self.page_id,
+            "error": state_capture_error, "omitted": omitted_nonempty,
+            "failures": list(self._state_capture_failures),
+        }
         if omitted_nonempty:
             result["state_captures_omitted"] = omitted_nonempty
         self.record(
@@ -9311,13 +9935,24 @@ class LumenWebTools:
         tailwind_missing = False
         runtime_path = tailwind_runtime_path(Path(self.config.repo_root))
         if runtime_path is not None:
+            from lumen_api.fragments.editor_preflight import qualify_fragment_preflight
+
+            # Read once: qualification and execution must use exactly the same bytes.
+            runtime_bytes = runtime_path.read_bytes()
+            html, preflight_diagnostics = qualify_fragment_preflight(
+                html, runtime_bytes=runtime_bytes
+            )
+            diagnostics.extend(preflight_diagnostics)
+            # Transitional internal name: this bool also makes unsupported runtime
+            # evidence unsettled. Public results distinguish unverified from missing.
+            tailwind_missing = bool(preflight_diagnostics)
             # The marker is what the F3.3 review gate's readiness check anchors on: the compiled
             # utilities can only land AFTER this element, so "an untyped style following this
             # script" means the JIT has run, and a page with no such script can never be mistaken
             # for a compiled one. The attribute is inert to every other reader.
             script = (
                 f"<script {TAILWIND_RUNTIME_MARKER}>"
-                + runtime_path.read_text(encoding="utf-8")
+                + runtime_bytes.decode("utf-8")
                 + "</script>"
             )
             if "</head>" in html:
@@ -9350,18 +9985,44 @@ class LumenWebTools:
         the base-preview loop PROPAGATES (so render's dead-browser retry can
         relaunch and rerun the whole pass); a state-capture failure degrades to
         a recorded warning + a `state_capture_error` string and NEVER voids the
-        base previews. `omitted` is ``{"dialogs": [...], "tabs": [...]}``."""
+        base previews. `omitted` is ``{"dialogs": [...], "switchers": [...]}``."""
         browser = self._browser_handle()
         paths: List[str] = []
         # Reset per pass so a dead-browser retry does not accumulate stale
         # captures on top of a half-finished first attempt.
         self._state_captures = []
+        self._state_capture_failures = []
+        self._preview_media_ready = False
+        self._preview_media_readiness = {}
+        self._layout_by_width = {}
+        targets = layout_targets(self.web_doc, self.page_id)
         for width in _PREVIEW_WIDTHS:
             page = browser.new_page(viewport={"width": width, "height": 1200})
             page.set_content(html, wait_until="load")
             page.wait_for_timeout(400)
+            media = prepare_capture_media(page)
+            self._preview_media_readiness[str(width)] = media
+            if not media.get("settled"):
+                diagnostics.append({
+                    "code": "web_preview.media_unsettled", "severity": "warning",
+                    "message": (
+                        f"Media readiness is incomplete at {width}px; "
+                        "inspect unresolved media before judging missing imagery."
+                    ),
+                    "media_readiness": media,
+                })
             dest = iter_dir / f"preview_{width}.png"
             page.screenshot(path=str(dest), full_page=True)
+            # Observe the same rendered page, not a separately recreated section.
+            # A failure remains explicit and does not erase a valid screenshot.
+            layout = capture_layout(page, targets)
+            layout.update(
+                document_id=self.web_doc.get("id"), page_id=self.page_id,
+                local_document_version=self._doc_version, iteration=self.iteration,
+                persisted_revision_checked=False, media_readiness=media,
+            )
+            self._layout_by_width[width] = layout
+            self._write_json(iter_dir / f"layout_{width}.json", layout)
             page.close()
             paths.append(str(dest))
             self._preview_by_width[width] = str(dest)
@@ -9378,6 +10039,9 @@ class LumenWebTools:
                 output_summary=f"state capture degraded: {state_capture_error}",
                 diagnostics=diagnostics,
             )
+        self._preview_media_ready = all(
+            report.get("settled") is True for report in self._preview_media_readiness.values()
+        ) and state_capture_error is None
         return paths, state_capture_error, omitted
 
     def _capture_states(self, browser, html: str, iter_dir: Path) -> JsonObject:
@@ -9390,19 +10054,18 @@ class LumenWebTools:
         accordion exists, per width one FULL-page screenshot is taken with every
         NON-nav `<details>` forced open (a nav hamburger is captured separately).
         If a nav_menu exists, ONE capture at 375px opens just the nav dropdown
-        (a VIEWPORT screenshot — the dropdown is viewport-anchored). Per tabs
-        component (first _MAX_TABS_CAPTURES only), ONE capture at 1440px clicks
-        the SECOND tab and takes a FULL-page screenshot.
+        (a VIEWPORT screenshot — the dropdown is viewport-anchored). Native tabs
+        and eligible source CSS-radio image groups receive bounded actual-click,
+        keyboard and component-region evidence at both state widths. They do not
+        inherit the forced-state semantics of dialog/accordion captures.
 
-        Returns ``{"dialogs": [...], "tabs": [...]}`` — the ids beyond each cap
-        (omitted, never dropped silently)."""
-        plan = _interactive_capture_plan(self.web_doc)
+        Returns ``{"dialogs": [ids], "switchers": [observations]}`` for omitted
+        controls/states; failed observations live in `_state_capture_failures`."""
+        self._state_capture_failures = []
+        plan = _interactive_capture_plan(self.web_doc, self.page_id)
         dialogs = plan["dialogs"]
         captured_dialogs = dialogs[:_MAX_DIALOG_CAPTURES]
         omitted_dialogs = dialogs[_MAX_DIALOG_CAPTURES:]
-        tabs = plan["tabs"]
-        captured_tabs = tabs[:_MAX_TABS_CAPTURES]
-        omitted_tabs = tabs[_MAX_TABS_CAPTURES:]
 
         for node_id in captured_dialogs:
             for width in _STATE_WIDTHS:
@@ -9440,6 +10103,7 @@ class LumenWebTools:
                 )
                 page.wait_for_timeout(250)
                 dest = iter_dir / f"state_{width}_accordion.png"
+                self._preview_media_readiness[f"accordion:{width}"] = prepare_capture_media(page)
                 page.screenshot(path=str(dest), full_page=True)
                 page.close()
                 self._state_captures.append(
@@ -9475,31 +10139,12 @@ class LumenWebTools:
                 }
             )
 
-        for node_id in captured_tabs:
-            # Switch to the SECOND tab (the first is the default panel) at
-            # desktop width and capture the full page.
-            page = browser.new_page(viewport={"width": 1440, "height": 1200})
-            page.set_content(html, wait_until="load")
-            page.wait_for_timeout(250)
-            page.evaluate(
-                "(id) => { const root = document.querySelector("
-                "'[data-node-id=\"' + id + '\"]'); const tabs = root ? "
-                "root.querySelectorAll('[role=\"tab\"]') : []; "
-                "if (tabs[1]) tabs[1].click(); }",
-                node_id,
-            )
-            page.wait_for_timeout(250)
-            dest = iter_dir / f"state_1440_tabs_{node_id}.png"
-            page.screenshot(path=str(dest), full_page=True)
-            page.close()
-            self._state_captures.append(
-                {
-                    "kind": "tab-selected",
-                    "node_id": node_id,
-                    "width": 1440,
-                    "path": str(dest),
-                }
-            )
+        nodes = self._home_page().get("nodes") or {}
+        native_groups = [{"node_id": node_id, "count": len(nodes[node_id].get("children") or [])}
+                         for node_id in plan["tabs"]]
+        switchers = capture_switchers(browser, html, iter_dir, native_groups, _STATE_WIDTHS)
+        self._state_captures.extend(switchers["captures"])
+        self._state_capture_failures.extend(switchers["failures"])
 
         if omitted_dialogs:
             self.record(
@@ -9511,17 +10156,235 @@ class LumenWebTools:
                 ),
                 payload={"omitted_dialog_ids": omitted_dialogs},
             )
-        if omitted_tabs:
+        if switchers["omitted"] or switchers["failures"]:
             self.record(
                 "orchestrator",
-                "web_state_capture_omitted",
+                "web_switcher_capture_incomplete",
                 output_summary=(
-                    f"{len(omitted_tabs)} tabs component(s) beyond the "
-                    f"{_MAX_TABS_CAPTURES}-capture cap were not captured"
+                    f"{len(switchers['omitted'])} omitted and "
+                    f"{len(switchers['failures'])} failed switcher observations"
                 ),
-                payload={"omitted_tabs_ids": omitted_tabs},
+                payload={"omitted": switchers["omitted"], "failures": switchers["failures"]},
             )
-        return {"dialogs": omitted_dialogs, "tabs": omitted_tabs}
+        return {"dialogs": omitted_dialogs, "switchers": switchers["omitted"]}
+
+    def _view_node(self, node_id: str) -> list:
+        """Read exactly one active-page node from this turn, never durable state."""
+        # BaseTool views bypass the harness's callable serialization. Take the
+        # same reentrant lock as writers so page, document and local version
+        # belong to one snapshot, including when called from an existing lock.
+        with self.tool_lock:
+            def reply(payload: JsonObject) -> list:
+                serialized = json.dumps(payload, ensure_ascii=False)
+                required_bytes = len(serialized.encode("utf-8"))
+                if required_bytes > _WEB_NODE_VIEW_MAX_BYTES:
+                    payload = {
+                        "status": "error",
+                        "complete": False,
+                        "scope": "current_turn_in_memory",
+                        "code": "web_node.too_large",
+                        "message": (
+                            "The complete node snapshot exceeds the response limit. "
+                            "No partial node was returned; preserve it rather than "
+                            "reconstructing an edit payload from incomplete content."
+                        ),
+                        "limit_bytes": _WEB_NODE_VIEW_MAX_BYTES,
+                        "required_bytes": required_bytes,
+                    }
+                    serialized = json.dumps(payload, ensure_ascii=False)
+                self.record(
+                    "agent", "web_view_called",
+                    input_summary=f"node:{node_id[:200]}",
+                    output_summary=str(payload.get("code") or "node"),
+                )
+                return [_text_block(serialized)]
+
+            def refuse(code: str, message: str) -> list:
+                return reply({
+                    "status": "error", "complete": False,
+                    "scope": "current_turn_in_memory", "code": code,
+                    "message": message,
+                })
+
+            doc = self.web_doc
+            page_id = self.page_id
+            pages = [
+                page for page in doc.get("pages") or []
+                if isinstance(page, dict) and page.get("id") == page_id
+            ]
+            if len(pages) != 1:
+                return refuse(
+                    "web_node.ambiguous_page" if pages else "web_node.unknown_page",
+                    "The active page does not identify one page in this turn's document.",
+                )
+            nodes = pages[0].get("nodes") or {}
+            node = nodes.get(node_id)
+            if not node_id or not isinstance(node, dict):
+                return refuse(
+                    "web_node.unknown_node",
+                    "No node with that exact ID exists on the active page. "
+                    "Use its section/child IDs or a current selection; other pages "
+                    "and documents were not searched.",
+                )
+            matching_ids = [
+                key for key, value in nodes.items()
+                if isinstance(value, dict) and value.get("id") == node_id
+            ]
+            if matching_ids != [node_id]:
+                return refuse(
+                    "web_node.ambiguous_node",
+                    "The requested node ID is inconsistent or duplicated on the active page.",
+                )
+            parent_ids = [
+                key for key, value in nodes.items() if isinstance(value, dict)
+                for child_id in value.get("children") or [] if child_id == node_id
+            ]
+            if len(parent_ids) > 1:
+                return refuse(
+                    "web_node.ambiguous_node",
+                    "The requested node has multiple parent references on the active page.",
+                )
+            return reply({
+                "status": "ok",
+                "complete": True,
+                "scope": "current_turn_in_memory",
+                "document_id": doc.get("id"),
+                "page_id": page_id,
+                "run_id": self.run_id,
+                "local_document_version": self._doc_version,
+                "persisted_revision_checked": False,
+                "node": node,
+                "parent_id": parent_ids[0] if parent_ids else None,
+                "child_ids": node.get("children") or [],
+            })
+
+    def _view_layout(self, target: str, *, can_render: bool) -> list:
+        """Read bounded saved measurements; never render or change a document from view."""
+        with self.tool_lock:
+
+            def reply(payload: JsonObject) -> list:
+                encoded = json.dumps(payload, ensure_ascii=False)
+                if len(encoded.encode("utf-8")) > _WEB_NODE_VIEW_MAX_BYTES:
+                    encoded = json.dumps(
+                        {
+                            "status": "error",
+                            "code": "layout.too_large",
+                            "message": "Measurement exceeds the view limit; "
+                            "no partial node returned.",
+                        }
+                    )
+                self.record(
+                    "agent",
+                    "web_view_called",
+                    input_summary=target[:300],
+                    output_summary="layout_observation",
+                )
+                return [_text_block(encoded)]
+
+            match = re.fullmatch(r"layout:(1440|768|375)(?::node:(.+))?", target)
+            if not match:
+                return reply(
+                    {
+                        "status": "error",
+                        "code": "layout.bad_target",
+                        "message": "Use layout:<1440|768|375> or layout:<width>:node:<id>.",
+                    }
+                )
+            width, node_id = int(match[1]), match[2]
+            report = self._layout_by_width.get(width)
+            next_step = (
+                "Call render_web_preview() first."
+                if can_render
+                else "Measurements refresh between rounds; finish the current round "
+                "and return to the director."
+            )
+            if not report:
+                return reply({
+                    "status": "error", "code": "layout.not_captured", "message": next_step,
+                })
+            if (
+                report.get("page_id") != self.page_id
+                or report.get("document_id") != self.web_doc.get("id")
+                or report.get("local_document_version") != self._doc_version
+                or report.get("iteration") != self._preview_iteration
+                or self._preview_doc_version != self._doc_version
+            ):
+                return reply(
+                    {
+                        "status": "error",
+                        "code": "layout.stale",
+                        "message": "The document changed after measurement. " + next_step,
+                    }
+                )
+            payload = {key: copy.deepcopy(value) for key, value in report.items() if key != "nodes"}
+            if report.get("status") != "observed":
+                return reply(payload)
+            if node_id is not None:
+                matches = [row for row in report["nodes"] if row.get("node_id") == node_id]
+                if len(matches) != 1:
+                    return reply(
+                        {
+                            "status": "error",
+                            "code": "layout.node_not_measured",
+                            "message": "No unique measurement for this node; "
+                            "inspect the layout index and omissions.",
+                        }
+                    )
+                payload["node"] = copy.deepcopy(matches[0])
+            else:
+                payload["nodes"] = [
+                    {
+                        key: row.get(key)
+                        for key in (
+                            "node_id",
+                            "kind",
+                            "fragment_id",
+                            "status",
+                            "box",
+                            "complete",
+                            "omitted",
+                        )
+                    }
+                    | {"target": f"layout:{width}:node:{row['node_id']}"}
+                    for row in report["nodes"]
+                ]
+            return reply(payload)
+
+    def _view_typography(self, target: str, *, can_render: bool) -> list:
+        """One bounded cross-viewport read of the existing native measurements."""
+        with self.tool_lock:
+            match = re.fullmatch(r"typography:node:(.+?)(?::offset:(0|[1-9][0-9]*))?", target)
+            try:
+                if not match:
+                    raise TypographyReferenceError(
+                        "typography.bad_target",
+                        "Use typography:node:<id> or its returned next_target.",
+                    )
+                payload = typography_inventory(
+                    self._layout_by_width, self._typography_identity(), match[1],
+                    int(match[2] or 0),
+                )
+                payload["persisted_revision_checked"] = False
+                encoded = json.dumps(payload, ensure_ascii=False)
+                if len(encoded.encode("utf-8")) > _WEB_NODE_VIEW_MAX_BYTES:
+                    raise TypographyReferenceError(
+                        "typography.too_large", "Text measurements exceed the view byte limit; "
+                        "inspect the existing per-width layout views. No partial row returned.",
+                    )
+            except TypographyReferenceError as error:
+                recovery = ""
+                if error.code == "typography.measurements_unavailable":
+                    recovery = (
+                        " Call render_web_preview() once, then inspect the current source."
+                        if can_render else " Return to the director for current measurements; "
+                        "do not keep editing to chase a fresh preview."
+                    )
+                encoded = json.dumps({
+                    "status": "error", "code": error.code, "message": str(error) + recovery,
+                })
+            self.record("agent", "web_view_called", input_summary=target[:300],
+                        output_summary="typography_observation")
+            return [_text_block(encoded)]
 
     def _view_content(self, target: str, can_render: bool = True) -> list:
         """Build the ToolMessage content for view(target). See make_web_view_tool.
@@ -9531,6 +10394,16 @@ class LumenWebTools:
         refusals must never instruct a role to call a tool it does not have —
         live failure 2026-07-29: an author churned blind for 14 minutes retrying
         stale views because the refusal said "call render_web_preview() first"."""
+        if target.startswith("layout:"):
+            return self._view_layout(target, can_render=can_render)
+        if target.startswith("typography:"):
+            return self._view_typography(target, can_render=can_render)
+        if target == "review":
+            report = self._review_evidence_report()
+            self.record("agent", "web_review_evidence_viewed", payload=report)
+            return [_text_block(json.dumps(report))]
+        if target.startswith("node:"):
+            return self._view_node(target[len("node:") :])
         if target == "brand":
             self.record("agent", "web_view_called", input_summary=target, output_summary="brand")
             return [_text_block(self.brand_card_text)]
@@ -9547,7 +10420,8 @@ class LumenWebTools:
             self.record("agent", "web_view_called", input_summary=target, output_summary="doc")
             return [_text_block(self._doc_summary_text())]
         if target.startswith("preview:"):
-            width_str = target[len("preview:") :]
+            parts = target[len("preview:") :].split(":")
+            width_str = parts[0]
             if width_str not in {"1440", "768", "375"}:
                 self.record(
                     "agent", "web_view_called", input_summary=target, output_summary="unknown_width"
@@ -9558,6 +10432,23 @@ class LumenWebTools:
                         "preview:1440, preview:768, or preview:375."
                     )
                 ]
+            tile_index = None
+            if len(parts) != 1:
+                if (
+                    len(parts) != 3
+                    or parts[1] != "tile"
+                    or re.fullmatch(r"0|[1-9][0-9]{0,8}", parts[2]) is None
+                ):
+                    self.record(
+                        "agent", "web_view_called", input_summary=target,
+                        output_summary="invalid_preview_tile",
+                    )
+                    return [_text_block(
+                        "view: invalid preview tile target. Use "
+                        "preview:<1440|768|375>:tile:<index>, with a zero-based "
+                        "nonnegative integer index (at most 9 digits)."
+                    )]
+                tile_index = int(parts[2])
             width = int(width_str)
             path = self._preview_by_width.get(width)
             if path is None or not Path(path).exists():
@@ -9592,10 +10483,12 @@ class LumenWebTools:
                         "orchestrator re-renders and the reviewer judges the result."
                     )
                 ]
+            if tile_index is not None:
+                return self._view_preview_tile(width, Path(path), tile_index, target)
             self.record(
                 "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
             )
-            return [
+            blocks = [
                 _text_block(_image_observation_label(
                     Path(path), f"view: latest preview at {width}px (iteration {self._preview_iteration})"
                 )),
@@ -9605,6 +10498,8 @@ class LumenWebTools:
                 # here clamps to the many-image ceiling — see view.py.
                 _image_block(Path(path), max_px=_VISION_MANY_IMAGE_MAX_PX),
             ]
+            self._record_review_image(target, Path(path))
+            return blocks
         if target.startswith("state:"):
             return self._view_state(target)
         if target.startswith("asset:"):
@@ -9616,11 +10511,239 @@ class LumenWebTools:
         )
         return [
             _text_block(
-                f"view: unknown target {target!r}. Use \"preview:1440\", "
-                '"preview:768", "preview:375", "state:<n>", "asset:<asset_id>", '
-                '"cloned_section:<fragment_id>", "doc", "brand", or "account".'
+                f"view: unknown target {target!r}. Use \"typography:node:<id>\", "
+                '"layout:1440", "preview:1440", '
+                '"preview:768", "preview:375", "preview:<width>:tile:<n>", '
+                '"state:<n>", "state:<n>:tile:<index>", "review", "asset:<asset_id>", '
+                '"cloned_section:<fragment_id>", "node:<node_id>", "doc", "brand", or "account".'
             )
         ]
+
+    def _view_preview_tile(
+        self, width: int, path: Path, index: int, target: str,
+        source_target: str | None = None,
+    ) -> list:
+        """Inspect one strip from the guarded, registered preview; never render/save.
+
+        Coverage describes only this call, not what a model remembers or has
+        approved. The byte hash lets it avoid mixing observations across renders.
+        """
+        from PIL import Image
+
+        raw = path.read_bytes()
+        with Image.open(io.BytesIO(raw)) as source:
+            pixel_width, pixel_height = source.size
+            stride = _PREVIEW_TILE_HEIGHT - _PREVIEW_TILE_OVERLAP
+            count = tile_count(pixel_height)
+            if index >= count:
+                self.record(
+                    "agent", "web_view_called", input_summary=target,
+                    output_summary="preview_tile_out_of_range",
+                )
+                return [_text_block(
+                    f"view: preview tile index {index} out of range. "
+                    f"This saved preview has {count} tiles; use indexes 0–{count - 1}."
+                )]
+            top = index * stride
+            bottom = min(top + _PREVIEW_TILE_HEIGHT, pixel_height)
+            source.seek(0)
+            tile = source.crop((0, top, pixel_width, bottom))
+            buffer = io.BytesIO()
+            tile.save(buffer, format="PNG")
+        other_ranges = []
+        if index > 0:
+            other_ranges.append([0, index - 1])
+        if index + 1 < count:
+            other_ranges.append([index + 1, count - 1])
+        metadata = {
+            "status": "ok",
+            "observation": "saved_preview_tile",
+            "document_id": self.web_doc.get("id"),
+            "page_id": self.page_id,
+            "run_id": self.run_id,
+            "persisted_revision_checked": False,
+            "source": {
+                "target": source_target or f"preview:{width}",
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "pixel_width": pixel_width,
+                "pixel_height": pixel_height,
+                "render_iteration": self._preview_iteration,
+                "local_document_version": self._preview_doc_version,
+            },
+            "crop": {"x": 0, "y": top, "width": pixel_width, "height": bottom - top},
+            "tile": {
+                "index": index, "count": count,
+                "height": _PREVIEW_TILE_HEIGHT, "overlap": _PREVIEW_TILE_OVERLAP,
+            },
+            "coverage": {
+                "scope": "this_call_only",
+                "other_tile_index_ranges": other_ranges,
+                "next_target": f"{source_target or f'preview:{width}'}:tile:{index + 1}" if index + 1 < count else None,
+                "complete_source_shown": count == 1,
+            },
+            "note": (
+                "Static crop of the saved full-page screenshot, before protective "
+                "image normalization; not a fresh viewport or interaction capture. "
+                "Other tile ranges were not shown by this call; this is not a "
+                "visual acceptance verdict or persisted revision check."
+            ),
+        }
+        image = _image_bytes_block(buffer.getvalue(), max_px=_VISION_MANY_IMAGE_MAX_PX)
+        self._record_review_image(source_target or f"preview:{width}", path, index=index)
+        self.record(
+            "agent", "web_view_called", input_summary=target,
+            output_summary=f"preview_tile={index}/{count}; blocks=2",
+            payload=metadata,
+        )
+        return [_text_block(json.dumps(metadata)), image]
+
+    def _record_review_image(self, target: str, path: Path, *, index: int | None = None) -> None:
+        self._review_observations.shown(
+            page_id=self.page_id, version=self._preview_doc_version,
+            iteration=self._preview_iteration, target=target, path=path, index=index,
+        )
+
+    def _typography_identity(self) -> JsonObject:
+        return {
+            "document_id": self.web_doc.get("id"),
+            "page_id": self.page_id,
+            "local_document_version": self._doc_version,
+            "iteration": self._preview_iteration,
+            "preview_version": self._preview_doc_version,
+        }
+
+    def _typography_report(self) -> JsonObject:
+        identity = self._typography_identity()
+        report = self._typography_references.report(self._layout_by_width, identity)
+        report["coverage"] = typography_coverage(
+            self._layout_by_width, identity, layout_targets(self.web_doc, self.page_id),
+            self._cloned_section_seen, report["bindings"],
+        )
+        return report
+
+    def set_web_typography_reference(self, bindings_json: str) -> str:
+        """Pin selected source text roles and check a draft against them without rendering.
+
+        Use after one native render and before restyling a selected component. For each new
+        authored role, choose the equivalent source role deliberately. Find exact node IDs in
+        view("layout:1440"), then paths and all widths in view("typography:node:<id>").
+        Pass a JSON list of 1–8 objects with role, reference_node_id, reference_path,
+        target_node_id, target_path. Paths are the exact rendered_node_relative :nth-child
+        chains, NOT stored text-edit paths; an empty path means the measured root text itself.
+        Reference and target may be the same for a selected-element edit. For a new raw section,
+        first freeze an equivalent retained source role to itself. Compose/pin, render the draft,
+        read the new target's real node/path, then map it to that same frozen reference. The tool
+        reuses the original snapshot across document mutations within this page and turn. New
+        source roles require complete current measurements at all three widths. Never invent
+        future node IDs or paths. Self-bound source nodes must remain on the final page.
+
+        This freezes source family, actual glyph faces, weight, size, line height, tracking,
+        alignment, synthesis, visibility and element tag within THIS TURN (24 role references
+        maximum). It compares subsequent target renders to those frozen values. Repeating the
+        same mapping never rebases it; changing an existing reference is refused. It does not
+        change the page. Fix mismatches using the source CSS or existing exact copy/slot edits,
+        then render and check view("review"). Missing/stale evidence stays incomplete.
+        Finalize cannot report accepted with a declared mismatch or incomplete measurement.
+
+        Review requires a captured fragment reference for each distinct text style in a composed
+        fragment. Select the source fragment's node ID, not an outer section wrapper. One mapped
+        representative covers identical text styles within that target node at all three widths;
+        it cannot cover a different style or another band. Check view("review") for missing roles.
+        Composed self-references cannot satisfy coverage. Unknown fragment provenance requires
+        search_cloned_sections for that ID; image-only bands need no text mapping.
+
+        Comparisons check the declared text roles. They do not establish full component structure,
+        content fit or page quality, and a wrong chosen reference is not made correct by a match.
+        To retain a selected component's structure, use its real pin with slot/exact text edits;
+        this tool cannot make a raw reconstruction structurally equivalent. References do not
+        persist as a page-wide brand rule across turns.
+        """
+        with self.tool_lock:
+            try:
+                self._typography_references.register(
+                    bindings_json, self._layout_by_width, self._typography_identity(),
+                )
+            except TypographyReferenceError as error:
+                return self._tool_error(error.code, str(error))
+            report = self._typography_report()
+            self._write_json(
+                self.turn_dir / "typography_references.json",
+                {
+                    "schema_version": 1,
+                    "run_id": self.run_id,
+                    "bindings": self._typography_references.bindings,
+                },
+            )
+            self.record(
+                "review", "web_typography_reference_set",
+                output_summary=report["status"], payload=report,
+            )
+            return json.dumps({"status": "registered", "typography_references": report}, indent=2)
+
+    def _review_evidence_report(self) -> JsonObject:
+        def describe(target: str, path: str | None) -> JsonObject:
+            return self._review_observations.image_report(
+                page_id=self.page_id, version=self._doc_version,
+                preview_version=self._preview_doc_version, iteration=self._preview_iteration,
+                target=target, path=path,
+            )
+
+        previews = {str(width): describe(f"preview:{width}", self._preview_by_width.get(width))
+                    for width in _PREVIEW_WIDTHS}
+        states = {str(index): {**copy.deepcopy(capture),
+                              **describe(f"state:{index}", capture.get("path"))}
+                  for index, capture in enumerate(self._state_captures)}
+        gaps = [{"code": "review.unseen_pixels", "target": row["target"],
+                 "status": row["status"], "next_target": row.get("next_target")}
+                for row in [*previews.values(), *states.values()]
+                if not row["readable_coverage_complete"]]
+        walk = self._review_observations.walk_report(
+            self.page_id, self._doc_version, bool(self._fragment_ids()),
+        )
+        if walk["status"] == "failed":
+            gaps.append({"code": "review.clone_walk_failed", "error_code": walk.get("error_code")})
+        elif walk["status"] not in {"current", "not_applicable"}:
+            gaps.append({"code": "review.clone_walk_missing_or_stale"})
+        if walk["status"] == "current":
+            if walk.get("advice_available") is False:
+                gaps.append({"code": "review.advice_unavailable"})
+            if walk.get("evidence_settled") is not True:
+                gaps.append({"code": "review.walk_unsettled"})
+            if walk.get("unobserved_capture_classes"):
+                gaps.append({"code": "review.capture_classes_unobserved"})
+            comparison = walk.get("comparison") or {}
+            if walk.get("reference_unavailable") or comparison.get("status") != "ok":
+                gaps.append({"code": "review.source_comparison_unavailable",
+                             "because": walk.get("reference_unavailable") or comparison.get("because")})
+            elif not comparison.get("bands") or comparison.get("skipped"):
+                gaps.append({"code": "review.source_bands_uncompared"})
+        if not self._preview_media_ready or self._preview_doc_version != self._doc_version:
+            gaps.append({"code": "review.preview_unsettled"})
+        limits = self._state_capture_limits
+        if limits.get("page_id") == self.page_id and limits.get("version") == self._doc_version:
+            if limits.get("error") or limits.get("omitted") or limits.get("failures"):
+                gaps.append({"code": "review.state_capture_incomplete"})
+        else:
+            limits = {}
+        typography = self._typography_report()
+        if typography["status"] not in {"matched", "not_declared"}:
+            gaps.append({"code": "review.typography_reference_" + typography["status"]})
+        if typography["coverage"]["status"] == "incomplete":
+            gaps.append({"code": "review.typography_coverage_incomplete"})
+        return {
+            "schema_version": 1, "scope": "active_page_current_turn",
+            "page_id": self.page_id, "document_id": self.web_doc.get("id"),
+            "local_document_version": self._doc_version, "persisted_revision_checked": False,
+            "status": "incomplete" if gaps else "observations_recorded",
+            "quality_verdict": "not_computed", "previews": previews, "states": states,
+            "preview_media_readiness": copy.deepcopy(self._preview_media_readiness),
+            "clone_review": walk, "state_capture_limits": limits, "gaps": gaps,
+            "typography_references": typography,
+            "consulted_source_behavior": copy.deepcopy(self._review_observations.sources),
+            "note": "Records pixels returned by view, not attention, aesthetic approval or all "
+                    "required interactions. Consulted sources may have been discarded; reconcile "
+                    "any reused behavior with the brief. Scope an edit verdict to its changed regions.",
+        }
 
     def _asset_id_menu(self) -> str:
         """The ids an `asset:` target can name, by source — what an unknown id
@@ -9768,15 +10891,19 @@ class LumenWebTools:
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="asset_viewed"
         )
+        # The shown image and alpha facts must describe the same file read.
+        raw = path.read_bytes()
         return [
             _text_block(_image_observation_label(
                 path, f"view: asset {asset_id} — {label} ({', '.join(details)})",
                 source_mime=(record.get("media") or {}).get("mime_type"),
+                raw=raw,
             )),
             # G5 (see the preview branch): every web view image rides the
             # many-image ceiling, kit assets included — they accumulate in the
             # same conversation as the page captures.
-            _image_block(path, max_px=_VISION_MANY_IMAGE_MAX_PX),
+            _image_bytes_block(raw, max_px=_VISION_MANY_IMAGE_MAX_PX),
+            *_asset_alpha_inspection_blocks(raw, report_opaque=True),
         ]
 
     def _view_state(self, target: str) -> list:
@@ -9784,7 +10911,13 @@ class LumenWebTools:
         STATE capture (0-based) from the latest render, as [text, image] blocks.
         An unparseable or out-of-range index returns an honest text-only error
         naming how many captures exist."""
-        index_str = target[len("state:") :]
+        parts = target[len("state:") :].split(":")
+        index_str = parts[0]
+        tile_index = None
+        if len(parts) != 1:
+            if len(parts) != 3 or parts[1] != "tile" or re.fullmatch(r"0|[1-9][0-9]{0,8}", parts[2]) is None:
+                return [_text_block("view: invalid state tile. Use state:<n>:tile:<index>.")]
+            tile_index = int(parts[2])
         try:
             index = int(index_str)
         except ValueError:
@@ -9818,6 +10951,9 @@ class LumenWebTools:
                     f"{len(captures)} state capture(s) (0..{len(captures) - 1})."
                 )
             ]
+        if self._preview_doc_version is not None and self._doc_version > self._preview_doc_version:
+            return [_text_block("view: state capture is STALE. The document changed after this render; "
+                                "the orchestrator must render again before reviewing it.")]
         capture = captures[index]
         path = capture.get("path")
         if not path or not Path(path).exists():
@@ -9825,12 +10961,17 @@ class LumenWebTools:
                 "agent", "web_view_called", input_summary=target, output_summary="state_missing_file"
             )
             return [_text_block(f"view: state capture {index} has no readable screenshot.")]
+        if tile_index is not None:
+            return self._view_preview_tile(
+                int(capture.get("width") or 0), Path(path), tile_index, target,
+                source_target=f"state:{index}",
+            )
         node = capture.get("node_id")
         node_note = f" node {node}" if node else ""
         self.record(
             "agent", "web_view_called", input_summary=target, output_summary="blocks=2"
         )
-        return [
+        blocks = [
             _text_block(_image_observation_label(
                 Path(path), f"view: state capture {index} — {capture.get('kind')}"
                 f"{node_note} at {capture.get('width')}px"
@@ -9839,6 +10980,8 @@ class LumenWebTools:
             # capture rides the identical accumulating request.
             _image_block(Path(path), max_px=_VISION_MANY_IMAGE_MAX_PX),
         ]
+        self._record_review_image(f"state:{index}", Path(path))
+        return blocks
 
     def finalize_web_run(
         self, outcome: str, summary: str, ladder_gap: Optional[str] = None
@@ -9852,13 +10995,34 @@ class LumenWebTools:
         carousel, a tabbed panel, a filterable grid you had to approximate or
         omit). When present, it is recorded to final.json AND emitted as a
         dedicated `ladder_gap` trace event so the demand for new components is
-        measurable across runs. Leave it None when the catalogue sufficed."""
+        measurable across runs. Leave it None when the catalogue sufficed.
+        An accepted outcome is downgraded to completed_with_warnings when authored text lacks
+        captured-role coverage or declared typography references mismatch/lack current measurements.
+        Inspect view("review") for exact missing nodes/roles. The draft is still
+        saved; this never launches a repair or provider call automatically."""
         valid = {"accepted", "completed_with_warnings", "failed"}
         if outcome not in valid:
             return self._tool_error(
                 "finalize.bad_outcome",
                 f"outcome must be one of {sorted(valid)}; got {outcome!r}.",
             )
+        requested_outcome = outcome
+        review_evidence = self._review_evidence_report()
+        typography_status = review_evidence["typography_references"]["status"]
+        if typography_status not in {"not_declared", "matched"}:
+            if outcome == "accepted":
+                outcome = "completed_with_warnings"
+            summary = (
+                f"{summary.rstrip()} Typography reference checks remain {typography_status}; "
+                "the selected type roles are not verified."
+            ).strip()
+        if review_evidence["typography_references"]["coverage"]["status"] == "incomplete":
+            if outcome == "accepted":
+                outcome = "completed_with_warnings"
+            summary = (
+                f"{summary.rstrip()} Authored typography coverage is incomplete; "
+                "some text roles or fragment provenance remain unverified."
+            ).strip()
         # The turn is ending on every valid outcome — release the kept-alive
         # browser so no Playwright process outlives the run, then retire the
         # render thread (its worker is non-daemon; left alive it would block
@@ -9882,6 +11046,7 @@ class LumenWebTools:
         payload: JsonObject = {
             "outcome": outcome,
             "summary": summary,
+            "review_evidence": review_evidence,
             "grounding_source_count": len(grounding["sources"]),
             "provenance_citation_count": len(grounding["citations"]),
             # Informational only — what this site ended up being. NO gate reads
@@ -9891,6 +11056,8 @@ class LumenWebTools:
                 for page in self._page_listing()
             ],
         }
+        if requested_outcome != outcome:
+            payload["requested_outcome"] = requested_outcome
         if gap:
             payload["ladder_gap"] = gap
             payload["ladder_gaps"] = gaps
@@ -9931,14 +11098,22 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     must not tell those roles to call render_web_preview (orchestrator-only).
 
     target="preview:1440"|"preview:768"|"preview:375" returns the latest
-    screenshot of that width as [text, image] blocks; "state:<n>" returns the
+    screenshot of that width as [text, image] blocks; "preview:<width>:tile:<n>"
+    returns one readable, zero-based strip of the same saved screenshot with
+    source/version/crop and coverage metadata, without rendering again;
+    "state:<n>" returns the
     nth interactive STATE capture (dialog opened / accordion expanded) from the
-    latest render; "asset:<asset_id>" returns that asset's preview image (from
+    latest render; "state:<n>:tile:<index>" reads a strip of that state capture.
+    "review" returns cumulative current-turn observation coverage and unresolved
+    evidence gaps, not an acceptance verdict; "asset:<asset_id>" returns that asset's preview image (from
     the document's own registry, the kit manifest, or the workspace library);
     "cloned_section:<fragment_id>" returns the picture of a cloned section
     `search_cloned_sections` returned (F2.3); "doc" returns a compact
-    section/asset summary; "brand" returns the brand card; "account" returns the
-    target account card (P5).
+    section/asset summary; "node:<node_id>" returns one complete canonical node,
+    parent/child IDs and explicitly local snapshot identity from the active page.
+    It reads this turn's in-memory document, not the latest persisted revision;
+    oversized/ambiguous/missing nodes return a refusal, never partial props.
+    "brand" returns the brand card; "account" returns the target account card (P5).
     Mirrors tools/view.make_view_tool: any failure inside returns an honest error
     STRING so a bad/unreadable image can never kill the turn unfinalized."""
     from langchain_core.tools import tool
@@ -9948,17 +11123,60 @@ def make_web_view_tool(tools: LumenWebTools, can_render: bool = True):
     def view(target: str) -> list:
         """Look at the page. target="preview:1440" / "preview:768" /
         "preview:375" returns the latest rendered screenshot at that width;
+        "preview:<width>:tile:<n>" returns one readable strip of that saved
+        screenshot (zero-based n; 1200px high, 100px overlap).
+        "layout:<1440|768|375>" returns a bounded section/fragment measurement index
+        from the same saved preview; "layout:<width>:node:<id>" returns one node's
+        computed typography, text/container boxes, image sizing/crop rules and three
+        ancestors' padding/backgrounds. Parent/ancestor container IDs resolve in
+        that node's containers map. It does not render again. Use it to diagnose
+        a type mismatch, tall empty container or hidden product before editing.
+        Bounds/omissions are explicit; rendered paths are NOT stored text-edit paths.
+        Computed font-family does not prove the actual glyph face; pixels and baked
+        image backgrounds are unclassified. Compare asset pixels and source evidence.
+        Stale/wrong-page measurements refuse, and none is an aesthetic verdict.
+        "typography:node:<id>" combines that node's measured text faces, weights, sizes,
+        line heights, tracking and alignment across 1440/768/375 into one bounded read.
+        Use the source node ID from the layout index before composing a sibling section;
+        each reference_path is ready for set_web_typography_reference after you choose
+        the equivalent target role. Follow next_target for more than eight captured paths.
+        Missing glyph evidence and capture omissions stay explicit. This read neither
+        freezes references nor infers responsive CSS or establishes source provenance.
+        Use tile:0 then
+        coverage.next_target to inspect tall/mobile pages. JSON reports source
+        hash/dimensions/render version, crop, tile count and other tile ranges
+        not shown by THIS call. "review" aggregates observations from this turn
+        by page/version/render/image hash and reports unseen/stale evidence,
+        clone-review comparison limits and consulted source behavior. It records
+        pixels delivered, not attention or aesthetic/interaction acceptance.
+        For scoped edits, judge the affected regions; full-page gaps alone do not
+        mandate regenerating unrelated content. A tile crops BEFORE image normalization,
+        never renders/writes, and uses the same stale-preview guards. This is a
+        static full-page crop, not a new viewport/scroll/interaction observation;
         "state:<n>" returns the nth interactive STATE capture (0-based: a dialog
-        opened or accordions expanded) from the latest render;
+        opened or accordions expanded) from the latest render; "state:<n>:tile:<i>"
+        reads a readable strip of that capture with the same stale guards.
+        State captures sample supported interactions, not every panel or behavior;
         "asset:<asset_id>" returns that asset's preview image with its SOURCE
         pixel dimensions (a brand kit asset, a `search_assets` library result, or
-        one already registered in the document);
+        one already registered in the document), decoded preview alpha counts/bounds
+        and a light/dark inspection comparison when non-opaque. Those artificial
+        surfaces are not placement assets. Alpha alone does not distinguish a baked
+        background from product-only artwork; preview facts do not prove original
+        pixels and alpha bounds are not a crop recommendation;
         "cloned_section:<fragment_id>" returns the picture of a cloned section
         `search_cloned_sections` returned, so you can see the band before
-        reusing it; "doc" returns a section + asset
-        summary; "brand" returns the brand card; "account" returns the target
-        account card. Returns image content so you judge by looking, not
-        guessing."""
+        reusing it; "doc" returns a section/count/asset summary.
+        "node:<node_id>" returns JSON for ONE exact active-page node: its full
+        flattened canonical fields (including rich text, slots and overrides),
+        parent/child IDs, document/page/run IDs and local_document_version.
+        This is current_turn_in_memory, never a checked persisted revision.
+        A successful result has complete=true; missing/ambiguous or oversized
+        snapshots return complete=false with no partial node. The JSON response
+        is bounded to 64 KiB UTF-8. Follow child IDs to inspect another node;
+        subtrees, asset bytes and library source are not expanded.
+        "brand" returns the brand card; "account" returns the target account
+        card. Images return image content so you judge by looking, not guessing."""
         try:
             with log_span("tool_web_view", logger=logger, target=target):
                 return tools._view_content(target, can_render=can_render)

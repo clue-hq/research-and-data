@@ -6,12 +6,12 @@ confidently wrong answer. They are regression pins, not coverage.
 
 from __future__ import annotations
 
+import asyncio
 import io
 
+import httpx
 import pytest
-
 from lumen_ingestion import logo_ladder as ladder
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -947,3 +947,128 @@ def test_company_tokens_read_the_organisation_label():
     assert {"goodman", "campbell"} <= ladder.company_tokens(
         "goodmancampbell.com", "Goodman Campbell Brain and Spine"
     )
+
+
+# ---------------------------------------------------------------------------
+# optional brand pages must not discard logos harvested from a successful page
+# ---------------------------------------------------------------------------
+
+
+def _fetch_static_site(monkeypatch, responses, requested):
+    """Keep the real fetcher and SSRF guard; substitute DNS and HTTP transport only."""
+    from lumen_ingestion.capture import net
+
+    async def public_dns(host, port):
+        return ["93.184.216.34"]
+
+    def respond(request):
+        url = str(request.url)
+        requested.append(url)
+        response = responses.get(url, httpx.Response(404))
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            return await ladder.fetch_logo_family(
+                "https://acme.com/", company_name="Acme Robotics", client=client,
+            )
+
+    monkeypatch.setattr(net, "_resolve_all", public_dns)
+    return asyncio.run(run())
+
+
+@pytest.mark.parametrize("redirected", [False, True])
+@pytest.mark.parametrize("optional_failure", ["not_found", "timeout"])
+def test_homepage_logo_survives_optional_page_fetch_failures(
+    monkeypatch, redirected, optional_failure,
+):
+    logo_url = "https://assets.example.net/acme-logo.svg"
+    final_url = "https://acme.com/overview/default.aspx" if redirected else "https://acme.com/"
+    responses = {
+        final_url: httpx.Response(200, text=(
+            '<title>Acme Robotics</title><header><a href="/">'
+            '<img src="//assets.example.net/acme-logo.svg" alt="Acme Robotics">'
+            '</a></header>'
+        )),
+        logo_url: httpx.Response(
+            200, content=_wordmark_svg(), headers={"content-type": "image/svg+xml"},
+        ),
+    }
+    if redirected:
+        responses["https://acme.com/"] = httpx.Response(
+            302, headers={"location": "/overview/default.aspx"},
+        )
+    if optional_failure == "timeout":
+        responses["https://acme.com/brand"] = httpx.ReadTimeout("fixture " * 1000)
+    requested = []
+
+    result = _fetch_static_site(monkeypatch, responses, requested)
+
+    assert result.status == "resolved"
+    assert result.slots["light"].candidate.url == logo_url
+    assert result.slots["light"].body == _wordmark_svg()
+    assert "https://acme.com/press" in requested
+    notes = [note for note in result.notes if "optional brand page" in note]
+    assert len(notes) == 2
+    assert all(len(note) <= 240 for note in notes)
+    assert all("fixture" not in note for note in notes)
+
+
+def test_later_optional_page_can_supply_a_logo_after_an_earlier_404(monkeypatch):
+    requested = []
+    result = _fetch_static_site(monkeypatch, {
+        "https://acme.com/": httpx.Response(200, text="<title>Acme Robotics</title>"),
+        "https://acme.com/press": httpx.Response(200, text=(
+            '<header><img src="/acme-logo.svg" alt="Acme Robotics"></header>'
+        )),
+        "https://acme.com/acme-logo.svg": httpx.Response(
+            200, content=_wordmark_svg(), headers={"content-type": "image/svg+xml"},
+        ),
+    }, requested)
+
+    assert result.status == "resolved"
+    assert result.slots["light"].candidate.url == "https://acme.com/acme-logo.svg"
+    assert result.slots["light"].candidate.rung == "BRAND_PAGE"
+    assert requested.index("https://acme.com/brand") < requested.index("https://acme.com/press")
+
+
+def test_initial_page_failure_still_aborts_logo_discovery(monkeypatch):
+    from lumen_ingestion.capture.net import CaptureError
+
+    requested = []
+    with pytest.raises(CaptureError) as failure:
+        _fetch_static_site(monkeypatch, {}, requested)
+
+    assert failure.value.code == "LUMI0503"
+    assert requested == ["https://acme.com/"]
+
+
+def test_optional_page_redirect_to_private_address_still_fails_closed(monkeypatch):
+    from lumen_ingestion.capture.net import CaptureError
+
+    requested = []
+    with pytest.raises(CaptureError) as failure:
+        _fetch_static_site(monkeypatch, {
+            "https://acme.com/": httpx.Response(200, text="<title>Acme Robotics</title>"),
+            "https://acme.com/brand": httpx.Response(
+                302, headers={"location": "http://127.0.0.1/internal"},
+            ),
+        }, requested)
+
+    assert failure.value.code == "LUMI0501"
+    assert requested == ["https://acme.com/", "https://acme.com/brand"]
+
+
+def test_optional_page_size_limit_still_fails_closed(monkeypatch):
+    from lumen_ingestion.capture import net
+
+    monkeypatch.setattr(net, "PAGE_MAX_BYTES", 100)
+    with pytest.raises(net.CaptureError) as failure:
+        _fetch_static_site(monkeypatch, {
+            "https://acme.com/": httpx.Response(200, text="<title>Acme Robotics</title>"),
+            "https://acme.com/brand": httpx.Response(200, content=b"x" * 101),
+        }, [])
+
+    assert failure.value.code == "LUMI0507"

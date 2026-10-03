@@ -959,3 +959,25 @@ def test_ingest_failure_diagnostics_are_capped_and_then_summarized() -> None:
     assert len(summary) == 1, summary
     assert summary[0]["context"] == "summary"
     assert "more" in summary[0]["message"]
+
+
+def test_captured_video_is_not_sent_to_image_ingestion() -> None:
+    import hashlib
+
+    from lumen_ingestion.capture.snapshot import Download
+
+    outcome = _capture()
+    media = b"\x1a\x45\xdf\xa3original-background-video"
+    outcome.snapshot.downloads.append(
+        Download(
+            url=BASE + "original-background.webm",
+            kind="video",
+            content_type="video/webm",
+            bytes_b64=base64.b64encode(media).decode(),
+            sha256=hashlib.sha256(media).hexdigest(),
+            origin="video",
+        )
+    )
+    _, core = _evidence(outcome)
+    assert core.calls  # Images/fonts still go through their existing ingest path.
+    assert not any("original-background" in call.get("filename", "") for call in core.calls)

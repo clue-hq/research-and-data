@@ -12,7 +12,7 @@ use crate::doc::{
     calendly_url_is_valid, fragment_wrapper_class, ButtonAction, ComponentSpec, EmbedProvider,
     MarqueeDirection, WebBackgroundImage, WebDoc, WebNode, WebNodeKind,
 };
-use crate::runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS};
+use crate::runtime::{PLATFORM_CSS, PLATFORM_RUNTIME_JS, TABS_CSS};
 use crate::theme::WebTheme;
 use crate::util::{escape_attr, escape_text};
 use lumen_core::{Diagnostic, DiagnosticSubject, NodeId, PageId, Phase};
@@ -82,6 +82,31 @@ pub struct FragmentContent {
     /// plus a diagnostic.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub slot_kinds: BTreeMap<String, FragmentSlotKind>,
+    /// Artifact-bound platform dependencies, never inferred from captured classes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_dependencies: Option<NativeFragmentDependencies>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeFragmentDependencies {
+    pub version: u32,
+    pub platform_runtime: u32,
+    pub tabs: Vec<NativeFragmentTabs>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeFragmentTabs {
+    pub root_id: String,
+    pub items: Vec<NativeFragmentTabItem>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeFragmentTabItem {
+    pub tab_id: String,
+    pub panel_id: String,
 }
 
 /// What one fragment slot holds, from the artifact's slot manifest. The Python
@@ -274,7 +299,13 @@ pub fn render_page(
 
     let editor = options.mode == RenderMode::Editor;
     let uses_components = page_uses_components(doc, page_id);
-    let needs_runtime = page_needs_runtime(doc, page_id);
+    let native_tabs = page_fragment_ids(doc, page_id).iter().any(|id| {
+        options
+            .fragments
+            .get(id)
+            .is_some_and(|f| f.native_dependencies.is_some())
+    });
+    let needs_runtime = page_needs_runtime(doc, page_id) || native_tabs;
     let mut html = String::with_capacity(body.len() + theme.base_css.len() + 2048);
     html.push_str("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n");
     html.push_str("<meta charset=\"utf-8\">\n");
@@ -318,6 +349,9 @@ pub fn render_page(
     // custom-component placeholder, or embed.
     if uses_components {
         html.push_str(&format!("<style>\n{PLATFORM_CSS}\n</style>\n"));
+    }
+    if uses_components || native_tabs {
+        html.push_str(&format!("<style>\n{TABS_CSS}\n</style>\n"));
     }
     // The document's own CSS, AFTER the theme block — which since F1.3 ends with the fragment
     // sheet. So at equal specificity `custom_css` beats a cloned section's rule, and that is the
@@ -519,6 +553,7 @@ fn render_node(
                 out.push_str(&format!(" command=\"{}\"", command.as_html_attr()));
                 node_attr(out);
                 class_attr(out);
+                out.push_str(" data-lumen-command=\"true\"");
                 out.push('>');
                 out.push_str(label);
                 out.push_str("</button>");
@@ -539,7 +574,7 @@ fn render_node(
                 // Platform-owned close control: render-supplied, not a node
                 // (so it carries no data-node-id and is never selectable).
                 out.push_str(&format!(
-                    "<button type=\"button\" class=\"lumen-dialog-close\" commandfor=\"{}\" command=\"close\" aria-label=\"Close\">&#215;</button>",
+                    "<button type=\"button\" data-lumen-command=\"true\" class=\"lumen-dialog-close\" commandfor=\"{}\" command=\"close\" aria-label=\"Close\">&#215;</button>",
                     escape_attr(node.id.as_str())
                 ));
                 for child in &node.children {
@@ -679,6 +714,7 @@ fn render_node(
                 if let Some(seconds) = autoplay_s {
                     out.push_str(&format!(" data-autoplay-s=\"{seconds}\""));
                 }
+                out.push_str(" data-lumen-carousel=\"true\"");
                 node_attr(out);
                 out.push('>');
                 out.push_str("<div class=\"lumen-carousel-track\">");
@@ -791,7 +827,9 @@ fn render_node(
                         .message
                         .as_deref()
                         .unwrap_or("The pinned artifact is unavailable.");
-                    out.push_str("<div class=\"lumen-custom-component-unavailable\" role=\"status\">");
+                    out.push_str(
+                        "<div class=\"lumen-custom-component-unavailable\" role=\"status\">",
+                    );
                     out.push_str("<span>Custom component unavailable</span>");
                     out.push_str(&format!("<strong>{}</strong>", escape_text(slug)));
                     out.push_str(&format!("<small>{}</small>", escape_text(message)));
@@ -988,6 +1026,10 @@ fn render_node(
                 out.push_str(&escape_attr(node.classes.trim()));
             }
             out.push('"');
+            // Semantic CSS boundary in both modes, only for resolved artifacts.
+            // Unlike an authored class, this cannot accidentally turn a native
+            // container or missing-pin placeholder into source-owned markup.
+            out.push_str(" data-lumen-fragment=\"true\"");
             node_attr(out);
             // Slice 2 / R-A1: the bridge has to tell a clone ROOT from an ordinary
             // vocabulary node, because everything INSIDE this wrapper is the artifact's
@@ -1017,12 +1059,37 @@ fn render_node(
             // because the markup the editor measured the path against is the
             // rendered markup, not the stored artifact. Both passes are
             // identity functions when nothing is bound.
-            out.push_str(&crate::fragment::apply_fragment_text_overrides(
+            let personalized = crate::fragment::apply_fragment_text_overrides(
                 &substituted,
                 text_overrides,
                 &node.id,
                 diagnostics,
-            ));
+            );
+            if let Some(dependencies) = &content.native_dependencies {
+                let result = if suppress_node_ids {
+                    Err("native fragments cannot be duplicated inside a nav or marquee".to_owned())
+                } else {
+                    crate::fragment::instantiate_native_fragment(
+                        &personalized,
+                        dependencies,
+                        &node.id,
+                    )
+                };
+                match result {
+                    Ok(html) => out.push_str(&html),
+                    Err(message) => {
+                        out.push_str("<span role=\"status\">Native section unavailable</span>");
+                        diagnostics.push(Diagnostic::error(
+                            Phase::Web,
+                            "LUMW0445",
+                            message,
+                            Some(DiagnosticSubject::Node(node.id.clone())),
+                        ));
+                    }
+                }
+            } else {
+                out.push_str(&personalized);
+            }
             out.push_str("</div>");
         }
         WebNodeKind::Embed {
@@ -1224,6 +1291,10 @@ fn render_tabs(
         out.push_str(&escape_attr(node.classes.trim()));
     }
     out.push('"');
+    out.push_str(&format!(
+        " id=\"lumen-tabs-{}\" data-lumen-tabs=\"true\"",
+        escape_attr(node.id.as_str())
+    ));
     if editor && !suppress_node_ids {
         out.push_str(&format!(
             " data-node-id=\"{}\"",
@@ -1670,6 +1741,7 @@ mod tests {
             FragmentContent {
                 html: FRAGMENT_HTML.to_owned(),
                 slot_kinds,
+                native_dependencies: None,
             },
         );
         options
@@ -1818,7 +1890,7 @@ mod tests {
         assert!(
             editor.html.contains(
                 "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\" \
-                 data-node-id=\"frg_hero\" data-fragment-root=\"true\">"
+                 data-lumen-fragment=\"true\" data-node-id=\"frg_hero\" data-fragment-root=\"true\">"
             ),
             "{}",
             editor.html
@@ -1838,7 +1910,7 @@ mod tests {
         )
         .expect("delivery render");
         assert!(delivery.html.contains(
-            "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\">"
+            "<div class=\"lumen-fragment lumen-frag-0123456789abcdef w-full py-12\" data-lumen-fragment=\"true\">"
         ));
         assert!(delivery.html.contains(FRAGMENT_HTML));
         assert!(!delivery.html.contains("data-node-id"));
@@ -1948,6 +2020,7 @@ mod tests {
             FragmentContent {
                 html: FRAGMENT_HTML.to_owned(),
                 slot_kinds: BTreeMap::new(),
+                native_dependencies: None,
             },
         );
         let output = render_page(&doc, &PageId::from("home"), &theme, &options).expect("render");
