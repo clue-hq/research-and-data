@@ -40,3 +40,25 @@
   the runbook's public URL).
 - Owed: runbook §2 step 7 must list RAILWAY_DOCKERFILE_PATH; check_prod_env must know the metrics and
   Sumble rules; push branch deploy/page-origin-after-migrate; VM (§4) not started; founder sign-in walk.
+
+## 2026-10-03 ~09:30 UTC — VM live; onboarding findings
+- VM (OVH, 40.160.37.148): bootstrap needed a fix (UID 1000 is `ubuntu` on OVH's image → clue is
+  1001; PR #87). Env files filled from Railway by a script (no values printed), boot-checked locally
+  per pool, installed 0600; `deploy.sh 0f362f9f8…` → pgbouncer, chat, design, batch1-3, ingestion up.
+- Onboarding jobs queued at 08:30 were picked up at 09:04 (no workers before). Website brand kit:
+  ~17 min of work, ~7.5 of it the brand brief (x-ai/grok-4.7, medium reasoning, screenshots,
+  ToolStrategy re-asks) — knobs LUMEN_INGESTION_BRIEF_MODEL / _REASONING.
+- ad_assets job FAILED: Adyntel HTTP 402 "Insufficient tokens" → founder to top up, then Try again.
+  The setup screen keeps spinning "Creating brand kit" on a failed ad_assets job (UI gap: should show
+  "hit a problem" like the research steps).
+- Sentry 7770166418: agent turns (onboarding ICP step; also chat turns and design jobs) failed —
+  LangGraph saver.setup() runs CREATE TABLE IF NOT EXISTS in public as clue_worker → permission
+  denied. FIX A (applied 09:3x, founder-approved): `GRANT CREATE ON SCHEMA public TO clue_worker`;
+  setup() run once as clue_worker (async + sync savers) → checkpoint tables exist, migration v9.
+- TODO B (follow-up PR): create the LangGraph checkpoint tables in an Alembic migration (owner), make
+  agent_execution_wiring / entity_research_runtime_wiring / lumen_api.fleet_handler skip setup() when
+  checkpoint_migrations is current, then `REVOKE CREATE ON SCHEMA public FROM clue_worker`.
+- TODO: ingestion pool installs no Sentry/OTel/Langfuse (lumen_api.ingestion_pool main() only calls
+  setup()); its spend IS on provider_call_ledger. Add the production installers (service
+  clue-ingestion-pool).
+- Langfuse MCP in this workspace is attached to the DEV project (lane environments), not production.
