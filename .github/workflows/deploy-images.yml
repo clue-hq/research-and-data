@@ -83,6 +83,8 @@ jobs:
       # Railway's platform-api and design-api run the image just tagged (their source is
       # ghcr.io/clue-hq/clue-backend:production); they never build it themselves. platform-api goes
       # first: its pre-deploy `clue migrate` brings the schema to head before design-api starts.
+      # page-origin builds from main on Railway, which can finish before the migration and then fail
+      # on a missing table (2026-10-03); redeploying it last puts it on the migrated schema.
       - name: Redeploy the Railway backends from the image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
@@ -91,3 +93,4 @@ jobs:
           npm install -g @railway/cli@5.63.1
           deploy/railway_redeploy.sh platform-api
           deploy/railway_redeploy.sh design-api
+          deploy/railway_redeploy.sh page-origin

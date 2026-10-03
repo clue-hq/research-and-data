@@ -233,8 +233,9 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 2. The merge's own `deploy-images` run repeats every check and only then moves the `production` tags.
    It must be green.
 3. That run then redeploys `platform-api` from the new image and waits until it is live — its
-   pre-deploy `clue migrate` runs `alembic upgrade head` once — and then `design-api`. `page-origin`
-   and the frontend rebuild from `main` on Railway as before.
+   pre-deploy `clue migrate` runs `alembic upgrade head` once — and then `design-api`, then
+   `page-origin` (which also builds from `main` on its own and can fail before the migration lands;
+   this redeploy puts it on the migrated schema). The frontend rebuilds from `main` as before.
 4. **Only after Railway is green**, on the VM as `clue`:
    `/srv/clue/app/deploy/vm/deploy.sh <sha>` — it refuses if the database is not at head.
 5. Uptime checks (Better Stack or UptimeRobot free tier) on `https://app.cluehq.ai`,
