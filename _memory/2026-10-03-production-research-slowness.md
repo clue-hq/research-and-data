@@ -178,3 +178,32 @@ bytes first, then do the short DB transaction; (3) narrow the project-wide
 `agent-project-artifacts` lock (it exists to serialise against project erasure; a per-artifact or
 shared/exclusive scheme would let writers run in parallel); (4) revisit the single-connection
 `_db_lock` once R2 is out of the critical sections; (5) claim import concurrency.
+
+## McKee's failure (16:32 UTC) — not slowness, a finalize ordering bug
+
+Job `20ea09fe…` ended `needs_review`, `failure_code=workspace_conflict`, after 74 model calls,
+215 tool calls and $7.97. Chain, from the worker log and code:
+1. 15:36 and 15:44 — five `search_evidence` calls failed (bad source reference; the refusal itself
+   is correct). The earlier note called these harmless; they were not.
+2. 16:26:21 — `finalize_turn` refused: called in the same batch as other tools.
+3. 16:26:49 — `finalize_turn` refused: "Unresolved failed tool attempts remain:
+   agent_search_evidence_… (5). Correct using retry_of, or finalize with an honest blocked status."
+   That check lives in `agent_execution_wiring.py` `finalize()` (~line 2101) and runs **after**
+   `agent_runtime_wiring.py` `finalize_turn` has already run the completion guard (wrote
+   `outputs/research.json`) and `snapshot_outputs(empty_after=True)` (~line 1348), which freezes
+   and empties `outputs/` and sets `_outputs_snapshotted`.
+4. 16:30–16:31 — the agent repaired all five (`agent.tool_recovered` ×5), as told.
+5. 16:32:32 — the next `finalize_turn` ran the completion guard
+   (`quality_research_wiring.py:~1045`), which writes `outputs/research.json` again →
+   `WorkspaceConflict("snapshotted outputs are immutable")` (`clue_agents/workspace.py:583`) →
+   `agent.runtime_failed` → job contained as `workspace_conflict`.
+
+So any refusal raised after the snapshot makes the very repair it asks for impossible. Fix: run
+every refusable check (unresolved failures, batch rule) before the completion guard and the
+snapshot, or don't snapshot until nothing can refuse. Claims were already imported
+(`quality_state: provisional`, 35 qualified), so the research is not lost — the job just never
+completed.
+
+The 317 s transaction on `UPDATE artifact SET expires_at` is from `arv2/media_store.py:284`
+(`subjects`, person-job media). Not yet explained: the media download itself runs outside the
+transaction, so it was most likely waiting on a lock held by another job. Unconfirmed.
