@@ -111,8 +111,14 @@ fetch images through the frontend's narrow public proxy
    needs your own OAuth credentials; email-code sign-up needs bot protection off and email
    verification by code on (as on the development instance).
 5. **Shared Variables** (Project Settings): fill every `<FILL>` in `1-shared-secrets.env`, paste it.
-6. Three services from this repo, branch **`main`**; paste each one's file into Variables → Raw
-   Editor, then:
+6. Three services; paste each one's file into Variables → Raw Editor. **`platform-api` and `design-api`
+   run the image CI built and tested** — they never build it themselves (2026-10-03): Settings → Source →
+   Docker image `ghcr.io/clue-hq/clue-backend:production`, and under **Registry Credentials** a GitHub
+   personal access token (classic) with only `read:packages`. Their `RAILWAY_DOCKERFILE_PATH` line is
+   then unused. `deploy-images` redeploys them after moving the `production` tags
+   (`deploy/railway_redeploy.sh`, `platform-api` first), using the repository secret
+   **`RAILWAY_TOKEN`**: a Railway project token for this project's production environment.
+   `page-origin` builds from this repo, branch **`main`**. Then:
    - `platform-api` — start command `clue platform-api`, **pre-deploy command `clue migrate`** (the
      only place migrations run), memory 1 GB, health check `/healthz`, domain `api.cluehq.ai`
      (Cloudflare CNAME, **DNS only**). Add the zone id and Cloudflare token references once Part C
@@ -216,12 +222,19 @@ OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is d
 Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 
 ## 6. First ship
-1. Open a pull request from `research-streaming` into `main` and merge it [FOUNDER]. (The first one
-   merges cleanly — checked 2026-10-01.)
-2. Watch the `deploy-images` workflow: it builds both images, checks the engine handshake, runs the
-   static and boot smoke tests, and only then moves the `production` tags. It must be green.
-3. Railway rebuilds and redeploys from `main`; `platform-api`'s pre-deploy `clue migrate` runs
-   `alembic upgrade head` once.
+0. **Before pushing any change to the images** (`docker/`, `pyproject.toml`/`uv.lock`, the
+   `deploy-images` workflow): run `docker/backend/local_gate.sh` from the repository root. It refuses
+   to build with under 15 GB of Docker disk free, builds both images, and runs `smoke.sh` and
+   `boot_smoke.sh` — the checks CI runs — in about 8 minutes cached. CI then confirms on amd64.
+1. Open a pull request from `research-streaming` into `main` [FOUNDER]. Its `deploy-images` run builds
+   both images, checks the engine handshake, and runs the static and boot smoke tests (migrations, both
+   APIs' health, the S3 storage round trip, worker start, the sandbox). **Merge only once that check
+   is green** — merging while it runs is how 2026-10-02's release shipped an image that never built.
+2. The merge's own `deploy-images` run repeats every check and only then moves the `production` tags.
+   It must be green.
+3. That run then redeploys `platform-api` from the new image and waits until it is live — its
+   pre-deploy `clue migrate` runs `alembic upgrade head` once — and then `design-api`. `page-origin`
+   and the frontend rebuild from `main` on Railway as before.
 4. **Only after Railway is green**, on the VM as `clue`:
    `/srv/clue/app/deploy/vm/deploy.sh <sha>` — it refuses if the database is not at head.
 5. Uptime checks (Better Stack or UptimeRobot free tier) on `https://app.cluehq.ai`,
@@ -229,8 +242,9 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
    health check covers it.)
 
 ## 7. Every later ship
-Merge a pull request from `research-streaming` into `main` once staging is tested; wait for
-`deploy-images` and Railway to go green; then `deploy.sh <sha>` on the VM.
+Merge a pull request from `research-streaming` into `main` once staging is tested and the pull
+request's `deploy-images` check is green (image changes: `local_gate.sh` first); wait for the
+merge's `deploy-images` run and Railway to go green; then `deploy.sh <sha>` on the VM.
 
 ## 7a. Known gap — accepted for now, to be closed later
 Railway rebuilds the frontend and the design API separately, so for a minute or two during a deploy
