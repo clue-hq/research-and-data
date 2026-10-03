@@ -231,3 +231,27 @@ first run 9 failures (all pre-existing, reproduced on `1ad82b6be`); after the st
 Residual: the recovery path's `index_transcripts` still uploads under the lock taken by the recovery publish (rare path).
 Not yet proven: end-to-end speedup. Owed — an R2-backed before/after load run against a dev bucket, and the
 post-deploy production measurement against spec §1 success criteria 1–5 (founder triggers the run).
+
+## R2-backed before/after benchmark (2026-10-04, laptop → dev bucket `clue-dev-bench`)
+
+Focused benchmark (not committed; the old `tests/arv2/quality_load_harness.py` is stale — its scripted
+model's tool calls fail on current contracts, every job ends `runtime_error`; repairing it is separate
+work). Same script on base `1ad82b6be` and the branch, each on its own throwaway DB, real Postgres + real
+R2, no model/provider calls: 4 concurrent account jobs in one project, each 40 evidence saves
+(`persist_source`), 10 research-artifact saves (`persist_body`), one 20-finding dossier import.
+Alternated base/branch, two rounds:
+
+| | base r1 / r2 | branch r1 / r2 |
+|---|---|---|
+| wall for the 4 jobs | 193.0 / 187.8 s | 35.0 / 33.1 s (~5.5×) |
+| mean job | 133.8 / 129.6 s | 30.8 / 28.9 s |
+| dossier import | 100.0 / 97.1 s | 8.0 / 7.5 s |
+| evidence saves | 25.5 / 24.7 s | 18.2 / 17.2 s |
+| storage reads | 240 | 84 |
+| lock-wait (sampled waiter-seconds) | 216 / 207 s | 15.5 / 14.5 s |
+
+Per-call R2 latency from the laptop is ~450 ms on a warm connection (≈2× the VM); the shared client
+saves ~90–110 ms per call vs a new client per call (median 562 → 454 ms). Not covered: account+person
+jobs sharing one account's evidence lock, and model time (context growth, cause #4). Production
+confirmation still owed post-deploy. Cleanup: bench objects deleted from the dev bucket, `.env` back
+to `fs`, throwaway DBs dropped.
