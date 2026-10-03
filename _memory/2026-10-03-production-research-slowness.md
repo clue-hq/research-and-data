@@ -228,7 +228,9 @@ Verification: ruff/format/mypy (499 files)/lint-imports (29 kept) clean. Focused
 tests/api/{project_artifact_lock,research_artifacts,agent_turn_wiring,agent_runtime_wiring}_db.py tests/api/test_fleet_wiring.py tests/arv2`):
 first run 9 failures (all pre-existing, reproduced on `1ad82b6be`); after the stale-test fixes **2206 passed, 13 skipped, 0 failed**.
 
-Residual: the recovery path's `index_transcripts` still uploads under the lock taken by the recovery publish (rare path).
+Final review (self-review, 2026-10-04): the plan's "rare recovery path" residual was wrong — `index_transcripts`
+runs after every media tool call and held the account lock across later transcripts' R2 traffic. Fixed in
+`8c1137b11` (prepare all, publish once; RED→GREEN lock-probe test). Deferred minors are in the ledger/final message.
 Not yet proven: end-to-end speedup. Owed — an R2-backed before/after load run against a dev bucket, and the
 post-deploy production measurement against spec §1 success criteria 1–5 (founder triggers the run).
 
