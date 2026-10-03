@@ -80,3 +80,14 @@ jobs:
         run: |
           docker buildx imagetools create -t "$BACKEND:production" "$BACKEND:${{ github.sha }}"
           docker buildx imagetools create -t "$SANDBOX:production" "$SANDBOX:${{ github.sha }}"
+      # Railway's platform-api and design-api run the image just tagged (their source is
+      # ghcr.io/clue-hq/clue-backend:production); they never build it themselves. platform-api goes
+      # first: its pre-deploy `clue migrate` brings the schema to head before design-api starts.
+      - name: Redeploy the Railway backends from the image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          npm install -g @railway/cli@5.63.1
+          deploy/railway_redeploy.sh platform-api
+          deploy/railway_redeploy.sh design-api
