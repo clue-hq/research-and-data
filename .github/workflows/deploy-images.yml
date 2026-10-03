@@ -22,25 +22,14 @@ jobs:
   images:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: clue
-          POSTGRES_PASSWORD: clue
-          POSTGRES_DB: clue
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U clue -d clue"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
     steps:
+      # The backend image (Skia compiled from source, Chromium, the Python environment) does not fit
+      # in the runner's default free disk; drop preinstalled toolchains this job never uses.
+      - name: Free runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/boost
+          df -h /
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -84,10 +73,21 @@ jobs:
         run: docker/backend/smoke.sh "$BACKEND:${{ github.sha }}"
       - name: Boot smoke (every service starts)
         run: |
-          PGPASSWORD=clue psql -h 127.0.0.1 -U clue -d clue -c "CREATE EXTENSION IF NOT EXISTS vector"
+          # Self-contained: starts its own Postgres (pgvector), Redis and an S3 server on a private network.
           docker/backend/boot_smoke.sh "$BACKEND:${{ github.sha }}" "$SANDBOX:${{ github.sha }}"
       - name: Move the production tags (only after every check above passed)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           docker buildx imagetools create -t "$BACKEND:production" "$BACKEND:${{ github.sha }}"
           docker buildx imagetools create -t "$SANDBOX:production" "$SANDBOX:${{ github.sha }}"
+      # Railway's platform-api and design-api run the image just tagged (their source is
+      # ghcr.io/clue-hq/clue-backend:production); they never build it themselves. platform-api goes
+      # first: its pre-deploy `clue migrate` brings the schema to head before design-api starts.
+      - name: Redeploy the Railway backends from the image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          npm install -g @railway/cli@5.63.1
+          deploy/railway_redeploy.sh platform-api
+          deploy/railway_redeploy.sh design-api

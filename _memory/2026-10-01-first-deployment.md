@@ -103,3 +103,67 @@ too) · 5 `deploy/check_prod_env.py` · 6 backup/watchdog/restore (restore rehea
   generated; the VM file passes with dummy secrets. Generator: session scratchpad gen_railway_env.py.
 - Founder chose Clerk PRODUCTION; JWKS/issuer assumed https://clerk.cluehq.ai (verify in Clerk).
 - Lane .env differs from example: ARV2 discovery ON and Langfuse US host — carried into production.
+
+### 2026-10-03 — backend image never built (skia from source)
+- Release PR #84 merged 2026-10-02 before CI finished; both deploy-images runs (37033670590 PR,
+  37033905636 push main) failed in `Backend image`: rust-skia 0.97.2 has no prebuilt Skia for our
+  feature set (textlayout+svg+webp, no vulkan) on Linux x86_64 or aarch64 → 404 → full source
+  build → `ninja` missing. First CI build of the image ever; deterministic, a rerun cannot help.
+  Railway platform-api/design-api build the same Dockerfile → same failure. No tag moved.
+- Fix (branch deploy/skia-build-deps): helper stage COPYs subsystems/clue-design/fonts (lumen-skia
+  include_bytes! the Inter faces — the second failure, found by the local build) and installs clang, libclang-dev, ninja-build,
+  libfontconfig1-dev. Cold build +15–25 min; CI caches the layer (gha), Railway builds it per service.
+  Rejected: adding `vulkan` to match a prebuilt (changes the engine's pinned features for packaging).
+  Follow-up idea: Railway pulls the CI-built GHCR image instead of building (one Skia compile).
+- Third failure (found by local smoke.sh): runtime had no libpq → psycopg (langgraph's
+  AsyncPostgresSaver) "no pq wrapper available" at the first platform import. Fix: libpq5 in the
+  runtime apt line (psycopg-binary is not in uv.lock). After it, psycopg imports.
+- Local smoke cannot go further on this Mac: cryptography 49's Rust bindings SIGILL (exit 132) on
+  Docker Desktop's 5.15.49-linuxkit kernel (same as the sandbox image's pin note), and every service
+  imports it. The real amd64 smoke + boot smoke run in the PR's deploy-images job.
+- Fourth failure (CI run 37054466971, dispatched on the branch): runner disk full after 31 min
+  (`No space left on device`). Fix: workflow step `Free runner disk` (removes dotnet/android/ghc/
+  CodeQL/boost, ~30 GB) + the helper RUN deletes target/ and the cargo registry in the same step
+  (layer 39.6 MB locally, was GBs). NOT a BuildKit cache mount: Railway refuses cache mounts whose
+  id lacks the `s/<service-id>-` prefix, and this Dockerfile builds on two Railway services.
+
+### 2026-10-03 — pages.cluehq.ai temporarily used by a static landing page (founder ruling)
+- Founder chose `pages.cluehq.ai/conduit` for an urgent static page (Conduit for Hotel Equities,
+  a design export) in a SEPARATE Railway project `conduit-hotel-equities` (Caddy, files in
+  ~/clue-deploy/conduit-hotel-equities, outside the repo). 2026-10-03: also `/conduit-for-arlo-hotels/` (renamed from `/arlo-hotels/`, which now 308s to it; Conduit
+  page prepared for Arlo Hotels). One directory per page under pages/ → /srv; Caddy's file_server
+  adds the trailing slash. Live with a Let's Encrypt cert; `/` is a 404 by design. Cloudflare: `pages` CNAME →
+  <railway target>, DNS only, plus `_railway-verify.pages` TXT.
+- CONFLICT, known and accepted: Part C (docs/specs/pages-hosting-runbook.md §Cloudflare for SaaS)
+  needs `pages` CNAME → page-origin.cluehq.ai, PROXIED, as the fallback origin. Before that step,
+  move or retire the Conduit page (and remove its Railway custom domain), or that page goes dark.
+  `*.pages` (workspace hostnames) does not conflict.
+
+### 2026-10-03 — image builds in CI; fifth/sixth gaps: alembic + S3 SDK were dev-only
+- CI run 37059071573: backend image built (36 min cold), engine handshake passed, static smoke
+  passed everything up to `alembic --help` → not in the image: alembic lived only in the root `dev`
+  group and the image syncs `--no-dev`. Same line held aioboto3 — and NO member depends on
+  `clue-storage[s3]`, so production (R2) would have had no S3 client; the boot smoke uses fs storage
+  and could never catch it.
+- Fix: root `deploy` dependency group (alembic, clue-storage[s3]; `[tool.uv.sources]` clue-storage =
+  workspace), `dev` includes it; image `uv sync --frozen --no-dev --group deploy --all-packages`;
+  smoke.sh imports aioboto3. uv.lock +5 lines, no version changes. Local proof: alembic runs,
+  aioboto3 15.5.0 imports, `clue migrate` on fresh pgvector pg16 → 290 migrations, head 0a3a88c7e5ed.
+- INCIDENT (local): repeated image builds filled Docker Desktop's 36 GB VM disk → the shared dev
+  Postgres `clue-pg-papeete` (:55040, many lanes) crashed ~20:58 UTC on ENOSPC. Freed my dangling
+  images + trimmed build cache to 4 GB (7.6 GB free), restarted it; WAL recovery clean. Lanes' writes
+  in that window failed. Docker Desktop here is 4.16.1 (Jan 2023, kernel 5.15.49): the cryptography
+  SIGILL comes from that kernel; updating is the founder's call. Watch `docker run --rm alpine df -h /`
+  before big builds.
+
+### 2026-10-03 — Docker Desktop 4.93 + one boot smoke everywhere + local gate (committed, NOT pushed)
+- Docker Desktop updated 4.16.1 → 4.93.0 (kernel 7.0.14; Rosetta disabled — VZ "failed to install
+  Rosetta"; 8 CPU / 7.7 GB / 78 GB disk). The cryptography SIGILL is gone: full smokes run on the Mac.
+  `clue-pg-papeete` (:55040) has restart=no — start it by hand after every Docker restart.
+- boot_smoke.sh is now self-contained (own pgvector/Redis/MinIO on a private network, ports published
+  to 127.0.0.1, socket gid read from a container) → same script on Mac and CI; workflow `services:`
+  removed. New check: S3 round trip through `storage_from_settings()` against MinIO.
+- docker/backend/local_gate.sh: disk ≥15 GB check, builds both images (label clue.local-gate=1),
+  smoke.sh, boot_smoke.sh, prunes only its own dangling images. First run: PASSED in 7m41s.
+- Boot-smoke env needs CLUE_GATEWAY_ALLOW_STUB=true AND a placeholder CLUE_OPENROUTER_API_KEY
+  (the agent model provider is built at worker boot; no request until a turn runs).

@@ -38,9 +38,14 @@ members = [
 ]
 
 [manifest.dependency-groups]
+deploy = [
+    { name = "alembic" },
+    { name = "clue-storage", extras = ["s3"], editable = "libs/clue-storage" },
+]
 dev = [
     { name = "aioboto3", specifier = ">=13" },
     { name = "alembic" },
+    { name = "clue-storage", extras = ["s3"], editable = "libs/clue-storage" },
     { name = "fakeredis", specifier = ">=2.20" },
     { name = "import-linter", specifier = ">=2.0" },
     { name = "mypy", specifier = ">=1.11" },

@@ -2,17 +2,26 @@
 # live in libs/ · subsystems/ · platform/; this file holds the workspace + shared tooling.
 
 [dependency-groups]
+# What a deployment needs beyond the members' own dependencies. The backend image installs it
+# (`uv sync --no-dev --group deploy`); `dev` includes it, so local environments are unchanged.
+deploy = [
+    "alembic",               # migrations CLI (`clue migrate`; env.py imports clue_db; run from the workspace root)
+    "clue-storage[s3]",      # the S3/R2 storage backend's SDK (aioboto3), lazy-imported in clue_storage/s3.py
+]
 # Dev toolchain — the M0.1 enforcement baseline. Pinned loosely; uv.lock pins exact versions.
 dev = [
+    { include-group = "deploy" },
     "ruff>=0.6",          # formatter + linter (replaces black/flake8/isort)
     "mypy>=1.11",         # static ("compile-time") type checker
     "import-linter>=2.0", # machine-enforced modular dependency rules (the M0.1 seam contracts)
     "pytest>=8.2",        # structure + contract tests (M0.6 grows this into the full harness)
     "types-PyYAML>=6",    # strict typing for C6's folder-backed prompt/skill/profile catalog
-    "fakeredis>=2.20",
-    "alembic",         # migrations CLI (env.py imports clue_db; run from the workspace root)    # M2.4 — in-process Redis fake for the lock tests when no Redis is reachable
-    "aioboto3>=13",    # B2 — the S3-leg of the storage contract suite (MinIO); prod installs clue-storage[s3]
+    "fakeredis>=2.20",    # M2.4 — in-process Redis fake for the lock tests when no Redis is reachable
+    "aioboto3>=13",       # B2 — the S3-leg of the storage contract suite (MinIO)
 ]
+
+[tool.uv.sources]
+clue-storage = { workspace = true }
 
 # --- uv workspace (Doc R): libs/ now; subsystems/ + platform/ join in later phases ---
 [tool.uv.workspace]
