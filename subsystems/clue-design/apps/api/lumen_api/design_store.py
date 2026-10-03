@@ -102,7 +102,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import UUID
 
 from clue_config import Settings
-from clue_db import create_engine
+from clue_db import create_engine, database_url
 from clue_spine.hostnames import active_custom_hostname as _active_custom_hostname
 from clue_spine.hostnames import ensure_system_hostname
 from clue_spine.hostnames import lock_system_hostname as _lock_system_hostname
@@ -251,6 +251,69 @@ def run_isolated[T](coro: "Awaitable[T]") -> T:
         return pool.submit(asyncio.run, coro).result()  # type: ignore[arg-type]
 
 
+class _BridgeLoop:
+    """ONE long-lived event loop per process, on its own daemon thread, owning ONE pooled engine
+    per database URL (brand-context slowness fix, 2026-10-04).
+
+    The bridge used to ``asyncio.run`` every call on a private loop with a private engine: a new
+    Postgres connection per store call and, because the shared S3 client lives per event loop, a
+    new R2 client per byte read. Production served one brand-context image in a 30 s median with
+    300 requests queued behind that setup. Every call now runs on this loop and borrows a pooled
+    connection; the binding O5 rule is unchanged — each call is still exactly ONE coroutine in
+    ONE connection/transaction, and the pool is only ever used on the loop that created it.
+
+    A forked child (new pid) builds its own loop and engines; an inherited loop thread does not
+    exist in the child. A call made FROM this loop's thread cannot wait on the loop it is
+    blocking, so :meth:`DesignStoreBridge._run` gives such a call the old one-shot path.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pid: int | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
+        self._engines: Dict[str, Any] = {}
+
+    def _ensure(self) -> asyncio.AbstractEventLoop:
+        with self._lock:
+            alive = self._thread is not None and self._thread.is_alive()
+            if self._loop is None or self._pid != os.getpid() or not alive:
+                loop = asyncio.new_event_loop()
+                thread = threading.Thread(
+                    target=loop.run_forever, name="design-store-bridge", daemon=True
+                )
+                thread.start()
+                self._loop, self._thread, self._pid, self._engines = loop, thread, os.getpid(), {}
+            return self._loop
+
+    def owns_current_thread(self) -> bool:
+        return (
+            self._thread is not None
+            and self._pid == os.getpid()
+            and threading.current_thread() is self._thread
+        )
+
+    def engine(self) -> Any:
+        """The pooled engine for the CURRENT database URL (called on the loop thread only)."""
+        url = database_url()
+        engine = self._engines.get(url)
+        if engine is None:
+            engine = create_engine(url)
+            self._engines[url] = engine
+        return engine
+
+    def run[T](self, coro_factory: Callable[[Any], Awaitable[T]]) -> T:
+        loop = self._ensure()
+
+        async def on_loop() -> T:
+            return await coro_factory(self.engine())
+
+        return asyncio.run_coroutine_threadsafe(on_loop(), loop).result()
+
+
+_BRIDGE_LOOP = _BridgeLoop()
+
+
 class DesignStoreBridge:
     """Sync facade over the async ``clue_design`` DAL — one call, one loop, one transaction."""
 
@@ -261,6 +324,14 @@ class DesignStoreBridge:
         self.ensure_workspace = ensure_workspace
 
     def _run[T](self, fn: Callable[[AsyncConnection], Awaitable[T]]) -> T:
+        async def _pooled_transaction(engine: Any) -> T:
+            # The process-wide bridge loop's pooled engine: still one connection and one
+            # transaction for this call (O5), but the connection is borrowed, not opened.
+            async with engine.connect() as conn, conn.begin():
+                if self.ensure_workspace:
+                    await _ensure_workspace(conn, self.workspace_id)
+                return await fn(conn)
+
         async def _one_transaction() -> T:
             # ``create_engine`` (a private engine) rather than ``db_lifespan``: the lifespan
             # registers a PROCESS-GLOBAL engine and refuses re-entry, so two bridge calls on two
@@ -279,7 +350,12 @@ class DesignStoreBridge:
                 await engine.dispose()
 
         try:
-            return run_isolated(_one_transaction())
+            bridge = _BRIDGE_LOOP
+            if bridge.owns_current_thread():
+                # Already ON the bridge loop (a store call from inside a store call): waiting on
+                # the loop from its own thread would deadlock, so this one call is one-shot.
+                return run_isolated(_one_transaction())
+            return bridge.run(_pooled_transaction)
         except DesignNotFoundError as exc:
             raise NotFoundError(exc.kind, exc.key) from exc
         except DesignVersionConflictError as exc:
@@ -991,6 +1067,14 @@ class HybridRepository:
         return self._bridge._run(
             lambda conn: design_assets.get_asset_record(
                 conn, workspace_id=self.workspace_id, asset_id=asset_id
+            )
+        )
+
+    def get_asset_records(self, asset_ids: List[str]) -> Dict[str, JsonObject]:
+        """Many asset records in ONE statement; ids that are not visible are simply absent."""
+        return self._bridge._run(
+            lambda conn: design_assets.get_asset_records(
+                conn, workspace_id=self.workspace_id, asset_ids=asset_ids
             )
         )
 
