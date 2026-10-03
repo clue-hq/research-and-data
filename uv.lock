@@ -938,6 +938,7 @@ dependencies = [
     { name = "clue-core" },
     { name = "clue-obs" },
     { name = "langchain-openai" },
+    { name = "langfuse" },
     { name = "openai" },
 ]
 
@@ -947,6 +948,7 @@ requires-dist = [
     { name = "clue-core", editable = "libs/clue-core" },
     { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "langchain-openai", specifier = "==1.4.1" },
+    { name = "langfuse", specifier = ">=4.15,<5" },
     { name = "openai", specifier = ">=2.45,<3" },
 ]
 

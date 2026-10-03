@@ -385,11 +385,12 @@ ignore_imports = [
 ]
 
 # Lane 3 slice 3 — the Langfuse SDK lives only behind ``clue_obs.langfuse`` (the client and every
-# platform-side helper) and ``clue_api.langfuse_callbacks`` (the LangChain adapter, which needs
-# ``langchain_core`` and so cannot live in the base library). Everything else reaches Langfuse
-# through those two modules' no-op-when-off helpers.
+# platform-side helper) and ``clue_gateway.langfuse_handler`` (the LangChain adapter, which needs
+# ``langchain_core`` and so cannot live in the base library; moved out of ``clue_api`` on
+# 2026-10-03 so the design subsystem can report its agents through it). Everything else reaches
+# Langfuse through those two modules' no-op-when-off helpers.
 [[tool.importlinter.contracts]]
-name = "the Langfuse SDK lives only behind clue_obs.langfuse and clue_api.langfuse_callbacks"
+name = "the Langfuse SDK lives only behind clue_obs.langfuse and clue_gateway.langfuse_handler"
 type = "forbidden"
 source_modules = [
     "clue_research",
@@ -419,7 +420,7 @@ forbidden_modules = ["langfuse"]
 # recorded — and must be exempted — as the edge to ``langfuse``.
 ignore_imports = [
     "clue_obs.langfuse -> langfuse",
-    "clue_api.langfuse_callbacks -> langfuse",
+    "clue_gateway.langfuse_handler -> langfuse",
 ]
 
 # Rule 2b — libs are subsystem-agnostic: no lib may import the research subsystem (or api).
