@@ -25,7 +25,7 @@ def _muse_schema_guidance(node: Any, depth: int = 0) -> Any:
     """
     if isinstance(node, dict):
         if depth >= 6 and any(key in node for key in ("type", "anyOf", "oneOf", "allOf")):
-            result = {
+            result: dict[str, Any] = {
                 "description": (
                     "Supply the actual JSON value, not a serialized string. Full schema for this "
                     "value (validated by the platform): "

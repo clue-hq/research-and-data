@@ -71,7 +71,7 @@ def reference_ids(value: Any) -> set[str]:
     if isinstance(value, list):
         return set().union(*(reference_ids(v) for v in value))
     if isinstance(value, dict):
-        result = set()
+        result: set[str] = set()
         for k, v in value.items():
             if k in ("claimIds", "claim_ids", "duplicate_of", "conflicts_with", "superseded_by"):
                 result.update(str(x) for x in (v if isinstance(v, list) else [v]) if x)

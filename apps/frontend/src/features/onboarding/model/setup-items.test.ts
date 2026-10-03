@@ -229,3 +229,20 @@ test("the group table is a parameter, not a hard-wired dependency", () => {
   assert.equal(items[0]?.id, "solo");
   assert.equal(items[0]?.status, "complete");
 });
+
+test("a halted run never spins the brand-kit row; finished outcomes still show", () => {
+  // First production onboarding (2026-10-03): company research failed while the website ingestion
+  // was still running, polling stopped (a halted run surfaces recovery controls), and the row kept
+  // spinning on its last-seen `running` forever — after the job had in fact succeeded. Once the run
+  // has halted, that `running` is stale, exactly as for the step rows (`groupStatus`).
+  for (const halted of ["failed", "unavailable"] as const) {
+    for (const status of ["queued", "running", "some-future-status"]) {
+      const row = brandKitRow(withJob({ job_id: "ingest_1", status }, halted));
+      assert.equal(row?.status, "queued", `job ${status} under a ${halted} run must not spin`);
+      assert.equal(row?.detail, BRAND_KIT_DETAIL);
+    }
+    assert.equal(brandKitRow(withJob({ job_id: "ingest_1", status: "succeeded" }, halted))?.status, "complete");
+    const failed = brandKitRow(withJob({ job_id: "ingest_1", status: "failed" }, halted));
+    assert.equal(failed?.detail, `${BRAND_KIT_DETAIL}${FAILED_MEMBER_ANNOTATION}`);
+  }
+});

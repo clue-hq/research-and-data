@@ -1024,7 +1024,7 @@ class DeterministicAgentContextAssembler:
         if not isinstance(final, HumanMessage) or final_text != current_instruction.body:
             raise ValueError("current user instruction must be the final opening-context message")
 
-        aggregate_payload = {
+        aggregate_payload: dict[str, Any] = {
             "schema_version": "1",
             "execution_id": str(request.constitution.execution_id),
             "policy_version": self._policy.version,

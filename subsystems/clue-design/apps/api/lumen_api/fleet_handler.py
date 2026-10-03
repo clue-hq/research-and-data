@@ -660,8 +660,8 @@ def _thread_has_state(checkpointer: Any, thread_id: str) -> bool:
 
 # --- the LangGraph Postgres checkpointer (R-D5-B4) --------------------------------------------
 
-#: ``PostgresSaver.setup()`` is an idempotent DDL install, but it is also a round trip per turn.
-#: Run it once per process per DSN; a fresh database in a test process still gets its tables
+#: Checking (and, behind, installing) the tables is a round trip per turn.
+#: Do it once per process per DSN; a fresh database in a test process still gets its tables
 #: because the set is process-local, not persisted.
 _CHECKPOINTER_SETUP_DONE: set[str] = set()
 
@@ -677,6 +677,30 @@ def _psycopg_dsn(value: str) -> str:
         "postgresql+psycopg://",
         "postgresql://",
     )
+
+
+def _ensure_checkpoint_tables(saver: Any) -> None:
+    """Run LangGraph's ``setup()`` only when the database is behind the installed library.
+
+    Sync twin of ``clue_api.agent_execution_wiring.ensure_checkpoint_tables`` (this subsystem may
+    not import the platform app). The tables come from the platform's Alembic migration
+    ``4a94970221e9``, created by the owner; production opens this saver as ``clue_worker``, which
+    has no CREATE on schema public, and ``setup()`` always issues ``CREATE TABLE IF NOT EXISTS``
+    (2026-10-03). A database the migration has not reached still gets ``setup()``.
+    """
+    import psycopg
+
+    latest = len(saver.MIGRATIONS) - 1
+    try:
+        # LangGraph's own read in setup(); its connections return dict rows.
+        row = saver.conn.execute(
+            "SELECT v FROM checkpoint_migrations ORDER BY v DESC LIMIT 1"
+        ).fetchone()
+        recorded = row["v"] if row is not None else None
+    except psycopg.errors.UndefinedTable:
+        recorded = None
+    if recorded is None or recorded < latest:
+        saver.setup()
 
 
 @contextlib.contextmanager
@@ -696,7 +720,7 @@ def postgres_design_checkpointer(thread_id: str) -> Any:
     dsn = _psycopg_dsn(database_url())
     with PostgresSaver.from_conn_string(dsn) as saver:
         if dsn not in _CHECKPOINTER_SETUP_DONE:
-            saver.setup()
+            _ensure_checkpoint_tables(saver)
             _CHECKPOINTER_SETUP_DONE.add(dsn)
         logger.debug("design_job.checkpointer_open", thread_id=thread_id)
         yield saver

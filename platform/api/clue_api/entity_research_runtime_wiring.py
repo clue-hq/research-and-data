@@ -27,6 +27,7 @@ from clue_agents.entity_research_runtime import (
     EntityResearchAgentRuntime,
     EntityResearchCheckpointerFactory,
 )
+from clue_api.agent_execution_wiring import ensure_checkpoint_tables
 from clue_core import serialize_value_json
 from clue_db import ConnFactory, database_url, transaction
 from clue_fleet.entity_research import (
@@ -53,10 +54,10 @@ def _psycopg_dsn(value: str) -> str:
 async def postgres_entity_research_checkpointer(
     _thread_id: str,
 ) -> AsyncIterator[BaseCheckpointSaver[str]]:
-    """Open the production LangGraph Postgres saver and install its tables idempotently."""
+    """Open the production LangGraph Postgres saver (its tables come from the migrations)."""
 
     async with AsyncPostgresSaver.from_conn_string(_psycopg_dsn(database_url())) as saver:
-        await saver.setup()
+        await ensure_checkpoint_tables(saver)
         yield saver
 
 

@@ -17,9 +17,19 @@ import sys
 import time
 from pathlib import Path
 
+from clue_config import Secrets, load_settings
 from clue_db import create_engine, db_lifespan
 from clue_fleet import LeasedWorkWorker, run_worker
 from clue_obs import get_logger, setup
+from clue_obs.langfuse import flush_langfuse, shutdown_langfuse
+from clue_obs.otel import TracingRuntime
+from clue_obs.production import (
+    install_production_langfuse,
+    install_production_sentry,
+    install_production_tracing,
+)
+from opentelemetry import trace as otel_trace
+from opentelemetry.sdk.trace import TracerProvider as SdkTracerProvider
 from py_lumen_config import settings
 from sqlalchemy import text
 
@@ -226,6 +236,31 @@ async def execution(role: str, parent_pid: int | None):
             await monitor
 
 
+#: One service for every pool process (controller, coordinator, analysis workers).
+SERVICE_NAME = "clue-ingestion-pool"
+
+
+def _process_has_tracer() -> bool:
+    return isinstance(otel_trace.get_tracer_provider(), SdkTracerProvider)
+
+
+def install_pool_telemetry() -> TracingRuntime | None:
+    """OTel, Sentry and Langfuse for this pool process, as ``clue-ingestion-pool``.
+
+    Installed at process start, so the coordinator's later lazy import of ``lumen_api.main`` (to
+    run a job) finds a provider already in place and skips its own ``clue-design-api`` install —
+    the same "does this process already have a root?" guard ``lumen_api.main`` uses. Before
+    2026-10-03 the controller and the analysis workers had no telemetry at all.
+    """
+    if _process_has_tracer():
+        return None
+    settings, secrets = load_settings(), Secrets()
+    runtime = install_production_tracing(settings, secrets, service_name=SERVICE_NAME)
+    install_production_sentry(settings, secrets, service_name=SERVICE_NAME)
+    install_production_langfuse(settings, secrets, runtime=runtime, service_name=SERVICE_NAME)
+    return runtime
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -236,9 +271,16 @@ def main():
     parser.add_argument("--parent-pid", type=int)
     args = parser.parse_args()
     setup()
-    asyncio.run(
-        controller() if args.role == "controller" else execution(args.role, args.parent_pid)
-    )
+    runtime = install_pool_telemetry()
+    try:
+        asyncio.run(
+            controller() if args.role == "controller" else execution(args.role, args.parent_pid)
+        )
+    finally:
+        flush_langfuse()
+        shutdown_langfuse()
+        if runtime is not None:
+            runtime.shutdown()
 
 
 if __name__ == "__main__":
