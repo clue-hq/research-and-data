@@ -64,9 +64,42 @@ Found on the first production day (2026-10-03):
   `ToolAwaitingInput` at warning (no traceback), so they never become Sentry events; every other
   exception stays at error.
 
+### 2.1 The design subsystem (added by the founder, 2026-10-03)
+
+The design subsystem gets the same treatment: **Langfuse for its agent part, other tracing for
+everything else.** What exists today (mapped 2026-10-03, file references in the session record):
+the design graph reports to Langfuse only on the inline design-leg lane, which is the one path
+that passes the platform's LangChain handler (`design_fleet.py` `turn_callbacks`). A queued
+`design_job` drained by the fleet (`fleet_main.py`, `build_design_job_handler` with no
+`turn_callbacks_factory`), the design API's embedded worker and the synchronous preview route run
+the same graph with no Langfuse handler. The brand-brief agent (`lumen_ingestion/brief_agent.py`)
+has none either. Ingestion's model calls (`openrouter.design.ingestion.*`, image generation, ad
+DNA) open Langfuse observations but sit in no named trace. Before R1 these paths still showed up as
+empty `llm.gateway_call` generations (model and timing, no prompt or cost); R1 removes those, so
+R7 closes the gap R1 widens. No design code opens an OpenTelemetry span of its own; `py_lumen_obs`
+has log-only `log_span`; capture, the Rust render helper and ingestion failures are visible only as
+log events or job-row diagnostics, and several failures are stored with no log line at all.
+
+- **R7 — Every design agent run is a named Langfuse trace (this PR).** Every path that runs the
+  design graph attaches the platform's LangChain handler and opens a named trace: the queued
+  `design_job` drained by the fleet, the design API's embedded worker and the preview route, as the
+  inline leg lane already does (`design-leg.turn`). The brand-brief agent and the other design
+  model calls outside the graph (imagery judge, ingestion describe/assist/vision, ad DNA, image
+  generation and edit) run under a named trace per job: an ingestion job is one trace
+  (`design.ingestion`, tagged with the brand and job), with its model calls inside.
+- **R8 — Design's non-agent work is traced with OpenTelemetry (PR 2).** One span per unit of work:
+  a design job, an ingestion job and its stages, a website capture, a render or export through the
+  Rust helper (with the trace context handed to the helper so its stderr log lines carry the trace
+  id), a publish. These spans never go to Langfuse (R1); they go to Grafana Tempo with the rest of
+  the platform's spans in PR 2, where they are visible. Failures that are stored on a job row with
+  no log line (ingestion `store.fail`, asset analysis `fail()`, `assist`/`pdf_vision` returning
+  `None`, capture fallbacks) log one warning or error each with the trace id, so a failed job can
+  be found from the logs.
+
 ## 3. Out of scope (follow-ups, agreed in chat)
 
-- **PR 2 — one place to search:** export all spans (requests, workers) to Grafana Cloud Tempo
+- **PR 2 — one place to search:** R8 (design's non-agent spans and logged failures), and export
+  all spans (requests, workers, design) to Grafana Cloud Tempo
   through the existing `CLUE_OTEL_TRACES_ENDPOINT` and ship logs to Grafana Cloud Loki, so a trace
   id pasted into Grafana shows every log line from Railway and the VM. Needs a Grafana token with
   logs-write and traces-write (founder).
@@ -74,7 +107,9 @@ Found on the first production day (2026-10-03):
 
 ## 4. Verification
 
-- Unit tests per requirement (export filter by scope; environment on every exported span; fleet task
+- Unit tests per requirement (design graph on the fleet and embedded-worker paths reports to
+  Langfuse under a named trace; the brief agent and an ingestion job's model calls sit in one named
+  trace; export filter by scope; environment on every exported span; fleet task
   is a new root with a link and `launched_by_trace_id`; log lines carry the ids in both packages and
   for an exception logged after its span; Sentry event trace context, tag and Langfuse link; refusal
   at warning, other errors at error).
