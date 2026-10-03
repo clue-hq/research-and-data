@@ -254,7 +254,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # section 7b to teach the brief, the manual re-mints at `manual-*@v16` (a new discovery
     # chapter), and the conversation recipe moves 32 -> 33 because its slot pins exact addresses.
     # Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v70",
+    # v71 (2026-10-04): v70's surface exactly. The manual re-mints at `manual-*@v17`: the design
+    # leg's first turn is queued from the human's own message when the leg opens (the v16 chapters
+    # and the open_design_leg note still said opening a leg starts nothing), and
+    # `read_account_research` pages the overview by whole section. `stage0-interview@v44` only
+    # repoints its manual paths. Prompt v18 and the recipe stay.
+    AgentRole.HEAD_OF_ABM: "v71",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

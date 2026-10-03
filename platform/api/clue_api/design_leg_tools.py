@@ -29,10 +29,11 @@ stamps, never values) — validated structurally at the input model. Their exist
 provenance is the research-view surface's job: the only way a head-of-abm holds claim ids at all
 is by having read them through ``get_research_view``.
 
-What this tool does **not** do: dispatch anything. Opening a leg spends nothing and runs no
-design turn; the agent's next act is to tell the user the design session is open and end its
-turn. The user's next message on the thread is what becomes the first design turn (the P3.4
-routing rule in ``agent_turn_fleet_wiring``).
+Opening a leg queues its first design turn from the opening turn's own user submission, in
+the same transaction (spec 2026-09-20 §2.3; ``_queue_first_turn``), so the user does not have to
+speak again to begin. The tool itself makes no provider call; the queued design turn is what
+spends. A machine-originated opening with no submission of its own queues nothing, and every
+later user message on the thread routes to Design (the P3.4 rule in ``agent_turn_fleet_wiring``).
 
 **@2 — document birth at leg-open (genweb slice 2, plan §4.1).** A leg may now *create* the
 document its docstring always promised (§2.1). ``doc_kind="web"`` on a document-less open

@@ -155,9 +155,10 @@ launch_arv2_person_research:
 
 open_design_leg:
   afterwards: >-
-    A design leg is open on this thread and the design agent takes over the conversation. You do
-    not run again while it is open and you cannot close it; the human ends it by saying so. The
-    artifact it produces appears in the project's gallery.
+    A design leg is open on this thread, and its first design turn is already queued from the
+    human's own message, so nobody needs to say anything to start it. The design agent takes over
+    the conversation. You do not run again while it is open and you cannot close it; the human
+    ends it by saying so. The artifact it produces appears in the project's gallery.
   skill_section: Not taught by the current skill.
   see_also: [siblings, gates-authority]
   refusals:
@@ -264,7 +265,6 @@ read_account_research:
     account_not_researched: Say plainly that nothing is known about this account yet, and offer to research it.
     no_claims_under_prefix: Pick one of the families the refusal lists and read again; never invent a prefix.
     offset_past_end: You have already read to the end. Stop paging and answer from what you have.
-    offset_not_paged: Drop offset; the overview is served whole.
 
 read_artifact:
   afterwards: >-
