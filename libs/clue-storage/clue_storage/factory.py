@@ -38,4 +38,5 @@ def storage_from_settings(
         region=settings.storage_s3_region,
         access_key_id=access_key.get_secret_value() if access_key else None,
         secret_access_key=secret_key.get_secret_value() if secret_key else None,
+        max_pool_connections=settings.storage_s3_max_pool_connections,
     )

@@ -830,6 +830,9 @@ async def _projections_lifespan(_app: FastAPI) -> AsyncIterator[None]:
             library_closer = getattr(_app.state, "project_library_closer", None)
             if library_closer is not None:
                 library_closer()
+            from clue_storage import close_shared_s3_clients
+
+            await close_shared_s3_clients()
 
 
 def create_projections_app(

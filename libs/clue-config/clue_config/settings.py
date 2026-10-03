@@ -322,6 +322,9 @@ class Settings(BaseSettings):
     storage_s3_bucket: str | None = None
     storage_s3_endpoint_url: str | None = None
     storage_s3_region: str | None = None
+    # Keep-alive connections the shared S3 client may hold (research slowness fix 2026-10-03).
+    # Env: ``CLUE_STORAGE_S3_MAX_POOL_CONNECTIONS``.
+    storage_s3_max_pool_connections: int = Field(default=50, ge=1)
 
     # --- platform deepagent workspace (C6.1) -----------------------------------------------
     # Dedicated host root for ephemeral agent execution trees. Production composition requires

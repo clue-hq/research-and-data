@@ -27,7 +27,7 @@ from clue_storage.protocol import (
     artifact_key,
     content_address,
 )
-from clue_storage.s3 import S3Storage
+from clue_storage.s3 import S3Storage, close_shared_s3_clients
 from clue_storage.snapshot import PendingSnapshot, SnapshotSink, flush_snapshots
 
 __all__ = [
@@ -39,6 +39,7 @@ __all__ = [
     "PendingSnapshot",
     "PurgeResult",
     "S3Storage",
+    "close_shared_s3_clients",
     "SnapshotSink",
     "StorageBackend",
     "StorageError",
