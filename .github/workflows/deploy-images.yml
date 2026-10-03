@@ -94,3 +94,25 @@ jobs:
           deploy/railway_redeploy.sh platform-api
           deploy/railway_redeploy.sh design-api
           deploy/railway_redeploy.sh page-origin
+      # The worker VM runs the same image; it goes last, once platform-api's pre-deploy migration has
+      # run (deploy.sh refuses a database behind head). CI's key can do nothing but this: on the VM it
+      # is forced to deploy/vm/ci_deploy.sh, which accepts one full commit sha and nothing else. The
+      # host key is pinned. Until the secrets exist this warns and skips (deploy.sh by hand, §7).
+      - name: Deploy the worker VM
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_SSH_KNOWN_HOSTS: ${{ secrets.VM_SSH_KNOWN_HOSTS }}
+          VM_HOST: ${{ vars.VM_HOST }}
+        run: |
+          if [ -z "$VM_SSH_KEY" ] || [ -z "$VM_SSH_KNOWN_HOSTS" ] || [ -z "$VM_HOST" ]; then
+            echo "::warning::VM deploy not configured (secrets VM_SSH_KEY, VM_SSH_KNOWN_HOSTS; variable VM_HOST): run deploy.sh ${{ github.sha }} on the VM by hand"
+            exit 0
+          fi
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$VM_SSH_KEY" > "$HOME/.ssh/vm_deploy"
+          chmod 600 "$HOME/.ssh/vm_deploy"
+          printf '%s\n' "$VM_SSH_KNOWN_HOSTS" > "$HOME/.ssh/vm_known_hosts"
+          ssh -i "$HOME/.ssh/vm_deploy" -o IdentitiesOnly=yes -o BatchMode=yes \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/vm_known_hosts" \
+            clue@"$VM_HOST" "${{ github.sha }}"

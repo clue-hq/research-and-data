@@ -240,6 +240,15 @@ OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is d
    ```
 7. Sentry → Crons [FOUNDER]: monitor `clue-db-backup` (daily, 26-hour margin) and `clue-watchdog`
    (every 5 minutes, 10-minute margin), alerting the founder. A missed check-in is the alert.
+8. **CI deploys the VM** (one time). On your Mac:
+   `ssh-keygen -t ed25519 -N "" -C clue-ci-deploy -f ci_deploy_key`. On the VM, append to
+   `/home/clue/.ssh/authorized_keys` (owned by clue, mode 600):
+   `command="/srv/clue/app/deploy/vm/ci_deploy.sh",restrict <contents of ci_deploy_key.pub>` —
+   the key can then only ask `deploy/vm/ci_deploy.sh` to deploy one full commit sha. In GitHub
+   (repo Settings → Secrets and variables → Actions): secret **`VM_SSH_KEY`** = `ci_deploy_key`
+   (the private key), secret **`VM_SSH_KNOWN_HOSTS`** = `ssh-keyscan -t ed25519 <vm-ip>` (pins the
+   host key), variable **`VM_HOST`** = the VM's IP. Delete the local key files afterwards. Until
+   all three exist, `deploy-images` warns and skips the VM step.
 
 ## 5. Vendors [FOUNDER]
 Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
@@ -267,8 +276,10 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
 
 ## 7. Every later ship
 Merge a pull request from `research-streaming` into `main` once staging is tested and the pull
-request's `deploy-images` check is green (image changes: `local_gate.sh` first); wait for the
-merge's `deploy-images` run and Railway to go green; then `deploy.sh <sha>` on the VM.
+request's `deploy-images` check is green (image changes: `local_gate.sh` first). The merge's
+`deploy-images` run moves the tags, redeploys Railway (`platform-api` first) and then the worker VM
+(§4 step 8). Without that step configured, or if it fails: `deploy.sh <sha>` on the VM as `clue`.
+A release that adds a variable the workers need: add it to `/srv/clue/env` first.
 
 ## 7a. Known gap — accepted for now, to be closed later
 Railway rebuilds the frontend and the design API separately, so for a minute or two during a deploy

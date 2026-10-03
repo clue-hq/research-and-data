@@ -96,3 +96,27 @@ def test_both_apis_listen_on_a_configurable_host_defaulting_to_ipv4() -> None:
 def test_the_bind_host_is_documented() -> None:
     lines = (ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
     assert "CLUE_BIND_HOST=0.0.0.0" in lines
+
+
+def test_the_release_deploys_the_vm_last_with_a_pinned_host_and_only_the_sha() -> None:
+    """After Railway (platform-api migrates first), CI deploys the worker VM over SSH: the host key is
+    pinned, nothing interactive, and the only thing sent is the commit sha — on the VM the key is
+    forced to deploy/vm/ci_deploy.sh, which accepts nothing else. Unconfigured, it warns and skips."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "deploy-images.yml").read_text(encoding="utf-8")
+    )
+    steps = workflow["jobs"]["images"]["steps"]
+    names = [s.get("name", "") for s in steps]
+    vm = names.index("Deploy the worker VM")
+    assert vm == len(steps) - 1
+    assert vm > next(i for i, n in enumerate(names) if n.startswith("Redeploy the Railway"))
+    step = steps[vm]
+    assert step["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    run = step["run"]
+    assert "StrictHostKeyChecking=yes" in run and "BatchMode=yes" in run
+    assert 'clue@"$VM_HOST" "${{ github.sha }}"' in run
+    assert "::warning::" in run and "exit 0" in run
+    assert step["env"]["VM_SSH_KEY"] == "${{ secrets.VM_SSH_KEY }}"
+    assert step["env"]["VM_SSH_KNOWN_HOSTS"] == "${{ secrets.VM_SSH_KNOWN_HOSTS }}"
