@@ -9,7 +9,7 @@ rule: this is the surface for debugging exactly those values). Nothing here does
 :func:`install_langfuse` was given both keys; every helper is a no-op otherwise, so an
 unconfigured process behaves as it did after slice 2.
 
-This module (and ``clue_api.langfuse_callbacks``, the LangChain adapter) are the only two that
+This module (and ``clue_gateway.langfuse_handler``, the LangChain adapter) are the only two that
 import the SDK — an import-linter contract keeps it that way.
 """
 

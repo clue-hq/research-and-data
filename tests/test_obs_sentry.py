@@ -11,6 +11,7 @@ from clue_obs import bound_context
 from clue_obs.otel import collect_spans, traced_step
 from clue_obs.otel.trace_ids import remember_trace
 from clue_obs.sentry import capture, install_sentry, sentry_is_installed
+from tests._langfuse import langfuse_installed
 
 
 class StubTransport(Transport):
@@ -85,7 +86,7 @@ def test_an_event_carries_the_opentelemetry_trace_id_and_a_langfuse_link() -> No
     transport = StubTransport()
     _install_with_langfuse(transport)
     try:
-        with collect_spans(), traced_step("fleet.task") as span:
+        with langfuse_installed(), collect_spans(), traced_step("fleet.task") as span:
             try:
                 raise RuntimeError("boom")
             except RuntimeError as exc:
@@ -119,6 +120,21 @@ def test_an_error_reported_after_its_span_closed_carries_the_remembered_trace() 
         trace_id = format(span.get_span_context().trace_id, "032x")
         assert event["contexts"]["trace"]["trace_id"] == trace_id
         assert event["tags"]["trace_id"] == trace_id
+    finally:
+        sentry_sdk.get_client().close()
+
+
+def test_no_langfuse_link_when_langfuse_is_not_installed() -> None:
+    """A deployment with Langfuse switched on but keyless installs no client; its events keep the
+    trace id and get no link to a trace that was never exported."""
+    transport = StubTransport()
+    _install_with_langfuse(transport)
+    try:
+        with collect_spans(), traced_step("fleet.task") as span:
+            capture(RuntimeError("boom"))
+        (event,) = _events(transport)
+        assert event["tags"]["trace_id"] == format(span.get_span_context().trace_id, "032x")
+        assert "langfuse" not in event.get("contexts", {})
     finally:
         sentry_sdk.get_client().close()
 

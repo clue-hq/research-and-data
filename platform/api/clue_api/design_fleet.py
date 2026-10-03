@@ -587,8 +587,10 @@ def build_design_leg_lane_driver(
     must refuse loudly rather than wedge the leg (the ``None`` composes the runner's
     unavailable-lane backstop).
 
-    Lane 3 slice 5: this lane — and only this lane — hands the design side a per-turn Langfuse
-    handler. A leg turn runs inside ``design-leg.turn`` (``design_leg_wiring._dispatch``), so the
+    Lane 3 slice 5: this lane hands the design side its own per-turn Langfuse handler and opens no
+    named trace of its own (``named_trace=False``; the drain, by contrast, injects none and the
+    design side defaults to the platform handler under one ``design.*`` trace per job, 2026-10-03
+    spec R7). A leg turn runs inside ``design-leg.turn`` (``design_leg_wiring._dispatch``), so the
     trio's generations nest under that observation and each collected receipt can name the
     generation its money belongs to. The factory is called once per turn: the handler and its
     run-id registry are per turn, and a shared instance would cross-attribute one turn's model

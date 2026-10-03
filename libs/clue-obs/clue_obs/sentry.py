@@ -17,6 +17,7 @@ from typing import Any, cast
 import sentry_sdk
 from sentry_sdk.types import Event, Hint
 
+from clue_obs.langfuse import langfuse_is_installed
 from clue_obs.otel.install import bound_run_context
 from clue_obs.otel.trace_ids import current_trace_ids, remembered_trace
 from clue_obs.redact import redact_value
@@ -54,14 +55,16 @@ def _before_send(event: Event, hint: Hint) -> Event:
             fields[section] = redact_value(value)
     # One trace id across tools (2026-10-03 spec, R5): the event's trace is the OpenTelemetry
     # trace the logs and Langfuse carry, not the id Sentry invents with its tracing off. Set after
-    # the redaction, which would mask a 32-hex id as an opaque token.
+    # the redaction so the ids are written exactly as the logs and Langfuse show them.
     ids = _event_trace(hint)
     if ids is not None:
         trace_id, span_id = ids
         tags["trace_id"] = trace_id
         contexts = dict(fields.get("contexts") or {})
         contexts["trace"] = {"trace_id": trace_id, "span_id": span_id}
-        if _langfuse_host is not None:
+        # Decided per event: Sentry installs before Langfuse at the roots, and a keyless
+        # deployment with Langfuse switched on installs no client at all.
+        if _langfuse_host is not None and langfuse_is_installed():
             contexts["langfuse"] = {"trace_url": f"{_langfuse_host}/trace/{trace_id}"}
         fields["contexts"] = contexts
     if tags:

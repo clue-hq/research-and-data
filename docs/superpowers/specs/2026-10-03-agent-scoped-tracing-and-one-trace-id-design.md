@@ -96,6 +96,19 @@ log events or job-row diagnostics, and several failures are stored with no log l
   `None`, capture fallbacks) log one warning or error each with the trace id, so a failed job can
   be found from the logs.
 
+### 2.2 Known gaps left by this PR (found in the branch review, 2026-10-03)
+
+- The synchronous `/agent/turn-preview` route (not a fleet job) opens no named trace and passes no
+  handler; deferred, it is not a production path.
+- The M8D entity-research runtime (`clue_agents.entity_research_runtime`, superseded by ARV2, flag
+  off by default, on under the `integration_pilot` overlay) builds its agent with no Langfuse
+  handler; before R1 its model calls showed only as empty `llm.gateway_call` spans, after R1 not at
+  all. Attach the handler if that lane is ever run again.
+- `worker.heartbeat_crashed` is logged and reported outside the task's span with no remembered
+  trace, so it carries no trace id.
+- An error raised inside a web request takes the request's trace id; the request is not exported
+  to Langfuse (R1), so its Langfuse link leads nowhere until PR 2 sends requests to Grafana.
+
 ## 3. Out of scope (follow-ups, agreed in chat)
 
 - **PR 2 — one place to search:** R8 (design's non-agent spans and logged failures), and export

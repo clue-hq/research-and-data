@@ -201,7 +201,8 @@ class TurnCallbacks:
     """What the platform injects into a design run: opaque LangChain handlers and the id registry.
 
     ``handlers`` ride the invoke config alongside the turn's own collector, so the platform's
-    Langfuse handler nests the whole design run under the design-leg observation.
+    Langfuse handler nests the whole design run under the open observation: ``design-leg.turn`` on
+    the inline lane, the job's own ``design.turn`` on the fleet drain.
     ``langfuse_ids`` is the registry that handler fills; the collector reads it to stamp each
     receipt with the observation its cost belongs to.
     """
