@@ -1810,3 +1810,24 @@ def test_account_brief_binding_preserves_plain_text_and_does_not_expand_values()
         )
         == "Acme {{account_domain}} / acme.test / Acme {{account_domain}}"
     )
+
+
+def test_the_research_handler_declares_its_per_process_limit() -> None:
+    """The worker claims at most this many research tasks per process (research slowness fix
+    2026-10-03), the same number as the handler's own job semaphore."""
+    from clue_fleet import InFlightLimited
+
+    run = _run_row()
+    handler = Arv2AccountResearchWorkHandler(
+        settings=Settings(_env_file=None, arv2_account_max_parallel_jobs=3),
+        conn_factory=FakeConnFactory(),
+        artifacts=FakeArtifacts(),
+        storage=object(),
+        clients=FakeClients(),
+        model_provider=FakeModels(_finalizes_at_once()),
+        model_id="x-ai/grok-4.6",
+        writer=FakeWriter(),
+        store=FakeStore(run, _job_row(run)),
+    )
+    assert isinstance(handler, InFlightLimited)
+    assert handler.max_in_flight == 3

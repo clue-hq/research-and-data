@@ -486,6 +486,13 @@ class Arv2AccountResearchWorkHandler:
         self._db_lock = asyncio.Lock()
         self._jobs = asyncio.Semaphore(settings.arv2_account_max_parallel_jobs)
 
+    @property
+    def max_in_flight(self) -> int:
+        """Research jobs (account, person and quality continuations share this kind) one process
+        runs at once — the same number as the ``self._jobs`` semaphore, which by construction now
+        never makes a claimed task wait (research slowness fix 2026-10-03)."""
+        return self._settings.arv2_account_max_parallel_jobs
+
     # -- fleet entry -------------------------------------------------------------------------
 
     async def handle(self, context: WorkContext) -> WorkResult:
