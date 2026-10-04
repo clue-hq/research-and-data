@@ -311,6 +311,7 @@ def _filesystem_permissions():
 
 def _create_scene_solo_graph(
     *, model, backend, tools, system_prompt, skills, checkpointer, context_middleware=(),
+    compaction_middleware=(),
 ):
     """Compose DeepAgents 0.6.12 middleware without a delegation capability.
 
@@ -329,7 +330,6 @@ def _create_scene_solo_graph(
     from deepagents.middleware.memory import MemoryMiddleware
     from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
     from deepagents.middleware.skills import SkillsMiddleware
-    from deepagents.middleware.summarization import create_summarization_middleware
     from langchain.agents import create_agent
     from langchain.agents.middleware import TodoListMiddleware
     from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
@@ -341,7 +341,9 @@ def _create_scene_solo_graph(
         SkillsMiddleware(backend=backend, sources=skills),
         FilesystemMiddleware(backend=backend, _permissions=_filesystem_permissions()),
         SceneGuidanceReadMiddleware(backend),
-        create_summarization_middleware(model, backend),
+        # The platform's compaction (summariser + `compact_conversation`), sized from the
+        # model's real context window — the same mechanism as every governed platform agent.
+        *compaction_middleware,
         PatchToolCallsMiddleware(),
         AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
         MemoryMiddleware(
@@ -586,6 +588,26 @@ def create_design_deepagent(
         budget,
         **cancel_kwargs,
     )
+
+    # Compaction (founder ruling 2026-10-04): the design agent compacts its conversation the way
+    # every governed platform agent does — `clue_agents.compaction`, sized from the orchestrator
+    # model's real context window, with the `compact_conversation` tool. Registering the governed
+    # harness profile drops deepagents' own summariser by exact class, so `create_deep_agent`
+    # never adds a second one. History stays at `/conversation_history/<session>.md`, the path
+    # this backend admits.
+    from clue_agents.compaction import (
+        build_compaction_middleware,
+        register_governed_harness_profile,
+    )
+    from clue_agents.compaction_config import compaction_for
+
+    register_governed_harness_profile()
+    compaction_middleware = build_compaction_middleware(
+        orchestrator_model,
+        backend,
+        compaction_for(runtime_config.orchestrator_model),
+        history_under_work=False,
+    )
     if not scene_solo:
         author_model = _instrument(
             runtime_config, tools, runtime_config.author_model, "author", budget, **cancel_kwargs
@@ -812,6 +834,7 @@ def create_design_deepagent(
             checkpointer=checkpointer,
             # Solo already installs guidance-read middleware above.
             context_middleware=preference_middleware("orchestrator"),
+            compaction_middleware=compaction_middleware,
         )
         return agent, tools
 
@@ -839,7 +862,10 @@ def create_design_deepagent(
             scene_skill_bundle=runtime_config.scene_skill_bundle,
         ),
         subagents=subagents,
-        **({"middleware": model_middleware("orchestrator")} if scene_candidate or scoped_preferences else {}),
+        middleware=[
+            *(model_middleware("orchestrator") if scene_candidate or scoped_preferences else []),
+            *compaction_middleware,
+        ],
         name="lumen-design-deepagent",
         checkpointer=checkpointer,
         **(

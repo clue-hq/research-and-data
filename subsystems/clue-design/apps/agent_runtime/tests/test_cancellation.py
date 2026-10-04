@@ -29,6 +29,8 @@ fails for the author too instead of hiding until someone else runs the file in a
 
 from __future__ import annotations
 
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
 import json
 import types
 from dataclasses import replace
@@ -140,7 +142,7 @@ def _install_callbackable_models(monkeypatch) -> None:
     """
     monkeypatch.setattr(
         "lumen_agent.llm.init_model",
-        lambda *a, **k: types.SimpleNamespace(callbacks=[]),
+        lambda *a, **k: GenericFakeChatModel(messages=iter(()), callbacks=[]),
         raising=False,
     )
 

@@ -18,6 +18,8 @@ Covers:
 
 from __future__ import annotations
 
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
 import sys
 import types
 from pathlib import Path
@@ -188,11 +190,12 @@ def _install_harness_stubs(monkeypatch, capture: dict):
 
     def fake_init_model(model, **kwargs):
         calls.append({"model": model, **kwargs})
-        # FRESH sentinel per call with a `callbacks` field (declared on real
-        # BaseChatModel) so attach_trace_callback appends its role-tagged handler.
-        return types.SimpleNamespace(
-            _role_model_id=model, _kwargs=kwargs, callbacks=None
-        )
+        # FRESH model per call: a real (fake) chat model, because the harness builds the
+        # compaction middleware from it, tagged with the id and kwargs it was built for.
+        sentinel = GenericFakeChatModel(messages=iter(()))
+        object.__setattr__(sentinel, "_role_model_id", model)
+        object.__setattr__(sentinel, "_kwargs", kwargs)
+        return sentinel
 
     monkeypatch.setattr("lumen_agent.llm.init_model", fake_init_model, raising=False)
     # Neutralize the multimodal probe (it would try HTTP); the per-role coverage

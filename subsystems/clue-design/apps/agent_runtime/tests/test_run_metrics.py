@@ -10,6 +10,8 @@ the path whose metrics matter most (the 20m42s baseline died on a quota 403).
 
 from __future__ import annotations
 
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+
 import json
 import sys
 import types
@@ -402,7 +404,7 @@ def test_failed_run_still_emits_metrics_json(tmp_path, monkeypatch):
     module = sys.modules["deepagents"]
     monkeypatch.setattr(module, "create_deep_agent", fake_create_deep_agent)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
-    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: GenericFakeChatModel(messages=iter(())))
 
     from lumen_agent.harness import run_deepagent_turn
 
@@ -433,7 +435,7 @@ def test_successful_run_emits_metrics_after_its_finalize(tmp_path, monkeypatch):
     capture: dict = {}
     _install_deepagents_stub(monkeypatch, capture)
     monkeypatch.setattr("lumen_agent.tools.substrate.CoreClient", FakeCoreClient)
-    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: object())
+    monkeypatch.setattr("lumen_agent.llm.init_model", lambda *a, **k: GenericFakeChatModel(messages=iter(())))
 
     holder: dict = {}
     real_init = __import__(
