@@ -24,6 +24,16 @@ import EditorApp, { type EditQueueFactory } from "../EditorApp";
  * - Queue: messages typed while busy wait and drain one per idle transition.
  */
 
+// CanvasKit cannot load under Node/jsdom (no /canvaskit/canvaskit.wasm). loadCanvasKit already
+// catches the failed init, but Emscripten's abort also rejects an internal promise nobody awaits,
+// and that unhandled rejection failed this suite's CI run even with every test passing
+// (Editor checks, red since at least 2026-09-22). Resolve to `null` — the documented
+// "CanvasKit unavailable, stay on Konva" path — and keep the module's other exports real.
+vi.mock("@/engine/canvaskit/loadCanvasKit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/engine/canvaskit/loadCanvasKit")>()),
+  loadCanvasKit: vi.fn().mockResolvedValue(null)
+}));
+
 vi.mock("../canvas/CanvasSurface", () => ({
   CanvasSurface: ({ selectedNodeId }: { selectedNodeId: string | null }) =>
     React.createElement("div", {
