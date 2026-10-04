@@ -94,6 +94,13 @@ class GatewayConfig(BaseModel):
     embedding_model: str = "openai/text-embedding-3-small"
     # Optional fallback model id tried when the primary errors (config; ``None`` = no fallback).
     fallback_model: str | None = None
+    # The agent models' fallback CHAIN (founder ruling 2026-10-04), tried in order after the
+    # primary (and after ``fallback_model``) when a call fails before answering.
+    # Env: CLUE_AGENT_FALLBACK_MODELS.
+    fallback_models: tuple[str, ...] = ()
+    # How long a STREAMED agent model call may wait for its first chunk before the next model in
+    # the chain is tried; ``None`` = no first-chunk deadline. Env: CLUE_AGENT_FIRST_TOKEN_TIMEOUT_S.
+    first_token_timeout_s: float | None = Field(default=None, gt=0)
     # P3.2 (PD-part3 delta 6) — OpenRouter economics knobs, policy as data. ``provider.sort``
     # pins routing to one replica ordering, which is what makes a stable prompt-cache prefix
     # actually HIT (the design runtime's ~95% cached-prefill invariant); ``usage.include``
@@ -170,6 +177,10 @@ def default_gateway_config() -> GatewayConfig:
         if settings.chat_reasoning_trace_mode == "raw"
         else None
     )
+    # The agent fallback chain and first-chunk deadline (founder ruling 2026-10-04): production
+    # 2026-10-04, grok-4.6 accepted requests and sent nothing, with no fallback configured.
+    fallback_models = settings.agent_fallback_models
+    first_token_timeout_s = settings.agent_first_token_timeout_s or None
     if settings.judge_model:
         return GatewayConfig(
             synthesis_model=settings.synthesis_model,
@@ -177,12 +188,16 @@ def default_gateway_config() -> GatewayConfig:
             timeout_s=settings.gateway_timeout_s,
             agent_reasoning=reasoning,
             openrouter_chat_completions_fallback=True,
+            fallback_models=fallback_models,
+            first_token_timeout_s=first_token_timeout_s,
         )
     return GatewayConfig(
         synthesis_model=settings.synthesis_model,
         timeout_s=settings.gateway_timeout_s,
         agent_reasoning=reasoning,
         openrouter_chat_completions_fallback=True,
+        fallback_models=fallback_models,
+        first_token_timeout_s=first_token_timeout_s,
     )
 
 

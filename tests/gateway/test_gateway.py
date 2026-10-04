@@ -449,3 +449,28 @@ def test_model_price_arithmetic_is_exact_decimal() -> None:
 def test_embedding_result_is_typed() -> None:
     out = build_gateway(GatewayConfig()).embed(model="e", inputs=["a"])
     assert isinstance(out, EmbeddingResult)
+
+
+def test_the_agent_fallback_chain_and_first_chunk_deadline_come_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Founder ruling 2026-10-04: every agent model call falls back to grok-4.7, then
+    meta/muse-spark-1.3, by default — production gets it from the deploy, with no env change."""
+    from clue_config import load_settings
+    from clue_config.gateway import default_gateway_config
+
+    monkeypatch.delenv("CLUE_AGENT_FALLBACK_MODELS", raising=False)
+    monkeypatch.delenv("CLUE_AGENT_FIRST_TOKEN_TIMEOUT_S", raising=False)
+    defaults = load_settings()
+    assert defaults.agent_fallback_models == ("x-ai/grok-4.7", "meta/muse-spark-1.3")
+    assert defaults.agent_first_token_timeout_s == 120.0
+    config = default_gateway_config()
+    assert config.fallback_models == ("x-ai/grok-4.7", "meta/muse-spark-1.3")
+    assert config.first_token_timeout_s == 120.0
+
+    monkeypatch.setenv("CLUE_AGENT_FALLBACK_MODELS", " a/one , b/two ")
+    monkeypatch.setenv("CLUE_AGENT_FIRST_TOKEN_TIMEOUT_S", "0")
+    assert load_settings().agent_fallback_models == ("a/one", "b/two")
+    assert default_gateway_config().first_token_timeout_s is None  # 0 = no deadline
+    monkeypatch.setenv("CLUE_AGENT_FALLBACK_MODELS", "")
+    assert default_gateway_config().fallback_models == ()

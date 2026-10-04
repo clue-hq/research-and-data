@@ -18,6 +18,7 @@ x-worker: &worker
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock
     - /srv/clue/workspaces:/srv/clue/workspaces
+    - /srv/clue/lumen-agent:/srv/clue/lumen-agent
     - /srv/clue/engine-cache:/srv/clue/engine-cache
 
 # The worker pools go through PgBouncer (transaction pooling, MAX_PREPARED_STATEMENTS set in
@@ -27,8 +28,12 @@ x-worker-env: &worker-env
   CLUE_DATABASE_URL: postgresql+asyncpg://clue_worker:${PGBOUNCER_CLIENT_PASSWORD}@pgbouncer:6432/railway
   CLUE_AGENT_WORKSPACE_ROOT: /srv/clue/workspaces
   # The design agent's session memory and compaction history; unset, it lands inside the image
-  # (/app/subsystems/clue-design/.deepagent-workspace) and every redeploy would wipe it.
-  LUMEN_AGENT_WORKSPACE_ROOT: /srv/clue/workspaces/lumen-agent
+  # (/app/subsystems/clue-design/.deepagent-workspace) and every redeploy would wipe it. Its OWN
+  # mounted root, never inside CLUE_AGENT_WORKSPACE_ROOT: the fleet workers refuse to boot when
+  # any entry there is not a private 0700 directory, and the design agent creates its root with the
+  # default umask (2026-10-04: /srv/clue/workspaces/lumen-agent at 0755 crash-looped every worker).
+  # deploy.sh creates this directory (UID 1000, 0700) and moved the old nested one once.
+  LUMEN_AGENT_WORKSPACE_ROOT: /srv/clue/lumen-agent
   LUMEN_ASSET_STORE_ROOT: /srv/clue/engine-cache
 
 x-batch: &batch
@@ -77,6 +82,7 @@ services:
     depends_on: [pgbouncer]
     volumes:
       - /srv/clue/workspaces:/srv/clue/workspaces
+      - /srv/clue/lumen-agent:/srv/clue/lumen-agent
       - /srv/clue/engine-cache:/srv/clue/engine-cache
     environment:
       <<: *worker-env

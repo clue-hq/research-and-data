@@ -103,10 +103,20 @@ def test_the_controller_url_is_documented_with_an_empty_default() -> None:
         assert "LUMEN_INGESTION_CONTROLLER_DATABASE_URL=" in lines, example
 
 
-def test_design_session_memory_lives_on_the_mounted_workspace_volume() -> None:
+def test_design_session_memory_has_its_own_mounted_root_outside_the_agent_workspace_root() -> None:
     """Unset, the design agent keeps session memory and compaction history under the image's own
-    /app/subsystems/clue-design/.deepagent-workspace, which every redeploy replaces."""
+    /app/subsystems/clue-design/.deepagent-workspace, which every redeploy replaces — so it needs
+    a mounted host directory. It must NOT be inside CLUE_AGENT_WORKSPACE_ROOT: the fleet workers
+    refuse to boot when any entry there is not a private 0700 directory, and the design agent
+    creates its root with the default umask (production 2026-10-04: a 0755
+    /srv/clue/workspaces/lumen-agent crash-looped every fleet worker after a deploy)."""
     services = _services()
     for name in (*SLOTS, "ingestion"):
-        root = _env(services[name]).get("LUMEN_AGENT_WORKSPACE_ROOT", "")
-        assert root.startswith(WORKSPACE_ROOT + "/"), name
+        env = _env(services[name])
+        root = env.get("LUMEN_AGENT_WORKSPACE_ROOT", "")
+        agent_root = env.get("CLUE_AGENT_WORKSPACE_ROOT", WORKSPACE_ROOT)
+        assert root.startswith("/"), name
+        design, platform = Path(root), Path(agent_root)
+        assert not design.is_relative_to(platform), name
+        assert not platform.is_relative_to(design), name
+        assert f"{root}:{root}" in services[name].get("volumes", []), name

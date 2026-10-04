@@ -22,12 +22,14 @@ if ! id clue > /dev/null 2>&1; then
   fi
 fi
 usermod -aG docker clue
-mkdir -p /srv/clue/workspaces /srv/clue/engine-cache
+mkdir -p /srv/clue/workspaces /srv/clue/lumen-agent /srv/clue/engine-cache
 # The checkout and env files belong to clue; the two directories the containers write belong to
 # UID 1000, which every container runs as (compose.yaml `user: "1000:1000"`).
 chown clue:clue /srv/clue
-chown 1000:1000 /srv/clue/workspaces /srv/clue/engine-cache
-chmod 700 /srv/clue/workspaces
+chown 1000:1000 /srv/clue/workspaces /srv/clue/lumen-agent /srv/clue/engine-cache
+# The design agent's root is NOT inside the agent workspace root (whose every entry must be a
+# private 0700 directory, or no fleet worker boots); deploy.sh keeps both at 0700.
+chmod 700 /srv/clue/workspaces /srv/clue/lumen-agent
 
 [ -d /srv/clue/app/.git ] || sudo -u clue git clone --branch main git@github.com:clue-hq/research-and-data.git /srv/clue/app
 for f in env pgbouncer.env backup.env compose.env; do

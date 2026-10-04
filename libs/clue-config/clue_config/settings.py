@@ -26,6 +26,10 @@ _ALLOWLIST_FORMAT_ERROR: Final = (
     'CLUE_AGENT_WORKSPACE_ALLOWLIST must be a JSON array (["ws-a","ws-b"]) or a comma-separated '
     "list (ws-a,ws-b)"
 )
+_FALLBACK_MODELS_FORMAT_ERROR: Final = (
+    'CLUE_AGENT_FALLBACK_MODELS must be a JSON array (["x-ai/grok-4.7","meta/muse-spark-1.3"]) '
+    "or a comma-separated list (x-ai/grok-4.7,meta/muse-spark-1.3)"
+)
 
 _CORS_ORIGINS_FORMAT_ERROR: Final = (
     'CLUE_FRONTEND_CORS_ALLOW_ORIGINS must be a JSON array (["https://app.example"]) or a '
@@ -634,6 +638,19 @@ class Settings(BaseSettings):
     # setting with an error that names neither the accepted formats nor the fix. (Seen live: a
     # shell ``source .env`` strips the JSON string quotes, leaving ``[ws-a]``.)
     agent_workspace_allowlist: Annotated[tuple[str, ...], NoDecode] = ()
+    # Every agent model call's fallback chain (founder ruling 2026-10-04): tried in order when the
+    # primary fails before answering — an error, or no first chunk within
+    # ``agent_first_token_timeout_s``. Comma-separated (or JSON) OpenRouter ids; blank = none.
+    # Env: ``CLUE_AGENT_FALLBACK_MODELS``.
+    agent_fallback_models: Annotated[tuple[str, ...], NoDecode] = (
+        "x-ai/grok-4.7",
+        "meta/muse-spark-1.3",
+    )
+    # Seconds a streamed agent model call may wait for its FIRST chunk before the next model is
+    # tried (production 2026-10-04: grok-4.6 sent nothing for 300 s). 0 = no first-chunk deadline;
+    # mid-answer pauses stay governed by LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S.
+    # Env: ``CLUE_AGENT_FIRST_TOKEN_TIMEOUT_S``.
+    agent_first_token_timeout_s: float = Field(default=120.0, ge=0)
     agent_canary_percent: int = Field(default=0, ge=0, le=100)
     # Absolute API-root ceiling for one governed account-agent plan. The prepared runner further
     # clamps this to the account's durable research budget when one exists.
@@ -1080,6 +1097,13 @@ class Settings(BaseSettings):
         """Accept a JSON array *or* a plain comma-separated list of workspace ids."""
 
         return _parse_string_list(value, _ALLOWLIST_FORMAT_ERROR)
+
+    @field_validator("agent_fallback_models", mode="before")
+    @classmethod
+    def _parse_agent_fallback_models(cls, value: Any) -> Any:
+        """Accept a JSON array *or* a plain comma-separated list of model ids."""
+
+        return _parse_string_list(value, _FALLBACK_MODELS_FORMAT_ERROR)
 
     @field_validator("stage0_official_site_crawl_workspace_allowlist", mode="before")
     @classmethod
