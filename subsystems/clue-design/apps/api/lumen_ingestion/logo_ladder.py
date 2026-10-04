@@ -921,6 +921,23 @@ def attach_bytes(candidates: list[LadderCandidate], fetched: dict) -> list[Ladde
                 continue
             blob = body
             candidate.content_type = content_type
+            # A CDN that picks the format from `Accept` (Cloudflare `f=auto`) serves AVIF, which
+            # neither our appearance analysis nor the engine can read. Decode it to PNG here, once,
+            # so every later step — ink, real dimensions, the asset id, placement — sees PNG.
+            # Lazy: `lumen_ingestion.capture` imports this module and must stay PIL-free.
+            from lumen_api.image_containers import PNG_MIME, ImageContainerError, convert_to_png
+
+            try:
+                decoded = convert_to_png(blob)
+            except ImageContainerError as error:
+                candidate.fetch_error = f"image could not be decoded: {error}"
+                continue
+            if decoded is not None:
+                candidate.notes.append(
+                    f"decoded {decoded.source_container.upper()} to PNG (source sha256:{decoded.source_sha256})"
+                )
+                blob, content_type = decoded.data, PNG_MIME
+                candidate.content_type = content_type
             candidate.fmt = guess_fmt(candidate.url, content_type, blob)
         candidate.body = blob
         candidate.sha256 = hashlib.sha256(blob).hexdigest()
@@ -1763,11 +1780,17 @@ def classify_variant(candidate: LadderCandidate) -> tuple[str, str, int]:
         return "light", "explicit prefers-color-scheme:light <source>", 1
 
     # 1b. filename/alt naming is an explicit authored signal too
+    # A name is ambiguous — "logo-dark" can mean dark ink as easily as dark mode — so it yields
+    # when the measured pixels clearly say the opposite (Atrium Hospitality: an asset named "dark"
+    # whose ink measures L=0.30, i.e. made for light backgrounds).
+    pixel_variant = {"light_variant": "light", "dark_variant": "dark"}.get(
+        appearance.get("verdict")
+    )
     dark_hits = [t for t in DARK_NAME_TOKENS if _has_token(hay, t)]
     light_hits = [t for t in LIGHT_NAME_TOKENS if _has_token(hay, t)]
-    if dark_hits and not light_hits:
+    if dark_hits and not light_hits and pixel_variant != "light":
         return "dark", f"filename/alt names a dark/inverse asset: {dark_hits}", 2
-    if light_hits and not dark_hits:
+    if light_hits and not dark_hits and pixel_variant != "dark":
         return "light", f"filename/alt names a light asset: {light_hits}", 2
 
     # 1c. Theme-adaptive assets are decided by INSPECTING THE ASSET, and that
@@ -1903,7 +1926,12 @@ def score_candidate(
         signals.append(f"links into /{partner}/ - partner/customer logo, not our brand -80")
 
     width, height = candidate.width, candidate.height
-    if width and height and width > 800 and height > 800 and not names_logo:
+    # A large raster is a hero or a screenshot unless its own name says logo, or it both links to
+    # this site's root and carries the brand in its name. That pair is what a header logo served
+    # at full resolution looks like (Atrium Hospitality: a 3000x1562 header image, linked home,
+    # named `atrium-hospitality-…`, whose size only became visible once its AVIF was decoded).
+    brand_logo_evidence = links_home and brand_in_name
+    if width and height and width > 800 and height > 800 and not (names_logo or brand_logo_evidence):
         score -= 90
         signals.append(f"{width}x{height} in both dims and not logo-named - hero/screenshot -90")
 
