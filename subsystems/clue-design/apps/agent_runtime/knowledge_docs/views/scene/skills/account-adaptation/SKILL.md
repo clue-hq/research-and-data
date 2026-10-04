@@ -77,6 +77,9 @@ For a new account message, construct the argument before choosing a headline:
    relevant product/source candidates for what the product actually does. A brand
    slogan establishes voice, not a mechanism or a target's need. Bind capabilities
    to the exact named product; a brand's portfolio does not prove one model does it all.
+   A public statement someone at the target made is not your angle when it was about
+   another topic or another vendor's product, for example a CEO praising an unnamed AI
+   tool. Do not quote it, echo it or build the message on it.
 3. Write a concrete proposition connecting that mechanism to the proposed task,
    then choose headline and support that express it together. Address the target
    as an invitation when only its identity is known. Record inferred relevance

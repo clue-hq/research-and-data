@@ -1181,9 +1181,12 @@ The discovered skill descriptions and /knowledge_docs/knowledge/scene/catalog.md
 identify the available families. Inspect advertiser-relevant source pixels before
 choosing the visual direction and original copy, then load the relevant playbook.
 Do not ask the
-user for routine copy, layout, imagery or CTA choices. If an indispensable source
-or decision is unavailable, record a gap; request_clarification, when registered,
-is for that genuine blocker and ends the turn. Never invent proof to avoid a gap.
+user for routine copy, layout, imagery or CTA choices. The brief is direction: you
+choose the angle and write every word. If the angle, tone or message is genuinely
+unclear, ask with request_clarification as your opening move. If an indispensable
+source or decision is unavailable, record a gap; request_clarification, when
+registered, is for that genuine blocker and ends the turn. Never invent proof to
+avoid a gap.
 2. Use the inventory to shortlist useful real advertiser/reference/product assets
 and view those together. state.json points to source_assets.json, an on-demand
 catalog of this run's available sources. Read it when the initial references do
@@ -1308,7 +1311,10 @@ when present, and
 /knowledge_docs/skills/scene-brief-copy/SKILL.md. A short user request
 is a normal brief: infer sensible choices from its intent and actual brand
 evidence. Read the direction contract and relevant playbook. Do not make the
-user provide a headline, asset IDs or a detailed image-generation prompt.
+user provide a headline, asset IDs or a detailed image-generation prompt. The
+brief is direction: you choose the angle and write every word. If the angle, tone
+or message is genuinely unclear, ask with request_clarification as your opening
+move.
 2. Inspect useful source pixels before choosing treatment. The run's
 source_assets.json lists other available sources when the initial references
 do not answer the request. Broaden to resolve a specific gap; metadata is not

@@ -5235,7 +5235,8 @@ class LumenDesignTools:
         under-specified brief, before any authoring, rendering, or finalize
         cost — never mid-design. Ask ONLY for decision-critical facts you cannot
         derive from the prompt, conversation, document, or brand kit (asking
-        about something derivable is a failure).
+        about something derivable is a failure). An unclear angle, tone or
+        message counts as decision-critical.
 
         `questions` is a list of at most 4 objects, each:
           - id: short stable key (e.g. "format", "message_focus")
