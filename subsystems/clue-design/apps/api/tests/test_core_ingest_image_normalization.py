@@ -18,7 +18,7 @@ from PIL import Image, features
 from lumen_api.core import CoreClient, CoreError
 from lumen_api.image_containers import (
     INGEST_IMAGE_DECODE_FAILED,
-    decode_avif,
+    decode_to_png,
     is_avif,
     normalize_ingest_image,
 )
@@ -65,8 +65,8 @@ def test_is_avif_recognizes_the_ftyp_brand_and_nothing_else() -> None:
     assert not is_avif(b"")
 
 
-def test_decode_avif_keeps_alpha_and_size() -> None:
-    decoded = decode_avif(avif_bytes("RGBA"))
+def test_decode_to_png_keeps_alpha_and_size() -> None:
+    decoded = decode_to_png(avif_bytes("RGBA"))
     assert decoded is not None
     assert decoded.mime_type == "image/png"
     with Image.open(BytesIO(decoded.data)) as png:
@@ -75,9 +75,9 @@ def test_decode_avif_keeps_alpha_and_size() -> None:
         assert png.mode == "RGBA"
 
 
-def test_decode_avif_is_deterministic() -> None:
+def test_decode_to_png_is_deterministic() -> None:
     data = avif_bytes()
-    first, second = decode_avif(data), decode_avif(data)
+    first, second = decode_to_png(data), decode_to_png(data)
     assert first is not None and second is not None
     assert first.data == second.data
 
@@ -173,8 +173,27 @@ def test_real_helper_stores_the_decoded_png_as_a_raster_image(tmp_path: Path) ->
     )
     assert response.get("ok"), response
     record = response["asset"]["record"]
-    expected = decode_avif(data)
+    expected = decode_to_png(data)
     assert expected is not None
     assert record["kind"] == "raster_image"
     assert record["media"]["mime_type"] == "image/png"
     assert record["media"]["digest"]["value"] == hashlib.sha256(expected.data).hexdigest()
+
+
+def test_an_ico_favicon_is_decoded_to_its_largest_image_as_png() -> None:
+    icon = Image.new("RGBA", (64, 64), (10, 80, 200, 255))
+    out = BytesIO()
+    icon.save(out, format="ICO", sizes=[(16, 16), (32, 32), (64, 64)])
+    data = out.getvalue()
+    assert not is_avif(data)
+    decoded = decode_to_png(data)
+    assert decoded is not None and decoded.source_format == "ico"
+    with Image.open(BytesIO(decoded.data)) as png:
+        assert png.format == "PNG" and png.size == (64, 64)
+    normalized = normalize_ingest_image(
+        bytes_base64=b64(data), declared_mime_type="image/x-icon", filename="favicon.ico",
+        provenance=None,
+    )
+    assert normalized.declared_mime_type == "image/png"
+    assert normalized.filename == "favicon.png"
+    assert "ico -> png" in normalized.provenance["notes"][0]

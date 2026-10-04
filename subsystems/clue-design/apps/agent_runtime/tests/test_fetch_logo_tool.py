@@ -1255,3 +1255,45 @@ def test_web_fetch_logo_end_to_end_mixed_vendor_and_ladder_family(tmp_path, monk
     assert registry[
         next(e["asset_id"] for e in result["logos"] if e["cell"] == "dark_lockup")
     ]["source"]["url"] == "https://acme.com/logo-white.svg"
+
+
+def test_every_logo_the_ladder_stands_behind_reaches_the_agent_as_an_alternative(monkeypatch):
+    """Founder ask 2026-10-04: the agent sees all of the site's logos, not only the cells.
+
+    A ranked candidate the ladder stands behind (fetched, positive score, first-party) and could
+    read as logo artwork rides along as an alternative; a CSS background photo the ladder could
+    not read as a logo (`lockup == "unknown"`) does not; the cell's own bytes are not repeated.
+    """
+    from lumen_ingestion.logo_ladder import LadderCandidate
+    from lumen_ingestion.logo_vendor import VendorCredentialsMissing
+
+    def ranked(url, body, *, lockup, score=50.0, first_party=True, content_type="image/svg+xml"):
+        candidate = LadderCandidate(url=url, rung="BRAND_PAGE", fmt="svg", dom_role="link rel=icon")
+        candidate.body, candidate.content_type = body, content_type
+        candidate.lockup, candidate.variant = lockup, "light"
+        candidate.score, candidate.first_party = score, first_party
+        return candidate
+
+    cell = _slot(_svg(), lockup="full_lockup", variant="light", url="https://acme.com/logo.svg")
+    resolution = _resolution({"light": cell})
+    resolution.ranked = [
+        ranked("https://acme.com/logo.svg", _svg(), lockup="full_lockup"),  # the cell itself
+        ranked("https://acme.com/favicon.svg", _svg("#2050c0", 64, 64), lockup="symbol"),
+        ranked("https://acme.com/footer-photo.jpg", _png(), lockup="unknown",
+               content_type="image/png"),
+        ranked("https://partner.com/badge.svg", _svg("#999999", 90, 90), lockup="symbol",
+               first_party=False),
+        ranked("https://acme.com/junk.svg", _svg("#123456", 70, 70), lockup="symbol", score=-5),
+    ]
+    monkeypatch.setattr(logo_fetch, "_ladder_rung", lambda site, company: resolution)
+
+    def no_vendor(site, company):
+        raise VendorCredentialsMissing("no key in this test")
+
+    monkeypatch.setattr(logo_fetch, "_vendor_rung", no_vendor)
+    outcome = logo_fetch.fetch_logo_family("acme.com", company_name="Acme")
+
+    assert [p.cell for p in outcome.prepared] == ["light_lockup"]
+    urls = [p.source_ref["url"] for p in outcome.alternatives]
+    assert urls == ["https://acme.com/favicon.svg"]
+    assert outcome.alternatives[0].label == "Acme logo (site: light symbol, link rel=icon)"

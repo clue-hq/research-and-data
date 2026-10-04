@@ -1,5 +1,8 @@
 """Image container normalization for the design asset store (2026-10-04).
 
+AVIF and ICO, the two raster formats a site serves for logos that the engine cannot sniff, are
+decoded to PNG where bytes enter. (ICO: a favicon is often the only small mark a site publishes.)
+
 INVARIANT: a raster asset's primary bytes are a format the engine sniffs and renders —
 PNG, JPEG, GIF or WebP (`crates/lumen-assets/src/mime.rs`).
 
@@ -36,6 +39,11 @@ class ImageContainerError(ValueError):
     """An AVIF payload that cannot be decoded to PNG."""
 
 
+def is_ico(data: bytes) -> bool:
+    """Whether ``data`` is a Windows icon (``ICONDIR``: reserved 0, type 1, at least one image)."""
+    return len(data) >= 6 and data[:4] == b"\x00\x00\x01\x00" and data[4:6] != b"\x00\x00"
+
+
 def is_avif(data: bytes) -> bool:
     """Whether ``data`` is an AVIF file: an ISO-BMFF ``ftyp`` box naming an AVIF brand.
 
@@ -56,20 +64,29 @@ class DecodedImage:
     data: bytes
     mime_type: str
     source_sha256: str
+    source_format: str = "avif"
 
 
-def decode_avif(data: bytes) -> Optional[DecodedImage]:
-    """Decode AVIF to PNG. ``None`` when ``data`` is not AVIF.
+def decode_to_png(data: bytes) -> Optional[DecodedImage]:
+    """Decode AVIF or ICO to PNG. ``None`` when ``data`` is neither.
 
-    An animated AVIF keeps its first frame, which is what a logo or still placement shows.
-    Raises :class:`ImageContainerError` when the payload claims AVIF but cannot be decoded.
+    An animated AVIF keeps its first frame, which is what a logo or still placement shows; an ICO
+    keeps its largest image. Raises :class:`ImageContainerError` when the payload claims one of
+    the two formats but cannot be decoded.
     """
-    if not is_avif(data):
+    if is_avif(data):
+        source_format = "avif"
+    elif is_ico(data):
+        source_format = "ico"
+    else:
         return None
     from PIL import Image
 
     try:
         with Image.open(BytesIO(data)) as image:
+            if source_format == "ico":
+                largest = max(image.info.get("sizes") or {image.size}, key=lambda s: s[0] * s[1])
+                image.size = largest
             image.seek(0)
             has_alpha = image.mode in ("RGBA", "LA", "PA") or "transparency" in image.info
             frame = image.convert("RGBA" if has_alpha else "RGB")
@@ -77,28 +94,32 @@ def decode_avif(data: bytes) -> Optional[DecodedImage]:
         frame.save(out, format="PNG")
     except Exception as error:  # noqa: BLE001 — Pillow raises a zoo of types
         raise ImageContainerError(
-            f"avif image could not be decoded to png: {type(error).__name__}: {error}"
+            f"{source_format} image could not be decoded to png: {type(error).__name__}: {error}"
         ) from error
     return DecodedImage(
         data=out.getvalue(),
         mime_type="image/png",
         source_sha256=hashlib.sha256(data).hexdigest(),
+        source_format=source_format,
     )
 
 
 def png_filename(filename: Optional[str]) -> Optional[str]:
-    """``x.avif`` → ``x.png``; any other name is returned unchanged."""
+    """``x.avif`` / ``x.ico`` → ``x.png``; any other name is returned unchanged."""
     if not filename:
         return filename
     stem, dot, ext = filename.rpartition(".")
-    if dot and ext.lower() == "avif":
+    if dot and ext.lower() in ("avif", "ico"):
         return f"{stem}.png"
     return filename
 
 
 def decode_note(decoded: DecodedImage) -> str:
     """The provenance note the record carries so the source bytes stay traceable."""
-    return f"image container decoded at ingestion: avif -> png (source sha256:{decoded.source_sha256})"
+    return (
+        f"image container decoded at ingestion: {decoded.source_format} -> png "
+        f"(source sha256:{decoded.source_sha256})"
+    )
 
 
 @dataclass(frozen=True)
@@ -143,14 +164,15 @@ def normalize_ingest_image(
     untouched = NormalizedImageIngest(
         bytes_base64, declared_mime_type, filename, provenance, decoded=None, refusal=None
     )
-    if not is_avif(_leading_bytes(bytes_base64)):
+    head = _leading_bytes(bytes_base64)
+    if not (is_avif(head) or is_ico(head)):
         return untouched
     try:
         raw = base64.b64decode(bytes_base64, validate=True)
     except (binascii.Error, ValueError):
         return untouched  # the helper reports malformed base64 exactly as it always has
     try:
-        decoded = decode_avif(raw)
+        decoded = decode_to_png(raw)
     except ImageContainerError as error:
         return NormalizedImageIngest(
             bytes_base64,

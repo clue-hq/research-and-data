@@ -947,3 +947,63 @@ def test_company_tokens_read_the_organisation_label():
     assert {"goodman", "campbell"} <= ladder.company_tokens(
         "goodmancampbell.com", "Goodman Campbell Brain and Spine"
     )
+
+
+# --- Atrium Hospitality, 2026-10-04: the header lockups only became measurable once AVIF decoded --
+
+
+def test_an_ambiguous_dark_name_yields_to_measured_dark_ink() -> None:
+    """A file named "dark" whose ink measures dark is the LIGHT-background asset, not dark mode."""
+    candidate = ladder.LadderCandidate(
+        url="https://cdn.example/logos/acme-logo-dark.png",
+        appearance={"kind": "png", "verdict": "light_variant", "mean_lightness": 0.295},
+    )
+    variant, basis, _rank = ladder.classify_variant(candidate)
+    assert variant == "light"
+    assert "dark ink" in basis
+
+
+def test_a_dark_name_still_wins_when_the_pixels_agree_or_say_nothing() -> None:
+    agreeing = ladder.LadderCandidate(
+        url="https://cdn.example/logos/acme-logo-dark.png",
+        appearance={"kind": "png", "verdict": "dark_variant", "mean_lightness": 0.97},
+    )
+    unread = ladder.LadderCandidate(url="https://cdn.example/logos/acme-logo-dark.png")
+    assert ladder.classify_variant(agreeing)[0] == "dark"
+    assert ladder.classify_variant(unread)[0] == "dark"
+    assert "filename/alt" in ladder.classify_variant(unread)[1]
+
+
+def _large_header_raster(url: str, link: str | None) -> ladder.LadderCandidate:
+    return ladder.LadderCandidate(
+        url=url, rung="HEADER", fmt="png", width=3000, height=1562, link_destination=link,
+    )
+
+
+def test_a_full_resolution_header_logo_linked_home_and_brand_named_is_not_a_hero() -> None:
+    candidate = _large_header_raster(
+        "https://cdn.example/logos/atrium-hospitality-12735-morris-rd.png",
+        "https://www.atriumhospitality.com/",
+    )
+    score, signals, *_ = ladder.score_candidate(candidate, "atriumhospitality.com", set())
+    assert not any("hero/screenshot" in s for s in signals)
+    unlinked = _large_header_raster(candidate.url, None)
+    unlinked_score, *_ = ladder.score_candidate(unlinked, "atriumhospitality.com", set())
+    # The link home is worth +20; the rest of the gap is the hero penalty it no longer pays.
+    assert score - unlinked_score == 20 + 90
+
+
+@pytest.mark.parametrize(
+    ("url", "link"),
+    [
+        # brand-named but not linked home: a lobby photo
+        ("https://cdn.example/img/atrium-hospitality-lobby.png", None),
+        # linked home but not brand-named: a hero banner
+        ("https://cdn.example/img/summer-hero.png", "https://www.atriumhospitality.com/"),
+    ],
+)
+def test_a_large_raster_with_only_one_signal_is_still_a_hero(url: str, link: str | None) -> None:
+    _score, signals, *_ = ladder.score_candidate(
+        _large_header_raster(url, link), "atriumhospitality.com", set()
+    )
+    assert any("hero/screenshot" in s for s in signals)
