@@ -178,3 +178,12 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   tagged); scale = /abm/[account] + typed records in PloyDB; direct text edit in preview (no AI).
 - Key implication: our root cause is per-section scoped CSS islands vs Ploy's single shared theme;
   we copied Ploy's skill names/process but not its substrate. Raw notes: scratchpad only.
+
+## Founder rulings after the Ploy study (2026-10-04) — direction only, no plan committed yet
+- Each seller's pages may become a standard code project (Astro/React/Tailwind, Ploy-like) that
+  the platform builds and serves, provided output quality is pristine. Ads stay on the current
+  Rust scene engine.
+- Our own capture pipeline stays as the evidence source for the rebuild (not Ploy's lighter one).
+- Direct text editing in the preview (Ploy's no-AI quick edit) is wanted in the first version.
+- Still open for discussion: week-1 bridge scope in the current engine, the parallel code-first
+  lane's v1 scope, framework/hosting shape, what happens to existing web documents.
