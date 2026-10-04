@@ -61,8 +61,9 @@ __all__ = [
 # attaches a PDF, a deck or a spreadsheet gets an answer about what is in it. v59 moves
 # `open_design_leg` to @5, so one ask can open one leg that births many artifacts, and v60 is the
 # prompt that stops telling the user to speak before generation begins: the leg's first design
-# turn is queued from the message that opened it.
-PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v70"
+# turn is queued from the message that opened it. v71 is the prompt that hands Design direction,
+# never copy: the design agent picks the angle and writes every word.
+PROJECT_CONVERSATION_AGENT_PROFILE_ID = "head-of-abm@v71"
 PROJECT_CONVERSATION_MODEL_ID = "x-ai/grok-4.6"
 
 _MAX_CONTEXT_ACCOUNTS = 50

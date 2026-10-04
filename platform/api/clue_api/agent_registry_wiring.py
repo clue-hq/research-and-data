@@ -254,7 +254,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # section 7b to teach the brief, the manual re-mints at `manual-*@v16` (a new discovery
     # chapter), and the conversation recipe moves 32 -> 33 because its slot pins exact addresses.
     # Prompt v18 stays.
-    AgentRole.HEAD_OF_ABM: "v70",
+    # v71 (design brief is direction, founder 2026-10-04): no address moves. Prompt v19 and
+    # `open_design_leg@5`'s description say the brief carries direction, never copy; Design picks
+    # the angle and writes every word. The manual re-mints at `manual-*@v17` (its tools chapter
+    # renders that description).
+    AgentRole.HEAD_OF_ABM: "v71",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
