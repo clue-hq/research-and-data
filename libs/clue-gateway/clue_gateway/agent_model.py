@@ -420,6 +420,39 @@ def _generation_id(message: BaseMessage | None, payload: Mapping[str, Any] | Non
     return None
 
 
+class FirstChunkTimeout(TimeoutError):
+    """A streamed candidate sent no chunk at all within the first-chunk deadline."""
+
+
+async def _first_chunk_within(
+    stream: AsyncIterator[ChatGenerationChunk], timeout_s: float | None
+) -> AsyncIterator[ChatGenerationChunk]:
+    """Re-yield ``stream``, raising :class:`FirstChunkTimeout` when its FIRST chunk takes longer
+    than ``timeout_s``. Later chunks are not timed here (mid-answer pauses stay governed by the
+    provider client's own chunk timeout). The underlying stream is always closed, so an abandoned
+    candidate releases its HTTP request before the next one starts."""
+
+    try:
+        if timeout_s is None:
+            async for chunk in stream:
+                yield chunk
+            return
+        iterator = stream.__aiter__()
+        try:
+            first = await asyncio.wait_for(iterator.__anext__(), timeout=timeout_s)
+        except StopAsyncIteration:
+            return
+        except TimeoutError as exc:
+            raise FirstChunkTimeout(f"no response chunk within {timeout_s:g}s") from exc
+        yield first
+        async for chunk in iterator:
+            yield chunk
+    finally:
+        aclose = getattr(stream, "aclose", None)
+        if aclose is not None:
+            await aclose()
+
+
 class GovernedAgentChatModel(BaseChatModel):
     """Provider model(s) wrapped with fallback, bounded transient retry, usage/cost metadata,
     tracing, and tool binding.
@@ -439,6 +472,14 @@ class GovernedAgentChatModel(BaseChatModel):
     # attribution mechanism — LangChain callbacks and usage records are per-instance).
     # None = an unlabelled platform model; nothing changes for existing call sites.
     attribution_role: str | None = None
+    # Seconds a streamed call may wait for its FIRST chunk from one candidate before the next
+    # candidate is tried (2026-10-04: grok-4.6 accepted requests and sent nothing for 300 s).
+    # ``None`` = no first-chunk deadline. Once a chunk has arrived, pauses are not cut here.
+    first_token_timeout_s: float | None = None
+    # Hard wall-clock deadline for one candidate's NON-streamed call, opt-in per builder (the
+    # design-leg exit judge): a stalled provider can keep the connection alive, so the per-read
+    # HTTP timeout never fires (a judge call hung 13 minutes on 2026-10-04). ``None`` = none.
+    call_deadline_s: float | None = None
     # OpenRouter's meter for a generation whose response did not carry its own cost (the streaming
     # and Responses paths). ``None`` = do not ask — every such call reports ``unpriced`` unless the
     # deployment happens to list the model in ``GatewayConfig.prices``. The provider injects the
@@ -697,11 +738,16 @@ class GovernedAgentChatModel(BaseChatModel):
                 zip(self.models, self.model_ids, strict=True)
             ):
                 try:
-                    result = await model._agenerate(
+                    call = model._agenerate(
                         messages,
                         stop=stop,
                         run_manager=run_manager,
                         **kwargs,
+                    )
+                    result = (
+                        await asyncio.wait_for(call, timeout=self.call_deadline_s)
+                        if self.call_deadline_s is not None
+                        else await call
                     )
                     return result, _served_model_from_result(result, fallback=model_id)
                 except Exception as exc:
@@ -781,11 +827,14 @@ class GovernedAgentChatModel(BaseChatModel):
                 yielded = False
                 pending: ChatGenerationChunk | None = None
                 try:
-                    async for chunk in model._astream(
-                        messages,
-                        stop=stop,
-                        run_manager=run_manager,
-                        **kwargs,
+                    async for chunk in _first_chunk_within(
+                        model._astream(
+                            messages,
+                            stop=stop,
+                            run_manager=run_manager,
+                            **kwargs,
+                        ),
+                        self.first_token_timeout_s,
                     ):
                         if pending is not None:
                             _strip_model_keys(pending.message)
@@ -972,6 +1021,7 @@ class OpenRouterAgentModelProvider:
         max_output_tokens: int,
         temperature: float,
         role: str | None = None,
+        call_deadline_s: float | None = None,
     ) -> BaseChatModel:
         """Build a bounded primary/fallback model with truthful answering-model attribution.
 
@@ -992,9 +1042,11 @@ class OpenRouterAgentModelProvider:
         if not 0 <= temperature <= 2:
             raise ValueError("temperature must be between 0 and 2")
 
+        # Primary, then the single fallback, then the chain (2026-10-04) — each model once.
         candidates = [model_id]
-        if self._config.fallback_model and self._config.fallback_model != model_id:
-            candidates.append(self._config.fallback_model)
+        for candidate in (self._config.fallback_model, *self._config.fallback_models):
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
         models = tuple(
             self._build_openrouter_model(
                 model_id=candidate,
@@ -1012,6 +1064,8 @@ class OpenRouterAgentModelProvider:
             requested_model=model_id,
             gateway_config=self._config,
             attribution_role=role,
+            first_token_timeout_s=self._config.first_token_timeout_s,
+            call_deadline_s=call_deadline_s,
             # The meter for the paths that do not carry a cost back. Built here because this is
             # where the key and the HTTP clients live; the model itself holds no credential.
             cost_lookup=OpenRouterGenerationCost(

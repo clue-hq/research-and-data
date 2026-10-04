@@ -227,3 +227,16 @@ def test_the_judges_output_budget_leaves_room_for_a_question() -> None:
     judge = build_design_leg_exit_judge(models=models, profiles=_FakeProfiles())
     assert _run(judge) == _LOCKED
     assert models.build_calls[0]["max_output_tokens"] == 600
+
+
+def test_the_judges_model_call_has_a_hard_deadline() -> None:
+    """Production 2026-10-04: a non-streamed judge call to a stalled provider hung for 13
+    minutes (its per-read timeout never fired). A per-model deadline lets the fallback chain
+    take over, and the judge's own fail-safe still answers if every model stalls."""
+
+    model = _FakeModel(AIMessage(content=_VERDICT))
+    models = _FakeModels(model)
+    judge = build_design_leg_exit_judge(models=models, profiles=_FakeProfiles())
+    assert _run(judge) == _LOCKED
+    deadline = models.build_calls[0]["call_deadline_s"]
+    assert 0 < deadline <= 60

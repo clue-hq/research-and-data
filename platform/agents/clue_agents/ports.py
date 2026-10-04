@@ -206,6 +206,7 @@ class AgentModelProvider(Protocol):
         max_output_tokens: int,
         temperature: float,
         role: str | None = None,
+        call_deadline_s: float | None = None,
     ) -> BaseChatModel: ...
 
 
