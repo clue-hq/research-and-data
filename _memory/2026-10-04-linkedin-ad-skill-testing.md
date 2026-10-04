@@ -43,3 +43,16 @@ Branch cut from origin/research-streaming at 135ca509a (PR #98 merge). Lane stac
 - Kit gap: Conduit kit has no light (inverse) wordmark.
 - 126 font faces missing from this lane's font library.
 - Frontend build gate (design-system:build/lint/build) not run for fa0ce77a6 (dev server shares .next).
+
+## Verbosity rulings applied (founder, 2026-10-04)
+- Design agent picks the angle and writes every word; Head of ABM's brief is direction only
+  (may SUGGEST a headline/message, never require it); support line <= 15 words on feed ads;
+  unclear angle/tone/message -> request_clarification as opening move; no target-person quotes
+  about unrelated topics/vendors. Copy guide stays scene-brief-copy (nothing added).
+- 0c7afbc66 Head of ABM v71 (prompt v19, manual v17, stage0-interview v44 links only; tool
+  surface = v70). 525bdd2ab scene-brief-copy / account-adaptation / scene prompts /
+  request_clarification text.
+- Pre-existing failures seen (not from these changes): test_product_knowledge_tools_s5d gate
+  visibility (stale since v44), test_pilot_budget_controls (field-registry DB state).
+- Stack restarted 2026-10-04 ~15:50 UTC with solo mode, v71, Langfuse env=default. Next: rerun the
+  Atrium 1:1 LinkedIn prompt in a NEW chat and compare copy length/angle.
