@@ -216,3 +216,18 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   `_matches_workspace_glob` (recursive `**` support); kept both test sets. 94/94 pass.
 - Added CLUE_ARV2_PAGE_WRITER_TIMEOUT_S=900.0 to the local .env (parity). Running stack still on
   pre-merge code until restarted.
+
+## Written down (2026-10-04): spec + roadmap
+- Spec: docs/superpowers/specs/2026-10-04-website-quality-and-code-first-lane-design.md (Ploy
+  study in detail, diagnosis with evidence, decisions, target architecture, week-1 bridge, risks).
+- Roadmap: docs/superpowers/plans/2026-10-04-website-quality-roadmap.md (A1 brief format +
+  research offer [Head of ABM v72/manual v18], A2 design copy skills, A3 research visibility
+  [read_account_research sections insights + contacts, in place], A4 typography + ad headings +
+  kit repair script, A5 seller theme with type tokens, A6 dynamic capture settle, A7 Garner demo
+  walk; Part B code-first lane C0 spikes -> C6 evaluation). Each workstream gets its own
+  step plan before it starts.
+- Rulings: demo seller = garnerhealth.com; research offer is a recommendation, no hard gate.
+- New finding: the website agent reads only the account OVERVIEW page; insights page, contact
+  pages, person research and a contact list are unreachable from design (Head of ABM has
+  get_research_view). Dana run read the overview once (old code: truncated, no paging), never read
+  claims/contacts, and never opened web-account-personalization / copy-craft / account-argument.
