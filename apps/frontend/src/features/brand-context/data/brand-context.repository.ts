@@ -99,6 +99,40 @@ export function httpBrandContextRepository({
   };
 }
 
+/** Kit asset records: one batch read, or (older design API) one read per asset. */
+async function readAssetRecords(
+  read: (path: string) => Promise<unknown>,
+  assetIds: readonly string[],
+): Promise<Map<string, DesignAssetRecord>> {
+  const records = new Map<string, DesignAssetRecord>();
+  if (assetIds.length === 0) return records;
+  try {
+    const batch = (await read(
+      `/assets/records?asset_ids=${assetIds.map(encodeURIComponent).join(",")}`,
+    )) as { assets?: Record<string, unknown> };
+    for (const [assetId, body] of Object.entries(batch.assets ?? {})) {
+      const parsed = DesignAssetRecordSchema.safeParse(body);
+      if (parsed.success) records.set(assetId, parsed.data);
+    }
+    return records;
+  } catch {
+    // No batch route on this design API yet: fall back to one read per asset.
+  }
+  await Promise.all(
+    assetIds.map(async (assetId) => {
+      try {
+        records.set(
+          assetId,
+          DesignAssetRecordSchema.parse(await read(`/assets/${encodeURIComponent(assetId)}`)),
+        );
+      } catch {
+        // An asset the registry cannot describe still renders its bytes.
+      }
+    }),
+  );
+  return records;
+}
+
 async function readWorkspace(
   designFetch: typeof fetch,
   platformFolders: Promise<BrandKnowledgeFolder[]>,
@@ -118,45 +152,42 @@ async function readWorkspace(
   ) : null;
 
   // The kit names its assets by id only; their filename, media type, byte
-  // length and geometry live in the asset registry. One read per asset, in
-  // parallel, and any refusal leaves that row with honest unknowns.
-  const assetRecords = new Map<string, DesignAssetRecord>();
-  await Promise.all(
-    (kit ? brandKitAssetIds(kit) : []).map(async (assetId) => {
-      try {
-        const record = DesignAssetRecordSchema.parse(
-          await read(`/assets/${encodeURIComponent(assetId)}`),
-        );
-        assetRecords.set(assetId, record);
-      } catch {
-        // An asset the registry cannot describe still renders its bytes.
-      }
-    }),
-  );
+  // length and geometry live in the asset registry. ONE batch read (the page
+  // used to send one request per asset — 27 per load, each queueing on the
+  // design API, production 2026-10-03). A design API without the batch route
+  // gets the old one-read-per-asset path, so a deploy-order skew never blanks
+  // the page; any refusal leaves that row with honest unknowns.
+  const assetIds = kit ? [...new Set(brandKitAssetIds(kit))] : [];
+  const assetRecords = await readAssetRecords(read, assetIds);
 
   // The Assets section is the kit UNION the workspace registry: a picture
   // uploaded in the editor belongs to this brand too. One page per image kind
   // is enough for a review surface (the editor's own library pages further,
   // because a picker must be complete); a refusal costs the uploads, never the
-  // kit's own assets, so the page never blanks over a registry hiccup.
-  const registryRecords: DesignAssetListRecord[] = [];
-  for (const kind of ["raster_image", "vector", "logo"]) {
-    try {
-      for (let offset = 0; ; offset += 200) {
-        const page = (await read(`/assets?kind=${kind}&include_archived=false&limit=200&offset=${offset}`)) as {assets?: unknown[]};
-        for (const raw of page.assets ?? []) {
-          const parsed = DesignAssetListRecordSchema.safeParse(raw);
-          if (parsed.success) registryRecords.push(parsed.data);
+  // kit's own assets, so the page never blanks over a registry hiccup. The
+  // three kinds are listed concurrently; each kind keeps its own paging order.
+  const byKind = await Promise.all(
+    ["raster_image", "vector", "logo"].map(async (kind) => {
+      const records: DesignAssetListRecord[] = [];
+      try {
+        for (let offset = 0; ; offset += 200) {
+          const page = (await read(`/assets?kind=${kind}&include_archived=false&limit=200&offset=${offset}`)) as {assets?: unknown[]};
+          for (const raw of page.assets ?? []) {
+            const parsed = DesignAssetListRecordSchema.safeParse(raw);
+            if (parsed.success) records.push(parsed.data);
+          }
+          if ((page.assets?.length ?? 0) < 200) break;
         }
-        if ((page.assets?.length ?? 0) < 200) break;
+      } catch (error) {
+        console.warn(
+          `[brand-context] registry read for ${kind} failed; kit assets only:`,
+          error,
+        );
       }
-    } catch (error) {
-      console.warn(
-        `[brand-context] registry read for ${kind} failed; kit assets only:`,
-        error,
-      );
-    }
-  }
+      return records;
+    }),
+  );
+  const registryRecords: DesignAssetListRecord[] = byKind.flat();
 
   const workspace = kit ? toBrandContextWorkspace(kit, {assetRecords, registryRecords})
     : {...emptyBrandContextWorkspace(), assets: toRegistryAssets(registryRecords, new Set())};

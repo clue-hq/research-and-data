@@ -62,6 +62,42 @@ def test_engines_pre_ping_connections_before_pool_reuse() -> None:
     run_async(_run())
 
 
+def test_pool_settings_default_to_the_library_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("CLUE_DB_POOL_SIZE", "CLUE_DB_MAX_OVERFLOW", "CLUE_DB_POOL_TIMEOUT_S"):
+        monkeypatch.delenv(name, raising=False)
+
+    async def _run() -> None:
+        engine = create_engine()
+        try:
+            pool = engine.sync_engine.pool
+            assert pool.size() == 5  # type: ignore[attr-defined]
+            assert pool._max_overflow == 10  # type: ignore[attr-defined]
+            assert pool._timeout == 30  # type: ignore[attr-defined]
+        finally:
+            await engine.dispose()
+
+    run_async(_run())
+
+
+def test_pool_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Research slowness fix 2026-10-03: the per-process pool is an explicit setting."""
+    monkeypatch.setenv("CLUE_DB_POOL_SIZE", "7")
+    monkeypatch.setenv("CLUE_DB_MAX_OVERFLOW", "3")
+    monkeypatch.setenv("CLUE_DB_POOL_TIMEOUT_S", "12")
+
+    async def _run() -> None:
+        engine = create_engine()
+        try:
+            pool = engine.sync_engine.pool
+            assert pool.size() == 7  # type: ignore[attr-defined]
+            assert pool._max_overflow == 3  # type: ignore[attr-defined]
+            assert pool._timeout == 12  # type: ignore[attr-defined]
+        finally:
+            await engine.dispose()
+
+    run_async(_run())
+
+
 # --- lifespan + pool (DB required) ------------------------------------------
 
 

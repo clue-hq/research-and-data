@@ -19,7 +19,7 @@ from clue_page_origin.app import create_page_origin_app
 from clue_page_origin.edge import EdgeGate
 from clue_page_origin.reads import DbPageReads
 from clue_spine.hostnames import system_hostnames_off_suffix
-from clue_storage import storage_from_settings
+from clue_storage import close_shared_s3_clients, storage_from_settings
 
 log = get_logger("clue_page_origin.main")
 
@@ -53,7 +53,10 @@ def build_application(settings: Settings | None = None, secrets: Secrets | None 
                 suffix=resolved.pages_system_suffix,
                 trust_host_header=resolved.pages_trust_host_header,
             )
-            yield
+            try:
+                yield
+            finally:
+                await close_shared_s3_clients()
 
     return create_page_origin_app(reads=reads, gate=gate, lifespan=lifespan)
 

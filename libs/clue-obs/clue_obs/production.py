@@ -74,6 +74,7 @@ def install_production_sentry(settings: Settings, secrets: Secrets, *, service_n
         environment=settings.sentry_environment,
         release=settings.release or None,
         process_name=service_name,
+        langfuse_host=settings.langfuse_host if settings.langfuse_enabled else None,
     )
     log.info(
         "sentry.installed",

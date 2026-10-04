@@ -68,6 +68,9 @@ def test_preconditions_block_and_emit_a_failed_span() -> None:
     assert ei.value.reason_codes == ("no_active_icp",)
     assert tool.invocations == []  # the write never ran
     assert cap.has("toolbelt.echo_failed")  # a blocked invocation is still observable
+    # ...as a warning: the agent repairs a refusal itself, so it must not page Sentry (R6).
+    (failed,) = cap.events("toolbelt.echo_failed")
+    assert failed["level"] == "warning" and failed["error_type"] == "PreconditionFailed"
 
 
 def test_unknown_tool_is_typed() -> None:

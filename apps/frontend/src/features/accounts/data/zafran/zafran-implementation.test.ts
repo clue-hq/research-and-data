@@ -30,7 +30,9 @@ test("fit dispositions retain five supporting facts and two caveats", () => {
 
 test("instruction text never becomes contact research", () => {
   assert.doesNotMatch(JSON.stringify(nick.contactDisplay), /Empty-state line|\{section\}|Part 5|Link register/);
-  assert.equal(nick.contactDisplay!.sections.at(-1)!.items.at(-1)!.body.length, 0);
+  // By key, not position: Miscellaneous (added 2026-09-27, 296922df1) is now the last section.
+  const doNotMention = nick.contactDisplay!.sections.find((entry) => entry.key === "do-not-mention")!;
+  assert.equal(doNotMention.items.at(-1)!.body.length, 0);
 });
 
 test("the same URL resolves to distinct Gong and buying-criteria evidence", () => {
@@ -182,7 +184,7 @@ test("every overview paragraph, fit reason, timing item, approach and warning is
 test("all restricted research is retained without implementation instructions", () => {
   const pairs = [
     [section("context-only"), "## 🔒 Context only — never use in outreach", "---\n\n## Part 3"],
-    [nick.contactDisplay!.sections.at(-1)!, "## 🔒 Do not mention", "**Empty-state line"],
+    [nick.contactDisplay!.sections.find((entry) => entry.key === "do-not-mention")!, "## 🔒 Do not mention", "**Empty-state line"],
   ] as const;
   for (const [entry, start, end] of pairs) {
     const raw = md.slice(md.indexOf("\n", md.indexOf(start)) + 1, md.indexOf(end, md.indexOf(start)));

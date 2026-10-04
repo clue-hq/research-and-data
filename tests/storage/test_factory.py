@@ -41,3 +41,15 @@ def test_s3_selection_builds_s3_backend() -> None:
 def test_settings_reject_unknown_backend() -> None:
     with pytest.raises(ValidationError):  # Literal["fs", "s3"]
         Settings(_env_file=None, storage_backend="gcs")
+
+
+def test_s3_pool_size_comes_from_settings() -> None:
+    settings = Settings(
+        _env_file=None,
+        storage_backend="s3",
+        storage_s3_bucket="b",
+        storage_s3_max_pool_connections=7,
+    )
+    backend = storage_from_settings(settings, Secrets(_env_file=None))
+    assert isinstance(backend, S3Storage)
+    assert backend._max_pool_connections == 7

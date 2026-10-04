@@ -168,6 +168,7 @@ class OpenRouterBriefAgent:
         return bool(self.enabled and self.api_key)
 
     def write_brief(self, request: BriefRequest) -> dict[str, Any]:
+        from clue_gateway.langfuse_handler import build_langfuse_callbacks
         from langchain.agents import create_agent
         from langchain.agents.structured_output import ToolStrategy
         from lumen_agent.llm import init_model
@@ -188,7 +189,13 @@ class OpenRouterBriefAgent:
         # `.with_config` returns a RunnableBinding the agent factory mishandles. There is one
         # model and no sub-agents here, so `on_llm_*` on this instance IS every call the stage
         # makes.
-        collector = ModelCallCollector()
+        # The platform's Langfuse handler (2026-10-03 agent-scoped tracing spec, R7): the agent's
+        # rounds land in the ingestion job's trace, and the collector is told each generation's
+        # ids. ``None`` when Langfuse is not installed — then the stage runs exactly as before.
+        langfuse = build_langfuse_callbacks()
+        collector = ModelCallCollector(
+            langfuse_ids=langfuse.registry if langfuse is not None else None
+        )
         _append_callback(model, collector)
         agent = create_agent(
             model=model,
@@ -200,7 +207,10 @@ class OpenRouterBriefAgent:
         try:
             result = agent.invoke(
                 {"messages": [{"role": "user", "content": _message_content(request)}]},
-                config={"recursion_limit": MAX_AGENT_STEPS},
+                config={
+                    "recursion_limit": MAX_AGENT_STEPS,
+                    "callbacks": [langfuse.handler] if langfuse is not None else [],
+                },
             )
         finally:
             # On EVERY exit path: a refusal and a hung gateway still spent the calls they made.

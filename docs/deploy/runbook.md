@@ -218,6 +218,7 @@ OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is d
    MAX_PREPARED_STATEMENTS=200
    DEFAULT_POOL_SIZE=20
    MAX_CLIENT_CONN=200
+   STATS_USERS=clue_worker
    AUTH_TYPE=scram-sha-256
    SERVER_TLS_SSLMODE=require
    LISTEN_PORT=6432
@@ -228,6 +229,22 @@ OVHcloud's Ubuntu image logs in as **`ubuntu`** (with sudo); root SSH login is d
    PgBouncer. If something else turns out to need session state, give that process its own
    direct URL the same way, or a second session-mode PgBouncer pool for it alone — never
    `POOL_MODE=session` for the whole VM.)
+
+   **Research capacity and connection checks (2026-10-03).** `STATS_USERS` gives the app user
+   read-only `SHOW POOLS` / `SHOW STATS` on PgBouncer's admin database (confirm the variable name
+   against the image README for this tag, as above).
+   - Research jobs run at once, fleet-wide = batch workers × `CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS`
+     (today 3 × 4 = 12). A worker never claims more research tasks than it can run.
+   - Are transactions waiting for a PgBouncer server connection? From a worker container, connect
+     to the `pgbouncer` database on port 6432 as `clue_worker` and run `SHOW POOLS;` — `cl_waiting`
+     staying above 0 means the pool is too small.
+   - `DEFAULT_POOL_SIZE` goes from 20 to 40 **only after** the research slowness fixes
+     (`docs/superpowers/specs/2026-10-03-research-slowness-fixes-design.md`) are deployed and
+     measured: raising it before them only lets more transactions wait on the same locks. Postgres
+     allows 200 connections and the Railway services use about 10. Edit `/srv/clue/pgbouncer.env`,
+     then run `docker compose up -d pgbouncer` from `/srv/clue/app/deploy/vm` as `clue`.
+   - Lock waits: sample `pg_stat_activity` for `wait_event_type='Lock'` while research runs, and
+     look for `db.critical_section` lines in the batch workers' logs (`docker logs vm-batch1-1`).
 6. Fill `/srv/clue/backup.env`:
    ```
    PGURL=postgresql://<owner>:<pw>@<proxy-host>:<port>/railway?sslmode=require

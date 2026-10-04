@@ -200,3 +200,130 @@ def test_transcript_speaker_qualification_repair_and_refusal_replay(tmp_path, at
             )
 
     run_async(case())
+
+
+class _LockProbe(FsStorage):
+    """At every storage call, asks a second connection whether the account manifest row is held."""
+
+    def __init__(self, root, engine, scope):
+        super().__init__(root)
+        self._engine, self._scope, self.held = engine, scope, []
+
+    async def _probe(self):
+        from sqlalchemy.exc import DBAPIError
+
+        async with self._engine.connect() as other:
+            await other.begin()
+            try:
+                await other.execute(
+                    text(
+                        "SELECT 1 FROM arv2_evidence_manifest WHERE workspace_id=:ws "
+                        "AND run_id=:run AND account_id=:account FOR UPDATE NOWAIT"
+                    ),
+                    {
+                        "ws": self._scope.workspace_id,
+                        "run": self._scope.run_id,
+                        "account": self._scope.account_id,
+                    },
+                )
+                self.held.append(False)
+            except DBAPIError:
+                self.held.append(True)
+            await other.rollback()
+
+    async def get(self, key):
+        await self._probe()
+        return await super().get(key)
+
+    async def put(self, key, data, *, media_type):
+        await self._probe()
+        await super().put(key, data, media_type=media_type)
+
+
+def test_index_transcripts_never_holds_the_account_lock_across_storage(tmp_path, monkeypatch):
+    """Research slowness review 2026-10-04: index_transcripts runs after every media tool call and
+    published each transcript as it went, so the account lock taken by the first publish stayed
+    held across every later transcript's reads and uploads, blocking the account's other jobs."""
+    from functools import partial
+
+    from clue_api.arv2.quality_evidence import persist_source
+    from clue_db import db_lifespan
+    from clue_research.claimstore import load_core_pack
+    from tests.arv2 import test_quality_evidence_db as evidence
+
+    monkeypatch.setattr(
+        evidence,
+        "seed_icp_fixture",
+        partial(evidence.seed_icp_fixture, workspace_id=f"tx-{uuid4()}", user_id=f"u-{uuid4()}"),
+    )
+
+    async def case():
+        async with db_lifespan() as engine:
+            fs = FsStorage(tmp_path)
+            async with engine.begin() as conn:
+                await load_core_pack(conn)
+                op, account, _ = await setup(conn, fs)
+                contact = await insert_contact_entity(
+                    conn, account_entity_id=account.account_id, full_name="Alex Fixture"
+                )
+                jid = uuid4()
+                await create_job(
+                    conn,
+                    job_id=jid,
+                    run_id=op.run_id,
+                    workspace_id=op.workspace_id,
+                    account_entity_id=op.account_id,
+                    subject_type="person",
+                    subject_entity_id=contact,
+                    profile_sha256="a" * 64,
+                )
+                job = replace(
+                    account,
+                    job_id=jid,
+                    subject_kind="person",
+                    contact_id=contact,
+                    person_name="Alex Fixture",
+                    catalog_version="v4",
+                )
+                pop = OperationScope(op.workspace_id, op.run_id, jid, op.account_id)
+                rt = SimpleNamespace(
+                    scope=job,
+                    operation_scope=pop,
+                    storage=fs,
+                    settings=SimpleNamespace(arv2_person_media_max_items=8),
+                )
+                # A committed source, so the account's manifest row exists to be probed.
+                await persist_source(
+                    conn,
+                    fs,
+                    pop,
+                    kind="web_snapshot",
+                    body="An earlier page.",
+                    original_key=None,
+                    origin_locator="fixture",
+                    observed_at=evidence.NOW,
+                    source_url="https://fixture.test/page",
+                )
+                for n in range(3):
+                    item = await media_store.item_for(
+                        rt, conn, Candidate(url=f"https://fixture.test/episode-{n}")
+                    )
+                    await media_store.bind_item(rt, conn, item["item_id"], "inspect interview")
+                    value = f"Episode {n}: we need better intake tools."
+                    await media_store.save_transcript(
+                        rt,
+                        conn,
+                        item_id=item["item_id"],
+                        value=value,
+                        segments=[Segment(start=0, end=len(value), speaker="Guest")],
+                        quality=Quality(coverage="full", warnings=[]),
+                        method="fixture",
+                        operation_id=uuid4(),
+                    )
+            probe = _LockProbe(tmp_path, engine, pop)
+            async with engine.begin() as conn:
+                sources = await index_transcripts(conn, probe, pop)
+            assert len(sources) == 3
+            assert probe.held and not any(probe.held), probe.held
+
+    run_async(case())

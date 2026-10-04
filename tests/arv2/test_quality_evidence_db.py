@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -384,5 +385,75 @@ def test_operation_navigation_stays_scoped_and_marks_erased_sources_unavailable(
             result = await operation_source_navigation(conn, grant, target)
             assert [x["source_id"] for x in result["sources"]] == [str(refs[0].source_id)]
             assert result["unavailable_source_count"] == 1
+
+    run_async(case())
+
+
+def test_recovery_pages_through_more_receipts_than_one_batch_and_terminates(tmp_path, monkeypatch):
+    """Publication is deferred to the end of recovery, so paging must exclude what it already
+    prepared instead of relying on "not yet published" (research slowness fix 2026-10-03)."""
+    from clue_api.arv2 import quality_acquisition
+    from clue_api.arv2.provider_ledger import (
+        BufferedLedger,
+        BufferedRawSink,
+        LedgerStamp,
+        drain_provider_calls,
+    )
+    from clue_api.arv2.sinks import LedgerRow
+    from tests.arv2.test_committee_discovery_v2_db import Artifacts
+    from tests.arv2.test_provider_ledger import _record
+
+    monkeypatch.setattr(quality_acquisition, "_RECOVERY_BATCH", 2)
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            scope, _ = await seed(conn, storage)
+            raw = BufferedRawSink()
+            ledger = BufferedLedger()
+            for i in range(5):
+                ref = raw.save(
+                    _record(NOW),
+                    json.dumps(
+                        {"results": [{"url": f"https://e.test/{i}", "text": f"Page {i} text."}]}
+                    ).encode(),
+                )
+                ledger.record(
+                    LedgerRow(
+                        row_id=f"test-recovery-ledger-{i}",
+                        call_id=f"test-recovery-call-{i}",
+                        phase="result",
+                        provider="exa",
+                        operation="search",
+                        label="quality",
+                        recorded_at=NOW,
+                        http_status=200,
+                        raw_ref=ref,
+                        outcome="ok",
+                    )
+                )
+            project = (
+                await conn.execute(
+                    text("SELECT project_id FROM arv2_research_run WHERE run_id=:id"),
+                    {"id": scope.run_id},
+                )
+            ).scalar_one()
+            await drain_provider_calls(
+                conn,
+                raw=raw,
+                ledger=ledger,
+                artifacts=Artifacts(conn, storage),
+                stamp=LedgerStamp(
+                    workspace_id=scope.workspace_id, project_id=project, job_id=scope.job_id
+                ),
+            )
+            refs = await asyncio.wait_for(
+                quality_acquisition.recover_acquisitions(conn, storage, scope), 30
+            )
+            assert len({r.ledger_id for r in refs}) == 5
+            assert len({r.source_id for r in refs}) == len(refs)
+            revisions = sorted(r.revision for r in refs)
+            assert revisions == list(range(revisions[0], revisions[0] + len(refs)))
+            assert await quality_acquisition.recover_acquisitions(conn, storage, scope) == ()
 
     run_async(case())

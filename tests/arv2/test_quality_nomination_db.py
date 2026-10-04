@@ -225,6 +225,7 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
             assert seed["candidate_ref"] == candidate
             assert len(wire.requests) == 2  # no extra named-person purchase
             if revision >= 6:
+                from clue_api.arv2.display.recipes import load_display_recipes
                 from clue_api.arv2.quality_findings import (
                     RecordFindingInput,
                     RecordResearchFindingTool,
@@ -255,6 +256,9 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
                     ),
                 )
                 assert finding.references["claim_id"]
+                # Workers load the page designs at start; a page serves only designed sections
+                # (founder ruling 2026-09-29), so the test loads them too.
+                await load_display_recipes(conn)
                 await publish_page(
                     conn,
                     storage,
@@ -285,10 +289,17 @@ def test_candidate_original_survives_nomination_replay_and_person_seed(tmp_path,
                     ),
                 )
                 page = await read_page(conn, person_scope, context_id=cid, page="contact")
-                assert "+1 202 555 0100" in json.dumps(page["display_block"])
-                assert "Your marketing work" in json.dumps(page["display_block"])
+                sections = {s["key"]: s for s in page["display_block"]["sections"]}
+                assert "Your marketing work" in json.dumps(sections["openers"])
+                # A finding no section cites is shown in the page's Miscellaneous (ruling
+                # 2026-09-29 retired the "All research findings" section that used to hold it).
+                assert "+1 202 555 0100" in json.dumps(sections["miscellaneous"])
             assert (
-                await conn.execute(text("SELECT count(*) FROM arv2_generation_child"))
+                # Scoped to this test's workspace: other DB tests commit rows to the same table.
+                await conn.execute(
+                    text("SELECT count(*) FROM arv2_generation_child WHERE workspace_id=:ws"),
+                    {"ws": op.workspace_id},
+                )
             ).scalar_one() == 1
 
     run_async(case())

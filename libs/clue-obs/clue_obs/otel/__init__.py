@@ -30,6 +30,7 @@ from clue_obs.otel.attributes import (
     ATTR_ICP_ID,
     ATTR_JOB_ID,
     ATTR_LATENCY_MS,
+    ATTR_LAUNCHED_BY_TRACE_ID,
     ATTR_MODALITY,
     ATTR_MODEL,
     ATTR_N_CLAIMS,
@@ -92,8 +93,10 @@ from clue_obs.otel.metrics import (
 )
 from clue_obs.otel.propagation import (
     CARRIER_KEYS,
+    TaskTraceStart,
     carrier_from_current_span,
     context_from_carrier,
+    task_trace_start,
 )
 from clue_obs.otel.spans import (
     PROJECT_PHASES,
@@ -149,6 +152,8 @@ __all__ = [
     "CARRIER_KEYS",
     "carrier_from_current_span",
     "context_from_carrier",
+    "task_trace_start",
+    "TaskTraceStart",
     # span names
     "SPAN_RESOLVE",
     "resolve_span",
@@ -210,6 +215,7 @@ __all__ = [
     "ATTR_FLEET_KIND",
     "ATTR_TASK_ATTEMPT",
     "ATTR_WORKER_ID",
+    "ATTR_LAUNCHED_BY_TRACE_ID",
     "STANDARD_ATTRIBUTES",
     "SpanAttributes",
     "safe_attributes",

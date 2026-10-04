@@ -8,7 +8,7 @@ not erase independent findings. Retrying the same import reuses durable receipts
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -18,14 +18,21 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.dossier_findings import Finding, assessment_for
-from clue_api.arv2.dossier_json import import_groups, parse_json_dossier
+from clue_api.arv2.dossier_json import DossierRecord, import_groups, parse_json_dossier
 from clue_api.arv2.evidence_paths import source_path
+from clue_api.arv2.import_storage import ImportStorage
 from clue_api.arv2.quality_claims import FindingProposal, SourceSupport, submit_proposal
-from clue_api.arv2.quality_evidence import EvidenceGrant, SourceRef, authorize_grant, resolve_source
+from clue_api.arv2.quality_evidence import (
+    EvidenceGrant,
+    EvidenceUnavailable,
+    SourceRef,
+    authorize_grant,
+    resolve_source,
+)
 from clue_api.arv2.quality_policy import advisory_research
 from clue_core import IdentityBinding, UseClass
 from clue_core.equality import canonical_json
-from clue_obs import get_logger, observation
+from clue_obs import critical_section, get_logger, observation
 from clue_storage import StorageBackend
 
 log = get_logger("arv2.dossier_import")
@@ -72,7 +79,7 @@ def finding_proposal(
     )
 
 
-async def import_research_dossier(
+async def _import_research_dossier(
     conn: AsyncConnection,
     storage: StorageBackend,
     scope: JobScope,
@@ -386,4 +393,93 @@ async def import_research_dossier(
 
 # Preserve the existing account caller while sharing one implementation with
 # person replay. Scope and bound job determine the entity, not this historical name.
+async def import_read_keys(
+    conn: AsyncConnection,
+    grant: EvidenceGrant,
+    *,
+    scope: JobScope,
+    context_id: UUID,
+    records: Sequence[DossierRecord],
+    source_aliases: Mapping[str, UUID] | None,
+) -> set[str]:
+    """Every storage key the import will read: the context manifest and each cited source's
+    artifact and original. Resolved exactly as the import resolves them; unresolvable paths are
+    skipped here and refused by the import itself."""
+    keys: set[str] = set()
+    manifest = (
+        await conn.execute(
+            text(
+                "SELECT manifest_key FROM arv2_research_context_pin "
+                "WHERE context_id=:id AND workspace_id=:ws"
+            ),
+            {"id": context_id, "ws": scope.workspace_id},
+        )
+    ).scalar_one_or_none()
+    if manifest:
+        keys.add(manifest)
+    paths = {path for record in records for path in record.entry.source_paths}
+    for path in sorted(paths):
+        reference = source_aliases.get(path) if source_aliases is not None else path
+        if reference is None:
+            continue
+        try:
+            ref = await resolve_source(conn, grant, reference)
+        except EvidenceUnavailable:
+            continue
+        keys.add(ref.artifact_key)
+        if ref.original_key:
+            keys.add(ref.original_key)
+    return keys
+
+
+async def import_research_dossier(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    scope: JobScope,
+    grant: EvidenceGrant,
+    *,
+    context_id: UUID,
+    actor_ref: str,
+    import_id: UUID,
+    body: bytes,
+    expected_sha256: str,
+    source_aliases: Mapping[str, UUID] | None = None,
+    reuse_entries: Mapping[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Import a dossier with prefetched reads and concurrent uploads (research slowness fix
+    2026-10-03, spec part 3b). The work itself is :func:`_import_research_dossier`, unchanged;
+    only where its bytes come from and when they leave differ."""
+    staged = ImportStorage(storage)
+    with critical_section("arv2.dossier.import", job_id=str(scope.job_id)):
+        try:
+            records: Sequence[DossierRecord] = parse_json_dossier(body).records
+        except Exception:  # noqa: BLE001 — the import itself raises the proper error below
+            records = ()
+        await staged.prefetch(
+            await import_read_keys(
+                conn,
+                grant,
+                scope=scope,
+                context_id=context_id,
+                records=records,
+                source_aliases=source_aliases,
+            )
+        )
+        result = await _import_research_dossier(
+            conn,
+            staged,
+            scope,
+            grant,
+            context_id=context_id,
+            actor_ref=actor_ref,
+            import_id=import_id,
+            body=body,
+            expected_sha256=expected_sha256,
+            source_aliases=source_aliases,
+            reuse_entries=reuse_entries,
+        )
+        await staged.flush()
+    return result
+
+
 import_account_dossier = import_research_dossier

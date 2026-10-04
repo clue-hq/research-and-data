@@ -46,15 +46,18 @@ def test_inline_and_drain_hosts_receive_same_resolver_factory(
         # Lane 3 slice 5: both entrypoints also inject the platform's whole drain, so a design
         # 402 opens a provider incident under the ARV2 close rule wherever the work is drained.
         assert offer["spend_drain"] is not None
-    # Only the LEG lane hands the design side a per-turn Langfuse handler — the drain handler
-    # runs turns with no platform observation to nest under.
+    # The LEG lane injects its own per-turn Langfuse handler and runs inside ``design-leg.turn``,
+    # so it opens no trace of its own; the drain injects none (the design side defaults to the
+    # platform handler) and opens one named trace per job (2026-10-03 spec, R7).
     assert offers[0]["turn_callbacks_factory"] is None
     assert offers[1]["turn_callbacks_factory"] is not None
+    assert offers[0]["named_trace"] is True
+    assert offers[1]["named_trace"] is False
 
     assert build_design_job_handler(enabled=True) is not None
     # Preserve the installed app's legacy/default host construction: no host_provider.
     assert "host_provider" not in offers[-1]
-    assert set(offers[-1]) == {"spend_drain", "turn_callbacks_factory"}
+    assert set(offers[-1]) == {"spend_drain", "turn_callbacks_factory", "named_trace"}
     assert (
         build_design_job_handler(enabled=False, preference_resolver_factory=resolver_factory)
         is None

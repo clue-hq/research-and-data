@@ -71,6 +71,9 @@ ATTR_WORK_ID = "work_id"
 ATTR_FLEET_KIND = "fleet_kind"
 ATTR_TASK_ATTEMPT = "task_attempt"
 ATTR_WORKER_ID = "worker_id"
+#: The trace that enqueued a fleet task (32 lowercase hex). A task is its own trace and links back
+#: to the one that launched it (2026-10-03 agent-scoped tracing spec, R3).
+ATTR_LAUNCHED_BY_TRACE_ID = "launched_by_trace_id"
 
 # Known-safe dimensions: identifiers/enums/numbers, never secrets. Passed through (type-coerced)
 # without value-shape redaction so a UUID id is not mistaken for an opaque-token credential.
@@ -112,6 +115,7 @@ STANDARD_ATTRIBUTES: frozenset[str] = frozenset(
         ATTR_FLEET_KIND,
         ATTR_TASK_ATTEMPT,
         ATTR_WORKER_ID,
+        ATTR_LAUNCHED_BY_TRACE_ID,
     }
 )
 

@@ -55,6 +55,18 @@ DATABASE_URL_ENV = "CLUE_DATABASE_URL"
 # credentials baked into ``docker-compose.yml``.
 DEFAULT_DATABASE_URL = "postgresql+asyncpg://clue:clue@localhost:5432/clue"
 
+# Per-process connection pool (research slowness fix 2026-10-03): explicit settings with the
+# SQLAlchemy defaults, read straight from the environment like ``CLUE_DATABASE_URL``.
+POOL_SIZE_ENV = "CLUE_DB_POOL_SIZE"
+MAX_OVERFLOW_ENV = "CLUE_DB_MAX_OVERFLOW"
+POOL_TIMEOUT_ENV = "CLUE_DB_POOL_TIMEOUT_S"
+
+
+def _env_number(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    return float(raw) if raw else default
+
+
 # Module-global engine, owned by ``db_lifespan``. There is exactly one engine per process; its
 # pool is the connection pool. ``None`` until the lifespan is entered.
 _engine: AsyncEngine | None = None
@@ -87,6 +99,11 @@ def create_engine(url: str | None = None, *, echo: bool = False) -> AsyncEngine:
         # connections at checkout so the next fleet claim replaces that connection instead of
         # terminating the worker with InterfaceError("connection is closed").
         pool_pre_ping=True,
+        # Behind pgbouncer (transaction mode) a pooled connection holds a real Postgres
+        # connection only during a transaction.
+        pool_size=int(_env_number(POOL_SIZE_ENV, 5)),
+        max_overflow=int(_env_number(MAX_OVERFLOW_ENV, 10)),
+        pool_timeout=_env_number(POOL_TIMEOUT_ENV, 30),
     )
 
 

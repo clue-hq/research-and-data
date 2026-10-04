@@ -2,13 +2,15 @@
 
 import hashlib
 from dataclasses import replace
+from typing import Any
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 
-from clue_api.arv2 import dossier_import
+from clue_api.arv2 import dossier_import, import_storage
 from clue_api.arv2.quality_evidence import grant_manifest, revoke_grant
+from clue_storage import StorageError
 from clue_storage.fs import FsStorage
 from tests.arv2.test_dossier_json import document, finding
 from tests.arv2.test_quality_claims_db import setup
@@ -300,5 +302,78 @@ def test_reciprocal_conflicts_rollback_together_then_retry_with_exact_links(tmp_
             replay = await invoke(conn, ctx, body)
             assert replay["complete"] and all(e["replayed"] for e in replay["entries"])
             assert ids == {e["id"]: e["claim_id"] for e in replay["entries"]}
+
+    run_async(case())
+
+
+class _CountingStorage:
+    """Counts reads per key and fails an upload on request; delegates everything else."""
+
+    def __init__(self, inner: Any, *, fail_put: bool = False) -> None:
+        self._inner = inner
+        self._fail_put = fail_put
+        self.gets: dict[str, int] = {}
+
+    async def get(self, key: str) -> bytes:
+        self.gets[key] = self.gets.get(key, 0) + 1
+        return await self._inner.get(key)
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        if self._fail_put:
+            raise StorageError("simulated upload failure")
+        await self._inner.put(key, data, media_type=media_type)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+def test_import_reads_each_blob_once_however_many_findings_cite_it(tmp_path):
+    """Research slowness fix 2026-10-03: the context manifest and each cited source used to be
+    read from storage once per finding, one round trip at a time."""
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage, job, grant, kwargs = await context(conn, tmp_path)
+            counting = _CountingStorage(storage)
+            body = document(finding("F001"), finding("F002"), finding("F003"))
+            result = await invoke(conn, (counting, job, grant, kwargs), body)
+            assert result["stored"] == 3
+            assert counting.gets and max(counting.gets.values()) == 1
+
+    run_async(case())
+
+
+def test_an_artifact_erased_after_prefetch_is_still_refused(tmp_path, monkeypatch):
+    async def case():
+        async with rollback_conn() as conn:
+            ctx = await context(conn, tmp_path)
+            _storage, _job, _grant, kwargs = ctx
+            source_id = next(iter(kwargs["source_aliases"].values()))
+            original_prefetch = import_storage.ImportStorage.prefetch
+
+            async def prefetch_then_erase(self, keys):
+                await original_prefetch(self, keys)
+                await conn.execute(
+                    text(
+                        "UPDATE artifact SET erased_at=now() WHERE storage_key=("
+                        "SELECT artifact_key FROM arv2_evidence_source WHERE source_id=:id)"
+                    ),
+                    {"id": source_id},
+                )
+
+            monkeypatch.setattr(import_storage.ImportStorage, "prefetch", prefetch_then_erase)
+            result = await invoke(conn, ctx, document(finding("F001")))
+            assert not result["complete"] and result["stored"] == 0
+
+    run_async(case())
+
+
+def test_a_failed_upload_fails_the_import(tmp_path):
+    async def case():
+        async with rollback_conn() as conn:
+            storage, job, grant, kwargs = await context(conn, tmp_path)
+            failing = _CountingStorage(storage, fail_put=True)
+            with pytest.raises(StorageError):
+                await invoke(conn, (failing, job, grant, kwargs), document(finding("F001")))
 
     run_async(case())

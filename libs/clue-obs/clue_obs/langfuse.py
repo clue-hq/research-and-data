@@ -1,14 +1,15 @@
 """Langfuse at the process roots (lane 3 slice 3, R4): the agent-tree viewer.
 
-One client per process, attached to the tracer provider slice 2 built (D1), so the agent tree
-the LangChain handler reports, the platform-side observations opened here, the FastAPI and httpx
-spans and the worker's ``fleet.task`` span are one trace. Every payload passes :func:`make_mask`
+One client per process, attached to the tracer provider slice 2 built (D1), exporting only the
+agent harness: the agent tree the LangChain handler reports and the platform-side observations
+opened here. The FastAPI, httpx and ``fleet.task`` spans on the same provider stay out of Langfuse
+(2026-10-03 spec, R1). Every payload passes :func:`make_mask`
 before export (R3: the secret-key rule and the blob rule, plus truncation — never the claim-value
 rule: this is the surface for debugging exactly those values). Nothing here does anything until
 :func:`install_langfuse` was given both keys; every helper is a no-op otherwise, so an
 unconfigured process behaves as it did after slice 2.
 
-This module (and ``clue_api.langfuse_callbacks``, the LangChain adapter) are the only two that
+This module (and ``clue_gateway.langfuse_handler``, the LangChain adapter) are the only two that
 import the SDK — an import-linter contract keeps it that way.
 """
 
@@ -21,7 +22,8 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
+import structlog
+from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SpanExporter
 
 from clue_obs.redact import is_secret_key, mask_blob, redact_value
@@ -64,11 +66,12 @@ ObservationType = Literal[
 ]
 Level = Literal["DEBUG", "DEFAULT", "WARNING", "ERROR"]
 
+#: The run-context key the fleet worker binds to the enqueuing trace's id
+#: (``ATTR_LAUNCHED_BY_TRACE_ID``).
+_LAUNCHED_BY_KEY = "launched_by_trace_id"
+
 #: Longest string any exported payload may carry; the turn's receipt limit is the same order.
 DEFAULT_MASK_LIMIT = 8_000
-
-#: Server spans for these routes are health probes: dropped before export.
-HEALTH_ROUTES: frozenset[str] = frozenset({"/healthz", "/health", "/readyz", "/livez"})
 
 # The SDK client, typed ``Any`` on purpose: the platform never depends on its exact typed
 # surface, and every helper below tolerates ``None`` (not installed).
@@ -111,14 +114,6 @@ def make_mask(limit: int = DEFAULT_MASK_LIMIT) -> Callable[..., Any]:
     return mask
 
 
-def _not_a_health_check(span: ReadableSpan) -> bool:
-    attributes = span.attributes or {}
-    route = (
-        attributes.get("http.route") or attributes.get("url.path") or attributes.get("http.target")
-    )
-    return route not in HEALTH_ROUTES
-
-
 # --- install / lifecycle ---------------------------------------------------------------------
 
 
@@ -141,6 +136,7 @@ def install_langfuse(
     if not (public_key or "").strip() or not (secret_key or "").strip():
         return False
     from langfuse import Langfuse
+    from langfuse.span_filter import is_default_export_span
 
     _client = Langfuse(
         public_key=public_key,
@@ -150,7 +146,11 @@ def install_langfuse(
         release=release or None,
         tracer_provider=tracer_provider,
         mask=make_mask(mask_limit),
-        should_export_span=_not_a_health_check,
+        # Langfuse holds the agent harness and nothing else (2026-10-03 spec, R1): the SDK's own
+        # default keeps ``langfuse-sdk`` observations, ``gen_ai.*`` spans and known LLM
+        # instrumentors, and drops the FastAPI, httpx and plain ``clue_research`` spans that share
+        # this provider. The first production day had ~1,195 request traces in ~1,200.
+        should_export_span=is_default_export_span,
         span_exporter=span_exporter,
         tracing_enabled=True,
     )
@@ -328,6 +328,8 @@ def propagate_trace(
     """Name the trace and stamp session, user, metadata and tags on every span opened inside.
 
     Metadata values are stringified (the SDK takes primitives) and ``None`` values are dropped.
+    Inside a fleet task the launcher's trace id (bound by the worker as ``launched_by_trace_id``)
+    is added, so a job's trace leads back to the turn that launched it (2026-10-03 spec, R3).
     """
     if _client is None:
         yield
@@ -335,7 +337,9 @@ def propagate_trace(
     from langfuse import propagate_attributes
 
     _seed_entities()
-    cleaned = {k: str(v) for k, v in (metadata or {}).items() if v is not None}
+    launched_by = structlog.contextvars.get_contextvars().get(_LAUNCHED_BY_KEY)
+    merged = {_LAUNCHED_BY_KEY: launched_by, **(metadata or {})}
+    cleaned = {k: str(v) for k, v in merged.items() if v is not None}
     with propagate_attributes(
         trace_name=trace_name,
         session_id=session_id,

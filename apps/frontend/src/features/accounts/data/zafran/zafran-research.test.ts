@@ -42,7 +42,8 @@ test("Zafran account research satisfies the frontend contracts", () => {
   assert.equal(account.id, "zafran-security");
   assert.equal(account.fitCriteria.length, 0);
   assert.equal(account.buyingCommittee.length, 5);
-  assert.equal(workspace.insightsDisplay?.sections.length, 6);
+  // Six researched sections plus the empty Miscellaneous section (2026-09-27, 296922df1).
+  assert.equal(workspace.insightsDisplay?.sections.length, 7);
   assert.equal(
     workspace.insightsDisplay?.sections
       .flatMap((section) => section.items)

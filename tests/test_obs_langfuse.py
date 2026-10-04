@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from opentelemetry.sdk.trace import ReadableSpan
 
+from clue_obs import bound_context
 from clue_obs.langfuse import (
     DEFAULT_MASK_LIMIT,
     LangfuseIds,
@@ -121,15 +122,31 @@ def test_the_installed_client_masks_payloads_before_export() -> None:
     assert '"q": "hi"' in payload
 
 
-def test_health_check_server_spans_are_not_exported() -> None:
+def test_only_agent_harness_spans_are_exported_and_all_carry_the_environment() -> None:
+    """R1/R2 (2026-10-03 spec): web requests, raw HTTP calls and our plain pipeline spans never
+    reach Langfuse; an observation under them is exported (as the trace root, its parents gone),
+    and every exported span carries the client's environment, so the trace is not ``default``."""
     with langfuse_installed() as (exporter, provider):
-        tracer = provider.get_tracer("test")
-        with tracer.start_as_current_span("GET /healthz", attributes={"http.route": "/healthz"}):
+        server = provider.get_tracer("opentelemetry.instrumentation.fastapi")
+        client = provider.get_tracer("opentelemetry.instrumentation.httpx")
+        ours = provider.get_tracer("clue_research")
+        with (
+            server.start_as_current_span("POST /turns", attributes={"http.route": "/turns"}),
+            ours.start_as_current_span("fleet.task"),
+            observation("head-of-abm.turn", as_type="agent"),
+        ):
+            with (
+                ours.start_as_current_span("llm.gateway_call", attributes={"model": "m"}),
+                client.start_as_current_span("POST"),
+            ):
+                pass
+            with observation("search_web", as_type="tool"):
+                pass
+        with server.start_as_current_span("GET /auth/v1/session"):
             pass
-        with tracer.start_as_current_span("GET /accounts", attributes={"http.route": "/accounts"}):
-            pass
-        names = [span.name for span in finished_spans(exporter)]
-    assert names == ["GET /accounts"]
+        spans = finished_spans(exporter)
+    assert sorted(span.name for span in spans) == ["head-of-abm.turn", "search_web"]
+    assert {_attrs(span).get("langfuse.environment") for span in spans} == {"lane-test"}
 
 
 def test_the_run_registry_remembers_and_pops_by_run_id() -> None:
@@ -198,3 +215,21 @@ def test_tag_entities_from_child_tasks_shares_one_accumulator() -> None:
         _attrs(s)["langfuse.trace.metadata.entities"] for s in spans if s.name == "entities.tagged"
     ]
     assert sets == ["acc-1", "acc-1,con-2"]
+
+
+def test_a_trace_opened_in_a_launched_task_names_the_trace_that_launched_it() -> None:
+    """R3 (2026-10-03 spec): a fleet task is its own trace; the worker binds the launcher's trace
+    id, and the Langfuse trace carries it so a research job's trace leads back to its turn."""
+    launcher = "df90b7ebcd28d5b6489e4e6f830761fc"
+    with langfuse_installed() as (exporter, _provider):
+        with (
+            bound_context(launched_by_trace_id=launcher),
+            propagate_trace(trace_name="arv2.account_research"),
+            observation("job"),
+        ):
+            pass
+        with propagate_trace(trace_name="head-of-abm.turn"), observation("turn"):
+            pass
+        by_name = {span.name: _attrs(span) for span in finished_spans(exporter)}
+    assert by_name["job"]["langfuse.trace.metadata.launched_by_trace_id"] == launcher
+    assert "langfuse.trace.metadata.launched_by_trace_id" not in by_name["turn"]

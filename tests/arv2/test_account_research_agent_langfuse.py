@@ -65,6 +65,8 @@ def test_a_finalized_job_is_a_named_trace_with_priced_rounds_and_an_ending_event
     assert first["session.id"] == str(SCOPE.run_id)
     assert first["user.id"] == SCOPE.workspace_id
     assert first["langfuse.trace.metadata.job_id"] == str(SCOPE.job_id)
+    # One job is one trace (2026-10-03 spec, R3), findable by the account it researched.
+    assert f"account:{SCOPE.account_domain}" in first["langfuse.trace.tags"]
     assert json.loads(first["langfuse.observation.cost_details"]) == {"total": 0.025}
     rows = [row for row in runtime.model_ledger.drain() if row.phase == "result"]
     assert len(rows) == outcome.model_rounds

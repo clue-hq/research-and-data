@@ -191,8 +191,9 @@ class Settings(BaseSettings):
     # On by default (founder, 2026-09-15): installed whenever both keys (secrets) are set; with
     # the keys blank the roots log ``langfuse.not_installed`` and run without it, so a process
     # without a project (CI, a fresh worktree) still boots. Set it false to silence a configured
-    # project. The client attaches to the process's tracer provider, so the agent tree, the HTTP
-    # spans and the worker's task span are one trace. ``langfuse_environment`` names the
+    # project. The client attaches to the process's tracer provider but exports only the agent
+    # harness (2026-10-03: no HTTP or ``fleet.task`` spans; each fleet task is its own trace,
+    # linked to its launcher). ``langfuse_environment`` names the
     # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only).
     # Env: ``CLUE_LANGFUSE_ENABLED`` / ``CLUE_LANGFUSE_HOST`` / ``CLUE_LANGFUSE_ENVIRONMENT``.
     langfuse_enabled: bool = True
@@ -321,6 +322,9 @@ class Settings(BaseSettings):
     storage_s3_bucket: str | None = None
     storage_s3_endpoint_url: str | None = None
     storage_s3_region: str | None = None
+    # Keep-alive connections the shared S3 client may hold (research slowness fix 2026-10-03).
+    # Env: ``CLUE_STORAGE_S3_MAX_POOL_CONNECTIONS``.
+    storage_s3_max_pool_connections: int = Field(default=50, ge=1)
 
     # --- platform deepagent workspace (C6.1) -----------------------------------------------
     # Dedicated host root for ephemeral agent execution trees. Production composition requires

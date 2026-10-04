@@ -37,6 +37,7 @@ from clue_obs.context import (
     clear_context,
     unbind_context,
 )
+from clue_obs.critical_section import critical_section
 from clue_obs.langfuse import (
     current_ids,
     guardrail,
@@ -70,6 +71,7 @@ __all__ = [
     "capture",
     "capture_events",
     "clear_context",
+    "critical_section",
     "current_ids",
     "get_logger",
     "guardrail",

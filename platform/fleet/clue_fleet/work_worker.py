@@ -28,7 +28,8 @@ from clue_fleet.queue import (
     WorkTaskRow,
 )
 from clue_obs import bound_context, get_logger
-from clue_obs.otel import CARRIER_KEYS, context_from_carrier, get_tracer, safe_attributes
+from clue_obs.otel import CARRIER_KEYS, get_tracer, safe_attributes, task_trace_start
+from clue_obs.otel.trace_ids import remember_trace
 from clue_obs.sentry import capture
 
 log = get_logger("clue_fleet.work_worker")
@@ -112,6 +113,22 @@ class CapabilityGated(Protocol):
     def task_capabilities(self) -> tuple[TaskCapability, ...]: ...
 
 
+@runtime_checkable
+class InFlightLimited(Protocol):
+    """A handler that runs at most ``max_in_flight`` tasks at once in one process.
+
+    The worker does not claim a task of this kind while that many are already running here, so
+    a claimed task is always a running task and another worker can take the rest (research
+    slowness fix 2026-10-03: a worker claimed 10 research tasks while able to run 4, and two
+    person jobs sat claimed for 50 minutes while another worker was idle). ``None`` means no
+    per-kind limit. Its own protocol, like ``CapabilityGated``, so the worker detects it with one
+    ``isinstance``.
+    """
+
+    @property
+    def max_in_flight(self) -> int | None: ...
+
+
 class LeasedWorkWorker:
     """Claim any registered work kind and supervise it under a generated lease fence.
 
@@ -169,6 +186,7 @@ class LeasedWorkWorker:
         self._concurrency = concurrency
         self._stop = asyncio.Event()
         self._active_work: set[WorkId] = set()
+        self._in_flight: dict[FleetTaskKind, int] = {}
 
     def stop(self) -> None:
         self._stop.set()
@@ -261,6 +279,16 @@ class LeasedWorkWorker:
             return ()
         return tuple(handler.task_capabilities)
 
+    def _at_limit(self, kind: FleetTaskKind) -> bool:
+        handler = self._handlers[kind]
+        if not isinstance(handler, InFlightLimited):
+            return False
+        limit = handler.max_in_flight
+        return limit is not None and self._in_flight.get(kind, 0) >= limit
+
+    def _release(self, kind: FleetTaskKind) -> None:
+        self._in_flight[kind] = self._in_flight.get(kind, 0) - 1
+
     async def drain_once(self, *, slot: int | None = None) -> bool:
         """Fair round-robin claim across registered top-level task kinds.
 
@@ -281,16 +309,30 @@ class LeasedWorkWorker:
                     kind=kind.value,
                 )
                 continue
-            task = await self._queue.claim_next(
-                kind=kind,
-                worker_id=self.worker_id,
-                stale_after=self._task_stale_after,
-                capabilities=capabilities,
-            )
-            if task is not None:
-                self._next_kind = (index + 1) % len(self._kind_order)
+            if self._at_limit(kind):
+                continue
+            # Reserve before awaiting the claim: slots share this loop, and between this check
+            # and the claim's return another slot could otherwise pass the same check.
+            self._in_flight[kind] = self._in_flight.get(kind, 0) + 1
+            try:
+                task = await self._queue.claim_next(
+                    kind=kind,
+                    worker_id=self.worker_id,
+                    stale_after=self._task_stale_after,
+                    capabilities=capabilities,
+                )
+            except BaseException:
+                self._release(kind)
+                raise
+            if task is None:
+                self._release(kind)
+                continue
+            self._next_kind = (index + 1) % len(self._kind_order)
+            try:
                 await self._run_task(task, self._handlers[kind], slot=slot)
-                return True
+            finally:
+                self._release(kind)
+            return True
         return False
 
     async def _handle_in_context(
@@ -300,9 +342,10 @@ class LeasedWorkWorker:
 
         The bound context (task, kind, attempt, worker, and the payload's subject ids) rides onto
         every log line, every span (``RunContextSpanProcessor``) and every Sentry tag for the
-        whole handle; the ``fleet.task`` span is a child of the ``traceparent`` the enqueue stamped
-        into the payload, so the request that queued the work and the worker that runs it are one
-        trace. No carrier → a fresh trace, still stamped.
+        whole handle. The ``fleet.task`` span starts a NEW trace (2026-10-03 agent-scoped tracing
+        spec, R3): it links to the span whose ``traceparent`` the enqueue stamped into the
+        payload, and that span's trace id is bound as ``launched_by_trace_id``, so one task is one
+        trace that still names what launched it. No carrier → no link.
         """
         bound: dict[str, object] = {
             "task_id": str(task.task_id),
@@ -315,14 +358,25 @@ class LeasedWorkWorker:
             value = task.payload.get(key)
             if isinstance(value, str) and value:
                 bound[key] = value
-        parent = context_from_carrier(task.payload)
+        start = task_trace_start(task.payload)
+        if start.launched_by_trace_id is not None:
+            bound["launched_by_trace_id"] = start.launched_by_trace_id
         with (
             bound_context(**bound),
             get_tracer().start_as_current_span(
-                "fleet.task", context=parent, attributes=safe_attributes(bound)
+                "fleet.task",
+                context=start.context,
+                links=start.links,
+                attributes=safe_attributes(bound),
             ),
         ):
-            return await handler.handle(context)
+            try:
+                return await handler.handle(context)
+            except BaseException as exc:
+                # ``worker.work_error`` is logged and reported after this span closes; the
+                # exception carries the task's trace there (2026-10-03 spec, R4/R5).
+                remember_trace(exc)
+                raise
 
     async def _run_task(
         self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None
@@ -367,8 +421,8 @@ class LeasedWorkWorker:
             # therefore refused every QUEUED job it was ever handed — 47 ``design_job.
             # preamble_error`` failures in one lane's logs on 2026-09-17. Stripped HERE and not at
             # the parse: ``_handle_in_context`` reads the carrier off ``task.payload`` (the row, not
-            # this context) for the span parent, so the trace still joins the enqueue's trace while
-            # the handler sees exactly the payload its caller wrote.
+            # this context) for the span's link to its launcher, while the handler sees exactly
+            # the payload its caller wrote.
             payload={k: v for k, v in task.payload.items() if k not in CARRIER_KEYS},
             stop_requested=self._stop,
             lease_lost=lease_lost,
