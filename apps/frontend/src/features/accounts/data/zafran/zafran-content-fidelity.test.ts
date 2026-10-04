@@ -35,8 +35,10 @@ test("Insights exposes every source item without shortened replacement copy", ()
   const insights = zafranWorkspaceFixture.insightsDisplay!;
   assert.deepEqual(
     insights.sections.map((entry) => entry.items.length),
-    [4, 3, 3, 3, 5, 3],
+    // The trailing 0 is Miscellaneous: an honest empty section, added 2026-09-27 (296922df1).
+    [4, 3, 3, 3, 5, 3, 0],
   );
+  assert.equal(section(insights, "miscellaneous").empty, true);
 
   const firstSignal = section(insights, "buying-signals").items[0]!;
   assert.equal(
@@ -86,8 +88,10 @@ test("Nick Fisher's page keeps all supplied research and copy-lines", () => {
   const contact = nickFisherFixture.contactDisplay!;
   assert.deepEqual(
     contact.sections.map((entry) => entry.items.length),
-    [4, 3, 5, 4, 4],
+    // The trailing 0 is Miscellaneous: an honest empty section, added 2026-09-27 (296922df1).
+    [4, 3, 5, 4, 4, 0],
   );
+  assert.equal(section(contact, "miscellaneous").empty, true);
 
   const whyThisPerson = section(contact, "why-this-person");
   assert.equal(
