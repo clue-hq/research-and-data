@@ -376,3 +376,68 @@ def test_person_workspace_exposes_parent_dossier_and_rejects_writes(tmp_path):
             assert PARENT_DOSSIER_PATH not in person_task_instruction(brief)
 
     run_async(case())
+
+
+def test_generation_view_resolves_each_jobs_own_generation_in_a_shared_run(tmp_path):
+    """Independently launched people each open a generation in the same run and account; the
+    view must give every reader its own (or its parent's), never fail on the other rows."""
+    from deepagents.backends.protocol import BackendProtocol
+
+    from clue_api.arv2.quality_execution import Allowance, bind_execution
+    from clue_api.arv2.quality_views import research_backend
+    from tests.arv2.test_quality_execution_db import execution
+    from tests.arv2.test_quality_tools_db import read
+
+    async def case():
+        async with rollback_conn() as conn:
+            parent, child, cid, storage, ctx, gen, path = await initial(conn, tmp_path)
+            contact = await insert_contact_entity(
+                conn, account_entity_id=parent.account_id, full_name="Independent person"
+            )
+            solo_id = uuid4()
+            await create_job(
+                conn,
+                job_id=solo_id,
+                run_id=parent.run_id,
+                workspace_id=parent.workspace_id,
+                account_entity_id=parent.account_id,
+                subject_type="person",
+                subject_entity_id=contact,
+                profile_sha256="a" * 64,
+                input_refs={"quality_recipe_version": 25},
+            )
+            solo = replace(
+                parent,
+                job_id=solo_id,
+                subject_kind="person",
+                contact_id=contact,
+                input_refs={"quality_recipe_version": 25},
+            )
+            solo_gen = await ensure_generation(
+                conn,
+                OperationScope(parent.workspace_id, parent.run_id, solo_id, parent.account_id),
+                context_id=cid,
+            )
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            async def generation_seen_by(job):
+                op = OperationScope(job.workspace_id, job.run_id, job.job_id, job.account_id)
+                eid = await execution(conn, op, job.project_id)
+                await bind_execution(
+                    conn,
+                    op,
+                    execution_id=eid,
+                    context_id=cid,
+                    role="account_research",
+                    limits=Allowance(100, 100, 10),
+                )
+                backend = research_backend(BackendProtocol(), connections, storage, job, eid)
+                return await read(backend, "/research/generation.json")
+
+            assert (await generation_seen_by(solo))["generation_id"] == str(solo_gen.generation_id)
+            assert (await generation_seen_by(child))["generation_id"] == str(gen.generation_id)
+
+    run_async(case())
