@@ -10,6 +10,7 @@ from sqlalchemy import text
 
 from clue_api.arv2.account_research_store import finish_job
 from clue_api.arv2.display.recipes import load_display_recipes
+from clue_api.arv2.quality_catalog import CURRENT_RECIPE_VERSION
 from clue_api.arv2.quality_execution import Allowance, bind_execution
 from clue_api.arv2.quality_generation import pending_continuations, read_generation, signal
 from clue_api.arv2.quality_json_dossier import (
@@ -565,7 +566,7 @@ def test_real_launch_persists_resolved_recipe_for_scheduler(tmp_path):
             owner._model_id = owner._person_model_id = "unused"
             composition = await owner._compose_quality(conn, job, run)
             persisted = await read_job(conn, job_id=job.job_id)
-            assert persisted.input_refs["quality_recipe_version"] == 24
+            assert persisted.input_refs["quality_recipe_version"] == CURRENT_RECIPE_VERSION
             assert persisted.input_refs == composition.scope.input_refs
 
     run_async(case())

@@ -9,3 +9,14 @@ from clue_api.arv2.account_research_claims import JobScope
 
 def advisory_research(scope: JobScope) -> bool:
     return int((scope.input_refs or {}).get("quality_recipe_version", 5)) >= 6
+
+
+#: From this recipe the researcher only researches; the driver's page writer writes the pages.
+SEPARATE_WRITER_RECIPE = 25
+
+
+def writes_pages_separately(scope: JobScope) -> bool:
+    return (
+        scope.catalog_version == "v4"
+        and int((scope.input_refs or {}).get("quality_recipe_version", 0)) >= SEPARATE_WRITER_RECIPE
+    )

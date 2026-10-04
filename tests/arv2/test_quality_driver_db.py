@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from sqlalchemy import text
 
 from clue_agents import AgentWorkspaceFactory, ScriptedAgentChatModel, WorkspaceRootPolicy
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
@@ -15,11 +16,17 @@ from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler
 from clue_api.arv2.account_research_launch import launch_arv2_account_research
 from clue_api.arv2.account_research_store import read_job, read_run
 from clue_api.arv2.claim_writer import LenientClaimWriter
+from clue_api.arv2.display.recipes import load_display_recipes
+from clue_api.arv2.page_writer import SECTIONS
+from clue_api.arv2.page_writer_runtime import PageWriterModels
+from clue_api.arv2.quality_catalog import CURRENT_RECIPE_VERSION
 from clue_api.arv2.quality_context import read_context
 from clue_api.arv2.quality_execution import Allowance
+from clue_api.arv2.quality_pages import read_page
 from clue_api.arv2.quality_results import QualityJobOutcome
 from clue_api.quality_research_wiring import ResearchUnitRuntime, quality_tools
 from clue_fleet import LeaseGeneration, WorkId
+from clue_fleet.lease import acquire_work_lease
 from clue_fleet.work_worker import WorkContext
 from clue_storage.fs import FsStorage
 from tests.arv2.icp_fixture import seed_icp_fixture, settings_for
@@ -65,6 +72,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "blobs")
             fixture = await seed_icp_fixture(conn, storage)
+            await load_display_recipes(conn)
             first_persona = await persona(
                 conn,
                 storage,
@@ -135,6 +143,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
                 artifact_sink=artifacts,
             )
             calls = []
+            scopes = []
 
             class NoLegacyModels:
                 def build(self, **kwargs):
@@ -142,15 +151,8 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
 
             async def runner(*, scope, context_id, runtime, objective, model_id, unit_key=None):
                 calls.append(unit_key)
-                # The recipe the current account launch bundle pins (it moves on every recipe
-                # revision; a literal here went stale at revision 24, 2026-09-28).
-                from clue_api.arv2.quality_catalog import load_quality_resources
-
-                current = load_quality_resources("arv2-account").profile.body
-                assert (
-                    scope.input_refs["quality_recipe_version"]
-                    == json.loads(current)["recipe_version"]
-                )
+                scopes.append(scope)
+                assert scope.input_refs["quality_recipe_version"] == CURRENT_RECIPE_VERSION
                 assert (
                     scope.persona_markdown
                     == "---\nkind: audience-persona\nicp_key: clue-abm-buyers\n"
@@ -284,6 +286,40 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
                     result.failure_code,
                 )
 
+            writes = []
+
+            async def writer_model(messages, json_mode):
+                writes.append(json_mode)
+                if not json_mode:
+                    return "The seller sells account-based marketing."
+                return json.dumps(
+                    {
+                        "pages": [
+                            {
+                                "page": page,
+                                "sections": [
+                                    {
+                                        "key": key,
+                                        "intro": [
+                                            {
+                                                "text": f"Story {len(writes)}.",
+                                                "kind": "fact",
+                                                "refs": ["F001"],
+                                            }
+                                        ]
+                                        if key == "why-they-fit"
+                                        else [],
+                                        "items": [],
+                                        "gaps": [],
+                                    }
+                                    for key in SECTIONS[page]
+                                ],
+                            }
+                            for page in ("overview", "insights")
+                        ]
+                    }
+                )
+
             queue = Queue()
             handler = Arv2AccountResearchWorkHandler(
                 settings=settings,
@@ -295,19 +331,21 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
                 model_id="fixture/research",
                 writer=LenientClaimWriter(lenient=True),
                 quality_runner=runner,
+                page_writer=PageWriterModels(
+                    call_for=lambda scope: writer_model, model_id="fixture/writer"
+                ),
                 queue=queue,
             )
             jid = launch.job_ids[0]
             result = await handler.handle(work(jid, launch.run_id, fixture.workspace_id))
-            assert result.outcome == "needs_review", (result, await read_job(conn, job_id=jid))
             initial = await read_job(conn, job_id=jid)
-            # This scripted worker finalizes a report without publishing pages. Measured
-            # completion must retain that gap rather than accepting the model's status.
-            assert initial.finalization["coverage"]["missing_pages"] == ["insights", "overview"]
-            # Five scripted calls, plus the turn the refused finalize asks for: since the
-            # 2026-09-28 completion contract, a completed finalize with owned pages unpublished is
-            # refused (repairably), and this script has no answer left for that turn.
-            assert initial.finalization["spend"]["unpriced_model_calls"] == 6
+            # Recipe 25: the researcher finalizes without pages; the driver's page writer
+            # writes them (one seller-brief call, one page call) before the job settles.
+            assert result.outcome == "completed", (result, initial.finalization)
+            assert writes == [False, True]
+            assert initial.finalization["coverage"]["missing_pages"] == []
+            assert initial.finalization["coverage"]["published_pages"] == ["insights", "overview"]
+            assert initial.finalization["spend"]["unpriced_model_calls"] == 5
             assert initial.finalization["spend"]["cost_complete"] is False
             assert initial.finalization["schema_version"] == "quality-job-v1"
             assert await handler.sweep_quality() == 1
@@ -316,12 +354,42 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             assert offer["payload"]["continuation"] == "quality_reconciliation"
             assert offer["payload"]["job_id"] == str(jid)
             assert offer["payload"]["run_id"] == str(initial.run_id)
-            # What the offered continuation does is owned elsewhere since recipe revision 20: it
-            # is the focused account reconciliation
-            # (docs/specs/arv4-focused-account-reconciliation.md), driven by its own editor and
-            # tested in test_reconciliation_continuation_db.py and
-            # test_quality_reconciliation_db.py. This test's scripted researcher only covered the
-            # earlier researcher continuation, so it stops at the offer.
+            lease = await acquire_work_lease(
+                conn, work_id=WorkId(offer["work_id"]), worker_id="offline-quality"
+            )
+            assert lease is not None
+            continuation = WorkContext(
+                task_id=uuid4(),
+                work_id=offer["work_id"],
+                worker_id="offline-quality",
+                lease_generation=lease.generation,
+                payload=offer["payload"],
+                stop_requested=asyncio.Event(),
+                lease_lost=asyncio.Event(),
+            )
+            # Once the people settle, the account is rewritten by the writer (the seller brief is
+            # reused), not by continuing the researcher.
+            rewrite = await handler.handle(continuation)
+            assert rewrite.outcome == "completed" and rewrite.references["applied"] is True
+            assert writes == [False, True, True]
+            overview = await read_page(conn, scopes[0], context_id=run.context_id, page="overview")
+            fit = next(
+                s for s in overview["display_block"]["sections"] if s["key"] == "why-they-fit"
+            )
+            assert fit["intro"][0]["text"] == "Story 3."
+            assert (await read_job(conn, job_id=jid)).finalization == initial.finalization
+            assert (
+                await conn.execute(
+                    text(
+                        "SELECT state FROM arv2_account_research_generation "
+                        "WHERE initial_job_id=:id"
+                    ),
+                    {"id": jid},
+                )
+            ).scalar_one() == "reconciled"
+            # A redelivered continuation is a no-op: no second rewrite, no researcher call.
+            assert (await handler.handle(continuation)).outcome == "completed"
+            assert writes == [False, True, True]
             assert len(calls) == 1
             # No legacy Luna display or repeat initial task was offered.
             assert len(queue.offers) == 1
