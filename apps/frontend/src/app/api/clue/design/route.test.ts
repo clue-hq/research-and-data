@@ -188,3 +188,27 @@ test("dot segments in the path are refused, not forwarded", async () => {
     /dot segments/,
   );
 });
+
+test("an image revalidation forwards If-None-Match and passes a bodiless 304 with its ETag", async () => {
+  let forwarded: string | null = null;
+  const response = await handleDesignProxyRequest(
+    new Request("http://localhost/api/clue/design/assets/a1/bytes", {
+      headers: { "If-None-Match": '"abc"' },
+    }),
+    ["assets", "a1", "bytes"],
+    dependencies({
+      fetchImpl: async (_input, init) => {
+        forwarded = new Headers(init?.headers).get("if-none-match");
+        return new Response(null, {
+          status: 304,
+          headers: { etag: '"abc"', "cache-control": "private, max-age=300" },
+        });
+      },
+    }),
+  );
+  assert.equal(forwarded, '"abc"');
+  assert.equal(response.status, 304);
+  assert.equal(response.headers.get("etag"), '"abc"');
+  assert.equal(response.headers.get("cache-control"), "private, max-age=300");
+  assert.equal(await response.text(), "");
+});

@@ -10,6 +10,7 @@ import {
   emptyBrandContextWorkspace,
   parseAssetRecords,
   toBrandContextWorkspace,
+  toRegistryAssets,
 } from "./brand-context-mapping";
 import { BrandKitDetailSchema } from "./brand-kit";
 
@@ -540,4 +541,40 @@ test("an alias naming a prototype key resolves to nothing, not to Object.prototy
     mapped.colorGroups[0].swatches.map((swatch) => swatch.id),
     ["surface.page"],
   );
+});
+
+test("a registry asset with a stored thumbnail shows the thumbnail in the grid; one without falls back to its bytes", () => {
+  const [withThumb, without] = toRegistryAssets(
+    [
+      { id: "a_thumb", kind: "raster_image", status: "ready", source: { kind: "uploaded" },
+        media: { mime_type: "image/png", thumbnail: { mime_type: "image/png" } } },
+      { id: "a_plain", kind: "raster_image", status: "ready", source: { kind: "uploaded" },
+        media: { mime_type: "image/png" } },
+    ],
+    new Set(),
+  );
+  assert.equal(withThumb.visual.kind, "image");
+  assert.equal(without.visual.kind, "image");
+  if (withThumb.visual.kind !== "image" || without.visual.kind !== "image") return;
+  assert.equal(withThumb.visual.thumbnailPath, "/api/clue/design/assets/a_thumb/thumbnail");
+  assert.equal(withThumb.visual.imagePath, "/api/clue/design/assets/a_thumb/bytes");
+  assert.equal(without.visual.thumbnailPath, undefined);
+});
+
+test("a kit asset whose registry record has a thumbnail shows it in the grid", () => {
+  const kit = BrandKitDetailSchema.parse(HARVESTED_BRAND_KIT);
+  const [first] = brandKitAssetIds(kit);
+  const raw = HARVESTED_ASSET_RECORDS[first] as { asset: { media?: Record<string, unknown> } };
+  const withThumb = {
+    ...raw,
+    asset: { ...raw.asset, media: { ...(raw.asset.media ?? {}), thumbnail: { mime_type: "image/png" } } },
+  };
+  const workspace = toBrandContextWorkspace(kit, {
+    assetRecords: parseAssetRecords({ ...HARVESTED_ASSET_RECORDS, [first]: withThumb }),
+    registryRecords: [],
+  });
+  const asset = workspace.assets.find(candidate => candidate.id === first);
+  assert.ok(asset && asset.visual.kind === "image");
+  if (asset?.visual.kind !== "image") return;
+  assert.equal(asset.visual.thumbnailPath, `/api/clue/design/assets/${encodeURIComponent(first)}/thumbnail`);
 });
