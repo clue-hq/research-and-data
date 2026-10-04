@@ -83,6 +83,28 @@ only extra commits are research-streaming PR merges). Source: `brand-context-fix
 - Owed before any live run: rebuild lumen-api-helper on the host; founder review of the v17
   manual wording (presented in chat); setup-screen form (698b62071) still held.
 
+## Verification of the Astra (Shashank's agent) typography/ad audit claims — 2026-10-04
+Code-read + offline repro with the real normalizer (scratch script, no DB, no spend):
+- CONFIRMED hidden headings win: capture/rendered.py `take(t, 3)` = first 3 per tag in DOM order,
+  no visibility check; parse.py `_parse_computed_samples` drops `area` and keeps a bare
+  `rendered :: h1` locator. Repro: hidden 96px/700 H1 before visible 56px/400 -> kit headline 96/700.
+- CONFIRMED one heading family overwrites measured roles: normalizer/typography.py `_family_from`
+  (frequency election) + build_type_styles line ~288. Repro: serif H1 + sans H2/H3 -> headline sans.
+- CONFIRMED entry-page-only type samples: evidence_builder `build_evidence` parses only the entry
+  snapshot; supporting pages feed assets only.
+- CONFIRMED (ads) logo_policy LIGHT_SURFACES always allows surface.page/card; reference-fidelity
+  gate (`substrate.py _reference_fidelity_error`) only activates via `_selected_reference_ids`,
+  set solely in `_produce_image_asset` -> reuse-only ads finalize with no fidelity check.
+- NEW (not in Astra's audit), root cause of bold ad headings: build_type_styles hard-codes
+  display = max(heading_weight, 700) and stat = max(..., 700); eyebrow/label 600; subtitle 500.
+  Only h1->headline, h2->title, body/p, button->cta, caption are measured (ANCHOR_LABELS). With no
+  H1 captured, heading weight defaults to 700 and headline (32px) comes out smaller than title.
+  Repro: all-400 source -> display 700, stat 700. The scene brand card puts type.display first
+  (brand_card.py CARD_TYPE_ROLES) and SCENE_TYPE_SIZE_NOTE tells the agent to keep family/weight
+  via style($type.display) -> every ad headline inherits the forced 700.
+- NOT verified (evidence not on this machine): AWS cookie-modal provenance, Google draft-vs-approved
+  kit, CSS truncation size, Arlo run traces — they live in Shashank's local `.local-setup/` and DB.
+
 ## Next (discussed, not started)
 The branch's purpose was 1:1 creative typography fidelity. Shashank's audits
 (subsystems/clue-design/docs/typography-ingestion-audit-and-plan-2026-09-29.md,
