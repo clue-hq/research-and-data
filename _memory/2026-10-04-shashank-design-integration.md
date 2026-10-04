@@ -158,3 +158,23 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   baking only (rendered.py SVG serializer), not a force-visible step.
 - Unverified agent claims: editor vs export typography divergence (web_export drops
   --font-display/body; unguarded preflight), picker preview = source screenshot crop.
+
+## Ploy study (2026-10-04) — skills zip + live Ploy session (read-only, in-app browser)
+- Ploy clone = RECONSTRUCTION, not copy: capture HTML + linked CSS (+rendered fallback) as
+  evidence -> design-system foundations (theme tokens) -> rebuild each section as a React/Tailwind
+  component (source CSS translated to Tailwind incl. arbitrary values; source class names kept as
+  hooks; SVGs extracted to components; text parsed programmatically, not retyped) -> interactions
+  rebuilt per type (CSS / stateful component / carousel lib / motion lib / custom controller /
+  stated fallback) -> visual + runtime review and repair. Ploy admits: not an identical copy;
+  Stripe hero animated wave became a static image.
+- Stack: Astro 6 routes (thin) + React 19 sections with typed props + TS + Tailwind v4 + CVA/shadcn
+  + motion/react + react-hook-form/zod, Cloudflare Workers. ONE shared globals.css theme:
+  color roles (--ploy-*) bound to Tailwind, font roles (heading/body/eyebrow/button) with measured
+  weights (Stripe heading weight 300), letter-spacing, line-height, text-xs..9xl scale, radius
+  tokens, real font file. Components carry @ployComponentId/Type/Pattern/Status registry JSDoc.
+- New (from-scratch) sections: all colors via ploy tokens (only #0d1738 + white raw), one repeated
+  house typography idiom (text-4xl md:text-6xl font-light leading-[1.05] tracking-[-0.045em]).
+- Platform owns forms (submitForm -> /_ploy/form-submit) + tracking (window.ploy.track, account
+  tagged); scale = /abm/[account] + typed records in PloyDB; direct text edit in preview (no AI).
+- Key implication: our root cause is per-section scoped CSS islands vs Ploy's single shared theme;
+  we copied Ploy's skill names/process but not its substrate. Raw notes: scratchpad only.
