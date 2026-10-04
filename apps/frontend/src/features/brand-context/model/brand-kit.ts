@@ -172,6 +172,8 @@ export const DesignAssetRecordSchema = z.object({
         mime_type: z.string().nullish(),
         byte_length: z.number().nullish(),
         filename: z.string().nullish(),
+        // Present when the store holds a thumbnail; the grid shows it instead of the bytes.
+        thumbnail: z.object({ mime_type: z.string().nullish() }).passthrough().nullish(),
       })
       .nullish(),
     raster: z
@@ -202,6 +204,7 @@ export const DesignAssetListRecordSchema = z.object({
       mime_type: z.string().nullish(),
       byte_length: z.number().nullish(),
       filename: z.string().nullish(),
+      thumbnail: z.object({ mime_type: z.string().nullish() }).passthrough().nullish(),
     })
     .nullish(),
   raster: z

@@ -56,6 +56,10 @@ def test_backend_rebuilds_ids_and_preserves_judgment_and_readiness(tmp_path):
             assert report.delivery["claims_imported"] is True
             assert report.delivery["narrative_published"] is False
             assert await build_completion_report(conn, storage, job, cid, notes) == report
+            # Recipe 25+: the researcher writes no pages (the driver's writer does, afterwards).
+            separate = replace(job, input_refs={"quality_recipe_version": 25})
+            separate_report = await build_completion_report(conn, storage, separate, cid, notes)
+            assert separate_report.claim_ids == report.claim_ids
             # A damaged parent pointer must not silently hide a registered child from
             # backend-built completion. Generation membership is an independent check.
             await conn.execute(

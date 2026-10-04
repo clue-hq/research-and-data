@@ -25,8 +25,13 @@ const FORWARDED_REQUEST_HEADERS = [
   "accept",
   "content-type",
   "idempotency-key",
+  // Lets an image the browser already holds come back as a bodiless 304.
+  "if-none-match",
   "last-event-id",
 ] as const;
+
+/** Statuses a Response must be built without a body for. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 
 function errorResponse(
   status: number,
@@ -109,7 +114,7 @@ export async function handleDesignProxyRequest(
       ...streamingFetchOptions(outgoing),
     },
   );
-  return new Response(response.body, {
+  return new Response(NULL_BODY_STATUSES.has(response.status) ? null : response.body, {
     status: response.status,
     statusText: response.statusText,
     headers: browserResponseHeaders(response.headers),

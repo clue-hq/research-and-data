@@ -701,6 +701,26 @@ def resolve_web_page_id(web_doc: JsonObject, requested: Optional[str]) -> str:
     return first if isinstance(first, str) and first else "home"
 
 
+# Asset bytes are revalidated by their content digest, never cached as immutable: re-registering
+# an asset id replaces its record, so the same URL can serve new bytes. A browser re-asks after
+# five minutes and a matching digest is a 304 with no storage read (brand-context fix, 2026-10-04:
+# the page re-downloaded every full-size image on every load — 899 downloads in 30 minutes).
+ASSET_BYTES_CACHE_CONTROL = "private, max-age=300"
+
+
+def asset_cache_headers(digest: str) -> Dict[str, str]:
+    return {"ETag": f'"{digest}"', "Cache-Control": ASSET_BYTES_CACHE_CONTROL}
+
+
+def not_modified(request: Request, digest: str) -> bool:
+    """Whether the request's If-None-Match already names this digest."""
+    header = request.headers.get("if-none-match")
+    if not header:
+        return False
+    etag = f'"{digest}"'
+    return any(tag.strip() in (etag, f"W/{etag}", "*") for tag in header.split(","))
+
+
 def create_app(
     engine_cache_root: Optional[Path] = None,
     *,
@@ -7483,6 +7503,31 @@ def create_app(
     # the reference counting and the durable-custody-then-cache-mirror ordering are part of the
     # one destructive operation, not route glue. They had no other caller.
 
+    # GET /assets/records — like /assets/descriptions, registered before /assets/{asset_id}.
+    # The brand-context page read every kit asset's record one request at a time (27 per
+    # load, each queueing on the design API — production 2026-10-03); this is the same
+    # envelope GET /assets/{asset_id} serves, for many ids in one statement. An id that is
+    # not visible in this workspace is absent, not an error.
+    @app.get("/assets/records")
+    def get_asset_records(
+        asset_ids: str = Query(..., description="comma-separated asset ids"),
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        ids = [ident.strip() for ident in (asset_ids or "").split(",") if ident.strip()][:200]
+        stored = repo.get_asset_records(ids)
+        return {
+            "schema_version": 1,
+            "assets": {
+                asset_id: {
+                    "schema_version": 1,
+                    "asset": public_asset_record(row["asset"]),
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                }
+                for asset_id, row in stored.items()
+            },
+        }
+
     # GET /assets/descriptions is registered BEFORE GET /assets/{asset_id} so
     # the literal "descriptions" segment is not captured as an asset id (FastAPI
     # matches routes in registration order at the same path depth).
@@ -7552,6 +7597,7 @@ def create_app(
     @app.get("/assets/{asset_id}/bytes")
     def get_asset_bytes(
         asset_id: str,
+        request: Request,
         repo: HybridRepository = Depends(repository),
     ) -> Response:
         # D4: a pure-Python read straight from durable storage — resolved BY DIGEST, so the
@@ -7573,6 +7619,9 @@ def create_app(
                 status_code=404,
                 detail=f"asset {asset_id} has no locally stored bytes",
             )
+        headers = asset_cache_headers(digest)
+        if not_modified(request, digest):
+            return Response(status_code=304, headers=headers)
         data = read_asset_bytes(blob_store(repo), digest)
         if data is None:
             raise HTTPException(
@@ -7580,7 +7629,7 @@ def create_app(
                 detail=f"asset {asset_id} bytes are missing from the store",
             )
         media_type = media.get("mime_type") or "application/octet-stream"
-        return Response(content=data, media_type=media_type)
+        return Response(content=data, media_type=media_type, headers=headers)
 
     # O4-exempt (no X-Workspace-Id), RULED at D2.5A: the PUBLISHED page loads its images and
     # @font-face bytes from here (lumen-web's delivery render emits /asset-store/{digest} URLs),
@@ -7641,6 +7690,7 @@ def create_app(
     @app.get("/assets/{asset_id}/thumbnail")
     def get_asset_thumbnail(
         asset_id: str,
+        request: Request,
         repo: HybridRepository = Depends(repository),
     ) -> Response:
         # D4: same shape as /bytes — durable read, resolved by digest.
@@ -7653,6 +7703,9 @@ def create_app(
                 status_code=404,
                 detail=f"asset {asset_id} has no thumbnail",
             )
+        headers = asset_cache_headers(digest)
+        if not_modified(request, digest):
+            return Response(status_code=304, headers=headers)
         data = read_asset_bytes(blob_store(repo), digest)
         if data is None:
             raise HTTPException(
@@ -7660,7 +7713,7 @@ def create_app(
                 detail=f"asset {asset_id} thumbnail bytes are missing from the store",
             )
         media_type = thumbnail.get("mime_type") or "application/octet-stream"
-        return Response(content=data, media_type=media_type)
+        return Response(content=data, media_type=media_type, headers=headers)
 
     def asset_max_bytes() -> int:
         return settings.lumen_asset_max_bytes

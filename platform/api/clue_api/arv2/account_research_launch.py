@@ -63,6 +63,7 @@ from clue_api.arv2.fleet_task import (
 )
 from clue_api.arv2.icp_confirmation import ProjectIcpPin, current_project_icp_pin
 from clue_api.arv2.knowledge_frontmatter import parse_front_matter
+from clue_api.arv2.quality_generation import attach_to_account_research
 from clue_api.arv2.research_context import pin_persona
 from clue_api.arv2.structuring_client import FieldCatalog
 from clue_config import Settings
@@ -933,6 +934,16 @@ async def launch_arv2_person_research(
                     "ws": request.workspace_id,
                     "refs": json.dumps({"requested_persona": request.persona.value}),
                 },
+            )
+            # Join the account's own research (recipe 25+), so this person's result reaches the
+            # account's rewrite even though the person runs in a run of their own.
+            await attach_to_account_research(
+                conn,
+                workspace_id=request.workspace_id,
+                project_id=request.project_id,
+                account_id=place.account_id,
+                context_id=context_id,
+                job_id=job_id,
             )
         elif await seat_person_on_committee(
             conn,

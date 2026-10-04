@@ -1430,3 +1430,129 @@ def test_the_merged_stream_carries_the_answering_model_exactly_once() -> None:
     # LangChain's own merge still doubles the provider's repeated fields; that is why readers
     # must prefer the gateway's stamp over ``model_name``.
     assert merged.response_metadata["model_name"] == "served/streaming-modelserved/streaming-model"
+
+
+# --- Fallback chain + first-chunk / call deadlines (2026-10-04) -----------------------------------
+# Production 2026-10-04: grok-4.6 accepted requests and sent nothing — 300 s with zero chunks on a
+# streamed turn, and 13 minutes on a non-streamed exit-judge call — with no fallback configured.
+
+_STARTED: list[str] = []
+_CLOSED: list[str] = []
+
+
+class _StallingModel(StreamingChatModel):
+    """Accepts the request and never sends a chunk (or a non-streamed answer)."""
+
+    name_tag: str = "stalling"
+
+    async def _astream(
+        self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
+    ) -> Any:
+        _STARTED.append(self.name_tag)
+        try:
+            await asyncio.sleep(30)
+            yield ChatGenerationChunk(message=AIMessageChunk(content="too late"))
+        finally:
+            _CLOSED.append(self.name_tag)
+
+    async def _agenerate(
+        self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
+    ) -> ChatResult:
+        _STARTED.append(self.name_tag)
+        await asyncio.sleep(30)
+        return ChatResult(generations=[ChatGeneration(message=AIMessage(content="too late"))])
+
+
+class _AnsweringModel(StreamingChatModel):
+    async def _astream(
+        self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
+    ) -> Any:
+        yield ChatGenerationChunk(message=AIMessageChunk(content="fallback "))
+        yield ChatGenerationChunk(message=AIMessageChunk(content="answer", chunk_position="last"))
+
+    async def _agenerate(
+        self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
+    ) -> ChatResult:
+        return ChatResult(
+            generations=[ChatGeneration(message=AIMessage(content="fallback answer"))]
+        )
+
+
+class _StartsThenPausesModel(StreamingChatModel):
+    async def _astream(
+        self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any
+    ) -> Any:
+        yield ChatGenerationChunk(message=AIMessageChunk(content="slow "))
+        await asyncio.sleep(0.2)
+        yield ChatGenerationChunk(message=AIMessageChunk(content="answer", chunk_position="last"))
+
+
+def _chained(*models: BaseChatModel, **deadlines: Any) -> GovernedAgentChatModel:
+    return GovernedAgentChatModel(
+        models=models,
+        model_ids=tuple(f"model/{i}" for i in range(len(models))),
+        requested_model="model/0",
+        gateway_config=GatewayConfig(),
+        **deadlines,
+    )
+
+
+async def _collect(model: GovernedAgentChatModel) -> list[Any]:
+    return [chunk async for chunk in model.astream("Hello.")]
+
+
+def test_build_tries_the_configured_fallback_chain_in_order() -> None:
+    provider = _p32_provider(
+        GatewayConfig(fallback_models=("x-ai/grok-4.7", "meta/muse-spark-1.3")),
+        lambda request: httpx.Response(500, request=request),
+    )
+    kwargs = {"timeout_s": 10, "max_retries": 0, "max_output_tokens": 64, "temperature": 0}
+    model = provider.build(model_id="x-ai/grok-4.6", **kwargs)
+    assert model.model_ids == ("x-ai/grok-4.6", "x-ai/grok-4.7", "meta/muse-spark-1.3")
+    # A chain member equal to the primary is not tried twice.
+    again = provider.build(model_id="x-ai/grok-4.7", **kwargs)
+    assert again.model_ids == ("x-ai/grok-4.7", "meta/muse-spark-1.3")
+
+
+def test_build_carries_the_first_chunk_deadline_and_an_optional_call_deadline() -> None:
+    provider = _p32_provider(
+        GatewayConfig(first_token_timeout_s=90.0), lambda r: httpx.Response(500, request=r)
+    )
+    kwargs = {"timeout_s": 10, "max_retries": 0, "max_output_tokens": 64, "temperature": 0}
+    plain = provider.build(model_id="primary/model", **kwargs)
+    assert plain.first_token_timeout_s == 90.0 and plain.call_deadline_s is None
+    judged = provider.build(model_id="primary/model", call_deadline_s=45.0, **kwargs)
+    assert judged.call_deadline_s == 45.0
+
+
+def test_a_stream_with_no_first_chunk_falls_to_the_next_model() -> None:
+    _STARTED.clear()
+    _CLOSED.clear()
+    model = _chained(_StallingModel(), _AnsweringModel(), first_token_timeout_s=0.05)
+    chunks = asyncio.run(_collect(model))
+    assert "".join(str(c.content) for c in chunks) == "fallback answer"
+    assert chunks[-1].response_metadata["clue_answering_model"] == "model/1"
+    assert _CLOSED == ["stalling"]  # the abandoned stream was closed, not leaked
+
+
+def test_a_stream_that_has_started_is_not_cut_by_the_first_chunk_deadline() -> None:
+    model = _chained(_StartsThenPausesModel(), _AnsweringModel(), first_token_timeout_s=0.05)
+    chunks = asyncio.run(_collect(model))
+    assert "".join(str(c.content) for c in chunks) == "slow answer"
+
+
+def test_when_every_model_stalls_the_call_fails_fast_without_retrying_the_chain() -> None:
+    _STARTED.clear()
+    model = _chained(
+        _StallingModel(name_tag="a"), _StallingModel(name_tag="b"), first_token_timeout_s=0.05
+    )
+    with pytest.raises(TimeoutError):
+        asyncio.run(_collect(model))
+    assert _STARTED == ["a", "b"]
+
+
+def test_a_hung_non_streamed_call_moves_to_the_next_model_under_a_call_deadline() -> None:
+    model = _chained(_StallingModel(), _AnsweringModel(), call_deadline_s=0.05)
+    response = asyncio.run(model.ainvoke("Hello."))
+    assert response.text == "fallback answer"
+    assert response.response_metadata["clue_answering_model"] == "model/1"

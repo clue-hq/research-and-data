@@ -32,7 +32,7 @@ import asyncio
 import json
 import os
 import re
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
@@ -90,6 +90,7 @@ from clue_api.arv2.fleet_task import (
 )
 from clue_api.arv2.gemini_media_client import GeminiMediaClient, MediaBudget
 from clue_api.arv2.knowledge_frontmatter import document_identity, parse_front_matter
+from clue_api.arv2.page_writer_runtime import PageWriterModels, page_writer_models
 from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedRawSink,
@@ -444,6 +445,7 @@ class Arv2AccountResearchWorkHandler:
         writer: LenientClaimWriter,
         person_model_id: str = "",
         quality_runner: QualityJobRunner | None = None,
+        page_writer: PageWriterModels | None = None,
         queue: WorkQueue | None = None,
         store: Any = default_store,
         catalog_root: Path | None = None,
@@ -451,6 +453,8 @@ class Arv2AccountResearchWorkHandler:
         clock: Callable[[], datetime] = _utcnow,
     ) -> None:
         self._quality_runner = quality_runner
+        #: Writes a recipe-25+ job's pages after its research (``page_writer_runtime``).
+        self._page_writer = page_writer
         self._settings = settings
         self._conn_factory = conn_factory
         self._artifacts = artifacts
@@ -485,6 +489,13 @@ class Arv2AccountResearchWorkHandler:
         self._clock = clock
         self._db_lock = asyncio.Lock()
         self._jobs = asyncio.Semaphore(settings.arv2_account_max_parallel_jobs)
+
+    @property
+    def max_in_flight(self) -> int:
+        """Research jobs (account, person and quality continuations share this kind) one process
+        runs at once — the same number as the ``self._jobs`` semaphore, which by construction now
+        never makes a claimed task wait (research slowness fix 2026-10-03)."""
+        return self._settings.arv2_account_max_parallel_jobs
 
     # -- fleet entry -------------------------------------------------------------------------
 
@@ -709,6 +720,12 @@ class Arv2AccountResearchWorkHandler:
             if valid is None:
                 raise asyncio.CancelledError()
 
+        from clue_api.arv2 import page_writer_runtime
+
+        if page_writer_runtime.writes_pages_separately(scope):
+            return await self._rewrite_account(
+                work, scope, context_id, generation_id, revision, assert_lease
+            )
         quality_runner = self._quality_runner
 
         async def continue_account(packet: dict[str, Any]) -> dict[str, Any]:
@@ -789,6 +806,64 @@ class Arv2AccountResearchWorkHandler:
                         conn, generation_id, revision, ExecutionEventType.EXECUTION_FAILED
                     )
                 # A failed update is visible, but must not immediately buy the same call again.
+                await reconcile_generation(
+                    conn,
+                    workspace_id=scope.workspace_id,
+                    generation_id=generation_id,
+                    expected_revision=revision,
+                    processed_snapshot=True,
+                    needs_review=True,
+                )
+            return WorkResult(outcome="failed", references={"error": str(error)[:400]})
+
+    async def _rewrite_account(
+        self,
+        work: WorkContext,
+        scope: JobScope,
+        context_id: UUID,
+        generation_id: UUID,
+        revision: int,
+        assert_lease: Callable[[AsyncConnection], Awaitable[None]],
+    ) -> WorkResult:
+        """Recipe 25+: rewrite the account's pages with its people's findings, under the lease.
+
+        A failure settles the revision ``needs_review`` (as the edit path does), so the same
+        rewrite is not bought again on every redelivery.
+        """
+        from clue_api.arv2 import page_writer_runtime
+        from clue_api.arv2.quality_generation import reconcile_generation
+
+        @asynccontextmanager
+        async def leased() -> AsyncIterator[AsyncConnection]:
+            async with self._connection() as conn:
+                await assert_lease(conn)
+                yield conn
+
+        if work.stop_requested.is_set() or work.lease_lost.is_set():
+            raise asyncio.CancelledError()
+        try:
+            if self._page_writer is None:
+                raise RuntimeError("page_writer_not_composed")
+            async with self._jobs:
+                result = await page_writer_runtime.rewrite_account_pages(
+                    conn_factory=leased,
+                    storage=self._storage,
+                    scope=scope,
+                    context_id=context_id,
+                    generation_id=generation_id,
+                    revision=revision,
+                    models=self._page_writer,
+                )
+            return WorkResult(outcome="completed", references=cast(dict[str, JsonValue], result))
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log.exception(
+                "arv2.page_writer.rewrite_failed",
+                generation_id=str(generation_id),
+                revision=revision,
+            )
+            async with self._connection() as conn:
                 await reconcile_generation(
                     conn,
                     workspace_id=scope.workspace_id,
@@ -1053,6 +1128,7 @@ class Arv2AccountResearchWorkHandler:
                     objective=composition.task_instruction,
                     model_id=composition.model_id,
                 )
+                result = await self._write_pages(composition, result)
             return await self._settle_quality(composition, result)
         if has_capability(composition.scope.catalog_version, "committee_discovery"):
             if job.subject_type == "account" and job.selection_claim_ids is not None:
@@ -1655,6 +1731,43 @@ class Arv2AccountResearchWorkHandler:
         )
         return status
 
+    async def _write_pages(
+        self, composition: _Composition, result: QualityJobOutcome
+    ) -> QualityJobOutcome:
+        """Recipe 25+: the researcher only researches; the page writer writes its pages here.
+
+        Runs before settling, so the job's measured spend includes the writer's calls. A writer
+        failure leaves the pages missing and the job ``needs_review`` — never a silent success.
+        """
+        from clue_api.arv2 import page_writer_runtime
+
+        scope = composition.scope
+        context_id = composition.run.context_id
+        if (
+            not page_writer_runtime.writes_pages_separately(scope)
+            or result.status != "completed"
+            or result.report is None
+            or context_id is None
+        ):
+            return result
+        if self._page_writer is None:
+            log.error("arv2.page_writer_not_composed", job_id=str(scope.job_id))
+            return replace(result, status="needs_review", failure_code="page_writer_not_composed")
+        try:
+            await page_writer_runtime.write_job_pages(
+                conn_factory=self._connection,
+                storage=self._storage,
+                scope=scope,
+                context_id=context_id,
+                models=self._page_writer,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("arv2.page_writer_failed", job_id=str(scope.job_id))
+            return replace(result, status="needs_review", failure_code="page_writer_failed")
+        return result
+
     async def _settle_quality(self, composition: _Composition, result: QualityJobOutcome) -> str:
         from clue_api.arv2.account_research_launch import QueuedJob
         from clue_api.arv2.quality_generation import ensure_generation, record_child_result, signal
@@ -1724,6 +1837,15 @@ class Arv2AccountResearchWorkHandler:
                     event_id=uuid5(NAMESPACE_URL, f"quality-initial:{composition.job.job_id}"),
                     reason="initial_settled",
                 )
+                if composition.job.subject_type == "person":
+                    # A person launched on their own may have joined the account's research
+                    # (attach_to_account_research); report there too, so the account rewrites.
+                    await record_child_result(
+                        conn,
+                        workspace_id=composition.run.workspace_id,
+                        job_id=composition.job.job_id,
+                        receipt_key=result.finalization_key,
+                    )
                 from clue_api.arv2.quality_person_release import ready_person_jobs
 
                 children = await ready_person_jobs(conn, generation_id=generation.generation_id)
@@ -2294,6 +2416,9 @@ def build_arv2_account_research_handler(
         # drains person jobs, on the account lane's model, and the handler logs the fallback.
         person_model_id=os.environ.get(ARV2_PERSON_MODEL_ENV, "").strip(),
         quality_runner=quality_runner,
+        page_writer=page_writer_models(
+            settings=settings, secrets=secrets, artifacts=artifacts, conn_factory=conn_factory
+        ),
         writer=LenientClaimWriter(lenient=settings.claim_write_lenient),
         # The worker's own queue, so a committee resolved on this worker is offered through exactly
         # the machinery that will drain it. Composing without one still writes the person job rows

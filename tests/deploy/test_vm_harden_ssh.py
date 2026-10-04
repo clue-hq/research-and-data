@@ -117,10 +117,15 @@ def test_bootstrap_hardens_ssh_before_anything_else() -> None:
 
 def test_bootstrap_works_when_uid_1000_is_taken() -> None:
     """OVHcloud's Ubuntu image gives UID 1000 to `ubuntu` (first VM, 2026-10-03): `clue` takes UID
-    1000 only when it is free, owns the checkout and the env files by name, and the two directories
-    the containers write (they run as 1000:1000) stay with UID 1000."""
+    1000 only when it is free, owns the checkout and the env files by name, and the directories
+    the containers write (they run as 1000:1000) stay with UID 1000 — since 2026-10-04 that
+    includes the design agent's own root, /srv/clue/lumen-agent."""
     bootstrap = (SCRIPT.parent / "bootstrap.sh").read_text(encoding="utf-8")
     assert "getent passwd 1000" in bootstrap
-    assert "chown 1000:1000 /srv/clue/workspaces /srv/clue/engine-cache" in bootstrap
+    assert (
+        "chown 1000:1000 /srv/clue/workspaces /srv/clue/lumen-agent /srv/clue/engine-cache"
+        in bootstrap
+    )
+    assert "chmod 700 /srv/clue/workspaces /srv/clue/lumen-agent" in bootstrap
     assert "chown clue:clue /srv/clue\n" in bootstrap
     assert 'chown clue:clue "/srv/clue/$f"' in bootstrap

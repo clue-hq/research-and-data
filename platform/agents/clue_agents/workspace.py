@@ -650,10 +650,13 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                 components = relative.split("/")
                 for index, component in enumerate(components):
                     if index == len(components) - 1:
-                        metadata = os.stat(component, dir_fd=start_fd, follow_symlinks=False)
-                        if not stat.S_ISDIR(metadata.st_mode):
-                            _validate_regular_file(metadata)
-                            return [(prefix, metadata.st_size, metadata.st_mode)]
+                        leaf = os.stat(component, dir_fd=start_fd, follow_symlinks=False)
+                        if not stat.S_ISDIR(leaf.st_mode):
+                            # The prefix names one file (a grep or glob scoped to a file): list
+                            # just it, under the same checks a walk applies to every file.
+                            _validate_regular_file(leaf)
+                            named = relative if mount is None else f"{mount.name}/{relative}"
+                            return [(named, leaf.st_size, leaf.st_mode)]
                     next_fd = os.open(component, _DIR_FLAGS, dir_fd=start_fd)
                     os.close(start_fd)
                     start_fd = next_fd
@@ -1312,13 +1315,11 @@ class AnchoredAgentWorkspaceBackend(BackendProtocol):
                     if _matches_workspace_glob(entry["path"], pattern)
                 )
             for item in entries:
-                relative = (
-                    PurePosixPath(item.path).name
-                    if item.path == logical
-                    else item.path.removeprefix(f"{logical}/")
-                    if logical
-                    else item.path
-                )
+                if logical and item.path == logical:
+                    # ``path`` named one file: match the pattern against its own name.
+                    relative = logical.rsplit("/", 1)[-1]
+                else:
+                    relative = item.path.removeprefix(f"{logical}/") if logical else item.path
                 if _matches_workspace_glob(relative, pattern):
                     matches.append({"path": item.path, "is_dir": False, "size": item.byte_count})
             return GlobResult(matches=matches)

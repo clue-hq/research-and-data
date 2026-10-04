@@ -709,6 +709,37 @@ def test_grep_file_path_refuses_unsafe_files(tmp_path: Path, unsafe: str) -> Non
         harness.close()
 
 
+def test_grep_and_glob_accept_a_single_file_path(tmp_path: Path) -> None:
+    with _mounted_backend(tmp_path) as (backend, _mount_dir):
+        backend.write_text_sync("work/note.md", "first line\nsecond needle\n")
+        grepped = backend.grep("needle", "work/note.md")
+        assert grepped.error is None
+        assert grepped.matches == [{"path": "work/note.md", "line": 2, "text": "second needle"}]
+        in_mount = backend.grep("Plan", "library/plan.md")
+        assert in_mount.error is None
+        assert in_mount.matches == [{"path": "library/plan.md", "line": 1, "text": "# Plan"}]
+        assert backend.glob("*.md", "library/plan.md").matches == [
+            {"path": "library/plan.md", "is_dir": False, "size": 7}
+        ]
+        # A path that does not exist is honestly empty, not a security refusal.
+        missing = backend.grep("needle", "work/absent.md")
+        assert missing.error is None and missing.matches == []
+
+
+def test_grep_on_a_single_file_still_refuses_a_symlink(tmp_path: Path) -> None:
+    harness = make_workspace(tmp_path)
+    backend = harness.lease.backend
+    outside = tmp_path / "outside.md"
+    outside.write_text("host secret")
+    try:
+        (harness.thread_path / "work/link.md").symlink_to(outside)
+        refused = backend.grep("secret", "work/link.md")
+        assert (refused.error or "").startswith("permission_denied")
+        assert not refused.matches
+    finally:
+        harness.close()
+
+
 def test_a_mount_cannot_be_escaped_or_shadowed(tmp_path: Path) -> None:
     # The shadowing half of this guarantee — a mount may not claim a layout name — is
     # proven by test_a_mount_name_may_not_shadow_the_layout_or_be_malformed below.

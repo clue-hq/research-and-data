@@ -1289,6 +1289,9 @@ class GovernedAgentToolFactory:
             del runtime
             await self._check_work()
             model_input = ModelFinalizeRequest.model_validate(kwargs)
+            # Every refusal must come before the completion guard writes outputs/ and before the
+            # snapshot freezes it; afterwards the repair a refusal asks for cannot be made.
+            await self._execution.check_finalizable(status=model_input.status)
             if (
                 model_input.status is FinalizeStatus.COMPLETED
                 and self._required_output_path is not None

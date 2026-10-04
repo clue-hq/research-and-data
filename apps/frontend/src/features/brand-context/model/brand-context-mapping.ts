@@ -456,6 +456,7 @@ function toAssets(
       visual: {
         imagePath: `${DESIGN_ASSET_BFF_PREFIX}/${encodeURIComponent(entry.assetId)}/bytes`,
         kind: "image" as const,
+        ...thumbnailPath(entry.assetId, media?.thumbnail),
       },
     };
   });
@@ -499,10 +500,22 @@ export function toRegistryAssets(
       visual: {
         imagePath: `${DESIGN_ASSET_BFF_PREFIX}/${encodeURIComponent(record.id)}/bytes`,
         kind: "image",
+        ...thumbnailPath(record.id, media?.thumbnail),
       },
     });
   }
   return out;
+}
+
+/**
+ * The grid's preview URL — only when the store says a thumbnail exists (an asset without one
+ * would 404 the thumbnail route). The grid used to load every asset's full-size bytes on every
+ * visit (production 2026-10-03: 899 full downloads in 30 minutes).
+ */
+function thumbnailPath(assetId: string, thumbnail: unknown): { thumbnailPath?: string } {
+  return thumbnail
+    ? { thumbnailPath: `${DESIGN_ASSET_BFF_PREFIX}/${encodeURIComponent(assetId)}/thumbnail` }
+    : {};
 }
 
 function dimensionLabel(

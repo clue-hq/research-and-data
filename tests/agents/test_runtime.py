@@ -321,6 +321,9 @@ class _FinalizingExecution:
     def __init__(self) -> None:
         self.envelope: object | None = None
 
+    async def check_finalizable(self, *, status: object) -> None:
+        del status
+
     async def finalize(self, *, envelope: object) -> ArtifactRef:
         self.envelope = envelope
         return artifact("finalization-envelope.json")
@@ -738,14 +741,15 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
                     content="",
                     tool_calls=[
                         {
-                            "name": "open_product_set_selection_gate",
-                            # PC-C8 §6a: every identifier this gate needs is constitution or
-                            # engine authority, so the model sends nothing at all and the seam
-                            # fills it in. ARV2 onboarding O6 replaced `synthesize_icps@3` here
-                            # when `head-of-abm@v44` dropped it; the property under test is the
-                            # wrapper, and this tool has the same all-trusted input shape.
-                            "args": {},
-                            "id": "open-product-set-gate-c65",
+                            "name": "configure_project_targeting",
+                            # The property under test is the wrapper: the model sends only its
+                            # own field, the wrapper defaults the optional one, and the trusted
+                            # turn reference is filled in by the seam, never by the model. This
+                            # tool replaced the product-set gate when automatic targeting retired
+                            # the gates (0bdac1757, 2026-09-21); ARV2 onboarding O6 had earlier
+                            # replaced `synthesize_icps@3` here.
+                            "args": {"icp_key": "core-icp"},
+                            "id": "configure-project-targeting-c65",
                             "type": "tool_call",
                         }
                     ],
@@ -759,7 +763,7 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     )
     context = AssembledAgentContext(
         manifest=context_manifest(),
-        messages=(HumanMessage(content="Let us pick the products for this project."),),
+        messages=(HumanMessage(content="Target this project at our core ICP."),),
     )
 
     outcome = run_async(
@@ -775,19 +779,21 @@ def test_real_deepagent_tool_call_uses_exact_governed_descriptor_wrapper() -> No
     assert outcome.failure_code == "missing_finalize"
     assert len(execution.validated_plans) == 1
     proposed = execution.validated_plans[0].steps[0]
-    assert proposed.tool.address == "open_product_set_selection_gate@1"  # type: ignore[union-attr]
-    # The one optional model-facing field the gate has, defaulted by the wrapper because the model
-    # sent nothing: everything else it needs is trusted authority the seam fills in.
-    assert proposed.arguments == {"icp_key": None}  # type: ignore[union-attr]
+    assert proposed.tool.address == "configure_project_targeting@1"  # type: ignore[union-attr]
+    # The model's field as sent, the optional product list defaulted by the wrapper, and no trusted
+    # turn reference: that is authority the seam fills in.
+    assert proposed.arguments == {"icp_key": "core-icp", "product_ids": None}  # type: ignore[union-attr]
 
 
-def test_stage0_final_response_reports_the_gate_and_does_not_claim_a_confirmed_icp() -> None:
-    """ARV2 onboarding O6 retargeted this regression without changing what it protects.
+def test_stage0_final_response_reports_the_targeting_receipt_and_claims_nothing_else() -> None:
+    """Retargeted twice without changing what it protects: the agent's prose reports what a
+    receipt shows and claims nothing a receipt does not.
 
-    The v20 subject was readiness terminology — label the policy version, never call an
-    unsynthesized ICP a spec. `head-of-abm@v44` has no readiness surface at all, so the same
-    discipline now lives on the gates: the agent may open one and describe it, but a gate receipt
-    is the only authority for a confirmation, and its own prose must not claim one.
+    v20 protected readiness terminology; ARV2 onboarding O6 moved it onto the gates ("a gate
+    receipt is the only authority"). Automatic project targeting (0bdac1757, 2026-09-21) retired
+    the gates: ICP and product confirmation is now the `configure_project_targeting` receipt, and
+    the Stage-0 skill states the same discipline as "the tool's receipt is the only proof" and
+    "Report receipts, never claim capture."
     """
 
     request, resolved = _request()
@@ -797,14 +803,14 @@ def test_stage0_final_response_reports_the_gate_and_does_not_claim_a_confirmed_i
         if skill.ref.name == "stage0-interview"
     )
     body = resolved.open_skill(stage0_skill)  # type: ignore[union-attr]
-    assert "A gate receipt is the only authority" in body
-    assert 'Ordinary prose such as "looks good" confirms nothing.' in body
+    assert "the tool's receipt is the only proof that anything was recorded" in body
+    assert "Report receipts, never claim capture." in body
 
     execution = _ReadinessResponseExecution()
     artifacts = _DelegationArtifacts()
     response = (
-        "I opened the product-set gate with the three products this profile sells. "
-        "No product set is confirmed yet; it is awaiting your answer on the gate."
+        "Targeting is set from this turn's receipt: the project now uses the core ICP and the "
+        "product set the receipt names."
     )
     runtime = DeepAgentTurnRuntime(
         models=_Models(
@@ -813,9 +819,9 @@ def test_stage0_final_response_reports_the_gate_and_does_not_claim_a_confirmed_i
                     content="",
                     tool_calls=[
                         {
-                            "name": "open_product_set_selection_gate",
-                            "args": {},
-                            "id": "stage0-gate-terminology",
+                            "name": "configure_project_targeting",
+                            "args": {"icp_key": "core-icp"},
+                            "id": "stage0-targeting-receipt",
                             "type": "tool_call",
                         }
                     ],
@@ -859,7 +865,7 @@ def test_stage0_final_response_reports_the_gate_and_does_not_claim_a_confirmed_i
             resolved_profile=resolved,  # type: ignore[arg-type]
             context=AssembledAgentContext(
                 manifest=context_manifest(),
-                messages=(HumanMessage(content="Which products is this project about?"),),
+                messages=(HumanMessage(content="Target this project at our core ICP."),),
             ),
             backend=None,
             governed_tools=factory.build(),
@@ -870,10 +876,7 @@ def test_stage0_final_response_reports_the_gate_and_does_not_claim_a_confirmed_i
     envelope = cast(Any, execution.envelope)
     persisted_response = artifacts.data[envelope.user_message_artifact_ref.artifact_key].decode()
     assert persisted_response == response
-    assert "awaiting your answer on the gate" in persisted_response
-    assert "now confirmed" not in persisted_response
-    assert "has been confirmed" not in persisted_response
-    assert "No product set is confirmed yet" in persisted_response
+    assert "receipt" in persisted_response
 
 
 def test_c66_delegation_tool_freezes_exact_task_files_and_refs_before_child_wake() -> None:

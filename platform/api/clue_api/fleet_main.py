@@ -1450,6 +1450,9 @@ async def _serve() -> None:
                     await background
             if agent_workspace_factory is not None:
                 agent_workspace_factory.close()
+            from clue_storage import close_shared_s3_clients
+
+            await close_shared_s3_clients()
 
 
 def main() -> None:

@@ -27,7 +27,7 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     assert AgentRole.RESEARCH_CLAIMS not in profile.delegation_roles
     assert not profile.delegation_roles
     assert "acquire_research_evidence" in names
-    assert CURRENT_RECIPE_VERSION == 24
+    assert CURRENT_RECIPE_VERSION == 25
     bundle = load_quality_resources("person" if person else "account")
     manifest = json.loads(bundle.profile.body)
     assert manifest["recipe_version"] == CURRENT_RECIPE_VERSION

@@ -156,11 +156,13 @@ class WorkspaceRootPolicy:
                         raise WorkspaceConfigurationError(
                             "agent workspace root contains an unexpected link"
                         )
-                    _private_directory(entry_stat, label="workspace scope directory")
+                    # Named, so a refusal points at the offending entry: production 2026-10-04,
+                    # a 0755 design-agent directory crash-looped every fleet worker, and finding
+                    # it took a shell on the VM.
+                    label = f"workspace scope directory {entry.name!r}"
+                    _private_directory(entry_stat, label=label)
                     if stat.S_IMODE(entry_stat.st_mode) != _PRIVATE_DIR_MODE:
-                        raise WorkspaceConfigurationError(
-                            "active workspace scope directory must have mode 0700"
-                        )
+                        raise WorkspaceConfigurationError(f"{label} must have mode 0700")
         except WorkspaceConfigurationError:
             raise
         except OSError as exc:

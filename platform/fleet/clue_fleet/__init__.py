@@ -94,6 +94,7 @@ from clue_fleet.scheduler import (
 )
 from clue_fleet.work_worker import (
     CapabilityGated,
+    InFlightLimited,
     LeasedWorkWorker,
     WorkContext,
     WorkHandler,
@@ -187,6 +188,7 @@ __all__ = [
     "RunDriver",
     "enqueue_drive",
     "CapabilityGated",
+    "InFlightLimited",
     "LeasedWorkWorker",
     "WorkContext",
     "WorkHandler",
