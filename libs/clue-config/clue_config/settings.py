@@ -550,6 +550,11 @@ class Settings(BaseSettings):
     # How many sections of one page are in flight at once (one ProviderCaller each).
     # Env: ``CLUE_ARV2_DISPLAY_MAX_PARALLEL``.
     arv2_display_max_parallel: int = 30
+    # The separate page writer (recipe 25+): one call writes an account's Overview + Insights or a
+    # contact page, so it needs far longer than one section. The model is the research-narrative
+    # role's (``RESEARCH_NARRATIVE_AGENT_MODEL`` / ``_EFFORT``), falling back to
+    # ``arv2_display_model``. Env: ``CLUE_ARV2_PAGE_WRITER_TIMEOUT_S``.
+    arv2_page_writer_timeout_s: float = 900.0
     # ``client.what_we_sell`` in the display prompt, until Track O's company-overview artifact
     # supplies it (D2 decision 7). Env: ``CLUE_ARV2_DISPLAY_CLIENT_PITCH``.
     arv2_display_client_pitch: str = (

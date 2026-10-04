@@ -167,15 +167,24 @@ class ResearchViewMount(EvidenceWorkspace):
             row = (
                 (
                     await conn.execute(
+                        # One run can hold several generations for the same account (each
+                        # independently launched person opens its own), so resolve the one this
+                        # job owns, or the one it was released into as a child.
                         text("""SELECT g.generation_id,g.state,g.input_revision,
                     g.reconciled_revision
                 FROM arv2_account_research_generation g WHERE g.workspace_id=:ws AND g.run_id=:run
-                  AND g.account_id=:account AND g.context_id=:context"""),
+                  AND g.account_id=:account AND g.context_id=:context
+                  AND (g.initial_job_id=:job OR EXISTS (
+                    SELECT 1 FROM arv2_generation_child c
+                    WHERE c.generation_id=g.generation_id AND c.workspace_id=g.workspace_id
+                      AND c.job_id=:job))
+                ORDER BY (g.initial_job_id=:job) DESC, g.created_at DESC LIMIT 1"""),
                         {
                             "ws": scope.workspace_id,
                             "run": scope.run_id,
                             "account": scope.account_id,
                             "context": authority.context_id,
+                            "job": scope.job_id,
                         },
                     )
                 )
