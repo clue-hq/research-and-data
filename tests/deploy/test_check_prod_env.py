@@ -263,6 +263,14 @@ def test_telemetry_is_labelled_production(name: str) -> None:
     assert any(name in p for p in check.problems(env, "platform-api"))
 
 
+def test_an_unset_langfuse_label_is_not_production() -> None:
+    """Unset, the code default files traces under the development environment `default`."""
+    env = {k: v for k, v in GOOD_PLATFORM.items() if k != "CLUE_LANGFUSE_ENVIRONMENT"}
+    assert any("CLUE_LANGFUSE_ENVIRONMENT must be set" in p for p in check.problems(env, "platform-api"))
+    off = {**env, "CLUE_LANGFUSE_ENABLED": "false"}
+    assert not any("CLUE_LANGFUSE_ENVIRONMENT" in p for p in check.problems(off, "platform-api"))
+
+
 # --- values a shell would have expanded, but Railway and docker's env_file do not ---------------
 
 

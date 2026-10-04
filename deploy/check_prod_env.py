@@ -124,6 +124,14 @@ def problems(env: dict[str, str], role: str) -> list[str]:
         for name in PRODUCTION_LABELS:
             if name in env and env[name] != "production":
                 found.append(f"{name} must be 'production' (is {env[name]!r})")
+        # Langfuse is on unless switched off, and an unset label is NOT production: the code
+        # default is Langfuse's `default`, where every development lane's traces land.
+        langfuse_on = env.get("CLUE_LANGFUSE_ENABLED", "true").lower() in ("1", "true", "yes")
+        if langfuse_on and "CLUE_LANGFUSE_ENVIRONMENT" not in env:
+            found.append(
+                "CLUE_LANGFUSE_ENVIRONMENT must be set to 'production' (unset, traces are "
+                "filed under the development environment 'default')"
+            )
         if not env.get("CLUE_SUMBLE_API_KEY"):
             pilot = env.get("CLUE_PRODUCT_PATH") == "integration_pilot"
             for name, pilot_default in SUMBLE_SWITCHES.items():
