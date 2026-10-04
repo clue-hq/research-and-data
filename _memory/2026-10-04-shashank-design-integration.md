@@ -118,3 +118,16 @@ typography check (they use kit families/weights directly, so wrong kit weights b
 headings). Proposed order: ingestion fix first (shared by web + ads), then versioned kit repair,
 then a scene-ad typography check, then web fragment provenance/CSS truncation; no-spend replays
 before any founder-run live test. Awaiting the user's answer on branch placement and order.
+
+## Lane rebuilt for typography testing (2026-10-04, user request)
+- Removed the stale 930 MB san-salvador storage from `.artifacts` (`git clean -fdx -- .artifacts`;
+  the two git-tracked report folders kept).
+- `clue_trenton` recreated as a dump/restore of `clue_addis-ababa` via the `clue-pg-papeete`
+  container's own pg_dump/pg_restore (host tools are v15, server v16; addis had live connections),
+  then upgraded to head 10edab6dd974. Contents: 241 kits, 64 design docs, 4 conduit.ai ingestions
+  with saved evidence. Storage = addis-ababa `.artifacts` APFS-cloned (`cp -c -R`).
+- `.env` rebuilt from `dushanbe/.env` with trenton DB/ports (3029/8019/8029/8039, pages 8049)/paths;
+  previous file kept as `.env.bak-20261004`. All `.env.example` keys present.
+- Built `lumen-api-helper` (release); handshake OK (engine bb1aaeea610a). `npm ci` in
+  `apps/editor`; vendored `tailwind-browser.js` copied in. test_web_fragment_export now 16/16
+  (was 14 env-blocked failures). Stack not started.
