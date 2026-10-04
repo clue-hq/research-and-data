@@ -131,3 +131,30 @@ before any founder-run live test. Awaiting the user's answer on branch placement
 - Built `lumen-api-helper` (release); handshake OK (engine bb1aaeea610a). `npm ci` in
   `apps/editor`; vendored `tailwind-browser.js` copied in. test_web_fragment_export now 16/16
   (was 14 env-blocked failures). Stack not started.
+
+## Website quality diagnosis (2026-10-04) — evidence, no code changed
+Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Marriot"
+(run_84f4a3c50ba35703b59963ba523a0dd4) and "Dana.AI landing page" (run_e0a891ca...).
+- Capture yield: Conduit ingestion ingest_c162dc8c... minted 1 of 12 sections; 10 refused
+  `fragment.unrehosted_reference` (/_next/image..., /figma/...svg?dpl=) — the requested-vs-final
+  URL bug Shashank fixed in 0d06cd1d1 (on this branch, NOT on the lane that captured). So the agent
+  composed 7 of 8 page sections itself. Fresh re-capture on this branch still owed to prove the fix.
+- Composed sections: brand card (web lane) = display/headline/body/cta/eyebrow only (no title/h2,
+  no units, no provenance); Conduit card headline 32/500 = builder default (real 56/400, section
+  heading 48/400). Composed fragment CSS = raw px copied from the card (32/500, 20, 16, 12).
+  theme.rs @theme emits only --color-*, --font-display/body, geometry (no type tokens); kit type
+  rules carry NATIVE_SUBJECT :not(:where([data-lumen-fragment] *)) and composed sections ARE
+  fragments -> kit scale never applies inside them. Source type scale (e.g. Conduit text-heading-1
+  56px, source rem var) lives only in each clone's scoped CSS; compose_section mints without
+  source_fragment_id (agent_cloned_sections.py ~1391; repairs pass it) so pasted clone CSS goes
+  dead. web_typography_reference only downgrades accepted->completed_with_warnings, composed only.
+  Skills conflict: brand-and-tokens ("use type.*") vs create-website ("source measurements win").
+- Dynamic pages: rendered.py _harvest_page scrolls to bottom, scrollTo(0,0), 3s, then serializes
+  (no settle-to-final-state, no getAnimations/finish); scripts dropped; JS inline styles kept;
+  cssmatch keeps a rule only if all its classes exist in the captured subtree -> reveal-state rules
+  (.is-visible etc.) dropped; hidden = display/visibility only; stealth backend has no viewport
+  override (differs from downstream 1440); runtime has tabs/carousel only, no reveal logic.
+  CORRECTION: the `opacity:1 !important` inline styles seen on the Conduit hero are SVG paint
+  baking only (rendered.py SVG serializer), not a force-visible step.
+- Unverified agent claims: editor vs export typography divergence (web_export drops
+  --font-display/body; unguarded preflight), picker preview = source screenshot crop.
