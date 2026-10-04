@@ -231,3 +231,9 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   pages, person research and a contact list are unreachable from design (Head of ABM has
   get_research_view). Dana run read the overview once (old code: truncated, no paging), never read
   claims/contacts, and never opened web-account-personalization / copy-craft / account-argument.
+
+## Week-1 execution started (2026-10-04) — branch `website-quality/week1` off 1c5704f6a
+- Rulings: A1 brief wording APPROVED as presented; develop against Conduit first (Garner optional);
+  A5 composed-type mismatch goes BACK to the agent (final call pending on run time — a single page
+  must not take ~1 hour); execution = I implement directly, one whole-branch reviewer at the end.
+- Plan: A3 code first, then ONE Head of ABM v72 / manual v18 carrying A1 + A3 tool text.
