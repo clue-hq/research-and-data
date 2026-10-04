@@ -19,6 +19,8 @@ export async function providerSessionToken(): Promise<string | null> {
 
 export async function requireProviderSessionToken(): Promise<string> {
   const token = await providerSessionToken();
-  if (!token) redirect("/sign-in?reason=session_expired");
+  // No provider session means "not signed in", not "expired": a fresh browser gets the
+  // ordinary sign-in. The expired card stays for a token the backend rejects (401).
+  if (!token) redirect("/sign-in");
   return token;
 }
