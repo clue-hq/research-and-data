@@ -206,3 +206,13 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   (4) JW Marriott had no account research/account_id, so the page is a name swap; (5) copy skills
   are ~5.5k words of compressed rules (vs Ploy's plain worked weak/strong examples); writer is
   grok-4.6. Proposal (not approved yet) in chat.
+
+## Merged origin/research-streaming (2026-10-04, 43 commits, merge 6415ea6e5)
+- Brings PR #91 (research slowness), #92 (brand-context load), #93, #95, #96 (VM design workspace
+  root, model fallback chain grok-4.7 -> muse-spark-1.3, 120 s first-token timeout), #98 (research
+  page writer, recipe 25). No migrations (head stays 10edab6dd974); manual chapters current.
+- Conflicts: workspace.py + its tests — both sides fixed grep/glob on a single-file path. Took
+  research-streaming's leaf naming (mount-aware `named`) and kept the integration branch's
+  `_matches_workspace_glob` (recursive `**` support); kept both test sets. 94/94 pass.
+- Added CLUE_ARV2_PAGE_WRITER_TIMEOUT_S=900.0 to the local .env (parity). Running stack still on
+  pre-merge code until restarted.
