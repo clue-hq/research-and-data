@@ -187,3 +187,22 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
 - Direct text editing in the preview (Ploy's no-AI quick edit) is wanted in the first version.
 - Still open for discussion: week-1 bridge scope in the current engine, the parallel code-first
   lane's v1 scope, framework/hosting shape, what happens to existing web documents.
+
+## Founder rulings + copy-quality diagnosis (2026-10-04, later)
+- Rulings: existing web docs stay on the current engine (no migration); code-first lane = Astro
+  static + React (Ploy-like); week-1 table accepted incl. the ad forced-bold fix; I build the
+  code-first lane in a second worktree. ADDED to week 1: copy/content quality of 1:1 ABM pages
+  (demos this week).
+- Evidence: only 2 real web docs in clue_trenton (Conduit for JW Marriot doc_28084f01..., Dana.AI
+  doc_c0c22f01...); copy extracted from fragment payloads + slots (scratchpad page_copy.txt).
+- Findings: (1) audit/brief language leaks into visitor copy verbatim ("vendor-published case
+  studies, not JW Marriott results, and not independent causal proof", "Opera Cloud is one Conduit
+  names", "No generic startup signup", "Not a hotel-operator pitch") — Head-of-ABM briefs are
+  written in caveat voice and the design agent lifts their wording; (2) copy-craft.md requires a
+  visible qualification "BESIDE the claim, in body text" for analogous proof while
+  conversion-copywriting/review-website say keep caveats out — contradictory, agent picks literal
+  labeling; (3) Dana page names contacts in body copy ("Alon, the overlap") because the brief said
+  "address him as economic buyer", and knocks the prospect ("not a disconnected CRM");
+  (4) JW Marriott had no account research/account_id, so the page is a name swap; (5) copy skills
+  are ~5.5k words of compressed rules (vs Ploy's plain worked weak/strong examples); writer is
+  grok-4.6. Proposal (not approved yet) in chat.
