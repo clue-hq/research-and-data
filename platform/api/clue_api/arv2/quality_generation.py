@@ -115,6 +115,73 @@ async def ensure_generation(
     return generation
 
 
+async def attach_to_account_research(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    project_id: str,
+    account_id: UUID,
+    context_id: UUID,
+    job_id: UUID,
+) -> Generation | None:
+    """Join an independently launched person job to its account's latest research.
+
+    A person launched on their own runs in a run of their own, so without this their result never
+    reaches the account's research and the account's pages are never rewritten with it. The job
+    joins the newest generation for the same account, project and research context, and only one
+    whose account research writes its pages separately (recipe 25+): earlier recipes keep their
+    own reconciliation untouched. Returns that generation, or ``None`` when there is none to join.
+    """
+    from clue_api.arv2.quality_policy import SEPARATE_WRITER_RECIPE
+
+    row = (
+        (
+            await conn.execute(
+                text("""SELECT g.* FROM arv2_account_research_generation g
+        JOIN arv2_research_job j ON j.job_id=g.initial_job_id AND j.workspace_id=g.workspace_id
+        WHERE g.workspace_id=:ws AND g.project_id=:project AND g.account_id=:account
+          AND g.context_id=:context AND j.subject_type='account'
+          AND g.state NOT IN ('suspended','privacy_stopped')
+          AND COALESCE((j.input_refs->>'quality_recipe_version')::int,0) >= :recipe
+        ORDER BY g.created_at DESC, g.generation_id DESC LIMIT 1"""),
+                {
+                    "ws": workspace_id,
+                    "project": project_id,
+                    "account": account_id,
+                    "context": context_id,
+                    "recipe": SEPARATE_WRITER_RECIPE,
+                },
+            )
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    generation = _generation(dict(row))
+    contact = (
+        await conn.execute(
+            text("""SELECT subject_entity_id FROM arv2_research_job
+        WHERE job_id=:job AND workspace_id=:ws AND account_entity_id=:account
+          AND subject_type='person' AND input_refs->>'parent_job_id' IS NULL"""),
+            {"job": job_id, "ws": workspace_id, "account": account_id},
+        )
+    ).scalar_one_or_none()
+    if contact is None:
+        raise ValueError("only an independently launched person of this account can join")
+    await conn.execute(
+        text("""INSERT INTO arv2_generation_child(generation_id,workspace_id,job_id,contact_id)
+        VALUES (:id,:ws,:job,:contact) ON CONFLICT DO NOTHING"""),
+        {
+            "id": generation.generation_id,
+            "ws": workspace_id,
+            "job": job_id,
+            "contact": contact,
+        },
+    )
+    return generation
+
+
 async def register_child(conn: AsyncConnection, generation: Generation, *, job_id: UUID) -> None:
     # Containment is checked on every replay, even if a row already exists.
     row = (

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.quality_coverage import coverage
 from clue_api.arv2.quality_json_dossier import read_json_dossier
+from clue_api.arv2.quality_policy import writes_pages_separately
 from clue_api.arv2.quality_results import ResearchUnitReport, committee_references, validate_report
 from clue_storage import StorageBackend
 
@@ -73,9 +74,12 @@ async def build_completion_report(
         )
     claim_ids = tuple(UUID(e["claim_id"]) for e in saved["receipt"]["entries"])
     measured = await coverage(conn, scope, context_id)
+    # Recipes 20-24: the researcher writes its own pages before finishing. From 25 the driver's
+    # page writer writes them after this report, so missing pages are expected here.
     if (
         measured["missing_pages"]
         and int((scope.input_refs or {}).get("quality_recipe_version", 0)) >= 20
+        and not writes_pages_separately(scope)
     ):
         missing = ", ".join(cast(list[str], measured["missing_pages"]))
         raise ValueError(

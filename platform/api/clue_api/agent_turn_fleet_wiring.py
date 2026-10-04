@@ -1695,6 +1695,13 @@ def _judgment_payload(judgment: ExitJudgment) -> dict[str, object]:
     return judgment.model_dump(mode="json")
 
 
+#: A hard deadline for each model the exit judge tries. Its answer is one small JSON object,
+#: normally back in ~10 s; on 2026-10-04 a stalled provider held a judge call for 13 minutes
+#: (keep-alives defeat the per-read timeout). Past this, the fallback chain takes over, and if
+#: every model stalls the judge's own fail-safe answers CONTINUE.
+_EXIT_JUDGE_CALL_DEADLINE_S = 45.0
+
+
 def build_design_leg_exit_judge(
     *,
     models: AgentModelProvider,
@@ -1740,6 +1747,7 @@ def build_design_leg_exit_judge(
                         # call is attributable even though it writes no durable receipt —
                         # it runs outside any turn, so there is no turn to hang one on.
                         role=AgentRole.DESIGN.value,
+                        call_deadline_s=_EXIT_JUDGE_CALL_DEADLINE_S,
                     )
                 )
             prompt = render_exit_judgment_prompt(

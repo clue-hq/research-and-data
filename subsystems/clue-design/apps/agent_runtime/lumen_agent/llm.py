@@ -53,8 +53,25 @@ def _governed_provider(
     chat_completions: bool = False,
 ):
     """The cached governed provider for one gateway policy fingerprint."""
+    # The platform's agent fallback chain and first-chunk deadline apply here too (founder ruling
+    # 2026-10-04: grok-4.6 accepted requests and sent nothing; every agent falls back to grok-4.7,
+    # then meta/muse-spark-1.3). Read from CLUE_AGENT_FALLBACK_MODELS /
+    # CLUE_AGENT_FIRST_TOKEN_TIMEOUT_S, and part of the cache key so a change is never stale.
+    from clue_config import load_settings
+
+    platform = load_settings()
+    fallback_models = platform.agent_fallback_models
+    first_token_timeout_s = platform.agent_first_token_timeout_s or None
     key = (
-        base_url, api_key, reasoning, provider_sort, timeout_s, fallback_model, chat_completions
+        base_url,
+        api_key,
+        reasoning,
+        provider_sort,
+        timeout_s,
+        fallback_model,
+        chat_completions,
+        fallback_models,
+        first_token_timeout_s,
     )
     if key not in _PROVIDER_CACHE:
         from pydantic import SecretStr
@@ -67,6 +84,8 @@ def _governed_provider(
             timeout_s=timeout_s,
             max_retries=2,
             fallback_model=fallback_model,
+            fallback_models=fallback_models,
+            first_token_timeout_s=first_token_timeout_s,
             openrouter_provider_sort=provider_sort,  # type: ignore[arg-type]
             openrouter_usage_include=True,
             # 2026-09-04: non-OpenAI ids over chat-completions (the platform lane's

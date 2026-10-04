@@ -35,7 +35,7 @@ def test_same_finding_name_resolves_separately_and_preserves_exact_text():
 
 
 @pytest.mark.parametrize("person", [False, True])
-def test_new_researchers_own_narrative_while_historical_pins_keep_specialist(person):
+def test_new_researchers_leave_pages_to_the_writer_while_historical_pins_keep_theirs(person):
     tools = quality_tools(None, None, purge=False)
     current = quality_profiles(tools, version=CURRENT_RECIPE_VERSION, person=person)
     historical = quality_profiles(tools, version=19, person=person)
@@ -48,10 +48,20 @@ def test_new_researchers_own_narrative_while_historical_pins_keep_specialist(per
     assert not new.profile.delegation_roles
     assert AgentRole.RESEARCH_NARRATIVE in old.profile.delegation_roles
     names = {t.name for t in new.profile.tools}
-    assert {"finish_dossier", "read_narrative_inputs", "write_research_narrative"} <= names
+    page_tools = {
+        "read_narrative_inputs",
+        "write_research_narrative",
+        "read_research_page_inputs",
+        "publish_research_page",
+    }
+    # From recipe 25 the researcher writes no pages; the driver's page writer does.
+    assert "finish_dossier" in names and not page_tools & names
     assert "record_research_finding" not in names
-    assert "publish_research_page" not in names
-    assert CURRENT_RECIPE_VERSION == 24
+    owning = quality_profiles(tools, version=24, person=person).resolve(AgentRole.ACCOUNT_RESEARCH)
+    assert {"read_narrative_inputs", "write_research_narrative"} <= {
+        t.name for t in owning.profile.tools
+    }
+    assert CURRENT_RECIPE_VERSION == 25
     manifest = json.loads(load_quality_resources("person" if person else "account").profile.body)
     assert manifest["recipe_version"] == CURRENT_RECIPE_VERSION
     for version in range(2, CURRENT_RECIPE_VERSION + 1):

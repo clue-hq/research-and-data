@@ -100,3 +100,15 @@ def test_root_rejects_group_permissions_even_under_umask(tmp_path: Path) -> None
     os.chmod(root, 0o500)
     with pytest.raises(WorkspaceConfigurationError):
         WorkspaceRootPolicy(root, source, home).prepare()
+
+
+def test_a_permissive_scope_entry_is_named_in_the_refusal(tmp_path: Path) -> None:
+    """Production 2026-10-04: a 0755 entry crash-looped every fleet worker, and the refusal did not
+    say WHICH entry — finding it took a shell on the VM."""
+    source, home = _roots(tmp_path)
+    root = tmp_path / "runtime"
+    root.mkdir(mode=0o700)
+    (root / "lumen-agent").mkdir(mode=0o700)
+    os.chmod(root / "lumen-agent", 0o755)
+    with pytest.raises(WorkspaceConfigurationError, match="'lumen-agent'"):
+        WorkspaceRootPolicy(root, source, home).prepare()

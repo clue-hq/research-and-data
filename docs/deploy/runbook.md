@@ -286,7 +286,13 @@ Set monthly spend caps and alerts on OpenRouter, Exa, AI Ark and Adyntel.
    `page-origin` (which also builds from `main` on its own and can fail before the migration lands;
    this redeploy puts it on the migrated schema). The frontend rebuilds from `main` as before.
 4. **Only after Railway is green**, on the VM as `clue`:
-   `/srv/clue/app/deploy/vm/deploy.sh <sha>` — it refuses if the database is not at head.
+   `/srv/clue/app/deploy/vm/deploy.sh <sha>` — it refuses if the database is not at head, and
+   if the agent workspace root (`/srv/clue/workspaces`) fails the workers' own boot check (every
+   entry must be a private 0700 directory owned by UID 1000; the refusal names the entry, and
+   nothing is restarted). It keeps the design agent's root `/srv/clue/lumen-agent` (UID 1000,
+   0700) separate from that root, and after `up` it fails the deploy if any worker restarts
+   (2026-10-04: a 0755 `/srv/clue/workspaces/lumen-agent` crash-looped every fleet worker while
+   the deploy reported success).
 5. Uptime checks (Better Stack or UptimeRobot free tier) on `https://app.cluehq.ai`,
    `https://api.cluehq.ai/healthz`, and one published page. (The design API has no public domain; Railway's
    health check covers it.)
