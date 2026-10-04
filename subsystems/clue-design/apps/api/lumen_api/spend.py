@@ -214,19 +214,33 @@ def openrouter_call(
 
 
 def image_generation_cost_reader(response: HttpResponse) -> CostReading:
-    """Images-API responses carry no usage block; price from the generation id via OpenRouter.
+    """Price an Images-API call from OpenRouter's own metering.
 
-    ``OpenRouterGenerationCost.cost_cents`` answers in CENTS — the ledger holds USD, so the
-    reading divides. A lookup that fails answers ``None``, which the wrapper records as "the
+    The response carries a ``usage`` block like a chat completion (verified live 2026-10-04 on
+    ``openai/gpt-image-2.5-flare``: on a BYOK key ``cost`` is 0 and the OpenAI charge is in
+    ``cost_details.upstream_inference_cost``), so it is read by the same BYOK-aware reader. The
+    generation id is NOT in the body; it arrives in the ``x-generation-id`` header.
+
+    Only a response without a usable ``usage`` block falls back to the ``/generation?id=``
+    lookup. ``OpenRouterGenerationCost.cost_cents`` answers in CENTS — the ledger holds USD, so
+    the reading divides. A lookup that fails answers ``None``, which the wrapper records as "the
     provider did not tell us" (the estimate stands in), never as zero.
     """
+    reading = openrouter_cost_reader(response)
+    if reading.cost_usd is not None:
+        generation_id = reading.provider_request_id
+        return CostReading(
+            cost_usd=reading.cost_usd,
+            provider_request_id=generation_id,
+            extras={**reading.extras, **({"generation_id": generation_id} if generation_id else {})},
+        )
     try:
         payload = json.loads(response.body)
     except ValueError:
-        return CostReading()
-    if not isinstance(payload, dict):
-        return CostReading()
-    generation_id = payload.get("id")
+        payload = {}
+    generation_id = (payload.get("id") if isinstance(payload, dict) else None) or response.headers.get(
+        "x-generation-id"
+    )
     if not generation_id:
         return CostReading()
     lookup = _generation_lookup()
@@ -371,9 +385,51 @@ __all__ = [
 ]
 
 
-def drain_safely(scope: SpendScope) -> None:
-    """Persist receipts without changing an already-completed work result on a drain error."""
-    try:
-        drain_sync(scope)
-    except Exception:
-        log.exception("spend.drain_failed")
+#: Pauses between drain attempts. A drain fails on a transient database fault far more often than
+#: on a bad row — live 2026-10-04 a design turn's whole spend (an image generation and a Brandfetch
+#: call) was dropped because Postgres answered "too many clients" for one moment at turn end.
+_DRAIN_BACKOFF_S = (1.0, 2.0, 4.0, 8.0, 15.0)
+
+
+def drain_safely(scope: SpendScope, *, sleep: Callable[[float], None] | None = None) -> None:
+    """Persist receipts without changing an already-completed work result on a drain error.
+
+    Each attempt moves the buffered rows into a staging scope and drains that; a failed attempt
+    puts them back, so a fault after the library drain has emptied its buffers (mid-insert) costs
+    nothing either. Only when every attempt fails are the rows lost, and the error then says how
+    many rows and how much recorded money went with them.
+    """
+    import time
+    from dataclasses import replace
+
+    pause = sleep or time.sleep
+    attempts = len(_DRAIN_BACKOFF_S) + 1
+    for attempt in range(1, attempts + 1):
+        raw_items, rows = scope.raw.drain(), scope.ledger.drain()
+        if not raw_items and not rows:
+            return
+        staged = replace(scope, raw=BufferedRawSink(), ledger=BufferedLedger())
+        for _ref, record, body in raw_items:
+            staged.raw.save(record, body)
+        for row in rows:
+            staged.ledger.record(row)
+        try:
+            drain_sync(staged)
+            return
+        except Exception:
+            for _ref, record, body in raw_items:
+                scope.raw.save(record, body)
+            for row in rows:
+                scope.ledger.record(row)
+            if attempt == attempts:
+                results = [row for row in rows if row.phase == "result"]
+                log.exception(
+                    "spend.drain_failed rows_lost=%d result_rows_lost=%d usd_lost=%s operations=%s",
+                    len(rows),
+                    len(results),
+                    sum((row.cost_usd or Decimal(0) for row in results), Decimal(0)),
+                    sorted({row.operation for row in results}),
+                )
+                return
+            log.warning("spend.drain_retry attempt=%d of %d", attempt, attempts, exc_info=True)
+            pause(_DRAIN_BACKOFF_S[attempt - 1])

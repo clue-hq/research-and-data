@@ -41,7 +41,11 @@ def openrouter_cost_reader(response: HttpResponse) -> CostReading:
 
     ``usage.cost_details.upstream_inference_cost`` is preferred over ``usage.cost`` because a BYOK
     key reports ``cost: 0`` while the upstream provider still charged — reading ``cost`` alone
-    would record a real spend as free.
+    would record a real spend as free. On a call the body marks ``is_byok``, ``cost`` is
+    OpenRouter's own BYOK fee, paid on top of the upstream charge, so the two are summed.
+
+    The request id is the body's ``id``, or the ``x-generation-id`` header when the body has none
+    (the Images API answers that way).
 
     Takes the :class:`~clue_spend.transport.HttpResponse` the wrapper received; a body that is
     not JSON yields an empty reading rather than raising, because the wrapper treats an unreadable
@@ -61,10 +65,15 @@ def openrouter_cost_reader(response: HttpResponse) -> CostReading:
     usage = usage if isinstance(usage, dict) else {}
     details = usage.get("cost_details")
     details = details if isinstance(details, dict) else {}
-    cost = _decimal(details.get("upstream_inference_cost"))
-    if cost is None:
-        cost = _decimal(usage.get("cost"))
-    request_id = body.get("id")
+    upstream = _decimal(details.get("upstream_inference_cost"))
+    fee = _decimal(usage.get("cost"))
+    if upstream is None:
+        cost = fee
+    elif usage.get("is_byok") is True:
+        cost = upstream + (fee or Decimal(0))
+    else:
+        cost = upstream
+    request_id = body.get("id") or response.headers.get("x-generation-id")
     # The model that answered and the token counts ride along as extras, under the same keys the
     # research agent writes on its ``round-*`` rows, so the per-model cost breakdown reads every
     # chat/completions row the same way. Only what the body actually said is written.
