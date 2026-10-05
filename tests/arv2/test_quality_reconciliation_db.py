@@ -8,7 +8,6 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from clue_api.arv2.account_research_store import finish_job
 from clue_api.arv2.display.recipes import load_display_recipes
 from clue_api.arv2.quality_catalog import CURRENT_RECIPE_VERSION
 from clue_api.arv2.quality_execution import Allowance, bind_execution
@@ -28,6 +27,7 @@ from clue_api.arv2.quality_pages import read_page
 from clue_api.arv2.quality_reconciliation import run_reconciliation
 from clue_api.arv2.research_operations import OperationScope
 from clue_core import ExecutionId, OperationId
+from tests.arv2.account_research_job_helpers import finish_seeded_job
 from tests.arv2.test_dossier_json import finding
 from tests.arv2.test_quality_execution_db import execution
 from tests.arv2.test_quality_json_dossier_db import invoke
@@ -60,7 +60,7 @@ async def fixture(conn, tmp_path):
     assert (await call(WriteResearchNarrativeTool, parent, storage, ctx, draft(meta)))[
         "status"
     ] == "published"
-    await finish_job(
+    await finish_seeded_job(
         conn,
         job_id=parent.job_id,
         status="completed",
@@ -370,7 +370,7 @@ def test_batch_waits_for_all_imports_or_failures_and_scope_is_enforced(tmp_path)
             assert not await pending_continuations(conn)
             with pytest.raises(ValueError, match="not ready"):
                 await prepare(conn, storage, parent, cid, gen.generation_id, rev)
-            await finish_job(
+            await finish_seeded_job(
                 conn,
                 job_id=late.job_id,
                 status="needs_review",
