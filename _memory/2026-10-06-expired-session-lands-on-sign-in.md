@@ -1,16 +1,15 @@
 # 2026-10-06 — expired sessions land on the real sign-in page; sign-out never hangs
 
-Branch `claude/magical-darwin-d91835` (worktree `magical-darwin-d91835`, based on
-`website-quality/week1`). Local commits only.
+Branch `fix/expired-session-lands-on-sign-in`, cut from `origin/research-streaming` (which
+already carries issue #99, PR #100). PR onto `research-streaming`.
 
 ## Base
-Issue #99 (`fix/auth-surprise-logouts-99`, PR #100 → research-streaming, #101 → main) had
-already landed, so it was merged in first (`fa7d5f9a9`). One conflict in
-`onboarding-auth-driver.test.ts`: this branch had rewritten `startGoogleSignIn` onto
-`authenticateWithRedirect`, so #99's "already signed in Google start" test now drives
-`startGoogleSignIn` with a throwing `authenticateWithRedirect` (it still completes as sign-in).
+Developed first in worktree `magical-darwin-d91835` on top of `website-quality/week1` with #99
+merged in. That merge hit one test conflict there (week1 rewrote `startGoogleSignIn` onto
+`authenticateWithRedirect`). It is irrelevant on this branch: the three commits were
+cherry-picked onto research-streaming cleanly and do not touch the auth driver.
 
-## What changed (`f5e926c34`)
+## What changed
 - `/sign-in?reason=session_expired` stays the single entry point (every redirect site —
   `auth/server.ts`, `session-dal.ts`, `session/establish`, the accounts and email-lookup
   controllers, the recovery-screen link — still points at it, untouched). The card is gone:
