@@ -53,9 +53,14 @@ _EVALUATE_JS = r"""
     return !el.closest('dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]');
   };
   const take = (sel, n) => Array.from(document.querySelectorAll(sel)).filter(visible).slice(0, n);
+  // Headings: enough of them to see the page's real section-heading size (the first few are
+  // often tab labels), and none from navigation or footers, which are not section headings.
+  const content = (el) => !el.closest('nav, footer');
+  const takeHeadings = (sel, n) =>
+    Array.from(document.querySelectorAll(sel)).filter((el) => visible(el) && content(el)).slice(0, n);
   const samples = [];
   for (const el of take('body', 1)) samples.push(sample(el, 'body'));
-  for (const t of ['h1','h2','h3','h4','h5','h6']) for (const el of take(t, 3)) samples.push(sample(el, t));
+  for (const t of ['h1','h2','h3','h4','h5','h6']) for (const el of takeHeadings(t, 20)) samples.push(sample(el, t));
   for (const el of take('p', 3)) samples.push(sample(el, 'p'));
   for (const el of take('a', 5)) samples.push(sample(el, 'a'));
   for (const el of take('button, .btn', 5)) samples.push(sample(el, 'button'));
@@ -64,7 +69,7 @@ _EVALUATE_JS = r"""
     const r = el.getBoundingClientRect(); const c = clip(r);
     return {el, area: c.w * c.h};
   }).filter((x) => x.area > 0).sort((a, b) => b.area - a.area)
-    .filter((x) => visible(x.el)).slice(0, 40);
+    .filter((x) => visible(x.el) && (!/^H[1-6]$/.test(x.el.tagName) || content(x.el))).slice(0, 40);
   for (const x of all) samples.push(sample(x.el, x.el.tagName.toLowerCase()));
 
   const props = {};

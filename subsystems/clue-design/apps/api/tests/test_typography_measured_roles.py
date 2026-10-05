@@ -105,3 +105,65 @@ def test_capture_samples_only_headings_a_visitor_can_see():
     headings = [s for s in result["samples"] if s["selectorish"] in {"h1", "h2"}]
     assert {s["fontSize"] for s in headings} == {"40px", "56px"}
 
+
+
+# --- 2026-10-05: prominent section headings, measured light weights -------------------------
+
+
+def _h2s(sizes: list[float]) -> list[TypeSample]:
+    return [_sample("h2", "Inter", 400, size) for size in sizes]
+
+
+def test_the_section_title_is_the_size_that_fills_the_most_heading_space():
+    # garnerhealth.com: four 18px tab labels come first, then seven 56px section headings.
+    garner = _styles([_sample("h1", "Inter", 500, 87), *_h2s([18, 18, 18, 18, 56, 56, 56, 56, 56, 56, 56, 40, 40]),
+                      _sample("body", "Inter", 400, 16)])
+    assert garner["type.title"]["font_size"] == 56.0
+
+
+def test_many_small_card_titles_do_not_outvote_fewer_big_section_headings():
+    # ramp.com: six 28px card titles against five 48px section headings.
+    ramp = _styles([_sample("h1", "Inter", 500, 64), *_h2s([28, 40, 40, 48, 48, 28, 28, 28, 48, 28, 28, 48, 24]),
+                    _sample("body", "Inter", 400, 14)])
+    assert ramp["type.title"]["font_size"] == 48.0
+    # notion.com: three 22px feature headings against two 54px section headings.
+    notion = _styles([_sample("h1", "Inter", 500, 96), *_h2s([54, 22, 22, 22, 54, 42]),
+                      _sample("body", "Inter", 400, 20)])
+    assert notion["type.title"]["font_size"] == 54.0
+
+
+def test_one_giant_call_to_action_heading_does_not_become_the_section_title():
+    # conduit.ai: five 48px section headings and one 56px closing CTA.
+    conduit = _styles([_sample("h1", "Inter", 400, 56), *_h2s([48, 48, 48, 48, 48, 56]),
+                       _sample("body", "Inter", 400, 18)])
+    assert conduit["type.title"]["font_size"] == 48.0
+
+
+def test_instancing_also_cuts_the_weights_the_site_actually_uses():
+    from lumen_ingestion.capture.font_instances import INSTANCE_WEIGHTS, instance_weights
+
+    measured = [_sample("h1", "sohne-var", 300, 48), _sample("body", "sohne-var", 400, 16),
+                _sample("h1", "Other Font", 250, 40)]
+    assert instance_weights("sohne-var", measured) == (300, 400, 500, 600, 700)
+    assert instance_weights("SOHNE-VAR", measured)[0] == 300
+    assert instance_weights("Unmeasured", measured) == INSTANCE_WEIGHTS
+
+
+_NAV_PAGE = """
+<style>body{font-family:Arial;margin:0}</style>
+<nav><h2 style="font-size:12px">Menu heading</h2></nav>
+""" + "".join(f'<h2 style="font-size:{18 if i < 4 else 56}px">Heading {i}</h2>' for i in range(12)) + """
+<footer><h2 style="font-size:13px">Footer column</h2></footer>
+"""
+
+
+def test_capture_samples_many_visible_headings_and_skips_nav_and_footer():
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.set_content(_NAV_PAGE)
+        result = page.evaluate(_EVALUATE_JS)
+        browser.close()
+    h2 = [s["fontSize"] for s in result["samples"] if s["selectorish"] == "h2"]
+    assert "12px" not in h2 and "13px" not in h2
+    assert h2.count("56px") >= 8

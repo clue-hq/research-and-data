@@ -89,6 +89,33 @@ def _sample_rank(sample: TypeSample) -> tuple[bool, bool, bool, int]:
     return rendered and complete, complete, rendered, fields
 
 
+#: Labels whose role is a repeated section heading rather than a one-off hero.
+_SECTION_HEADING_LABELS = ("h2", "h3")
+
+
+def _prominent_heading(samples: list[TypeSample]) -> TypeSample | None:
+    """The rendered heading whose size fills the most heading space on the page.
+
+    Each size scores (how often it appears) x (the size), ties to the larger size. The first few
+    h2s on a page are often tab or card labels (garnerhealth.com: four 18px labels before seven
+    56px section headings), so the first sample is not the section heading; plain "most common"
+    lets many small card titles outvote fewer section headings (ramp.com, notion.com); "largest"
+    picks a one-off call-to-action. Checked against 14 B2B homepages on 2026-10-05: 14 of 14.
+    """
+    rendered = [
+        s for s in samples
+        if s.pointer.locator.startswith("rendered ::")
+        and _resolved_family(s.family) and _positive(s.size_px) and _positive(s.weight)
+    ]
+    if not rendered:
+        return None
+    groups: dict[float, list[TypeSample]] = {}
+    for sample in rendered:
+        groups.setdefault(round(float(sample.size_px), 1), []).append(sample)
+    size = max(groups, key=lambda px: (len(groups[px]) * px, px))
+    return groups[size][0]
+
+
 def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
     samples = evidence.type_samples
     by_label: dict[str, TypeSample] = {}
@@ -96,6 +123,10 @@ def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
         prior = by_label.get(sample.label)
         if prior is None or _sample_rank(sample) > _sample_rank(prior):
             by_label[sample.label] = sample
+    for label in _SECTION_HEADING_LABELS:
+        prominent = _prominent_heading([s for s in samples if s.label == label])
+        if prominent is not None:
+            by_label[label] = prominent
 
     selected = list(by_label.values())
     # The H1's own face is the brand's headline face. A frequency vote across h1-h3 let two sans

@@ -32,7 +32,7 @@ from ..evidence import (
 )
 from .budget import MAX_NAMED_DROPS, short_url
 from .candidates import collect_asset_candidates
-from .font_instances import plan_font_instances
+from .font_instances import instance_weights, plan_font_instances
 from .geometry import parse_geometry
 from .parse import ParsedSite, parse_color_value, parse_site
 
@@ -255,7 +255,10 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
             # renderers can match by weight, and a variable file is matched at its default only.
             if face_sha and asset_id is not None and face.style in ("normal", "italic"):
                 plan = plan_font_instances(
-                    font.family, sha_bytes[face_sha], italic=(face.style == "italic")
+                    font.family,
+                    sha_bytes[face_sha],
+                    italic=(face.style == "italic"),
+                    weights=instance_weights(font.family, type_samples),
                 )
                 if plan.variable and plan.instances:
                     declared_weight = face.weight or 400
