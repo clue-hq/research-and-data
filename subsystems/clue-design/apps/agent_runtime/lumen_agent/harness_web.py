@@ -604,11 +604,26 @@ def create_web_deepagent(
         # G4/G6: the delegation budgets ride as ordinary tool-call middleware on the
         # ORCHESTRATOR, which is where `task` executes. Fresh per turn, so the counters
         # cannot leak.
-        middleware=[WebDelegationCap(record=tools.record)],
+        middleware=[
+            WebDelegationCap(record=tools.record),
+            *_context_clearing_middleware(runtime_config),
+        ],
         name="lumen-web-deepagent",
         checkpointer=checkpointer,
     )
     return agent, tools
+
+
+def _context_clearing_middleware(runtime_config: AgentRuntimeConfig) -> list:
+    """Founder decisions 2026-10-06: superseded screenshots and finished planning results leave
+    the model request (never the saved history). Off restores the previous composition."""
+    if not runtime_config.web_context_clearing:
+        return []
+    from langchain.agents.middleware import ContextEditingMiddleware
+
+    from .context_clearing import SupersededToolResultsEdit
+
+    return [ContextEditingMiddleware(edits=[SupersededToolResultsEdit()])]
 
 
 def run_deepagent_web_turn(

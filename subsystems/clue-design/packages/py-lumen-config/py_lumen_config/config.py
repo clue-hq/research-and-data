@@ -432,6 +432,9 @@ class Settings(BaseSettings):
     # in a 57-minute page build. Overrides the two web flags above when on: there are no
     # subagents to quarantine selectively.
     lumen_agent_web_solo: bool = False
+    # Context clearing (founder decisions 2026-10-06): replace superseded preview screenshots and
+    # finished planning results with stubs before each website-agent model call. On by default.
+    lumen_agent_web_context_clearing: bool = True
     # §5.6 budgets. RULING D1 (founder, 2026-08-26) SPLIT THESE IN TWO: budgets
     # are GUIDANCE, not gates.
     #
