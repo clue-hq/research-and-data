@@ -73,3 +73,15 @@
   passes in a clean env (`env -i`).
 - Clone artefacts left in place: DB `clue_inspiring` (~1.8 GB) and `clue_inspiring_test` on
   `clue-pg-trenton`, worktree `.env` + `.artifacts` copy. Drop with founder OK.
+
+## Model context-window registry (founder request, same day; commit after 65d4494d1)
+- `CLUE_AGENT_MODEL_CONTEXT_WINDOWS` (env + `.env.example` + `settings.py` default):
+  `x-ai/grok-4.6=500000,x-ai/grok-4.7=500000,meta/muse-spark-1.3=1048576` (values read from
+  OpenRouter's catalogue 2026-10-05). Order: `CLUE_AGENT_CONTEXT_WINDOW_TOKENS` → registry →
+  catalogue (unlisted only, warns `model_windows.not_registered`) → fixed thresholds.
+- Founder ruling: compaction stays sized for the currently selected model. Verified the gateway's
+  fallback is per call (every call starts at the primary), so that is the primary — no change.
+- Guard: `tests/test_agent_model_context_windows_settings.py` fails if any model `.env.example`
+  names (`*_AGENT_MODEL`, fallback chain) lacks a window. Add the window when adding a model.
+- Live (clone, slow catalogue stand-in): a grok-4.6 job settled in 18 s with 0 catalogue requests.
+
