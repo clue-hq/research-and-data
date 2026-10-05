@@ -616,6 +616,12 @@ class DeepAgentTurnRuntime:
             role=profile.role.value,
         )
 
+    async def _compaction(self, profile: Any) -> CompactionSettings:
+        """The model's compaction thresholds, read in a thread: ``compaction_for`` may fetch the
+        model catalogue over the network, and a blocking read on the event loop stops every other
+        task on it — on 2026-10-05 a fleet worker stopped renewing its leases for 105 s."""
+        return await asyncio.to_thread(self._compaction_for, profile.model.model_id)
+
     def _build_graph(
         self,
         *,
@@ -624,11 +630,10 @@ class DeepAgentTurnRuntime:
         backend: object,
         governed_tools: Sequence[BaseTool],
         checkpointer: Any,
+        compaction: CompactionSettings,
     ) -> Any:
         profile = resolved_profile.profile
-        summariser, compact_tool = build_compaction_middleware(
-            model, backend, self._compaction_for(profile.model.model_id)
-        )
+        summariser, compact_tool = build_compaction_middleware(model, backend, compaction)
         return create_deep_agent(
             model=model,
             tools=list(governed_tools),
@@ -691,6 +696,7 @@ class DeepAgentTurnRuntime:
                 backend=backend,
                 governed_tools=governed_tools,
                 checkpointer=checkpointer,
+                compaction=await self._compaction(resolved_profile.profile),
             )
             previous = await graph.aget_state(cast(RunnableConfig, dict(self._continuation_config)))
         return bool(previous.values.get("messages")) and not previous.next
@@ -722,6 +728,7 @@ class DeepAgentTurnRuntime:
                 backend=backend,
                 governed_tools=governed_tools,
                 checkpointer=checkpointer,
+                compaction=await self._compaction(profile),
             )
             state: Any = {
                 "messages": cast(Any, list(context.messages)),

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import threading
 from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from types import SimpleNamespace
@@ -37,6 +38,7 @@ from clue_agents import (
     WorkspaceEntry,
     operation_id_for_plan_node,
 )
+from clue_agents.compaction import CompactionSettings
 from clue_agents.contracts import PlanDelegationStep
 from clue_agents.ports import AgentExecutionAdapter, ExecutionProgress
 from clue_api.agent_registry_wiring import build_agent_profile_registry
@@ -401,6 +403,53 @@ def test_real_deepagent_normal_stop_is_failed_without_finalize_authority() -> No
         message for message in capture.messages[0] if getattr(message, "type", None) == "system"
     )
     assert str(system.content).endswith("## End resolved resource and capability map")
+
+
+def test_compaction_settings_are_read_off_the_event_loop() -> None:
+    """2026-10-05: ``compaction_for`` reads the model catalogue over the network. Called on the
+    event loop it froze a fleet worker for 105 s, long enough to lose every lease it held, so the
+    runtime reads it in a thread."""
+    request, resolved = _request()
+    execution = _Execution()
+    read_on: list[int] = []
+
+    def compaction_for(model_id: str) -> CompactionSettings:
+        del model_id
+        read_on.append(threading.get_ident())
+        return CompactionSettings.fallback()
+
+    runtime = DeepAgentTurnRuntime(
+        models=_Models((AIMessage(content="No finalizer."), AIMessage(content="Still none."))),
+        execution=execution,
+        max_runtime_s=5,
+        compaction_for=compaction_for,
+    )
+    factory = GovernedAgentToolFactory(
+        request=request,
+        resolved_profile=resolved,  # type: ignore[arg-type]
+        registry=build_toolbelt(storage=None, gateway=None),
+        execution=cast(Any, execution),
+        lease=cast(Any, object()),
+        artifacts=cast(Any, object()),
+    )
+    loop_thread: list[int] = []
+
+    async def run() -> Any:
+        loop_thread.append(threading.get_ident())
+        return await runtime.run(
+            request=request,
+            resolved_profile=resolved,  # type: ignore[arg-type]
+            context=AssembledAgentContext(
+                manifest=context_manifest(), messages=(HumanMessage(content="Do the work."),)
+            ),
+            backend=None,
+            governed_tools=factory.build(),
+        )
+
+    run_async(run())
+
+    assert read_on, "the runtime read its compaction settings"
+    assert loop_thread[0] not in read_on
 
 
 def test_real_deepagent_timeout_recovers_and_never_manufactures_finalization() -> None:

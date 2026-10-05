@@ -26,7 +26,7 @@ from clue_core import EntityId, new_project_run_id
 from clue_research.durable.project_run import ensure_project_run
 from clue_spine import Project
 
-__all__ = ["seed_arv2_job"]
+__all__ = ["finish_seeded_job", "seed_arv2_job"]
 
 #: A syntactically valid sha for the run row's three ``^[0-9a-f]{64}$`` CHECKs. The tables have no
 #: FK to the artifact store, so a seeded run pins a key that need not resolve — what is under test
@@ -92,13 +92,17 @@ async def seed_arv2_job(
         workspace_id=ws,
         account_entity_id=uuid.UUID(str(account_id)),
     )
+    attempt = 0
     if status != "not_started":
         # Every non-queued status is reached from ``in_progress``, exactly as the driver reaches it.
-        await store.begin_job(conn, job_id=job_id)
+        begun = await store.begin_job(conn, job_id=job_id)
+        assert begun is not None
+        attempt = begun.attempt
     if status in ("completed", "needs_review"):
         await store.finish_job(
             conn,
             job_id=job_id,
+            attempt=attempt,
             status=status,
             finalization={"outcome": status},
             failure_code="unresolved_fields" if status == "needs_review" else None,
@@ -109,7 +113,7 @@ async def seed_arv2_job(
             media_seconds=0,
         )
     elif status == "suspended":
-        await store.suspend_job(conn, job_id=job_id)
+        await store.suspend_job(conn, job_id=job_id, attempt=attempt)
     await store.refresh_run_status(conn, run_id=run_id)
     if created_at is not None:
         await conn.execute(
@@ -117,3 +121,12 @@ async def seed_arv2_job(
             {"at": created_at, "id": job_id},
         )
     return job_id
+
+
+async def finish_seeded_job(conn: AsyncConnection, *, job_id: uuid.UUID, **settle: object) -> None:
+    """Settle a seeded job the way the driver does: claim it (a new attempt), then finish that
+    attempt. ``finish_job`` is fenced on the claimed attempt, so a test cannot finish a job
+    nobody claimed — exactly as production cannot."""
+    begun = await store.begin_job(conn, job_id=job_id)
+    assert begun is not None, "only an unfinished job can be settled"
+    assert await store.finish_job(conn, job_id=job_id, attempt=begun.attempt, **settle)  # type: ignore[arg-type]

@@ -802,10 +802,12 @@ async def _research_rows(
         account_entity_id=uuid.UUID(str(account_id)),
     )
     if job_created:
-        await begin_job(conn, job_id=ARV2_RESEARCH_JOB_ID)
+        begun = await begin_job(conn, job_id=ARV2_RESEARCH_JOB_ID)
+        assert begun is not None, "the job row was inserted by this transaction"
         await finish_job(
             conn,
             job_id=ARV2_RESEARCH_JOB_ID,
+            attempt=begun.attempt,
             status="completed",
             finalization={"claims_written": claims_written, "source": "answer-key"},
             # The run was driven by hand off-platform, so there is no model or provider spend to

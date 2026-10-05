@@ -31,6 +31,12 @@ _FALLBACK_MODELS_FORMAT_ERROR: Final = (
     "or a comma-separated list (x-ai/grok-4.7,meta/muse-spark-1.3)"
 )
 
+_CONTEXT_WINDOWS_FORMAT_ERROR: Final = (
+    "CLUE_AGENT_MODEL_CONTEXT_WINDOWS must be a comma-separated list of model=tokens "
+    "(x-ai/grok-4.6=500000,meta/muse-spark-1.3=1048576) or a JSON object "
+    '({"x-ai/grok-4.6": 500000})'
+)
+
 _CORS_ORIGINS_FORMAT_ERROR: Final = (
     'CLUE_FRONTEND_CORS_ALLOW_ORIGINS must be a JSON array (["https://app.example"]) or a '
     "comma-separated list (https://app.example,http://localhost:3000)"
@@ -78,6 +84,33 @@ def _parse_string_list(value: Any, format_error: str) -> Any:
             raise ValueError(format_error)
         return decoded
     return tuple(item.strip() for item in raw.split(",") if item.strip())
+
+
+def _parse_model_windows(value: Any) -> Any:
+    """Accept ``model=tokens,model=tokens`` *or* a JSON object for the context-window registry."""
+
+    if not isinstance(value, str):
+        return value
+    raw = value.strip()
+    if not raw:
+        return {}
+    if raw.startswith("{"):
+        try:
+            decoded = json.loads(raw)
+        except ValueError as exc:
+            raise ValueError(_CONTEXT_WINDOWS_FORMAT_ERROR) from exc
+        if not isinstance(decoded, dict):
+            raise ValueError(_CONTEXT_WINDOWS_FORMAT_ERROR)
+        return decoded
+    windows: dict[str, str] = {}
+    for entry in (item.strip() for item in raw.split(",")):
+        if not entry:
+            continue
+        model, sep, tokens = entry.rpartition("=")
+        if not sep or not model.strip() or not tokens.strip():
+            raise ValueError(_CONTEXT_WINDOWS_FORMAT_ERROR)
+        windows[model.strip()] = tokens.strip()
+    return windows
 
 
 # The checked-in activation record for the integration/pilot product path
@@ -230,6 +263,11 @@ class Settings(BaseSettings):
     # worker and re-owned. Sized to outlive the lease TTL (takeover is lease-gated first). Env:
     # ``CLUE_FLEET_TASK_STALE_AFTER_S``.
     fleet_task_stale_after_s: float = 60.0
+    # The worker process's thread pool: every blocking provider call AND the event loop's DNS
+    # lookups (a fresh DB connection, the lease heartbeat's included) share it. Python's default,
+    # min(32, cpu + 4), is filled by a few research jobs; threads start only on demand.
+    # Env: ``CLUE_FLEET_THREAD_POOL_SIZE``.
+    fleet_thread_pool_size: int = Field(default=128, ge=8)
     # The deep-phase concurrency window — account jobs in flight at once (REQ-10 ~16–32; the
     # accounts-per-pass half of the cost dial). Env: ``CLUE_FLEET_DEEP_WINDOW``.
     fleet_deep_window: int = 16
@@ -651,6 +689,17 @@ class Settings(BaseSettings):
         "x-ai/grok-4.7",
         "meta/muse-spark-1.3",
     )
+    # The context window, in tokens, of every model the platform's agents run on — the primaries
+    # AND the fallback chain above. Compaction sizes itself from it; a model listed here never
+    # costs a network call. Only an unlisted model falls back to OpenRouter's public catalogue
+    # (2026-10-05: a slow catalogue fetch froze a fleet worker for 105 s). A model added to the
+    # agent model settings belongs here too. ``CLUE_AGENT_CONTEXT_WINDOW_TOKENS`` still overrides
+    # every model. Env: ``CLUE_AGENT_MODEL_CONTEXT_WINDOWS`` (``model=tokens,...`` or JSON).
+    agent_model_context_windows: Annotated[dict[str, Annotated[int, Field(ge=1)]], NoDecode] = {
+        "x-ai/grok-4.6": 500_000,
+        "x-ai/grok-4.7": 500_000,
+        "meta/muse-spark-1.3": 1_048_576,
+    }
     # Seconds a streamed agent model call may wait for its FIRST chunk before the next model is
     # tried (production 2026-10-04: grok-4.6 sent nothing for 300 s). 0 = no first-chunk deadline;
     # mid-answer pauses stay governed by LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S.
@@ -1109,6 +1158,13 @@ class Settings(BaseSettings):
         """Accept a JSON array *or* a plain comma-separated list of model ids."""
 
         return _parse_string_list(value, _FALLBACK_MODELS_FORMAT_ERROR)
+
+    @field_validator("agent_model_context_windows", mode="before")
+    @classmethod
+    def _parse_agent_model_context_windows(cls, value: Any) -> Any:
+        """Accept ``model=tokens,...`` *or* a JSON object of model ids to context windows."""
+
+        return _parse_model_windows(value)
 
     @field_validator("stage0_official_site_crawl_workspace_allowlist", mode="before")
     @classmethod

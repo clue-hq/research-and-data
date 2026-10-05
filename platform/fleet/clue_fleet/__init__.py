@@ -83,7 +83,7 @@ from clue_fleet.queue import (
     requeue_task,
     touch_task,
 )
-from clue_fleet.runner import run_worker
+from clue_fleet.runner import install_thread_pool, run_worker
 from clue_fleet.scheduler import (
     AccountAdmission,
     AccountAdmissionDecision,
@@ -194,5 +194,6 @@ __all__ = [
     "WorkHandler",
     "WorkResult",
     "enqueue_work",
+    "install_thread_pool",
     "run_worker",
 ]

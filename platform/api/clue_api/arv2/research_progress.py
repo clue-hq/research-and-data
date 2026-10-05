@@ -193,7 +193,7 @@ def _reason(job: ProgressJob) -> str:
     incident's event id.
     """
     if job.status == "suspended":
-        return "paused, waiting for a worker"
+        return "paused, resuming automatically"
     parsed = parse_failure_code(job.failure_code)
     if parsed is not None and job.finished_at is not None:
         provider, kind, reason = parsed

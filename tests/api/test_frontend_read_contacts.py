@@ -30,7 +30,7 @@ from httpx import ASGITransport
 from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.account_research_store import RunRow, create_job, create_run, finish_job
+from clue_api.arv2.account_research_store import RunRow, create_job, create_run
 from clue_api.arv2.display.blocks import insert_block
 from clue_api.arv2.display.gather import SectionInput
 from clue_api.arv2.display.recipes import recipes_for
@@ -104,6 +104,7 @@ from tests.api.test_frontend_read_account_detail import (  # noqa: PLC2701
     _lenient_claim,
     _V1Fixture,
 )
+from tests.arv2.account_research_job_helpers import finish_seeded_job
 from tests.db.conftest import run_async
 from tests.profiling.conftest import conn_session_factory, rollback_conn
 
@@ -1360,7 +1361,7 @@ async def _settled_person_job(
         subject_type="person",
         subject_entity_id=uuid.UUID(str(contact_id)),
     )
-    await finish_job(
+    await finish_seeded_job(
         conn,
         job_id=job_id,
         status="completed",
