@@ -135,6 +135,7 @@ def test_a_run_and_its_jobs_walk_the_seam_1_states() -> None:
             await store.finish_job(
                 conn,
                 job_id=first,
+                attempt=begun.attempt,
                 status="completed",
                 finalization={"outcome": "completed", "claims": 12},
                 model_rounds=9,
@@ -158,11 +159,12 @@ def test_a_run_and_its_jobs_walk_the_seam_1_states() -> None:
 
             # A terminal job neither re-begins nor suspends.
             assert await store.begin_job(conn, job_id=first) is None
-            await store.suspend_job(conn, job_id=first)
+            assert await store.suspend_job(conn, job_id=first, attempt=begun.attempt) is False
             assert (await store.read_job(conn, job_id=first)).status == "completed"  # type: ignore[union-attr]
 
-            assert await store.begin_job(conn, job_id=second) is not None
-            await store.suspend_job(conn, job_id=second)
+            claimed = await store.begin_job(conn, job_id=second)
+            assert claimed is not None
+            assert await store.suspend_job(conn, job_id=second, attempt=claimed.attempt) is True
             suspended = await store.read_job(conn, job_id=second)
             assert suspended is not None and suspended.status == "suspended"
             assert await store.refresh_run_status(conn, run_id=run.run_id) == "suspended"
@@ -172,6 +174,7 @@ def test_a_run_and_its_jobs_walk_the_seam_1_states() -> None:
             await store.finish_job(
                 conn,
                 job_id=second,
+                attempt=resumed.attempt,
                 status="needs_review",
                 finalization={"outcome": "needs_review"},
                 failure_code="link_audit_failed",
@@ -212,10 +215,12 @@ def test_a_run_whose_jobs_all_completed_is_completed() -> None:
                 workspace_id=run.workspace_id,
                 account_entity_id=account,
             )
-            await store.begin_job(conn, job_id=job_id)
+            begun = await store.begin_job(conn, job_id=job_id)
+            assert begun is not None
             await store.finish_job(
                 conn,
                 job_id=job_id,
+                attempt=begun.attempt,
                 status="completed",
                 finalization={"outcome": "completed"},
                 model_rounds=1,
@@ -231,6 +236,56 @@ def test_a_run_whose_jobs_all_completed_is_completed() -> None:
     status, closed = run_async(scenario())
     assert status == "completed"
     assert closed is not None and closed.finished_at is not None
+
+
+def test_the_lease_holder_takes_over_an_in_progress_job_and_fences_the_old_driver() -> None:
+    """2026-10-05: a driver froze, its lease expired, and the re-offered task found the job
+    ``in_progress``. Only the lease holder calls ``begin_job``, so an ``in_progress`` row it finds
+    belongs to a driver that lost its lease: the claim takes the job over on a new attempt, and
+    the old driver's late suspend and finish — still on its old attempt — change nothing."""
+
+    async def scenario():  # type: ignore[no-untyped-def]
+        async with rollback_conn() as conn:
+            run, (account, _) = await _seed(conn)
+            await store.create_run(conn, run)
+            job_id = uuid4()
+            await store.create_job(
+                conn,
+                job_id=job_id,
+                run_id=run.run_id,
+                workspace_id=run.workspace_id,
+                account_entity_id=account,
+            )
+            first = await store.begin_job(conn, job_id=job_id)
+            assert first is not None and first.attempt == 1
+
+            second = await store.begin_job(conn, job_id=job_id)
+            assert second is not None
+            assert second.status == "in_progress" and second.attempt == 2
+
+            settle = {
+                "status": "completed",
+                "finalization": {"outcome": "completed"},
+                "model_rounds": 1,
+                "tool_calls": 1,
+                "cost_usd": Decimal("0"),
+                "credits": Decimal("0"),
+                "media_seconds": 0,
+            }
+            assert await store.suspend_job(conn, job_id=job_id, attempt=1) is False
+            assert await store.finish_job(conn, job_id=job_id, attempt=1, **settle) is False
+            current = await store.read_job(conn, job_id=job_id)
+            assert current is not None
+            assert current.status == "in_progress" and current.attempt == 2
+
+            assert await store.finish_job(conn, job_id=job_id, attempt=2, **settle) is True
+            # Terminal: nobody re-begins it, and no attempt can park it again.
+            assert await store.begin_job(conn, job_id=job_id) is None
+            assert await store.suspend_job(conn, job_id=job_id, attempt=2) is False
+            done = await store.read_job(conn, job_id=job_id)
+            assert done is not None and done.status == "completed"
+
+    run_async(scenario())
 
 
 def test_annotations_land_one_row_per_claim_and_verdict() -> None:

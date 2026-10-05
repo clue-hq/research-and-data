@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from clue_api.arv2.account_research_store import create_job, finish_job
+from clue_api.arv2.account_research_store import create_job
 from clue_api.arv2.person_research_brief import read_person_brief, save_person_brief
 from clue_api.arv2.quality_generation import ensure_generation, register_child, signal
 from clue_api.arv2.quality_json_dossier import (
@@ -29,6 +29,7 @@ from clue_api.arv2.quality_person_release import (
 )
 from clue_api.arv2.research_operations import OperationScope
 from clue_research.identity import insert_contact_entity
+from tests.arv2.account_research_job_helpers import finish_seeded_job
 from tests.arv2.test_dossier_json import finding
 from tests.arv2.test_quality_json_dossier_db import invoke, prepare
 from tests.claimstore.conftest import (  # noqa: F401
@@ -156,7 +157,7 @@ def test_ready_before_account_settlement_and_published_parent_view(tmp_path):
                 second.job_id,
             }
             # Narrative/account failure after import does not withhold the children.
-            await finish_job(
+            await finish_seeded_job(
                 conn,
                 job_id=parent.job_id,
                 status="needs_review",
@@ -312,7 +313,7 @@ def test_sweep_recovers_import_offer_and_child_finishes_before_parent(tmp_path):
             offer = next(iter(queue.offers.values()))
             assert offer["payload"]["job_id"] == str(child.job_id)
             assert "continuation" not in offer["payload"]
-            await finish_job(
+            await finish_seeded_job(
                 conn,
                 job_id=child.job_id,
                 status="completed",

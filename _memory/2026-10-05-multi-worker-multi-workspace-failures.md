@@ -53,7 +53,7 @@ code change), **MINE** (caused by how I operated the lane, not by the product).
   with `pkill -f "^.venv/bin/python -m lumen_api.ingestion_pool --role coordinator"`.
 - **Fix needed (OPEN):** a setting for the number of coordinators.
 
-## 4. Research jobs stranded as `suspended` after a lost lease — OPEN (most serious)
+## 4. Research jobs stranded as `suspended` after a lost lease — FIXED on `claude/inspiring-saha-a803c0` (see `2026-10-05-stranded-research-jobs-lease-takeover.md`)
 
 - **What happened (10:45–10:47):** Stripe's account research on Cloudinary and Tencent Cloud
   (run `2056417c…`, jobs `30b1bbfe…`, `27cc746e…`) ended `suspended` after ~105 s with 0 model rounds,

@@ -555,7 +555,11 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
     from langchain_core.messages import AIMessage, ToolMessage
 
     from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
-    from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler, _Scope
+    from clue_api.arv2.account_research_driver import (
+        Arv2AccountResearchWorkHandler,
+        _Claim,
+        _Scope,
+    )
     from clue_api.arv2.research_context import pin_persona
     from clue_api.storage_wiring import DurableContactResearchPrivacyStopper
     from clue_research.compliance import DataSubjectRightsImpl
@@ -716,14 +720,15 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
                 queue=queue,
             )
             scope = _Scope(job_id=job_id, run_id=run.run_id, workspace_id=run.workspace_id)
-            assert await asyncio.wait_for(handler._run(scope, task_attempt=1), 10) == "completed"
+            ran = await asyncio.wait_for(handler._run(scope, _Claim(), task_attempt=1), 10)
+            assert ran == "completed"
             account_job = await store.read_job(conn, job_id=job_id)
             assert account_job.finalization["gaps"]
             jobs = await store.list_jobs(conn, run_id=run.run_id)
             child = next(j for j in jobs if j.subject_type == "person")
             assert len(wire.requests) == 4
             before = len(queue.offers)
-            await handler._run(scope, task_attempt=2)
+            await handler._run(scope, _Claim(), task_attempt=2)
             assert len(queue.offers) > before and len(wire.requests) == 4
             # Re-enter after a simulated interrupted settlement. The committed selection wins
             # without another model turn, duplicate child or provider purchase.
@@ -734,7 +739,7 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
                 ),
                 {"id": job_id},
             )
-            await handler._run(scope, task_attempt=3)
+            await handler._run(scope, _Claim(), task_attempt=3)
             recovered = await store.read_job(conn, job_id=job_id)
             assert (
                 recovered.finalization["summary"] == "Recovered the committed committee selection."
@@ -816,6 +821,7 @@ def test_scripted_agent_account_then_person_depth_channels_receipt_and_erasure(c
                         _Scope(
                             job_id=child.job_id, run_id=run.run_id, workspace_id=run.workspace_id
                         ),
+                        _Claim(),
                         task_attempt=1,
                     ),
                     10,

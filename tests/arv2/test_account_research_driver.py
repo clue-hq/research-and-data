@@ -164,6 +164,8 @@ class FakeStore:
         #: a task that outran its launch.
         self.row: JobRow | None = job if row is _SAME_ROW else row
         self.events: list[tuple[str, dict[str, Any]]] = []
+        #: Set to say a later lease holder took the job over: every fenced write then refuses.
+        self.superseded = False
 
     async def begin_job(self, conn: Any, *, job_id: UUID) -> JobRow | None:
         del conn
@@ -180,17 +182,20 @@ class FakeStore:
         self.events.append(("read_run", {"run_id": run_id}))
         return self.run if run_id == self.run.run_id else None
 
-    async def suspend_job(self, conn: Any, *, job_id: UUID) -> None:
+    async def suspend_job(self, conn: Any, *, job_id: UUID, attempt: int) -> bool:
         del conn
-        self.events.append(("suspend_job", {"job_id": job_id}))
+        self.events.append(("suspend_job", {"job_id": job_id, "attempt": attempt}))
+        return True
 
     async def set_job_stage(self, conn: Any, *, job_id: UUID, stage: str) -> None:
         del conn
         self.events.append(("set_job_stage", {"job_id": job_id, "stage": stage}))
 
-    async def finish_job(self, conn: Any, **kwargs: Any) -> None:
+    async def finish_job(self, conn: Any, **kwargs: Any) -> bool:
+        """``True`` unless the test took the job over (``superseded``): the attempt fence."""
         del conn
         self.events.append(("finish_job", kwargs))
+        return not self.superseded
 
     async def refresh_run_status(self, conn: Any, *, run_id: UUID) -> str:
         del conn
@@ -589,7 +594,9 @@ def test_a_profile_digest_that_moved_since_the_launch_refuses_the_job(
     assert landed["failure_code"] == "profile_pin_mismatch"
 
 
-def test_stop_requested_requeues_as_suspended(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_task_stopped_before_its_claim_is_requeued_without_touching_the_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     run = _run_row()
     job = _job_row(run)
     store = FakeStore(run, job)
@@ -604,13 +611,14 @@ def test_stop_requested_requeues_as_suspended(monkeypatch: pytest.MonkeyPatch) -
 
     assert result.outcome == "stopped"
     assert result.requeue is True
-    assert store.named("suspend_job") == [{"job_id": job.job_id}]
     assert not store.named("begin_job"), "a stopped task never starts the agent"
+    assert not store.named("suspend_job"), "nothing is claimed, so nothing is this task's to park"
 
 
-def test_payload_work_id_mismatch_is_a_needs_review_not_a_crash(
+def test_payload_work_id_mismatch_fails_the_task_and_writes_no_job_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The lease is on the work id, not on the job the payload names: no row is this task's."""
     run = _run_row()
     job = _job_row(run)
     store = FakeStore(run, job)
@@ -621,11 +629,9 @@ def test_payload_work_id_mismatch_is_a_needs_review_not_a_crash(
 
     result = asyncio.run(handler.handle(_context(job, work_id=uuid4())))
 
-    assert result.outcome == "needs_review"
-    landed = store.named("finish_job")[0]
-    assert landed["status"] == "needs_review"
-    assert landed["failure_code"] == "invalid_task_payload"
-    assert not store.named("begin_job")
+    assert result.outcome == "failed"
+    assert result.requeue is False
+    assert store.events == []
 
 
 def test_an_unreadable_payload_is_contained_without_a_raise() -> None:
@@ -712,11 +718,13 @@ def test_a_job_row_that_never_appears_stops_waiting_and_fails(
     assert not store.named("finish_job")
 
 
-def test_a_cancelled_handle_suspends_the_job_before_the_cancellation_propagates() -> None:
-    """I1: the fleet CANCELS the handler on lease loss, and ``CancelledError`` is a BaseException.
+@pytest.mark.parametrize("claimed", [True, False])
+def test_a_cancelled_handle_parks_only_a_job_it_claimed(claimed: bool) -> None:
+    """The fleet CANCELS the handler on lease loss, and ``CancelledError`` is a BaseException.
 
-    Without the explicit clause the job would stay ``in_progress`` forever: the redelivery cannot
-    claim it, reads as a finished job, and the task is marked done.
+    A claimed job is parked on the attempt this task claimed, before the cancellation propagates
+    (fenced: a later lease holder's attempt is untouched). A task cancelled before its claim owns
+    no part of the row and parks nothing.
     """
     run = _run_row()
     job = _job_row(run)
@@ -724,8 +732,10 @@ def test_a_cancelled_handle_suspends_the_job_before_the_cancellation_propagates(
     handler, _, _, _ = _handler(store)
     started = asyncio.Event()
 
-    async def hang(scope: Any, *, task_attempt: int) -> str:
+    async def hang(scope: Any, claim: Any, *, task_attempt: int) -> str:
         del scope, task_attempt
+        if claimed:
+            claim.attempt = 3
         started.set()
         await asyncio.Event().wait()
         raise AssertionError("unreachable")
@@ -741,9 +751,34 @@ def test_a_cancelled_handle_suspends_the_job_before_the_cancellation_propagates(
 
     asyncio.run(scenario())
 
-    assert store.named("suspend_job") == [{"job_id": job.job_id}], (
-        "a lease-lost job must be parked, or nothing can ever claim it again"
+    expected = [{"job_id": job.job_id, "attempt": 3}] if claimed else []
+    assert store.named("suspend_job") == expected
+
+
+def test_a_settle_refused_by_the_attempt_fence_requeues_and_offers_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later lease holder took the job over while this attempt ran: its ``finish_job`` is
+    refused, so it reports ``superseded``, hands the task back rather than closing it, and offers
+    no follow-on work for a settle that did not happen."""
+    run = _run_row()
+    job = _job_row(run)
+    store = FakeStore(run, job)
+    store.superseded = True
+    _patch_reads(
+        monkeypatch, account=SimpleNamespace(canonical_name="Probook", primary_domain="probook.ai")
     )
+    _patch_committee_step(monkeypatch, store, run)
+    handler, _, _, _ = _handler(store, queue=_RecordingQueue(store))
+
+    result = asyncio.run(handler.handle(_context(job)))
+
+    assert result.outcome == "superseded"
+    assert result.requeue is True
+    assert store.named("finish_job")[0]["attempt"] == job.attempt
+    assert not store.named("refresh_run_status")
+    assert not store.named("committee_step"), "nothing runs after a refused settle"
+    assert not store.named("enqueue")
 
 
 def test_the_model_error_outcome_lands_needs_review_with_its_reason(
