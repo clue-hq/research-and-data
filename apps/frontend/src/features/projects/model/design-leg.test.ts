@@ -249,3 +249,11 @@ test("a provider refusal on a turn reads as a sentence, not a code", () => {
   assert.equal(designTurnFailureNotice("permission_denied_error"), "permission_denied_error");
   assert.equal(designTurnFailureNotice(null), null);
 });
+
+test("a design run that failed before generating anything says so, and that a retry is the next message", () => {
+  const notice = designTurnFailureNotice("design_leg_runtime_failed");
+  assert.ok(notice);
+  assert.match(notice, /couldn't start/);
+  assert.match(notice, /Nothing was generated/);
+  assert.notEqual(notice, designTurnFailureNotice("design_leg_turn_failed"));
+});

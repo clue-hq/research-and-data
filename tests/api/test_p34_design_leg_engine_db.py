@@ -111,6 +111,24 @@ class _FakeLane:
             )
 
 
+class _RuntimeFailedLane(_FakeLane):
+    """Fails the run the way production did on 2026-10-05: before any model call, with the
+    runtime's diagnostic (the design workspace was not writable)."""
+
+    async def drive(self, *, envelope: Any) -> None:
+        self.envelopes.append(envelope)
+        from tests.api.test_design_leg_failure_reason import RUNTIME_FAILED
+
+        async with self._conn_factory() as conn:
+            await design_runs.set_run_result(
+                conn,
+                workspace_id=envelope.workspace_id,
+                run_id=envelope.run_id,
+                status="failed",
+                result={"schema_version": 1, **RUNTIME_FAILED},
+            )
+
+
 class _BatchFakeLane(_FakeLane):
     """A fake lane that also answers the multi-document seam (§3.3's ``drive_batch``),
     completing every sibling the turn dispatched in the order it was handed them."""
@@ -979,6 +997,39 @@ def test_a_failed_design_run_fails_the_turn_honestly_and_keeps_the_leg_open(
                 )
             ).scalar_one()
             assert int(commits) == 0  # honest failure: no manufactured finalize authority
+
+    run_async(scenario())
+
+
+def test_a_run_that_failed_before_generating_fails_the_turn_with_the_runtime_code(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Production 2026-10-05: the design runtime could not write its workspace, so the run
+    failed in seconds before any model call. The turn says THAT, not the generic code."""
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="rtfail")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            submission = await _submit_message(
+                conn, seeds, label="rtfail", message="Generate the page."
+            )
+            result = await _run_turn(
+                conn,
+                seeds,
+                registry,
+                _RuntimeFailedLane(conn_factory=seeds["conn_factory"]),
+                submission,
+            )
+            assert result.outcome.status is AgentExecutionStatus.FAILED
+            assert result.outcome.failure_code == "design_leg_runtime_failed"
+            leg_after = await design_legs.get_leg(
+                conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
+            )
+            assert leg_after["state"] == "open_awaiting_user"
 
     run_async(scenario())
 

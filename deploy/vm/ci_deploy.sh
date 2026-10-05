@@ -10,4 +10,11 @@ if [[ ! "$requested" =~ ^[0-9a-f]{40}$ ]]; then
   echo "refused: CI may only request a deploy of one full commit sha" >&2
   exit 2
 fi
-exec "$(dirname "$0")/deploy.sh" "$requested"
+# Check the requested commit out FIRST, then run ITS deploy.sh. deploy.sh checks the commit out
+# too, but by then the previous release's copy of deploy.sh is the one running: a release that
+# changed deploy.sh got its new compose file and the old deploy steps (2026-10-04: #96's design
+# workspace preparation never ran, the mount came up root-owned, and design failed for a day).
+app="$(cd "$(dirname "$0")/../.." && pwd)"
+git -C "$app" fetch origin main
+git -C "$app" checkout --detach "$requested"
+exec "$app/deploy/vm/deploy.sh" "$requested"
