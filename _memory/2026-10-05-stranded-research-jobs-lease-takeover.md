@@ -57,10 +57,19 @@
 - A suspended job still raises the card's `needs_attention` pill though it resumes by itself — not
   changed (presentation ruling not asked).
 - Blocking-call audit (read-only, this session): no other sync network call on the research loop.
-  Secondary risks: default thread pool (min(32, cpu+4)) shared by every provider `to_thread`,
-  long shielded calls (yt-dlp 900 s, Deepgram 660 s) can starve it and delay asyncpg's
-  `getaddrinfo` for the heartbeat when DB host is `localhost`; media acquisition hashes/writes up to
-  200 MiB on the loop (`media_acquisition.py` ~257-305); workspace materialization fsyncs on the
-  loop (`specialist_wiring.py:410`).
+  **Thread-pool starvation — FIXED (commit 386ad5e90, founder-approved plan):** every provider call
+  and the loop's DNS lookup for a fresh DB connection (heartbeat included; host is a name) share the
+  default executor, min(32, cpu+4) threads, vs ~18 concurrent provider calls per job x 4 jobs, some
+  held 660-900 s. Measured: 80 slow calls in flight → fresh connection 39.9 s on the default pool
+  (> 30 s lease), 0.02 s on 128 threads. `fleet_main._serve` now calls
+  `clue_fleet.install_thread_pool(loop, max_workers=settings.fleet_thread_pool_size)` first thing;
+  `CLUE_FLEET_THREAD_POOL_SIZE=128` in `.env.example` (+ worktree `.env`). Test
+  `tests/fleet/test_worker_thread_pool.py` (lookup waited 2.9 s on the default pool → red).
+  Not changed (measured/estimated small, founder agreed): media hashing/writing ~0.4 s per 200 MiB
+  on the loop (`media_acquisition.py` ~257-305); workspace fsync (`specialist_wiring.py:410`, not
+  measured). Not done: a dedicated DB pool for the heartbeat (pool exhaustion never measured).
+  Other processes (design ingestion pool, platform API) keep Python's default pool.
+  `tests/test_config_settings.py` fails 4 tests when `.env` is sourced into the shell — env leak,
+  passes in a clean env (`env -i`).
 - Clone artefacts left in place: DB `clue_inspiring` (~1.8 GB) and `clue_inspiring_test` on
   `clue-pg-trenton`, worktree `.env` + `.artifacts` copy. Drop with founder OK.
