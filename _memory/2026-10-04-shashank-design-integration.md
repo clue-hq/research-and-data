@@ -271,3 +271,15 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   were created with clue_spine.create_workspace/create_brand + clue_auth create_workspace_membership
   (owner), then each setup started from the app (workspace switcher + POST /api/clue/onboarding
   {company_domain}), which runs Stage-0 company research + brand-kit ingestion + ads harvest.
+- 2026-10-05 agent_timeout on the Stripe ICP turn: OpenRouter connections from this machine failed
+  10:06-10:17 UTC (114 describe calls: server disconnected / read+write timeouts; OpenRouter status
+  page clean), and Head of ABM calls were already 55-59 s at ~73k tokens against a 60 s limit, so
+  grok-4.6 -> grok-4.7 -> muse-spark (3 attempts each) all timed out. Fix: CLUE_AGENT_MODEL_TIMEOUT_S
+  and CLUE_GATEWAY_TIMEOUT_S 60 -> 120 (.env + .env.example, committed); workers + APIs restarted.
+- Ingestion runs ONE job at a time per lane (single coordinator, concurrency 1). Started 4 extra
+  coordinators by hand (`.venv/bin/python -m lumen_api.ingestion_pool --role coordinator`, logs
+  /tmp/trenton_ingest_coord_extra{1..4}.log) so the 3 kits + ads run in parallel. They are NOT
+  stopped by dev_stack down (pkill pattern is the absolute interpreter path) -> kill by hand:
+  pkill -f "^.venv/bin/python -m lumen_api.ingestion_pool --role coordinator".
+- ICP turns sent for all three: Stripe thr_32b10e17… (retry), Garner Health thr_af77844e…,
+  AltCarbon thr_ea2b5d4d….
