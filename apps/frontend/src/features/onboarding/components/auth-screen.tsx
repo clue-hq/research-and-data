@@ -10,6 +10,7 @@ export function AuthScreen({
   draft,
   emailMode,
   error = null,
+  notice = null,
   onChooseEmail,
   onChooseGoogle,
   onDraftChange,
@@ -21,6 +22,7 @@ export function AuthScreen({
   draft: OnboardingDraft;
   emailMode: boolean;
   error?: string | null;
+  notice?: string | null;
   onChooseEmail: () => void;
   onChooseGoogle: () => void;
   onDraftChange: <Key extends keyof OnboardingDraft>(
@@ -46,6 +48,7 @@ export function AuthScreen({
             {copy.accountAction}
           </button>
         </p>
+        {notice ? <p role="status">{notice}</p> : null}
       </div>
 
       <Button

@@ -2,13 +2,14 @@
 
 import { useClerk } from "@clerk/nextjs";
 import { useTransition } from "react";
+import { endSession } from "../model/end-session";
 
 export function SessionSignOut({
   className,
   label = "Sign out",
   onClearWorkspace,
   pendingLabel = "Signing out…",
-  redirectUrl = "/sign-in",
+  redirectUrl = "/onboarding/sign-in",
 }: Readonly<{
   className?: string;
   label?: string;
@@ -16,7 +17,7 @@ export function SessionSignOut({
   pendingLabel?: string;
   redirectUrl?: string;
 }>) {
-  const { signOut } = useClerk();
+  const clerk = useClerk();
   const [pending, startTransition] = useTransition();
 
   return (
@@ -24,19 +25,15 @@ export function SessionSignOut({
       className={className}
       disabled={pending}
       onClick={() => {
-        startTransition(async () => {
-          try {
-            await onClearWorkspace();
-          } finally {
-            await signOut({ redirectUrl });
-            // Clerk only navigates when a session existed to destroy. Reaching
-            // this line means there was nothing to sign out of (e.g. landing on
-            // the expired-session card already signed out — shared localhost
-            // dev cookies make this common), so navigate explicitly; when Clerk
-            // did navigate, this assigns the same URL and is a no-op.
-            window.location.assign(redirectUrl);
-          }
-        });
+        startTransition(() =>
+          endSession({
+            clearWorkspace: onClearWorkspace,
+            signOut: (params) => clerk.signOut(params),
+            hasProviderSession: Boolean(clerk.session),
+            navigate: (url) => window.location.assign(url),
+            redirectUrl,
+          }),
+        );
       }}
       type="button"
     >
