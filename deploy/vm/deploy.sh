@@ -50,6 +50,12 @@ docker run --rm --user 1000:1000 --env-file "$ENV_FILE" \
 # create a missing bind-mount source as root, and `clue` cannot chown. Idempotent.
 docker run --rm --user 0:0 -v /srv/clue:/srv/clue "$BACKEND" \
   shell -c "install -d -m 700 -o 1000 -g 1000 $DESIGN_WORKSPACE && chmod 700 $DESIGN_WORKSPACE"
+# ...and PROVE the workers' user can write there before anything restarts. Workers boot fine
+# without it, so neither the boot check nor the health check notices: on 2026-10-05 a root-owned
+# mount failed every design run with Permission denied for a day. Refused here, nothing restarts.
+docker run --rm --user 1000:1000 -v "$DESIGN_WORKSPACE:$DESIGN_WORKSPACE" "$BACKEND" \
+  shell -c "touch $DESIGN_WORKSPACE/.deploy-write-check && rm $DESIGN_WORKSPACE/.deploy-write-check" \
+  || { echo "the design workspace $DESIGN_WORKSPACE is not writable by UID 1000; nothing was restarted" >&2; exit 1; }
 # One-time move of the old root, which lived INSIDE the agent workspace root. The fleet stops first
 # so no old worker re-creates the old path mid-move (it would come back 0755 and break the next
 # boot). Only UID 1000/root can see inside the 0700 workspace root, hence the containers.

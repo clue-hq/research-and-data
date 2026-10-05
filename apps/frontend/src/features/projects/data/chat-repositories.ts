@@ -6,6 +6,11 @@ import {
   type ComposerContextRepository,
 } from "./composer-context.repository";
 import {
+  createHttpMentionDirectoryRepository,
+  unavailableMentionDirectoryRepository,
+  type MentionDirectoryRepository,
+} from "./mention-directory.repository";
+import {
   createFixtureChatGatesRepository,
   createHttpChatGatesRepository,
   type ChatGatesRepository,
@@ -103,6 +108,8 @@ export interface ChatRepositories {
    */
   inspector: ChatInspectorRepository;
   composerContext: ComposerContextRepository;
+  /** The @ tagger's directory: every account and committee contact, names and ids. */
+  mentionDirectory: MentionDirectoryRepository;
 }
 
 export function createChatRepositories(
@@ -125,6 +132,7 @@ export function createChatRepositories(
       discoveries: createHttpDiscoveryRunsRepository(transport),
       inspector: createHttpChatInspectorRepository(transport),
       composerContext: createHttpComposerContextRepository(transport),
+      mentionDirectory: createHttpMentionDirectoryRepository(transport),
     };
   }
   // One shared fixture state, so the four adapters agree with each other the
@@ -146,5 +154,6 @@ export function createChatRepositories(
     discoveries: createFixtureDiscoveryRunsRepository(),
     inspector: createFixtureChatInspectorRepository(),
     composerContext: unavailableComposerContextRepository,
+    mentionDirectory: unavailableMentionDirectoryRepository,
   };
 }

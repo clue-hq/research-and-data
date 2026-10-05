@@ -125,6 +125,7 @@ __all__ = [
     "DESIGN_LEG_ACCOUNT_UNRESOLVED",
     "DESIGN_LEG_BUDGET_LIMIT_MILLICENTS",
     "DESIGN_LEG_DOCUMENT_FINALIZED",
+    "DESIGN_LEG_RUNTIME_FAILED",
     "DESIGN_LEG_TURN_CRASHED",
     "DESIGN_LEG_TURN_FAILED",
     "DesignLegLaneDriver",
@@ -134,6 +135,7 @@ __all__ = [
     "design_leg_execution_id",
     "design_leg_run_id",
     "design_legs_for_threads",
+    "design_run_failure_note",
     "load_design_leg_history",
     "load_head_of_abm_history",
     "project_design_documents",
@@ -146,6 +148,11 @@ DESIGN_LEG_BUDGET_LIMIT_MILLICENTS = 1_000_000
 
 #: The one stable failure code a failed design run surfaces on the platform turn.
 DESIGN_LEG_TURN_FAILED = "design_leg_turn_failed"
+
+#: Every addressed run failed BEFORE generating anything (no model call; the runtime itself
+#: failed — production 2026-10-05: the design workspace was not writable). Distinct from a run
+#: that failed while designing, so the user is told nothing was made and the cause is ours.
+DESIGN_LEG_RUNTIME_FAILED = "design_leg_runtime_failed"
 
 #: G1 (founder ruling, 2026-08-19): the pinned document is finalized, so this turn would be a
 #: mutation of a frozen artifact. Revising one means a new draft revision plus a governed move
@@ -276,15 +283,68 @@ DESIGN_LEG_EXIT_SUMMARIES: dict[str, str] = {
 }
 
 
-def exit_summary(reason: str, reasoning: str | None = None) -> str:
+def exit_summary(
+    reason: str, reasoning: str | None = None, *, last_failure: str | None = None
+) -> str:
     """The leg summary head-of-abm resumes with: the engine's sentence for ``reason`` plus,
-    when the v2 judge supplied one, its own reasoning. Bounded to the finish tool's limit."""
+    when the v2 judge supplied one, its own reasoning, plus — when the session's latest design
+    run failed — the engine's note saying so (:func:`design_run_failure_note`). Head-of-abm sees a
+    closed session ONLY through this summary; without the note it explained a failed run as one
+    that "was never generated" (2026-10-05). Bounded to the finish tool's limit."""
 
-    base = DESIGN_LEG_EXIT_SUMMARIES.get(reason, DESIGN_LEG_EXIT_SUMMARIES["abandoned"])
+    summary = DESIGN_LEG_EXIT_SUMMARIES.get(reason, DESIGN_LEG_EXIT_SUMMARIES["abandoned"])
     words = (reasoning or "").strip()
-    if not words:
-        return base
-    return f"{base} Exit judge: {words}"[:4_000]
+    if words:
+        summary = f"{summary} Exit judge: {words}"
+    if last_failure:
+        summary = f"{summary} {last_failure}"
+    return summary[:4_000]
+
+
+def _failure_codes(result: Mapping[str, Any]) -> list[str]:
+    diagnostics = result.get("diagnostics") or []
+    codes = sorted(
+        {
+            str(item["code"])
+            for item in diagnostics
+            if isinstance(item, Mapping) and item.get("code")
+        }
+    )
+    error = result.get("error")
+    if not codes and isinstance(error, Mapping) and error.get("code"):
+        codes = [str(error["code"])]
+    return codes
+
+
+def _failed_before_generating(result: Any) -> bool:
+    """A failed run that made NO model call and recorded why: the runtime itself failed."""
+
+    return (
+        isinstance(result, Mapping)
+        and str(result.get("status") or "") == "failed"
+        and isinstance(result.get("model_calls"), list)
+        and not result["model_calls"]
+        and bool(_failure_codes(result))
+    )
+
+
+def design_run_failure_note(result: Any) -> str | None:
+    """One engine sentence for a failed design run, or ``None`` when it did not fail.
+
+    Derived from the run's terminal result — its diagnostic CODES only, never the free-text hint
+    (which carries server paths and errno text the user and the agent must not see).
+    """
+
+    if not isinstance(result, Mapping) or str(result.get("status") or "") != "failed":
+        return None
+    codes = ", ".join(_failure_codes(result)) or "no diagnostic code"
+    if _failed_before_generating(result):
+        return (
+            "The last design turn failed before anything was generated (design runtime error: "
+            f"{codes}). This is a server-side failure, not a problem with the request; nothing "
+            "was created, and sending the request again retries it."
+        )
+    return f"The last design turn failed while designing (error: {codes})."
 
 
 async def _exit_judge_artifact_lines(
@@ -1567,16 +1627,29 @@ class DesignLegTurnRunner:
             # when every addressed document's run failed. One failed sibling is named in the
             # summary and the leg hands back, so the user can address that document alone.
             if all(run["status"] != "succeeded" for _document, run in dispatched):
+                results = [run.get("result") or {} for _document, run in dispatched]
+                runtime_failed = all(_failed_before_generating(result) for result in results)
                 log.warning(
                     "design_leg.turn_failed",
                     leg_id=leg_id,
                     turn_id=str(turn_id),
                     run_ids=[str(run.get("run_id")) for _document, run in dispatched],
+                    before_generating=runtime_failed,
+                    # The runs' own diagnostics, so the cause is in the worker log (2026-10-05:
+                    # only the run ids were logged, and the reason sat in result_json).
+                    diagnostics=[
+                        {"code": item.get("code"), "hint": str(item.get("hint") or "")[:300]}
+                        for result in results
+                        for item in (result.get("diagnostics") or [])
+                        if isinstance(item, Mapping)
+                    ],
                 )
                 return await self._fail_turn(
                     submission=submission,
                     execution_id=execution_id,
-                    failure_code=DESIGN_LEG_TURN_FAILED,
+                    failure_code=(
+                        DESIGN_LEG_RUNTIME_FAILED if runtime_failed else DESIGN_LEG_TURN_FAILED
+                    ),
                     stream=stream,
                 )
 
@@ -1966,6 +2039,27 @@ class DesignLegTurnRunner:
             )
         return decision
 
+    async def _last_run_failure(self, *, workspace_id: str, leg_id: str) -> str | None:
+        """The failure note for this leg's most recent design run, or None if it did not fail."""
+
+        async with self._conn_factory() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT result_json FROM design_agent_run "
+                        "WHERE workspace_id = :ws AND leg_id = :leg "
+                        "ORDER BY created_at DESC, run_id DESC LIMIT 1"
+                    ),
+                    {"ws": workspace_id, "leg": leg_id},
+                )
+            ).first()
+        if row is None:
+            return None
+        result = row[0]
+        if isinstance(result, (str, bytes, bytearray)):
+            result = json.loads(result)
+        return design_run_failure_note(result)
+
     async def _journaled_exit_summary(
         self, conn: AsyncConnection, *, workspace_id: str, turn_id: UUID
     ) -> str | None:
@@ -2021,7 +2115,8 @@ class DesignLegTurnRunner:
 
         workspace_id = submission.workspace_id
         turn_id = submission.turn_id
-        summary = summary_override or exit_summary(reason, reasoning)
+        last_failure = await self._last_run_failure(workspace_id=workspace_id, leg_id=leg_id)
+        summary = summary_override or exit_summary(reason, reasoning, last_failure=last_failure)
         if self._finisher is not None:
             # A crash-retried exit replays the same governed invocation (derived operation
             # id + the tool's own closing-turn journal replay) and returns the ORIGINAL
@@ -2034,7 +2129,7 @@ class DesignLegTurnRunner:
             )
             closed_reason = str(references.get("reason") or reason)
             if closed_reason != reason and summary_override is None:
-                summary = exit_summary(closed_reason, reasoning)
+                summary = exit_summary(closed_reason, reasoning, last_failure=last_failure)
         # else: closed-leg re-entry on a worker without the bridge — the close itself
         # committed atomically with the tool's transaction, so only the finalize remains.
 

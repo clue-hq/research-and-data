@@ -138,6 +138,7 @@ export const ProjectComposerEditor = forwardRef<
     disabled?: boolean;
     entities: ProjectEntity[];
     onContextChange: (entityIds: string[]) => void;
+    onMentionQueryChange?: (query: string) => void;
     onPromptChange: (value: string) => void;
     onSubmit: (value: string) => void;
     prompt: string;
@@ -150,6 +151,7 @@ export const ProjectComposerEditor = forwardRef<
     disabled = false,
     entities,
     onContextChange,
+    onMentionQueryChange,
     onPromptChange,
     onSubmit,
     prompt,
@@ -232,6 +234,11 @@ export const ProjectComposerEditor = forwardRef<
   );
 
   const query = mentionQuery.trim();
+  // A directory too large to load whole is also searched on the server; its matches arrive
+  // as new `entities` and are found by the same local search, after the local matches.
+  useEffect(() => {
+    if (mentionTarget) onMentionQueryChange?.(mentionQuery);
+  }, [mentionQuery, mentionTarget, onMentionQueryChange]);
   const visibleEntities = useMemo(
     () => resolveEntities(mentionQuery, mentionCategory, expandedAccountIds),
     [expandedAccountIds, mentionCategory, mentionQuery, resolveEntities],

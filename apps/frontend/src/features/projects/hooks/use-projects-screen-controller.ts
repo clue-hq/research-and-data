@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useChatRepositories } from "../data/projects-transport";
+import { useMentionDirectory } from "./use-mention-directory";
 import { newIdempotencyKey } from "../data/chat-api";
 import {
   filterDirectory,
@@ -104,6 +105,8 @@ export async function startChat(
   });
   return { href: thread.href };
 }
+
+const NO_ENTITIES: readonly ProjectEntity[] = [];
 
 export function useProjectsScreenController(projectId?: string) {
   const repositories = useChatRepositories();
@@ -212,12 +215,16 @@ export function useProjectsScreenController(projectId?: string) {
   const models = shell?.models ?? [];
   const selectedModel =
     models.find((model) => model.id === modelId) ?? models[0];
+  const mention = useMentionDirectory(
+    projectId ?? null,
+    shell?.entities ?? NO_ENTITIES,
+  );
   const selectedEntities = useMemo(
     () =>
       selectedEntityIds
-        .map((id) => shell?.entities.find((entity) => entity.id === id))
+        .map((id) => mention.entities.find((entity) => entity.id === id))
         .filter((entity): entity is ProjectEntity => Boolean(entity)),
-    [shell, selectedEntityIds],
+    [mention.entities, selectedEntityIds],
   );
 
   async function run<T>(act: () => Promise<T>): Promise<T> {
@@ -433,6 +440,9 @@ export function useProjectsScreenController(projectId?: string) {
     removeAttachment: attachmentsEnabled ? chatAttachments.remove : undefined,
     selectEntity,
     removeEntity,
+    // The @ tagger's accounts and contacts: the whole workspace directory.
+    mentionEntities: mention.entities,
+    onMentionQueryChange: mention.onMentionQueryChange,
     selectedEntities,
     selectedEntityIds,
     models,
