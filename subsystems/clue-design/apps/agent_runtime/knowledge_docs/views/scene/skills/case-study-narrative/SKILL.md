@@ -57,7 +57,7 @@ multi-page format is needed; do not compress every stage into unreadable labels.
 Read `knowledge/scene/components.md` for native result, quote, qualifier and
 attribution layers, authentic independent logos and optional CTA construction.
 Reuse approved customer photography or authentic product images when useful.
-Follow `knowledge/scene/references.md` for separately generated contextual artwork.
+Follow `/.deepagent/skills/generative-imagery/SKILL.md` for separately generated contextual artwork.
 Generated art may illustrate a concept; it cannot depict a fabricated customer
 event, employee, quotation, dashboard result or endorsement as real evidence.
 

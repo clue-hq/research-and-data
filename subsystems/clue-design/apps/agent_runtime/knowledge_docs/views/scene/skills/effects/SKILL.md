@@ -8,7 +8,7 @@ description: Use when a scene's inspected source treatment or communication need
 Effects serve the chosen direction; they do not establish a default material or
 lighting style. Use native paints/geometry for simple gradients, strokes and
 shadows, preserving editability. Generate texture or complex imagery only when
-that component calls for it; `knowledge/scene/references.md` owns that decision.
+that component calls for it; `/.deepagent/skills/generative-imagery/SKILL.md` owns that decision.
 
 Supported examples (substitute actual kit tokens where appropriate):
 

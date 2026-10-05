@@ -35,6 +35,11 @@ where it is actually sourced. Avoid reducing the customer to a proof badge.
 - **Customer world:** The customer's real product, venue or brand imagery leads,
   with a concise statement of the supported relationship. Useful when what the
   customer makes is more recognizable than an employee portrait.
+
+  Real material from the customer or the person (photos, venue, product) can lead
+  as authentic layers. Generated imagery stays in the seller's look and shows the
+  customer's world only when the seller's own imagery already shows that kind of
+  subject; see `/.deepagent/skills/generative-imagery/SKILL.md`.
 - **Editorial co-brand feature:** Native story title and context lead with two
   independent authentic identities and optional supporting imagery. Useful when
   no suitable portrait exists; it need not look like a press-release lockup.
@@ -47,7 +52,8 @@ angle or authentic scene deliberately without inventing another relationship.
 
 ## Assemble without merging identities
 
-Read `knowledge/scene/components.md` and `knowledge/scene/references.md`.
+Read `knowledge/scene/components.md`, and
+`/.deepagent/skills/generative-imagery/SKILL.md` before any generated layer.
 Headlines, attribution, story text and CTA labels stay native; frames and button
 geometry stay native. Keep each logo, portrait, product image and artwork as an
 independent layer. Do not generate a combined customer/advertiser logo or bake

@@ -90,9 +90,15 @@ Evidence comes from three Conduit → Atrium Hospitality LinkedIn ad runs (run 2
 
 - Run 3 and run 2 used `conduit.ai/og-image.jpg` as the treatment reference. Its description reads
   "warm yellow-green and olive shapes… several soft circular bokeh highlights"; it is a website
-  image tagged `reference_only`, not Conduit's ad look (pastel pink/purple/blue blur).
-- The agent then amplified it: "olive, yellow-green and amber bokeh, with a few soft circular
-  highlights" (run 3), "warm olive and pale gold… gentle circular bokeh" (run 2).
+  image tagged `reference_only`.
+- Correction (2026-10-05, after viewing all 16 harvested ads): Conduit's ads run TWO blur looks —
+  the pastel pink/purple/blue blur AND a blurred outdoor landscape (green, blue sky, touches of
+  yellow/orange: `asset_ad_8ebd0fe1`, `9c1ed170`, `ba691224`, `1130db61`). So a green/yellow
+  landscape blur has a basis in the brand's ads; the og-image was a defensible look, though not
+  from an ad.
+- What had no basis: the agent pushed it to "olive, yellow-green and amber bokeh, with a few soft
+  circular highlights" (run 3) and "warm olive and pale gold… gentle circular bokeh" (run 2) —
+  warmer and more lit than any of the ads.
 - "Quiet hotel front desk at first light" (run 3) and "an unbranded hotel interior" (run 2, with a
   "Hotel Lobby Interior" photo as composition reference) are the agent's own invention: the target
   is a hotel company. No Conduit asset shows a hotel, and no skill asks for the target's world.
@@ -208,7 +214,39 @@ to be pointed at from the `brand-imagery` and `generative-imagery` skills:
 
 ## 7. Trial results
 
-None yet.
+### T5 round 1 (2026-10-05) — 3 runs per arm, run-4 brief, no account research in context
+
+- Every run, both arms, chose Conduit's own imagery as references; none invented a hotel, desk or
+  any subject. Arm A (today's guidance) used the og-image / website hero photo plus 2–3 ads and
+  produced blurred-landscape grounds (sky, foliage, flower bokeh); arm B used ads only and produced
+  pastel washes. Arm A prompts ~1,000+ chars, arm B ~400.
+- Founder verdict: no real difference in brand fit; **arm A's images were the more coherent**,
+  slightly noisier. Website images stay allowed as references.
+- Timing: a run is 2–3 agent steps (~25 s) plus one render (~20 s). Agent ≈ $0.03–0.05, image
+  ≈ $0.08–0.10. In the first attempt 4 of 6 runs hung > 20 min (no step log; likely the day's
+  network hangs, the script waits up to 4 min per call with 3 tries) and were rerun.
+- Round 2 (one arm-B run, wording v2 allowing website images): the agent viewed the website hero
+  photo but referenced only ads; pastel/landscape blend, clean copy space.
+- **Not yet tested:** the real failures (amber bokeh, hotel desk) happened with the full scene
+  prompt and Atrium's account research in context. T5 lacked both, so it could not reproduce them.
+
+Consequence: §5 is NOT adopted for now. Today's guidance stays unless the failure reproduces with
+the full context (round 3).
+
+### T5 round 3 (2026-10-05) — Atrium account research added; arm A vs arm C (A + calm line)
+
+- Arm C = today's guidance + "The ground sits behind copy: ask for a few large, soft areas of colour
+  rather than many small spots, specks or highlights."
+- All six referenced only Conduit's ads and website images; none picked the hotel lobby photo.
+- **The target's world leaked once:** C3's image prompt asked for "like an out-of-focus hotel
+  garden seen through frosted glass"; C1 reasoned "Atrium Hospitality is a hotel operator". C1/C2
+  added "pale gold". A1/A2 named hotels only as exclusions. The rendered images showed no hotel.
+- Calm line works: arm C grounds have fewer, larger, softer colour masses; arm A still shows
+  distinct bokeh discs (A3 most).
+- Timing: first step to image call 16–31 s; first step to finished image ≈ 70–90 s; one image call
+  hit a ConnectError and succeeded on the automatic retry.
+- Proposal from this round: keep today's paragraph, add the calm line and one seller's-look line
+  (the founder's ruling) — no other wording change.
 
 ## Evidence index
 

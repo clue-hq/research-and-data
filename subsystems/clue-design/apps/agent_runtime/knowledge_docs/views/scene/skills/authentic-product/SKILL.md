@@ -16,7 +16,7 @@ as product evidence. If no useful authentic image exists, choose another playboo
 and record the gap unless the request explicitly requires that image.
 
 Read `knowledge/scene/components.md`; if a generated setting helps, also read
-`knowledge/scene/references.md`. Generate only the setting/treatment, with honest
+`/.deepagent/skills/generative-imagery/SKILL.md` (product scene). Generate only the setting/treatment, with honest
 conditioning roles. Product references are not automatically style references.
 
 Review crop, screen legibility, native copy and authentic branding separately.

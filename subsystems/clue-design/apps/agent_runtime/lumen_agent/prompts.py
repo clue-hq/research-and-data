@@ -1358,7 +1358,8 @@ to retain or establish page dimensions, then native text/geometry, authentic ima
 and sized artwork reservations
 before image operations. Required logo source preparation belongs to step 2;
 logo placement belongs to this validated construction. Then generate, edit, crop
-or reuse imagery as the validated direction requires. Inspect generated pixels before placement
+or reuse imagery as the validated direction requires. Before any generate_image call, read
+/.deepagent/skills/generative-imagery/SKILL.md if you have not read it this turn. Inspect generated pixels before placement
 with returned real asset IDs. Preserve independent authentic logos and product
 images; generation cannot certify their exactness. Keep copy and buttons editable.
 Use supplied type and color tokens, text height hugs, checked operations and

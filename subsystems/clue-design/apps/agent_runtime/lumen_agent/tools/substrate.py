@@ -2916,6 +2916,9 @@ class LumenDesignTools:
           (or `target_slot_id`) so the aspect is derived from that frame's geometry —
           images are cropped to fill, never stretched. Optional `aspect_ratio` /
           `width` / `height`, `brand_notes`, `transparent_background`, `label`.
+          `brand_notes` and `reference_framing` are appended to the prompt the image
+          model receives; they follow the same rules as the prompt
+          (`/.deepagent/skills/generative-imagery/SKILL.md`).
           `reference_asset_ids` selects up to four inspected style inputs by ID
           from this run's attachments, brand kit, workspace library or scene.
           Omit it to use turn attachments; [] uses no references. A selection
