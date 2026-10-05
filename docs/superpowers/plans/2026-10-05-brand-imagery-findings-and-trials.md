@@ -248,6 +248,34 @@ the full context (round 3).
 - Proposal from this round: keep today's paragraph, add the calm line and one seller's-look line
   (the founder's ruling) — no other wording change.
 
+### Guidance rewrite (2026-10-05, `8aba75529`)
+
+Founder redirected: the guidance must be a brand-agnostic method by image job, not background
+rules. `generative-imagery` became the single home (decide the job; seller's imagery for the look;
+subject from the message; the target account's world only when the seller's own imagery shows that
+kind of subject; short prompt), with pointers from references.md, components.md and the skills.
+
+### T5 round 4 (2026-10-05) — committed guidance, Conduit + Insight Health × background + illustration
+
+- 8 runs, all finished in ~1 min (agent 2–3 steps, render 22–45 s). No failures.
+- Brand-agnostic: Insight backgrounds came out deep forest green with a faint hexagon pattern (its
+  report-teaser ads + its own geometric website backgrounds); Insight illustrations are white report
+  cards with teal line icons on a mint glow (its own illustrations). Conduit backgrounds are pastel
+  blurs. Each seller's look, from its own references.
+- Conduit illustrations: a painterly hotel lobby with one person at the desk — subject from the
+  message and conduit.ai's own homepage lobby photo (allowed under the 2026-10-05 ruling); style from
+  Conduit's own painterly landscape illustrations. Run 1 set it "at night, warm lamps" from the
+  account research's overnight context.
+- **Defect:** `conduit_background_1` came back with ad copy baked in ("Better guest experiences,
+  together…") although the prompt said "no text" and the framing said not to copy words: two of
+  its four references were finished ads full of text. Fix proposed for the skill: prefer text-free
+  references; if the look sits behind text or cards in an ad, crop the clean area
+  (`crop_image`) and use the crop. The skill's step 7 check (view the output) would catch it in a
+  real turn; the trial does not run that step.
+- Side findings: the Images API returns 3:4 (1152×1536) when 4:5 is asked (4:5 is not in its enum);
+  5 of Conduit's 506 asset descriptions are junk from the describer (DeepSeek v4.1 Flash) —
+  "Describe each image below.", "N/A", a Thai word, the asset id itself (the Conduit wordmark).
+
 ## Evidence index
 
 - Run 3 image calls: session `dsess_76efab4f…/turns/run_fac28447…/logs/run.jsonl` (15:55:32, 15:55:39).
