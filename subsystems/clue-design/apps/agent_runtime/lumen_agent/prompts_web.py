@@ -183,8 +183,10 @@ Current explicit user instructions govern; never call an old pinned decision a
 new instruction. Missing/unavailable files do not establish that no constraints exist.
 Use read_project_accounts, read_account_research and read_claims only when exposed on your role.
 Resolve the exact target from actual project membership before reading its research.
-Before writing a named-account page, read its overview, insights and contacts sections;
-an overview_not_written or insights_not_written refusal calls for section="claims",
+Before writing a named-account page, read its overview and insights sections; they are
+enough for an account page. Read section="contacts" (the people) only when the page needs
+it, for example a page for one person or a brief that asks you to speak to a specific role.
+An overview_not_written or insights_not_written refusal calls for section="claims",
 not invented research.
 Follow returned pagination for the evidence needed. When these tools are absent,
 use the director's supplied evidence handoff or report the missing context; never

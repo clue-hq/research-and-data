@@ -7,13 +7,15 @@ edits retain their narrower scope. Work in the existing plan, not a new schema.
 
 Read project membership and research through [identity and evidence](identity-and-evidence.md).
 A target may lack a card; use available scoped reads. Keep research and design
-account IDs distinct. Before writing a named-account page, read three sections of
-`read_account_research`: **overview**, **insights** and **contacts**, following every
-returned `next_offset` until null. Each page holds whole sections. A section marked
-`body_truncated` was larger than a page on its own and its tail is missing, so treat it
-as partial. The contacts tell you who on the buying committee the page must persuade
-and what each person cares about; use that to choose the argument, never to name
-them on an account page.
+account IDs distinct. Before writing a named-account page, read two sections of
+`read_account_research`: **overview** and **insights**, following every returned
+`next_offset` until null. They are enough for an account page. Each page holds whole
+sections. A section marked `body_truncated` was larger than a page on its own and its
+tail is missing, so treat it as partial.
+Read **contacts** (the people on the buying committee) only when the page needs them:
+a page for one person, or a brief that asks you to speak to a specific role. A whole
+committee runs to many pages, so read the person you need, not everyone. What you learn
+about people shapes the argument; never name them on an account page.
 For a contact page, read available professional evidence using the returned person
 entity ID. Then read only the claim families needed for the selected argument.
 In the plan record **read coverage**: sections/contact evidence read, outstanding

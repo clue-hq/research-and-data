@@ -89,9 +89,11 @@ def make_platform_read_tools(tools: Any, reads: Any) -> list:
         - section="claims": the facts research holds, each with its source; field_prefix narrows
           to one family named in the answer's prefixes.
         Every section comes in pages: when next_offset is not null, read again with
-        offset=next_offset before you summarize or count. Read the overview, insights and contacts
-        before writing a page for a named account: they are where the account-specific reasons
-        come from."""
+        offset=next_offset before you summarize or count. Read the overview and insights before
+        writing a page for a named account: they are where the account-specific reasons come
+        from, and they are enough for an account page. Read contacts only when the page needs
+        the people, for example a page for one person or a brief that names a role to speak to;
+        a committee runs to many pages."""
         return _call(
             tools,
             reads,

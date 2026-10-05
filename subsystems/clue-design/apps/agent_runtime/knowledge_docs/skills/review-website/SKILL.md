@@ -61,8 +61,8 @@ deviation even when clone geometry or another typography role passes.
    rendered text and buttons, including captured unslotted labels. Name omitted
    explanations, unsupported additions and repeated mechanisms by section. The
    plan is a comparison aid, not evidence that its claims or promises are true.
-   Verify read coverage includes relevant overview/committee/approach/watch-outs;
-   then point to the real relevance, product mechanism, evidence and evaluation
+   Verify read coverage includes the overview and insights (contacts only when the
+   page needed them); then point to the real relevance, product mechanism, evidence and evaluation
    material. Missing substance, internal provenance/disclaimer copy, or identity
    placement that contradicts the shell brief is an actionable request-satisfaction
    defect. Green geometry checks do not make a thin or incoherent account page acceptable.
