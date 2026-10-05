@@ -17,10 +17,13 @@ export function OnboardingScreen({
   flow,
   step,
   autoAdvance,
+  notice = null,
 }: {
   flow: OnboardingFlow;
   step: OnboardingStep;
   autoAdvance: boolean;
+  /** One line above a sign-in card, e.g. why the user was sent back to sign in. */
+  notice?: string | null;
 }) {
   const controller = useOnboardingController({ step, autoAdvance });
   const isAuthScreen = [
@@ -73,6 +76,7 @@ export function OnboardingScreen({
             draft={controller.draft}
             emailMode={step.endsWith("email")}
             error={controller.error}
+            notice={step.startsWith("sign-in") ? notice : null}
             onChooseEmail={() => controller.chooseAuthMethod("email")}
             onChooseGoogle={() => controller.chooseAuthMethod("google")}
             onDraftChange={controller.updateDraft}

@@ -1,12 +1,12 @@
 import { redirect } from "next/navigation";
 import { isAuthenticationEnabled } from "@/auth/config";
-import { SessionExpiredCard } from "@/features/session/components/session-expired-card";
+import { SessionExpiredRedirect } from "@/features/session/components/session-expired-redirect";
 import { clearWorkspaceSelection } from "@/features/session/data/session-actions";
 
 /**
  * The approved onboarding sign-in card owns normal authentication. This compatibility route
- * keeps the explicit expired-session cleanup added by FI-2 before handing ordinary sign-in to
- * the headless-Clerk onboarding flow.
+ * is where every expired session lands: it does the FI-2 cleanup automatically, then hands
+ * over to the onboarding sign-in page (which shows a one-line "session expired" notice).
  */
 export default async function SignInPage({
   searchParams,
@@ -22,10 +22,10 @@ export default async function SignInPage({
   }
   const { reason } = await searchParams;
   if (reason === "session_expired") {
-    // The card first tries to reconnect a still-live browser session and return to the app.
+    // First tries to reconnect a still-live browser session and return to the app.
     return (
       <main className="grid min-h-screen place-items-center p-6">
-        <SessionExpiredCard onClearWorkspace={clearWorkspaceSelection} />
+        <SessionExpiredRedirect onClearWorkspace={clearWorkspaceSelection} />
       </main>
     );
   }
