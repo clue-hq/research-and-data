@@ -58,7 +58,9 @@ already landed, so it was merged in first (`fa7d5f9a9`). One conflict in
   still-unexpired session JWT cookie (60 s lifetime, plus #99's 60 s backend leeway) that
   Clerk-js cleared on load. That is about why a session looks alive, not where it lands, so it
   was not chased.
-- Not walked live: the anti-loop path (live Clerk session that the backend rejects → reconnect →
-  bounce back → sign out → sign-in page). Signing in on :3070 against trenton's API would
-  exercise it exactly (3070 is not an authorized party there), but it needs the founder's
-  sign-in.
+- Anti-loop path walked live (founder sign-in on :3070, 2026-10-06): trenton's API does not list
+  :3070 in `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES`, so `/session/establish` got a 401 → expired route →
+  reconnect succeeded → `/` → 401 again → expired route inside the 30 s window → `endSession`
+  (clear + Clerk sign-out) → `/onboarding/sign-in?reason=session_expired`. One bounce, no loop.
+  Caveat for anyone reusing :3070: signing in there can never succeed against a lane API that
+  doesn't authorize the port; it lands back on the expired notice by design.
