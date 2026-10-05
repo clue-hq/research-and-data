@@ -299,3 +299,4 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   in_progress and returns 'completed' as a no-op, attempt 1 then suspends the job -> stranded
   suspended job with no task (Stripe Cloudinary/Tencent 10:46). Also a turn whose start raises
   (ExecutionConflict) gets no terminal agent_turn_event and no chat message.
+- 2026-10-05: full record of today's multi-worker/multi-workspace failures in _memory/2026-10-05-multi-worker-multi-workspace-failures.md
