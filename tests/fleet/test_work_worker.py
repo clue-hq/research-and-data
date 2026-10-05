@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
+import structlog
 from pydantic import JsonValue
 from sqlalchemy.exc import InterfaceError
 
@@ -63,7 +64,9 @@ def test_slots_cannot_reacquire_their_workers_active_work() -> None:
         await worker._run_task(following, handler, slot=1)
         assert len(handler.contexts) == 1
         assert leases.generations[task.work_id] == 1
-        assert queue.requeued == [(following.task_id, None)]
+        # Bounced off its own worker's lease: handed back for later, and the claim never ran.
+        assert queue.requeued == [(following.task_id, timedelta(seconds=0.001))]
+        assert queue.uncounted == [following.task_id]
         finish.set()
         await first
         await worker._run_task(following, handler, slot=2)
@@ -79,6 +82,7 @@ class _Queue:
         self.rows = deque(rows)
         self.finished: list[tuple[UUID, FleetTaskStatus, dict[str, JsonValue]]] = []
         self.requeued: list[tuple[UUID, timedelta | None]] = []
+        self.uncounted: list[UUID] = []
         self.claimed_with: dict[FleetTaskKind, tuple[TaskCapability, ...]] = {}
 
     async def claim_next(
@@ -123,10 +127,17 @@ class _Queue:
         return True
 
     async def requeue(
-        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+        self,
+        *,
+        task_id: UUID,
+        worker_id: str,
+        delay: timedelta | None = None,
+        uncount_attempt: bool = False,
     ) -> bool:
         del worker_id
         self.requeued.append((task_id, delay))
+        if uncount_attempt:
+            self.uncounted.append(task_id)
         return True
 
     async def enqueue(
@@ -374,6 +385,68 @@ def test_delayed_requeue_is_delegated_to_durable_queue_without_sleeping_worker()
         assert len(leases.released) == 1
 
     asyncio.run(scenario())
+
+
+class _HeldLeases(_Leases):
+    """Another worker holds every lease."""
+
+    async def acquire(
+        self,
+        *,
+        work_id: WorkId,
+        worker_id: str,
+        ttl: timedelta,
+    ) -> WorkLeaseRow | None:
+        del work_id, worker_id, ttl
+        return None
+
+
+def _bounce_off_held_lease(waited: timedelta) -> tuple[_Queue, _Handler, list[dict]]:
+    """Claim one task that has been queued for ``waited`` while its lease is held elsewhere."""
+    task = _task(FleetTaskKind.ARV2_ACCOUNT_RESEARCH)
+    task = task.model_copy(update={"enqueued_at": task.enqueued_at - waited})
+    queue = _Queue([task])
+    handler = _Handler(task.kind)
+    worker = LeasedWorkWorker(
+        handlers=(handler,),
+        queue=queue,
+        leases=_HeldLeases(),
+        worker_id="waiting-worker",
+        poll_interval=1.0,
+        heartbeat_interval=10,
+        lease_ttl=timedelta(seconds=30),
+    )
+    with structlog.testing.capture_logs() as events:
+        assert asyncio.run(worker.drain_once())
+    return queue, handler, events
+
+
+def test_a_held_lease_hands_the_task_back_for_later_without_counting_the_claim() -> None:
+    """2026-10-05 (trenton): siblings behind a held lease were re-claimed every poll — one task
+    reached 883 attempts in four minutes, none of it logged. The wait now grows with how long
+    the task has been queued, and a claim that never ran is not an attempt."""
+    queue, handler, events = _bounce_off_held_lease(timedelta(seconds=20))
+
+    assert handler.contexts == []
+    assert queue.finished == []
+    ((task_id, delay),) = queue.requeued
+    assert delay is not None and timedelta(seconds=10) <= delay < timedelta(seconds=11)
+    assert queue.uncounted == [task_id]
+    (event,) = [e for e in events if e["event"] == "worker.lease_held_requeue"]
+    assert event["task_id"] == str(task_id) and event["log_level"] == "debug"
+
+
+@pytest.mark.parametrize(
+    ("waited", "expected"),
+    [
+        (timedelta(0), timedelta(seconds=1)),  # never less than one poll interval
+        (timedelta(minutes=10), timedelta(seconds=30)),  # never more than one lease TTL
+    ],
+)
+def test_the_held_lease_wait_is_bounded(waited: timedelta, expected: timedelta) -> None:
+    queue, _, _ = _bounce_off_held_lease(waited)
+    ((_, delay),) = queue.requeued
+    assert delay is not None and abs(delay - expected) < timedelta(milliseconds=100)
 
 
 def test_requeue_delay_requires_requeue_and_non_negative_duration() -> None:
