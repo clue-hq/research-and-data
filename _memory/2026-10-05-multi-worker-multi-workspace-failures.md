@@ -142,3 +142,4 @@ code change), **MINE** (caused by how I operated the lane, not by the product).
   Volvo Group held (not started).
 - Running by hand and NOT stopped by `dev_stack down`: 4 extra ingestion coordinators, the 2 mismatched
   extra workers were retired once idle (`74f06c95` at 11:26:31, `09200c59` at 11:34:21). `extra5`/`extra6` ARE stopped by `down`.
+- 2026-10-05: filed clue-hq/research-and-data#99 — users logged out on weak networks (session_expired redirect on any missing token / backend 401, no retry; backend Clerk leeway 5 s); founder wants 3h+ sessions.
