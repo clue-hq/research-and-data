@@ -43,7 +43,16 @@ _EVALUATE_JS = r"""
       borderRadius: cs.borderRadius, area: c.w * c.h,
     };
   };
-  const take = (sel, n) => Array.from(document.querySelectorAll(sel)).slice(0, n);
+  // Only what a visitor can see is evidence of the brand's type: a heading inside a closed
+  // cookie modal, behind opacity 0 or under display:none once became a kit's headline.
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    if (typeof el.checkVisibility === 'function'
+        && !el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})) return false;
+    return !el.closest('dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"]');
+  };
+  const take = (sel, n) => Array.from(document.querySelectorAll(sel)).filter(visible).slice(0, n);
   const samples = [];
   for (const el of take('body', 1)) samples.push(sample(el, 'body'));
   for (const t of ['h1','h2','h3','h4','h5','h6']) for (const el of take(t, 3)) samples.push(sample(el, t));
@@ -54,7 +63,8 @@ _EVALUATE_JS = r"""
   const all = Array.from(document.querySelectorAll('*')).map((el) => {
     const r = el.getBoundingClientRect(); const c = clip(r);
     return {el, area: c.w * c.h};
-  }).filter((x) => x.area > 0).sort((a, b) => b.area - a.area).slice(0, 40);
+  }).filter((x) => x.area > 0).sort((a, b) => b.area - a.area)
+    .filter((x) => visible(x.el)).slice(0, 40);
   for (const x of all) samples.push(sample(x.el, x.el.tagName.toLowerCase()));
 
   const props = {};

@@ -98,7 +98,14 @@ def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
             by_label[sample.label] = sample
 
     selected = list(by_label.values())
-    heading_family = _family_from(selected, _HEADING_LABELS, evidence.fonts, "heading")
+    # The H1's own face is the brand's headline face. A frequency vote across h1-h3 let two sans
+    # section headings overwrite a serif H1 (2026-09-29 audit); the vote is the fallback only.
+    h1 = by_label.get("h1")
+    heading_family = (
+        h1.family
+        if h1 is not None and _resolved_family(h1.family)
+        else _family_from(selected, _HEADING_LABELS, evidence.fonts, "heading")
+    )
     body_family = _family_from(selected, _BODY_LABELS, evidence.fonts, "body")
 
     # PDF-shaped labels
@@ -117,7 +124,12 @@ def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
     if body_family is None:
         body_family = heading_family
 
-    headline_sample = by_label.get("h1") or by_label.get("pdf-heading")
+    # A page with no H1 (headings built from h2s, or styled divs plus an h2) still shows its
+    # biggest heading: that is the headline's measurement, not the 32px/700 default, which used
+    # to come out smaller than the measured title.
+    headline_sample = (
+        by_label.get("h1") or by_label.get("pdf-heading") or _largest_heading(by_label)
+    )
     body_sample = by_label.get("body") or by_label.get("p") or by_label.get("pdf-body")
 
     headline_size = _DEFAULT_HEADLINE
@@ -144,6 +156,15 @@ def resolve_anchors(evidence: BrandEvidence) -> TypeAnchors:
         body_weight=int(body_weight),
         samples=by_label,
     )
+
+
+def _largest_heading(by_label: dict[str, TypeSample]) -> TypeSample | None:
+    """The biggest measured h2/h3, for a page that has no H1."""
+    candidates = [
+        by_label[label] for label in ("h2", "h3")
+        if label in by_label and _positive(by_label[label].size_px)
+    ]
+    return max(candidates, key=lambda sample: sample.size_px, default=None)
 
 
 def _round_half(value: float) -> float:
@@ -239,20 +260,26 @@ def build_type_styles(
     H = anchors.headline_size
     hw = anchors.heading_weight
     bw = anchors.body_weight
+    # Small emphasis roles (eyebrow, label) borrow the weight the site gives its buttons when
+    # that was measured; otherwise they keep the semibold default.
+    button = anchors.samples.get("button")
+    emphasis = int(button.weight) if button is not None and _positive(button.weight) else 600
 
     # (role, size, weight, line_height, color, letter_spacing)
     spec: list[tuple[str, float, int, float, str, float]] = [
-        ("display", H * 1.6, max(hw, 700), 1.05, "text.primary", -0.02),
+        # Display and stat are computed, not measured: they carry the headline's own weight. The
+        # old floor of 700 made every ad headline bold on light-type brands (Stripe's 300).
+        ("display", H * 1.6, hw, 1.05, "text.primary", -0.02),
         ("headline", H, hw, 1.1, "text.primary", -0.01),
         ("title", H * 0.72, hw, 1.15, "text.primary", 0.0),
-        ("subtitle", B * 1.25, 500, 1.3, "text.secondary", 0.0),
+        ("subtitle", B * 1.25, bw, 1.3, "text.secondary", 0.0),
         ("body", B, bw, 1.45, "text.primary", 0.0),
         ("body.small", B * 0.875, bw, 1.4, "text.primary", 0.0),
         ("caption", B * 0.75, 500, 1.35, "text.secondary", 0.0),
-        ("eyebrow", B * 0.75, 600, 1.2, "text.brand", 0.08),
-        ("label", B * 0.8125, 600, 1.2, "text.primary", 0.0),
+        ("eyebrow", B * 0.75, emphasis, 1.2, "text.brand", 0.08),
+        ("label", B * 0.8125, emphasis, 1.2, "text.primary", 0.0),
         ("cta", B, 600, 1.2, cta_color, 0.0),
-        ("stat", H * 1.25, max(hw, 700), 1.0, "text.brand", 0.0),
+        ("stat", H * 1.25, hw, 1.0, "text.brand", 0.0),
         ("legal", B * 0.6875, bw, 1.3, "text.muted", 0.0),
     ]
 
@@ -286,7 +313,19 @@ def build_type_styles(
                         type_unit_diagnostic(role, "letter_spacing", anchor.letter_spacing, anchor.pointer.locator)
                     )
         family = anchors.heading_family if role in _HEADING_ROLES else anchors.body_family
-        font_asset = "brand" if role in _HEADING_ROLES else ("body" if anchors.body_family != anchors.heading_family else "brand")
+        # A measured role keeps its own face when the kit carries that face (an h2 set in the body
+        # family stays in the body family). A third family the kit has no asset for is left alone.
+        if (
+            anchor is not None
+            and _resolved_family(anchor.family)
+            and anchor.family in (anchors.heading_family, anchors.body_family)
+        ):
+            family = anchor.family
+        font_asset = (
+            "brand"
+            if family == anchors.heading_family
+            else ("body" if anchors.body_family != anchors.heading_family else "brand")
+        )
 
         # Never declare a weight this family cannot paint.
         available = shipped.get(family)

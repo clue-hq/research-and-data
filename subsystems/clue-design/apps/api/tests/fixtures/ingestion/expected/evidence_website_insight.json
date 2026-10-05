@@ -2090,7 +2090,7 @@
               "font_asset": "brand",
               "font_family": "Aeonik",
               "font_size": 77.0,
-              "font_weight": 700,
+              "font_weight": 600,
               "kind": "style",
               "letter_spacing": -0.02,
               "line_height": 1.05
@@ -2195,7 +2195,7 @@
               "font_asset": "brand",
               "font_family": "Aeonik",
               "font_size": 60.0,
-              "font_weight": 700,
+              "font_weight": 600,
               "kind": "style",
               "letter_spacing": 0.0,
               "line_height": 1.0
@@ -2216,7 +2216,7 @@
               "font_asset": "brand",
               "font_family": "Aeonik",
               "font_size": 20.0,
-              "font_weight": 500,
+              "font_weight": 400,
               "kind": "style",
               "letter_spacing": 0.0,
               "line_height": 1.3
