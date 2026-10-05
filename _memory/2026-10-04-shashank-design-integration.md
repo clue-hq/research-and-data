@@ -300,3 +300,10 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   suspended job with no task (Stripe Cloudinary/Tencent 10:46). Also a turn whose start raises
   (ExecutionConflict) gets no terminal agent_turn_event and no chat message.
 - 2026-10-05: full record of today's multi-worker/multi-workspace failures in _memory/2026-10-05-multi-worker-multi-workspace-failures.md
+- 2026-10-05 a5ac209c8: h2/h3 section title = size filling most heading space (count x size, ties
+  larger), up to 20 visible headings per tag, nav/footer skipped (14-site survey: 14/14 vs 8/14 for
+  first-visible; survey JSON in scratchpad heading_survey.json); variable-font instancing also cuts
+  measured weights (Stripe 300). Verified with a standalone capture->roles script (no DB/AI):
+  Stripe 48/32 @300, Garner title 56, Conduit/AltCarbon unchanged. Live kits in clue_trenton still
+  hold the old values until re-extracted; ingestion processes (pool + 4 extra coordinators) run the
+  OLD code until restarted.
