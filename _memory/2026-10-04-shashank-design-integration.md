@@ -237,3 +237,20 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   A5 composed-type mismatch goes BACK to the agent (final call pending on run time — a single page
   must not take ~1 hour); execution = I implement directly, one whole-branch reviewer at the end.
 - Plan: A3 code first, then ONE Head of ABM v72 / manual v18 carrying A1 + A3 tool text.
+
+## Live test of A4 + infra (2026-10-04/05)
+- Founder rulings: built features stay ON in live runs (image describe/vision/brief); web AND
+  scene-ad design agents solo by default (`LUMEN_AGENT_SCENE_SOLO=1` added to .env + both
+  .env.example; web was already 1). Re-extract kits from scratch instead of a repair script
+  (repair script deleted before commit).
+- Conduit re-extract (ingest_be2a8d80…, this branch's code) -> kit v2: headline 56/400 (was
+  32/500 default), title 48/400 (was 23/500), display 89.5/400, stat 70/400, label 500 (was 700);
+  matches conduit.ai. 40 approved sections over 6 pages (was 1 of 12) -> 0d06cd1d1 URL fix proven.
+  BUT 715/747 image descriptions failed: shared clue-pg-papeete hit max_connections=100 and the
+  ingestion analysis children crashed on start (652 "Image worker did not complete analysis");
+  21 failed separately on an empty `usage` field in the describe model output (pre-existing bug).
+- Fix: trenton DB moved to its own container clue-pg-trenton @127.0.0.1:55160 (300 conns);
+  dump/restore verified identical. Old copy kept on papeete.
+- Regression run of 34 typography-related design test files was invalidated by the connection
+  exhaustion (89 failures, untrustworthy) -> rerun owed on a throwaway DB on 55160.
+- Owed before commit: editor checks (Conduit ad + page with kit v2), describe rerun, regression rerun.
