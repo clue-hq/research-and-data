@@ -134,7 +134,15 @@ code change), **MINE** (caused by how I operated the lane, not by the product).
   `only_if_work_idle`). `tests/fleet` + `tests/arv2` on a throwaway pg16 DB: all pass except
   `test_quality_claims_db.py::test_provider_value_and_web_quote_use_originals_and_replay`, which
   fails identically on the unchanged base (pre-existing, not investigated). Worker-driving API
-  tests (146) pass; mypy clean. **Owed:** a live multi-worker walk to see the spin gone.
+  tests (146) pass; mypy clean.
+- **Replay (no LLM, throwaway pg16):** real `LeasedWorkWorker`/`DbWorkQueue`/leases, 4 workers × 3
+  slots at production fleet timings, one account, a 60 s stand-in reconciliation, a claim change
+  every 8 s for 120 s, four 10 s sweeps offering what `sweep_quality` offers. Before the fix
+  (`47ce65b69`): 16 tasks, up to 8 live on the lease, 986 claims (970 bounced), worst task 263
+  attempts, 14 superseded runs. With the fix: 2 tasks, max 1 live, 2 claims, 0 bounces, 0
+  superseded. Fixed code with the old-style offer (safety net alone): 122 claims, attempts ≤ 1.
+  Catch-up 5.1–5.5 s after the last signal in all three; both runs applied twice. Script was a
+  scratchpad file, not committed. **Owed:** a live multi-worker walk on a lane (spends LLM).
 
 ## 7. Smaller issues seen along the way
 
