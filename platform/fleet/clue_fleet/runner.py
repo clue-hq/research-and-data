@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import signal
+from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
 
 
@@ -23,6 +24,20 @@ class RunnableWorker(Protocol):
 
 
 _DRAIN_SIGNALS = (signal.SIGTERM, signal.SIGINT)
+
+
+def install_thread_pool(loop: asyncio.AbstractEventLoop, *, max_workers: int) -> None:
+    """Give a worker process's loop a default thread pool sized for its blocking calls.
+
+    Every provider call runs in ``asyncio.to_thread``, and so does the loop's own DNS lookup for a
+    fresh database connection — the lease heartbeat's included. The default pool is
+    ``min(32, cpu + 4)`` threads; a few research jobs, each allowed several provider calls at once
+    and some held for minutes, fill it, and the heartbeat then waits behind them (2026-10-05).
+    Threads are started only as calls need them, so an idle worker costs nothing.
+    """
+    loop.set_default_executor(
+        ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="clue-fleet")
+    )
 
 
 async def run_worker(worker: RunnableWorker, *, install_signal_handlers: bool = True) -> None:
