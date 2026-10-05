@@ -37,7 +37,7 @@ export default async function OnboardingStepPage({
   searchParams,
 }: {
   params: Promise<{ step: string }>;
-  searchParams: Promise<{ hold?: string }>;
+  searchParams: Promise<{ hold?: string; reason?: string }>;
 }) {
   const [{ step }, query, flow] = await Promise.all([
     params,
@@ -51,6 +51,11 @@ export default async function OnboardingStepPage({
     <OnboardingScreen
       autoAdvance={query.hold !== "1"}
       flow={flow}
+      notice={
+        query.reason === "session_expired"
+          ? "Your session expired. Please sign in again."
+          : null
+      }
       step={step}
     />
   );
