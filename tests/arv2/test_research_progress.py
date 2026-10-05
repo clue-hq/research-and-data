@@ -230,6 +230,8 @@ def test_a_suspended_job_is_paused_not_finished() -> None:
     assert card.progress_pct == 0
     assert (card.requested_accounts, card.queued, card.running, card.finished) == (10, 0, 0, 0)
     assert card.pill == "needs_attention"
+    # A suspended job always has a queued task, so the line says it continues on its own.
+    assert card.attention[0].reason == "paused, resuming automatically"
     # ... and a job paused further along still keeps the quarters it walked, and only those.
     paused_late = job("Late", status="suspended", stage="committee", account_id=uuid4())
     assert account_score(paused_late, []) == 0.5
