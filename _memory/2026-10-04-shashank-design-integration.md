@@ -283,3 +283,19 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   pkill -f "^.venv/bin/python -m lumen_api.ingestion_pool --role coordinator".
 - ICP turns sent for all three: Stripe thr_32b10e17… (retry), Garner Health thr_af77844e…,
   AltCarbon thr_ea2b5d4d….
+- 2026-10-05 LESSON (my mistake): extra fleet workers started with only `source .env` lack the
+  stack's PLATFORM_ENV overrides (CLUE_DESIGN_RUNTIME_ENABLED=1, CLUE_DESIGN_API_BASE_URL,
+  CLUE_AGENT_WORKSPACE_ROOT, CLUE_PAGES_* local posture). A turn that ran on one and was retried on a
+  stack worker failed with ExecutionConflict ("execution id was replayed with a different recipe,
+  scope, or parameters") and the chat showed nothing (AltCarbon turn 7aa3a9fe, last event stays
+  'requested'). Extra workers must be started with the same env as scripts/dev_stack.sh
+  start_workers and the absolute interpreter path ($ROOT/.venv/bin/python) so `down` stops them.
+  Replaced: killed the 2 idle bad ones, started extra5/extra6 correctly; the 2 busy bad ones are
+  killed by a watcher once they hold no claimed task (SIGTERM would suspend their research).
+- Not a worker shortage: queue empty, 9/20 slots free. Stripe's "Cloudinary: paused, waiting for a
+  worker" is just the UI wording for a suspended job (held by request).
+- Bug to fix (not fixed): a fleet worker that blocks its event loop (sync network calls, e.g.
+  model_windows urlopen) misses lease renewals; the task is re-offered, attempt 2 sees the job
+  in_progress and returns 'completed' as a no-op, attempt 1 then suspends the job -> stranded
+  suspended job with no task (Stripe Cloudinary/Tencent 10:46). Also a turn whose start raises
+  (ExecutionConflict) gets no terminal agent_turn_event and no chat message.
