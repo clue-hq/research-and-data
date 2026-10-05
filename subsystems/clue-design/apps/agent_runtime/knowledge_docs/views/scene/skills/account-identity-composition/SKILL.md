@@ -84,18 +84,20 @@ support first; place an adjacent artwork region after the support's actual last
 line plus the intended breathing room. Recompute that boundary after resizing
 either region. An image's pale or transparent-looking pixels still occupy its
 whole rectangle: for text-over-image, put the image behind the text and verify
-local contrast; for separate regions, keep their content clear. Match a generated
-image's ground to the neighboring field, or use a deliberate frame/bleed supported
-by the references. View their boundary in the composite before accepting it.
+local contrast; for separate regions, keep their content clear. Where a generated
+image meets the neighbouring field, decide its edge under
+`/.deepagent/skills/generative-imagery/SKILL.md`, or use a deliberate frame or bleed
+supported by the references. View their boundary in the composite before accepting it.
 Meet the minimum text size as well as visual hierarchy. Its floor
 is a rejection threshold, not the final size or proof that every face reads well.
 
 Choose one visual idea that supports the evidenced proposition. An attractive
 unrelated product card is not proof of a different workflow. For a new concept,
 vary the depicted idea as well as the crop. For a faithful variant or background
-replacement, preserve the requested concept and change that layer only. Preserve
-the advertiser's observed material, color and blur/texture language. Generate the separate artwork; keep
-original logos, factual product pixels and native copy independent. A new backdrop
+replacement, preserve the requested concept and change that layer only. Generate the
+separate artwork under `/.deepagent/skills/generative-imagery/SKILL.md`, taking its look
+from the advertiser's own imagery; keep original logos, factual product pixels and
+native copy independent. A new backdrop
 behind the same unrelated card does not make a new concept.
 
 ## 4. Bind, render and judge the whole ad

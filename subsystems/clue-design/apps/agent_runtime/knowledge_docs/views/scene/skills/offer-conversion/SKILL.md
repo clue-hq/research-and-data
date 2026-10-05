@@ -43,7 +43,8 @@ Consider these distinct possibilities against the inspected references:
 These are reasoning options, not fixed regions. Preserve the selected original
 ad's hierarchy, artwork treatment, logo relationship and CTA treatment when the
 request calls for continuity. Vary the supported message or subject deliberately;
-do not replace material imagery with a flat field merely to fit more copy.
+do not replace the original's imagery with a flat field merely to fit more copy;
+new imagery follows `/.deepagent/skills/generative-imagery/SKILL.md`.
 
 ## Compose and check the decision
 

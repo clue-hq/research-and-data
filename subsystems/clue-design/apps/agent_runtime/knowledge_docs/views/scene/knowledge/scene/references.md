@@ -1,5 +1,10 @@
 # Shared image and source direction
 
+This file covers reference roles, the generation and edit calls, custody of
+reference bytes and contrast checks. What to generate and how to write the prompt
+are in `/.deepagent/skills/generative-imagery/SKILL.md`; read it before any
+`generate_image` call.
+
 Study advertiser-relevant references before deciding what to draw or write.
 Prefer the supplied examples and actual advertiser campaigns for brand treatment;
 use other references for a clearly named purpose. Inspect each relevant source's
@@ -47,9 +52,7 @@ Exact reproduction follows the user's request; otherwise preserve the defining
 properties intentionally.
 
 Choose intent explicitly: native, reuse, edit, close_companion, new_concept or
-palette_only. Preserve and vary choices describe observable properties. A new
-subject does not authorize invented lighting or materials: do not translate a
-concept word into a luminous network unless the sources or request justify it.
+palette_only. Preserve and vary choices describe observable properties.
 Matching palette and dot patterns alone cannot establish fidelity.
 
 For a creation or change request that asks for new imagery, the deliverable
@@ -72,12 +75,10 @@ not attach it. Omission uses automatic turn attachments, not the library images
 you viewed; an explicit empty list deliberately uses none. When a selected source
 is unavailable, repair the selection rather than silently generating without it.
 
-Specify the component, aspect, quiet copy region and observed treatment. Describe
-material, edge softness/blur, tonal range, depth and texture scale as they appear
-in the sources, then name deliberate changes. Preserve those qualities where
-the direction requires them; replacing textured imagery with a flat brand color
-changes the treatment. Keep the quiet region readable through its actual tone
-and composition, without erasing the defining material behavior.
+**Generated imagery.** Before writing any `generate_image` call, read
+`/.deepagent/skills/generative-imagery/SKILL.md` if you have not read it this
+turn. In short: decide what the image is for, take its look only from the
+seller's own imagery, and ask for nothing those references do not show.
 
 For a style change that needs selected references, use `generate_image` with
 those inputs, inspect the result, then `asset(action="place", asset_id=...,

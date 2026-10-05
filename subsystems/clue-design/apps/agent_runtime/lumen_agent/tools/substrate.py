@@ -2898,29 +2898,73 @@ class LumenDesignTools:
         crop_rect: list[Any] | None = None,
         frame_index: StrictInt | None = None,
     ) -> str:
-        """Create, crop or place images. Pick `action`:
-        - generate_image: make a new image from a prompt. It is registered and returns its asset_id but is
-          not placed; view it, then place it yourself. The result reports the references it used.
-        - edit_image: change the image already placed in a node (recolour, warmth, background, fix a flawed
-          subject) without changing the composition. The result goes back into the same node, in the same
-          place. Prefer it over a new image when the image is right but flawed.
-        - crop_image: cut an exact rectangle out of an original image, with no model and no resampling. It
-          returns a separate, unplaced image and a crop receipt; view it, then place it in its own image
-          node. It can't recover hidden or missing parts, or remove a background inside the rectangle.
-          Rotated (EXIF-oriented) or unsupported images are refused.
-        - generate_qr: make a QR code from a URL or text.
-        - place: put an image you generated or cropped this run, or a library image, into an image node,
-          an empty leaf frame you reserved for it, or an image slot. A library image is registered into the
-          scene for you. The node keeps its id and geometry, and a vector image stays a native vector. You
-          don't need to declare an empty image node first. Reversible.
-        - use_brand_asset: put one of the brand kit's logos or images into a node or slot, recorded as
-          coming from the brand kit. Pick the logo variant for the background (the reversed one on dark).
-          Needs an attached brand kit.
+        """Generate or place a design asset. Pick `action`:
 
-        generate_image, crop_image and generate_qr refuse before spending anything if the scene has no
-        page yet. Keep exact product UI and logos as their own layers; generate_image makes a new image and
-        never copies them.
-        """
+        - `action="generate_image"` — generate a raster image from `prompt` and
+          register it (returns its asset_id; NOT auto-placed). Pass `target_node_id`
+          (or `target_slot_id`) so the aspect is derived from that frame's geometry —
+          images are cropped to fill, never stretched. Optional `aspect_ratio` /
+          `width` / `height`, `brand_notes`, `transparent_background`, `label`.
+          `brand_notes` and `reference_framing` are appended to the prompt the image
+          model receives; they follow the same rules as the prompt
+          (`/.deepagent/skills/generative-imagery/SKILL.md`).
+          `reference_asset_ids` selects up to four inspected style inputs by ID
+          from this run's attachments, brand kit, workspace library or scene.
+          Omit it to use turn attachments; [] uses no references. A selection
+          replaces automatic attachments. Source pixels and their digest are
+          verified before spending; unavailable selections return an error.
+          Optional reference_roles align with selected IDs: source, treatment,
+          composition. reference_framing states what to preserve/vary; operation
+          records intent such as close_companion. These participate in caching.
+          Successful model/cache results report exact `reference_inputs` and
+          persisted provider `image_request_receipt` when available.
+          Viewing an asset alone does not attach it. Keep exact UI and logos as
+          separate source layers; this action produces a new raster component.
+        - `action="edit_image"` — edit the image already placed in `node_id` with a
+          text `prompt` (recolor / warmth / background / fix a flawed subject) WITHOUT
+          changing the composition; the edited result re-enters the same node with its
+          current placement preserved. Set `transparent_background=True` to remove the
+          background. Prefer this over a full regenerate when the image is right-but-flawed.
+          This source-only route does not accept reference_asset_ids, reference_roles
+          or reference_framing. For selected-reference changes, generate_image with
+          those inputs, inspect the result and place it explicitly.
+        - `action="crop_image"` — extract an exact rectangle from an inspected
+          original raster `asset_id`, without a model or resampling. `crop_rect`
+          is four integers [left, top, right, bottom] in ORIGINAL source pixels,
+          half-open; right/bottom excluded. Use original dimensions, not preview
+          dimensions. Bounds must be nonempty and inside the source. Nonidentity
+          EXIF orientation and unsupported images are refused. Animated cropping
+          requires an explicit nonnegative integer `frame_index` (GIF only); use
+          view(target="asset:<id>", frame_index=...) to inspect that original
+          frame first. Coordinates are its decoded composited full-frame pixels,
+          not a thumbnail or smaller GIF patch. Omitting the index refuses animation.
+          Preserves decoded pixels/alpha and original asset; returns a separate image asset
+          and crop_receipt with source digest/rect. Inspect, then explicitly place
+          it in an independent image node. Cannot recover occluded or absent UI,
+          nor remove backgrounds baked inside the selected rectangle.
+        - `action="generate_qr"` — generate a deterministic QR asset from `data`
+          (URL/text). For physical artifacts set `print_media=True` and `target_width_mm`
+          so print-scannability diagnostics can fire. Optional `ec_level`, `label`.
+        - `action="place"` — place an existing asset (`asset_id`: one you generated
+          this run, or one from this workspace's asset library — a library asset is
+          registered into the scene for you)
+          into an existing image or intentionally reserved empty leaf `fr`
+          (`node_id`), or a bound image slot (`slot_id`). Raster/logo placement
+          converts the leaf to an image in place, preserving its ID and geometry;
+          path-backed vectors stay native. Containers with children cannot be
+          consumed; missing node/asset IDs remain errors. No assetless image
+          declaration is needed. Use `fit` (default cover), normalized focal point
+          (`focal_x`/`focal_y`, 0..1, default centered), `alt` text, and optional
+          `preserve_transparency`. Reversible.
+        - `action="use_brand_asset"` — register one of the attached Brand Kit's assets
+          (a logo variant or brand image; `asset_id` from the brand context card's
+          inventory) into the scene with brand_guide provenance and place it into
+          the same supported `node_id` target or `slot_id` as `place`.
+          Logos place with fit `contain` (never cropped);
+          pick the variant by background (reversed on dark fields). Requires an
+          attached kit — without one this action errors.
+
+        Every action mutates the scene only through the canonical core operation path."""
         if frame_index is not None and action != "crop_image":
             return self._tool_error(
                 "asset.frame_unsupported_action",

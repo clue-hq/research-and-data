@@ -38,6 +38,9 @@ Required fields:
   every copy block needs a native text layer. Authentic images require `asset_id`
   in source_roles. Generated layers can name ordered `reference_asset_ids` and
   aligned `reference_roles` (source/treatment/composition, at most four).
+  A generated layer's `purpose` names what the image is for (background,
+  illustration, supporting shape, product scene, texture or another stated job), as
+  `/.deepagent/skills/generative-imagery/SKILL.md` describes.
 - Each layer's `placement`: `{x, y, width, height, fit}` as fractions of the
   artboard within 0..1; fit is contain or cover (default contain). Translate
   these into artboard layout points; these are intent, not locked boxes.

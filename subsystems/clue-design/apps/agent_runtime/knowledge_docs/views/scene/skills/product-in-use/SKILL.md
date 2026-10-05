@@ -71,7 +71,7 @@ invented elapsed time and guaranteed outcomes add no credibility.
 Follow `knowledge/scene/components.md`: headline, support, task labels and any CTA
 stay native; logo, product and setting remain independently placeable. Reuse
 approved use photography when suitable. When new imagery is requested, generate
-the contextual layer under `knowledge/scene/references.md`, inspect it, then
+the contextual layer under `/.deepagent/skills/generative-imagery/SKILL.md` (product scene), inspect it, then
 combine with authentic product pixels. Do not ask generation to recreate exact UI,
 logos or a named customer's real event. Unsupported perspective or occlusion is
 a reason to simplify the composition, not invent invisible editing capabilities.
