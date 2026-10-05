@@ -385,14 +385,44 @@ class LeasedWorkWorker:
         # another slot must not replace the fence of a still-running task for this work ID.
         # Across processes the existing durable lease remains the authority.
         if task.work_id in self._active_work:
-            await self._queue.requeue(task_id=task.task_id, worker_id=self.worker_id)
-            await self._sleep(self._poll_interval)
+            await self._wait_behind_held_lease(task, slot=slot, holder="this_worker")
             return
         self._active_work.add(task.work_id)
         try:
             await self._run_leased_task(task, handler, slot=slot)
         finally:
             self._active_work.remove(task.work_id)
+
+    async def _wait_behind_held_lease(
+        self, task: WorkTaskRow, *, slot: int | None, holder: str
+    ) -> None:
+        """Hand back a task whose work lease is held, to be claimed again later.
+
+        The claim never ran the handler, so it is not counted as an attempt. The wait grows with
+        how long the task has been queued — half of it, at least one poll interval and at most
+        one lease TTL — so a task stuck behind a long holder is re-claimed a few times a minute,
+        not every poll (2026-10-05: one task bounced 883 times in four minutes). Both stamps are
+        DB-clock, so worker clock skew cannot stretch or shrink the wait.
+        """
+        waited = task.claimed_at - task.enqueued_at if task.claimed_at is not None else timedelta(0)
+        delay = min(max(waited / 2, timedelta(seconds=self._poll_interval)), self._lease_ttl)
+        await self._queue.requeue(
+            task_id=task.task_id,
+            worker_id=self.worker_id,
+            delay=delay,
+            uncount_attempt=True,
+        )
+        log.debug(
+            "worker.lease_held_requeue",
+            worker_id=self.worker_id,
+            slot=slot,
+            kind=task.kind.value,
+            work_id=str(task.work_id),
+            task_id=str(task.task_id),
+            holder=holder,
+            waited_s=round(waited.total_seconds(), 1),
+            delay_s=round(delay.total_seconds(), 1),
+        )
 
     async def _run_leased_task(
         self, task: WorkTaskRow, handler: WorkHandler, *, slot: int | None = None
@@ -404,8 +434,7 @@ class LeasedWorkWorker:
             ttl=self._lease_ttl,
         )
         if lease is None:
-            await self._queue.requeue(task_id=task.task_id, worker_id=self.worker_id)
-            await self._sleep(self._poll_interval)
+            await self._wait_behind_held_lease(task, slot=slot, holder="another_worker")
             return
 
         generation = LeaseGeneration(lease.generation)
