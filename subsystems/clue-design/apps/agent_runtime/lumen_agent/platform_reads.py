@@ -82,9 +82,10 @@ def make_platform_read_tools(tools: Any, reads: Any) -> list:
           committee). A researched account whose overview is not written yet answers
           overview_not_written: then read section="claims".
         - section="insights": the insights page (watch-outs, context and the rest).
-        - section="contacts": the buying committee the account screen lists, one person at a time
-          with their role, title and the sections of their contact page (why this person). A
-          person whose page is not written yet is listed with page_written false.
+        - section="contacts": the buying committee the account screen lists, each person with
+          their role, title and the sections of their contact page (why this person, do-not-mention
+          and the rest). A long contact page continues on the next page (sections_truncated
+          true); a person whose page is not written yet is listed with page_written false.
         - section="claims": the facts research holds, each with its source; field_prefix narrows
           to one family named in the answer's prefixes.
         Every section comes in pages: when next_offset is not null, read again with

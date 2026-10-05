@@ -1513,7 +1513,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` beside the retired
     # `@1`, which stays for replay: one more address, no new name (166 -> 167).
     # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
-    assert len(registry) == 168
+    # And `read_account_research@3` (insights and the buying committee, for Design) beside `@2`
+    # (168 -> 169).
+    assert len(registry) == 169
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1589,7 +1591,9 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` beside the retired
     # `@1`, which stays for replay: one more address, no new name (166 -> 167).
     # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
-    assert len(registry) == 168
+    # And `read_account_research@3` (insights and the buying committee, for Design) beside `@2`
+    # (168 -> 169).
+    assert len(registry) == 169
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

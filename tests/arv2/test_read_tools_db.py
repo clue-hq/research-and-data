@@ -2605,6 +2605,9 @@ def test_the_contacts_section_lists_the_committee_with_each_person_s_contact_pag
             by_id = {person.contact_entity_id: person for person in research.contacts}
             assert set(by_id) == {str(written), str(unwritten)}
             assert by_id[str(written)].name == "Nick Fisher"
+            # The title the committee card shows, from the person's title claim.
+            assert by_id[str(written)].title == "VP of Marketing"
+            assert by_id[str(unwritten)].title == "CFO"
             assert by_id[str(written)].page_written is True
             assert by_id[str(written)].sections[0].section_key == "why-this-person"
             assert "Owns the ABM budget." in by_id[str(written)].sections[0].body_text
@@ -2612,5 +2615,128 @@ def test_the_contacts_section_lists_the_committee_with_each_person_s_contact_pag
             assert by_id[str(unwritten)].page_written is False
             assert by_id[str(unwritten)].sections == ()
             assert research.next_offset is None and research.overview == ()
+
+    run_async(scenario())
+
+
+def test_overview_and_insights_read_the_current_lane_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The current research lane's pages, not just the legacy blocks (regression 2026-10-05:
+    ``_PAGE_WRITTEN_AT`` gained ``kind``/``page`` binds and the overview path still passed three,
+    so every current-lane overview read raised)."""
+
+    import clue_api.arv2.quality_pages as quality_pages
+    import clue_api.arv2.quality_read as quality_read
+
+    context_id = uuid4()
+
+    class _Selection:
+        scope = object()
+        metadata: dict[str, object] = {"committee": []}
+
+        def __init__(self) -> None:
+            self.context_id = context_id
+
+    async def fake_select(*_args: object, **_kwargs: object) -> _Selection:
+        return _Selection()
+
+    asked: list[str] = []
+
+    async def fake_read_page(_conn: object, _scope: object, *, context_id: UUID, page: str):
+        asked.append(page)
+        text_by_page = {"overview": "They run 40 schools.", "insights": "A levy vote in May."}
+        return {
+            "display_block": {
+                "sections": [{"key": f"{page}-one", "h1": page, "intro": [{"text": text_by_page[page]}]}]
+            }
+        }
+
+    monkeypatch.setattr(quality_read, "select_quality_context", fake_select)
+    monkeypatch.setattr(quality_pages, "read_page", fake_read_page)
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            for section, words in (("overview", "They run 40 schools."), ("insights", "A levy vote in May.")):
+                research = await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section=section,
+                    settings=VERIFYING,
+                    project_id=project.project_id,
+                )
+                assert [s.section_key for s in research.overview] == [f"{section}-one"]
+                assert words in research.overview[0].body_text
+        assert asked == ["overview", "insights"]
+
+    run_async(scenario())
+
+
+def test_current_lane_contacts_carry_the_committee_card_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The current lane's committee (``committee()`` over the quality selection) carries no
+    title of its own; the read fills it from the title claim, as the committee card does
+    (found live 2026-10-05: every current-lane contact came back with title None)."""
+
+    import clue_api.arv2.quality_pages as quality_pages
+    import clue_api.arv2.quality_read as quality_read
+
+    members: list[dict[str, object]] = []
+
+    class _Scope:
+        account_name = "Alpha Health"
+        account_domain = "alpha.example"
+
+    class _Selection:
+        scope = _Scope()
+        context_id = uuid4()
+
+        @property
+        def metadata(self) -> dict[str, object]:
+            return {"committee": members}
+
+    async def fake_select(*_args: object, **_kwargs: object) -> _Selection:
+        return _Selection()
+
+    async def fake_read_page(_conn: object, _scope: object, *, context_id: UUID, page: str):
+        return {"display_block": {"sections": [
+            {"key": "why-this-person", "h1": "Why this person", "intro": [{"text": "Owns the budget."}]}
+        ]}}
+
+    monkeypatch.setattr(quality_read, "select_quality_context", fake_select)
+    monkeypatch.setattr(quality_pages, "read_page", fake_read_page)
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+            contact = await _seed_contact(
+                conn, account, name="Nick Fisher", linkedin="https://www.linkedin.com/in/nfisher"
+            )
+            await _seed_contact_claim(
+                conn, {}, project, contact, label="t1",
+                field_key="contact.current_title", value="VP of Marketing",
+            )
+            members.append({
+                "contact_id": str(contact), "assessment_claim_id": str(uuid4()),
+                "persona_key": "champion", "proposed_role": "champion", "state": "supported",
+                "employment_claim_ids": [],
+            })
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="contacts",
+                settings=VERIFYING,
+                project_id=project.project_id,
+            )
+            (person,) = research.contacts
+            assert (person.name, person.committee_role, person.title) == (
+                "Nick Fisher", "champion", "VP of Marketing"
+            )
+            assert [s.section_key for s in person.sections] == ["why-this-person"]
 
     run_async(scenario())

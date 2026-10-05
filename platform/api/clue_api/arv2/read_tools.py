@@ -145,7 +145,8 @@ class Arv2ReadRefused(Arv2Error):
     :class:`~clue_toolbelt.PreconditionFailure`. Codes: ``project_not_found``,
     ``account_not_found``, ``overview_not_written``, ``account_not_researched``,
     ``no_claims_under_prefix``, ``offset_past_end``, ``discovery_run_not_found``,
-    ``no_discovery_run``, ``entity_not_found``, ``since_invalid``.
+    ``no_discovery_run``, ``entity_not_found``, ``since_invalid``, ``insights_not_written``,
+    ``context_required``.
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -362,8 +363,8 @@ class AccountContactView(BaseModel, frozen=True):
     title: str | None
     page_written: bool
     sections: tuple[AccountOverviewSection, ...]
-    #: Only when this one person's page is larger than a whole read page: trailing sections were
-    #: left out so the person fits. Every other person is served whole.
+    #: This person's contact page continues on the next page (``next_offset``): a contact page is
+    #: often larger than one read page, so the committee is paged by section.
     sections_truncated: bool = False
 
 
@@ -675,11 +676,24 @@ async def _account_contacts(
     """The account's buying committee as the account screen lists it, each person with their
     written contact page."""
 
-    from clue_api.frontend_read.display_pages import committee
+    from clue_api.frontend_read.display_pages import (
+        TITLE_KEY,
+        committee,
+        committee_claims,
+        displayable,
+        title_of,
+    )
+    from clue_research.compliance import load_workspace_policy
 
     members = await committee(
         conn, workspace_id=workspace_id, account_id=str(account_uuid), project_id=project_id
     )
+    # The title the committee card shows: the latest displayable title claim, under the
+    # workspace's policy (``SubjectRef`` carries none of its own).
+    latest = await committee_claims(
+        conn, workspace_id=workspace_id, members=members, field_keys=(TITLE_KEY,)
+    )
+    policy = await load_workspace_policy(conn, workspace_id=workspace_id)
     people: list[AccountContactView] = []
     for member in members:
         sections = await _page_sections(
@@ -696,7 +710,7 @@ async def _account_contacts(
                 contact_entity_id=member.id,
                 name=member.name,
                 committee_role=member.persona,
-                title=member.title,
+                title=title_of(displayable(latest.get((member.id, TITLE_KEY)), policy)),
                 page_written=bool(sections),
                 sections=tuple(sections),
             )
@@ -704,38 +718,71 @@ async def _account_contacts(
     return people
 
 
-def _fit_contact_to_page(person: AccountContactView) -> AccountContactView:
-    """One person larger than a whole read page, with trailing sections left out until they fit."""
-
-    sections = list(person.sections)
-    trial = person
-    while sections and receipt_bytes([trial.model_dump()]) > READ_REFERENCES_BUDGET_BYTES:
-        sections.pop()
-        trial = person.model_copy(update={"sections": tuple(sections), "sections_truncated": True})
-    if sections and receipt_bytes([trial.model_dump()]) > READ_REFERENCES_BUDGET_BYTES:
-        trial = trial.model_copy(update={"sections": (_clip_section_to_page(sections[0]),)})
-    return trial
-
-
 def _contacts_page(
     people: Sequence[AccountContactView], *, offset: int
 ) -> tuple[tuple[AccountContactView, ...], bool, int | None]:
-    """One page of the committee: whole people from ``offset`` that fit the receipt's budget."""
+    """One page of the committee, paged by contact-page section so every section is reachable.
 
-    if offset >= len(people) and offset > 0:
+    ``offset`` counts units: each section of each person's contact page, in committee order, and
+    one unit for a person whose page is not written yet. A page serves the whole units from
+    ``offset`` that fit the receipt's byte budget, grouped back into people. A contact page is
+    often larger than a whole read page (2026-10-05: 22-46 KB against 12 KB), so one person may
+    span several pages: ``sections_truncated`` says that person's next sections are on the next
+    page. The only section ever cut is one larger than a whole page by itself; it is served alone,
+    clipped, and says so with ``body_truncated``.
+    """
+
+    units: list[tuple[int, int | None]] = []
+    for index, person in enumerate(people):
+        if person.sections:
+            units.extend((index, position) for position in range(len(person.sections)))
+        else:
+            units.append((index, None))
+    if offset >= len(units) and offset > 0:
         raise Arv2ReadRefused(
             "offset_past_end",
-            f"this account has {len(people)} committee members; offset {offset} is past the end",
+            f"this account's committee pages hold {len(units)} sections; offset {offset} is past "
+            "the end",
         )
-    rest = list(people[offset:])
-    fitted, _ = _take_within_budget(
-        [person.model_dump() for person in rest], budget=READ_REFERENCES_BUDGET_BYTES
-    )
-    page = rest[: max(fitted, 1 if rest else 0)]
-    if page and receipt_bytes([page[0].model_dump()]) > READ_REFERENCES_BUDGET_BYTES:
-        page[0] = _fit_contact_to_page(page[0])
-    end = offset + len(page)
-    more = end < len(people)
+
+    def assemble(chosen: Sequence[tuple[int, int | None]]) -> list[AccountContactView]:
+        views: list[AccountContactView] = []
+        for index, position in chosen:
+            person = people[index]
+            section = () if position is None else (person.sections[position],)
+            continues = position is not None and position < len(person.sections) - 1
+            if views and views[-1].contact_entity_id == person.contact_entity_id:
+                views[-1] = views[-1].model_copy(
+                    update={
+                        "sections": views[-1].sections + section,
+                        "sections_truncated": continues,
+                    }
+                )
+            else:
+                views.append(
+                    person.model_copy(update={"sections": section, "sections_truncated": continues})
+                )
+        return views
+
+    def size(views: Sequence[AccountContactView]) -> int:
+        return receipt_bytes([view.model_dump() for view in views])
+
+    chosen: list[tuple[int, int | None]] = []
+    for unit in units[offset:]:
+        if chosen and size(assemble([*chosen, unit])) > READ_REFERENCES_BUDGET_BYTES:
+            break
+        chosen.append(unit)
+    page = assemble(chosen)
+    if len(chosen) == 1 and size(page) > READ_REFERENCES_BUDGET_BYTES:
+        # One section larger than a whole page: clip it to what is left beside its person.
+        (only,) = page
+        overhead = size([only.model_copy(update={"sections": ()})])
+        clipped = _clip_section_to_page(
+            only.sections[0], budget=READ_REFERENCES_BUDGET_BYTES - overhead
+        )
+        page = [only.model_copy(update={"sections": (clipped,)})]
+    end = offset + len(chosen)
+    more = end < len(units)
     return tuple(page), more, (end if more else None)
 
 
@@ -781,7 +828,13 @@ async def _current_lane_overview(
     written_at = (
         await conn.execute(
             _PAGE_WRITTEN_AT,
-            {"ws": workspace_id, "context": selection.context_id, "subject": account_uuid},
+            {
+                "ws": workspace_id,
+                "context": selection.context_id,
+                "kind": "account",
+                "subject": account_uuid,
+                "page": _OVERVIEW_PAGE,
+            },
         )
     ).scalar_one_or_none()
     sections: list[AccountOverviewSection] = []
@@ -899,8 +952,11 @@ def _overview_page(
     return tuple(page), more, (end if more else None)
 
 
-def _clip_section_to_page(section: AccountOverviewSection) -> AccountOverviewSection:
-    """``section`` with its body cut to the longest prefix that still fits one page.
+def _clip_section_to_page(
+    section: AccountOverviewSection, *, budget: int = READ_REFERENCES_BUDGET_BYTES
+) -> AccountOverviewSection:
+    """``section`` with its body cut to the longest prefix that still fits ``budget`` bytes (one
+    page by default; less when the section is served inside a contact, beside the person).
 
     Measured in the receipt's own bytes, not characters, so a body of multi-byte text is held to
     the same bound the runtime enforces.
@@ -909,7 +965,7 @@ def _clip_section_to_page(section: AccountOverviewSection) -> AccountOverviewSec
     def fits(length: int) -> bool:
         body, _ = _clip(section.body_text, length)
         trial = section.model_copy(update={"body_text": body, "body_truncated": True})
-        return receipt_bytes([trial.model_dump()]) <= READ_REFERENCES_BUDGET_BYTES
+        return receipt_bytes([trial.model_dump()]) <= budget
 
     low, high = 1, len(section.body_text)
     while low < high:
@@ -2087,9 +2143,11 @@ class ReadAccountResearchV3Tool(ReadAccountResearchV2Tool):
         "overview (what they do, why they fit, why now, buying committee), whole sections a page "
         "at a time: follow next_offset until it is null. section='insights' returns the insights "
         "page (watch-outs, context and the rest) the same way. section='contacts' returns the "
-        "buying committee the account screen lists, one person at a time with their role, title "
-        "and the sections of their contact page (why this person); a person whose page is not "
-        "written yet is listed with page_written false. Follow next_offset until it is null. "
+        "buying committee the account screen lists, each person with their role, title and the "
+        "sections of their contact page (why this person, do-not-mention and the rest); a long "
+        "contact page continues on the next page (sections_truncated true), and a person whose "
+        "page is not written yet is listed with page_written false. Follow next_offset until it "
+        "is null. "
         "When the overview or insights page is not written yet the read refuses "
         "(overview_not_written / insights_not_written): then read section='claims'. "
         "section='claims' returns the claims the account pages show: set limit (default 40), "
