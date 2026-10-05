@@ -264,3 +264,10 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   audit, scene_turn_persist, agent_turns API); 4 were mine = 3 normalizer goldens + geometry
   byte-stable, regenerated (only display/stat 700->600 for a 600 headline, subtitle 500->400).
 - Committed: bb55a9ac8 (A4 type roles), e7113e1d4 (scene solo default).
+- 2026-10-05 founder: A6 moved ahead of A5 (roadmap updated). Test sample widened: added workspaces
+  Stripe (ws_ecf8bfecfc8047f28af94bc42edb30c2), Garner Health (ws_c080123a7c434454898aa5ae1a8f698b),
+  AltCarbon (ws_d4e6f4b1e1514e77bc3cb7dacafe0db3) under the same user (usr_67ae85b9…) in
+  clue_trenton. There is no add-workspace UI and /auth/v1/provision is first-time-only, so they
+  were created with clue_spine.create_workspace/create_brand + clue_auth create_workspace_membership
+  (owner), then each setup started from the app (workspace switcher + POST /api/clue/onboarding
+  {company_domain}), which runs Stage-0 company research + brand-kit ingestion + ads harvest.

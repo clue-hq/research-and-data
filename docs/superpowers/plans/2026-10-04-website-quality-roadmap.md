@@ -153,6 +153,20 @@ typography check for scene ads.
 - [ ] The four repro cases above produce the visible/measured values (red first, then green).
 - [ ] Repair script dry run on the Garner Health and Conduit kits prints the before/after roles; `--apply` writes a new kit version (founder approves applying).
 
+### Workstream A6: Capture the final state of dynamic pages
+
+**Why:** spec §3.1 and §3.4.
+
+**Files:**
+- Modify: `subsystems/clue-design/apps/api/lumen_ingestion/capture/rendered.py` (scroll down in steps so intersection observers fire; at the end call `document.getAnimations().forEach(a => a.finish())`, wait for transitions, then serialize; set a 1440×900 viewport on every backend including stealth)
+- Modify: `.../sections/segment.py` (treat `opacity:0` and heavy `filter: blur()` as hidden for segmentation decisions only after the settle step)
+- Modify: `.../sections/cssmatch.py` (keep rules whose extra classes were present on any element in the settled DOM)
+- Test: `apps/api/tests/` with a local fixture page that reveals text on scroll (blur → clear) and a fade-in grid
+
+**Acceptance:**
+- [ ] The fixture page's captured section shows readable text (screenshot and serialized HTML).
+- [ ] Founder-approved fresh Conduit capture on this branch: more than 1 of 12 sections minted; no `fragment.unrehosted_reference` for `/_next/image` URLs.
+
 ### Workstream A5: Seller theme with type tokens, used by composed sections
 
 **Why:** spec §3.3. Composed sections have no shared type scale to use.
@@ -172,20 +186,6 @@ be sent back to the agent as a must-fix (today it only becomes `completed_with_w
 - [ ] A composed section using `text-heading-1` renders at the source's 56px/400 for Conduit (in-app browser check on Conduit, Garner Health, Clue).
 - [ ] Cargo tests for `theme.rs` and the new Python tests pass; vendored wasm rebuilt only if `lumen-wasm` depends on the change.
 
-### Workstream A6: Capture the final state of dynamic pages
-
-**Why:** spec §3.1 and §3.4.
-
-**Files:**
-- Modify: `subsystems/clue-design/apps/api/lumen_ingestion/capture/rendered.py` (scroll down in steps so intersection observers fire; at the end call `document.getAnimations().forEach(a => a.finish())`, wait for transitions, then serialize; set a 1440×900 viewport on every backend including stealth)
-- Modify: `.../sections/segment.py` (treat `opacity:0` and heavy `filter: blur()` as hidden for segmentation decisions only after the settle step)
-- Modify: `.../sections/cssmatch.py` (keep rules whose extra classes were present on any element in the settled DOM)
-- Test: `apps/api/tests/` with a local fixture page that reveals text on scroll (blur → clear) and a fade-in grid
-
-**Acceptance:**
-- [ ] The fixture page's captured section shows readable text (screenshot and serialized HTML).
-- [ ] Founder-approved fresh Conduit capture on this branch: more than 1 of 12 sections minted; no `fragment.unrehosted_reference` for `/_next/image` URLs.
-
 ### Workstream A7: Garner Health demo walk
 
 **Files:** none (operational), plus a run record in `_memory/`.
@@ -201,11 +201,11 @@ be sent back to the agent as a must-fix (today it only becomes `completed_with_w
 |---|---|
 | Mon 5 Oct | A1 + A2 substance in chat for approval; A4 tests and fixes; code-first spikes start (Part B, C0) |
 | Tue 6 Oct | A1 + A2 written, versioned and tested; A3 |
-| Wed 7 Oct | A5; A4 kit repair dry runs; Garner prompts ready |
-| Thu 8 Oct | A6; founder before/after runs on Garner, Conduit, Clue |
+| Wed 7 Oct | A6 (moved ahead of A5, founder 2026-10-05: A4 skips headings still animating in until capture waits for reveals); Garner prompts ready |
+| Thu 8 Oct | A5; founder before/after runs on Conduit, Garner Health, Stripe, AltCarbon |
 | Fri 9 Oct | Fixes from the runs; fresh Conduit capture; week record in `_memory/` |
 
-If a Garner demo falls on Tuesday or Wednesday, A1–A4 come first and A5/A6 move after it.
+Order (founder 2026-10-05): A4 done → A6 → A5. Test sample: Conduit, Stripe, Garner Health, AltCarbon in the trenton lane.
 
 ---
 
