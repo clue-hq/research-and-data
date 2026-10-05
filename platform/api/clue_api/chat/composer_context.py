@@ -19,7 +19,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_agents import DomainObjectRef
-from clue_api.arv2.display.gather import SubjectRef, committee_members
+from clue_api.arv2.display.gather import (
+    SubjectRef,
+    committee_members,
+    committee_members_for_accounts,
+)
 from clue_api.arv2.project_documents import (
     document_title,
     get_project_document,
@@ -129,6 +133,40 @@ async def _account_logo_urls(
     return {entity_id: current.value_json for (entity_id, _field), current in values.items()}
 
 
+def account_context_entity(
+    account_id: Any,
+    name: str,
+    primary_domain: str | None,
+    logo: Any,
+    *,
+    settings: Settings | None,
+) -> ComposerContextEntity:
+    """One account as the picker shows it (shared by the bounded list and the directory)."""
+
+    return ComposerContextEntity(
+        object_type="account",
+        object_id=str(account_id),
+        label=name,
+        secondary_label=primary_domain or "Account",
+        image_url=account_logo_path(account_id, logo, domain=primary_domain, settings=settings),
+    )
+
+
+def contact_context_entity(
+    member: SubjectRef, *, account_id: str, account_name: str
+) -> ComposerContextEntity:
+    """One committee contact as the picker shows it, nested under its account."""
+
+    return ComposerContextEntity(
+        object_type="contact",
+        object_id=member.id,
+        label=member.name,
+        secondary_label=member.title or account_name,
+        account_id=account_id,
+        account_name=account_name,
+    )
+
+
 async def list_composer_context_entities(
     conn: AsyncConnection,
     *,
@@ -156,38 +194,28 @@ async def list_composer_context_entities(
         workspace_id=workspace_id,
         account_ids=[EntityId(UUID(str(row[0]))) for row in rows],
     )
+    # One batched committee read for the whole page (it was one query per account).
+    committees = await committee_members_for_accounts(
+        conn, workspace_id=workspace_id, account_ids=[str(row[0]) for row in rows]
+    )
     result: list[ComposerContextEntity] = []
     for account_id, canonical_name, primary_domain, _created_at, _updated_at in rows:
-        name = str(canonical_name)
         result.append(
-            ComposerContextEntity(
-                object_type="account",
-                object_id=str(account_id),
-                label=name,
-                secondary_label=primary_domain or "Account",
-                image_url=account_logo_path(
-                    account_id,
-                    logo_urls.get(EntityId(UUID(str(account_id)))),
-                    domain=primary_domain,
-                    settings=settings,
-                ),
+            account_context_entity(
+                account_id,
+                str(canonical_name),
+                primary_domain,
+                logo_urls.get(EntityId(UUID(str(account_id)))),
+                settings=settings,
             )
         )
-        for member in await committee_members(
-            conn, workspace_id=workspace_id, account_id=str(account_id)
-        ):
-            if not member.name:
-                continue
-            result.append(
-                ComposerContextEntity(
-                    object_type="contact",
-                    object_id=member.id,
-                    label=member.name,
-                    secondary_label=member.title or name,
-                    account_id=str(account_id),
-                    account_name=name,
-                )
+        result.extend(
+            contact_context_entity(
+                member, account_id=str(account_id), account_name=str(canonical_name)
             )
+            for member in committees.get(str(account_id), [])
+            if member.name
+        )
     return tuple(result)
 
 

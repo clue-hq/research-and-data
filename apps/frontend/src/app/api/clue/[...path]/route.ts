@@ -79,7 +79,9 @@ async function proxyRequest(request: Request, context: RouteContext) {
     },
     backendContext,
   );
-  return new Response(response.body, {
+  // A 304 (an ETag revalidation) must be built without a body.
+  const nullBody = [101, 204, 205, 304].includes(response.status);
+  return new Response(nullBody ? null : response.body, {
     status: response.status,
     statusText: response.statusText,
     headers: browserResponseHeaders(response.headers),

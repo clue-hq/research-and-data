@@ -33,7 +33,8 @@ export function ProjectHomeView({
           <ProjectComposer
             attachmentError={controller.attachmentError}
             attachments={controller.attachments}
-            entities={data.entities}
+            entities={controller.mentionEntities}
+            onMentionQueryChange={controller.onMentionQueryChange}
             disabled={controller.loading}
             variant="home"
             modelPickerOpen={controller.modelPickerOpen}

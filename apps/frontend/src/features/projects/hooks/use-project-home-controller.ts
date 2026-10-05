@@ -14,12 +14,15 @@ import type {
   ProjectHome,
 } from "../model/project-workspace";
 import { useChatAttachments } from "./use-chat-attachments";
+import { useMentionDirectory } from "./use-mention-directory";
 
 export function useProjectHomeController(data: ProjectHome) {
   const router = useRouter();
   const repositories = useChatRepositories();
   const httpMode = repositories.transport.mode === "http";
   const [home, setHome] = useState(data);
+  // The @ tagger's accounts and contacts: the whole workspace directory once loaded.
+  const mention = useMentionDirectory(null, home.entities);
   const [prompt, setPromptState] = useState("");
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([]);
@@ -104,9 +107,9 @@ export function useProjectHomeController(data: ProjectHome) {
   const selectedEntities = useMemo(
     () =>
       selectedEntityIds
-        .map((id) => home.entities.find((entity) => entity.id === id))
+        .map((id) => mention.entities.find((entity) => entity.id === id))
         .filter((entity): entity is ProjectEntity => Boolean(entity)),
-    [home.entities, selectedEntityIds],
+    [mention.entities, selectedEntityIds],
   );
 
   const selectedModel =
@@ -154,7 +157,7 @@ export function useProjectHomeController(data: ProjectHome) {
       reviseDraft({
         ...draft.current,
         contextRefs: next
-          .map((id) => home.entities.find((entity) => entity.id === id))
+          .map((id) => mention.entities.find((entity) => entity.id === id))
           .filter((entity): entity is ProjectEntity => Boolean(entity))
           .map((entity) => ({
             objectId: entity.id,
@@ -172,7 +175,7 @@ export function useProjectHomeController(data: ProjectHome) {
       reviseDraft({
         ...draft.current,
         contextRefs: next
-          .map((id) => home.entities.find((entity) => entity.id === id))
+          .map((id) => mention.entities.find((entity) => entity.id === id))
           .filter((entity): entity is ProjectEntity => Boolean(entity))
           .map((entity) => ({
             objectId: entity.id,
@@ -196,7 +199,7 @@ export function useProjectHomeController(data: ProjectHome) {
       return false;
     }
     const submittedEntities = (entityIdsOverride ?? selectedEntityIds)
-      .map((id) => home.entities.find((entity) => entity.id === id))
+      .map((id) => mention.entities.find((entity) => entity.id === id))
       .filter((entity): entity is ProjectEntity => Boolean(entity));
     const parsed = parseHomeBootstrapDraft({
       agentProfileId: selectedModel?.id ?? null,
@@ -280,7 +283,10 @@ export function useProjectHomeController(data: ProjectHome) {
     data: home,
     error,
     loading,
+    // The @ tagger's accounts and contacts: the whole workspace directory.
+    mentionEntities: mention.entities,
     modelPickerOpen,
+    onMentionQueryChange: mention.onMentionQueryChange,
     prompt,
     removeAttachment: attachmentsEnabled ? chatAttachments.remove : undefined,
     removeEntity,
