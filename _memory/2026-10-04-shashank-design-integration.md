@@ -254,3 +254,13 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
 - Regression run of 34 typography-related design test files was invalidated by the connection
   exhaustion (89 failures, untrustworthy) -> rerun owed on a throwaway DB on 55160.
 - Owed before commit: editor checks (Conduit ad + page with kit v2), describe rerun, regression rerun.
+- 2026-10-05: second Conduit re-extract (ingest_3e85c884…) on the dedicated DB -> kit v3, same
+  typography as v2, 37 approved sections, 720/742 descriptions ready, 0 worker crashes. 22 failed on
+  describe-model output (deepseek-v4.1-flash): 12 broken/runaway or empty JSON, 8 blank required
+  fields (usage/title/description), 2 placement-count mismatch. Proposed fix (not done): one retry
+  on invalid output + provider structured output.
+- Regression: 34 typography-related design test files on clue_trenton_test@55160: 30 failing ids;
+  26 fail identically on a clean HEAD worktree (pre-existing: pdf/uploads routes, brief, grammar
+  audit, scene_turn_persist, agent_turns API); 4 were mine = 3 normalizer goldens + geometry
+  byte-stable, regenerated (only display/stat 700->600 for a 600 headline, subtitle 500->400).
+- Committed: bb55a9ac8 (A4 type roles), e7113e1d4 (scene solo default).
