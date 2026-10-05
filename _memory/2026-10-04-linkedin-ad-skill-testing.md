@@ -56,3 +56,18 @@ Branch cut from origin/research-streaming at 135ca509a (PR #98 merge). Lane stac
   visibility (stale since v44), test_pilot_budget_controls (field-registry DB state).
 - Stack restarted 2026-10-04 ~15:50 UTC with solo mode, v71, Langfuse env=default. Next: rerun the
   Atrium 1:1 LinkedIn prompt in a NEW chat and compare copy length/angle.
+
+## 2026-10-05 — imagery investigation (no product change)
+- Run 4 (`run_bfcb80e9…`) gave a good round 1 (8-word headline, 13-word support, pre-generated
+  pastel ground) then failed on a hung LLM call (1,045 s despite a 60 s timeout; network flaky).
+  Leg `0c45a5cd…` is open_awaiting_user. Timeout overrun not yet investigated.
+- Export 401 the founder hit was a lapsed Clerk session (every BFF call 401 for one window), not a
+  disabled feature; the editor does not refresh-and-retry on 401 (offered, not done).
+- Findings + trial plan written: `docs/superpowers/plans/2026-10-05-brand-imagery-findings-and-trials.md`
+  (library descriptions too long and unstructured; scene agent never told to search; pick-a-look
+  call redundant and silently failing; style groups are single ads; pre-generation produces 12
+  near-identical grounds; yellow bokeh came from the og-image reference, the hotel desk was the
+  agent's own invention).
+- Founder direction: no pre-generated assets by default; the agent generates at runtime with full
+  context; image prompts must not add detail no reference shows. Trials T1–T6 not started; §5
+  prompt wording awaits founder review before it goes into any skill.
