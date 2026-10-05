@@ -259,7 +259,12 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # and the open_design_leg note still said opening a leg starts nothing), and
     # `read_account_research` pages the overview by whole section. `stage0-interview@v44` only
     # repoints its manual paths. Prompt v18 and the recipe stay.
-    AgentRole.HEAD_OF_ABM: "v71",
+    # v72 (2026-10-05): v71's surface exactly. The manual re-mints at `manual-*@v18`: a page brief
+    # gives Design direction (purpose, reader, angle, suggested structure, facts with sources) and
+    # keeps private notes apart, Design writes every word, and research is offered for an
+    # unresearched account as a recommendation. `stage0-interview@v45` only repoints its manual
+    # paths. Prompt v18 and the recipe stay.
+    AgentRole.HEAD_OF_ABM: "v72",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",

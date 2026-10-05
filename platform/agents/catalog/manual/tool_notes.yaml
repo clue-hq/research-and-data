@@ -262,6 +262,8 @@ read_account_research:
     arv2_reads_not_composed: Tell the human the reads are not wired on this deployment; do not answer from memory instead.
     account_not_found: Take the account id from read_project_accounts and call again; a merged account is refused under its old id, so use the survivor.
     overview_not_written: Read again with section 'claims', and say the overview has not been written yet rather than that the account is unresearched.
+    insights_not_written: The insights page has not been written yet. Read the overview or the claims instead, and do not describe it as missing research.
+    context_required: The account was researched in more than one project and this read could not tell which. Read section 'claims' instead, or ask the human to open the account in the app.
     account_not_researched: Say plainly that nothing is known about this account yet, and offer to research it.
     no_claims_under_prefix: Pick one of the families the refusal lists and read again; never invent a prefix.
     offset_past_end: You have already read to the end. Stop paging and answer from what you have.
