@@ -36,6 +36,11 @@ The seller's look lives in its published ads, the images on its own website and 
 brand kit. Find candidates with `search_assets` and the brand card's image list,
 read `ad-assets.md` when it exists, and `view` the ones that might fit.
 
+Search in plain visual words for what you need, one need per search — for example the
+seller's blurred backgrounds, then its illustrations. Search matches the look of the
+images as well as their descriptions, so describe the look and the subject you want
+rather than guessing a file name. View the best few results before choosing.
+
 Prefer references that do the same job. For a background, look at the seller's
 backgrounds; for an illustration, its illustrations; for a supporting figure, its
 icons, marks and shapes. If the seller has nothing of that kind, take only the look

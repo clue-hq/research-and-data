@@ -38,6 +38,10 @@ dependencies = [
     # needs this at runtime for `flavor="woff2"`; it was only ever present by accident before.
     "brotli>=1.1,<2",
     "pillow>=10,<12",
+    # CLIP image/query embeddings for the scene agent's hybrid asset search (2026-10-05), run on
+    # ONNX Runtime so the backend image carries no torch. `tokenizers` reads CLIP's tokenizer.json.
+    "onnxruntime>=1.20,<2",
+    "tokenizers>=0.20,<1",
     "playwright>=1.45,<2",
     # Stealth render backend (brand-color capture): bot-walled and WebGL-hero
     # sites serve real pages only to a hardened profile (capture PoC 2026-08-30).

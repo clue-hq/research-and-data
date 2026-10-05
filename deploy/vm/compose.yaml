@@ -20,6 +20,9 @@ x-worker: &worker
     - /srv/clue/workspaces:/srv/clue/workspaces
     - /srv/clue/lumen-agent:/srv/clue/lumen-agent
     - /srv/clue/engine-cache:/srv/clue/engine-cache
+    # CLIP model for the hybrid asset search (2026-10-05), read-only. Kept out of the image so the
+    # image the Railway API servers share stays small; see bootstrap.sh for how it is filled.
+    - /srv/clue/models:/srv/clue/models:ro
 
 # The worker pools go through PgBouncer (transaction pooling, MAX_PREPARED_STATEMENTS set in
 # /srv/clue/pgbouncer.env so asyncpg's prepared statements survive). Their advisory locks are all
@@ -35,6 +38,9 @@ x-worker-env: &worker-env
   # deploy.sh creates this directory (UID 1000, 0700) and moved the old nested one once.
   LUMEN_AGENT_WORKSPACE_ROOT: /srv/clue/lumen-agent
   LUMEN_ASSET_STORE_ROOT: /srv/clue/engine-cache
+  # Hybrid asset search: ingestion embeds images with image.onnx, a design turn embeds each
+  # search query with text.onnx. A missing directory turns visual search off (keyword-only).
+  LUMEN_ASSET_EMBEDDING_MODEL_DIR: /srv/clue/models/clip-vit-base-patch32-onnx
 
 x-batch: &batch
   <<: *worker
@@ -84,5 +90,6 @@ services:
       - /srv/clue/workspaces:/srv/clue/workspaces
       - /srv/clue/lumen-agent:/srv/clue/lumen-agent
       - /srv/clue/engine-cache:/srv/clue/engine-cache
+      - /srv/clue/models:/srv/clue/models:ro
     environment:
       <<: *worker-env
