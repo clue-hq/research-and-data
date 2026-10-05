@@ -15,7 +15,21 @@ from clue_gateway.model_windows import resolve_context_window
 __all__ = ["compaction_for"]
 
 
+def window_model_id(model_id: str) -> str:
+    """The id the window registry and catalogue know: a LangChain ``provider:`` prefix removed.
+
+    The design agent names its model ``openai:x-ai/grok-4.7`` (LangChain's provider-prefixed form);
+    the registry and OpenRouter's catalogue key on ``x-ai/grok-4.7``. Found 2026-10-05: the prefixed
+    id resolved to no window, so the design agent compacted at the fixed fallback and paid a
+    catalogue lookup every turn. Only a prefix without a slash is stripped — OpenRouter ids such as
+    ``deepseek/deepseek-v4.1-flash:batch`` keep their own colon.
+    """
+    head, sep, tail = model_id.partition(":")
+    return tail if sep and tail and "/" not in head else model_id
+
+
 def compaction_for(model_id: str) -> CompactionSettings:
+    model_id = window_model_id(model_id)
     settings = load_settings()
     return CompactionSettings(
         trigger_fraction=settings.agent_compact_trigger_fraction,
