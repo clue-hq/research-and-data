@@ -107,3 +107,39 @@ def test_concurrent_callers_fetch_the_catalogue_once() -> None:
 
     assert fetched == [1]
     assert answers == [500_000] * 4
+
+
+def _no_network() -> dict[str, int]:
+    raise AssertionError("a registered model must not reach the catalogue")
+
+
+def test_a_registered_model_never_reaches_the_catalogue() -> None:
+    registry = {"x-ai/grok-4.6": 500_000}
+    assert (
+        resolve_context_window("x-ai/grok-4.6", override=None, registry=registry, fetch=_no_network)
+        == 500_000
+    )
+
+
+def test_the_override_still_wins_over_the_registry() -> None:
+    assert (
+        resolve_context_window(
+            "x-ai/grok-4.6",
+            override=200_000,
+            registry={"x-ai/grok-4.6": 500_000},
+            fetch=_no_network,
+        )
+        == 200_000
+    )
+
+
+def test_an_unregistered_model_falls_back_to_the_catalogue() -> None:
+    assert (
+        resolve_context_window(
+            "openai/gpt-5-mini",
+            override=None,
+            registry={"x-ai/grok-4.6": 500_000},
+            fetch=lambda: {"openai/gpt-5-mini": 400_000},
+        )
+        == 400_000
+    )
