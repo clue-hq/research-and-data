@@ -352,6 +352,9 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             assert await handler.sweep_quality() == 0
             offer = next(iter(queue.offers.values()))
             assert offer["payload"]["continuation"] == "quality_reconciliation"
+            # One live continuation per account lease: while one runs, newer revisions wait for
+            # the next sweep instead of queueing siblings that spin on the held lease.
+            assert offer["only_if_work_idle"] is True
             assert offer["payload"]["job_id"] == str(jid)
             assert offer["payload"]["run_id"] == str(initial.run_id)
             lease = await acquire_work_lease(

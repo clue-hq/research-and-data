@@ -99,7 +99,7 @@ code change), **MINE** (caused by how I operated the lane, not by the product).
   - a worker process accepts work even when design runtime or required settings are missing; it
     should refuse to start, or the execution parameters should not depend on process-local settings.
 
-## 6. Hot retry loop on lease contention — OPEN
+## 6. Hot retry loop on lease contention — FIXED (branch `claude/priceless-agnesi-62e868`)
 
 - **What happened (~11:25–11:31):** worker `67e90478` (`extra6`) re-claimed Garner Health's Syracuse
   quality-reconciliation tasks hundreds of times in minutes (one task 502 attempts, others 266, 123,
@@ -110,8 +110,31 @@ code change), **MINE** (caused by how I operated the lane, not by the product).
   spin until the holder finishes; then they end `completed` / `superseded`.
 - **Impact:** wasted database round-trips and slot time; attempt counts become meaningless for
   diagnosis.
-- **Fix needed (OPEN):** back off (`available_at` in the future) when the lease is held, or collapse
-  queued continuations for one generation into one task.
+- **Confirmed on the trenton DB (read-only, same day):** generation `abdc99a8…` (work id
+  `970544ce…`): revision 199 held the lease 11:24:33→11:28:14; revisions 200/201/202 bounced
+  502/266/123 times and all ended `superseded` within 1 ms of it; 203 then ran and applied. Its
+  revisions came from 198 `claim_changed`, 4 `person_result`, 1 `initial_settled` signals. Lane
+  total: 21 continuation tasks, 3,210 claims, 9 superseded, 8 applied; worst task 883 claims.
+  Mechanism: the 10 s quality sweep (`_quality_reconcile_loop` → `sweep_quality`) re-offers each
+  behind generation's *current* revision; a new revision is a new dedup key, so a new task joined
+  the running one on the same lease every tick.
+- **Fix (both layers, ruled with the founder):**
+  1. *Source* — `enqueue_task(..., only_if_work_idle=True)` (generic queue option, advisory-locked
+     per `(kind, work id)`): no insert while a queued/claimed task of that kind exists on the work
+     id. `sweep_quality` uses it, so an account has at most one live continuation; the tick after
+     it ends offers the latest revision (≤10 s later) — the agent-turn dispatcher's existing rule.
+  2. *Safety net* — `LeasedWorkWorker._wait_behind_held_lease` (both the cross-worker and the
+     same-process branch): requeue with `uncount_attempt=True` (a claim that never ran is not an
+     attempt) and `delay = clamp((claimed_at − enqueued_at)/2, poll_interval, lease_ttl)`;
+     `log.debug("worker.lease_held_requeue", …)`. Applies to every kind; other kinds keep one live
+     task per work id, so they reach it only in crash recovery.
+- **Verified:** new tests red first, then green — `tests/fleet/test_work_worker.py` (held lease,
+  wait bounds, same-process bounce), `tests/fleet/test_fleet_db.py` (attempt taken back; busy-work
+  offer refused until the live task ends), `tests/arv2/test_quality_driver_db.py` (sweep asks for
+  `only_if_work_idle`). `tests/fleet` + `tests/arv2` on a throwaway pg16 DB: all pass except
+  `test_quality_claims_db.py::test_provider_value_and_web_quote_use_originals_and_replay`, which
+  fails identically on the unchanged base (pre-existing, not investigated). Worker-driving API
+  tests (146) pass; mypy clean. **Owed:** a live multi-worker walk to see the spin gone.
 
 ## 7. Smaller issues seen along the way
 

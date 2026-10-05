@@ -105,6 +105,7 @@ class FakeQueue:
         priority: int = 0,
         payload: dict[str, Any] | None = None,
         reopen_terminal: bool = False,
+        only_if_work_idle: bool = False,
     ) -> bool:
         if self.trace is not None:
             self.trace.append("enqueue")
@@ -117,6 +118,7 @@ class FakeQueue:
                 "priority": priority,
                 "payload": payload,
                 "reopen_terminal": reopen_terminal,
+                "only_if_work_idle": only_if_work_idle,
             }
         )
         # A duplicate dedup key is a pure no-op at the real queue (``reopen_terminal=False``),
