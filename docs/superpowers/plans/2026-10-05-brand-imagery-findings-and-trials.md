@@ -287,6 +287,33 @@ kind of subject; short prompt), with pointers from references.md, components.md 
   look, none its pastel look — the pastel look exists only in ads with text on them, and no run
   used crop_image to lift it out.
 
+### T1 light (2026-10-05) — four search methods, 10 Conduit requests, founder-labelled
+
+Pooled top-5 per method per request (125 images), labelled blind by the founder. Found = right
+assets in the top 5 out of min(right answers, 5); q3 (Conduit wordmark for a light background) had
+no right answer found by any method.
+
+| Method | Requests with a right answer in top 5 | Right assets found | Median time |
+|---|---|---|---|
+| keyword (today's `search_assets`) | 8/9 | 22/36 (61%) | 0.03 s |
+| filtered (type / has text / ad or website, then keyword) | 6/9 | 22/36 (61%) | 0.01 s |
+| model picker (one-line inventory → DeepSeek v4.1 Flash) | 8/9 | 26/36 (72%) | 17 s, $0.06 total |
+| CLIP (openai/clip-vit-base-patch32, local) | 8/9 | 31/36 (86%) | 0.12 s |
+| hybrid keyword + CLIP (rank fusion) | **9/9** | 28/36 (78%) | ~0.15 s |
+
+- CLIP alone found the most, and was the only method to find any inbox screenshot (q4: 5/5,
+  others 0/5); it missed the pastel-look request (q1, 0/3) that keyword search got 2/3 of. The
+  hybrid is the only method with a right answer for every answerable request.
+- Filters hurt as built: "no text" excluded the founder's q1 picks (ads with text in the pastel
+  look) and "type = logo" excluded the Oracle logo that lives inside an ad (q8).
+- The picker is too slow for in-turn search with reasoning on (9–73 s per request).
+- q3 failed for every method because the Conduit wordmark is an SVG (CLIP skips vectors) whose
+  stored description is its own asset id (one of the 5 junk descriptions).
+- CLIP cost: 581 MB model + ~700 MB packages; embedding 515 images took 5.1 s on the Mac GPU,
+  7.6 s on CPU; a query takes milliseconds. The founder disliked CLIP's results on sight; the
+  labels say otherwise — decision pending.
+- Caveat: one brand, 10 requests; the pool only holds what some method found.
+
 ## Evidence index
 
 - Run 3 image calls: session `dsess_76efab4f…/turns/run_fac28447…/logs/run.jsonl` (15:55:32, 15:55:39).
