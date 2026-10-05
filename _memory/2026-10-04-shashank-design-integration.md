@@ -355,3 +355,15 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   test_the_tool_docstrings_carry_the_amendment_too. Helper-backed scene tests fail under `env -i`
   (default DB lacks workspace_hostname); they skip in a worktree without the helper.
 - Contacts read cost: 10-15 pages per account committee (~120-180 KB) if Design reads it all.
+
+## 2026-10-06 — website-agent context clearing (plan docs/superpowers/plans/2026-10-06-web-agent-context-clearing.md)
+- Built: `lumen_agent/context_clearing.py` (rule + ContextEdit adapter, logs `web_context.cleared`),
+  wired via LangChain ContextEditingMiddleware in `harness_web.py`, flag
+  `LUMEN_AGENT_WEB_CONTEXT_CLEARING=1` (both .env.example files + lane .env). Commits 11005bdc9, 7db079c5f.
+- Free replay on the Syracuse run (dsess_b5f568ded78d5224abafd1d836c670f0,
+  `scripts/context_clearing_replay.py`): LangChain's approximate counter says history total
+  4.12M -> 2.85M (31% less), but it undercounts images. Counting images by pixels and adding the
+  ~48k fixed prompt: peak per call ~269k -> ~198k, total over 34 calls 6.10M -> 4.48M (27% less).
+  Most of the drop starts at call 10 (plan.md written). Expect roughly a quarter off the website
+  agent's cost (~$7.71 -> ~$5.6), not half — the latest round's screenshots and reads stay.
+- Owed: founder-run live re-run of the Syracuse request (Task 4) after a stack restart.
