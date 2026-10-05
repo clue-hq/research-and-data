@@ -137,3 +137,36 @@ def test_the_cleared_prefix_is_stable_between_boundaries() -> None:
     short = clear_superseded_tool_results(history[:11])
     long = clear_superseded_tool_results(history)
     assert [m.model_dump() for m in long[:11]] == [m.model_dump() for m in short]
+
+
+def test_the_edit_runs_through_langchains_real_middleware_and_leaves_saved_history_alone() -> None:
+    """The adapter must fit ContextEditingMiddleware's real call shape: the model sees stubs,
+    the request's own message list (the saved history) keeps the originals."""
+    import asyncio
+
+    from langchain.agents.middleware import ContextEditingMiddleware
+    from langchain.agents.middleware.types import ModelRequest
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    from lumen_agent.context_clearing import SupersededToolResultsEdit
+
+    history = _history_with_two_rounds()
+    request = ModelRequest(model=FakeMessagesListChatModel(responses=[AIMessage(content="x")]),
+                           messages=history)
+    middleware = ContextEditingMiddleware(edits=[SupersededToolResultsEdit()])
+    seen: list = []
+
+    def handler(req):
+        seen.append(req.messages)
+        return AIMessage(content="done")
+
+    middleware.wrap_model_call(request, handler)
+
+    async def ahandler(req):
+        seen.append(req.messages)
+        return AIMessage(content="done")
+
+    asyncio.run(middleware.awrap_model_call(request, ahandler))
+    for sent in seen:
+        assert _cleared(sent[4]) and not _cleared(sent[10])
+    assert not _cleared(history[4]) and history[4].content == _IMAGE
