@@ -132,6 +132,19 @@ code change), **MINE** (caused by how I operated the lane, not by the product).
 - **`claimed_at` is refreshed by heartbeats**, so many tasks showing the same claim time (11:22:06,
   11:31:47) is normal, not a mass re-claim; `attempts` stayed 1 for those.
 
+## 8. Brand-brief step times out and retries for many minutes — OPEN
+
+- **What happened:** the Stripe and Garner Health typography re-extractions (13:27, descriptions/
+  vision/ads off) reached "Preparing your brand kit…" by ~13:43 and then sat there: the brand-brief
+  agent's calls to grok-4.7 (`/responses`, reasoning medium, up to 3 screenshots) kept timing out and
+  retrying ~every 2 minutes (Stripe from 13:42, Garner from 13:48). Conduit's morning run showed the
+  same retries (08:11, 08:13). OpenRouter itself answered (3–4 s on /models).
+- **Why it can take so long:** `lumen_ingestion/brief_agent.py` allows `MAX_AGENT_STEPS = 6` rounds;
+  each call times out at ~120 s and is retried twice, so the step can run ~30 min before giving up.
+  A refused brief still publishes the kit, so it delays rather than blocks.
+- **Fix ideas (OPEN):** faster model or lower reasoning for the brief, fewer screenshots, no client
+  retries on timeout (fail fast), or run the brief after the kit is published so it never delays it.
+
 ## Current state at the time of writing (~11:32)
 
 - Brand kits: all three done (Stripe 517/701 described, Garner 95/99, AltCarbon 101/111).
