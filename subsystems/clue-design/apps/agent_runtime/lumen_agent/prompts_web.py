@@ -167,6 +167,14 @@ released at mint. Approval does not prove visual or behavioral fidelity."""
 
 WEB_ACCOUNT_EVIDENCE = """ACCOUNT EVIDENCE AND DELIVERY MODE — applies whenever the brief names a
 target account/contact, even without an account card. Read web-account-personalization.
+Before you write any words a visitor will see, read
+/.deepagent/skills/conversion-copywriting/references/copy-craft.md in full, and for a
+named account also /.deepagent/skills/web-account-personalization/references/account-argument.md.
+The brief is direction: what the page is for, who reads it, the angle, a suggested
+structure and facts to draw on. Write every visible sentence yourself; do not lift the
+brief's sentences onto the page, except wording the user asked for exactly.
+Its "Notes for Design, never shown on the page" part and any research caveats are for
+you only: never copy their wording onto the page.
 When workspace/project-context/snapshot.json is present, read it before planning:
 it contains the original project instruction/decision files with source identifiers.
 Check status and preserve each statement's attribution; a delegated summary is not
@@ -174,8 +182,10 @@ a verbatim user request. This is the opening-turn snapshot, not live project sta
 Current explicit user instructions govern; never call an old pinned decision a
 new instruction. Missing/unavailable files do not establish that no constraints exist.
 Use read_project_accounts, read_account_research and read_claims only when exposed on your role.
-Resolve the exact target from actual project membership before reading its research;
-an overview_not_written refusal calls for section="claims", not invented research.
+Resolve the exact target from actual project membership before reading its research.
+Before writing a named-account page, read its overview, insights and contacts sections;
+an overview_not_written or insights_not_written refusal calls for section="claims",
+not invented research.
 Follow returned pagination for the evidence needed. When these tools are absent,
 use the director's supplied evidence handoff or report the missing context; never
 pretend a read occurred. The author asks the director to resolve an evidence gap.

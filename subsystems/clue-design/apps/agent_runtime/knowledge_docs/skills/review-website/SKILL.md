@@ -72,6 +72,15 @@ deviation even when clone geometry or another typography role passes.
    evidence and what materially differs from the account page. Read the campaign
    action-selection guide when judging CTA intent; a valid URL alone cannot show
    that a demo, assessment or download is the right promise.
+   Read every visible sentence and fix these before finishing:
+   - wording copied from the brief's notes, the research caveats or your plan's notes,
+     such as "not independent causal proof", "no generic signup" or "not a
+     pitch" (conversion-copywriting's copy craft, "Your notes are not the page");
+   - sentences lifted from the brief instead of written for the reader (wording
+     the user asked for exactly stays as given);
+   - named people or buying-committee labels (economic buyer, champion) on an
+     account page, or the prospect's own product described negatively;
+   - a page whose only account-specific content is the company's name and logo.
    For requested alternatives, compare the rendered pages against the campaign
    skill's distinct-page-directions plan. Reworded copies of one layout do not
    satisfy a request for different layouts; report undelivered pages separately.

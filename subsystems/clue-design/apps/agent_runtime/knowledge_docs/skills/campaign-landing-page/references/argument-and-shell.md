@@ -162,9 +162,10 @@ Before deciding sections, list what the page MAY use:
 
 And hold the one hard line of this craft: **the page never invents evidence.**
 No fabricated customers, metrics, quotes, awards, deadlines, or partnership
-implications — and analogous proof is presented as what it is ("results those
-named customers reported"), never visually implied as a forecast for this
-reader. When a section you want needs proof that does not exist, cut the
+implications — and analogous proof stays attributed to the customer who
+reported it ("Wynwood House cut guest resolution time from 15 minutes to 3"),
+never visually implied as a forecast for this reader. Naming whose result it is
+is the qualification; no disclaimer sentence is needed. When a section you want needs proof that does not exist, cut the
 section or reshape it around what is real. An honest smaller page outperforms
 an impressive fabricated one — and a fabricated one is the only real failure.
 

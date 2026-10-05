@@ -5,32 +5,35 @@ description: Use when writing or rewriting campaign copy, page headings, section
 
 # Evidence-grounded conversion copy
 
-Name what the product does, why the supplied audience would use it and the real
-next step. Match the brand's observed voice and the current composition's density.
-For page copy, `campaign-landing-page` owns the argument; other surfaces keep
-their existing strategy skill. The wording craft belongs here.
+Say what the product does, why this reader would use it, and the real next step.
+Match the brand's observed voice and the density of the current composition.
+For page copy, `campaign-landing-page` decides what the page argues; this skill
+decides how each sentence says it. Other surfaces keep their own strategy skill.
 
-For a new website or a substantive rewrite,
+Before you write any words a visitor will see, read [copy craft](references/copy-craft.md)
+in full, continuing any truncated read. It covers the brief as direction, notes that
+must stay off the page, headlines, the reader's vocabulary, the claim ladder, proof,
+calls to action, forms, people and the prospect, and fitting copy into slots.
+For a new website or a substantive rewrite, also
 read [website copy brief](references/website-copy-brief.md) before filling section slots.
-Continue any truncated reference read before applying the guide.
 
-Read [copy craft](references/copy-craft.md) when drafting an argument or rewriting
-copy. It retains the headline, audience vocabulary, claim/proof, tone, form and
-slot-fit guidance. For a tiny exact-text website change, preserve the requested
-wording and use `edit-website`; other surfaces keep their own edit contract.
-Apply the same evidence checks to exact replacements. Skip a new strategy exercise.
+For a tiny exact-text website change, keep the requested wording and use
+`edit-website`, without a new strategy exercise. Other surfaces keep their own edit
+contract. Exact replacements still get the same evidence checks.
 
-Before composing prominent facts or outcome claims, pair the sentence with its
-supporting excerpt in the existing plan. Preserve terms, subject, units, eligibility
-and timeframe; retrieve missing detail or narrow the claim, never fill from memory.
-Keep metrics attributed and qualified. Seller capability and another customer's
-result are not this reader's forecast; conditional words do not supply causality.
-Unsupported requested proof remains a review gap even in a useful narrower draft.
+Before you write a prominent fact or outcome, find its supporting excerpt in your
+plan. Keep its terms, subject, units, eligibility and time window. If a detail is
+missing, look it up or narrow the claim; never fill it from memory. Keep each
+metric with the customer it belongs to. A seller capability or another customer's
+result is not a forecast for this reader. If requested proof has no support, write
+the useful narrower draft and name the gap in your review report.
 
-For web copy addressing accounts/contacts or segments, read
-`web-account-personalization`. Use its identity, claim and allowed-use limits.
+When the page addresses accounts, contacts or segments, read
+`web-account-personalization` and follow its identity, claim and allowed-use limits.
 Other surfaces keep their own account-adaptation and evidence contracts.
-For web conversion, align label, actual action and verified destination; no default
-pilot, invented URL or homepage relabeled as booking. Keep internal caveats and
-missing-source notes in the review report, not visitor-facing copy. Never promise
-form delivery, consent behavior or response timing without implementation evidence.
+
+For web conversion, the button label, the action it performs and its verified
+destination must match. Do not default to a pilot, invent a URL, or relabel the
+homepage as a booking page. Never promise form delivery, consent handling or a
+response time without evidence that it is implemented. Internal caveats and
+missing-source notes go in the review report, never in visitor-facing copy.

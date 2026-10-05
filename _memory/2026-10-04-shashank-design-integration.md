@@ -313,3 +313,45 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   stories. The website design agent writes all page words itself with its copywriting skills and
   never lifts sentences from either half of the brief (A2 must say the same). Notes half, prospect
   rule and the research offer (recommendation, no hard gate) unchanged.
+
+## 2026-10-05 — A1 + A2 built (uncommitted at time of writing)
+- **A1:** Head of ABM v72 / manual v18 / stage0-interview v45. manual-siblings v18 has "How to write
+  the brief for a page" (For the page / Notes for Design, never shown on the page; direction, not
+  copy) and "When the account has not been researched" (offer research, recommendation only).
+  open_design_leg@5 description says the same and states the first design turn is queued at once
+  (description only; schema digest unchanged). Prompt v18 and recipe 33 unchanged.
+- A3 fix: `insights_not_written` and `context_required` (raised by read_tools since 862d40b38) had
+  no tool_notes.yaml line, so test_manual_drift failed. Notes added under read_account_research.
+  Lesson: run tests/agents/test_manual_drift.py whenever a read tool gains a refusal code.
+- **A2 (design agent):** copy-craft.md gains "The brief is direction; you write every word", "Your
+  notes are not the page" (JW Marriott / Dana examples), the attribution-is-the-qualification
+  proof rule (replaces the "qualification beside the claim" rule that produced disclaimer
+  sentences) and "People and the prospect"; conversion-copywriting SKILL.md rewritten plainly;
+  account-argument.md reads overview + insights + contacts and gains "The shape of a 1:1 account
+  page"; identity-and-evidence.md lists the four @3 sections; prompts_web.py WEB_ACCOUNT_EVIDENCE
+  requires reading copy-craft in full and never lifting brief/notes wording; review-website step 3
+  gains the copy checks.
+- Owed: founder's live website session per workspace (before/after copy comparison).
+- **Verification pass (founder asked for close verification) found three A3 defects, all fixed:**
+  1. `_PAGE_WRITTEN_AT` gained `kind`/`page` binds in 862d40b38 but `_current_lane_overview` still
+     passed three → EVERY current-lane overview read raised (Head of ABM @2 too). Tests only seeded
+     legacy display blocks. The live stack (started 15:59/16:53) predates the commit, so it never ran.
+  2. Contacts paged whole people; real contact pages are 22-46 KB vs the 12 KB read page, so every
+     person lost trailing sections (`do-not-mention`, `miscellaneous`) with no way to page to them.
+     Now paged by contact-page section (`offset` counts sections); `sections_truncated` = this
+     person continues on the next page. Live: all sections reachable in order, max page 12286/12288.
+  3. Current-lane `committee()` carries no title → `title` None for everyone; now filled from the
+     title claim exactly as the committee card does (`committee_claims`+`displayable`+`title_of`).
+  New tests: current-lane overview/insights + current-lane contact title (both red on old code),
+  pure paging tests (`tests/arv2/test_read_tools_contacts_paging.py`).
+- A2 verification fixes: "do not lift sentences from your plan" contradicted the web prompt (the
+  plan carries finished words) → narrowed to brief/research; added "wording the user asked for
+  exactly stays as given"; aligned campaign-landing-page's analogous-proof line; prompt paths now
+  `/.deepagent/skills/...` (verified by materializing a workspace); restored the exact
+  "read [website copy brief](…) before filling section slots." phrase test_web_skill_family pins.
+- Pre-existing design-test failures at HEAD (not ours): test_tool_surfaces_are_exactly_the_ledger,
+  test_flag_on_author_toolset_includes_render, test_the_account_reads_are_registered_only_when_the_
+  platform_injected_them[True], test_the_create_website_skill_geometry_block_names_all_ten,
+  test_the_tool_docstrings_carry_the_amendment_too. Helper-backed scene tests fail under `env -i`
+  (default DB lacks workspace_hostname); they skip in a worktree without the helper.
+- Contacts read cost: 10-15 pages per account committee (~120-180 KB) if Design reads it all.

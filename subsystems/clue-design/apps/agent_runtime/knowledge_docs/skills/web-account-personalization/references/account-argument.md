@@ -7,10 +7,13 @@ edits retain their narrower scope. Work in the existing plan, not a new schema.
 
 Read project membership and research through [identity and evidence](identity-and-evidence.md).
 A target may lack a card; use available scoped reads. Keep research and design
-account IDs distinct. Complete the **overview**: follow every returned `next_offset` until
-null. Each page holds whole sections. A section marked `body_truncated` was larger than a
-page on its own and its tail is missing, so treat it as partial. Include committee,
-approach and watch-outs as well as company/fit.
+account IDs distinct. Before writing a named-account page, read three sections of
+`read_account_research`: **overview**, **insights** and **contacts**, following every
+returned `next_offset` until null. Each page holds whole sections. A section marked
+`body_truncated` was larger than a page on its own and its tail is missing, so treat it
+as partial. The contacts tell you who on the buying committee the page must persuade
+and what each person cares about; use that to choose the argument, never to name
+them on an account page.
 For a contact page, read available professional evidence using the returned person
 entity ID. Then read only the claim families needed for the selected argument.
 In the plan record **read coverage**: sections/contact evidence read, outstanding
@@ -51,6 +54,23 @@ remain useful fit questions without deleting supported context and product detai
 Map sections to source ancestors, text/media changes and the question each answers.
 Rebind healthy slots first; derive a variant when meaningful explanation cannot fit.
 Preserve the seller's geometry, type and imagery. Do not shrink copy into slogans.
+
+## The shape of a 1:1 account page
+
+Build the middle of the page from the account's own priorities:
+
+1. Pick two or three priorities the research supports, each in the account's own
+   words where you have them.
+2. Pair each with the seller capability that serves it, and say how it would apply
+   here. This is a proposal, so it "would" help; it never "will".
+3. Then attributed proof from similar customers: name the customer and give the
+   result as theirs.
+4. Then one action.
+
+Swapping in the company's name and logo is not personalization. If the account has
+no research, say so in your handoff and write only what the seller's own facts
+support. The brief's suggested structure is direction: follow it when it serves
+this shape, change it when a better order serves the reader.
 
 ## Write useful visitor copy, keep the audit internal
 

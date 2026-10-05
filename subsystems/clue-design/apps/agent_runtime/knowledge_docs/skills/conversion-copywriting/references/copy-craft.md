@@ -51,6 +51,35 @@ the pyramid: what this is → why it matters → how it works → evidence →
 detail → action. A reader who stops scrolling at any point should still have
 gotten the most important thing above that point.
 
+## The brief is direction; you write every word
+
+The brief tells you what the page is for, who reads it, the angle, a suggested
+structure and the facts you can draw on. It is direction, not copy. Write every
+visible sentence yourself, in the brand's voice, for this reader. Do not lift
+sentences from the brief or the research onto the page. Use the facts; choose your
+own words. The one exception is wording the user asked for exactly
+(a headline, a tagline, a button label): keep that as given. A suggested structure
+is a starting point: change it when a better order serves the reader.
+
+## Your notes are not the page
+
+The brief, the research and your plan also carry notes meant only for you: what
+must not be claimed, how strong the evidence is, who is on the buying committee.
+(The finished words you draft in your plan are yours to place; the notes are not.)
+A brief may put these under "Notes for Design, never shown on the page". Never
+copy that wording onto the page. Turn each note into what the reader should see
+instead, or leave it out.
+
+| A page said | Write instead |
+|---|---|
+| "These are vendor-published case studies, not JW Marriott results, and not independent causal proof." | Remove it. The attribution already does that job: "Wynwood House cut guest resolution time from 15 minutes to 3." |
+| "No generic startup signup." | Say what the reader gets: "A 30-minute walkthrough with your guest experience and operations leads." |
+| "Bring messages, voice, and a supported hotel PMS (Opera Cloud is one Conduit names)." | "Connect messaging, voice and your PMS, Opera Cloud included." |
+| "Not a hotel-operator pitch." | Remove it. Say what the conversation covers. |
+
+A sentence that says what the page is not, what the evidence is not, or what you
+were told to avoid is almost always a note that leaked. Say what is true instead.
+
 ## Say what it is
 
 The first screen is never a mystery box. For a considered decision, literal
@@ -82,8 +111,10 @@ Seller capability language  →  Reader operational language
 Prefer the words the audience actually uses — from the brief's research, the
 account's own materials, and the clone's own published copy. Investor pitch
 is not buyer pitch: market size, category creation, and vision are OUT;
-what changes operationally for the reader is IN. If the brief carries the
-reader's own phrases, use them verbatim — recognition is persuasion.
+what changes operationally for the reader is IN. When the research quotes the
+reader's own phrases (their filings, their site, their leaders), you can use them
+verbatim — recognition is persuasion. The brief's own sentences are not the
+reader's words; they are direction for you.
 
 ## The claim ladder
 
@@ -116,10 +147,12 @@ persuades more.
 - **"Trusted by" needs actual use or endorsement evidence.** "Backed by" needs
   evidenced backing; "partner" needs evidenced partnership. These relationships
   are distinct and cannot stand in for one another.
-- **Analogous proof is labeled as what it is** — results those named
-  customers reported, evidence for the model, not a forecast — and the
-  qualification sits BESIDE the claim, in body text, never buried in a
-  footer.
+- **Name the customer and give the result as theirs.** "Wynwood House cut
+  guest resolution time from 15 minutes to 3." Saying whose result it is IS the
+  qualification. Do not add a sentence saying the result is not the reader's,
+  is a vendor case study, or is not independent proof. If a real condition
+  changes what the number means (a time window, a plan, a region), keep it
+  inside the same sentence.
 - **Relationship honesty on personalized pages**: an invitation or proposal
   is not customer, partner or endorsement proof. Use a relationship claim only
   when supplied evidence establishes it. Authentic side-by-side identity can
@@ -225,6 +258,16 @@ their present ("keep pricing flexible as usage grows" — not "stop letting
 outdated billing hold you back", which assumes facts about the reader and
 picks a fight). Real problems are named plainly, framed toward the desired
 state.
+
+## People and the prospect
+
+- An account page speaks to the company. Do not name individual people in the
+  copy ("Alon, the overlap") and never show buying-committee labels (economic
+  buyer, champion, blocker). Use what you know about the committee to choose
+  what the page argues, not to address them. A page for one person is a contact
+  page, which is a separate request.
+- Never describe the prospect's own product negatively ("not a disconnected
+  CRM"). Say what the seller adds.
 
 ## What this skill does NOT do
 
