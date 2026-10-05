@@ -186,10 +186,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
         AgentRole.HEAD_OF_ABM,
         AgentRole.DESIGN,
     )
-    assert c6_roles_for_tool("read_account_research@2") == (
-        AgentRole.HEAD_OF_ABM,
-        AgentRole.DESIGN,
-    )
+    # 2026-10-05: design@v4 moves the design role to `@3` (insights page + committee);
+    # head-of-abm keeps the `@2` it pins.
+    assert c6_roles_for_tool("read_account_research@2") == (AgentRole.HEAD_OF_ABM,)
+    assert c6_roles_for_tool("read_account_research@3") == (AgentRole.DESIGN,)
     # Agent-authored discovery (2026-09-30): `read_discovery_run@3` adds the run's summary, end
     # reason and exclusions, and `head-of-abm@v70` pins it, so the grant moves to `@3`. The paged
     # `@2` stays registered for replay (recipe0-stage0@32 and earlier) and is held by nobody,

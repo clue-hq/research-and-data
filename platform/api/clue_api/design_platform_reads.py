@@ -73,7 +73,7 @@ log = get_logger("clue_api.design_platform_reads")
 _T = TypeVar("_T")
 
 #: The one read asked for at a version other than its default alias (ruling T1-1).
-_PINNED_VERSIONS = {"read_account_research": "2"}
+_PINNED_VERSIONS = {"read_account_research": "3"}
 
 
 class DesignPlatformReadError(RuntimeError):

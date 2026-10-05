@@ -2476,3 +2476,141 @@ def test_the_excluded_list_is_bounded_and_its_total_is_the_whole_run() -> None:
             assert run.candidates == () and run.candidate_total == 0
 
     run_async(scenario())
+
+
+# --- read_account_research@3: the insights page and the buying committee (2026-10-05) --------
+
+
+async def _seed_page_block(
+    conn: AsyncConnection,
+    project: Project,
+    subject_id: EntityId,
+    *,
+    subject_kind: str,
+    page: str,
+    section_key: str,
+    body: dict[str, object],
+) -> None:
+    """One live ``display_block`` on any page of any subject (the legacy display lane)."""
+
+    await conn.execute(
+        text(
+            "INSERT INTO display_block (workspace_id, subject_kind, subject_id, page, "
+            "section_key, body_json, cited_claim_ids, model, prompt_version, recipe_version, "
+            "generated_at) VALUES (:ws, :kind, :subject, :page, :section, "
+            "CAST(:body AS jsonb), CAST(:cited AS uuid[]), 'luna', 'v1+v1', 1, "
+            "CAST(:now AS timestamptz))"
+        ),
+        {
+            "ws": project.workspace_id,
+            "kind": subject_kind,
+            "subject": subject_id,
+            "page": page,
+            "section": section_key,
+            "body": json.dumps(body),
+            "cited": [],
+            "now": _NOW,
+        },
+    )
+
+
+def test_the_insights_section_serves_the_insights_page_and_refuses_when_unwritten() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+
+            with pytest.raises(Arv2ReadRefused) as refused:
+                await read_account_research(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    account_entity_id=str(account),
+                    section="insights",
+                    settings=VERIFYING,
+                )
+            assert refused.value.code == "insights_not_written"
+
+            await _seed_page_block(
+                conn,
+                project,
+                account,
+                subject_kind="account",
+                page="insights",
+                section_key="watch-outs",
+                body={"items": [{"text": "A new CFO joined in June."}]},
+            )
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="insights",
+                settings=VERIFYING,
+            )
+            assert research.section == "insights"
+            assert [section.section_key for section in research.overview] == ["watch-outs"]
+            assert "A new CFO joined in June." in research.overview[0].body_text
+            assert (research.claims, research.contacts) == ((), ())
+
+    run_async(scenario())
+
+
+def test_the_contacts_section_lists_the_committee_with_each_person_s_contact_page() -> None:
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            await load_display_recipes(conn)
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            written = await _seed_contact(
+                conn,
+                account,
+                name="Nick Fisher",
+                linkedin="https://www.linkedin.com/in/nicholastfisher",
+            )
+            unwritten = await _seed_contact(
+                conn, account, name="Ada Lane", linkedin="https://www.linkedin.com/in/adalane"
+            )
+            # The legacy committee is the contacts under the account holding a live claim.
+            for label, contact, title in (
+                ("t1", written, "VP of Marketing"),
+                ("t2", unwritten, "CFO"),
+            ):
+                await _seed_contact_claim(
+                    conn,
+                    claims,
+                    project,
+                    contact,
+                    label=label,
+                    field_key="contact.current_title",
+                    value=title,
+                )
+            await _seed_page_block(
+                conn,
+                project,
+                written,
+                subject_kind="contact",
+                page="contact",
+                section_key="why-this-person",
+                body={"items": [{"text": "Owns the ABM budget."}]},
+            )
+
+            research = await read_account_research(
+                conn,
+                workspace_id=project.workspace_id,
+                account_entity_id=str(account),
+                section="contacts",
+                settings=VERIFYING,
+            )
+            by_id = {person.contact_entity_id: person for person in research.contacts}
+            assert set(by_id) == {str(written), str(unwritten)}
+            assert by_id[str(written)].name == "Nick Fisher"
+            assert by_id[str(written)].page_written is True
+            assert by_id[str(written)].sections[0].section_key == "why-this-person"
+            assert "Owns the ABM budget." in by_id[str(written)].sections[0].body_text
+            # A person whose page is not written yet is still on the committee.
+            assert by_id[str(unwritten)].page_written is False
+            assert by_id[str(unwritten)].sections == ()
+            assert research.next_offset is None and research.overview == ()
+
+    run_async(scenario())

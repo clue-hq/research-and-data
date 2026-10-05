@@ -34,6 +34,7 @@ from clue_api.agent_turn_wiring import DurableAgentArtifactStore
 from clue_api.arv2.icp_confirmation import ConfirmedIcp, pin_project_icp
 from clue_api.arv2.read_tools import (
     DbArv2ReadService,
+    ReadAccountResearchV3Tool,
     build_arv2_paged_read_tools,
     build_arv2_read_tools,
 )
@@ -236,6 +237,9 @@ async def _seeded(
         registry.register(tool, make_default=tool.descriptor.name not in unaliased)
     for tool in build_arv2_paged_read_tools(service):
         registry.register(tool, make_default=True)
+    # The design side asks for `read_account_research@3` (design@v4), as the production wiring
+    # registers it: beside `@2`, without the name-only alias.
+    registry.register(ReadAccountResearchV3Tool(service), make_default=False)
     from clue_api.web_search_tool import WebSearchTool  # noqa: PLC0415
     from tests.api.test_web_search_tool import HIT, FakeExa, _result  # noqa: PLC0415
 
@@ -339,7 +343,7 @@ def test_the_three_reads_answer_for_the_legs_project_on_the_platform_loop(
             ).all()
             assert [str(row[0]) for row in rows] == [
                 "read_project_accounts@1",
-                "read_account_research@2",
+                "read_account_research@3",  # design@v4 (2026-10-05)
                 "read_claims@1",
             ]
 

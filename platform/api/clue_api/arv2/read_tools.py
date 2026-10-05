@@ -79,6 +79,10 @@ from clue_toolbelt import (
 )
 
 __all__ = [
+    "AccountContactView",
+    "ReadAccountResearchV3Input",
+    "ReadAccountResearchV3Output",
+    "ReadAccountResearchV3Tool",
     "EVIDENCE_CHARS",
     "MAX_ACCOUNTS",
     "MAX_CANDIDATES",
@@ -343,9 +347,29 @@ class AccountClaimView(BaseModel, frozen=True):
     collected_at: str
 
 
+class AccountContactView(BaseModel, frozen=True):
+    """One person on the account's buying committee, with their written contact page.
+
+    ``read_account_research@3`` ``section='contacts'``: the people the account screen lists, in its
+    order, each with the sections of their contact page ("why this person" and the rest). A person
+    whose page is not written yet is still listed, with ``page_written`` false and no sections.
+    """
+
+    contact_entity_id: str
+    name: str
+    #: The person's committee role or membership state as the account screen shows it.
+    committee_role: str | None
+    title: str | None
+    page_written: bool
+    sections: tuple[AccountOverviewSection, ...]
+    #: Only when this one person's page is larger than a whole read page: trailing sections were
+    #: left out so the person fits. Every other person is served whole.
+    sections_truncated: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class AccountResearch:
-    """What research holds about one account, in whichever of the two shapes was asked for."""
+    """What research holds about one account, in whichever shape was asked for."""
 
     account_entity_id: str
     account_name: str
@@ -365,6 +389,8 @@ class AccountResearch:
     #: may ask for. The whole account's, never this page's: a narrowed read still says what
     #: else is there, so a wrong guess costs one call rather than a series of them.
     prefixes: dict[str, int]
+    #: ``section='contacts'`` only (``@3``): the committee, a page of whole people at a time.
+    contacts: tuple[AccountContactView, ...] = ()
 
 
 #: The hard ceiling on one claims read, for the same reason as :data:`MAX_ACCOUNTS`: a researched
@@ -492,10 +518,225 @@ def _claim_ids_in(value: object) -> tuple[str, ...]:
 _PAGE_WRITTEN_AT = text(
     """
     SELECT updated_at FROM arv2_research_page_current
-    WHERE workspace_id = :ws AND context_id = :context AND subject_kind = 'account'
-      AND subject_id = :subject AND page = 'overview'
+    WHERE workspace_id = :ws AND context_id = :context AND subject_kind = :kind
+      AND subject_id = :subject AND page = :page
     """
 )
+
+
+async def _current_lane_page(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    subject_kind: Literal["account", "contact"],
+    subject_uuid: UUID,
+    page: Page,
+    project_id: str | None,
+    account_uuid: UUID | None = None,
+) -> list[AccountOverviewSection] | None:
+    """One research page the current lane wrote (an account's overview or insights, or a
+    contact's page), as the screens serve it.
+
+    ``None`` when the subject has no current-lane research at all (the caller may then read the
+    legacy display lane); an empty list when it does but this page is not written yet. The page is
+    chosen exactly as the screens choose it (``select_quality_context``).
+    """
+
+    from clue_api.arv2.quality_pages import read_page
+    from clue_api.arv2.quality_read import select_quality_context
+
+    selection = await select_quality_context(
+        conn,
+        workspace_id=workspace_id,
+        subject_id=subject_uuid,
+        subject_kind=subject_kind,
+        account_id=account_uuid,
+        project_id=project_id,
+    )
+    if selection is None:
+        return None
+    if selection.scope is None or selection.context_id is None:
+        raise Arv2ReadRefused(
+            "context_required",
+            "this account was researched in more than one project and this read names none of "
+            "them; open the account in the app",
+        )
+    try:
+        served = await read_page(conn, selection.scope, context_id=selection.context_id, page=page)
+    except ValueError:
+        # A stopped or not-yet-started generation has no usable narrative.
+        return []
+    written_at = (
+        await conn.execute(
+            _PAGE_WRITTEN_AT,
+            {
+                "ws": workspace_id,
+                "context": selection.context_id,
+                "kind": subject_kind,
+                "subject": subject_uuid,
+                "page": page,
+            },
+        )
+    ).scalar_one_or_none()
+    sections: list[AccountOverviewSection] = []
+    for section in served["display_block"]["sections"]:
+        if not section.get("intro") and not section.get("items"):
+            continue
+        body = {
+            key: section[key]
+            for key in ("h1", "intro", "items", "restricted")
+            if key in section and section[key] not in (None, [])
+        }
+        sections.append(
+            AccountOverviewSection(
+                section_key=str(section["key"]),
+                body_text=json.dumps(body, sort_keys=True, ensure_ascii=False),
+                body_truncated=False,
+                cited_claim_ids=_claim_ids_in(body),
+                generated_at="" if written_at is None else written_at.isoformat(),
+            )
+        )
+    return sections
+
+
+async def _legacy_page(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    subject_kind: Literal["account", "contact"],
+    subject_uuid: UUID,
+    page: Page,
+) -> list[AccountOverviewSection]:
+    """The legacy display lane's live blocks for one page, in the page's own recipe order."""
+
+    blocks = await live_blocks(
+        conn,
+        workspace_id=workspace_id,
+        subject_kind=subject_kind,
+        subject_id=str(subject_uuid),
+        page=page,
+    )
+    if not blocks:
+        return []
+    recipes = await read_recipes(conn, page, workspace_id=workspace_id)
+    position = {recipe.section_key: index for index, recipe in enumerate(recipes)}
+    ordered = sorted(
+        blocks.values(),
+        key=lambda block: (position.get(block.section_key, len(position)), block.section_key),
+    )
+    return [
+        AccountOverviewSection(
+            section_key=block.section_key,
+            body_text=json.dumps(block.body_json, sort_keys=True, ensure_ascii=False),
+            body_truncated=False,
+            cited_claim_ids=block.cited_claim_ids,
+            generated_at=block.generated_at.isoformat(),
+        )
+        for block in ordered
+    ]
+
+
+async def _page_sections(
+    conn: AsyncConnection,
+    *,
+    workspace_id: str,
+    subject_kind: Literal["account", "contact"],
+    subject_uuid: UUID,
+    page: Page,
+    project_id: str | None,
+    account_uuid: UUID | None = None,
+) -> list[AccountOverviewSection]:
+    """A page's written sections: the current lane's when the subject has current-lane research,
+    the legacy lane's otherwise. Empty when nothing is written."""
+
+    current = await _current_lane_page(
+        conn,
+        workspace_id=workspace_id,
+        subject_kind=subject_kind,
+        subject_uuid=subject_uuid,
+        page=page,
+        project_id=project_id,
+        account_uuid=account_uuid,
+    )
+    if current is not None:
+        return current
+    return await _legacy_page(
+        conn,
+        workspace_id=workspace_id,
+        subject_kind=subject_kind,
+        subject_uuid=subject_uuid,
+        page=page,
+    )
+
+
+async def _account_contacts(
+    conn: AsyncConnection, *, workspace_id: str, account_uuid: UUID, project_id: str | None
+) -> list[AccountContactView]:
+    """The account's buying committee as the account screen lists it, each person with their
+    written contact page."""
+
+    from clue_api.frontend_read.display_pages import committee
+
+    members = await committee(
+        conn, workspace_id=workspace_id, account_id=str(account_uuid), project_id=project_id
+    )
+    people: list[AccountContactView] = []
+    for member in members:
+        sections = await _page_sections(
+            conn,
+            workspace_id=workspace_id,
+            subject_kind="contact",
+            subject_uuid=UUID(member.id),
+            page="contact",
+            project_id=project_id,
+            account_uuid=account_uuid,
+        )
+        people.append(
+            AccountContactView(
+                contact_entity_id=member.id,
+                name=member.name,
+                committee_role=member.persona,
+                title=member.title,
+                page_written=bool(sections),
+                sections=tuple(sections),
+            )
+        )
+    return people
+
+
+def _fit_contact_to_page(person: AccountContactView) -> AccountContactView:
+    """One person larger than a whole read page, with trailing sections left out until they fit."""
+
+    sections = list(person.sections)
+    trial = person
+    while sections and receipt_bytes([trial.model_dump()]) > READ_REFERENCES_BUDGET_BYTES:
+        sections.pop()
+        trial = person.model_copy(update={"sections": tuple(sections), "sections_truncated": True})
+    if sections and receipt_bytes([trial.model_dump()]) > READ_REFERENCES_BUDGET_BYTES:
+        trial = trial.model_copy(update={"sections": (_clip_section_to_page(sections[0]),)})
+    return trial
+
+
+def _contacts_page(
+    people: Sequence[AccountContactView], *, offset: int
+) -> tuple[tuple[AccountContactView, ...], bool, int | None]:
+    """One page of the committee: whole people from ``offset`` that fit the receipt's budget."""
+
+    if offset >= len(people) and offset > 0:
+        raise Arv2ReadRefused(
+            "offset_past_end",
+            f"this account has {len(people)} committee members; offset {offset} is past the end",
+        )
+    rest = list(people[offset:])
+    fitted, _ = _take_within_budget(
+        [person.model_dump() for person in rest], budget=READ_REFERENCES_BUDGET_BYTES
+    )
+    page = rest[: max(fitted, 1 if rest else 0)]
+    if page and receipt_bytes([page[0].model_dump()]) > READ_REFERENCES_BUDGET_BYTES:
+        page[0] = _fit_contact_to_page(page[0])
+    end = offset + len(page)
+    more = end < len(people)
+    return tuple(page), more, (end if more else None)
 
 
 async def _current_lane_overview(
@@ -893,11 +1134,35 @@ async def read_account_research(
     excluded = {"sensitive": 0, "unverified": 0, "outreach_unsafe": 0}
     next_offset: int | None = None
     prefixes: dict[str, int] = {}
+    contacts: tuple[AccountContactView, ...] = ()
     if section == "overview":
         sections = await _overview_sections(
             conn, workspace_id=workspace_id, account_uuid=account_uuid, project_id=project_id
         )
         overview, truncated, next_offset = _overview_page(sections, offset=offset)
+    elif section == "insights":
+        # @3: the insights page (watch-outs, context and the rest), paged like the overview.
+        sections = await _page_sections(
+            conn,
+            workspace_id=workspace_id,
+            subject_kind="account",
+            subject_uuid=account_uuid,
+            page="insights",
+            project_id=project_id,
+        )
+        if not sections:
+            raise Arv2ReadRefused(
+                "insights_not_written",
+                "this account's insights page has not been written yet; read section='overview' "
+                "or section='claims'",
+            )
+        overview, truncated, next_offset = _overview_page(sections, offset=offset)
+    elif section == "contacts":
+        # @3: the buying committee, each person with their written contact page.
+        people = await _account_contacts(
+            conn, workspace_id=workspace_id, account_uuid=account_uuid, project_id=project_id
+        )
+        contacts, truncated, next_offset = _contacts_page(people, offset=offset)
     else:
         claims, truncated, excluded, next_offset, prefixes = await _account_claims(
             conn,
@@ -919,6 +1184,7 @@ async def read_account_research(
         offset=offset,
         next_offset=next_offset,
         prefixes=prefixes,
+        contacts=contacts,
     )
 
 
@@ -1792,6 +2058,81 @@ class ReadAccountResearchV2Tool(ReadAccountResearchTool):
     def _claims_limit(self, inputs: ReadAccountResearchInput) -> int:
         assert isinstance(inputs, ReadAccountResearchV2Input)
         return inputs.limit
+
+
+class ReadAccountResearchV3Input(ReadAccountResearchV2Input):
+    """``@2``'s inputs, with two more sections: ``insights`` and ``contacts``."""
+
+    section: Literal["overview", "insights", "contacts", "claims"] = "overview"  # type: ignore[assignment]
+
+
+class ReadAccountResearchV3Output(ReadAccountResearchOutput):
+    """``@2``'s output plus the committee, filled only for ``section='contacts'``."""
+
+    #: The buying committee when ``section='contacts'``, else empty.
+    contacts: tuple[AccountContactView, ...] = ()
+
+
+class ReadAccountResearchV3Tool(ReadAccountResearchV2Tool):
+    """``read_account_research@3``: ``@2`` plus the account's insights page and its committee.
+
+    Granted to the website design agent (design profile v4) so a 1:1 page can be written from the
+    whole of what research found, not only the overview. ``@2`` keeps the name-only alias and
+    head-of-abm's pin: this is a new address, so no promoted profile's contract moves.
+    """
+
+    version = "3"
+    model_description = (
+        "Read what research found about one account. section='overview' returns the written "
+        "overview (what they do, why they fit, why now, buying committee), whole sections a page "
+        "at a time: follow next_offset until it is null. section='insights' returns the insights "
+        "page (watch-outs, context and the rest) the same way. section='contacts' returns the "
+        "buying committee the account screen lists, one person at a time with their role, title "
+        "and the sections of their contact page (why this person); a person whose page is not "
+        "written yet is listed with page_written false. Follow next_offset until it is null. "
+        "When the overview or insights page is not written yet the read refuses "
+        "(overview_not_written / insights_not_written): then read section='claims'. "
+        "section='claims' returns the claims the account pages show: set limit (default 40), "
+        "follow next_offset, or narrow with field_prefix to a family listed in 'prefixes'. "
+        "Sensitive, unverified tier-4 and outreach-unsafe claims are held back and counted in "
+        "'excluded'. Effect-free. " + tool_manual_link("read_account_research")
+    )
+    input_model: ClassVar[type[ToolInput]] = ReadAccountResearchV3Input
+    output_model: ClassVar[type[ToolOutput]] = ReadAccountResearchV3Output
+
+    async def invoke(self, inputs: ToolInput, ctx: ToolContext) -> ToolResult:
+        assert isinstance(inputs, ReadAccountResearchV3Input)
+        assert self._service is not None
+        try:
+            research = await self._service.read_account_research(
+                workspace_id=ctx.workspace_id,
+                account_entity_id=inputs.account_entity_id,
+                section=inputs.section,
+                field_prefix=inputs.field_prefix,
+                offset=inputs.offset,
+                limit=self._claims_limit(inputs),
+                project_id=ctx.project_id,
+            )
+        except Arv2ReadRefused as refused:
+            raise PreconditionFailed([PreconditionFailure(refused.code, str(refused))]) from refused
+        tag_entities(
+            [research.account_entity_id]
+            + [person.contact_entity_id for person in research.contacts]
+        )
+        output = ReadAccountResearchV3Output(
+            account_entity_id=research.account_entity_id,
+            account_name=research.account_name,
+            section=research.section,
+            overview=research.overview,
+            claims=research.claims,
+            truncated=research.truncated,
+            excluded=research.excluded,
+            offset=research.offset,
+            next_offset=research.next_offset,
+            prefixes=research.prefixes,
+            contacts=research.contacts,
+        )
+        return ToolResult(tool=self.name, version=self.version, references=output.model_dump())
 
 
 class ReadDiscoveryRunInput(ToolInput):

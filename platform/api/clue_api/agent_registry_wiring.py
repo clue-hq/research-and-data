@@ -269,7 +269,9 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # head-of-abm holds — so a 1:1 creative can open the target account's research itself
     # instead of writing from whatever the brief happened to carry. Nothing else moves.
     # v3 (2026-09-22): v2 plus web_search@1 (spec 2026-09-22). Nothing else moves.
-    AgentRole.DESIGN: "v3",
+    # v4 (2026-10-05): read_account_research @2 -> @3 (insights page + buying committee with each
+    # person's contact page), so a 1:1 page is written from the whole of the research.
+    AgentRole.DESIGN: "v4",
     # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
     # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
     # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
@@ -869,8 +871,14 @@ def _roles_for(address: str, name: str) -> tuple[AgentRole, ...]:
     # 2026-09-19: this branch is a VERSION fence, not a role list — it reads the audit dict so a
     # role joining `read_account_research` (the DESIGN role, at `design@v2`) is granted here too,
     # on `@2` only. The `@1`s stay held by nobody.
+    # 2026-10-05: `@3` adds the insights page and the committee; `design@v4` pins it, so the DESIGN
+    # role holds `@3` and head-of-abm keeps `@2` (its pinned contract). `@1` is held by nobody.
     if name == "read_account_research":
-        return C6_AGENT_TOOL_AUTHORITY.get(name, ()) if address.endswith("@2") else ()
+        if address == f"{name}@2":
+            return (AgentRole.HEAD_OF_ABM,)
+        if address == f"{name}@3":
+            return (AgentRole.DESIGN,)
+        return ()
     # Asset ingestion registered @2 for the upload/edit API, while the reviewed design
     # profile still pins @1. Registration must not implicitly grant every new version.
     if name in {"design_register_asset_record", "design_set_asset_description"}:

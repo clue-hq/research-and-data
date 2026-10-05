@@ -77,13 +77,20 @@ def make_platform_read_tools(tools: Any, reads: Any) -> list:
         field_prefix: str | None = None,
         offset: int = 0,
     ) -> str:
-        """What research found about one account. section="overview" returns the written
-        sections; a researched account whose overview is not written yet answers
-        overview_not_written — then read section="claims". Both sections come in pages: when
-        next_offset is not null, read again with offset=next_offset before you summarize or
-        count. An overview page holds whole sections; one marked body_truncated was larger than
-        a page and is partial. field_prefix narrows to one family named in the answer's
-        prefixes."""
+        """What research found about one account, in four sections:
+        - section="overview": the written overview (what they do, why they fit, why now, buying
+          committee). A researched account whose overview is not written yet answers
+          overview_not_written: then read section="claims".
+        - section="insights": the insights page (watch-outs, context and the rest).
+        - section="contacts": the buying committee the account screen lists, one person at a time
+          with their role, title and the sections of their contact page (why this person). A
+          person whose page is not written yet is listed with page_written false.
+        - section="claims": the facts research holds, each with its source; field_prefix narrows
+          to one family named in the answer's prefixes.
+        Every section comes in pages: when next_offset is not null, read again with
+        offset=next_offset before you summarize or count. Read the overview, insights and contacts
+        before writing a page for a named account: they are where the account-specific reasons
+        come from."""
         return _call(
             tools,
             reads,

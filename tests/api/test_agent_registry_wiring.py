@@ -308,7 +308,9 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # `@1` (166 -> 167), and `read_discovery_run@3` (summary, end reason, exclusions) beside `@2`
     # (167 -> 168). `head-of-abm@v70` pins both new addresses, so they are available and the
     # addresses they replace drop to role-unavailable.
-    assert len(by_address) == 168
+    # 2026-10-05 installs `read_account_research@3` for the design role (168 -> 169); head-of-abm
+    # does not pin it, so from this view it is role-unavailable.
+    assert len(by_address) == 169
     assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["read_discovery_run@3"].status is AgentCapabilityStatus.AVAILABLE
@@ -430,7 +432,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
     # launch_arv2_discovery@2 (2026-09-30) (166 -> 167) and read_discovery_run@3 (167 -> 168),
     # both granted at head-of-abm@v70.
-    assert len(by_address) == 168
+    assert len(by_address) == 169  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
@@ -1037,7 +1039,7 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     the account's research itself.
     """
     resolved = registry.resolve(AgentRole.DESIGN)
-    assert resolved.profile.version == "v3"
+    assert resolved.profile.version == "v4"
     assert len(resolved.profile.tools) == 54
     assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
     assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
@@ -1046,9 +1048,11 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     # `head-of-abm@v56`. `@1` is registered-but-ungranted (frozen for replay), so the design
     # note's `@1` naming cannot be composed: see the module comment at `_roles_for`.
     # 2026-09-22 adds the fourth: web_search@1, the open-web search, used last.
+    # 2026-10-05 (design@v4): the research read moves to `@3` — the insights page and the
+    # committee with each person's contact page.
     for address in (
         "read_project_accounts@1",
-        "read_account_research@2",
+        "read_account_research@3",
         "read_claims@1",
         "web_search@1",
     ):
