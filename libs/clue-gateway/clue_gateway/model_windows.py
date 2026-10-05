@@ -1,14 +1,16 @@
-"""A model's context window, from OpenRouter's public model catalogue (no key needed).
+"""A model's context window: the platform's own registry first, OpenRouter's catalogue after.
 
-Compaction sizes itself from this number (founder ruling 2026-09-29). It is read once per process
-and cached; a missing model or an unreachable catalogue answers ``None`` so the caller falls back
-to fixed thresholds — never an unlimited agent, never a start-up failure.
+Compaction sizes itself from this number (founder ruling 2026-09-29). The models the platform runs
+on are registered with their windows in ``CLUE_AGENT_MODEL_CONTEXT_WINDOWS``, so they never cost a
+network call. Only a model nobody registered is looked up in OpenRouter's public catalogue (no key
+needed), read once per process and cached; a model found in neither answers ``None`` so the caller
+falls back to fixed thresholds — never an unlimited agent, never a start-up failure.
 
-The read is blocking network I/O, so callers on an event loop run it in a thread (the agent
-runtime does). On 2026-10-05 it ran on a fleet worker's loop while OpenRouter trickled the body:
-every read beat the socket timeout, the fetch took 105 s, and the worker lost every lease it held.
-So the whole fetch has a deadline, one thread fetches while the others wait, and a failure is
-retried after a cooldown instead of pinning the process to the fallback for good.
+The catalogue read is blocking network I/O, so callers on an event loop run this in a thread (the
+agent runtime does). On 2026-10-05 it ran on a fleet worker's loop while OpenRouter trickled the
+body: every read beat the socket timeout, the fetch took 105 s, and the worker lost every lease it
+held. So the whole fetch has a deadline, one thread fetches while the others wait, and a failure
+is retried after a cooldown instead of pinning the process to the fallback for good.
 """
 
 from __future__ import annotations
@@ -61,14 +63,24 @@ def resolve_context_window(
     model_id: str,
     *,
     override: int | None,
+    registry: Mapping[str, int] | None = None,
     fetch: Callable[[], Mapping[str, int]] | None = None,
 ) -> int | None:
-    """The model's context window in tokens, ``override`` first; ``None`` when unknown.
+    """The model's context window in tokens: ``override``, then ``registry``, then the catalogue;
+    ``None`` when unknown.
 
-    Blocking: call it from a thread when on an event loop.
+    Blocking when the catalogue is needed: call it from a thread when on an event loop.
     """
     if override is not None:
         return override
+    registered = (registry or {}).get(model_id)
+    if registered is not None:
+        return registered
+    log.warning(
+        "model_windows.not_registered",
+        model_id=model_id,
+        detail="add it to CLUE_AGENT_MODEL_CONTEXT_WINDOWS; reading OpenRouter's catalogue instead",
+    )
     global _cache, _failed_at
     with _lock:
         cooling = _failed_at is not None and time.monotonic() - _failed_at < _RETRY_AFTER_S
