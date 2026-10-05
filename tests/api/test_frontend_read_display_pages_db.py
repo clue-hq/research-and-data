@@ -28,7 +28,7 @@ from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
-from clue_api.arv2.account_research_store import create_job, finish_job
+from clue_api.arv2.account_research_store import create_job
 from clue_api.arv2.display.personas import PERSONA_RANK, persona_label
 from clue_api.arv2.display.recipes import recipes_for
 from clue_api.arv2.display.runner import LunaSectionRunner
@@ -66,6 +66,7 @@ from clue_research.compliance import WorkspacePolicy
 from clue_research.durable import ensure_project_run
 from clue_research.identity import insert_account_entity, insert_contact_entity
 from tests._workspace import seed_project
+from tests.arv2.account_research_job_helpers import finish_seeded_job
 from tests.arv2.display._seed import Seeded, seed_display_fixture, write_claim
 
 # The D2 page suite's keyed provider double and its one-runner-per-section factory. Imported so
@@ -806,7 +807,7 @@ async def _seed_run(conn: AsyncConnection, seeded: Seeded) -> uuid.UUID:
 
 
 async def _settle_job(conn: AsyncConnection, job_id: uuid.UUID) -> None:
-    await finish_job(
+    await finish_seeded_job(
         conn,
         job_id=job_id,
         status="completed",

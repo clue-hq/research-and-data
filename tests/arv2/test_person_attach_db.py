@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from clue_api.arv2.account_research_store import create_job, create_run, finish_job, read_run
+from clue_api.arv2.account_research_store import create_job, create_run, read_run
 from clue_api.arv2.evidence_paths import source_path
 from clue_api.arv2.page_writer_runtime import committee_people
 from clue_api.arv2.quality_execution import Allowance, bind_execution
@@ -24,6 +24,7 @@ from clue_api.arv2.quality_json_dossier import (
 from clue_api.arv2.research_operations import OperationScope
 from clue_core import ExecutionId, OperationId
 from clue_research.identity import insert_contact_entity
+from tests.arv2.account_research_job_helpers import finish_seeded_job
 from tests.arv2.test_dossier_json import finding
 from tests.arv2.test_quality_evidence_db import save
 from tests.arv2.test_quality_execution_db import execution
@@ -160,7 +161,7 @@ def test_the_attached_persons_result_reaches_the_account_rewrite(tmp_path):
                     conn, workspace_id=parent.workspace_id, generation_id=gen.generation_id
                 )
             ).input_revision
-            await finish_job(
+            await finish_seeded_job(
                 conn,
                 job_id=person.job_id,
                 status="completed",

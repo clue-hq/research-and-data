@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from clue_api.arv2.account_research_store import create_job, finish_job
+from clue_api.arv2.account_research_store import create_job
 from clue_api.arv2.quality_generation import (
     ensure_generation,
     pending_continuations,
@@ -19,6 +19,7 @@ from clue_api.arv2.quality_generation import (
 )
 from clue_research.identity import insert_contact_entity
 from clue_storage.fs import FsStorage
+from tests.arv2.account_research_job_helpers import finish_seeded_job
 from tests.arv2.test_quality_claims_db import setup
 from tests.claimstore.conftest import (  # noqa: F401
     migrated_db,
@@ -55,7 +56,7 @@ def test_initial_terminal_history_late_people_and_replay(tmp_path):
             await register_child(conn, generation, job_id=child)
             await register_child(conn, generation, job_id=child)
             assert not await pending_continuations(conn)
-            await finish_job(
+            await finish_seeded_job(
                 conn,
                 model_rounds=0,
                 tool_calls=0,
@@ -98,7 +99,7 @@ def test_initial_terminal_history_late_people_and_replay(tmp_path):
                 )
             ).state == "provisional"
             assert not await pending_continuations(conn)
-            await finish_job(
+            await finish_seeded_job(
                 conn,
                 model_rounds=0,
                 tool_calls=0,
