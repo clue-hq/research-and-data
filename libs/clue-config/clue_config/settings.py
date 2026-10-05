@@ -230,6 +230,11 @@ class Settings(BaseSettings):
     # worker and re-owned. Sized to outlive the lease TTL (takeover is lease-gated first). Env:
     # ``CLUE_FLEET_TASK_STALE_AFTER_S``.
     fleet_task_stale_after_s: float = 60.0
+    # The worker process's thread pool: every blocking provider call AND the event loop's DNS
+    # lookups (a fresh DB connection, the lease heartbeat's included) share it. Python's default,
+    # min(32, cpu + 4), is filled by a few research jobs; threads start only on demand.
+    # Env: ``CLUE_FLEET_THREAD_POOL_SIZE``.
+    fleet_thread_pool_size: int = Field(default=128, ge=8)
     # The deep-phase concurrency window — account jobs in flight at once (REQ-10 ~16–32; the
     # accounts-per-pass half of the cost dial). Env: ``CLUE_FLEET_DEEP_WINDOW``.
     fleet_deep_window: int = 16
