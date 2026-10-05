@@ -3,6 +3,8 @@
 import { useClerk } from "@clerk/nextjs";
 import { useTransition } from "react";
 
+const SIGN_OUT_FALLBACK_MS = 3_000;
+
 export function SessionSignOut({
   className,
   label = "Sign out",
@@ -24,6 +26,9 @@ export function SessionSignOut({
       className={className}
       disabled={pending}
       onClick={() => {
+        // Never hang on the pending label: Clerk or the workspace-clear action can stall
+        // (a slow network, a restarted server), so navigate anyway after a few seconds.
+        window.setTimeout(() => window.location.assign(redirectUrl), SIGN_OUT_FALLBACK_MS);
         startTransition(async () => {
           try {
             await onClearWorkspace();

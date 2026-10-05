@@ -23,6 +23,8 @@ def compaction_for(model_id: str) -> CompactionSettings:
         trigger_tokens=settings.agent_compact_trigger_tokens,
         keep_messages=settings.agent_compact_keep_messages,
         context_window=resolve_context_window(
-            model_id, override=settings.agent_context_window_tokens
+            model_id,
+            override=settings.agent_context_window_tokens,
+            registry=settings.agent_model_context_windows,
         ),
     )

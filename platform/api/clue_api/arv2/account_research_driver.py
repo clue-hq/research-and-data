@@ -340,6 +340,20 @@ class _InvalidTaskPayload(RuntimeError):
     """The task payload does not describe the job it names."""
 
 
+class _JobSuperseded(RuntimeError):
+    """The job is no longer this attempt's: a later lease holder took it over, so this driver's
+    settle wrote nothing (``finish_job`` is fenced on the attempt) and its transaction rolls back.
+    """
+
+
+@dataclass
+class _Claim:
+    """The attempt :func:`begin_job` gave this task, once it has claimed the job. Every write that
+    moves the job's status names it; until it is set, this task owns no part of the job row."""
+
+    attempt: int | None = None
+
+
 class ContactMissing(RuntimeError):
     """A person job's subject has no contact row.
 
@@ -509,42 +523,58 @@ class Arv2AccountResearchWorkHandler:
             # reads the log; inventing an id to mark would be worse than the honest dead end.
             log.error("arv2.account_invalid_payload", payload=sorted(context.payload))
             return WorkResult(outcome="failed", references={}, requeue=False)
+        references: dict[str, JsonValue] = {
+            "job_id": str(scope.job_id),
+            "run_id": str(scope.run_id),
+        }
         if context.stop_requested.is_set() or context.lease_lost.is_set():
-            await self._suspend(scope)
-            return WorkResult(
-                outcome="stopped", references={"job_id": str(scope.job_id)}, requeue=True
-            )
+            # Nothing is claimed yet, so there is nothing to park: the task goes back to the queue
+            # and the next claim takes the job from whatever state it is in.
+            return WorkResult(outcome="stopped", references=references, requeue=True)
         if UUID(str(context.work_id)) != scope.job_id:
-            status = await self._contain(
-                scope,
-                code=INVALID_TASK_PAYLOAD,
-                message=f"task work id {context.work_id} disagrees with job id {scope.job_id}",
+            # The lease is on the work id, not on the job this payload names, so this worker owns
+            # no job row here and writes none. A corrupt payload fails loudly, like a missing one.
+            log.error(
+                "arv2.account_work_id_mismatch",
+                job_id=str(scope.job_id),
+                work_id=str(context.work_id),
+                failure_code=INVALID_TASK_PAYLOAD,
             )
-            return WorkResult(outcome=status, references={"job_id": str(scope.job_id)})
+            return WorkResult(outcome="failed", references=references, requeue=False)
+        claim = _Claim()
         ending: str | WorkResult
         try:
-            ending = await self._run(scope, task_attempt=context.task_attempt)
+            ending = await self._run(scope, claim, task_attempt=context.task_attempt)
         except asyncio.CancelledError:
-            # The fleet CANCELS this task when the lease is lost, and ``CancelledError`` is a
-            # ``BaseException`` — so without this clause the ``except Exception`` below never runs,
-            # nothing parks the row, and the job stays ``in_progress`` forever (``begin_job``
-            # claims only ``not_started``/``suspended``, so the redelivery cannot revive it). The
-            # suspend is shielded because the task is already being cancelled: its own database
-            # write must survive the cancellation that provoked it.
-            await asyncio.shield(self._suspend(scope))
+            # The fleet CANCELS this task when the lease is lost (or the worker stops), and
+            # ``CancelledError`` is a ``BaseException`` the clause below never sees. Park the job
+            # for the next lease holder — shielded, because this write must survive the very
+            # cancellation that provoked it. Fenced on the attempt: if a later holder already took
+            # the job over, this changes nothing.
+            if claim.attempt is not None:
+                await asyncio.shield(self._suspend(scope, attempt=claim.attempt))
             raise
+        except _JobSuperseded:
+            ending = self._superseded(scope, claim)
         except Exception as error:  # noqa: BLE001 — containment: the job row is the only report
             log.exception("arv2.account_job_contained_failure", job_id=str(scope.job_id))
-            code = _failure_code(error)
-            ending = await self._contain(scope, code=code, message=str(error))
+            if claim.attempt is None:
+                # It failed before the job was claimed (the claim itself raised): no part of the
+                # row is this task's to flag, so the task is offered again.
+                return WorkResult(
+                    outcome="claim_failed",
+                    references=references,
+                    requeue=True,
+                    requeue_after=_JOB_ROW_RETRY_DELAY,
+                )
+            ending = await self._contain(
+                scope, attempt=claim.attempt, code=_failure_code(error), message=str(error)
+            )
         if isinstance(ending, WorkResult):
-            # The one ending that is not a job status: the task arrived before (or without) its
-            # row, so there is nothing to settle and the fleet is told what to do with the task.
+            # The endings that are not a job status — the task arrived before (or without) its
+            # row, or the job was taken over — so the fleet is told what to do with the task.
             return ending
-        return WorkResult(
-            outcome=ending,
-            references={"job_id": str(scope.job_id), "run_id": str(scope.run_id)},
-        )
+        return WorkResult(outcome=ending, references=references)
 
     async def _quality_continuation(self, work: WorkContext) -> WorkResult:
         from clue_api.arv2.quality_generation import (
@@ -946,12 +976,17 @@ class Arv2AccountResearchWorkHandler:
                     job_id=str(child["job_id"]),
                     parent_job_id=str(child["parent_job_id"]),
                 )
+        # Every continuation of an account shares one lease, and this sweep re-offers the latest
+        # revision every tick. Offer only while no continuation is queued or running for the
+        # account: one live task per lease, and the tick after it ends offers whatever revision
+        # is current then (2026-10-05: siblings queued behind a running one spun on its lease).
         for g in pending:
             offered += int(
                 await self._queue.enqueue(
                     kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
                     work_id=WorkId(continuation_work_id(g)),
                     dedup_key=f"arv2:quality-editorial:{g.generation_id}:{g.input_revision}",
+                    only_if_work_idle=True,
                     priority=ARV2_ACCOUNT_TASK_PRIORITY,
                     payload={
                         "continuation": "quality_reconciliation",
@@ -983,16 +1018,37 @@ class Arv2AccountResearchWorkHandler:
         async with self._db_lock, self._conn_factory() as conn:
             yield conn
 
-    async def _suspend(self, scope: _Scope) -> None:
-        """Park the job for requeue. A failure here is logged, never raised into the fleet."""
+    async def _suspend(self, scope: _Scope, *, attempt: int) -> None:
+        """Park this attempt's job for requeue. A failure here is logged, never raised into the
+        fleet: the task is re-offered either way (requeued, or reclaimed once it goes stale), and
+        the next lease holder claims the job whether it is ``suspended`` or still ``in_progress``.
+        """
         try:
             async with self._connection() as conn:
-                await self._store.suspend_job(conn, job_id=scope.job_id)
+                parked = await self._store.suspend_job(conn, job_id=scope.job_id, attempt=attempt)
+            if not parked:
+                log.info(
+                    "arv2.account_suspend_superseded", job_id=str(scope.job_id), attempt=attempt
+                )
         except Exception:  # noqa: BLE001 — a stopped task must still return a result
             log.exception("arv2.account_suspend_failed", job_id=str(scope.job_id))
 
-    async def _contain(self, scope: _Scope, *, code: str, message: str) -> str:
-        """Land the job ``needs_review`` with a named reason, and refresh its run."""
+    @staticmethod
+    def _superseded(scope: _Scope, claim: _Claim) -> WorkResult:
+        """A later lease holder took the job over, so this attempt settled nothing. The task is
+        requeued, never closed — the requeue is holder-guarded, so it is a no-op when that holder
+        owns the task, and the task closes only once someone sees the job finished."""
+        log.warning("arv2.account_job_superseded", job_id=str(scope.job_id), attempt=claim.attempt)
+        return WorkResult(
+            outcome="superseded",
+            references={"job_id": str(scope.job_id), "run_id": str(scope.run_id)},
+            requeue=True,
+        )
+
+    async def _contain(
+        self, scope: _Scope, *, attempt: int, code: str, message: str
+    ) -> str | WorkResult:
+        """Land this attempt's job ``needs_review`` with a named reason, and refresh its run."""
         finalization: dict[str, object] = {
             "reason": code,
             "detail": message[:1_000],
@@ -1005,9 +1061,10 @@ class Arv2AccountResearchWorkHandler:
 
                 meter = await usage(conn, workspace_id=scope.workspace_id, job_id=scope.job_id)
                 finalization["spend"] = meter.receipt()
-                await self._store.finish_job(
+                landed = await self._store.finish_job(
                     conn,
                     job_id=scope.job_id,
+                    attempt=attempt,
                     status="needs_review",
                     finalization=finalization,
                     failure_code=code,
@@ -1018,18 +1075,20 @@ class Arv2AccountResearchWorkHandler:
                     credits=meter.credits,
                     media_seconds=meter.media_seconds,
                 )
-                await self._store.refresh_run_status(conn, run_id=scope.run_id)
+                if landed:
+                    await self._store.refresh_run_status(conn, run_id=scope.run_id)
         except Exception:  # noqa: BLE001 — the fleet result is owed whatever the database does
             log.exception("arv2.account_contain_failed", job_id=str(scope.job_id))
-        return "needs_review"
+            return "needs_review"
+        return "needs_review" if landed else self._superseded(scope, _Claim(attempt))
 
     async def _not_claimable(
         self, conn: AsyncConnection, scope: _Scope, *, task_attempt: int
     ) -> str | WorkResult:
         """``begin_job`` refused. Whether that is normal depends on the row *existing*.
 
-        A row that is terminal (or in progress under another worker) is an ordinary redelivery:
-        the fleet may deliver a task more than once, and re-running it would be the error. **No
+        ``begin_job`` claims every unfinished job, so a row that is there is finished: an ordinary
+        redelivery, and re-running it would be the error. **No
         row at all** is the opposite — treating it as finished is how an authorized account is
         silently and permanently never researched — so the task is requeued while the launch's
         commit could still be landing, and fails loudly only once waiting has stopped being
@@ -1097,11 +1156,12 @@ class Arv2AccountResearchWorkHandler:
 
     # -- the job -----------------------------------------------------------------------------
 
-    async def _run(self, scope: _Scope, *, task_attempt: int) -> str | WorkResult:
+    async def _run(self, scope: _Scope, claim: _Claim, *, task_attempt: int) -> str | WorkResult:
         async with self._connection() as conn:
             job = await self._store.begin_job(conn, job_id=scope.job_id)
             if job is None:
                 return await self._not_claimable(conn, scope, task_attempt=task_attempt)
+            claim.attempt = job.attempt
             if job.run_id != scope.run_id:
                 # The payload's run is checked against the row rather than trusted, because every
                 # pin this job runs under is read from that run — researching under a run nobody
@@ -1678,9 +1738,10 @@ class Arv2AccountResearchWorkHandler:
                         "available evidence."
                     )
             status = "needs_review" if outcome.reason == "model_error" else "completed"
-            await self._store.finish_job(
+            if not await self._store.finish_job(
                 conn,
                 job_id=composition.job.job_id,
+                attempt=composition.job.attempt,
                 status=status,
                 finalization=finalization,
                 failure_code=_job_failure_code(outcome) if status == "needs_review" else None,
@@ -1690,7 +1751,8 @@ class Arv2AccountResearchWorkHandler:
                 cost_usd=spend.cost_usd,
                 credits=spend.credits,
                 media_seconds=spend.media_seconds,
-            )
+            ):
+                raise _JobSuperseded(str(composition.job.job_id))
             if composition.job.subject_type == "account":
                 await self._store.set_job_stage(
                     conn, job_id=composition.job.job_id, stage="committee"
@@ -1804,9 +1866,10 @@ class Arv2AccountResearchWorkHandler:
                 "spend": meter.receipt(),
                 "quality_state": "provisional",
             }
-            await self._store.finish_job(
+            if not await self._store.finish_job(
                 conn,
                 job_id=composition.job.job_id,
+                attempt=composition.job.attempt,
                 status=status,
                 finalization=finalization,
                 failure_code=result.failure_code or "quality_unit_incomplete",
@@ -1815,7 +1878,8 @@ class Arv2AccountResearchWorkHandler:
                 cost_usd=meter.known_usd,
                 credits=meter.credits,
                 media_seconds=meter.media_seconds,
-            )
+            ):
+                raise _JobSuperseded(str(composition.job.job_id))
             if composition.job.subject_type == "account" or not (
                 composition.job.input_refs or {}
             ).get("parent_job_id"):

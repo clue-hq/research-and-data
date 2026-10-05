@@ -529,6 +529,80 @@ def test_delayed_requeue_uses_db_time_and_does_not_starve_ready_work() -> None:
     run_async(_run())
 
 
+def test_a_requeue_can_take_back_the_attempt_its_claim_counted() -> None:
+    """A claim that bounced off a held lease never ran, so it must not spend an attempt — the
+    research and crawl handlers read ``attempts`` as a retry budget."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            run_id = new_project_run_id()
+            await enqueue_task(
+                conn, kind=FleetTaskKind.DRIVE_RUN, project_run_id=run_id, dedup_key="d"
+            )
+            for expected in (1, 1, 1):
+                claimed = await claim_next_task(
+                    conn,
+                    kind=FleetTaskKind.DRIVE_RUN,
+                    worker_id="worker-a",
+                    project_run_id=run_id,
+                    stale_after=_FRESH,
+                )
+                assert claimed is not None and claimed.attempts == expected
+                assert await requeue_task(
+                    conn, task_id=claimed.task_id, worker_id="worker-a", uncount_attempt=True
+                )
+                stored = await get_task(conn, claimed.task_id)
+                assert stored is not None and stored.attempts == expected - 1
+
+    run_async(_run())
+
+
+def test_an_offer_for_busy_work_is_refused_until_the_live_task_ends() -> None:
+    """``only_if_work_idle``: at most one live (queued or claimed) task of a kind per work id —
+    the shape the agent-turn dispatcher already keeps, now available to any offerer."""
+
+    async def _run() -> None:
+        async with rollback_conn() as conn:
+            work = new_project_run_id()
+            other = new_project_run_id()
+
+            async def offer(work_id, key: str) -> bool:
+                return await enqueue_task(
+                    conn,
+                    kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
+                    project_run_id=work_id,
+                    dedup_key=key,
+                    only_if_work_idle=True,
+                )
+
+            assert await offer(work, "rev-2")
+            assert not await offer(work, "rev-3")  # rev-2 is queued
+            # Another work id, and another kind on the same work id, are not affected.
+            assert await offer(other, "rev-3")
+            assert await enqueue_task(
+                conn, kind=FleetTaskKind.DRIVE_RUN, project_run_id=work, dedup_key="rev-3"
+            )
+            running = await claim_next_task(
+                conn,
+                kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
+                worker_id="worker-a",
+                project_run_id=work,
+                stale_after=_FRESH,
+            )
+            assert running is not None and running.dedup_key == "rev-2"
+            assert not await offer(work, "rev-3")  # rev-2 is claimed
+            assert await finish_task(
+                conn, task_id=running.task_id, worker_id="worker-a", status=FleetTaskStatus.DONE
+            )
+            assert await offer(work, "rev-5")  # idle again: the latest revision is offered
+            rows = await list_tasks(
+                conn, project_run_id=work, kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH
+            )
+            assert sorted(row.dedup_key for row in rows) == ["rev-2", "rev-5"]
+
+    run_async(_run())
+
+
 def test_requeue_rejects_negative_delay_before_touching_db() -> None:
     async def _run() -> None:
         async with rollback_conn() as conn:

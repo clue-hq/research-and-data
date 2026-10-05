@@ -307,11 +307,16 @@ async def create_job(
 
 
 async def begin_job(conn: AsyncConnection, *, job_id: UUID) -> JobRow | None:
-    """Claim a job for this attempt: ``not_started``/``suspended`` → ``in_progress``.
+    """Claim an unfinished job for a new attempt: ``attempt + 1``, status ``in_progress``.
 
-    Guarded on those two statuses so a re-delivered fleet task can neither restart a job another
-    worker is driving nor revive a finished one; ``None`` says "not mine to run", which is a
-    normal outcome of a redelivery, not an error.
+    **Only the holder of the job's fleet lease calls this** (the work id is the job id, and the
+    fleet runs a handler only under a live lease). So a row still ``in_progress`` belongs to a
+    driver whose lease expired — killed, or frozen past its TTL — and the holder takes it over.
+    The new attempt is the fence: that old driver's late :func:`finish_job` or
+    :func:`suspend_job` names the attempt it claimed, which is no longer the row's, and writes
+    nothing (2026-10-05: a frozen worker parked a job another worker had already re-offered).
+
+    ``None`` means the job is finished (or has no row); a finished job is never revived.
     """
     row = (
         (
@@ -319,7 +324,8 @@ async def begin_job(conn: AsyncConnection, *, job_id: UUID) -> JobRow | None:
                 text(
                     "UPDATE arv2_research_job SET status = 'in_progress', attempt = attempt + 1, "
                     " started_at = now(), updated_at = now() "
-                    "WHERE job_id = :job_id AND status IN ('not_started', 'suspended') RETURNING *"
+                    "WHERE job_id = :job_id "
+                    " AND status IN ('not_started', 'suspended', 'in_progress') RETURNING *"
                 ),
                 {"job_id": job_id},
             )
@@ -334,6 +340,7 @@ async def finish_job(
     conn: AsyncConnection,
     *,
     job_id: UUID,
+    attempt: int,
     status: TerminalJob,
     finalization: dict[str, Any],
     failure_code: str | None = None,
@@ -343,21 +350,26 @@ async def finish_job(
     cost_usd: Decimal,
     credits: Decimal,
     media_seconds: int,
-) -> None:
+) -> bool:
     """Land a job on a terminal status with its finalization and its spend.
+
+    Fenced on ``attempt`` — the one :func:`begin_job` returned to this driver. ``False`` means
+    the job is no longer this attempt's (another lease holder took it over, or it is already
+    finished) and nothing was written; the caller must not act as though it settled the job.
 
     ``arv2_research_job_failure`` is biconditional, so the code is derived from the status rather
     than trusted from the caller: a ``completed`` job drops any failure pair it was handed, and a
     ``needs_review`` job that named no code records :data:`UNSPECIFIED_FAILURE`.
     """
     code = (failure_code or UNSPECIFIED_FAILURE) if status == "needs_review" else None
-    await conn.execute(
+    result = await conn.execute(
         text(
             "UPDATE arv2_research_job SET status = :status, finished_at = now(), "
             " finalization_json = CAST(:finalization AS jsonb), failure_code = :code, "
             " failure_message = :message, model_rounds = :model_rounds, tool_calls = :tool_calls, "
             " cost_usd = :cost_usd, credits = :credits, media_seconds = :media_seconds, "
-            " updated_at = now() WHERE job_id = :job_id"
+            " updated_at = now() "
+            "WHERE job_id = :job_id AND attempt = :attempt AND status = 'in_progress'"
         ),
         {
             "status": status,
@@ -370,24 +382,27 @@ async def finish_job(
             "credits": credits,
             "media_seconds": int(media_seconds),
             "job_id": job_id,
+            "attempt": attempt,
         },
     )
+    return result.rowcount == 1
 
 
-async def suspend_job(conn: AsyncConnection, *, job_id: UUID) -> None:
-    """Park a job for requeue (a lost lease, a stop request, a run-level pause).
+async def suspend_job(conn: AsyncConnection, *, job_id: UUID, attempt: int) -> bool:
+    """Park this attempt's job for requeue (a lost lease, a stop request).
 
-    Guarded off the terminal statuses so the requeue path can never walk a finished job back into
-    the queue — and so the biconditional ``finished_at`` CHECK stays satisfied without this
-    function having to clear a column it does not own.
+    Fenced like :func:`finish_job`: only the attempt that claimed the job parks it, and only while
+    it is ``in_progress`` — so a finished job is never walked back into the queue, and a driver
+    that was taken over cannot park the job its successor is running. Returns whether it parked.
     """
-    await conn.execute(
+    result = await conn.execute(
         text(
             "UPDATE arv2_research_job SET status = 'suspended', updated_at = now() "
-            "WHERE job_id = :job_id AND status NOT IN ('completed', 'needs_review')"
+            "WHERE job_id = :job_id AND attempt = :attempt AND status = 'in_progress'"
         ),
-        {"job_id": job_id},
+        {"job_id": job_id, "attempt": attempt},
     )
+    return result.rowcount == 1
 
 
 async def set_job_stage(conn: AsyncConnection, *, job_id: UUID, stage: JobStage) -> None:

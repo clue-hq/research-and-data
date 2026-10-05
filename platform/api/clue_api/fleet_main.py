@@ -198,7 +198,7 @@ from clue_execution import (
     RecipeExecutor,
     sweep_stream_tokens,
 )
-from clue_fleet import DbTaskQueue, DbWorkQueue, WorkQueue, run_worker
+from clue_fleet import DbTaskQueue, DbWorkQueue, WorkQueue, install_thread_pool, run_worker
 from clue_locks import redis_lifespan
 from clue_obs import get_logger, setup
 from clue_obs.sentry import capture
@@ -844,6 +844,8 @@ async def _serve() -> None:
     """Open the process-wide DB + Redis lifecycles, register the boot handlers, and drive the worker
     (with the orphan sweep alongside) until a graceful stop."""
     settings = load_settings()
+    # Before anything runs a thread: provider calls and the heartbeat's DNS lookups share this pool.
+    install_thread_pool(asyncio.get_running_loop(), max_workers=settings.fleet_thread_pool_size)
     secrets = Secrets()
     # Startup gate: a declared product path that is missing a provider credential refuses here,
     # before any lifecycle is opened or handler composed (see ``product_path_preflight``).

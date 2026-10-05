@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -26,6 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2 import account_research_driver as driver
 from clue_api.arv2 import account_research_store as store
 from clue_api.arv2.account_research_catalog import (
     ARV2_ACCOUNT_PROFILE_REF,
@@ -216,78 +218,97 @@ async def _register_document(
     return key, sha
 
 
+@dataclass(frozen=True)
+class _SeededJob:
+    workspace_id: str
+    project_id: str
+    account_id: Any
+    run_id: UUID
+    job_id: UUID
+    storage: _MemoryStorage
+
+
+async def _seed_account_job(conn: AsyncConnection) -> _SeededJob:
+    """A workspace, its project run, one account, its ICP and persona documents, and one queued
+    account job pinned to them."""
+    workspace_id = "ws-r2-driver-db"
+    project = await seed_project(conn, workspace_id, name="R2 driver")
+    project_run_id = new_project_run_id()
+    await ensure_project_run(
+        conn,
+        project_run_id=project_run_id,
+        project_id=project.project_id,
+        workspace_id=workspace_id,
+        icp_key="clue-abm-buyers",
+        icp_version=1,
+    )
+    account_id = await insert_account_entity(
+        conn,
+        canonical_name="Probook",
+        primary_domain="probook.ai",
+        workspace_id=workspace_id,
+    )
+    storage = _MemoryStorage()
+    icp_key_, icp_sha = await _register_document(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        brand_id=project.brand_id,
+        path="audience/icp-clue-abm-buyers.md",
+        kind="icp-definition",
+        status="confirmed",
+        body=ICP_MARKDOWN,
+    )
+    await _register_document(
+        conn,
+        storage,
+        workspace_id=workspace_id,
+        brand_id=project.brand_id,
+        path="audience/persona-clue-abm-buyers.md",
+        kind="audience-persona",
+        status="ready",
+        body=PERSONA_MARKDOWN,
+    )
+
+    run_id, job_id = uuid4(), uuid4()
+    await store.create_run(
+        conn,
+        store.RunRow(
+            run_id=run_id,
+            workspace_id=workspace_id,
+            project_id=project.project_id,
+            brand_id=project.brand_id,
+            project_run_id=UUID(str(project_run_id)),
+            icp_artifact_key=icp_key_,
+            icp_artifact_sha256=icp_sha,
+            icp_key="clue-abm-buyers",
+            icp_version=1,
+            product_selection_version=1,
+            effort="full",
+            committee_cap=3,
+            directive_text="prioritise hiring evidence",
+            profile_ref=ARV2_ACCOUNT_PROFILE_REF,
+            profile_sha256=arv2_account_profile_sha256(),
+            requested_by_user_id="usr-r2",
+            request_sha256=hashlib.sha256(b"request").hexdigest(),
+        ),
+    )
+    await store.create_job(
+        conn,
+        job_id=job_id,
+        run_id=run_id,
+        workspace_id=workspace_id,
+        account_entity_id=UUID(str(account_id)),
+    )
+    return _SeededJob(workspace_id, project.project_id, account_id, run_id, job_id, storage)
+
+
 def test_one_job_runs_to_a_finalized_receipt_and_a_completed_run() -> None:
     async def scenario() -> None:
         async with rollback_conn() as conn:
-            workspace_id = "ws-r2-driver-db"
-            project = await seed_project(conn, workspace_id, name="R2 driver")
-            project_run_id = new_project_run_id()
-            await ensure_project_run(
-                conn,
-                project_run_id=project_run_id,
-                project_id=project.project_id,
-                workspace_id=workspace_id,
-                icp_key="clue-abm-buyers",
-                icp_version=1,
-            )
-            account_id = await insert_account_entity(
-                conn,
-                canonical_name="Probook",
-                primary_domain="probook.ai",
-                workspace_id=workspace_id,
-            )
-            storage = _MemoryStorage()
-            icp_key_, icp_sha = await _register_document(
-                conn,
-                storage,
-                workspace_id=workspace_id,
-                brand_id=project.brand_id,
-                path="audience/icp-clue-abm-buyers.md",
-                kind="icp-definition",
-                status="confirmed",
-                body=ICP_MARKDOWN,
-            )
-            await _register_document(
-                conn,
-                storage,
-                workspace_id=workspace_id,
-                brand_id=project.brand_id,
-                path="audience/persona-clue-abm-buyers.md",
-                kind="audience-persona",
-                status="ready",
-                body=PERSONA_MARKDOWN,
-            )
-
-            run_id, job_id = uuid4(), uuid4()
-            await store.create_run(
-                conn,
-                store.RunRow(
-                    run_id=run_id,
-                    workspace_id=workspace_id,
-                    project_id=project.project_id,
-                    brand_id=project.brand_id,
-                    project_run_id=UUID(str(project_run_id)),
-                    icp_artifact_key=icp_key_,
-                    icp_artifact_sha256=icp_sha,
-                    icp_key="clue-abm-buyers",
-                    icp_version=1,
-                    product_selection_version=1,
-                    effort="full",
-                    committee_cap=3,
-                    directive_text="prioritise hiring evidence",
-                    profile_ref=ARV2_ACCOUNT_PROFILE_REF,
-                    profile_sha256=arv2_account_profile_sha256(),
-                    requested_by_user_id="usr-r2",
-                    request_sha256=hashlib.sha256(b"request").hexdigest(),
-                ),
-            )
-            await store.create_job(
-                conn,
-                job_id=job_id,
-                run_id=run_id,
-                workspace_id=workspace_id,
-                account_entity_id=UUID(str(account_id)),
-            )
+            seeded = await _seed_account_job(conn)
+            workspace_id, account_id = seeded.workspace_id, seeded.account_id
+            run_id, job_id, storage = seeded.run_id, seeded.job_id, seeded.storage
 
             handler = Arv2AccountResearchWorkHandler(
                 settings=Settings(_env_file=None),
@@ -360,8 +381,90 @@ def test_one_job_runs_to_a_finalized_receipt_and_a_completed_run() -> None:
             assert len(activity) == 1
             assert activity[0]["kind"] == "updated"
             assert activity[0]["actor_kind"] == "clue"
-            assert activity[0]["project_id"] == project.project_id
+            assert activity[0]["project_id"] == seeded.project_id
             assert "Account research finalized" in activity[0]["text"]
+
+    run_async(scenario())
+
+
+def test_a_job_whose_driver_lost_its_lease_is_taken_over_not_stranded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 2026-10-05 stranding, replayed against the real rows.
+
+    Attempt 1's event loop froze in a blocking call, so it stopped renewing the job's lease. The
+    fleet re-offered the task, and attempt 2 — now the lease holder — found the job
+    ``in_progress``. Then attempt 1 woke, its worker saw the lease was lost and cancelled it.
+    Before the fix attempt 2 closed its task as a no-op and attempt 1 parked the job
+    ``suspended``: no task left, nothing resumed it. Whoever holds the lease owns the job, so
+    attempt 2 takes it over and settles it, and attempt 1's late suspend changes nothing.
+    """
+    real_agent = driver.run_account_agent
+    first_attempt_running = asyncio.Event()
+
+    async def first_attempt_freezes(**kwargs: Any) -> Any:
+        if kwargs["attempt"] == 1:
+            first_attempt_running.set()
+            await asyncio.Event().wait()  # until the fleet cancels it
+        return await real_agent(**kwargs)
+
+    monkeypatch.setattr(driver, "run_account_agent", first_attempt_freezes)
+
+    def worker(conn: AsyncConnection, storage: _MemoryStorage) -> Arv2AccountResearchWorkHandler:
+        return Arv2AccountResearchWorkHandler(
+            settings=Settings(_env_file=None),
+            conn_factory=conn_session_factory(conn),
+            artifacts=DurableAgentArtifactStore(
+                storage=storage,  # type: ignore[arg-type]
+                conn_factory=conn_session_factory(conn),
+            ),
+            storage=storage,
+            clients=_Clients(),
+            model_provider=_Models(_finalizing_model()),
+            model_id="x-ai/grok-4.6",
+            writer=LenientClaimWriter(lenient=True),
+            clock=lambda: datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+        )
+
+    def task(seeded: _SeededJob, *, worker_id: str, attempt: int) -> WorkContext:
+        return WorkContext(
+            task_id=uuid4(),
+            work_id=arv2_account_work_id(seeded.job_id),
+            worker_id=worker_id,
+            lease_generation=LeaseGeneration(attempt),
+            payload={
+                "job_id": str(seeded.job_id),
+                "run_id": str(seeded.run_id),
+                "workspace_id": seeded.workspace_id,
+            },
+            stop_requested=asyncio.Event(),
+            lease_lost=asyncio.Event(),
+            task_attempt=attempt,
+        )
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeded = await _seed_account_job(conn)
+            first_task = task(seeded, worker_id="w1", attempt=1)
+            first = asyncio.create_task(worker(conn, seeded.storage).handle(first_task))
+            await first_attempt_running.wait()
+
+            second = await worker(conn, seeded.storage).handle(
+                task(seeded, worker_id="w2", attempt=2)
+            )
+
+            first_task.lease_lost.set()
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+
+            job = await store.read_job(conn, job_id=seeded.job_id)
+            assert job is not None
+            assert job.status == "completed", "the job must be settled, never stranded"
+            assert job.attempt == 2
+            assert job.finalization is not None and job.finalization["reason"] == "finalized"
+            assert second.outcome == "completed"
+            assert await store.refresh_run_status(conn, run_id=seeded.run_id) == "completed"
 
     run_async(scenario())
 
