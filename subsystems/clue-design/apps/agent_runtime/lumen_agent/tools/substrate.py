@@ -184,6 +184,17 @@ def _extract_diagnostics(entry: JsonObject) -> list:
     return []
 
 
+def _one_line(text: Any, limit: int = 220) -> Optional[str]:
+    """An asset description's first sentence, capped — `search_assets` results stay compact;
+    `view("asset:<id>")` carries the full analysis."""
+    if not text:
+        return None
+    flat = " ".join(str(text).split())
+    end = flat.find(". ")
+    first = flat[: end + 1] if 0 < end < limit else flat
+    return first if len(first) <= limit else first[: limit - 1].rstrip() + "…"
+
+
 def _feedback_one_liner(entry: JsonObject) -> str:
     """One short human line describing what an attempt produced/why it failed."""
     if not isinstance(entry, dict):
@@ -1320,12 +1331,19 @@ class LumenDesignTools:
         return json.dumps(payload, indent=2)
 
     def search_assets(self, q: str, kind: Optional[str] = None, limit: int = 8) -> str:
-        """Search every image in the brand kit and the workspace library by type, use, source, text or
-        exact id. Returns short details for each match. View a match before choosing it, then place it by
-        its origin: a "library" result with asset(action='place', asset_id=..., node_id=...), a
-        "brand_kit" result with asset(action='use_brand_asset', asset_id=..., node_id=...).
+        """Search every image in the brand kit and the workspace library, by meaning and by look.
+        Write what you need in plain words: what the image shows, what it looks like, and what it
+        is for — for example "soft pastel blur, no text", "inbox screenshot with guest messages",
+        "Oracle Hospitality logo". Results combine two matches: the words in each image's title,
+        description and tags, and the image itself compared with your words. Best first, up to
+        `limit` (1–20). Each result gives the id, origin, type, source, title and a one-line
+        description; `view("asset:<id>")` before using one, then place it by its origin: a
+        "library" result with asset(action='place', asset_id=..., node_id=...), a "brand_kit"
+        result with asset(action='use_brand_asset', asset_id=..., node_id=...). An exact asset id
+        also works as the query. `kind` narrows to image, logo or font. Run a separate search for
+        each separate need.
         """
-        from .asset_catalog import rank_assets, asset_summary
+        from .asset_catalog import asset_summary, rank_assets
         if not q.strip() or isinstance(limit, bool) or not 1 <= limit <= 20:
             return json.dumps({"status": "error", "message": "Supply a query and limit 1..20"})
         candidates = {}
@@ -1333,12 +1351,59 @@ class LumenDesignTools:
                                  (self.config.asset_library or {}, "library")):
             for asset_id, entry in manifest.items():
                 candidates.setdefault(asset_id, (entry, origin))
-        results = [{"asset_id": aid, "origin": origin, "title": entry.get("title"),
-                    "description": entry.get("description"), "usage": entry.get("usage"),
-                    "view": f"asset:{aid}", **asset_summary(entry)}
-                   for aid, entry, origin, _, _ in rank_assets(candidates, q.strip().lower(), (kind or "").lower())[:limit]]
+        query, wanted_kind = q.strip(), (kind or "").lower()
+        ranked = rank_assets(candidates, query.lower(), wanted_kind)
+        named = [row[0] for row in ranked if row[3]]
+        keyword = [row[0] for row in ranked if not row[3]]
+        visual, visual_status = self._visual_asset_ranking(query, candidates, wanted_kind)
+        if visual:
+            from lumen_api.asset_embeddings import FUSION_DEPTH, hybrid_ranking
+
+            fused = [aid for aid in hybrid_ranking(keyword, visual) if aid not in named]
+            keyword_set, visual_set = set(keyword[:FUSION_DEPTH]), set(visual[:FUSION_DEPTH])
+        else:
+            fused = keyword
+            keyword_set, visual_set = set(keyword), set()
+        results = []
+        for aid in (named + fused)[:limit]:
+            entry, origin = candidates[aid]
+            results.append({
+                "asset_id": aid, "origin": origin, "title": entry.get("title"),
+                "description": _one_line(entry.get("description")), "usage": entry.get("usage"),
+                "view": f"asset:{aid}", **asset_summary(entry),
+                "match": ("id" if aid in named else
+                          "words and look" if aid in keyword_set and aid in visual_set else
+                          "words" if aid in keyword_set else
+                          "look" if aid in visual_set else
+                          "words" if aid in keyword else "look"),
+            })
         return json.dumps({"status": "ok", "results": results, "count": len(results),
-                           "inventory_count": len(candidates)})
+                           "inventory_count": len(candidates), "visual_search": visual_status})
+
+    def _visual_asset_ranking(self, query: str, candidates: dict, kind: str) -> tuple[list[str], str]:
+        """Candidate ids closest to the query by CLIP image vector, and a plain status line.
+
+        Visual search is an addition, never a requirement: no vectors for this library, no
+        model on this host, or a failed query embedding each return [] with the reason, and the
+        caller ranks by keyword alone.
+        """
+        from .asset_catalog import _asset_kind_matches
+
+        embeddings = self.config.asset_embeddings or {}
+        if not embeddings:
+            return [], "off: this library has no image vectors yet"
+        try:
+            from lumen_api.asset_embeddings import EmbeddingUnavailable, embed_query, visual_ranking
+        except Exception as error:  # noqa: BLE001 - the API package may be absent in a bare runtime
+            return [], f"off: visual search is not installed here ({type(error).__name__})"
+        try:
+            vector = embed_query(query)
+        except EmbeddingUnavailable as error:
+            return [], f"off: {error}"
+        eligible = [aid for aid, (entry, _) in candidates.items()
+                    if _asset_kind_matches(entry.get("record") or {}, kind)]
+        ranking = visual_ranking(vector, embeddings, eligible)
+        return ranking, ("on" if ranking else "off: none of these images has a vector yet")
 
     def _library_asset_entry(self, asset_id: str) -> Optional[JsonObject]:
         """W1.1: the by-value WORKSPACE ASSET LIBRARY entry for `asset_id`, or None.

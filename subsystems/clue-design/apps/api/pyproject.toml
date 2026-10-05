@@ -40,6 +40,10 @@ dependencies = [
     # AVIF/ICO -> PNG at ingestion (`image_containers.py`, 2026-10-18): the AVIF decoder ships
     # in Pillow's wheels from 11.3 (the version the root lock pins).
     "pillow>=11.3,<12",
+    # CLIP image/query embeddings for the scene agent's hybrid asset search (2026-10-05), run on
+    # ONNX Runtime so the backend image carries no torch. `tokenizers` reads CLIP's tokenizer.json.
+    "onnxruntime>=1.20,<2",
+    "tokenizers>=0.20,<1",
     "playwright>=1.45,<2",
     # Stealth render backend (brand-color capture): bot-walled and WebGL-hero
     # sites serve real pages only to a hardened profile (capture PoC 2026-08-30).

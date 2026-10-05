@@ -15,6 +15,9 @@ from clue_design import descriptions
 from clue_design.asset_context import PROMPT_VERSION, SCHEMA_VERSION, validate_analysis
 from lumen_api.design_store import DesignStoreBridge
 from py_lumen_config import settings
+from py_lumen_obs import get_logger
+
+_logger = get_logger("lumen_ingestion.asset_enrichment")
 
 
 JOB_CONTEXT: ContextVar[tuple[str, int | None] | None] = ContextVar(
@@ -112,6 +115,103 @@ class EnrichmentStore:
                 asset_ids=[asset_id],
             )
         ).get(asset_id, {})
+
+    def embedding_digest(self, asset_id: str, model: str) -> str | None:
+        """The preview digest this asset's stored vector was made from, or None."""
+        from sqlalchemy import text
+
+        async def call(conn):
+            row = (
+                await conn.execute(
+                    text(
+                        "SELECT preview_digest FROM design_asset_embedding "
+                        "WHERE workspace_id = :w AND asset_id = :a AND model = :m"
+                    ),
+                    {"w": self.workspace_id, "a": asset_id, "m": model},
+                )
+            ).first()
+            return row.preview_digest if row else None
+
+        return self._run(call)
+
+    def upsert_embedding(self, asset_id: str, model: str, digest: str, vector: list[float]) -> None:
+        from sqlalchemy import text
+
+        from lumen_api.asset_embeddings import vector_literal
+
+        async def call(conn):
+            await conn.execute(
+                text(
+                    "INSERT INTO design_asset_embedding "
+                    "(asset_id, workspace_id, model, preview_digest, embedding) "
+                    "VALUES (:a, :w, :m, :d, CAST(:v AS vector)) "
+                    "ON CONFLICT (asset_id, workspace_id, model) DO UPDATE SET "
+                    "preview_digest = EXCLUDED.preview_digest, embedding = EXCLUDED.embedding, "
+                    "updated_at = now()"
+                ),
+                {"a": asset_id, "w": self.workspace_id, "m": model, "d": digest, "v": vector_literal(vector)},
+            )
+
+        self._run(call)
+
+
+#: Phrases a describer echoes back from its own instructions instead of describing the image.
+_INSTRUCTION_ECHOES = ("describe each image", "describe the image", "describe this image")
+#: Placeholder answers that say nothing about the image.
+_PLACEHOLDERS = {"n/a", "na", "none", "null", "unknown", "image", "no description", "-"}
+
+
+def junk_description_reason(analysis: dict, asset_id: str) -> str | None:
+    """Why a validated analysis still says nothing about the image, or None when it is usable.
+
+    Found live 2026-10-05: 5 of Conduit's 506 descriptions were "Describe each image below.",
+    "N/A", a single Thai word, a dimension label and the asset's own id. Each one passed schema
+    validation and silently blinded search for that asset.
+    """
+    description = " ".join(str(analysis.get("description") or "").split())
+    title = " ".join(str(analysis.get("title") or "").split())
+    lowered = description.lower()
+    if not description:
+        return "the analysis has no description"
+    if lowered.strip(" .") in _PLACEHOLDERS:
+        return f"the description is a placeholder ({description[:40]!r})"
+    if any(lowered.startswith(echo) for echo in _INSTRUCTION_ECHOES):
+        return "the description echoes the instruction instead of describing the image"
+    if asset_id and asset_id.lower() in lowered and len(description) <= len(asset_id) + 12:
+        return "the description is the asset id"
+    if len(description.split()) < 3 and len(title.split()) < 2:
+        return f"the description is too short to describe anything ({description[:40]!r})"
+    return None
+
+
+def embed_preview(store: Any, asset_id: str, preview_b64: str | None, preview_digest: str | None) -> str:
+    """Store the asset's CLIP image vector, made from its analysis preview. Returns what happened.
+
+    Hybrid asset search (2026-10-05). The vector is a by-product of the preview this step already
+    builds, so every ingestion path gets it. An unchanged preview is skipped; an unavailable model
+    or a failed embedding is logged and skipped — never a failed asset. A lease fence still raises:
+    a superseded worker must stop writing.
+    """
+    if getattr(store, "upsert_embedding", None) is None or not preview_b64 or not preview_digest:
+        return "skipped"
+    from clue_design.errors import DesignJobFencedError
+    from lumen_api import asset_embeddings
+
+    try:
+        space = asset_embeddings.model_info().space
+        if store.embedding_digest(asset_id, space) == preview_digest:
+            return "current"
+        vector = asset_embeddings.embed_image_bytes(base64.b64decode(preview_b64))
+        store.upsert_embedding(asset_id, space, preview_digest, vector.tolist())
+        return "embedded"
+    except asset_embeddings.EmbeddingUnavailable as error:
+        _logger.debug("asset_embedding_unavailable", asset_id=asset_id, reason=str(error))
+        return "unavailable"
+    except DesignJobFencedError:
+        raise
+    except Exception as error:  # noqa: BLE001 - the vector is optional; the asset is not
+        _logger.warning("asset_embedding_failed", asset_id=asset_id, error=f"{type(error).__name__}: {error}"[:300])
+        return "failed"
 
 
 def enrich_assets(
@@ -212,6 +312,7 @@ def enrich_assets(
         if preview:
             preview_info["digest"] = hashlib.sha256(base64.b64decode(preview)).hexdigest()
             preview_info["transformations"].append("downscaled_to_512px")
+            embed_preview(store, asset_id, preview, preview_info["digest"])
         inputs = {
             "schema_version": SCHEMA_VERSION,
             "prompt_version": PROMPT_VERSION,
@@ -262,6 +363,10 @@ def enrich_assets(
                         or "No valid structured asset analysis returned"
                     )
                 completed_analysis = validate_analysis(result.analysis, item.source_occurrences)
+                junk = junk_description_reason(completed_analysis, asset_id)
+                if junk:
+                    completed_analysis = None
+                    raise ValueError(junk)
                 break
             except Exception as error:
                 from clue_spend import ProviderHalted
