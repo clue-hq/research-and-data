@@ -25,7 +25,9 @@ class ClerkJwtConfig(BaseModel):
     jwks_url: HttpUrl
     issuer: str
     authorized_parties: tuple[str, ...] = Field(min_length=1)
-    clock_skew_seconds: int = Field(default=5, ge=0, le=60)
+    # A full minute of slack: Clerk session tokens live ~60s, so a token that expires while a
+    # request is in flight (or across small clock drift) must not log the user out.
+    clock_skew_seconds: int = Field(default=60, ge=0, le=60)
     jwks_cache_ttl_seconds: int = Field(default=300, ge=1, le=3600)
     jwks_cache_max_keys: int = Field(default=16, ge=1, le=128)
 

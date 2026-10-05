@@ -125,6 +125,12 @@ export function useOnboardingController({
       return;
     }
     if (result.status === "complete") {
+      // Already signed in (Clerk's session_exists): establish routes an unprovisioned
+      // identity onward to profile itself.
+      if (result.flow === "sign-in") {
+        establishSession();
+        return;
+      }
       // Verification is normally required; a Clerk instance with it off completes here.
       navigate("profile");
       return;
@@ -211,7 +217,9 @@ export function useOnboardingController({
           return;
         }
         if (auth.mode === "fixture") navigate("profile");
-        // In clerk mode the OAuth redirect is already in flight.
+        // Already signed in (Clerk's session_exists): no OAuth redirect will start.
+        else if (result.status === "complete" && result.flow === "sign-in") establishSession();
+        // Otherwise the OAuth redirect is already in flight.
       });
     },
     switchAuthMode: () => navigate(authSwitchTarget(step)),
