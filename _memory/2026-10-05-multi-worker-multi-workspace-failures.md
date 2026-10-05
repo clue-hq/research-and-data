@@ -140,6 +140,5 @@ code change), **MINE** (caused by how I operated the lane, not by the product).
   new job `0a041c6b…`) with 4 committee people running alongside; Cloudinary held (`suspended`); the
   first Tencent job stays `suspended`. AltCarbon — Mitsubishi Heavy Industries account job running;
   Volvo Group held (not started).
-- Running by hand and NOT stopped by `dev_stack down`: 4 extra ingestion coordinators, and the 1
-  remaining mismatched extra worker (pid 75745, `09200c59`) until the watcher retires it (the other,
-  `74f06c95`, was retired at 11:26:31). `extra5`/`extra6` ARE stopped by `down`.
+- Running by hand and NOT stopped by `dev_stack down`: 4 extra ingestion coordinators, the 2 mismatched
+  extra workers were retired once idle (`74f06c95` at 11:26:31, `09200c59` at 11:34:21). `extra5`/`extra6` ARE stopped by `down`.
