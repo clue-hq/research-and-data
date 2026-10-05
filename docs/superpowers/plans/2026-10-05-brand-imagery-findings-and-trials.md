@@ -276,6 +276,17 @@ kind of subject; short prompt), with pointers from references.md, components.md 
   5 of Conduit's 506 asset descriptions are junk from the describer (DeepSeek v4.1 Flash) —
   "Describe each image below.", "N/A", a Thai word, the asset id itself (the Conduit wordmark).
 
+### T5 round 5 (2026-10-05) — text-free references + regenerate-on-failure, with the view loop
+
+- Skill additions (founder 2026-10-05): prefer references without text, cards or interface, or crop
+  the clean area; view every output and, when it is wrong, fix the cause and generate a new image
+  (no fixed attempt limit; change approach or report if it keeps failing the same way).
+- Trial now returns each generated image to the agent, which accepts or regenerates.
+- Conduit background × 3: every run led with text-free references; no text leaked; all three
+  accepted the first image (~50 s per run). Side effect: all three took Conduit's landscape-blur
+  look, none its pastel look — the pastel look exists only in ads with text on them, and no run
+  used crop_image to lift it out.
+
 ## Evidence index
 
 - Run 3 image calls: session `dsess_76efab4f…/turns/run_fac28447…/logs/run.jsonl` (15:55:32, 15:55:39).

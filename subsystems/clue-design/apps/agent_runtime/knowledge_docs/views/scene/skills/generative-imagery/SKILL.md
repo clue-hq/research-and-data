@@ -45,6 +45,11 @@ that image's subject.
 Pick at most four references, in a deliberate order, and give each an honest role.
 A reference you did not view is a guess; view it first.
 
+Prefer references without text, cards or interface: the image model copies what it
+sees, including words. If the look you want sits behind text or cards in an ad,
+crop the clean area with `asset(action="crop_image")` and use the crop, or choose
+a text-free image with the same look.
+
 ## 3. Decide the subject and the look separately
 
 **The subject** comes from the message the creative is making, and it must serve
@@ -108,6 +113,12 @@ use it only when that is the intended direction.
 
 `view` every generated image before placing it. Compare it with the references you
 used: is it in the seller's look, does it carry anything you did not ask for, and
-does it work in place with the copy? If not, repair the prompt or the references
-once, or report the gap. A placeholder or failed generation is not finished
-imagery.
+does it work in place with the copy? Look closely for words, letters, logos or
+interface the model added on its own.
+
+If the image is not what you asked for, do not place it. Find the cause, fix it and
+generate a new image: swap a text-heavy reference for a text-free or cropped one,
+remove what pulled the image off the look, or say more plainly what the image must
+not contain. Then view the new image the same way. If it keeps failing in the same
+way, change approach (other references, native shapes and brand colours) or report
+the gap. A placeholder or failed generation is not finished imagery.
