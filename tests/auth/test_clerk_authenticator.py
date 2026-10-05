@@ -152,6 +152,28 @@ def test_invalid_session_claims_fail_closed(overrides: dict[str, Any], reason: s
     assert reason
 
 
+def test_token_that_expired_in_flight_is_accepted_within_one_minute() -> None:
+    """A ~60s session token can expire between the Next server reading it and the API
+    checking it; the default leeway must not turn that into a logout."""
+
+    async def scenario() -> None:
+        private, jwk = _keys()
+        authenticator, _ = _authenticator(private, jwk)
+        expired_30s_ago = int((datetime.now(UTC) - timedelta(seconds=30)).timestamp())
+        session = await authenticator.authenticate(
+            AuthenticationRequest(authorization=f"Bearer {_token(private, exp=expired_30s_ago)}")
+        )
+        assert session.provider_subject == "user_provider_123"
+
+        expired_2m_ago = int((datetime.now(UTC) - timedelta(minutes=2)).timestamp())
+        with pytest.raises(SessionInvalid):
+            await authenticator.authenticate(
+                AuthenticationRequest(authorization=f"Bearer {_token(private, exp=expired_2m_ago)}")
+            )
+
+    run_async(scenario())
+
+
 def test_audience_claim_does_not_participate_in_verification() -> None:
     """Session-token-native contract: a default session token has no ``aud``; one that happens
     to carry any ``aud`` (a customized session token) must verify identically."""

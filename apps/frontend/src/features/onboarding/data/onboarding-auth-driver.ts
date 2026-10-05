@@ -117,11 +117,35 @@ const UNSUPPORTED_FACTOR_RESULT: OnboardingAuthResult = {
     "This account requires a verification method that isn't available on this screen. Use another sign-in method or contact support.",
 };
 
+// Clerk's "You're already signed in." The browser already holds a live session, so the
+// attempt succeeded in every sense that matters: establish the session, never show an error.
+const ALREADY_SIGNED_IN_RESULT: OnboardingAuthResult = {
+  status: "complete",
+  flow: "sign-in",
+};
+
+function isSessionExists(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: unknown; errors?: unknown };
+  if (candidate.code === "session_exists") return true;
+  return (
+    Array.isArray(candidate.errors) &&
+    candidate.errors.some(
+      (item) =>
+        !!item &&
+        typeof item === "object" &&
+        (item as { code?: unknown }).code === "session_exists",
+    )
+  );
+}
+
 function errorResult(error: ClerkErrorLike): OnboardingAuthResult {
+  if (isSessionExists(error)) return ALREADY_SIGNED_IN_RESULT;
   return { status: "error", message: error.longMessage ?? error.message };
 }
 
 function thrownErrorResult(error: unknown): OnboardingAuthResult {
+  if (isSessionExists(error)) return ALREADY_SIGNED_IN_RESULT;
   if (error && typeof error === "object") {
     const candidate = error as { message?: unknown; longMessage?: unknown };
     if (typeof candidate.longMessage === "string" && candidate.longMessage) {

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   pendingVerificationEmail,
   resendPendingEmailCode,
+  runClerkStep,
   startPasswordSignIn,
   startPasswordSignUp,
   verifyPendingEmailCode,
@@ -198,4 +199,39 @@ test("sign-up verification still dispatches through the sign-up resource", async
     "verify-sign-up-code",
     "finalize",
   ]);
+});
+
+// Clerk's "You're already signed in." arrives as an API response error whose top-level code is
+// `api_response_error`; the `session_exists` code is on its entries.
+const alreadySignedIn = {
+  message: "Session already exists",
+  longMessage: "You're already signed in.",
+  code: "api_response_error",
+  errors: [{ code: "session_exists", message: "Session already exists" }],
+};
+
+test("an already-signed-in password sign-in completes instead of showing Clerk's error", async () => {
+  const signIn = signInDriver("needs_first_factor");
+  signIn.password = async () => {
+    signIn.calls.push("password");
+    return { error: alreadySignedIn };
+  };
+  const result = await startPasswordSignIn(signIn, "person@example.com", "pw");
+  assert.deepEqual(result, { status: "complete", flow: "sign-in" });
+  assert.deepEqual(signIn.calls, ["password"]);
+});
+
+test("an already-signed-in sign-up routes as a sign-in, not into a new profile", async () => {
+  const signUp = signUpDriver(null);
+  signUp.password = async () => ({ error: alreadySignedIn });
+  const result = await startPasswordSignUp(signUp, "new@example.com", "pw");
+  assert.deepEqual(result, { status: "complete", flow: "sign-in" });
+});
+
+test("an already-signed-in Google start completes instead of showing Clerk's error", async () => {
+  // signInWithGoogle runs Clerk's sso() through runClerkStep; a thrown session_exists completes.
+  const started = await runClerkStep(async () => {
+    throw Object.assign(new Error("Session already exists"), alreadySignedIn);
+  });
+  assert.deepEqual(started, { ok: false, result: { status: "complete", flow: "sign-in" } });
 });
