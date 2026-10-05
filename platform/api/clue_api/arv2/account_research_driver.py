@@ -976,12 +976,17 @@ class Arv2AccountResearchWorkHandler:
                     job_id=str(child["job_id"]),
                     parent_job_id=str(child["parent_job_id"]),
                 )
+        # Every continuation of an account shares one lease, and this sweep re-offers the latest
+        # revision every tick. Offer only while no continuation is queued or running for the
+        # account: one live task per lease, and the tick after it ends offers whatever revision
+        # is current then (2026-10-05: siblings queued behind a running one spun on its lease).
         for g in pending:
             offered += int(
                 await self._queue.enqueue(
                     kind=FleetTaskKind.ARV2_ACCOUNT_RESEARCH,
                     work_id=WorkId(continuation_work_id(g)),
                     dedup_key=f"arv2:quality-editorial:{g.generation_id}:{g.input_revision}",
+                    only_if_work_idle=True,
                     priority=ARV2_ACCOUNT_TASK_PRIORITY,
                     payload={
                         "continuation": "quality_reconciliation",
