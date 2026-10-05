@@ -401,6 +401,10 @@ def choose_style_group(brief: str, names: list[str]) -> Optional[str]:
     body = {
         "model": settings.lumen_ad_dna_model,
         "max_tokens": SELECT_MAX_TOKENS,
+        # A reasoning model spends the whole tiny budget thinking and answers nothing
+        # (deepseek-v4.1-flash, 2026-10-05: content None, finish_reason "length"). Naming one
+        # look needs no reasoning.
+        "reasoning": {"enabled": False},
         "messages": [
             {"role": "system", "content": _SELECT_PROMPT},
             {

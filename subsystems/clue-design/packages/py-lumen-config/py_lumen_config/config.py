@@ -289,7 +289,7 @@ class Settings(BaseSettings):
 
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
-    lumen_ad_dna_model: str = "x-ai/grok-4.5"
+    lumen_ad_dna_model: str = "deepseek/deepseek-v4.1-flash"
 
     # --- Agent runtime (lumen_deepagent) ---
     # OpenRouter is the SOLE LLM gateway: the model id must be "openai:<id>" and

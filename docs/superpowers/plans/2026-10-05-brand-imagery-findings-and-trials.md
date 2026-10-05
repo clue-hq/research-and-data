@@ -16,6 +16,12 @@ Evidence comes from three Conduit → Atrium Hospitality LinkedIn ad runs (run 2
 - The image prompts the agent writes must not add detail nobody asked for and no brand reference
   shows (yellow lights, an unbranded hotel front desk).
 - Sort this out with standalone trials first, then change the product.
+- A scene ad's imagery sticks to the SELLER's look and brand theme only — the way the seller's own
+  ads show and illustrate things. Never the target's world (their hotels, their product).
+- The ad-style describer (`LUMEN_AD_DNA_MODEL`) is `deepseek/deepseek-v4.1-flash` from 2026-10-05.
+- The §5 prompt wording is tuned by a standalone test that runs the whole path — agent writes the
+  image call, the image model renders it — and is judged on the images (T5), not on the prompt
+  text alone.
 
 ## 2. Findings
 
@@ -138,10 +144,31 @@ lane DB only. Nothing in the product changes. Results go into §7 of this doc.
 | T2 | Description diet | Re-describe 40 assets with a short structured prompt (DeepSeek v4.1 Flash vs Grok 4.5); rerun T1 on the short version | T1 score vs today; cost per asset | < $1 |
 | T3 | Style groups | Cluster Conduit's 16 ads by embedding; compare with Grok's 6 single-ad groups | do real looks come out | ≈ $0 |
 | T4 | Runtime generation done well | For the run-3/run-4 brief, generate backgrounds from (a) today's agent prompt + og-image, (b) the brand's ads of one look as treatment + a disciplined prompt (§5), (c) (b) + a text-free brand photo. 3 images each, judged side by side by the founder | on-brand, no invented detail | ≈ $1–2 |
-| T5 | Prompt discipline | Give Grok 4.7 the run-3 brief, the chosen references and today's vs §5 guidance; have it write only the image prompt, 5 times each. Count details not traceable to a reference or the request | invented details per prompt | < $1 |
+| T5 | Prompt discipline, end to end | See §4.1 | founder's side-by-side judgement of the images; invented details per prompt | ≈ $1–2 per round |
 | T6 | Agent selection | Same brief, the design agent with (a) today's index, (b) inventory + filtered contact-sheet search. Compare what it picks | right references chosen | a few $ |
 
 Order: T1 and T5 first (cheap, decide search and prompting), then T4, then T2/T3, then T6.
+
+### 4.1 T5 in detail
+
+One standalone script, no product code path changed:
+
+1. **Context, as close to a real turn as possible:** the design agent's model (`x-ai/grok-4.7`),
+   the run-4 brief, `ad-assets.md`, the brand card, the image-related guidance
+   (`brand-imagery`, `generative-imagery`, `references.md`), and a fixed pool of candidate
+   references it may view: Conduit's harvested ads, the text-free website blur photo, the
+   og-image, and a few distractors (product screenshots, a hotel photo).
+2. **The agent's job:** view what it wants (images returned as image parts), then return the
+   arguments of ONE `generate_image` call — prompt, up to 4 reference ids, roles, framing.
+3. **Render:** pass those arguments through the real `image_provider.generate` (same model,
+   endpoint and framing as production), square 1:1.
+4. **Arms:** A = today's guidance; B = §5 wording. 3 runs each per round.
+5. **Output:** one sheet per round — for each run, the references it chose, its prompt, and the
+   image — plus a count of prompt details not traceable to a chosen reference or the brief.
+6. **Iterate:** the founder judges the sheet; §5 is tweaked; the next round reruns B (and A as the
+   control). Stop when B's images are reliably on the seller's look with nothing invented.
+
+Cost per round ≈ 6 agent calls + 6 images ≈ $1–2.
 
 ## 5. Image prompt discipline — proposed wording (for founder review, not yet in any skill)
 
@@ -168,12 +195,16 @@ to be pointed at from the `brand-imagery` and `generative-imagery` skills:
 
 ## 6. Open questions for the founder
 
-1. Should a scene ad ever carry imagery of the target's world (their hotels, their product), or is
-   the background always the seller's look? (§5 assumes the seller's look.)
-2. Is the brand-look collection curated by a person at onboarding, inferred by the model, or both?
-3. Switch the ad-style describer (`LUMEN_AD_DNA_MODEL`) to `deepseek/deepseek-v4.1-flash` now, or
-   wait for T2? (It reads images and supports structured output; $0.30/$1.20 per M tokens vs
-   Grok 4.5's $2/$6.)
+1. ~~Target's world or seller's look?~~ Ruled 2026-10-05: the seller's look only (§1).
+2. How is the brand-look collection decided — and if by a model, how does it decide? Proposal: the
+   brand's harvested ads ARE the brand look by definition (no picking needed). Every other image
+   joins only if it is text-free and visually close to those ads (embedding similarity to the ads,
+   checked by a vision model against the ads themselves). The founder can add or remove from the
+   Brand context screen. **Deferred (founder, 2026-10-05):** decided only after T1/T2 deliver
+   better descriptions and search; today's library is not something the agent can read through.
+3. ~~Switch the describer to DeepSeek?~~ Done 2026-10-05 (§1). The pre-turn look picker shares the
+   setting and asks for ≤32 tokens; DeepSeek spent them all reasoning and returned nothing, so the
+   picker now sends `reasoning: {enabled: false}` (verified live: it answers correctly).
 
 ## 7. Trial results
 
