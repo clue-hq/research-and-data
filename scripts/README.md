@@ -362,3 +362,28 @@ uv run python scripts/19_production_context_release_gate.py \
 
 The reviewed owners, reasons, removal conditions, and 32-node baseline live in
 `tests/fixtures/production_context/release_broad_quarantine.json`.
+
+## Fleet lease-spin replay
+
+`fleet_lease_spin_replay.py` replays the 2026-10-05 incident in which ARV2 quality continuations
+queued behind a running one were re-claimed every poll (one task 883 times in four minutes). It
+runs the real fleet worker, queue and work leases — 4 workers × 3 slots at production timings —
+with a stand-in reconciliation (a sleep, no LLM, no provider calls) and a stand-in quality sweep,
+then prints claims, hand-backs, the most live tasks on the lease, attempt counts and catch-up
+time as JSON. About two minutes per run.
+
+It needs an explicit, migrated, **throwaway** database and refuses one whose `fleet_task` holds
+anything but earlier replays' rows, since a running stack there would claim the replay's tasks:
+
+```bash
+docker run -d --name clue-pg-replay -e POSTGRES_USER=clue -e POSTGRES_PASSWORD=clue \
+  -e POSTGRES_DB=replay -p 127.0.0.1:55171:5432 pgvector/pgvector:pg16
+CLUE_DATABASE_URL=postgresql+asyncpg://clue:clue@127.0.0.1:55171/replay uv run alembic upgrade head
+uv run python scripts/fleet_lease_spin_replay.py \
+  --dsn postgresql+asyncpg://clue:clue@127.0.0.1:55171/replay --label with-fix
+```
+
+`--offer old` offers a new task per revision even on the fixed queue, which isolates the worker's
+held-lease safety net. To measure a commit from before a change, check it out with
+`git worktree add` and run this file's path from inside that checkout. First results (before vs
+after the fix): §6 of `_memory/2026-10-05-multi-worker-multi-workspace-failures.md`.
