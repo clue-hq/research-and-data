@@ -9,11 +9,12 @@ changes only when a new round lands or the plan is first written — that keeps 
 from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-
 from lumen_agent.context_clearing import CLEARED_MARKER, clear_superseded_tool_results
 
-_IMAGE = [{"type": "text", "text": "{\"tile\": 0}"},
-          {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}]
+_IMAGE = [
+    {"type": "text", "text": '{"tile": 0}'},
+    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
+]
 
 
 def _call(call_id: str, name: str, **args) -> AIMessage:
@@ -31,11 +32,16 @@ def _cleared(message) -> bool:
 def _history_with_two_rounds():
     return [
         HumanMessage(content="brief"),
-        _call("r1", "render_web_preview"), _result("r1", "render_web_preview"),
-        _call("v1", "view", target="preview:1440:tile:0"), _result("v1", "view", _IMAGE),
-        _call("a1", "view", target="asset:asset_x"), _result("a1", "view", _IMAGE),
-        _call("r2", "render_web_preview"), _result("r2", "render_web_preview"),
-        _call("v2", "view", target="preview:1440:tile:0"), _result("v2", "view", _IMAGE),
+        _call("r1", "render_web_preview"),
+        _result("r1", "render_web_preview"),
+        _call("v1", "view", target="preview:1440:tile:0"),
+        _result("v1", "view", _IMAGE),
+        _call("a1", "view", target="asset:asset_x"),
+        _result("a1", "view", _IMAGE),
+        _call("r2", "render_web_preview"),
+        _result("r2", "render_web_preview"),
+        _call("v2", "view", target="preview:1440:tile:0"),
+        _result("v2", "view", _IMAGE),
     ]
 
 
@@ -53,20 +59,30 @@ def test_screenshots_from_an_earlier_round_become_stubs_and_the_latest_round_sta
 
 def test_a_failed_render_does_not_start_a_new_round() -> None:
     history = _history_with_two_rounds()[:7] + [
-        _call("r2", "render_web_preview"), _result("r2", "render_web_preview", "boom", "error"),
+        _call("r2", "render_web_preview"),
+        _result("r2", "render_web_preview", "boom", "error"),
     ]
     out = clear_superseded_tool_results(history)
     assert not _cleared(out[4])  # the round-1 screenshot is still the current one
 
 
-def _planning_history(plan_tool: str = "write_file", plan_path: str = "/sessions/s/workspace/plan.md"):
+def _planning_history(
+    plan_tool: str = "write_file", plan_path: str = "/sessions/s/workspace/plan.md"
+):
     return [
         HumanMessage(content="brief"),
-        _call("s1", "search_cloned_sections", query="hero"), _result("s1", "search_cloned_sections", "x" * 400),
-        _call("i1", "inspect_cloned_section", fragment_id="frag_a"), _result("i1", "inspect_cloned_section", "y" * 400),
-        _call("c1", "view", target="cloned_section:frag_a"), _result("c1", "view", _IMAGE),
-        _call("p1", plan_tool, file_path=plan_path), _result("p1", plan_tool),
-        _call("i2", "inspect_cloned_section", fragment_id="frag_b"), _result("i2", "inspect_cloned_section", "z" * 400),
+        _call("s1", "search_cloned_sections", query="hero"),
+        _result("s1", "search_cloned_sections", "x" * 400),
+        _call("i1", "inspect_cloned_section", fragment_id="frag_a"),
+        _result("i1", "inspect_cloned_section", "y" * 400),
+        _call("c1", "view", target="cloned_section:frag_a"),
+        _result("c1", "view", _IMAGE),
+        _call("p1", plan_tool, file_path=plan_path),
+        _result("p1", plan_tool),
+        _call("b1", "assemble_cloned_sections"),
+        _result("b1", "assemble_cloned_sections"),
+        _call("i2", "inspect_cloned_section", fragment_id="frag_b"),
+        _result("i2", "inspect_cloned_section", "z" * 400),
     ]
 
 
@@ -76,45 +92,113 @@ def test_planning_results_stay_until_the_plan_is_written() -> None:
     assert not any(_cleared(m) for m in out if isinstance(m, ToolMessage))
 
 
-def test_planning_results_before_the_plan_become_stubs_after_it_is_written() -> None:
+def test_planning_results_stay_while_the_plan_exists_but_building_has_not_started() -> None:
+    history = _planning_history()[:9]  # through the plan write, before any build tool
+    out = clear_superseded_tool_results(history)
+    assert not any(_cleared(m) for m in out if isinstance(m, ToolMessage))
+
+
+def test_planning_results_become_stubs_once_the_plan_exists_and_building_starts() -> None:
     out = clear_superseded_tool_results(_planning_history())
-    for index, tool, key in ((2, "search_cloned_sections", "hero"),
-                             (4, "inspect_cloned_section", "frag_a"),
-                             (6, "view", "cloned_section:frag_a")):
+    for index, tool, key in (
+        (2, "search_cloned_sections", "hero"),
+        (4, "inspect_cloned_section", "frag_a"),
+        (6, "view", "cloned_section:frag_a"),
+    ):
         assert _cleared(out[index]), index
         assert tool in out[index].content and key in out[index].content
         assert "plan.md" in out[index].content
-    assert not _cleared(out[8])   # the plan write's own result
-    assert not _cleared(out[10])  # an inspection after the plan stays
+    assert not _cleared(out[8])  # the plan write's own result
+    assert not _cleared(out[10])  # the build's own result
+    assert not _cleared(out[12])  # an inspection during building stays
+
+
+def test_an_early_skeleton_plan_does_not_block_clearing() -> None:
+    """The agent may create plan.md as a skeleton before searching; planning results still
+    clear once building starts."""
+    history = [
+        HumanMessage(content="brief"),
+        _call("p0", "write_file", file_path="workspace/plan.md"),
+        _result("p0", "write_file"),
+        _call("s1", "search_cloned_sections", query="hero"),
+        _result("s1", "search_cloned_sections", "x" * 400),
+        _call("i1", "inspect_cloned_section", fragment_id="frag_a"),
+        _result("i1", "inspect_cloned_section", "y" * 400),
+        _call("b1", "compose_web_section"),
+        _result("b1", "compose_web_section"),
+    ]
+    out = clear_superseded_tool_results(history)
+    assert _cleared(out[4]) and _cleared(out[6])
+
+
+def test_building_before_any_plan_waits_for_the_plan() -> None:
+    """The stub says the decisions are in plan.md, so nothing clears until plan.md exists."""
+    history = [
+        HumanMessage(content="brief"),
+        _call("s1", "search_cloned_sections", query="hero"),
+        _result("s1", "search_cloned_sections", "x" * 400),
+        _call("b1", "compose_web_section"),
+        _result("b1", "compose_web_section"),
+    ]
+    assert not _cleared(clear_superseded_tool_results(history)[2])
+    history += [
+        _call("p1", "write_file", file_path="workspace/plan.md"),
+        _result("p1", "write_file"),
+    ]
+    assert _cleared(clear_superseded_tool_results(history)[2])
+
+
+def test_a_failed_build_does_not_count_as_building_started() -> None:
+    history = _planning_history()[:9] + [
+        _call("b1", "assemble_cloned_sections"),
+        _result("b1", "assemble_cloned_sections", "boom", "error"),
+    ]
+    assert not _cleared(clear_superseded_tool_results(history)[2])
 
 
 def test_the_plan_counts_when_edited_or_written_to_a_relative_path_but_not_a_lookalike() -> None:
     assert _cleared(clear_superseded_tool_results(_planning_history("edit_file"))[2])
-    assert _cleared(clear_superseded_tool_results(_planning_history(plan_path="workspace/plan.md"))[2])
-    assert not _cleared(clear_superseded_tool_results(_planning_history(plan_path="workspace/review-plan.md"))[2])
-    assert not _cleared(clear_superseded_tool_results(_planning_history(plan_path="workspace/plan.md.bak"))[2])
+    assert _cleared(
+        clear_superseded_tool_results(_planning_history(plan_path="workspace/plan.md"))[2]
+    )
+    assert not _cleared(
+        clear_superseded_tool_results(_planning_history(plan_path="workspace/review-plan.md"))[2]
+    )
+    assert not _cleared(
+        clear_superseded_tool_results(_planning_history(plan_path="workspace/plan.md.bak"))[2]
+    )
 
 
 def test_parallel_calls_in_one_message_are_matched_by_call_id() -> None:
-    both = AIMessage(content="", tool_calls=[
-        {"id": "va", "name": "view", "args": {"target": "asset:asset_y"}},
-        {"id": "vb", "name": "view", "args": {"target": "preview:768"}},
-    ])
+    both = AIMessage(
+        content="",
+        tool_calls=[
+            {"id": "va", "name": "view", "args": {"target": "asset:asset_y"}},
+            {"id": "vb", "name": "view", "args": {"target": "preview:768"}},
+        ],
+    )
     history = [
-        _call("r1", "render_web_preview"), _result("r1", "render_web_preview"),
-        both, _result("va", "view", _IMAGE), _result("vb", "view", _IMAGE),
-        _call("r2", "render_web_preview"), _result("r2", "render_web_preview"),
+        _call("r1", "render_web_preview"),
+        _result("r1", "render_web_preview"),
+        both,
+        _result("va", "view", _IMAGE),
+        _result("vb", "view", _IMAGE),
+        _call("r2", "render_web_preview"),
+        _result("r2", "render_web_preview"),
     ]
     out = clear_superseded_tool_results(history)
     assert not _cleared(out[3])  # asset view kept
-    assert _cleared(out[4])      # preview view from round 1 cleared
+    assert _cleared(out[4])  # preview view from round 1 cleared
 
 
 def test_a_view_without_a_target_is_left_untouched() -> None:
     history = [
-        _call("r1", "render_web_preview"), _result("r1", "render_web_preview"),
-        _call("v1", "view"), _result("v1", "view", _IMAGE),
-        _call("r2", "render_web_preview"), _result("r2", "render_web_preview"),
+        _call("r1", "render_web_preview"),
+        _result("r1", "render_web_preview"),
+        _call("v1", "view"),
+        _result("v1", "view", _IMAGE),
+        _call("r2", "render_web_preview"),
+        _result("r2", "render_web_preview"),
     ]
     assert not _cleared(clear_superseded_tool_results(history)[3])
 
@@ -132,7 +216,8 @@ def test_the_cleared_prefix_is_stable_between_boundaries() -> None:
     """Cache safety: with no new render and no first plan write in between, a longer history
     clears exactly the same earlier messages as the shorter one."""
     history = _history_with_two_rounds() + [
-        _call("v3", "view", target="layout:1440"), _result("v3", "view", "{}"),
+        _call("v3", "view", target="layout:1440"),
+        _result("v3", "view", "{}"),
     ]
     short = clear_superseded_tool_results(history[:11])
     long = clear_superseded_tool_results(history)
@@ -147,12 +232,12 @@ def test_the_edit_runs_through_langchains_real_middleware_and_leaves_saved_histo
     from langchain.agents.middleware import ContextEditingMiddleware
     from langchain.agents.middleware.types import ModelRequest
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-
     from lumen_agent.context_clearing import SupersededToolResultsEdit
 
     history = _history_with_two_rounds()
-    request = ModelRequest(model=FakeMessagesListChatModel(responses=[AIMessage(content="x")]),
-                           messages=history)
+    request = ModelRequest(
+        model=FakeMessagesListChatModel(responses=[AIMessage(content="x")]), messages=history
+    )
     middleware = ContextEditingMiddleware(edits=[SupersededToolResultsEdit()])
     seen: list = []
 

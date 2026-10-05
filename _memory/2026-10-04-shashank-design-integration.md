@@ -367,3 +367,11 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   Most of the drop starts at call 10 (plan.md written). Expect roughly a quarter off the website
   agent's cost (~$7.71 -> ~$5.6), not half — the latest round's screenshots and reads stay.
 - Owed: founder-run live re-run of the Syracuse request (Task 4) after a stack restart.
+- 2026-10-06 deferred minors worked out (founder asked):
+  - Early skeleton plan: planning results now clear once plan.md exists AND building has started
+    (first successful build tool), at whichever came later; a failed build does not count.
+  - Per-call copy: measured on the real 11.2 MB Syracuse history — deepcopy ~1 ms on the last
+    call, 57 ms across all 34 calls (strings are shared, not copied). No change needed.
+  - Replay counting: the script now counts screenshots by pixels (w*h/750) and takes an optional
+    fixed per-call figure (48000 for the website agent). Syracuse: 6.10M -> 4.54M (26% less),
+    peak ~269k -> ~198k per call; clearing now starts at call 11 (build) instead of 10 (plan).
