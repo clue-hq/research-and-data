@@ -307,3 +307,9 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   Stripe 48/32 @300, Garner title 56, Conduit/AltCarbon unchanged. Live kits in clue_trenton still
   hold the old values until re-extracted; ingestion processes (pool + 4 extra coordinators) run the
   OLD code until restarted.
+- 2026-10-05 A1 wording REVISED by founder: Head of ABM's brief is DIRECTION, not copy. "For the page"
+  = purpose/reader/action, the angle (why this account, why now, the argument), a suggested section
+  structure, facts as source material with their sources ("not wording to copy"), fitting customer
+  stories. The website design agent writes all page words itself with its copywriting skills and
+  never lifts sentences from either half of the brief (A2 must say the same). Notes half, prospect
+  rule and the research offer (recommendation, no hard gate) unchanged.
