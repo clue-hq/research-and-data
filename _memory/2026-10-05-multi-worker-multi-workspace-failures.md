@@ -141,8 +141,8 @@ code change), **MINE** (caused by how I operated the lane, not by the product).
   (`47ce65b69`): 16 tasks, up to 8 live on the lease, 986 claims (970 bounced), worst task 263
   attempts, 14 superseded runs. With the fix: 2 tasks, max 1 live, 2 claims, 0 bounces, 0
   superseded. Fixed code with the old-style offer (safety net alone): 122 claims, attempts ≤ 1.
-  Catch-up 5.1–5.5 s after the last signal in all three; both runs applied twice. Script was a
-  scratchpad file, not committed. **Owed:** a live multi-worker walk on a lane (spends LLM).
+  Catch-up 5.1–5.5 s after the last signal in all three; both runs applied twice. Rerunnable as
+  `scripts/fleet_lease_spin_replay.py` (throwaway DB only; see `scripts/README.md`). **Owed:** a live multi-worker walk on a lane (spends LLM).
 
 ## 7. Smaller issues seen along the way
 
