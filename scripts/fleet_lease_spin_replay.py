@@ -19,7 +19,7 @@ the pre-fix way on the current code, which exercises the worker's held-lease saf
 own. To measure the code before a change, check that commit out with ``git worktree add`` and
 run this file from inside it (pass this file's path; it adapts to a queue without
 ``only_if_work_idle``). The record of the first run is in
-``_memory/2026-10-05-multi-worker-multi-workspace-failures.md`` §6.
+``_memory/2026-10-05-fleet-lease-spin-fix.md``.
 """
 
 from __future__ import annotations

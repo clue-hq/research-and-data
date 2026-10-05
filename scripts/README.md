@@ -386,4 +386,4 @@ uv run python scripts/fleet_lease_spin_replay.py \
 `--offer old` offers a new task per revision even on the fixed queue, which isolates the worker's
 held-lease safety net. To measure a commit from before a change, check it out with
 `git worktree add` and run this file's path from inside that checkout. First results (before vs
-after the fix): §6 of `_memory/2026-10-05-multi-worker-multi-workspace-failures.md`.
+after the fix): `_memory/2026-10-05-fleet-lease-spin-fix.md`.
