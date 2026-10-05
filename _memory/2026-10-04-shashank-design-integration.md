@@ -375,3 +375,13 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   - Replay counting: the script now counts screenshots by pixels (w*h/750) and takes an optional
     fixed per-call figure (48000 for the website agent). Syracuse: 6.10M -> 4.54M (26% less),
     peak ~269k -> ~198k per call; clearing now starts at call 11 (build) instead of 10 (plan).
+- **2026-10-06 live proof (founder-run, Garner Health, new thread thr_b7463b10…, run run_d71298e8…):**
+  website agent 38 calls, $4.14 (vs $7.71 on 2026-10-05, -46%), input 5.77M (vs 7.23M),
+  peak 222k per call (vs 318k), 92% cached, ~10.3 min. Head of ABM $0.62; total $4.76 (vs $8.15).
+  Clearing fired in 3 batches (23 planning results at the first build, then each new preview round:
+  27, 38 cleared). Billed prompt fell 185k->126k at the first batch. Saving beat the token cut
+  because grok-4.6 per-call cost roughly doubles above ~200k prompt tokens (inferred from usage:
+  180k call 13.8c vs 211k call with 7k uncached 23.8c) — keeping calls under ~200k matters.
+  Page: completed_with_warnings, wording scan clean (8%/12% framed as transport+healthcare as the
+  brief asked; 88% Nightingale figure is in seller files). A follow-up message on an OPEN leg
+  resumes the old session (turn.checkpoint_continue) — a fresh comparison needs a new chat.
