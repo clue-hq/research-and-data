@@ -50,6 +50,10 @@ def test_a_trickling_catalogue_gives_up_at_the_deadline(monkeypatch) -> None:  #
             return None
 
         def read(self, size: int = -1) -> bytes:
+            # ``http.client`` on a chunked body: waits until ``size`` bytes have trickled in.
+            raise AssertionError("read() would block for the whole trickle")
+
+        def read1(self, size: int = -1) -> bytes:
             del size
             time.sleep(0.05)
             return b" "

@@ -43,7 +43,9 @@ def _fetch_catalogue(*, deadline_s: float = _FETCH_DEADLINE_S) -> Mapping[str, i
     deadline = time.monotonic() + deadline_s
     chunks: list[bytes] = []
     with urllib.request.urlopen(_CATALOGUE_URL, timeout=min(10.0, deadline_s)) as response:  # noqa: S310
-        while chunk := response.read(64 * 1024):
+        # ``read1``, not ``read``: on a chunked body ``read(n)`` keeps reading chunks until it has
+        # ``n`` bytes, so one call would span the whole trickle and the deadline would never run.
+        while chunk := response.read1(64 * 1024):
             chunks.append(chunk)
             if time.monotonic() > deadline:
                 raise TimeoutError(f"model catalogue still arriving after {deadline_s:g}s")
