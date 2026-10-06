@@ -385,3 +385,7 @@ Real runs traced (addis-ababa worker traces + clue_trenton): "Conduit for JW Mar
   Page: completed_with_warnings, wording scan clean (8%/12% framed as transport+healthcare as the
   brief asked; 88% Nightingale figure is in seller files). A follow-up message on an OPEN leg
   resumes the old session (turn.checkpoint_continue) — a fresh comparison needs a new chat.
+- 2026-10-06: defect register for the three website runs saved at
+  `docs/superpowers/plans/2026-10-06-website-run-defects.md` (A1–A10 page problems, B1–B3 self-review,
+  C1–C3 tools, D1–D3 brief/handoff, E1–E4 platform, F cost). Founder: work through it one item at a
+  time. Still owed from earlier: D2 ("Queued is not finished" wording) and E1 (preview origin fix).

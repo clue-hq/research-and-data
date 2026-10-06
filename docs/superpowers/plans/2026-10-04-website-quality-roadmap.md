@@ -50,6 +50,11 @@ Tailwind v4 (new lane), Next.js frontend shell.
 
 ## Part A — Week 1 (current engine), in priority order for the Garner Health demos
 
+> **Status 2026-10-06:** A1–A4 shipped (Head of ABM v72 / manual v18, design-agent copy rules, research
+> reads, typography). Website-agent context clearing shipped (plan `2026-10-06-web-agent-context-clearing.md`;
+> Syracuse page $7.71 → $4.14). Defects found in the first three website runs are tracked one at a time
+> in **`2026-10-06-website-run-defects.md`**.
+
 ### Workstream A1: Brief format and research offer (Head of ABM)
 
 **Why:** spec §3.5 items 1, 3, 4. Internal notes reach the page because the brief mixes notes and
