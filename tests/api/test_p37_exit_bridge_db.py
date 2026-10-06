@@ -44,6 +44,7 @@ from tests.api.conftest import hermetic_flag_env
 from tests.api.test_p34_design_leg_engine_db import (
     _FakeLane,
     _run_turn,
+    _RuntimeFailedLane,
     _seed_leg_conversation,
     _submit_message,
 )
@@ -326,6 +327,55 @@ def test_an_out_of_scope_verdict_redelivers_the_pending_question(
                 conn, workspace_id=seeds["workspace_id"], leg_id=seeds["leg"]["id"]
             )
             assert leg_after["close_reason"] == "out_of_scope"
+
+    run_async(scenario())
+
+
+def test_closing_after_a_failed_run_tells_the_strategy_agent_why(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Production 2026-10-05: the session's runs had failed before generating anything; the
+    exit summary said only that the request was out of scope, so the strategy agent told the
+    user the page "was never generated". The summary now carries the failure."""
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds = await _seed_leg_conversation(conn, storage_root=tmp_path, label="oosfail")
+            with hermetic_flag_env():
+                registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            failing = _RuntimeFailedLane(conn_factory=seeds["conn_factory"])
+            first = await _submit_message(conn, seeds, label="oosfail-1", message="Generate.")
+            await _run_turn(conn, seeds, registry, failing, first)
+
+            closing = await _submit_message(
+                conn, seeds, label="oosfail-2", message="What's happening? Why is it not ready?"
+            )
+            result = await _run_bridged(
+                conn,
+                seeds,
+                registry,
+                failing,
+                closing,
+                judge=_ScriptedJudge(
+                    ExitJudgment(
+                        close_this_session=True,
+                        hand_message_to_strategy_agent=True,
+                        reasoning="A status question, not design work.",
+                    )
+                ),
+                finisher=_finisher(seeds, tmp_path),
+            )
+            assert result.outcome.status is AgentExecutionStatus.COMPLETED
+            message = result.assistant_message or ""
+            assert message.startswith(
+                exit_summary("out_of_scope", "A status question, not design work.")
+            )
+            assert "before anything was generated" in message
+            assert "agent_runtime.failed" in message
+            assert "/srv" not in message
 
     run_async(scenario())
 

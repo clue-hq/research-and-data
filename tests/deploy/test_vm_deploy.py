@@ -27,6 +27,8 @@ if args[:1] == ["run"] and "build_agent_workspace_factory" in joined:
               "must not grant group or other permissions", file=sys.stderr)
         sys.exit(1)
     sys.exit(0)
+if args[:1] == ["run"] and ".deploy-write-check" in joined:
+    sys.exit(0 if os.environ.get("FAKE_DESIGN_WRITABLE", "1") == "1" else 1)
 if args[:1] == ["run"] and "test -d" in joined:
     sys.exit(0 if os.environ.get("FAKE_OLD_DESIGN_DIR", "0") == "1" else 1)
 if args[:1] == ["compose"] and "ps" in args and "-q" in args:
@@ -217,3 +219,27 @@ def test_a_worker_that_restarts_after_up_fails_the_deploy(vm: dict[str, str]) ->
     assert code != 0
     assert "vm-c1-1" in out
     assert f"deployed {SHA}" not in out.splitlines()
+
+
+def test_the_design_workspace_is_proven_writable_by_the_workers_before_up(
+    vm: dict[str, str],
+) -> None:
+    """Production 2026-10-05: /srv/clue/lumen-agent was root-owned and every design run failed
+    with Permission denied — workers booted fine, so neither the boot check nor the health
+    check could see it. The deploy now writes there as the workers' user first."""
+    code, out, calls = _deploy(vm)
+    assert code == 0, out
+    check = _index(calls, ".deploy-write-check")
+    assert "--user 1000:1000" in calls[check]
+    assert _index(calls, "install -d -m 700 -o 1000 -g 1000 /srv/clue/lumen-agent") < check
+    assert check < _index(calls, " up ")
+
+
+def test_an_unwritable_design_workspace_refuses_the_deploy_and_restarts_nothing(
+    vm: dict[str, str],
+) -> None:
+    code, out, calls = _deploy(vm, FAKE_DESIGN_WRITABLE="0", FAKE_OLD_DESIGN_DIR="1")
+    assert code != 0
+    assert "/srv/clue/lumen-agent" in out
+    assert not _compose_up(calls)
+    assert not any(" compose " in f" {c} " and " stop " in f" {c} " for c in calls)

@@ -20,7 +20,7 @@ test("a live session refreshes its token exactly once, bypassing the cache, and 
   assert.deepEqual(live.calls, [{ skipCache: true }]);
 });
 
-test("a signed-out browser does not try to refresh and stays on the expired card", async () => {
+test("a signed-out browser does not try to refresh and goes to sign-in", async () => {
   const signedOut = session(false, async () => "unused");
   assert.equal(await refreshLiveSession(signedOut), false);
   assert.deepEqual(signedOut.calls, []);

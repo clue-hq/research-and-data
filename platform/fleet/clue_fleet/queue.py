@@ -212,6 +212,30 @@ _ENQUEUE_REOPEN_SQL = text(
     """
 )
 
+# Offer-if-idle variant: like _ENQUEUE_SQL, but nothing is inserted while any *live* (queued or
+# claimed) task of the same kind exists on the work id, whatever its dedup key. Tasks that share a
+# work id share one lease, so a second live task could only wait on the first; the offerer offers
+# again after the live task ends. Serialized per (kind, work id) by the advisory lock taken just
+# before it in the same transaction, so two concurrent offerers cannot both find the work idle.
+_ENQUEUE_IF_IDLE_SQL = text(
+    """
+    INSERT INTO fleet_task (task_id, kind, work_id, dedup_key, priority, payload_json)
+    SELECT
+        :task_id, CAST(:kind AS fleet_task_kind), :project_run_id, :dedup_key, :priority,
+        CAST(:payload AS jsonb)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM fleet_task
+        WHERE kind = CAST(:kind AS fleet_task_kind)
+          AND work_id = :project_run_id
+          AND status IN ('queued', 'claimed')
+    )
+    ON CONFLICT (kind, work_id, dedup_key) DO NOTHING
+    RETURNING task_id
+    """
+)
+
+_OFFER_LOCK_SQL = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
+
 # Atomic claim-next. A MATERIALIZED candidate prevents planner rescans of the locking SELECT
 # from selecting more rows as SKIP LOCKED changes under concurrent updates.
 # The inner SELECT picks the single best runnable row — ``queued``, or
@@ -294,7 +318,8 @@ _REQUEUE_SQL = text(
     """
     UPDATE fleet_task
     SET status = 'queued', claimed_by = NULL, claimed_at = NULL,
-        available_at = now() + make_interval(secs => :delay_seconds), updated_at = now()
+        available_at = now() + make_interval(secs => :delay_seconds),
+        attempts = attempts - CAST(:uncount AS integer), updated_at = now()
     WHERE task_id = :task_id AND claimed_by = :worker_id AND status = 'claimed'
     RETURNING task_id
     """
@@ -414,6 +439,7 @@ async def enqueue_task(
     priority: int = 0,
     payload: dict[str, JsonValue] | None = None,
     reopen_terminal: bool = False,
+    only_if_work_idle: bool = False,
 ) -> bool:
     """Idempotently enqueue one task; ``True`` iff the work is newly offered (a fresh row, or —
     with ``reopen_terminal`` — a terminal row re-opened to ``queued``).
@@ -424,8 +450,17 @@ async def enqueue_task(
     ``reopen_terminal=True`` (the ``drive_run`` semantics — see :func:`~clue_fleet.worker.
     enqueue_drive`): a ``done``/``failed`` row is re-opened for a fresh drive (a paused run's
     finished drive task must not block its post-resume re-drive); a ``queued``/``claimed`` row is
-    still a no-op."""
+    still a no-op.
+
+    ``only_if_work_idle=True``: also a no-op while any queued or claimed task of ``kind`` exists
+    on ``project_run_id`` under *another* dedup key — for an offerer that re-offers the latest
+    state on a timer and must not pile tasks behind one lease (the ARV2 quality sweep)."""
+    if only_if_work_idle and reopen_terminal:
+        raise ValueError("only_if_work_idle cannot be combined with reopen_terminal")
     statement = _ENQUEUE_REOPEN_SQL if reopen_terminal else _ENQUEUE_SQL
+    if only_if_work_idle:
+        await conn.execute(_OFFER_LOCK_SQL, {"key": f"fleet-offer:{kind.value}:{project_run_id}"})
+        statement = _ENQUEUE_IF_IDLE_SQL
     row = (
         await conn.execute(
             statement,
@@ -520,12 +555,16 @@ async def requeue_task(
     task_id: UUID,
     worker_id: str,
     delay: timedelta | None = None,
+    uncount_attempt: bool = False,
 ) -> bool:
     """Hand a claimed task back to ``QUEUED`` (the graceful-stop path). Holder-guarded like
     :func:`finish_task`.
 
     ``delay`` persists a DB-clock eligibility boundary rather than sleeping in one worker process.
     This lets the worker drain unrelated work while recovery waits and survives process restarts.
+
+    ``uncount_attempt`` takes back the attempt the claim counted, for a claim that never ran its
+    handler (the work lease was held elsewhere) — ``attempts`` is read as a retry budget.
     """
 
     delay_seconds = 0.0 if delay is None else delay.total_seconds()
@@ -538,6 +577,7 @@ async def requeue_task(
                 "task_id": task_id,
                 "worker_id": worker_id,
                 "delay_seconds": delay_seconds,
+                "uncount": int(uncount_attempt),
             },
         )
     ).first()
@@ -633,6 +673,7 @@ class TaskQueue(Protocol):
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
         reopen_terminal: bool = False,
+        only_if_work_idle: bool = False,
     ) -> bool: ...
 
     async def claim_next(
@@ -657,7 +698,12 @@ class TaskQueue(Protocol):
     async def touch(self, *, task_id: UUID, worker_id: str) -> bool: ...
 
     async def requeue(
-        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+        self,
+        *,
+        task_id: UUID,
+        worker_id: str,
+        delay: timedelta | None = None,
+        uncount_attempt: bool = False,
     ) -> bool: ...
 
     async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int: ...
@@ -681,6 +727,7 @@ class DbTaskQueue:
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
         reopen_terminal: bool = False,
+        only_if_work_idle: bool = False,
     ) -> bool:
         async with transaction() as conn:
             return await enqueue_task(
@@ -691,6 +738,7 @@ class DbTaskQueue:
                 priority=priority,
                 payload=payload,
                 reopen_terminal=reopen_terminal,
+                only_if_work_idle=only_if_work_idle,
             )
 
     async def claim_next(
@@ -730,10 +778,21 @@ class DbTaskQueue:
             return await touch_task(conn, task_id=task_id, worker_id=worker_id)
 
     async def requeue(
-        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+        self,
+        *,
+        task_id: UUID,
+        worker_id: str,
+        delay: timedelta | None = None,
+        uncount_attempt: bool = False,
     ) -> bool:
         async with transaction() as conn:
-            return await requeue_task(conn, task_id=task_id, worker_id=worker_id, delay=delay)
+            return await requeue_task(
+                conn,
+                task_id=task_id,
+                worker_id=worker_id,
+                delay=delay,
+                uncount_attempt=uncount_attempt,
+            )
 
     async def requeue_failed(self, *, kind: FleetTaskKind, project_run_id: ProjectRunId) -> int:
         async with transaction() as conn:
@@ -759,6 +818,7 @@ class WorkQueue(Protocol):
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
         reopen_terminal: bool = False,
+        only_if_work_idle: bool = False,
     ) -> bool: ...
 
     async def claim_next(
@@ -783,7 +843,12 @@ class WorkQueue(Protocol):
     async def touch(self, *, task_id: UUID, worker_id: str) -> bool: ...
 
     async def requeue(
-        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+        self,
+        *,
+        task_id: UUID,
+        worker_id: str,
+        delay: timedelta | None = None,
+        uncount_attempt: bool = False,
     ) -> bool: ...
 
 
@@ -802,6 +867,7 @@ class DbWorkQueue:
         priority: int = 0,
         payload: dict[str, JsonValue] | None = None,
         reopen_terminal: bool = False,
+        only_if_work_idle: bool = False,
     ) -> bool:
         return await self._queue.enqueue(
             kind=kind,
@@ -810,6 +876,7 @@ class DbWorkQueue:
             priority=priority,
             payload=payload,
             reopen_terminal=reopen_terminal,
+            only_if_work_idle=only_if_work_idle,
         )
 
     async def claim_next(
@@ -849,9 +916,19 @@ class DbWorkQueue:
         return await self._queue.touch(task_id=task_id, worker_id=worker_id)
 
     async def requeue(
-        self, *, task_id: UUID, worker_id: str, delay: timedelta | None = None
+        self,
+        *,
+        task_id: UUID,
+        worker_id: str,
+        delay: timedelta | None = None,
+        uncount_attempt: bool = False,
     ) -> bool:
-        return await self._queue.requeue(task_id=task_id, worker_id=worker_id, delay=delay)
+        return await self._queue.requeue(
+            task_id=task_id,
+            worker_id=worker_id,
+            delay=delay,
+            uncount_attempt=uncount_attempt,
+        )
 
 
 __all__ = [

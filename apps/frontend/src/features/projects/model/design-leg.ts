@@ -162,6 +162,10 @@ export function designTurnFailureNotice(code: string | null): string | null {
       return "This page is finalized; revising it needs a new draft revision.";
     case "design_leg_account_unresolved":
       return "This page's target account could not be resolved, so the turn was refused. Nothing was generated.";
+    case "design_leg_runtime_failed":
+      // Every run failed before any model call — the design service itself, not the request
+      // (2026-10-05: the design workspace was not writable). Nothing was made; resend to retry.
+      return "Design couldn't start because of a problem on our side. Nothing was generated — send your message again to retry.";
     case "design_leg_turn_failed":
     case "design_leg_turn_crashed":
       return "Design stopped before completion. Any saved draft remains available.";

@@ -37,6 +37,7 @@ export function ProjectComposer({
   onEntityRemove,
   onEntitySelect,
   onModelPickerToggle = NOOP,
+  onMentionQueryChange,
   onModelSelect = NOOP,
   onPromptChange,
   onSubmit,
@@ -68,6 +69,8 @@ export function ProjectComposer({
   onAttachmentRemove?: (attachmentId: string) => void;
   onEntityRemove?: (entityId: string) => void;
   onEntitySelect?: (entityId: string) => void;
+  /** Present when the @ directory was too large to load whole: the server is asked as the user types. */
+  onMentionQueryChange?: (query: string) => void;
   onModelPickerToggle?: () => void;
   onModelSelect?: (modelId: string) => void;
   onPromptChange: (value: string) => void;
@@ -177,6 +180,7 @@ export function ProjectComposer({
           disabled={disabled || submitting}
           entities={entities}
           onContextChange={handleContextChange}
+          onMentionQueryChange={onMentionQueryChange}
           onPromptChange={onPromptChange}
           onSubmit={(value) => {
             void submitCurrentDraft(value);

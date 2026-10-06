@@ -207,6 +207,10 @@ _ACCOUNT_FILTER = """
     )
 """
 
+#: The same lens, public for the composer's @-mention directory (``a`` aliases account_entity; it
+#: binds ``:workspace_id`` and ``:project_id``, NULL for the whole workspace).
+ACCOUNT_LENS_FILTER = _ACCOUNT_FILTER
+
 _COUNT_ACCOUNTS = text(f"SELECT count(*) FROM account_entity a WHERE {_ACCOUNT_FILTER}")
 
 # Keyset, newest first. The row-value comparison is the whole cursor predicate: it is total over

@@ -21,7 +21,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -273,7 +273,7 @@ _MEMBERS_TEMPLATE = """
            account.primary_domain
     FROM contact_entity contact
     JOIN account_entity account ON account.id = contact.account_entity_id
-    WHERE contact.account_entity_id = :account_id
+    WHERE {account_filter}
       AND contact.workspace_id = :workspace_id
       AND contact.merged_into IS NULL
       AND EXISTS (
@@ -285,39 +285,40 @@ _MEMBERS_TEMPLATE = """
 """
 
 
-async def committee_members(
-    conn: AsyncConnection, *, workspace_id: str, account_id: str
-) -> list[SubjectRef]:
-    """The people an account page speaks about, each with their persona and title.
+async def committee_members_for_accounts(
+    conn: AsyncConnection, *, workspace_id: str, account_ids: Sequence[str] | None
+) -> dict[str, list[SubjectRef]]:
+    """:func:`committee_members` for many accounts — or, with ``None``, every account in the
+    workspace — in a fixed number of statements: one for the members, one for their persona and
+    title. The composer's @-mention directory reads every committee at once, and a query per
+    account would grow with the workspace (2026-10-05). Accounts with no committee are absent."""
 
-    **The ARV2 committee, in one place.** The rule is the contacts under this account that hold at
-    least one live claim, ordered by persona rank and then by name (founder ruling 2026-09-09:
-    ARV2's own rows are the only truth, and the old research lane's coverage table is not one of
-    them). The ordering lives here rather than at the read surface so the generated page and the
-    committee card can never disagree about who is on the committee *or* in what order.
-
-    R3 will give the committee rows of its own. When it does, this function is the single place
-    that changes.
-    """
-    account = _as_uuid(account_id, kind="account")
     scope_sql, scope_params = WorkspaceScope.for_workspace(workspace_id).predicate()
+    params: dict[str, Any] = {"workspace_id": workspace_id, **scope_params}
+    if account_ids is None:
+        account_filter = "account.workspace_id = :workspace_id"
+    else:
+        if not account_ids:
+            return {}
+        account_filter = "contact.account_entity_id = ANY(CAST(:account_ids AS uuid[]))"
+        params["account_ids"] = [_as_uuid(account_id, kind="account") for account_id in account_ids]
     rows = [
         dict(row)
         for row in (
             await conn.execute(
-                text(_MEMBERS_TEMPLATE.format(scope_sql=scope_sql)),
-                {"workspace_id": workspace_id, "account_id": account, **scope_params},
+                text(_MEMBERS_TEMPLATE.format(scope_sql=scope_sql, account_filter=account_filter)),
+                params,
             )
         ).mappings()
     ]
 
     contact_ids = [EntityId(uuid.UUID(str(row["contact_id"]))) for row in rows]
     facts = await _committee_facts(conn, contact_ids, workspace_id=workspace_id)
-    members: list[SubjectRef] = []
+    by_account: dict[str, list[SubjectRef]] = {}
     for row in rows:
         contact_id = str(row["contact_id"])
         persona, title = facts.get(contact_id, (None, None))
-        members.append(
+        by_account.setdefault(str(row["account_id"]), []).append(
             SubjectRef(
                 kind="contact",
                 id=contact_id,
@@ -333,8 +334,30 @@ async def committee_members(
         )
     # Persona rank, then name — and then the id, so two namesakes on one committee still come back
     # in the same order on every read rather than in whatever order the planner returned them.
-    members.sort(key=lambda member: (persona_rank(member.persona), member.name, member.id))
-    return members
+    for members in by_account.values():
+        members.sort(key=lambda member: (persona_rank(member.persona), member.name, member.id))
+    return by_account
+
+
+async def committee_members(
+    conn: AsyncConnection, *, workspace_id: str, account_id: str
+) -> list[SubjectRef]:
+    """The people an account page speaks about, each with their persona and title.
+
+    **The ARV2 committee, in one place.** The rule is the contacts under this account that hold at
+    least one live claim, ordered by persona rank and then by name (founder ruling 2026-09-09:
+    ARV2's own rows are the only truth, and the old research lane's coverage table is not one of
+    them). The ordering lives here rather than at the read surface so the generated page and the
+    committee card can never disagree about who is on the committee *or* in what order.
+
+    R3 will give the committee rows of its own. When it does, this function (with
+    :func:`committee_members_for_accounts`, which it delegates to) is the single place that changes.
+    """
+    account = str(_as_uuid(account_id, kind="account"))
+    by_account = await committee_members_for_accounts(
+        conn, workspace_id=workspace_id, account_ids=[account]
+    )
+    return by_account.get(account, [])
 
 
 # -- the recipe input filter --------------------------------------------------------------------

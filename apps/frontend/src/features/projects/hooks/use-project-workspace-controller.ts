@@ -60,6 +60,14 @@ export function initialWorkspaceFocusPane(
  * R8 adds only server-advertised account/contact references and the one real
  * promoted agent profile; neither catalog is manufactured by this controller.
  */
+function catalogFirst(
+  catalog: readonly ProjectEntity[],
+  rest: readonly ProjectEntity[],
+): ProjectEntity[] {
+  const known = new Set(catalog.map((entity) => entity.id));
+  return [...catalog, ...rest.filter((entity) => !known.has(entity.id))];
+}
+
 export function useProjectWorkspaceController(
   workspace: ProjectWorkspace,
   initial: ProjectWorkspaceInitialState = {},
@@ -82,10 +90,14 @@ export function useProjectWorkspaceController(
   // the chat surface from the same feeds the Gallery draws and handed down
   // here, so the composer, the chips and the send path all read one list.
   const [catalogEntities, setCatalogEntities] = useState<ProjectEntity[]>([]);
+  // Once the surface has handed its catalog down, the catalog's order leads (its accounts are
+  // the workspace directory, this project's first); the server-rendered list only fills in.
   const composerEntities = useMemo(
     () =>
       mergeComposerContextEntities(
-        mergeComposerContextEntities(workspace.entities, catalogEntities),
+        catalogEntities.length
+          ? catalogFirst(catalogEntities, workspace.entities)
+          : workspace.entities,
         selectedEntities,
       ),
     [catalogEntities, selectedEntities, workspace.entities],

@@ -580,6 +580,27 @@ class ComposerContextEntityWire(_Wire):
     account_name: str | None = None
 
 
+class MentionDirectoryWire(_Wire):
+    """Every account and committee contact the @ tagger may offer (2026-10-05)."""
+
+    entities: tuple[ComposerContextEntityWire, ...]
+    #: ``False`` when the workspace exceeded the size threshold and the list was cut; the
+    #: composer then also asks ``/mention-directory/search`` as the user types.
+    complete: bool
+
+
+class MentionDirectoryResponse(_Wire):
+    data: MentionDirectoryWire
+
+
+class MentionSearchWire(_Wire):
+    entities: tuple[ComposerContextEntityWire, ...]
+
+
+class MentionSearchResponse(_Wire):
+    data: MentionSearchWire
+
+
 class PreparedComposerContextWire(_Wire):
     project_id: str
     thread_id: str | None

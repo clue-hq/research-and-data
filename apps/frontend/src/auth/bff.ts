@@ -2,6 +2,8 @@ const FORWARDED_REQUEST_HEADERS = [
   "accept",
   "content-type",
   "idempotency-key",
+  // The @-mention directory revalidates by ETag (2026-10-05): a match is a bodiless 304.
+  "if-none-match",
   "last-event-id",
   "x-quality-mode",
 ] as const;

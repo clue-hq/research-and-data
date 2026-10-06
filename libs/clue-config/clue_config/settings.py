@@ -706,6 +706,10 @@ class Settings(BaseSettings):
     # Env: ``CLUE_AGENT_FIRST_TOKEN_TIMEOUT_S``.
     agent_first_token_timeout_s: float = Field(default=120.0, ge=0)
     agent_canary_percent: int = Field(default=0, ge=0, le=100)
+    # The composer's @-mention directory (2026-10-05): every account and committee contact is
+    # loaded once and searched in the browser; above this many entries the list is cut (project
+    # accounts first) and typing also asks the server. Env: ``CLUE_MENTION_DIRECTORY_MAX_ENTRIES``.
+    mention_directory_max_entries: int = Field(default=5000, ge=1)
     # Absolute API-root ceiling for one governed account-agent plan. The prepared runner further
     # clamps this to the account's durable research budget when one exists.
     # Env: ``CLUE_AGENT_ACCOUNT_PLAN_BUDGET_LIMIT_MILLICENTS``.
