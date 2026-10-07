@@ -34,3 +34,6 @@
 ## Next
 - Founder review of brand coherence and editor feel; then phase 2 (agent pipeline on the same
   contracts: copy stage → props JSON → render → one look).
+
+## Production notes
+See trials/puck-spike/PRODUCTION-NOTES.md (page weight: duplicate clone CSS ~1 MB HTML, unused fonts, React runtime, video; kit gaps measured from clones; prop validation).
