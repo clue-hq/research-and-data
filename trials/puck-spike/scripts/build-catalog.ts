@@ -164,7 +164,7 @@ function sectionsFile(): string {
 
 type Token = { value: { default: Record<string, unknown> } };
 
-function brandFile(brand: BrandData): string {
+function brandFile(brand: BrandData, seller?: string): string {
   const kit = brand.kit as {
     name?: string;
     tokens: { colors: Record<string, Token>; typography: Record<string, Token> };
@@ -189,7 +189,7 @@ function brandFile(brand: BrandData): string {
     ([key, asset]) => `- \`${asset.file}\` (${asset.kind}${key.startsWith("asset_") ? `, ${key}` : ""}): ${(asset.description ?? asset.label ?? "").replace(/\s+/g, " ").slice(0, 220)}`,
   );
   return [
-    `# Brand: ${kit.name ?? brand.slug}`,
+    `# Brand: ${seller ?? kit.name ?? brand.slug}`,
     "",
     "Every brand section takes its colours, type and buttons from these values. You choose by name",
     "(for example `surface: \"brand\"`); you never write a colour or a size.",
@@ -220,7 +220,7 @@ function brandFile(brand: BrandData): string {
   ].join("\n");
 }
 
-export function buildCatalog(slug: string, outDir: string): void {
+export function buildCatalog(slug: string, outDir: string, seller?: string): void {
   const brand = loadBrand(slug);
   const clones = Object.values(brand.clones);
   fs.mkdirSync(path.join(outDir, "catalog", "clones"), { recursive: true });
@@ -254,10 +254,10 @@ export function buildCatalog(slug: string, outDir: string): void {
   }
   fs.writeFileSync(path.join(outDir, "catalog", "index.md"), index.join("\n") + "\n");
   fs.writeFileSync(path.join(outDir, "catalog", "sections.md"), sectionsFile());
-  fs.writeFileSync(path.join(outDir, "brand", "brand.md"), brandFile(brand));
+  fs.writeFileSync(path.join(outDir, "brand", "brand.md"), brandFile(brand, seller));
 }
 
 if (process.argv[1]?.endsWith("build-catalog.ts") && process.argv[2]) {
-  buildCatalog(process.argv[2], process.argv[3] ?? path.join("agent-runs", "catalog", process.argv[2]));
+  buildCatalog(process.argv[2], process.argv[3] ?? path.join("agent-runs", "catalog", process.argv[2]), process.argv[4]);
   console.log("catalog written");
 }

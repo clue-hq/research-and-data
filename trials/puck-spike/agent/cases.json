@@ -1,16 +1,19 @@
 {
   "A": {
     "brand": "garner",
+    "seller": "Garner Health",
     "source_run": "run_d71298e8df7c54c79631623b9f460ce4",
     "why": "Garner x Syracuse City School District, Run 3's brief: the head-to-head baseline"
   },
   "B": {
     "brand": "conduit",
+    "seller": "Conduit",
     "source_run": "run_406fe808b26f5c1ca0cfe709bfae9f65",
     "why": "Conduit x Dana.AI, the 2026-10-05 run's brief: rich research (the angle, D3, is still open)"
   },
   "C": {
     "brand": "conduit",
+    "seller": "Conduit",
     "source_run": "run_406fe808b26f5c1ca0cfe709bfae9f65",
     "brief_file": "briefs/atrium.md",
     "account_entity_id": "7494ff35-2c8a-41ca-93ba-dd9e8d8b2c50",

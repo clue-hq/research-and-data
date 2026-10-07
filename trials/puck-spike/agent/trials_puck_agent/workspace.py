@@ -96,9 +96,9 @@ def write_seller_files(knowledge: Any, dest: Path) -> int:
     return len(knowledge.documents)
 
 
-def build_catalog(spike_root: Path, brand: str, dest: Path) -> None:
+def build_catalog(spike_root: Path, brand: str, dest: Path, seller: str) -> None:
     subprocess.run(
-        ["npx", "tsx", "scripts/build-catalog.ts", brand, str(dest)],
+        ["npx", "tsx", "scripts/build-catalog.ts", brand, str(dest), seller],
         cwd=spike_root, check=True, capture_output=True, text=True, timeout=180,
     )
 
@@ -108,6 +108,7 @@ def assemble(
     *,
     spike_root: Path,
     brand: str,
+    seller: str,
     site: str,
     brief: str,
     account_name: str,
@@ -128,7 +129,7 @@ def assemble(
             f"# {account_name}\n\nThere is no written research for this account yet.\n"
         )
     seller_files = write_seller_files(knowledge, workspace / "seller") if knowledge else 0
-    build_catalog(spike_root, brand, workspace)
+    build_catalog(spike_root, brand, workspace, seller)
     shutil.copytree(SKILLS_DIR, workspace / "skills")
     (workspace / "fetched").mkdir()
     (workspace / ".run.json").write_text(json.dumps({"brand": brand, "site": site, "route": "/"}))

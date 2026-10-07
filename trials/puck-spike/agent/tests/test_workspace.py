@@ -67,7 +67,7 @@ def test_assemble_writes_the_workspace_the_prompt_describes(tmp_path: Path) -> N
     )
     workspace = tmp_path / "workspace"
     summary = ws.assemble(
-        workspace, spike_root=SPIKE, brand="garner", site="agent-test", brief="For the page\n",
+        workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site="agent-test", brief="For the page\n",
         account_name="Syracuse City School District", overview=[WHY_NOW], insights=[],
         knowledge=knowledge,
     )
@@ -78,13 +78,14 @@ def test_assemble_writes_the_workspace_the_prompt_describes(tmp_path: Path) -> N
         assert (workspace / path).exists(), path
     assert not (workspace / "page.json").exists() and not (workspace / "shell.json").exists()
     assert "(the confirmed ICP)" in (workspace / "seller/index.md").read_text()
+    assert (workspace / "brand/brand.md").read_text().startswith("# Brand: Garner Health")
     assert summary["people_in_research"] == 2 and summary["seller_files"] == 2 and summary["clones"] > 0
 
 
 def test_an_account_with_no_written_research_says_so(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     ws.assemble(
-        workspace, spike_root=SPIKE, brand="conduit", site="agent-test", brief="For the page\n",
+        workspace, spike_root=SPIKE, brand="conduit", seller="Conduit", site="agent-test", brief="For the page\n",
         account_name="Atrium Hospitality", overview=[], insights=[], knowledge=None,
     )
     assert "no written research" in (workspace / "research/README.md").read_text()

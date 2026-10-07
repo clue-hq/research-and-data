@@ -27,7 +27,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 FETCH_LIMIT = 12_000
-IMAGE_MAX_PX = 2000
+#: Screenshots keep their width: desktop at half size (720 px wide), mobile at full size (375 px),
+#: cut into pieces of at most TILE_PX tall so a model never shrinks a tall page into a sliver.
+SCALE_BY_WIDTH = {1440: 0.5, 375: 1.0}
+TILE_PX = 1600
 RETRIES = 2
 LOOP_GUARD_AT = 3
 
@@ -150,22 +153,25 @@ class PageTools:
         return f"{self.base_url}/s/{run['site']}{'' if route == '/' else route}"
 
     @staticmethod
-    def _image_block(png: bytes) -> dict:
+    def _tiles(png: bytes, scale: float) -> list[dict]:
         from PIL import Image
 
+        blocks = []
         with Image.open(io.BytesIO(png)) as image:
             image = image.convert("RGB")
-            scale = min(1.0, IMAGE_MAX_PX / max(image.size))
-            if scale < 1.0:
-                image = image.resize((int(image.width * scale), int(image.height * scale)))
-            buffer = io.BytesIO()
-            image.save(buffer, format="PNG", optimize=True)
-        return {
-            "type": "image",
-            "source_type": "base64",
-            "mime_type": "image/png",
-            "data": base64.b64encode(buffer.getvalue()).decode("ascii"),
-        }
+            if scale != 1.0:
+                image = image.resize((round(image.width * scale), round(image.height * scale)))
+            for top in range(0, image.height, TILE_PX):
+                tile = image.crop((0, top, image.width, min(image.height, top + TILE_PX)))
+                buffer = io.BytesIO()
+                tile.save(buffer, format="PNG", optimize=True)
+                blocks.append({
+                    "type": "image",
+                    "source_type": "base64",
+                    "mime_type": "image/png",
+                    "data": base64.b64encode(buffer.getvalue()).decode("ascii"),
+                })
+        return blocks
 
     def render_page(self) -> list[dict] | str:
         """Screenshot the page at 1440 and 375 wide. Refuses while the page is invalid."""
@@ -204,15 +210,18 @@ class PageTools:
                 )
                 png = page.screenshot(full_page=True)
                 (renders / f"{round_number}-{width}.png").write_bytes(png)
+                tiles = self._tiles(png, SCALE_BY_WIDTH.get(width, 1.0))
+                size = "half size" if SCALE_BY_WIDTH.get(width, 1.0) < 1 else "full size"
                 blocks.append({
                     "type": "text",
                     "text": (
                         f"{width} wide: page height {height}px, broken images: {facts['broken']}, "
                         f"horizontal overflow: {'yes' if facts['overflow'] else 'no'}, "
-                        f"console errors: {len(errors)}{(' (' + '; '.join(errors[:3]) + ')') if errors else ''}"
+                        f"console errors: {len(errors)}{(' (' + '; '.join(errors[:3]) + ')') if errors else ''}. "
+                        f"Shown at {size} in {len(tiles)} part{'s' if len(tiles) != 1 else ''}, top to bottom."
                     ),
                 })
-                blocks.append(self._image_block(png))
+                blocks.extend(tiles)
                 page.close()
             browser.close()
         self._record("render", url=url)

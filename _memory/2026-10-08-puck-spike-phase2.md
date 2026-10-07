@@ -24,9 +24,19 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   notes-wording checks removed from validate_page (rules stay in prompt/skills); one destination
   stays blocking for now. people.json dropped. Runner now prints a live trace (trace.log).
 
+## T4 run a1 (case A, 2026-10-08)
+- completed: 19 calls, $0.82, 303 s, 2 renders, 0 validation errors (valid first try), 4 small
+  edit_file fixes. Same clones as my hand picks. Misses: Nightingale as proof (conditions omitted),
+  no web_search for seller-site proof (Aon never found), brand sections for proof/offer without a
+  recorded reason, read 18/21 clone cards + fetched privacy/terms pages.
+- Harness fixes after a1 (founder go): screenshots keep width (desktop 720 wide, mobile 375, tiles
+  <=1600 px; a1's mobile reached the model ~132 px wide); context clearing off by default
+  (--clear-renders) after a1's last call lost the whole cache ($0.16 of $0.82); brand.md titled
+  from cases.json "seller" (Garner's kit is stored as "Doctor Quality Analytics" — platform
+  ingestion defect); read_file without a limit reads up to 1000 lines; trace shows glob/grep
+  patterns.
+
 ## Known limits
-- Screenshots are capped at 2000px on the long side (a 1440 page renders ~480px wide): headlines
-  and layout readable, body text not. Revisit if E1 reviews miss wrap problems.
 
 ## Next
 - T4 E1 builds (A twice, B, C) — waiting on founder go (spend ~$1 per page expected).

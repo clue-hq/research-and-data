@@ -7,6 +7,7 @@ render_page tests need the spike dev server on :3047 and are skipped without it.
 
 from __future__ import annotations
 
+import base64
 import http.server
 import json
 import shutil
@@ -163,8 +164,10 @@ def test_render_page_returns_desktop_and_mobile_screenshots(workspace: Path) -> 
     blocks = tools_for(workspace).render_page()
     images = [b for b in blocks if b.get("type") == "image"]
     texts = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-    assert len(images) == 2
-    assert "1440" in texts and "375" in texts
+    assert len(images) >= 4  # tall pages arrive in parts that keep their width
+    assert "1440" in texts and "375" in texts and "top to bottom" in texts
+    widths = {base64.b64decode(b["data"])[16:20] for b in images}
+    assert len(widths) == 2  # 720 (desktop at half size) and 375 (mobile at full size)
     assert "broken images: 0" in texts
 
 

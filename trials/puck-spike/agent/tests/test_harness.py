@@ -156,3 +156,12 @@ def test_a_validate_written_before_the_writes_runs_before_them(workspace: Path) 
         AIMessage(content="Done."),
     ])
     assert "does not exist yet" in tool_results(messages)["call_1"]
+
+
+def test_a_read_without_a_limit_gets_the_whole_file(workspace: Path) -> None:
+    (workspace / "research" / "long.md").write_text("\n".join(f"line {n}" for n in range(1, 251)))
+    messages, _ = run(workspace, [
+        AIMessage(content="", tool_calls=[call("read_file", {"file_path": "/research/long.md"}, 1)]),
+        AIMessage(content="Done."), AIMessage(content="Done."), AIMessage(content="Done."),
+    ])
+    assert "line 250" in tool_results(messages)["call_1"]

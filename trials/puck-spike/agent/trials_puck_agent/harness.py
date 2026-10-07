@@ -9,8 +9,10 @@ what this spike measures against. The pieces:
   outside page.json, shell.json, plan.md and new notes;
 - skills (deepagents SkillsMiddleware) with a short listing prompt;
 - malformed tool calls patched back to the model (PatchToolCallsMiddleware);
-- context clearing: a newer render_page replaces older screenshots in the model request, never
-  in the saved history (ContextEditingMiddleware with RenderClearing);
+- context clearing (optional, off by default since run a1 lost the cache on the call after it
+  first cleared): a newer render_page replaces older screenshots in the model request, never in
+  the saved history (ContextEditingMiddleware with RenderClearing);
+- a read_file without a limit reads the whole file (WholeFileReads);
 - tool calls from one response run one at a time, in the order the model wrote them;
 - RunRecorder: per-call usage and cost, the 40-call safety stop, and the finish guard (a turn
   cannot end on an invalid page; after two reminders it ends "completed with errors").
@@ -124,7 +126,9 @@ def describe_call(call: dict) -> str:
     if name in ("write_file", "edit_file"):
         size = len(args.get("content") or args.get("new_string") or "")
         return f"{name} {args.get('file_path')} ({size} chars)"
-    for key in ("file_path", "path", "pattern", "query", "url", "version"):
+    if name in ("glob", "grep"):
+        return f"{name} {args.get('pattern')!r} in {args.get('path', '/')}"
+    for key in ("file_path", "path", "query", "url", "version"):
         if key in args:
             return f"{name} {args[key]}"
     return name
@@ -145,6 +149,17 @@ class LiveTrace(AgentMiddleware):
                                  else "[image]" for b in content)
         self.trace(f"    <- {describe_call(request.tool_call)}: {_short(content)}")
         return result
+
+
+class WholeFileReads(AgentMiddleware):
+    """read_file shows 100 lines unless given a limit; here a read without a limit gets the whole
+    file (up to 1000 lines), so a skill or a research page is never silently cut off."""
+
+    def wrap_tool_call(self, request, handler):
+        call = request.tool_call
+        if call["name"] == "read_file" and "limit" not in (call.get("args") or {}):
+            request = request.override(tool_call={**call, "args": {**call["args"], "limit": 1000}})
+        return handler(request)
 
 
 # --- the run record ------------------------------------------------------------------------------
@@ -306,7 +321,7 @@ def page_tool_set(page_tools: PageTools) -> list:
 
 
 def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
-                safety_stop: int = SAFETY_STOP_CALLS, trace=None):
+                safety_stop: int = SAFETY_STOP_CALLS, trace=None, clear_renders: bool = False):
     """Returns (agent, recorder)."""
     from deepagents import FilesystemPermission
     from deepagents.backends import FilesystemBackend
@@ -327,7 +342,8 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
             _permissions=[FilesystemPermission(operations=["write"], paths=READ_ONLY, mode="deny")],
         ),
         PatchToolCallsMiddleware(),
-        ContextEditingMiddleware(edits=[RenderClearing()]),
+        *([ContextEditingMiddleware(edits=[RenderClearing()])] if clear_renders else []),
+        WholeFileReads(),
         OrderedToolCalls(),
         LiveTrace(trace),
         recorder,

@@ -166,6 +166,8 @@ def main() -> int:
     parser.add_argument("--case", choices=["A", "B", "C"])
     parser.add_argument("--turns", type=Path, help="More turns on the same session, one per line.")
     parser.add_argument("--from-run", help="Start from a finished run's workspace (edits only).")
+    parser.add_argument("--clear-renders", action="store_true",
+                        help="Clear superseded screenshots from the model request (off by default).")
     args = parser.parse_args()
     if not args.case and not args.from_run:
         parser.error("give --case (a build) or --from-run (edits on a finished page)")
@@ -201,6 +203,7 @@ def main() -> int:
             workspace,
             spike_root=SPIKE,
             brand=case["brand"],
+            seller=case["seller"],
             site=f"agent-{args.label}",
             brief=inputs["brief"],
             account_name=account,
@@ -224,10 +227,11 @@ def main() -> int:
         trace_file.write(line + "\n")
         trace_file.flush()
 
-    agent, recorder = build_agent(page_tools, model=build_model(), trace=trace)
+    agent, recorder = build_agent(page_tools, model=build_model(), trace=trace, clear_renders=args.clear_renders)
     session = {"configurable": {"thread_id": f"puck_{uuid.uuid4().hex}"}}
     record = {
         "label": args.label, "case": case_name, "account": account, "setup": setup,
+        "clear_renders": args.clear_renders,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "turns": [],
     }
     try:
