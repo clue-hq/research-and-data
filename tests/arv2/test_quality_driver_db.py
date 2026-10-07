@@ -370,16 +370,18 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
                 stop_requested=asyncio.Event(),
                 lease_lost=asyncio.Event(),
             )
-            # Once the people settle, the account is rewritten by the writer (the seller brief is
-            # reused), not by continuing the researcher.
+            # Once the people settle, the account's pages are the writer's (the seller brief is
+            # reused), not the researcher's. Recipe 26: nothing changed since the first write, so
+            # the revision settles without another model call.
             rewrite = await handler.handle(continuation)
             assert rewrite.outcome == "completed" and rewrite.references["applied"] is True
-            assert writes == [False, True, True]
+            assert rewrite.references["unchanged"] is True
+            assert writes == [False, True]
             overview = await read_page(conn, scopes[0], context_id=run.context_id, page="overview")
             fit = next(
                 s for s in overview["display_block"]["sections"] if s["key"] == "why-they-fit"
             )
-            assert fit["intro"][0]["text"] == "Story 3."
+            assert fit["intro"][0]["text"] == "Story 2."
             assert (await read_job(conn, job_id=jid)).finalization == initial.finalization
             assert (
                 await conn.execute(
@@ -392,7 +394,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             ).scalar_one() == "reconciled"
             # A redelivered continuation is a no-op: no second rewrite, no researcher call.
             assert (await handler.handle(continuation)).outcome == "completed"
-            assert writes == [False, True, True]
+            assert writes == [False, True]
             assert len(calls) == 1
             # No legacy Luna display or repeat initial task was offered.
             assert len(queue.offers) == 1

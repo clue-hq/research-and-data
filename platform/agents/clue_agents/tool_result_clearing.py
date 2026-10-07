@@ -5,12 +5,12 @@ call re-sent all of it; re-sending was 82% of the model cost, and the configured
 (90% of a 500k window) never fired. Clearing old tool results keeps the conversation small.
 
 The cut is *stateless and quantised*: once the conversation passes ``trigger`` tokens, the
-oldest eligible results up to ``(size - target) // step * step`` tokens of history are replaced
-by a short placeholder (``step = trigger - target``). The history is append-only, so the cut
-moves only when the conversation grows by another ``step``; between moves the prompt prefix is
-byte-identical and stays in the provider's cache. LangChain's ``ClearToolUsesEdit`` instead
-clears "all but the newest N" on every call, which moves the boundary each round and bills
-everything after it uncached.
+oldest eligible results up to ``min(size - target, start of the newest two rounds) // step *
+step`` tokens of history are replaced by a short placeholder (``step = trigger - target``).
+The history is append-only, so the cut moves only in whole steps; between moves the prompt
+prefix is byte-identical and stays in the provider's cache. LangChain's ``ClearToolUsesEdit``
+instead clears "all but the newest N" on every call, which moves the boundary each round and
+bills everything after it uncached.
 
 Only the model request is edited; the checkpointed history keeps every result, so a resumed or
 continued turn reproduces the same request.
@@ -88,16 +88,18 @@ def plan_clearing(
     if total <= trigger:
         return []
     step = trigger - target
-    cut = (total - target) // step * step
-    # The newest PROTECTED_ROUNDS model turns, and everything after them, stay whole.
+    # The newest PROTECTED_ROUNDS model turns, and everything after them, stay whole. The
+    # protection is folded into the cut *before* quantising, so the cut still only moves in
+    # steps when the protected rounds slide forward over uneven history.
     ai_positions = [i for i, m in enumerate(messages) if isinstance(m, AIMessage)]
     protected_from = ai_positions[-PROTECTED_ROUNDS] if len(ai_positions) >= PROTECTED_ROUNDS else 0
+    cut = min(total - target, sum(sizes[:protected_from])) // step * step
     calls = _calls(messages)
     cleared: list[str] = []
     end = 0
-    for index, (message, size) in enumerate(zip(messages, sizes, strict=True)):
+    for message, size in zip(messages, sizes, strict=True):
         end += size
-        if end > cut or index >= protected_from:
+        if end > cut:
             break
         if not isinstance(message, ToolMessage) or message.status == "error":
             continue

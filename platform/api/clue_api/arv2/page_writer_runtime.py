@@ -775,11 +775,6 @@ async def rewrite_account_pages(
 ) -> dict[str, Any]:
     """Rewrite the account's pages once its people have settled, and settle that revision.
 
-    Recipe 26: this is the generation's one final page step. It first writes the ``deferred``
-    contact pages (people who finished before the account imported), together, then the
-    account's pages; each write is skipped when its request is identical to the last one. A
-    contact page that fails is logged and settles the revision ``needs_review``.
-
     A full rewrite, not an edit: the writer reads the account dossier, the committee and every
     finished person dossier from durable rows, so later findings reach the story and the
     sections the same way the first write's findings did.
@@ -787,7 +782,25 @@ async def rewrite_account_pages(
     An account whose own research never imported (it failed before ``finish_dossier``) has
     nothing to write from: the revision settles ``needs_review`` and its pages stay as they are,
     rather than being replaced by a page of gaps.
+
+    Recipe 26: this is the generation's one final page step. The account's pages are written
+    first, then the ``deferred`` contact pages (people who finished before the account
+    imported), together, so each is written against the account's new story; then the revision
+    settles. Each write is skipped when its request is identical to the last one. Deferred
+    contact pages are written even when the account never imported (from the person's own
+    findings) or its write failed; any of those settles the revision ``needs_review``.
     """
+    if at_least(scope, RECIPE_26):
+        return await _final_page_step(
+            conn_factory=conn_factory,
+            storage=storage,
+            scope=scope,
+            context_id=context_id,
+            generation_id=generation_id,
+            revision=revision,
+            models=models,
+            deferred=deferred,
+        )
     async with conn_factory() as conn:
         own = await read_json_dossier(conn, storage, scope, context_id)
         if own.get("state") != "complete":
@@ -805,7 +818,65 @@ async def rewrite_account_pages(
                 "applied": applied,
                 "skipped": "account_dossier_not_imported",
             }
-    final_step = at_least(scope, RECIPE_26)
+    applied = False
+
+    async def settle(conn: AsyncConnection) -> None:
+        nonlocal applied
+        applied = await reconcile_generation(
+            conn,
+            workspace_id=scope.workspace_id,
+            generation_id=generation_id,
+            expected_revision=revision,
+            processed_snapshot=True,
+        )
+
+    ids = await write_job_pages(
+        conn_factory=conn_factory,
+        storage=storage,
+        scope=scope,
+        context_id=context_id,
+        models=models,
+        after_publish=settle,
+    )
+    return {
+        "generation_id": str(generation_id),
+        "input_revision": revision,
+        "applied": applied,
+        "blocks": len(ids),
+    }
+
+
+async def _final_page_step(
+    *,
+    conn_factory: ConnFactory,
+    storage: StorageBackend,
+    scope: JobScope,
+    context_id: UUID,
+    generation_id: UUID,
+    revision: int,
+    models: PageWriterModels,
+    deferred: Sequence[JobScope],
+) -> dict[str, Any]:
+    async with conn_factory() as conn:
+        own = await read_json_dossier(conn, storage, scope, context_id)
+    imported = own.get("state") == "complete"
+    ids: tuple[UUID, ...] = ()
+    unchanged = False
+    account_error: Exception | None = None
+    if imported:
+        try:
+            ids, unchanged = await _write_job_pages(
+                conn_factory=conn_factory,
+                storage=storage,
+                scope=scope,
+                context_id=context_id,
+                models=models,
+                skip_if_unchanged=True,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            account_error = error
     contacts = await asyncio.gather(
         *(
             _write_job_pages(
@@ -814,7 +885,7 @@ async def rewrite_account_pages(
                 scope=person,
                 context_id=context_id,
                 models=models,
-                skip_if_unchanged=final_step,
+                skip_if_unchanged=True,
             )
             for person in deferred
         ),
@@ -831,28 +902,18 @@ async def rewrite_account_pages(
                 job_id=str(person.job_id),
                 error=type(outcome).__name__,
             )
-    applied = False
-
-    async def settle(conn: AsyncConnection) -> None:
-        nonlocal applied
+    if account_error is not None:
+        # The caller settles the revision needs_review; the contact pages are already written.
+        raise account_error
+    async with conn_factory() as conn:
         applied = await reconcile_generation(
             conn,
             workspace_id=scope.workspace_id,
             generation_id=generation_id,
             expected_revision=revision,
             processed_snapshot=True,
-            needs_review=bool(failed),
+            needs_review=not imported or bool(failed),
         )
-
-    ids, unchanged = await _write_job_pages(
-        conn_factory=conn_factory,
-        storage=storage,
-        scope=scope,
-        context_id=context_id,
-        models=models,
-        after_publish=settle,
-        skip_if_unchanged=final_step,
-    )
     return {
         "generation_id": str(generation_id),
         "input_revision": revision,
@@ -861,4 +922,5 @@ async def rewrite_account_pages(
         "unchanged": unchanged,
         "contact_pages": len(deferred) - failed,
         "contact_page_failures": failed,
+        **({} if imported else {"skipped": "account_dossier_not_imported"}),
     }

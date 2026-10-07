@@ -85,3 +85,13 @@ def test_v2_is_a_new_version_and_v1_is_unchanged():
     assert AcquireResearchToolV2.version == "2"
     assert AcquireResearchToolV2.output_model is AcquireResearchReceiptV2
     assert "empty" in AcquireResearchReceiptV2.model_json_schema()["properties"]["status"]["enum"]
+
+
+def test_a_body_that_is_not_a_result_list_is_never_reported_empty():
+    """Review I3: an enrichment profile or a queued job came back with something."""
+    for value in (
+        {"profile": {"full_name": "Ana Ruiz", "title": "ABM Manager"}, "source_id": "s1"},
+        {"state": "queued", "operation_id": "op"},
+        {"item_id": "m1", "transcript_path": "/evidence/0003-podcast.json"},
+    ):
+        assert receipt_preview(value)[2] is False, value

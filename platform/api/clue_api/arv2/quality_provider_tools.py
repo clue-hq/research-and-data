@@ -413,7 +413,12 @@ def receipt_preview(value: Any) -> tuple[list[dict[str, str | None]], int | None
     count = value.get("n_results")
     if not isinstance(count, int):
         count = len(rows) if isinstance(rows, list) and rows else len(sources) or None
-    empty = (count == 0) or (not hits and not (isinstance(report, str) and report.strip()))
+    # Only a body that lists results (a search, page read or report) can come back empty; an
+    # enrichment profile, a queued job or a media item always came back with something.
+    listed = any(key in value for key in ("results", "hits", "n_results", "report"))
+    empty = listed and (
+        (count == 0) or (not hits and not (isinstance(report, str) and report.strip()))
+    )
     hits = hits[:PREVIEW_HITS]
     while hits and len(json.dumps(hits, default=str)) > PREVIEW_MAX_BYTES:
         hits.pop()

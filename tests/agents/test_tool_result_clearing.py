@@ -93,3 +93,14 @@ def test_the_model_sees_placeholders_naming_the_path_and_state_is_untouched():
     first = next(m for m in seen["messages"] if isinstance(m, ToolMessage))
     assert "/research/operations/0/0.json" in first.content and "x" * 100 not in first.content
     assert [m.content for m in messages] == original  # the checkpointed history is not edited
+
+
+def test_boundary_holds_when_the_protected_rounds_slide_forward():
+    """Review I5: uneven rounds. The newest two rounds sliding past an older result must not
+    clear it before the next crossing; that would bill everything after it uncached."""
+    messages = [HumanMessage("go")]
+    for i, tokens in enumerate((5_000, 20_000, 20_000, 80_000)):
+        messages += _round(i, tokens * 4)
+    first = plan_clearing(messages, trigger=TRIGGER, target=TARGET)
+    messages += _round(4, 1_000 * 4)  # a small round: no threshold crossing
+    assert plan_clearing(messages, trigger=TRIGGER, target=TARGET) == first

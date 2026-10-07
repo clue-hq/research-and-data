@@ -448,7 +448,7 @@ async def pending_continuations(
 async def deferred_contact_jobs(
     conn: AsyncConnection, *, workspace_id: str, generation_id: UUID
 ) -> list[UUID]:
-    """Recipe 26: the people whose contact page waits for the generation's final page step."""
+    """Recipe 26: the people whose contact page still waits for the generation's final step."""
     return list(
         (
             await conn.execute(
@@ -458,6 +458,10 @@ async def deferred_contact_jobs(
           AND j.status IN ('completed','needs_review')
           AND COALESCE(j.input_refs->>'privacy_stopped','false')<>'true'
           AND j.finalization_json->'coverage'->'deferred_pages' @> CAST('["contact"]' AS jsonb)
+          -- Written once: the final step has not written this person's page yet.
+          AND NOT EXISTS (SELECT 1 FROM artifact_reference w WHERE w.workspace_id=c.workspace_id
+            AND w.reference_kind='research_page_writer'
+            AND w.reference_id LIKE CAST(c.job_id AS text)||':%')
         ORDER BY j.created_at,c.job_id"""),
                 {"generation": generation_id, "ws": workspace_id},
             )
