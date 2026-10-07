@@ -63,3 +63,25 @@ context, stop re-reading skills, compaction/trimming, fewer rounds, model choice
   $0.07–0.13/person, $0.05 display (`ARV2-MASTER-PLAN.md:131-132`).
 - Founder decisions pending (doc §8). Production DB read access: a guarded read-only script exists
   at `~/.claude/scripts/clue-prod-readonly-sql.sh`; the founder has to add the allow rule themselves.
+
+## Deeper audit (2026-10-07) → plan `docs/superpowers/plans/2026-10-06-account-research-v26-cost-and-speed-plan.md`
+New findings, all verified against Langfuse tool I/O + code:
+- Media never works in production: 9 discover_media, 6–7 read_media, 17 media GETs → 0 transcripts.
+  2 crashed `FileNotFoundError: ffprobe` (`media_recording.py:103`; `docker/backend/Dockerfile:44-46`
+  installs no ffmpeg); the rest `no_supported_recording_link`/`no_exact_episode_match`
+  (`media_resolution.py` supports YouTube/direct audio/RSS only). Deepgram key empty locally, not in
+  deploy templates. Governed receipt says `completed` for failed reads. Skills still demand 3–5
+  podcast quotes (`person-depth-charter/v1:91`). Dialpad found a podcast with the FORMER CMO, never read.
+- Error rounds ≈ $8 of $48 and ~25 min: 27 failed `save_dossier_section` (strict `Finding`/`Review`
+  schema, `dossier_findings.py:16-47`; every run ≥1), the grep→search_evidence→finalize trap
+  (`quality_workspace.py:135` → `quality_tools.py:358` → finalize refused in 7/12 runs), 60 refused
+  ls/glob/grep.
+- Exa deep report (52–60k chars) IS read, in 4–11 windows per run (33–61k chars), each re-sent after.
+- Evidence created vs read: Dialpad ~964/89, Loopio ~994/113 (~90% never read).
+- Cross-job exact query duplication is small (2 per account); person cost is structural (each person
+  = full machine: own AI Ark lookup+enrich, own deep report, 5–14 searches).
+- Launching chat turn: 240 s, $0.58, 5 model calls, 9 file reads (17:11:27 → jobs 17:15:25).
+- Plan: W1 stop-the-bleeding (13 items), W2 evidence-path throughput, W3 v26 pipeline (code
+  acquisition → cheap extraction with substring-verified quotes → bounded Grok judge ≤10 rounds →
+  tiered persons starting at minute ~4 → per-section pages once), W4 media fix-or-off. Estimate
+  ≈ $3–4 and 12–14 min per account+5 (today $25/55 min). Seven founder decisions D1–D7 in §7.

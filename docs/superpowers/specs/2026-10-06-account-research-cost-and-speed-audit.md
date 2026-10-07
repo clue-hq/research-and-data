@@ -1,6 +1,10 @@
 # Account research — why it costs ~$25 and takes ~55 minutes per account, and how to fix it
 
-**Status:** analysis and recommendations, 2026-10-06. Nothing in the product has been changed.
+**Status:** evidence record, 2026-10-06. **Superseded as a plan by
+`docs/superpowers/plans/2026-10-06-account-research-v26-cost-and-speed-plan.md`** (2026-10-07), which
+adds the deeper audit (media never transcribes in production, the grep/search_evidence/finalize
+trap, 27 failed saves, ~17% of spend on error rounds, ~90% of evidence never read) and the
+concrete v26 design. The measurements in §2–§5 here still stand. Nothing in the product has been changed.
 Branch `shank-audit-account-research-cost-optimization` (cut from main `496956c98`).
 
 **Evidence.** The founder's production request of 2026-10-06 (Dialpad and Loopio, each with five
