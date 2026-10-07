@@ -452,6 +452,17 @@ class Settings(BaseSettings):
     # ``agent_long_turn_alert_s`` still warns when a job runs long.
     # Env: ``CLUE_ARV2_ACCOUNT_MAX_RUNTIME_S``.
     arv2_account_max_runtime_s: int = Field(default=0, ge=0)
+    # Recipe 26+ research conversations (docs/superpowers/plans/2026-10-07-research-cost-phase1.md).
+    # Past CLEAR_TRIGGER tokens, the oldest processed tool results are shown to the model as a
+    # short "re-read <path>" placeholder, in steps of (trigger - target) so the prompt stays
+    # cached between steps. COMPACT_* is the summarising backstop for research only (the shared
+    # rule compacts at 90% of the model window, which research never reached).
+    # Env: ``CLUE_ARV2_RESEARCH_CLEAR_TRIGGER_TOKENS`` / ``_CLEAR_TARGET_TOKENS`` /
+    # ``_COMPACT_TRIGGER_TOKENS`` / ``_COMPACT_KEEP_MESSAGES``.
+    arv2_research_clear_trigger_tokens: int = Field(default=100_000, ge=1)
+    arv2_research_clear_target_tokens: int = Field(default=50_000, ge=1)
+    arv2_research_compact_trigger_tokens: int = Field(default=150_000, ge=1)
+    arv2_research_compact_keep_messages: int = Field(default=40, ge=1)
     # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
     arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
     # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per

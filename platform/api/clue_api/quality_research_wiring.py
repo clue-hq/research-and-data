@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import replace
 from decimal import ROUND_CEILING, Decimal
@@ -49,7 +49,9 @@ from clue_agents import (
     WorkspaceSeedFile,
 )
 from clue_agents.catalog import FolderProfileCatalog, FolderPromptCatalog, FolderSkillCatalog
+from clue_agents.compaction import CompactionSettings
 from clue_agents.ports import SpillSink
+from clue_agents.tool_result_clearing import BatchedToolResultClearing
 from clue_api.agent_compaction import compaction_for
 from clue_api.agent_execution_wiring import (
     C5AgentExecutionAdapter,
@@ -350,6 +352,26 @@ def quality_profiles(
             for role in active_roles
         },
     )
+
+
+def research_compaction_for(
+    scope: JobScope, settings: Settings
+) -> Callable[[str], CompactionSettings]:
+    """Recipe 26+: research compacts at a fixed token count as a backstop to result clearing.
+
+    The shared rule (90% of the model's window: 450k for Grok 4.6) never fired on research,
+    whose conversations peaked around 205k tokens (2026-10-06).
+    """
+    if not at_least(scope, RECIPE_26):
+        return compaction_for
+    research = CompactionSettings(
+        trigger_fraction=0.90,
+        keep_fraction=0.10,
+        trigger_tokens=settings.arv2_research_compact_trigger_tokens,
+        keep_messages=settings.arv2_research_compact_keep_messages,
+        context_window=None,
+    )
+    return lambda model_id: research
 
 
 def drop_identity_echo(context: AssembledAgentContext, identity: str) -> AssembledAgentContext:
@@ -762,6 +784,16 @@ class ResearchUnitRuntime:
                 ).capabilities(),
             ),
             middleware=(
+                *(
+                    (
+                        BatchedToolResultClearing(
+                            trigger_tokens=self.settings.arv2_research_clear_trigger_tokens,
+                            target_tokens=self.settings.arv2_research_clear_target_tokens,
+                        ),
+                    )
+                    if at_least(self.scope, RECIPE_26)
+                    else ()
+                ),
                 *dossier_middleware,
                 SharedResearchAllowance(
                     self.connections,
@@ -1108,7 +1140,7 @@ class ResearchUnitRuntime:
                         tool.description += "\n\n" + COMPLETION_INSTRUCTIONS
             outcome = await DurableDeepAgentTurnRunner(
                 runtime=DeepAgentTurnRuntime(
-                    compaction_for=compaction_for,
+                    compaction_for=research_compaction_for(self.scope, self.settings),
                     models=self.models,
                     execution=adapter,
                     max_runtime_s=(

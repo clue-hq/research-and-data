@@ -38,6 +38,11 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_media_transcribe_model": MODEL_ID,
     "arv2_embedding_model": MODEL_ID,
     "arv2_media_seconds_ceiling": 9000,
+    # Recipe 26 research context (docs/superpowers/plans/2026-10-07-research-cost-phase1.md).
+    "arv2_research_clear_trigger_tokens": 100_000,
+    "arv2_research_clear_target_tokens": 50_000,
+    "arv2_research_compact_trigger_tokens": 150_000,
+    "arv2_research_compact_keep_messages": 40,
     "arv2_media_short_max_seconds": 600,
     "arv2_raw_root": ".artifacts/arv2",
     "arv2_account_max_model_rounds": 350,

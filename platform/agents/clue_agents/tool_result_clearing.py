@@ -1,0 +1,149 @@
+"""Clear processed tool results in batches, and strip the read gutter, for research agents.
+
+Production 2026-10-06: a research conversation grew from ~16k to ~200k tokens and every model
+call re-sent all of it; re-sending was 82% of the model cost, and the configured compaction
+(90% of a 500k window) never fired. Clearing old tool results keeps the conversation small.
+
+The cut is *stateless and quantised*: once the conversation passes ``trigger`` tokens, the
+oldest eligible results up to ``(size - target) // step * step`` tokens of history are replaced
+by a short placeholder (``step = trigger - target``). The history is append-only, so the cut
+moves only when the conversation grows by another ``step``; between moves the prompt prefix is
+byte-identical and stays in the provider's cache. LangChain's ``ClearToolUsesEdit`` instead
+clears "all but the newest N" on every call, which moves the boundary each round and bills
+everything after it uncached.
+
+Only the model request is edited; the checkpointed history keeps every result, so a resumed or
+continued turn reproduces the same request.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Awaitable, Callable, Sequence
+from typing import Any
+
+from langchain.agents.middleware.types import AgentMiddleware
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages.utils import count_tokens_approximately
+
+__all__ = [
+    "BatchedToolResultClearing",
+    "plan_clearing",
+    "strip_read_gutter",
+]
+
+#: Reads never cleared: the agent's own instructions would otherwise be re-read.
+KEEP_PATHS: tuple[str, ...] = ("/.deepagent/skills/",)
+#: Reads whose deepagents line-number gutter is stripped.
+GUTTER_PATHS: tuple[str, ...] = ("/research/", "/evidence/", "/.deepagent/skills/")
+#: The newest rounds are never cleared: the model is still working with them.
+PROTECTED_ROUNDS = 2
+
+_GUTTER = re.compile(r"(?m)^[ \t]*\d+(?:\.\d+)?\t")
+
+
+def placeholder(path: str | None) -> str:
+    if path:
+        return (
+            "[Earlier result removed to keep the conversation small. "
+            f"Re-read {path} if you need it.]"
+        )
+    return (
+        "[Earlier result removed to keep the conversation small. Re-run the tool if you need it.]"
+    )
+
+
+def strip_read_gutter(content: str) -> str:
+    """Remove deepagents' ``cat -n`` line-number column (and ``N.M`` continuation markers)."""
+    return _GUTTER.sub("", content)
+
+
+def _calls(messages: Sequence[BaseMessage]) -> dict[str, dict[str, Any]]:
+    calls: dict[str, dict[str, Any]] = {}
+    for message in messages:
+        if isinstance(message, AIMessage):
+            for call in message.tool_calls:
+                calls[str(call.get("id"))] = dict(call)
+    return calls
+
+
+def _path(call: dict[str, Any] | None) -> str | None:
+    args = (call or {}).get("args") or {}
+    value = args.get("file_path") or args.get("path") or args.get("source_path")
+    return str(value) if value else None
+
+
+def plan_clearing(
+    messages: Sequence[BaseMessage],
+    *,
+    trigger: int,
+    target: int,
+    keep_paths: tuple[str, ...] = KEEP_PATHS,
+) -> list[str]:
+    """The ``tool_call_id``s whose results the model should see as a placeholder, oldest first."""
+    if trigger <= target:
+        raise ValueError("trigger must exceed target")
+    sizes = [count_tokens_approximately([m]) for m in messages]
+    total = sum(sizes)
+    if total <= trigger:
+        return []
+    step = trigger - target
+    cut = (total - target) // step * step
+    # The newest PROTECTED_ROUNDS model turns, and everything after them, stay whole.
+    ai_positions = [i for i, m in enumerate(messages) if isinstance(m, AIMessage)]
+    protected_from = ai_positions[-PROTECTED_ROUNDS] if len(ai_positions) >= PROTECTED_ROUNDS else 0
+    calls = _calls(messages)
+    cleared: list[str] = []
+    end = 0
+    for index, (message, size) in enumerate(zip(messages, sizes, strict=True)):
+        end += size
+        if end > cut or index >= protected_from:
+            break
+        if not isinstance(message, ToolMessage) or message.status == "error":
+            continue
+        path = _path(calls.get(message.tool_call_id))
+        if path and any(path.startswith(prefix) for prefix in keep_paths):
+            continue
+        cleared.append(message.tool_call_id)
+    return cleared
+
+
+class BatchedToolResultClearing(AgentMiddleware[Any, Any, Any]):
+    """Recipe-26 research middleware: batched result clearing plus the read-gutter strip."""
+
+    def __init__(self, *, trigger_tokens: int, target_tokens: int) -> None:
+        super().__init__()
+        if trigger_tokens <= target_tokens:
+            raise ValueError("trigger_tokens must exceed target_tokens")
+        self.trigger_tokens = trigger_tokens
+        self.target_tokens = target_tokens
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        messages = list(request.messages)
+        cleared = set(
+            plan_clearing(messages, trigger=self.trigger_tokens, target=self.target_tokens)
+        )
+        if not cleared:
+            return await handler(request)
+        calls = _calls(messages)
+        edited = [
+            m.model_copy(
+                update={"content": placeholder(_path(calls.get(m.tool_call_id))), "artifact": None}
+            )
+            if isinstance(m, ToolMessage) and m.tool_call_id in cleared
+            else m
+            for m in messages
+        ]
+        return await handler(request.override(messages=edited))
+
+    async def awrap_tool_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        result = await handler(request)
+        call = getattr(request, "tool_call", None) or {}
+        if call.get("name") != "read_file" or not isinstance(result, ToolMessage):
+            return result
+        path = _path(call)
+        if not path or not any(path.startswith(prefix) for prefix in GUTTER_PATHS):
+            return result
+        if not isinstance(result.content, str):
+            return result
+        return result.model_copy(update={"content": strip_read_gutter(result.content)})
