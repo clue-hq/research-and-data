@@ -7,11 +7,11 @@ role: account_research
 prompt:
   name: quality-person-research
   version: v26-person
-  sha256: e7044f7682fe783b5df1c01c7667192823e1aa17c89f1dbb97d639e1e38a6b7c
+  sha256: 07cd8d64f542e441a395d3ded136fd1b138d1528a5b0c8a74b801253de3982c3
 skills:
 - name: governed-evidence
   version: v5
-  sha256: 96591a52f043298f2c393a9f591290eaa3747536c97562ebfbc2546923b9f990
+  sha256: ac9b6e1fd47f96191f395f75f47a851aeda66ea107f7794e859406c76b6e2380
 - name: person-dossier
   version: v5
   sha256: 5c58a20c8670bf34b0cda6821afb5fe10580a35f956e413ff3f838a8ec11a433

@@ -23,7 +23,7 @@ from deepagents.backends.protocol import (
     ReadResult,
     WriteResult,
 )
-from deepagents.backends.utils import slice_read_response
+from deepagents.backends.utils import MAX_LINE_LENGTH, slice_read_response
 from deepagents.middleware.filesystem import DEFAULT_READ_LIMIT
 
 from clue_api.arv2.evidence_paths import INDEX_PATH, SOURCE_PATH
@@ -42,36 +42,58 @@ _READ_ONLY = "permission_denied: evidence originals are read-only"
 _ASYNC = "Use the asynchronous research runtime for authorized evidence access."
 
 
-def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
-    """Return the complete view by default; explicit positive line windows remain optional.
+#: Deep Agents cuts any read over 80,000 characters (its 20,000-token limit, which
+#: ``create_deep_agent`` does not let us change), counted after it adds a line-number column,
+#: and points at a shell tool research agents do not have. A whole-file read therefore comes
+#: back in parts that stay well under that limit, each ending with the offset to read next.
+READ_PART_CHARS = 64_000
+#: Deep Agents' line-number column (``%6d`` and a tab), plus margin, per line or line chunk.
+_GUTTER_CHARS = 8
+CONTINUES = "\n[This file continues. Read it again with offset={offset} to see the rest.]"
+
+
+def _window(rendered: str, *, offset: int, limit: int) -> ReadResult:
+    """Return the file from ``offset``: whole by default, in parts when it is very long.
 
     Deep Agents fills an omitted line limit with its own default (``DEFAULT_READ_LIMIT``, 100 in
     0.6.12; 2000 in older releases). Treat that framework default, the old one, and nonpositive
-    limits as unbounded for these research views. A model that explicitly asks for exactly the
-    default window also gets the whole view; the two calls are indistinguishable here.
+    limits as "the rest of the file" for these research views. A model that explicitly asks for
+    exactly the default window gets the same; the two calls are indistinguishable here. An
+    explicit window is returned as asked. A single line longer than a part cannot be split by
+    line offset and is returned as it is.
     """
-    rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    lines = rendered.splitlines(keepends=True)
+    more_at: int | None = None
     if limit <= 0 or limit in (DEFAULT_READ_LIMIT, 2000):
-        limit = max(1, len(rendered.splitlines()))
+        end, used = offset, 0
+        while end < len(lines):
+            cost = len(lines[end]) + _GUTTER_CHARS * (1 + len(lines[end]) // MAX_LINE_LENGTH)
+            if used + cost > READ_PART_CHARS and end > offset:
+                break
+            used += cost
+            end += 1
+        limit = max(1, end - offset)
+        more_at = end if end < len(lines) else None
     sliced = slice_read_response({"content": rendered, "encoding": "utf-8"}, offset, limit)
     if isinstance(sliced, ReadResult):
         return sliced
+    if more_at is not None:
+        sliced = sliced.removesuffix("\n") + CONTINUES.format(offset=more_at)
     return ReadResult(file_data={"content": sliced, "encoding": "utf-8"})
+
+
+def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
+    """A research view as JSON, read by the rules of ``_window``."""
+    rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
+    return _window(rendered, offset=offset, limit=limit)
 
 
 def render_text(header: str, body: str, *, offset: int, limit: int) -> ReadResult:
     """A research view as plain text: header line(s), then the document exactly as stored.
 
-    Recipe 26+. The same whole-by-default rule as ``render_view``: an omitted window (the
-    framework default) or a nonpositive limit returns everything.
+    Recipe 26+. Read by the rules of ``_window``.
     """
-    rendered = f"{header}\n{body}"
-    if limit <= 0 or limit in (DEFAULT_READ_LIMIT, 2000):
-        limit = max(1, len(rendered.splitlines()))
-    sliced = slice_read_response({"content": rendered, "encoding": "utf-8"}, offset, limit)
-    if isinstance(sliced, ReadResult):
-        return sliced
-    return ReadResult(file_data={"content": sliced, "encoding": "utf-8"})
+    return _window(f"{header}\n{body}", offset=offset, limit=limit)
 
 
 def plain_source(source: dict[str, Any]) -> tuple[str, str]:

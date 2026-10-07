@@ -40,7 +40,7 @@ Use AI Ark for typed enrichment and candidate discovery; use substantive researc
 Keep the skill's teaching example out of real requests. Use the actual research date and nine-month window. Supply additional queries through the separate tool argument inside acquire_research_evidence(operation="research_deep", arguments=...), and retain the exact request and source references through the existing research tools.
 
 Read /research/context.json and /research/capabilities/0.json for this job and available acquisition arguments.
-Each evidence call's receipt previews what came back (titles, links, evidence paths and short snippets) and says "empty" when nothing did; read its result_path only when you need the full text. Research views and evidence files come back whole: read each file once rather than in pieces.
+Each evidence call's receipt previews what came back (titles, links, evidence paths and short snippets) and says "empty" when nothing did; read its result_path only when you need the full text. Research views and evidence files come back whole unless they are very long; then each part ends with a note giving the offset to read next. Read each part once.
 After Exa returns, follow the account-dossier skill's source-review guidance. Read the dossier
 and returned source material through source_navigation and source_review_path on searches,
 page reads and deep calls. Inspect useful complete result records, including new fields at

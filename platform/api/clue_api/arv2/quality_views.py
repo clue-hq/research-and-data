@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
@@ -147,7 +148,7 @@ class ResearchViewMount(EvidenceWorkspace):
 
         Earlier recipes refuse every grep and point to search_evidence, which cannot open a
         research view; the agent then failed search_evidence and could not finish
-        (2026-10-06). The search runs over exactly what ``aread`` serves for that file.
+        (2026-10-06). The search runs over the whole file exactly as ``aread`` serves it.
         """
         if not at_least(self._scope, RECIPE_26):
             return await super().agrep(pattern, path, glob)
@@ -158,7 +159,8 @@ class ResearchViewMount(EvidenceWorkspace):
             )
         if not pattern:
             return GrepResult(error="Give a literal text to search for.")
-        result = await self.aread(path)
+        # The whole file (an explicit window), not the first part a default read returns.
+        result = await self.aread(path, limit=sys.maxsize)
         if result.error:
             return GrepResult(error=result.error)
         file_data: dict[str, Any] = dict(result.file_data or {})
