@@ -1,6 +1,8 @@
 # Account research v26 — the plan to make it cheap, fast and sharp
 
-**Status:** proposal for founder decision, 2026-10-06/07. **Revision 3 (2026-10-07): independently
+**Status: SUPERSEDED 2026-10-07 by the document set in `arv2-v26/` (start at
+`arv2-v26/00-program-overview-and-decisions.md`).** Kept as the founder-reviewed intent and history.
+Original status: proposal for founder decision, 2026-10-06/07. **Revision 3 (2026-10-07): independently
 reviewed** — three reviewers checked it against the code (every W1–W3 item), rebuilt the cost ceiling
 bottom-up from the raw call data, and attacked the depth claim against the actual Dialpad dossiers.
 Their corrections are folded in below and marked **[rev]**. Founder rulings 2026-10-07:
