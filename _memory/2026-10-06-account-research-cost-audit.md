@@ -17,7 +17,7 @@ burns credits and narrow it. No code changed yet — this entry records the data
   never compacted. Cost split: cached re-reads 80%, new input 15%, output 5%.
 - Prices fitted: grok-4.6 $2.00 new / $0.50 cached / $6.00 output per 1M; no long-context premium.
 - File reads → ~50% of model cost over the run: `/research/operations/…` (agent re-reading its own
-  saved evidence-tool results, paged) $10.58; `/evidence/…` $5.55; skill files re-read ~8×/run
+  saved evidence-tool results, paged) $10.58; `/evidence/…` $5.55; skill files (each read once per run, in 2–3 chunks: ~8 reads/run)
   $3.53; `/research/capabilities/0.json` $1.39.
 
 ## Findings (time) — full report `.artifacts/account-research-cost-20261006/CALL-LOG.md`
@@ -47,3 +47,19 @@ burns credits and narrow it. No code changed yet — this entry records the data
 ## Next
 Decide optimizations with the founder: stop the agent reading its own saved results back into
 context, stop re-reading skills, compaction/trimming, fewer rounds, model choice.
+
+## Synthesis (five parallel reviews, key claims re-verified in code + Langfuse)
+- Written up in `docs/superpowers/specs/2026-10-06-account-research-cost-and-speed-audit.md`
+  (opinion, evaluation scorecard, 3-phase plan with estimates, decisions needed).
+- Corrections recorded: skills are read once per run (2–3 chunks each), not re-read; end-to-end to
+  final account pages is ~53–56 min (6 back-to-back account-page rewrites, 17:56–18:11, in traces
+  outside the 12 `account-research.turn` ones).
+- Verified in code: compaction trigger = window × 0.90 with grok-4.6 window 500k (never fires);
+  worker-wide `_db_lock` (`account_research_driver.py:504`, used by `_connection` :1017-1020);
+  `_drain` runs inside the provider semaphore (`account_research_tools.py:500/550`); person release
+  needs the account import marker (`quality_person_release.py:89-92`); uncited findings dumped into
+  Miscellaneous (`quality_pages.py:531+`); writer view passes caveats but not
+  `agent_interpretation` (`page_writer_view.py:80-81`); master plan POC ≈ $0.17/account,
+  $0.07–0.13/person, $0.05 display (`ARV2-MASTER-PLAN.md:131-132`).
+- Founder decisions pending (doc §8). Production DB read access: a guarded read-only script exists
+  at `~/.claude/scripts/clue-prod-readonly-sql.sh`; the founder has to add the allow rule themselves.
