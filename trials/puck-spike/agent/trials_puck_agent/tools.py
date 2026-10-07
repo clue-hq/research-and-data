@@ -175,6 +175,10 @@ class PageTools:
         url = self._publish_for_preview()
         from playwright.sync_api import sync_playwright
 
+        renders = self.workspace / "renders"
+        renders.mkdir(exist_ok=True)
+        round_number = len({p.name.split("-")[0] for p in renders.glob("*.png")}) + 1
+
         blocks: list[dict] = []
         with sync_playwright() as pw:
             browser = pw.chromium.launch()
@@ -199,6 +203,7 @@ class PageTools:
                     })"""
                 )
                 png = page.screenshot(full_page=True)
+                (renders / f"{round_number}-{width}.png").write_bytes(png)
                 blocks.append({
                     "type": "text",
                     "text": (

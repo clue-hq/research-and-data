@@ -7,4 +7,4 @@ data/brands/
 public/brands/
 data/sites/edit-test.json
 agent-runs/
-data/sites/agent-test.json
+data/sites/agent-*.json

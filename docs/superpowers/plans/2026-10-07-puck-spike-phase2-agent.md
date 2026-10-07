@@ -49,6 +49,18 @@ models know.
 Model calls go through our gateway (`lumen_agent.llm.init_model`). The model is an env setting
 (grok-4.6 today). None of the website agent's tools or prompts are used.
 
+*As built (T3, 2026-10-08):* the agent is composed with LangChain's `create_agent` and the
+deepagents middleware we want (file tools with write permissions, skills, malformed-call patching),
+the way the platform's scene solo graph is composed (`lumen_agent/harness.py`). `create_deep_agent`
+always adds a subagent tool, a todo tool and a base prompt; leaving them out is part of what is
+measured. No summarization middleware (context clearing covers screenshots; measured in E2). Also
+built: tool calls from one response run in the order written (a test fails without it); a finish
+guard (a turn cannot end on an invalid page; two reminders, then "completed with errors"); the
+40-call safety stop. A build starts with no `page.json` or `shell.json`, because the file tools
+refuse to overwrite a file; later changes are edits. The fixed prompt is about 3.4k tokens (system
+prompt with the skills list about 1.2k, 11 tool schemas about 2.1k), against about 52k on the
+platform agent.
+
 **Workspace (plain files):**
 
 ```

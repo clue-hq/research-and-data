@@ -93,6 +93,14 @@ export function validate(workspace: string): { valid: boolean; errors: string[] 
     return fs.existsSync(full) ? fs.readFileSync(full, "utf-8") : "";
   };
 
+  const missing = ["page.json", "shell.json"].filter((file) => !fs.existsSync(path.join(workspace, file)));
+  if (missing.length) {
+    return {
+      valid: false,
+      errors: missing.map((file) => `${file}: does not exist yet; create it with write_file (its shape is in the building-with-puck skill)`),
+    };
+  }
+
   let page: Page = {};
   let shell: Shell = {};
   try {
