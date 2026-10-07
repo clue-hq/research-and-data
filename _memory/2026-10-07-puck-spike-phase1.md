@@ -37,3 +37,6 @@
 
 ## Production notes
 See trials/puck-spike/PRODUCTION-NOTES.md (page weight: duplicate clone CSS ~1 MB HTML, unused fonts, React runtime, video; kit gaps measured from clones; prop validation).
+
+## Planned follow-up (founder, 2026-10-07)
+Seller component library: rebuild each captured section once as a React component with props (Ploy shallow refactor), screenshot-compared + approved, registered in Puck; agent composes pages from the seller's own components and writes new ones in their idiom. Open: sandboxed build + tenant-origin editor canvas, per-seller rebuild cost. Next spike after phase 2. Recorded in the phase 2 plan.

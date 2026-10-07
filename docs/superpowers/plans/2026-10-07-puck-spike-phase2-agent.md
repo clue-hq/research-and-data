@@ -270,3 +270,29 @@ frontend, publishing and the production notes.
   setting; one extra run of case A on a second model is optional and reported separately.
 - **Copy-skill gaps already known** (the proof rule, the hero). They are fixed through E1, with a
   failing case first.
+
+## Planned follow-up: seller component library (founder direction, 2026-10-07)
+
+Our own fixed sections are a starter set. The long-term model, closer to Ploy's, is a library of
+**the seller's own components**:
+1. **Rebuild once per seller.** The agent rebuilds each captured section once as a real React
+   component with typed props (Ploy's shallow refactor: same look, content as data).
+2. **Approve by comparison.** Each component is checked by screenshot comparison with the source
+   section, and approved by a human.
+3. **Register it in Puck.** The agent composes pages from these components (JSON, as today).
+4. **New sections in the seller's idiom.** When a page needs a section the site lacks, the agent
+   writes one using the seller's theme and the type patterns of its existing sections.
+
+This removes generic sections and makes everything inside a section editable (lists, order,
+variants). The theme, the measured values, the catalog (as the seller's component registry),
+validation and Puck all carry over.
+
+**Open design questions:**
+- running agent-written code safely: built in the offline sandbox, served from the seller's
+  preview origin, with the editor canvas hosted there too;
+- rebuild cost and quality per seller;
+- brand enforcement as a lint check plus human approval.
+
+**Next spike, if phase 2 passes:** rebuild Garner's five most-used clones as components, compare
+fidelity, and build a page from them. Phase 2's E5 (the agent writes one React section) is a
+small preview.
