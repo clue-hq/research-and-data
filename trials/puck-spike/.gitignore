@@ -1,0 +1,7 @@
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+# exported brand data and media (regenerate with export/export_brand.py)
+data/brands/
+public/brands/

@@ -1,0 +1,2 @@
+# Paths under knowledge_docs/ removed from the trial skill set (one per line).
+skills/web-account-personalization/references/account-argument.md

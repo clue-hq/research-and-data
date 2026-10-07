@@ -1,0 +1,11 @@
+{
+  "brand": "garner",
+  "pages": {
+    "/": {
+      "root": { "props": {} },
+      "content": [
+        { "type": "TailwindProbe", "props": { "id": "probe-1", "heading": "Tailwind v4 probe", "body": "Probe body." } }
+      ]
+    }
+  }
+}
