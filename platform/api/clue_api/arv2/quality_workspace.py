@@ -34,6 +34,7 @@ from clue_api.arv2.quality_evidence import (
     read_source,
     resolve_source,
 )
+from clue_api.arv2.quality_recipe import RECIPE_26
 from clue_db import ConnFactory
 from clue_storage import StorageBackend, StorageError
 
@@ -58,13 +59,50 @@ def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
     return ReadResult(file_data={"content": sliced, "encoding": "utf-8"})
 
 
+def render_text(header: str, body: str, *, offset: int, limit: int) -> ReadResult:
+    """A research view as plain text: header line(s), then the document exactly as stored.
+
+    Recipe 26+. The same whole-by-default rule as ``render_view``: an omitted window (the
+    framework default) or a nonpositive limit returns everything.
+    """
+    rendered = f"{header}\n{body}"
+    if limit <= 0 or limit in (DEFAULT_READ_LIMIT, 2000):
+        limit = max(1, len(rendered.splitlines()))
+    sliced = slice_read_response({"content": rendered, "encoding": "utf-8"}, offset, limit)
+    if isinstance(sliced, ReadResult):
+        return sliced
+    return ReadResult(file_data={"content": sliced, "encoding": "utf-8"})
+
+
+def plain_source(source: dict[str, Any]) -> tuple[str, str]:
+    """An evidence source as ``key: value`` header lines plus its unsegmented text."""
+    fields = {k: v for k, v in source.items() if k not in {"text", "metadata", "next_path"}}
+    fields.update({k: v for k, v in (source.get("metadata") or {}).items() if k not in fields})
+    lines = [f"# {fields.pop('path', '/evidence')}"]
+    lines += [
+        f"{key}: {value}"
+        for key, value in fields.items()
+        if value is not None and not isinstance(value, (dict, list))
+    ]
+    return "\n".join(lines), str(source.get("text") or "")
+
+
 class EvidenceWorkspace(BackendProtocol):
     """Mount at /evidence on an isolated governed workspace; provides no shell or host paths."""
 
-    def __init__(self, conn_factory: ConnFactory, storage: StorageBackend, grant: EvidenceGrant):
+    def __init__(
+        self,
+        conn_factory: ConnFactory,
+        storage: StorageBackend,
+        grant: EvidenceGrant,
+        *,
+        recipe: int = 0,
+    ):
         self._connections = conn_factory
         self._storage = storage
         self._grant = grant
+        # Recipe 26+: sources are served as plain text (see quality_recipe.py).
+        self._recipe = recipe
 
     async def aread(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         if offset < 0:
@@ -78,6 +116,9 @@ class EvidenceWorkspace(BackendProtocol):
                     ref = await resolve_source(conn, self._grant, file_path)
                     result = await read_source(conn, self._storage, self._grant, ref.source_id)
                     result["next_path"] = None
+                    if self._recipe >= RECIPE_26:
+                        header, body = plain_source(result)
+                        return render_text(header, body, offset=offset, limit=limit)
                     # Segment long lines without changing the original bytes.
                     body = result.pop("text")
                     result["text_segments"] = [
