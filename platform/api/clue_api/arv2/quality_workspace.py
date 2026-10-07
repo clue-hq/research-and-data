@@ -24,6 +24,7 @@ from deepagents.backends.protocol import (
     WriteResult,
 )
 from deepagents.backends.utils import slice_read_response
+from deepagents.middleware.filesystem import DEFAULT_READ_LIMIT
 
 from clue_api.arv2.evidence_paths import INDEX_PATH, SOURCE_PATH
 from clue_api.arv2.quality_evidence import (
@@ -43,11 +44,13 @@ _ASYNC = "Use the asynchronous research runtime for authorized evidence access."
 def render_view(value: Any, *, offset: int, limit: int) -> ReadResult:
     """Return the complete view by default; explicit positive line windows remain optional.
 
-    Deep Agents supplies 2000 when the caller omits its line limit. Treat that framework
-    default, and nonpositive limits, as unbounded for these research views.
+    Deep Agents fills an omitted line limit with its own default (``DEFAULT_READ_LIMIT``, 100 in
+    0.6.12; 2000 in older releases). Treat that framework default, the old one, and nonpositive
+    limits as unbounded for these research views. A model that explicitly asks for exactly the
+    default window also gets the whole view; the two calls are indistinguishable here.
     """
     rendered = json.dumps(value, ensure_ascii=False, indent=2, default=str)
-    if limit <= 0 or limit == 2000:
+    if limit <= 0 or limit in (DEFAULT_READ_LIMIT, 2000):
         limit = max(1, len(rendered.splitlines()))
     sliced = slice_read_response({"content": rendered, "encoding": "utf-8"}, offset, limit)
     if isinstance(sliced, ReadResult):
