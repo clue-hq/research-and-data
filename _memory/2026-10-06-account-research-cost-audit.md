@@ -20,6 +20,19 @@ burns credits and narrow it. No code changed yet — this entry records the data
   saved evidence-tool results, paged) $10.58; `/evidence/…` $5.55; skill files re-read ~8×/run
   $3.53; `/research/capabilities/0.json` $1.39.
 
+## Findings (time) — full report `.artifacts/account-research-cost-20261006/CALL-LOG.md`
+- 276 run-minutes over 12 runs: model 41% (avg 11s/call), tools 40%, page writer 16% (~3.5 min per
+  run, ~5.5 min for accounts), gaps 3%. Elapsed: Dialpad 45.9 min, Loopio 47.3 min, side by side.
+- `acquire_research_evidence` avg 58s while the provider answers in ~2.5s (Exa search) / 0.3s (Exa
+  contents): ~20s before dispatch and ~37s after the answer inside `operate` → `recover_acquisitions`.
+  Worst in a run's first evidence calls (59s after the answer), i.e. runs queuing on each other.
+- Only 4 evidence calls dispatch at once per job: positions 5 and 6+ in a batch wait 43s / 76s; a
+  batch's results come back together 30–70s after the providers answered.
+- Account runs nominate their 5 people at ~minute 15, but person jobs start only after the account
+  dossier import (~minute 22–23): ~8 min gate (`quality_person_release.releases_after_import`).
+- PR #91 (research slowness fixes) merged 2026-10-03 20:38 UTC; Langfuse carries no release tag, so
+  whether production ran it on Oct 6 is unverified. Traces' service.name = `clue-worker-fleet`.
+
 ## Access notes
 - Langfuse MCP is user-scoped with a headersHelper reading `CLUE_LANGFUSE_*` from this workspace's
   `.env` (the founder typed the keys). `CLUE_LANGFUSE_ENABLED` stays false locally.
