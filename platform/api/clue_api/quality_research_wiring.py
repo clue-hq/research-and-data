@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
+from langchain_core.messages import SystemMessage
 from pydantic import JsonValue
 from sqlalchemy import text
 
@@ -123,6 +124,7 @@ from clue_api.arv2.quality_page_tools import (
     ReadPageInputsTool,
 )
 from clue_api.arv2.quality_provider_tools import AcquireResearchTool
+from clue_api.arv2.quality_recipe import RECIPE_26, at_least
 from clue_api.arv2.quality_results import QualityJobRunner, ResearchUnitReport, validate_report
 from clue_api.arv2.quality_tools import (
     CorrectResearchClaimTool,
@@ -350,6 +352,22 @@ def quality_profiles(
     )
 
 
+def drop_identity_echo(context: AssembledAgentContext, identity: str) -> AssembledAgentContext:
+    """Recipe 26+: the runtime already sends the identity as the system message.
+
+    The L1 identity layer also opened the conversation with the same text as a
+    ``SystemMessage``, so every call carried the prompt and resource map twice (a third copy
+    after a reconciliation continuation). The manifest still records the layer; only the
+    duplicate message is not sent.
+    """
+    kept = tuple(
+        m for m in context.messages if not (isinstance(m, SystemMessage) and m.content == identity)
+    )
+    if kept == context.messages:
+        return context
+    return context.model_copy(update={"messages": kept})
+
+
 class _Contexts:
     def __init__(self, runtime: ResearchUnitRuntime):
         self.runtime = runtime
@@ -365,7 +383,7 @@ class _Contexts:
         if configured != profile:
             raise ValueError("Research context profile differs beyond model configuration")
         resolved = replace(resolved, profile=configured)
-        return await build_agent_context_assembler(
+        assembled = await build_agent_context_assembler(
             resolved_profile=resolved,
             artifacts=runtime.artifacts,
             cards=_PinnedContextOnly(),
@@ -384,6 +402,9 @@ class _Contexts:
             ),
             conn_factory=runtime.connections,
         ).assemble(request=request, profile=profile, history=history)
+        if at_least(runtime.scope, RECIPE_26):
+            assembled = drop_identity_echo(assembled, resolved.system_prompt)
+        return assembled
 
 
 class _ChildExecutions(DbSpecialistExecutionJournal):
