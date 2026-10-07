@@ -91,3 +91,13 @@ New findings, all verified against Langfuse tool I/O + code:
   contact PAGES wait for the account brief); fetch set fixed per subject (~20 account + ~15 per
   contact provider calls, pooled per account). Revised estimate ≈ $3–6 + credits and ≈ 8–10 min
   per account with 5 contacts (spread = Exa deep-report price, unknown until the ledger is read).
+- Plan revision 3 (2026-10-07): three independent reviews folded in. Depth: caps widened (Trigger
+  10, Committee 8, own-words 6, +proud-of, +not-found; contact ≈18); pain/successor templates;
+  code-driven follow-up table (50–65% of A-class account findings came from 2–3-hop follow-ups);
+  judge gets ALL candidates + ledger + people candidates; subject anchors; quote rule with
+  normaliser + typed values; AT-1..AT-8. Engineering: W1-2 default must be `supported` (not
+  insufficient_context → unresolved → hidden); W1-8 needs a deferred contact-page write (P1);
+  item 18 pooling is a schema redesign (deferred, pool by plan); W2 order 20→16→17→15→19; A0 is the
+  driver's first step, not the chat launch; re-mint (P2) and pool sizing (P3) prerequisites. Cost:
+  expected $2.8 (Luna) – $4.1 (Flash) + ~11 credits, 6.6 min; max $9–13 unless D8 (deep tier) and
+  D9 (person Exa text caps 10k×20 → 4k×12) are pinned → ceiling ≈ $5–6; without W2 time triples.
