@@ -127,7 +127,7 @@ from clue_api.arv2.quality_page_tools import (
     PublishResearchPageTool,
     ReadPageInputsTool,
 )
-from clue_api.arv2.quality_provider_tools import AcquireResearchTool
+from clue_api.arv2.quality_provider_tools import AcquireResearchTool, AcquireResearchToolV2
 from clue_api.arv2.quality_recipe import RECIPE_26, at_least
 from clue_api.arv2.quality_results import QualityJobRunner, ResearchUnitReport, validate_report
 from clue_api.arv2.quality_tools import (
@@ -257,6 +257,7 @@ def quality_tools(
         tool = cls(scope, storage, purge_unevidenced=purge)
         registry.register(tool, make_default=tool.version == "1")
     registry.register(AcquireResearchTool(acquisition_runtime), make_default=True)
+    registry.register(AcquireResearchToolV2(acquisition_runtime), make_default=False)
     return registry
 
 

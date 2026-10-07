@@ -288,7 +288,10 @@ def test_invalid_transcript_reads_are_durable_refusals_without_transport(tmp_pat
     run_async(case())
 
 
-def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_path):
+@pytest.mark.parametrize("version", ["1", "2"])
+def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_path, version):
+    from clue_api.arv2.quality_provider_tools import AcquireResearchToolV2
+
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path)
@@ -328,7 +331,7 @@ def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_p
                 execution_id=ExecutionId(parent),
                 operation_id=OperationId(uuid4()),
             )
-            tool = AcquireResearchTool(rt)
+            tool = AcquireResearchTool(rt) if version == "1" else AcquireResearchToolV2(rt)
             inputs = AcquireResearchInput(
                 operation="research_deep",
                 arguments={
@@ -339,6 +342,14 @@ def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_p
             )
             result = await tool.invoke(inputs, ctx)
             assert result.references["status"] == "completed", result
+            if version == "2":
+                # Recipe 26 receipts preview what came back, so no round is spent opening it.
+                preview = result.references["preview"]
+                assert preview and preview[0]["title"] == "Report"
+                assert any(h["url"] == "https://example.test/bdr" for h in preview)
+                assert result.references["result_count"]
+            else:
+                assert "preview" not in result.references
             backend = research_backend(BackendProtocol(), connections, storage, scope, parent)
             saved = json.loads(await read_document(backend, result.references["result_path"]))
             sources = saved["source_navigation"]["sources"]
