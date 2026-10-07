@@ -30,6 +30,8 @@ from clue_api.arv2.quality_authority import ResearchAuthority, resolve_authority
 from clue_api.arv2.quality_context import read_context, read_document
 from clue_api.arv2.quality_person_release import (
     PARENT_DOSSIER_PATH,
+    RELEASE_AT_NOMINATION,
+    parent_dossier_ready,
     read_parent_dossier,
     releases_after_import,
 )
@@ -381,7 +383,15 @@ class ResearchViewMount(EvidenceWorkspace):
                     "findings": "/research/claims/0.json",
                     "original_reports_pages_and_transcripts": "/evidence/index.json",
                 }
-                if releases_after_import(scope) and (scope.input_refs or {}).get("parent_job_id"):
+                if (
+                    releases_after_import(scope)
+                    and (scope.input_refs or {}).get("parent_job_id")
+                    # Recipe 26: listed only once the account has imported it.
+                    and (
+                        not at_least(scope, RELEASE_AT_NOMINATION)
+                        or await parent_dossier_ready(conn, scope)
+                    )
+                ):
                     result["account_research_references"]["dossier"] = PARENT_DOSSIER_PATH
             if advisory_research(scope):
                 result["review_policy"] = {
@@ -528,6 +538,14 @@ class ResearchViewMount(EvidenceWorkspace):
         try:
             async with self._connections() as conn:
                 await resolve_authority(conn, self._scope, self._execution_id)
+                parent_listed = bool(
+                    self._scope.person_subject_id
+                    and releases_after_import(self._scope)
+                    and (self._scope.input_refs or {}).get("parent_job_id")
+                ) and (
+                    not at_least(self._scope, RELEASE_AT_NOMINATION)
+                    or await parent_dossier_ready(conn, self._scope)
+                )
         except (ValueError, StorageError):
             return LsResult(error="Research authority unavailable.")
         if path.rstrip("/") == "/dossier":
@@ -543,13 +561,7 @@ class ResearchViewMount(EvidenceWorkspace):
                         "/catalog/0.json",
                         "/claims/0.json",
                         "/dossier/latest.json",
-                        *(
-                            ("/parent-account-dossier.json",)
-                            if self._scope.person_subject_id
-                            and releases_after_import(self._scope)
-                            and (self._scope.input_refs or {}).get("parent_job_id")
-                            else ()
-                        ),
+                        *(("/parent-account-dossier.json",) if parent_listed else ()),
                     )
                 )
             ]

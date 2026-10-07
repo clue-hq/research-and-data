@@ -38,13 +38,16 @@ def handler(models: PageWriterModels | None) -> Arv2AccountResearchWorkHandler:
     )
 
 
-def composition(recipe: int) -> Any:
+def composition(recipe: int, *, person: bool = False) -> Any:
+    refs: dict[str, Any] = {"quality_recipe_version": recipe}
+    if person:
+        refs["parent_job_id"] = str(uuid4())
     scope = SimpleNamespace(
         catalog_version="v4",
-        input_refs={"quality_recipe_version": recipe},
+        input_refs=refs,
         job_id=uuid4(),
         workspace_id="ws",
-        person_subject_id=None,
+        person_subject_id=uuid4() if person else None,
     )
     return SimpleNamespace(scope=scope, run=SimpleNamespace(context_id=uuid4()))
 
@@ -99,6 +102,37 @@ def test_an_uncomposed_writer_sends_the_job_to_review(writes: list[dict[str, Any
     settled = asyncio.run(handler(None)._write_pages(composition(25), outcome()))
     assert settled.status == "needs_review" and settled.failure_code == "page_writer_not_composed"
     assert writes == []
+
+
+@pytest.mark.parametrize("imported", [False, True])
+def test_recipe_26_person_defers_its_page_until_the_parent_imports(
+    writes: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch, imported: bool
+) -> None:
+    import clue_api.arv2.quality_person_release as release
+
+    async def ready(conn: Any, scope: Any) -> bool:
+        return imported
+
+    monkeypatch.setattr(release, "parent_dossier_ready", ready)
+    settled = asyncio.run(handler(MODELS)._write_pages(composition(26, person=True), outcome()))
+    assert settled.status == "completed"
+    if imported:
+        assert len(writes) == 1 and settled.deferred_pages == ()
+    else:
+        assert writes == [] and settled.deferred_pages == ("contact",)
+
+
+def test_a_recipe_25_person_still_writes_its_page_at_once(
+    writes: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import clue_api.arv2.quality_person_release as release
+
+    async def ready(conn: Any, scope: Any) -> bool:
+        return False
+
+    monkeypatch.setattr(release, "parent_dossier_ready", ready)
+    settled = asyncio.run(handler(MODELS)._write_pages(composition(25, person=True), outcome()))
+    assert len(writes) == 1 and settled.deferred_pages == ()
 
 
 def work_context() -> Any:

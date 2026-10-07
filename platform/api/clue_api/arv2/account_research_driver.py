@@ -97,6 +97,8 @@ from clue_api.arv2.provider_ledger import (
     LedgerStamp,
     drain_provider_calls,
 )
+from clue_api.arv2.quality_person_release import RELEASE_AT_NOMINATION, parent_dossier_ready
+from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import FieldCatalog, StructuringClient, catalog_menu_text
@@ -1409,6 +1411,10 @@ class Arv2AccountResearchWorkHandler:
                 account_dossier_available=(
                     quality_input_refs["quality_recipe_version"] >= 18
                     and bool(quality_input_refs.get("parent_job_id"))
+                    and (
+                        quality_input_refs["quality_recipe_version"] < RELEASE_AT_NOMINATION
+                        or await parent_dossier_ready(conn, scope)
+                    )
                 ),
             )
             if person_brief
@@ -1812,6 +1818,15 @@ class Arv2AccountResearchWorkHandler:
             or context_id is None
         ):
             return result
+        if scope.person_subject_id and at_least(scope, RELEASE_AT_NOMINATION):
+            from clue_api.arv2 import quality_person_release
+
+            async with self._connection() as conn:
+                imported = await quality_person_release.parent_dossier_ready(conn, scope)
+            if (scope.input_refs or {}).get("parent_job_id") and not imported:
+                # Recipe 26: the account has not imported yet; the account's final page step
+                # writes this contact page.
+                return replace(result, deferred_pages=("contact",))
         if self._page_writer is None:
             log.error("arv2.page_writer_not_composed", job_id=str(scope.job_id))
             return replace(result, status="needs_review", failure_code="page_writer_not_composed")
@@ -1845,7 +1860,9 @@ class Arv2AccountResearchWorkHandler:
             from clue_api.arv2.quality_coverage import coverage
 
             assert composition.run.context_id is not None
-            measured = await coverage(conn, composition.scope, composition.run.context_id)
+            measured = await coverage(
+                conn, composition.scope, composition.run.context_id, deferred=result.deferred_pages
+            )
             if measured["needs_review"]:
                 status = "needs_review"
             finalization = {
