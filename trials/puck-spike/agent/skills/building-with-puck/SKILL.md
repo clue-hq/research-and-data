@@ -1,0 +1,100 @@
+---
+name: building-with-puck
+description: Use when building or changing page.json or shell.json, choosing sections from the catalog, or filling a section's slots and fields.
+---
+
+# Building a page
+
+## What a page is
+
+`page.json` is a list of sections, in page order. This example is made up; your brand, clones and
+facts are in your workspace.
+
+```json
+{
+  "root": { "props": { "title": "Northwind for Lakeside Hospital" } },
+  "content": [
+    { "type": "ClonedSection", "props": { "id": "hero", "fragmentId": "frag_0123456789abcdef",
+      "slots": { "headline": "Fill Lakeside's open shifts in hours, not days." },
+      "replacements": [{ "find": "Start free trial", "replace": "See the staffing plan" }],
+      "links": [] } },
+    { "type": "StatsBand", "props": { "id": "proof", "surface": "brandSubtle",
+      "heading": "Open shifts filled 40% faster at a 600-bed hospital.",
+      "stats": [{ "value": "40%", "label": "faster to fill an open shift" }],
+      "source": "Customer study, published by Northwind, 2025." } }
+  ]
+}
+```
+
+Every section has a unique `id` you choose (short, lowercase, for example `hero`, `proof`). The
+header and footer are not sections; they live in `shell.json`.
+
+## Reuse first
+
+1. **A clone first.** These are the seller's own sections, exactly as captured. Keep their look
+   and change their words.
+2. **A brand section** (`StatsBand`, `FeatureSplit`, `ProofCard`, `CtaBand`) when no clone can
+   carry the point.
+3. **Leave the point out** if neither fits.
+
+## Choosing clones
+
+- `catalog/index.md` lists clones by source page, in page order. The home page's hero usually
+  opens the page.
+- Choose a clone for its layout (cards, a split, a band of numbers), not for its current words.
+  You will change the words.
+- Leave out clones that do not help this reader decide: navigation, newsletters, resource
+  lists, general testimonials, and whole case-study articles (they make the page long and move
+  the point down).
+
+## Filling a clone (`ClonedSection`)
+
+Open the clone's file in `catalog/clones/` first.
+
+- **`slots`:** set only what you change. Leaving a slot out keeps the original exactly.
+  - A text slot takes plain text. Keep about the original's length and number of lines.
+  - A link slot takes a URL or a `/route`.
+  - An image slot takes a file from `brand/brand.md`.
+  - `visible: false` hides the whole section.
+- **`replacements`:** for visible text with no slot, such as button labels. `find` must be exact
+  text from the clone file's "Other visible text".
+- **`links`:** for links with no slot. `find` is the exact current href, or `"*"` for every link
+  in the section; `replace` is the new href. Use `"*"` for cards that point at the seller's own
+  pages.
+
+## Brand sections
+
+Fields and choices are in `catalog/sections.md`.
+
+- Choose `surface` and `headingRole` by name.
+- Images come only from `brand/brand.md`.
+- Text fields take plain text.
+
+## Rhythm
+
+- Clones keep their own backgrounds. Choose brand-section surfaces so light and dark alternate.
+- Use at most one dark brand section (`brand` or `inverse`).
+- Do not place two sections that make the same point.
+
+## Buttons and links
+
+- Every button goes to the one destination the brief names for the offer: clone `cta` slots,
+  brand-section buttons, and the header button.
+- A link to another page of this site is a `/route`.
+
+## The shell (`shell.json`)
+
+```json
+{ "header": { "preparedFor": "Lakeside Hospital", "accountLogo": "",
+              "ctaLabel": "See the staffing plan", "ctaHref": "https://…" },
+  "footer": { "legal": "© 2026 Northwind. Prepared for Lakeside Hospital.",
+              "privacyHref": "https://…", "termsHref": "https://…" } }
+```
+
+Leave `accountLogo` empty unless the workspace gives you the account's logo file.
+
+## When validate_page says INVALID
+
+Each line names the section, the field and the fix. For example, it lists the real slots, says
+where the usable text is, or asks you to fetch a number's source. Fix those lines and validate
+again. If a change made the page worse, `restore_version` brings back the last good version.
