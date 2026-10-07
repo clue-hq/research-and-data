@@ -1,18 +1,21 @@
 import type { Config, Fields } from "@puckeditor/core";
 import type { BrandData } from "@/lib/brands";
-import { fillClone, type SlotValues, type TextReplacement } from "@/lib/clone";
+import {
+  fillClone,
+  slotDefaults,
+  type LinkReplacement,
+  type SlotValues,
+  type TextReplacement,
+} from "@/lib/clone";
 import { themeCss } from "@/lib/theme";
+import { makeSections } from "./sections";
+import { SiteFooter, SiteHeader, type FooterProps, type HeaderProps, type ShellData } from "./shell";
 
 type ClonedSectionProps = {
   fragmentId: string;
   slots: SlotValues;
   replacements: TextReplacement[];
-};
-
-type Props = {
-  TailwindProbe: { heading: string; body: string };
-  TokenProbe: { heading: string; body: string };
-  ClonedSection: ClonedSectionProps;
+  links: LinkReplacement[];
 };
 
 const SLOT_FIELD = {
@@ -28,9 +31,66 @@ const SLOT_FIELD = {
   },
 } as const;
 
-// One config per brand: the clone library is closed over, so fields and renders can read it
-// without global state. The editor (client) and the published route (server) both call this.
-export function makeConfig(brand: BrandData): Config {
+/** Editor-only pieces, injected by the editor route so published pages never bundle them. */
+export type EditorParts = {
+  CloneEditor: (props: { itemId: string; clone: import("@/lib/clone").Clone; html: string }) => React.ReactNode;
+  AssetPicker: (props: { assets: BrandData["assets"]; value: string; onChange: (value: string) => void }) => React.ReactNode;
+};
+
+export type ConfigOptions = {
+  /** Where this site is served, e.g. "/s/garner-syracuse"; internal links ("/analysis") resolve under it. */
+  basePath: string;
+  shell?: ShellData;
+  /** "page" edits a route; "shell" edits the shared header and footer. */
+  mode?: "page" | "shell";
+  editor?: EditorParts;
+};
+
+// One config per brand and site. Fields and renders close over the brand's clone library and
+// assets; the editor (client) and the published route (server) both call this.
+export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
+  const href = (value: string) =>
+    value && value.startsWith("/") && !value.startsWith("//")
+      ? `${options.basePath}${value === "/" ? "" : value}`
+      : value;
+  const brandCss = themeCss(brand);
+  const BrandRoot = ({ children, withShell }: { children: React.ReactNode; withShell: boolean }) => (
+    <div className="brand-root">
+      <style dangerouslySetInnerHTML={{ __html: brandCss }} />
+      {withShell && options.shell ? <SiteHeader brand={brand} header={options.shell.header} href={href} /> : null}
+      {children}
+      {withShell && options.shell ? <SiteFooter brand={brand} footer={options.shell.footer} href={href} /> : null}
+    </div>
+  );
+
+  if (options.mode === "shell") {
+    const shellConfig: Config<{ SiteHeader: HeaderProps; SiteFooter: FooterProps }> = {
+      root: { render: ({ children }) => <BrandRoot withShell={false}>{children}</BrandRoot> },
+      components: {
+        SiteHeader: {
+          label: "Site header",
+          fields: {
+            preparedFor: { type: "text", label: "Prepared for" },
+            accountLogo: { type: "text", label: "Account logo URL (optional)" },
+            ctaLabel: { type: "text", label: "Button label" },
+            ctaHref: { type: "text", label: "Button link" },
+          },
+          render: (props) => <SiteHeader brand={brand} header={props} href={href} />,
+        },
+        SiteFooter: {
+          label: "Site footer",
+          fields: {
+            legal: { type: "text", label: "Legal line" },
+            privacyHref: { type: "text", label: "Privacy link" },
+            termsHref: { type: "text", label: "Terms link" },
+          },
+          render: (props) => <SiteFooter brand={brand} footer={props} href={href} />,
+        },
+      },
+    };
+    return shellConfig as unknown as Config;
+  }
+
   const cloneOptions = [
     { label: "Choose a section…", value: "" },
     ...Object.values(brand.clones).map((clone) => ({
@@ -38,19 +98,23 @@ export function makeConfig(brand: BrandData): Config {
       value: clone.id,
     })),
   ];
+  const sections = makeSections(brand, href, options.editor?.AssetPicker);
 
-  const brandCss = themeCss(brand);
-
-  const config: Config<Props> = {
-    root: {
-      render: ({ children }) => (
-        <div className="brand-root">
-          <style dangerouslySetInnerHTML={{ __html: brandCss }} />
-          {children}
-        </div>
-      ),
+  const config: Config<{
+    ClonedSection: ClonedSectionProps;
+    StatsBand: Record<string, unknown>;
+    FeatureSplit: Record<string, unknown>;
+    ProofCard: Record<string, unknown>;
+    CtaBand: Record<string, unknown>;
+    TokenProbe: { heading: string; body: string };
+  }> = {
+    root: { render: ({ children }) => <BrandRoot withShell>{children}</BrandRoot> },
+    categories: {
+      clones: { title: "The seller's sections", components: ["ClonedSection"] },
+      brand: { title: "Brand sections", components: ["StatsBand", "FeatureSplit", "ProofCard", "CtaBand"] },
     },
     components: {
+      // Test fixture for the G3 token check (export/check_tokens.py); not offered in the menu.
       TokenProbe: {
         fields: { heading: { type: "text" }, body: { type: "textarea" } },
         defaultProps: { heading: "Brand token probe", body: "Body text in the brand's body role." },
@@ -62,23 +126,10 @@ export function makeConfig(brand: BrandData): Config {
           </section>
         ),
       },
-      TailwindProbe: {
-        fields: { heading: { type: "text" }, body: { type: "textarea" } },
-        defaultProps: { heading: "Tailwind v4 probe", body: "Probe body." },
-        render: ({ heading, body }) => (
-          <section className="mx-auto max-w-[72rem] px-6 py-16 md:py-24">
-            <h2 data-probe="heading" className="text-probe-size font-light tracking-[-0.02em] text-probe">
-              {heading}
-            </h2>
-            <p data-probe="body" className="mt-4 max-w-prose text-lg text-slate-600">{body}</p>
-            <div data-probe="box" className="mt-6 h-3 w-40 rounded-full bg-probe md:w-80" />
-          </section>
-        ),
-      },
-
+      ...(sections as unknown as Record<"StatsBand" | "FeatureSplit" | "ProofCard" | "CtaBand", never>),
       ClonedSection: {
         label: "Cloned section",
-        defaultProps: { fragmentId: "", slots: {}, replacements: [] },
+        defaultProps: { fragmentId: "", slots: {}, replacements: [], links: [] },
         fields: {
           fragmentId: { type: "select", label: "Section", options: cloneOptions },
           slots: { type: "object", label: "Slots", objectFields: {} },
@@ -87,6 +138,12 @@ export function makeConfig(brand: BrandData): Config {
             label: "Text replacements (text with no slot)",
             arrayFields: { find: { type: "text" }, replace: { type: "text" } },
             getItemSummary: (item) => item.find || "New replacement",
+          },
+          links: {
+            type: "array",
+            label: "Link replacements (* = every link)",
+            arrayFields: { find: { type: "text" }, replace: { type: "text" } },
+            getItemSummary: (item) => item.find || "New link",
           },
         },
         resolveFields: (data, { fields }) => {
@@ -97,12 +154,18 @@ export function makeConfig(brand: BrandData): Config {
               { ...SLOT_FIELD[slot.kind], label: `${key} (${slot.kind})` },
             ]),
           );
-          return {
-            ...fields,
-            slots: { type: "object", label: "Slots", objectFields },
-          } as Fields<ClonedSectionProps>;
+          return { ...fields, slots: { type: "object", label: "Slots", objectFields } } as Fields<ClonedSectionProps>;
         },
-        render: ({ fragmentId, slots, replacements }) => {
+        // Choosing a different section pre-fills its slots with the clone's own wording. Puck also
+        // runs this when the editor loads (every prop then counts as "changed"), so the test is
+        // against the previous data, never the `changed` flag alone.
+        resolveData: (data, { lastData }) => {
+          const clone = brand.clones[data.props.fragmentId];
+          const previous = lastData?.props?.fragmentId;
+          if (!clone || !lastData || previous === data.props.fragmentId) return data;
+          return { ...data, props: { ...data.props, slots: slotDefaults(clone) } };
+        },
+        render: ({ id, fragmentId, slots, replacements, links, puck }) => {
           const clone = brand.clones[fragmentId];
           if (!clone) {
             return (
@@ -111,7 +174,16 @@ export function makeConfig(brand: BrandData): Config {
               </div>
             );
           }
-          const html = fillClone(clone, slots, replacements);
+          const resolvedSlots = Object.fromEntries(
+            Object.entries(slots ?? {}).map(([key, value]) => [
+              key,
+              clone.slots[key]?.kind === "href" && typeof value === "string" ? href(value) : value,
+            ]),
+          );
+          const resolvedLinks = (links ?? []).map((link) => ({ ...link, replace: href(link.replace) }));
+          const html = fillClone(clone, resolvedSlots, replacements, resolvedLinks);
+          const Editor = options.editor?.CloneEditor;
+          if (puck?.isEditing && Editor) return <Editor itemId={id} clone={clone} html={html} />;
           return (
             <>
               <style dangerouslySetInnerHTML={{ __html: clone.css }} />

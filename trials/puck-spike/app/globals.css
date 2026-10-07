@@ -3,6 +3,15 @@
 /* Brand tokens: per-brand values arrive at runtime as --brand-* on .brand-root (lib/theme.ts).
    This maps them once into Tailwind v4 theme variables so sections use fixed class names. */
 @theme inline {
+  --color-on-surface-page: var(--brand-on-surface-page);
+  --color-on-surface-canvas: var(--brand-on-surface-canvas);
+  --color-on-surface-card: var(--brand-on-surface-card);
+  --color-on-surface-muted: var(--brand-on-surface-muted);
+  --color-on-surface-elevated: var(--brand-on-surface-elevated);
+  --color-on-surface-brand: var(--brand-on-surface-brand);
+  --color-on-surface-brand-subtle: var(--brand-on-surface-brand-subtle);
+  --color-on-surface-accent: var(--brand-on-surface-accent);
+  --color-on-surface-inverse: var(--brand-on-surface-inverse);
   --color-ink-primary: var(--brand-ink-primary);
   --color-ink-secondary: var(--brand-ink-secondary);
   --color-ink-muted: var(--brand-ink-muted);

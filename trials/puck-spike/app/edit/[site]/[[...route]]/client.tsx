@@ -3,7 +3,9 @@
 import { useMemo } from "react";
 import { Puck, type Data, type Viewports } from "@puckeditor/core";
 import type { BrandData } from "@/lib/brands";
-import { makeConfig } from "@/puck/config";
+import { makeConfig, type ConfigOptions } from "@/puck/config";
+import { AssetPicker } from "@/puck/asset-picker";
+import { CloneEditor } from "@/puck/clone-editor";
 
 // Our three review widths; desktop at 1440, the width the brand kits were measured at.
 const VIEWPORTS: Viewports = [
@@ -17,13 +19,15 @@ export function Editor({
   route,
   data,
   brand,
+  options,
 }: {
   site: string;
   route: string;
   data: Data;
   brand: BrandData;
+  options: ConfigOptions;
 }) {
-  const config = useMemo(() => makeConfig(brand), [brand]);
+  const config = useMemo(() => makeConfig(brand, { ...options, editor: { CloneEditor, AssetPicker } }), [brand, options]);
   return (
     <Puck
       config={config}
