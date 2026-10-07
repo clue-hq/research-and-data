@@ -96,6 +96,30 @@ Stretch, only in experiment 5: `write_section`. It writes a new React section fi
 type check plus a token-only lint (no hex colours, no arbitrary pixel values, no inline styles,
 no `className` props). It does not join the catalog without founder approval.
 
+**Error handling and retries (founder ask, 2026-10-07):**
+
+1. **The agent's own mistakes.**
+   - `validate_page` returns actionable errors: where (section id and field), what is wrong, and
+     the allowed values, for example `section "proof" field surface: "green" is not allowed; use
+     one of page, card, muted, brandSubtle, brand, inverse`.
+   - The agent fixes them and validates again.
+   - `render_page` and finishing refuse while the page is invalid.
+2. **Stuck loops.** When the same error returns a third time, the tool says so plainly ("third
+   failure on this; try a different approach, or leave this section out and say why in the
+   plan") and records it.
+3. **Tool and provider failures.**
+   - Each tool retries transient failures (network, fetch, search) twice with backoff before
+     reporting the error.
+   - Malformed tool calls return to the model as an error message (deepagents' default) so it
+     can retry.
+   - The gateway retries model calls and can fall back to a second model.
+4. **Bad edits.**
+   - Every page write that validates saves a version.
+   - A `restore_version` tool lets the agent roll back a change that broke the page or the render,
+     instead of patching forward.
+
+A run that still cannot fix something ends "completed with errors" and lists what remains.
+
 **Skills (three, short, written fresh, not copied from the website agent):**
 1. **`account-page-copy`.** The approved copy skill (trial overlay version).
 2. **`building-with-puck`.** How a page is put together:
@@ -163,7 +187,11 @@ Recorded per edit: success (did exactly what was asked, nothing else changed), t
 - non-token styling attempts;
 - broken JSON.
 
-Also: how many were caught by `validate_page` versus seen only in a render.
+Also: how many were caught by `validate_page` versus seen only in a render, and how each ended:
+- fixed by the agent on its own;
+- fixed after the loop guard;
+- rolled back with `restore_version`;
+- left unfixed.
 
 **E4. Against the baseline.** One table on case A:
 
@@ -200,6 +228,7 @@ token lint and render show whether it stays on brand.
 - `validate_page`, which shells out to the TypeScript validator;
 - `render_page`, using Playwright on the dev server;
 - `fetch_page`, which saves text to `fetched/`;
+- `restore_version`, with page versions saved on every valid write;
 - `web_search`, using the platform reads, composed as in `trials/web-agent/run_trial.py`.
 
 Each tool is tested on the phase-1 pages before the agent sees it. Those pages must validate
