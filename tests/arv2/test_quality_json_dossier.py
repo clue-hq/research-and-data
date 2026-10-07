@@ -105,3 +105,39 @@ def test_current_research_roles_can_read_but_not_modify_spilled_receipts():
             assert "reads" not in workspace.writable_prefixes
     for version in range(2, 20):
         load_quality_resources("account", version=version)
+
+
+def test_v2_save_schema_shows_the_review_statuses_and_v1_is_unchanged():
+    """Production 2026-10-06: all 27 rejected saves (56 errors) were a missing `review`; the
+    v1 schema showed `review.status` as a free string, so the allowed values were invisible."""
+    from clue_api.arv2.quality_json_dossier import (
+        SaveDossierSectionTool,
+        SaveDossierSectionToolV2,
+        SaveSectionInput,
+        SaveSectionInputV2,
+        UpdateDossierFindingsToolV2,
+    )
+
+    schema = SaveSectionInputV2.model_json_schema()
+    status = schema["$defs"]["EntryReviewV2"]["properties"]["status"]
+    assert set(status["enum"]) == {
+        "supported",
+        "duplicate",
+        "wrong_entity",
+        "insufficient_context",
+        "potential_conflict",
+    }
+    # A finding without review reaches the tool (it is refused per finding, not per call).
+    SaveSectionInputV2.model_validate(
+        {
+            "section": "s",
+            "findings": [{"id": "F001", "topic": "t", "claim_type": "observation", "finding": "x"}],
+        }
+    )
+    assert (
+        SaveDossierSectionTool.version == "1"
+        and SaveDossierSectionTool.input_model is SaveSectionInput
+    )
+    assert SaveDossierSectionToolV2.version == UpdateDossierFindingsToolV2.version == "2"
+    assert SaveDossierSectionToolV2.name == "save_dossier_section"
+    assert UpdateDossierFindingsToolV2.name == "update_dossier_findings"

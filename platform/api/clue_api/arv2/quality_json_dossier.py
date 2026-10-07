@@ -21,6 +21,7 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.arv2.dossier_import import import_research_dossier
 from clue_api.arv2.dossier_json import (
     Entry,
+    EntryV2,
     dossier_coverage,
     parse_json_dossier,
     replace_section,
@@ -283,6 +284,107 @@ class UpdateDossierFindingsTool(SaveDossierSectionTool):
         "remain unchanged. New IDs append; existing IDs replace in place. No field fragments "
         "or deletion by omission. Use for small corrections and incremental batches instead "
         "of rewriting whole sections. Imported dossiers require begin_dossier_revision first."
+    )
+
+
+REVIEW_REQUIRED = (
+    "review is required: add review.status (one of supported, duplicate, wrong_entity, "
+    "insufficient_context, potential_conflict) and review.reason, then send it again with "
+    "update_dossier_findings."
+)
+
+
+class SaveSectionInputV2(ToolInput):
+    section: str = Field(min_length=1)
+    findings: list[EntryV2]
+
+
+class SaveDossierSectionToolV2(SaveDossierSectionTool):
+    """Recipe 26: a finding without a review is refused by ID; the rest of the call is saved.
+
+    Production 2026-10-06: 27 saves were rejected whole because one or more findings lacked a
+    ``review``, and every valid finding had to be re-sent. No review is ever invented: a stored
+    finding re-sent without one keeps its stored version, a new one is simply not saved.
+    """
+
+    version = "2"
+    input_model = SaveSectionInputV2  # type: ignore[assignment]
+    model_description = (
+        SaveDossierSectionTool.model_description
+        + " Every finding needs review.status and review.reason; a finding without them is not "
+        "saved and is listed under refused, while the others are saved."
+    )
+
+    async def apply(
+        self,
+        conn: AsyncConnection,
+        authority: Any,
+        saved: dict[str, Any],
+        aliases: dict[str, UUID],
+        inputs: ToolInput,
+    ) -> dict[str, Any]:
+        args = SaveSectionInputV2.model_validate(inputs)
+        if saved["state"] != "draft":
+            return {
+                "saved": False,
+                "error": "Dossier frozen; reuse or retry its import",
+                "path": VIEW,
+            }
+        stored = {
+            f["id"]: f
+            for section in saved["document"]["sections"]
+            if section["section"] == args.section
+            for f in section["findings"]
+        }
+        findings: list[dict[str, Any]] = []
+        refused: list[dict[str, str]] = []
+        for entry in args.findings:
+            if entry.review is not None:
+                findings.append(entry.model_dump(mode="json"))
+            elif entry.id in stored:
+                findings.append(stored[entry.id])
+                refused.append(
+                    {"id": entry.id, "reason": f"{REVIEW_REQUIRED} The saved version was kept."}
+                )
+            else:
+                refused.append({"id": entry.id, "reason": REVIEW_REQUIRED})
+        reviewed = sum(entry.review is not None for entry in args.findings)
+        if not reviewed:
+            return {
+                "saved": False,
+                "error": "No finding had a review; nothing was saved.",
+                "refused": refused,
+                "path": VIEW,
+            }
+        try:
+            document = self.change_document(saved["document"], args.section, findings, set(aliases))
+        except ValueError as exc:
+            return {"saved": False, "error": str(exc), "refused": refused, "path": VIEW}
+        if saved["document"] != document:
+            saved = await _persist(
+                conn,
+                self.storage,
+                self.scope,
+                authority.context_id,
+                {**saved, "version": saved["version"] + 1, "document": document},
+            )
+        return {
+            "saved": True,
+            "path": VIEW,
+            "version": saved["version"],
+            "section": args.section,
+            "entries": reviewed,
+            "refused": refused,
+        }
+
+
+class UpdateDossierFindingsToolV2(SaveDossierSectionToolV2):
+    name = "update_dossier_findings"
+    change_document = staticmethod(update_findings)
+    model_description = (
+        UpdateDossierFindingsTool.model_description
+        + " Every finding needs review.status and review.reason; a finding without them is not "
+        "saved and is listed under refused, while the others are saved."
     )
 
 
