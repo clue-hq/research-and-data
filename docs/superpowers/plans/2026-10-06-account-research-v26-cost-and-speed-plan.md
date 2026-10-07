@@ -228,11 +228,13 @@ APPROVAL (the human confirms the account) ─► research driver starts the acco
    │      them, their team's job postings, news) • fetch top-6 cited pages • media only when
    │      transcription is live (W4)  → ≈ 15 provider calls per contact
    │
-   ├─ A3. FOLLOW-UPS (code, table-driven, ≤ 2 rounds, ~1 min) [rev]
+   ├─ A3. GUARANTEED FOLLOW-UPS (code, table-driven, ≤ 2 rounds, ~1 min) [rev] — the FLOOR
    │      departure found → successor/vacancy query • marketing-department job listing → fetch the
    │      full posting • committee candidate → profile + last posts • stack vendor named → vendor's
-   │      customer page • title found in a posting → AI Ark name search  (today 50–65 % of the
-   │      account's seller-critical findings came from exactly these 2–3-hop chains)
+   │      customer page • title found in a posting → AI Ark name search. The table is mined from
+   │      every production run so far (W0), and it never replaces the agent's own follow-ups: the
+   │      judge (C) can investigate further at any round, because its tools return extracted
+   │      candidates, not raw pages — a follow-up costs ~$0.02, not ~$0.10 plus every later round.
    │      Evidence is pooled per account BY THE PLAN (the contact batches never re-request a URL
    │      or query the account batch already issued; /evidence already mounts per account); the
    │      schema stays job-keyed in v26.0 (the account-level operation pool is a later design note,
@@ -247,18 +249,22 @@ B. EXTRACT (cheap model; small sources batched 4 per call, large ones chunked; ~
    AI Ark record) — unanchored items can only become `unbound` hooks that are never served
    → candidates-account.json (≈ 12–20k tokens), candidates-<contact>.json (≈ 6–12k tokens each)
    │
-   ├─ C-account. JUDGE (Grok, ≤ 10 rounds, ≤ 60k context): seller/ICP/persona context + ALL account
-   │     candidates + the people candidates [rev] + the acquisition ledger (every operation, zero-
-   │     result and HTTP-failure flags) → select, merge, rank into the §1 brief; synthesis items
-   │     cite ≥ 2 candidates; not-found items cite ledger operations; interpretations; per-class
-   │     minimums unmet ⇒ one more A3+B round (mechanical, AT-2) → emit the brief as the dossier
-   │     JSON (schema with server defaults)
+   ├─ C-account. JUDGE + INVESTIGATE (Grok, ≤ 20 rounds, ≤ 30 follow-up operations, ≤ 60k context):
+   │     seller/ICP/persona context + ALL account candidates + the people candidates [rev] + the
+   │     acquisition ledger (every operation, zero-result and HTTP-failure flags). The agent keeps
+   │     its full investigative loop — any search, fetch, AI Ark or ATS operation, as many hops as
+   │     it judges necessary within the budget — but every operation returns EXTRACTED CANDIDATES
+   │     (B runs inside the tool), never raw text. It selects, merges and ranks into the §1 brief;
+   │     synthesis items cite ≥ 2 candidates; not-found items cite ledger operations; per-class
+   │     minimums unmet ⇒ the mechanical gap round (AT-2) → emits the brief as the dossier JSON
+   │     (schema with server defaults)
    │
-   └─ C-contact ×5 (Grok, ≤ 8 rounds, ≤ 56k context [rev], in parallel with C-account): persona
-         context + the ACCOUNT candidates filtered to Trigger/Initiative/Pain/Stack (so the contact
-         is judged against the account's story without waiting for the account judge) + the
-         contact's candidates + its ledger → the §1 contact brief; interpretations; per-class
-         minimums (own-words ≥ 2, problem-now ≥ 1) unmet ⇒ one more A3+B round
+   └─ C-contact ×5 (Grok, ≤ 12 rounds, ≤ 15 follow-up operations, ≤ 56k context [rev], in parallel
+         with C-account): persona context + the ACCOUNT candidates filtered to Trigger/Initiative/
+         Pain/Stack (so the contact is judged against the account's story without waiting for the
+         account judge) + the contact's candidates + its ledger; the same investigative loop with
+         candidate-returning tools → the §1 contact brief; interpretations; per-class minimums
+         (own-words ≥ 2, problem-now ≥ 1) unmet ⇒ the mechanical gap round
    │
    ▼
 E. PAGES (per section, parallel, written ONCE; small model, D4; each section gets a per-section
@@ -277,6 +283,16 @@ person a role search returns, so A0 asks for 5 per role, not 10. Nothing is boug
 an account; AI Ark discovery records are reused instead of re-looked-up; ~90% of today's evidence
 files (never read) are never *indexed* (item 19) because the extractor consumes each source once
 and the agent reads none of them.
+
+**Why depth holds — the mechanic.** Today a follow-up is expensive because of what it *returns*:
+the raw page lands in the conversation and is re-sent on every later call, so a follow-up at
+round 30 costs ~$0.10 and makes every round after it dearer — which is exactly why the agent
+cannot afford to chase every lead. In v26 the agent makes the same move ("search for the
+successor") and gets back verified candidates (a few hundred tokens), so a follow-up costs
+~$0.02 and the agent can afford **more** of them, not fewer. The rule table and the per-class
+minimums are a floor underneath that; the ceiling is the operation budget, not the agent's
+curiosity. Depth is then checked, not hoped for: AT-9 requires the v26 judge to reproduce today's
+follow-up chains on the frozen pools.
 
 **Why fidelity holds.** Nothing is fabricated: every candidate carries a verbatim quote (or a
 typed value with its source offset) that must pass the mechanical rule against the stored source;
@@ -317,8 +333,8 @@ Expected-case stage table (Flash extraction, Flash pages):
 | A AI Ark | $0.10 | ≈ 10.7 credits (5 role searches × 5 people × 0.5 + company + 5 exports × 0.6) |
 | B extract, account | $0.24 | 316k chars → 79k tokens of source + 146 calls × 2k instructions (80 % cached) + 173 candidates × 92 tokens |
 | B extract, 5 contacts | $1.07 | ~400k chars **each** (person deep report + 20 result texts at the current 10k-char cap) — the single biggest line; D9 pins it |
-| C judge, account | $0.23 | 7 rounds expected (cap 10); opening context 28k; peak 45k; output 9.6k |
-| C judge, 5 contacts | $0.97 | 5 rounds each (cap 8); opening 40k (own 12k + account slice + system 9k + persona 3k); output 5.4k |
+| C judge, account | $0.23 (+ ≤ $0.30 at the full 20-round / 30-operation budget) | 7 rounds expected; opening context 28k; peak 45k; output 9.6k; each extra investigative round ≈ $0.03 |
+| C judge, 5 contacts | $0.97 (+ ≤ $0.50 at the full 12-round / 15-operation budget) | 5 rounds each expected; opening 40k (own 12k + account slice + system 9k + persona 3k); output 5.4k |
 | E pages, account (+½ refresh) | $0.15 | 11 sections × (7k in, 1.5k out) × 1.5 |
 | E pages, 5 contacts | $0.30 | 30 sections × (9k in, 1.5k out) |
 | Launch chat turn | $0.30 | today $0.58 / 240 s; W1-11 target one direct call |
@@ -330,8 +346,8 @@ tail 21 s → C 160 s (the final 6k-token brief emit alone is ~70 s at ~88 token
 triples while cost barely moves.
 
 **What is deterministic by construction** (fixed numbers in the pipeline): provider-call counts
-(5 role searches; 8+6 account, 6 per contact; 6 deep reports; follow-ups ≤ 2 rounds), round caps
-10/8, context caps 60k/56k, output caps 15k/12k, 41 page sections, the 10.5 s AI Ark gap, the
+(5 role searches; 8+6 account, 6 per contact; 6 deep reports; guaranteed follow-ups ≤ 2 rounds;
+investigative operations ≤ 30 account / ≤ 15 contact), round caps 20/12, context caps 60k/56k, output caps 15k/12k, 41 page sections, the 10.5 s AI Ark gap, the
 Exa `numResults` and per-result text caps, the price sheet. Because these are caps, the model
 bill cannot exceed the "max after pinning" column; today's cost has no cap at all (350 rounds).
 
@@ -365,6 +381,16 @@ without new machines; A/B stages are not fleet jobs.
 Owner split follows `docs/specs/ARV2-WORK-SPLIT.md`: **(A)** = Aryan-owned (fleet wiring,
 migrations, deploy, shared `clue_agents`, profile re-mints, merges); **(L)** = leaf code, prompts,
 skills an agent can build on a task branch for Shashank. Every item names its acceptance check.
+
+### W0 — Mine every production run before building (days; no spend; (L))
+
+Every production research run since 2026-09-28 is in Langfuse (Zafran, Mortenson, McKee Foods,
+Garner, Dialpad, Loopio and their contacts). For each: the ordered operation sequence, which
+operations were follow-ups on an earlier result, and which findings trace to them (the method the
+depth review used on Dialpad, `.artifacts/account-research-cost-20261006/depth-review/`). Output:
+(a) the follow-up rule table built from **all** accounts, not one; (b) the per-account
+"nothing-lost" lists for AT-6 and the follow-up-chain lists for AT-9; (c) the frozen evidence pools
+for replay. This is what makes the depth tests deterministic instead of anecdotal.
 
 **Prerequisites the review surfaced (all (A), small):**
 - **P1 Deferred contact-page write.** A contact that starts before the account import must not
@@ -421,7 +447,7 @@ Target: `acquire_research_evidence` ≈ provider time + ≤ 8 s; ~10 min off eac
 | 21 | **Committee at approval (A0)** as the **account job's first code step** (not in the chat launch — AI Ark pacing would block the chat turn and operations need a job row): role searches, a ranking function (none exists; `quality_committee_tool.py` nominates), then `create_job` + `register_child` + `save_person_brief` with the AI Ark record attached, released immediately (item 8 + P1) | `account_research_driver.py:1159-1180`; `quality_generation.py:185-205`; `person_research_brief.py:23-32`; `quality_person_job_id` (`account_research_launch.py:150-151`) | contacts never wait for the account run |
 | 22 | **Acquisition plans in code (A1/A2)** plus the **follow-up rule table (A3)**: fixed, ICP-parameterised operation lists per subject kind issued through `ToolRuntime.operate` (keeps `arv2_research_operation` idempotency; bypasses the governed journal — recorded); table-driven follow-ups, ≤ 2 rounds, unit-tested as a pure function (AT-3) | new `arv2/acquisition_plan.py`, `arv2/followups.py`; reuse `account_research_tools.py` bodies | the judge adds nothing beyond the mechanical gap round |
 | 23 | **Extractor (B)**: batched cheap-model calls, strict JSON, the §6 quote rule via the existing `substring_verdict` (`arv2/text.py:44`) plus the normaliser and typed-value branch, subject anchors, no candidate cap; model via a new `AgentRole` + `RESEARCH_EXTRACT_AGENT_MODEL` (+ parity) | new `arv2/quality_extract.py`; role in `clue_core/entity_research.py:74`, `clue_agents/contracts.py:225`, `agent_registry_wiring.py` (A) | AT-1, AT-5, AT-7 |
-| 24 | **Judge loops (C)**: profiles `quality-account-research@v26` / `quality-person-research@v26` with the §1 brief as the output schema (synthesis ≥ 2 candidate ids; `not_found` cites ledger ops; `conflicts_with`, `wrong_entity`), per-role round budgets (today `Allowance` is global, `quality_research_wiring.py:1233-1238`) and context caps 60k/56k; account judge receives the people candidates; contact judge receives the class-filtered account slice; per-class minimums trigger the mechanical gap round (AT-2) | new profiles/prompts/skills; `recipe-v26.json`; wiring + settings (A) | the dossier is emitted directly — no separate write phase |
+| 24 | **Judge + investigate loops (C)**: profiles `quality-account-research@v26` / `quality-person-research@v26` with the §1 brief as the output schema (synthesis ≥ 2 candidate ids; `not_found` cites ledger ops; `conflicts_with`, `wrong_entity`), per-role round budgets 20/12 and operation budgets 30/15 (today `Allowance` is global, `quality_research_wiring.py:1233-1238`), context caps 60k/56k; **the agent keeps the full `acquire_research_evidence` surface, but the tool runs extraction (B) on the result and returns candidates instead of a path** (the tool-result clearing of W1-1 stays as the backstop); account judge receives the people candidates; contact judge receives the class-filtered account slice; per-class minimums trigger the mechanical gap round (AT-2) | new profiles/prompts/skills; `recipe-v26.json`; `quality_provider_tools.py` receipt → candidates; wiring + settings (A) | the dossier is emitted directly — no separate write phase |
 | 25 | **Per-section parallel page writer** on a small model (D4), each section fed a per-section slice of the brief; written once per subject; contact pages via P1; one account refresh only if the committee section changed | `page_writer.py:225-236`, `page_writer_runtime.py`; `scripts/trial_page_writer.py:293` for replay | the 2026-09-26 trial wrote 8 sections in 51 s |
 | 26 | **Own `AgentRole` + model setting for contact research** (both profiles share `account_research` today) | roles, `<ROLE>_AGENT_MODEL`, `agent_registry_wiring.py` (A); `.env.example` | per-role tuning |
 
@@ -484,6 +510,10 @@ requires all of:
   number|date|money|title|location, value, source_offset}` whose offset slice contains the value.
   Regression over today's 43 spans: ≥ 41 pass (the 2 title-format cases via the typed branch).
 - **AT-8 The account judge receives the people candidates**; the org-sequence finding is emitted.
+- **AT-9 Follow-up recall.** On the frozen pools, for every follow-up chain mined in W0 (e.g.
+  departure → successor search → "no successor" finding), the v26 judge issues an operation of the
+  same kind on the same lead, or the floor table does: ≥ 90 % of chains reproduced per account.
+  This is the test that proves depth is not thinner than today.
 - **Zero**: failed saves, refused finishes, refused listings, media calls (until W4), repurchased
   operations within an account, misattributed employer facts.
 
@@ -508,6 +538,10 @@ requires all of:
 
 ## 8. Risks and unknowns
 
+- **Follow-up depth.** A floor table alone would reproduce the accounts it was mined from and
+  miss the next one; that is why the agent keeps its investigative loop (budgeted, with
+  candidate-returning tools) and why AT-9 measures chain recall on every replay. If AT-9 fails on
+  a new account, the budget rises before anything else changes.
 - **Extraction recall** is guarded by AT-1 (uncapped candidates, ≥ 95 % span recall on the
   frozen pools) and the mechanical gap round; the pre-decided fallback is a stronger extractor
   (+≈ $0.3 per account), not a redesign.
