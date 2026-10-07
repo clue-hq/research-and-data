@@ -12,7 +12,15 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
-from deepagents.backends.protocol import BackendProtocol, FileInfo, GlobResult, LsResult, ReadResult
+from deepagents.backends.protocol import (
+    BackendProtocol,
+    FileInfo,
+    GlobResult,
+    GrepMatch,
+    GrepResult,
+    LsResult,
+    ReadResult,
+)
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -26,13 +34,14 @@ from clue_api.arv2.quality_person_release import (
     releases_after_import,
 )
 from clue_api.arv2.quality_policy import advisory_research
-from clue_api.arv2.quality_recipe import RECIPE_26, recipe_of
+from clue_api.arv2.quality_recipe import RECIPE_26, at_least, recipe_of
 from clue_api.arv2.quality_relationships import read_committee
 from clue_api.arv2.quality_workspace import EvidenceWorkspace, render_text, render_view
 from clue_db import ConnFactory
 from clue_research.claimstore.quality import eligible_sql
 from clue_storage import StorageBackend, StorageError, read_verified_artifact
 
+_GREP_MAX_MATCHES = 1000  # deepagents' own agent-facing grep cap
 _DOCUMENT = re.compile(r"/documents/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _CLAIM = re.compile(r"/claim/([0-9a-f-]{36})/(0|[1-9][0-9]*)\.json\Z")
 _PAGE = re.compile(r"/(claims|catalog)/(0|[1-9][0-9]*)\.json\Z")
@@ -128,6 +137,36 @@ class ResearchViewMount(EvidenceWorkspace):
             return ReadResult(
                 error="Research view unavailable; inspect scope or request a new authorized task."
             )
+
+    async def agrep(
+        self, pattern: str, path: str | None = None, glob: str | None = None
+    ) -> GrepResult:
+        """Recipe 26+: a literal search inside one research or evidence file.
+
+        Earlier recipes refuse every grep and point to search_evidence, which cannot open a
+        research view; the agent then failed search_evidence and could not finish
+        (2026-10-06). The search runs over exactly what ``aread`` serves for that file.
+        """
+        if not at_least(self._scope, RECIPE_26):
+            return await super().agrep(pattern, path, glob)
+        if not path or path.endswith("/") or not path.endswith(".json"):
+            return GrepResult(
+                error="Grep one file: give the exact path of a research view or an evidence "
+                "source (for example a path listed in /evidence/index.json)."
+            )
+        if not pattern:
+            return GrepResult(error="Give a literal text to search for.")
+        result = await self.aread(path)
+        if result.error:
+            return GrepResult(error=result.error)
+        file_data: dict[str, Any] = dict(result.file_data or {})
+        content = str(file_data.get("content", ""))
+        matches: list[GrepMatch] = [
+            GrepMatch(path=path, line=number, text=line)
+            for number, line in enumerate(content.splitlines(), start=1)
+            if pattern in line
+        ][:_GREP_MAX_MATCHES]
+        return GrepResult(matches=matches)
 
     async def _view(
         self, conn: AsyncConnection, authority: ResearchAuthority, path: str
