@@ -85,3 +85,9 @@ New findings, all verified against Langfuse tool I/O + code:
   acquisition → cheap extraction with substring-verified quotes → bounded Grok judge ≤10 rounds →
   tiered persons starting at minute ~4 → per-section pages once), W4 media fix-or-off. Estimate
   ≈ $3–4 and 12–14 min per account+5 (today $25/55 min). Seven founder decisions D1–D7 in §7.
+- Founder rulings 2026-10-07 (plan revised in place): NO light/deep tiers — every buying-committee
+  contact (4–5 per account, not 45) gets full research; account + all contacts start together at
+  approval (committee via AI Ark at t=0, contacts judged against the account's candidates, only
+  contact PAGES wait for the account brief); fetch set fixed per subject (~20 account + ~15 per
+  contact provider calls, pooled per account). Revised estimate ≈ $3–6 + credits and ≈ 8–10 min
+  per account with 5 contacts (spread = Exa deep-report price, unknown until the ledger is read).

@@ -1,6 +1,9 @@
 # Account research v26 — the plan to make it cheap, fast and sharp
 
-**Status:** proposal for founder decision, 2026-10-06/07. Nothing in the product has changed.
+**Status:** proposal for founder decision, 2026-10-06/07, **revised 2026-10-07 after founder rulings:**
+every buying-committee contact (4–5 per account) gets the full research treatment — no light/deep
+tiers; the account and all its contacts start together the moment the account is approved; what we
+fetch is tightly specified. Nothing in the product has changed.
 Branch `shank-audit-account-research-cost-optimization`. This supersedes the three-phase sketch in
 `docs/superpowers/specs/2026-10-06-account-research-cost-and-speed-audit.md` (kept as the evidence
 record; its §2–§5 measurements still stand).
@@ -150,31 +153,33 @@ Research exists to feed direct mail, email, landing pages and ads per account ×
 (Doc S: content-schema fields draw on research fields and value-narrative sections). So the
 contract is a short, typed **campaign brief**, not a dossier. Every item keeps today's provenance
 (value, verbatim quote, source URL, date, attribution, confidence, use-class) — the claim store
-and field registry stay as they are; what changes is *which* findings and *how many*.
+and field registry stay as they are; what changes is *which* findings and *how many*. "Short"
+means ranked and capped, not shallow: every item is backed by the full evidence pool (§2).
 
 **Account brief (cap ≈ 30 findings, ranked):**
 
 | Class | What | Cap | Feeds |
 |---|---|---|---|
 | Trigger | Dated events: leadership change, funding, launch, expansion, hiring surge, award, layoff | 6 | why-now, email hook, ad timing |
-| Initiative / priority | What they are publicly trying to do this year (in their words) | 5 | why-they-fit, landing-page headline |
-| Pain / frustration | Problems they or their customers/employees name (resonance) | 5 | problem framing, ad copy |
+| Initiative / priority | What they are publicly trying to do this year, in their words | 5 | why-they-fit, landing-page headline |
+| Pain / frustration | Problems they, their customers or employees name (resonance) | 5 | problem framing, ad copy |
 | Motion & proof | How they sell/market; named customers; outcomes they claim | 5 | how-they-sell, credibility lines |
 | Stack | Tools they use that matter to the seller's product | 4 | fit, technical angle |
 | Committee | Who decides/champions/evaluates/blocks, with role evidence | 5 | contact selection |
 | Watch-outs | Disqualifiers, sensitivities, competitors in place | 3 | do-not-say, routing |
 | Firmographics | HQ, headcount, industry, founded, funding totals | fixed | programmatic slots (mail address block, stats) |
 
-**Contact brief (cap ≈ 10 findings):** current remit and what they own (2); problem right now,
-from their posts/jobs/initiatives (2); their own words — verbatim quotes with URL and date (2–3);
-personal hooks usable as an opener, self-disclosed only, use-class gated (1–3); career arc in one
-line (1); do-not-mention (1); identifiers for mail (title, office location).
+**Contact brief (cap ≈ 12 findings, every contact):** current remit and what they own (2);
+the problem they are working on right now, from their posts, job postings and initiatives (2–3);
+their own words — verbatim quotes with URL and date (3); personal hooks usable as an opener,
+self-disclosed only, use-class gated (1–3); career arc in one line (1); do-not-mention (1);
+identifiers for mail (title, office location).
 
 **Dropped:** education entries, early-career roles as separate findings, namesake inventories,
 hometown/pets/milestone sweeps, process narration ("AI Ark lookup failed"), recording listings
 presented as evidence, anything with no plausible use in an outreach artifact. The researcher's
-one-line *interpretation* becomes mandatory on Trigger/Initiative/Pain/Committee items and is
-passed to the page writer.
+one-line *interpretation* is mandatory on Trigger/Initiative/Pain/Committee items and on every
+contact's "problem right now", and is passed to the page writer.
 
 This maps one-to-one onto the display sections that exist today (overview: why-they-fit, why-now,
 buying-committee, how-to-approach, watch-outs; insights: buying-signals, money-and-momentum,
@@ -183,84 +188,111 @@ do-not-mention) and onto the content plane's programmatic/dynamic slots.
 
 ---
 
-## 2. The target pipeline (v26)
+## 2. The target pipeline (v26): everything starts at approval, in parallel
 
 Keep the strong model for judgement; stop paying it to read, page, list and re-send. Acquisition
-becomes code; extraction becomes a cheap model with a throw-away context; the agent judges a
-compact candidate set in a bounded loop and writes the brief directly; pages are written once,
-per section, in parallel.
+becomes code and runs for the account **and every contact at the same time**; extraction is a
+cheap model with a throw-away context; each judge is a short, bounded loop over a compact
+candidate set; pages are written once, per section, in parallel. Nothing waits on the account
+dossier except the contact *pages*.
 
 ```
-Head-of-ABM launch (today 4 min → see W1-10)
+APPROVAL (the human confirms the account)  ─────────────────────────────── t = 0
    │
-   ▼
-A. ACQUIRE (code, parallel, ~2 min)           per account, at minute 0
-   AI Ark company • ATS board • Exa deep report (fixed charter template from ICP+product)
-   • 6 fixed-template Exa searches (leadership, hiring, stack, news/funding, ABM/marketing,
-     customers/proof) with highlights • fetch top-K pages the deep report cites
-   • AI Ark people search per persona role  ◄── committee candidates at minute ~1, not 15
-   → raw bodies stored as today; indexed ONCE per batch; the agent never reads raw bodies
+   ├─ A0. COMMITTEE (code, ≤ 60 s): AI Ark people search per persona role (champion, economic
+   │      buyer, technical evaluator, blocker, +1 influencer) → rank by role fit + seniority +
+   │      evidence of public footprint → the 4–5 contacts. Their AI Ark records are kept and
+   │      REUSED (no per-contact re-lookup).
+   │
+   ├─ A1. ACQUIRE — ACCOUNT (code, one parallel batch, ~2 min)
+   │      AI Ark company • ATS board • 1 Exa deep report (charter template from ICP + product)
+   │      • 6 fixed-template Exa searches with highlights (leadership, hiring, stack,
+   │        news/funding, marketing/ABM programme, customers/proof) • fetch the top-10 pages the
+   │        deep report cites  → ≈ 20 provider calls
+   │
+   └─ A2. ACQUIRE — EACH CONTACT (code, one parallel batch per contact, ~2 min, all 5 at once)
+          AI Ark enrichment (batched, for identifiers only) • 1 Exa deep report (person charter:
+          remit, current problem, own words, hooks) • 6 fixed Exa searches with highlights
+          (own LinkedIn posts, talks/interviews, articles/bylines, company mentions of them, job
+          posting for their team, news) • fetch top-6 cited pages • media discovery ONLY when
+          transcription is live (W4)  → ≈ 14–16 provider calls per contact
+          Evidence is pooled PER ACCOUNT (not per job): a page fetched for the account is never
+          re-bought for a contact; operation identity = (workspace, account, canonical args).
    │
    ▼
 B. EXTRACT (cheap model, one call per source, parallel, ~1 min, context discarded)
    each source → typed candidate findings {class, finding, verbatim quote, url, date,
-   attribution, subject}; quote must be a substring of the source (mechanical check,
-   the same rule media quotes already obey) → candidates.json (≈ 10–20k tokens per account)
+   attribution, subject}; the quote must be a substring of the stored source (mechanical);
+   → candidates-account.json (≈ 12–20k tokens), candidates-<contact>.json (≈ 6–10k tokens each)
+   │
+   ├─ C-account. JUDGE (Grok, ≤ 10 rounds, ≤ 60k context): seller/ICP/persona context +
+   │     account candidates → select, merge, rank into the §1 brief; interpretations; ≤ 6 gap
+   │     queries → one bounded A1+B pass → emit the brief as the dossier JSON (lenient schema)
+   │
+   └─ C-contact ×5 (Grok, ≤ 8 rounds, ≤ 40k context, in parallel with C-account): persona
+         context + the ACCOUNT CANDIDATES (so the contact is judged against the account's
+         triggers/initiatives without waiting for the account judge) + the contact's candidates
+         → the §1 contact brief; interpretations; ≤ 4 gap queries → one bounded A2+B pass
    │
    ▼
-C. JUDGE + PLAN GAPS (Grok, ≤ 10 rounds, ≤ 60k context)
-   input: seller/ICP/persona context + candidates.json (no raw sources)
-   round 1: nominate the committee from AI Ark candidates + evidence  ──► person jobs start
-   rounds 2–9: select/merge/rank into the brief; write interpretations; name ≤ 6 gap queries
-              → one bounded A+B pass for the gaps
-   last round: emit the brief as the dossier JSON (lenient schema; server fills defaults)
-   │
-   ├──► D. PEOPLE (from minute ~4, parallel): top-2 "deep" = A(person) + B + C(≤ 8 rounds, with
-   │        one gap pass); others "light" = A + B + C(≤ 4 rounds, no gap pass). Media only if
-   │        transcription is actually available (W4).
-   ▼
-E. PAGES (written ONCE per subject; per section; parallel; small model or Grok low effort)
-   contact pages when the person finishes; account pages after the last person (one early
-   draft optional); no Miscellaneous dump; why-they-fit / why-now first.
+E. PAGES (per section, parallel, written ONCE; small model or Grok low effort)
+   account overview + insights as soon as C-account finishes (~min 7; one later refresh when the
+   last contact imports, only if the committee section changed);
+   each contact page as soon as its judge finishes AND the account brief exists (~min 7–8);
+   no Miscellaneous dump; why-they-fit / why-now / problem-right-now first.
 ```
+
+**What "optimised fetch" means, concretely.** Per account + 5 contacts: ≈ 20 + 5×15 = **~95
+provider calls, all issued within the first ~90 seconds**, versus today's ~230 calls issued one
+agent round at a time over 45 minutes. Six Exa deep reports (one per subject) are the only
+calls that cost real money; searches and fetches are cents. Nothing is bought twice across the
+six jobs; AI Ark discovery records are reused instead of re-looked-up (today every contact
+re-buys `lookup_person` + `enrich_contact`); ~90% of today's evidence files (never read) are
+never created, because the extractor consumes each source once and the agent reads none of them.
 
 **Why fidelity holds.** Nothing is fabricated: every candidate finding carries a verbatim quote
 that must appear in the stored source, with its path; the strong model still makes every
-judgement (what matters, who is on the committee, what it means); claims are imported through the
-same `finish_dossier` → import path with the same provenance. What goes away is the model reading
-raw pages 40 lines at a time and carrying them for 50 calls.
+judgement (what matters, what it means, who the committee is); claims import through the same
+`finish_dossier` → import path with the same provenance; the whole evidence pool is still
+acquired and stored — the contact is researched against *all* of it, not a sample.
 
-**Why time collapses.** The slow things today are serial: 50 model calls each waiting on ~58 s
-evidence calls, people waiting for the account import, one long page call per run, rewrites in a
-chain. In v26 acquisition is one parallel batch, extraction is parallel, the judge loop is short,
-people start at minute ~4, and pages are parallel and written once.
+**Why time collapses.** Everything that is serial today (50 agent rounds each waiting ~58 s on
+an evidence call; contacts waiting 8 min for the account import; one long page call per run;
+rewrites in a chain; a 4-minute launch turn) becomes one parallel batch, parallel extraction, six
+short judge loops running side by side, and parallel page sections written once.
 
 ---
 
-## 3. Numbers — today vs v26 (per account with five people)
+## 3. Numbers — today vs v26 (per account with five contacts, all deep)
 
-Assumptions are explicit; everything must be re-measured by replay (§6). Prices: Grok 4.6
-$2.00 / $0.50 cached / $6.00 per M; Gemini 3.8 Flash $0.75 / $0.075 / $3.75; GPT-5.6 Luna $0.20 /
-$0.02 / $1.20 (OpenRouter, 2026-10-07).
+Assumptions explicit; everything re-measured by replay (§6). Prices: Grok 4.6 $2.00 / $0.50
+cached / $6.00 per M; Gemini 3.8 Flash $0.75 / $0.075 / $3.75; GPT-5.6 Luna $0.20 / $0.02 /
+$1.20 (OpenRouter, 2026-10-07). Exa: searches/contents are cents; the deep report is $0.015–0.50
+per run depending on the Exa product and effort behind `exa.deep-reasoning` — not in Langfuse;
+read it from `provider_call_ledger` once D6 lands (today's observed non-model spend was ~$0.06–0.16
+per run, which bounds it low).
 
 | Stage | Today | v26 (estimate) | Arithmetic |
 |---|---|---|---|
-| Account research agent | $5.0, 30 min, 56–59 calls, avg 117–135k ctx | **$0.45, ~4 min**, ≤10 calls, avg ~45k ctx | cached 10×45k×$0.5/M = $0.23; new ~60k×$2/M = $0.12; out ~15k×$6/M = $0.09 |
+| Committee (A0) | inside the account run, at minute 15 | **≤ 1 min, at t=0**, AI Ark credits only | 5 role searches |
+| Account judge (C) | $5.0, 30 min, 56–59 calls, avg 117–135k ctx | **$0.45, ~3–4 min**, ≤ 10 calls, avg ~45k ctx | cached 10×45k×$0.5/M = $0.23; new ~60k×$2/M = $0.12; out ~15k×$6/M = $0.09 |
 | Account extraction (B) | — (the agent read it) | **$0.04–0.12**, ~1 min | ~330k chars ≈ 85k tok in, ~15k out: Luna $0.035 / Flash $0.12 |
-| Account pages | $0.20 + $1.10 of rewrites, 5.5 min + chain | **$0.05–0.17**, ~1 min, once | 11 sections × (3k in + 1.5k out) |
-| Person, deep (×2) | $3.3–4.9, 20–25 min each | **~$0.40, ~5 min** each | B $0.05 + C 7×30k cached $0.11 + new $0.08 + out $0.06 + page $0.09 |
-| Person, light (×3) | same as deep | **~$0.20, ~3 min** each | 4 rounds, no gap pass |
-| Providers (Exa, AI Ark) | ~$0.1–0.2 + AI Ark credits per account | about the same (fewer searches per person, one deep report each) | unchanged class of spend |
-| **Total model** | **~$24** | **≈ $2.0–2.4** | 0.45+0.12+0.17 + 2×0.40 + 3×0.20 |
-| **Total incl. providers** | **~$25 + 9 credits** | **≈ $3–4 + credits** | |
-| **Time to final pages** | **~55 min** (+4 min launch) | **≈ 12–14 min** | A 2–3 → B 1 → C 3–4 (people start at ~4) → people 5–6 in parallel → pages 1 |
+| Contact judge (C) ×5 | $3.3–4.9 each, 20–25 min each | **$0.33 each, ~3 min each, all parallel** | cached 8×35k×$0.5/M = $0.14; new ~45k×$2/M = $0.09; out ~12k×$6/M = $0.07; +extraction $0.03 |
+| Pages (account + 5 contacts) | $0.20 + $1.10 rewrites, 5.5 min + 15-min chain | **$0.20–0.35, ~1 min, once** | 11 + 5×6 sections × (3k in + 1.5k out) |
+| **Total model** | **~$24** | **≈ $2.5–3.0** | 0.45 + 0.12 + 5×0.36 + 0.35 |
+| Providers | ~$0.1–0.2 + ~9 AI Ark credits | ~$0.2–0.5 + ~6 deep reports ($0.1–3.0) + ~5 AI Ark credits | fewer AI Ark calls (records reused), same deep reports, ~95 cheap calls |
+| **All in** | **~$25 + credits** | **≈ $3–6 + credits** (the spread is the deep-report price) | |
+| **Time to final pages** | **~55 min** (+4 min launch) | **≈ 8–10 min** | A 2–3 → B 1 → C 3–4 (account and contacts side by side) → pages 1 |
 
-If W2 (platform throughput) is not done first, stage A still pays ~50 s per evidence call, but
-because v26 issues acquisition as one code-driven batch with a single publish, most of that
-overhead disappears anyway; W2 is what makes *today's* v25 faster while v26 is built.
+What W1 alone (no restructure) is expected to give on today's v25: **~$12–17 and ~35–40 min** —
+do it this week; do not stop there.
 
-What W1 alone (no restructure) is expected to give: **~$12–17 and ~35–40 min** — worth doing this
-week, not worth stopping at.
+**Fleet.** Six jobs per account (account + 5 contacts) all start at t=0, so two accounts fill
+today's 12 slots exactly (3 batch processes × 4 jobs). After W2 removes the worker lock, judge
+loops are I/O-bound (waiting on the model) and `CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS` can go to
+12–16 per process without new machines; A/B stages are not fleet jobs at all. AI Ark's real rate
+limit (~6 calls/min; `ai_ark_client.py:9,693`) is respected by batching: A0 needs 5 calls, A2
+enrichment 5 — about two minutes, overlapped with everything else.
 
 ---
 
@@ -275,30 +307,32 @@ branch for Shashank. Every item names its acceptance check.
 | # | Change | Where | Expected | Check |
 |---|---|---|---|---|
 | 1 | **Turn on tool-result clearing** (`ClearToolUsesEdit`: trigger ~100k, keep last 6 results, placeholder names the path) and give the research role a context-window override so compaction can fire (~120k) as a backstop | `platform/agents/clue_agents/runtime.py:643-664` (middleware tuple) or per-role at `quality_research_wiring.py:743`; `.env.example` parity | −30–38% model cost on v25 (simulated on the real calls) | replay Dialpad; cost/run and findings count |
-| 2 | **Lenient finding schema**: `review` optional with server default `supported`, drop `extra="forbid"` for unknown keys, return the corrected field list instead of refusing the whole section | `arv2/dossier_findings.py:16-47`, `dossier_json.py:17-40` | removes the 27 failed saves (~$2.5, ~7 min) | zero `save_dossier_section` validation errors on replay |
-| 3 | **Close the grep/search_evidence/finalize trap**: let `search_evidence` accept `/research/operations/…` paths, make `grep` on those paths work (or route it to search_evidence server-side), and stop a failed *advisory* search counting as an unresolved attempt that blocks `finalize_turn` | `quality_tools.py:358,388`, `quality_workspace.py:135`, finalize check in `agent_execution_wiring.py` (~2101 per the Oct 3 spec) | removes 7 refused finishes and ~45 wasted rounds | no finalize refusals on replay |
+| 2 | **Lenient finding schema**: `review` optional with server default (`supported` only when a quote is present, else `insufficient_context`), drop `extra="forbid"`, return the corrected field list instead of refusing the whole section | `arv2/dossier_findings.py:16-47`, `dossier_json.py:17-40` | removes the 27 failed saves (~$2.5, ~7 min) | zero `save_dossier_section` validation errors on replay |
+| 3 | **Close the grep/search_evidence/finalize trap**: let `search_evidence` accept `/research/operations/…` paths, make `grep` on those paths work, and stop a failed *advisory* search counting as an unresolved attempt that blocks `finalize_turn` | `quality_tools.py:358,388`, `quality_workspace.py:135`, finalize check in `agent_execution_wiring.py` (~2101) | removes 7 refused finishes and ~45 wasted rounds | no finalize refusals on replay |
 | 4 | **Serve views as plain text, whole by default, size-capped**; stop JSON-in-JSON for operation bodies; return the deep report as one readable document | `quality_workspace.py:43-55,77-83`, `quality_views.py:44-56,237` | −13–16% model cost; ~80 fewer paging rounds | tokens per evidence read ≤ 1.1× content |
-| 5 | **Return content-bearing receipts** from `acquire_research_evidence` (title, URL, date, highlights ≤600 chars, evidence path) and the **real outcome** (`unavailable`, `tool_error`) in the receipt status | `quality_provider_tools.py:244-262,315-323` | one hop fewer per call; no "completed" for failed media reads | agent reads results file in <20% of calls |
+| 5 | **Content-bearing receipts** from `acquire_research_evidence` (title, URL, date, highlights ≤ 600 chars, evidence path) and the **real outcome** (`unavailable`, `tool_error`) in the receipt status | `quality_provider_tools.py:244-262,315-323` | one hop fewer per call; no "completed" for failed media reads | agent reads the results file in < 20% of calls |
 | 6 | **Remove the duplicate L1 prompt and the dead `task` prompt** from every call | `context.py:274-296`, `runtime.py:640,190-196` | −3% | opening context ≈ 14k |
 | 7 | **Release the provider slot when the provider answers** (move `_drain` outside the semaphore; AI Ark pause only around the HTTP call) | `account_research_tools.py:500-565,462-492` | ~2 min per run; more in bursts | batch position 5+ waits ≤ 15 s |
-| 8 | **Start people at nomination**; hold only the contact page until the account imports | `quality_person_release.py:89-92` (new recipe condition); page writer already copes with a missing parent (`page_writer_runtime.py:414-437`) | −8 min per account | person jobs start < 1 min after nomination |
-| 9 | **Write account pages once** after the last person; skip rewrites whose input hash is unchanged | `quality_generation.py:224-265,398-403`, `account_research_driver.py:849ff` | −$1 and −6–9 min to final pages | ≤ 2 account writer calls per account |
-| 10 | **Launch latency**: make the Head-of-ABM research-launch path a direct tool call without the 9 file reads (separate chat-agent fix; record here so it is not lost) | Head-of-ABM profile/tools | −3–4 min before jobs start | launch turn < 45 s |
-| 11 | **Disable media operations and strike the media instructions from the skills until W4 lands** (`discover_media`, `read_media` out of the v26 allowlist; remove "3–5 quotes from podcasts") | `recipe-v26.json` allowlist; `person-depth-charter`, `person-dossier`, `account-dossier` skills | removes ~35 wasted provider/tool calls and their reasoning per request | zero media calls until re-enabled |
-| 12 | **Pages: pass `agent_interpretation` to the writer; stop the Miscellaneous dump for recipe ≥26; why-they-fit/why-now first; drop the duplicate "Context only"** | `page_writer_view.py:68-86`, `quality_pages.py:531-571`, `display/recipes.py:110-165` | shorter, decisive pages; no private leakage via the dump | page item count ≤ section caps |
-| 13 | **Seller-led skills (v26 prompts)**: the §1 brief with caps replaces the eleven-area sweep and the personal-depth charter; ban process narration as findings; ask Exa for a compact evidence-first report | the four skills + both `SYSTEM.md` → v26 | person dossiers roughly halve; −20–30% person-run cost even on v25 | rubric: ≥ 70% of findings class A/B |
+| 8 | **Start contacts at nomination**; hold only the contact page until the account imports | `quality_person_release.py:89-92` (new recipe condition); the page writer already copes with a missing parent (`page_writer_runtime.py:414-437`) | −8 min per account | contact jobs start < 1 min after nomination |
+| 9 | **Nominate the committee first**: AI Ark role searches in the account run's opening round, not after the account picture | `prompts/quality-account-research/v25/SYSTEM.md:51` → v26 | contacts start at minute ~2 on v25 | nominations before the first `search_web` |
+| 10 | **Write account pages once** after the last contact; skip rewrites whose input hash is unchanged | `quality_generation.py:224-265,398-403`, `account_research_driver.py:849ff` | −$1 and −6–9 min to final pages | ≤ 2 account writer calls per account |
+| 11 | **Launch latency**: make the Head-of-ABM research-launch path a direct tool call without the 9 file reads | Head-of-ABM profile/tools | −3–4 min before jobs start | launch turn < 45 s |
+| 12 | **Disable media operations and strike the media instructions** until W4 lands (`discover_media`, `read_media` out of the allowlist; remove "3–5 quotes from podcasts") | `recipe-v26.json`; `person-depth-charter`, `person-dossier`, `account-dossier` skills | removes ~35 wasted provider/tool calls and their reasoning per request | zero media calls until re-enabled |
+| 13 | **Pages: pass `agent_interpretation` to the writer; stop the Miscellaneous dump for recipe ≥ 26; why-they-fit/why-now first; drop the duplicate "Context only"** | `page_writer_view.py:68-86`, `quality_pages.py:531-571`, `display/recipes.py:110-165` | shorter, decisive pages; no private leakage via the dump | page item count ≤ section caps |
+| 14 | **Seller-led skills (v26 prompts)**: the §1 brief with caps replaces the eleven-area sweep and the personal-depth charter; ban process narration as findings; ask Exa for a compact evidence-first report | the four skills + both `SYSTEM.md` → v26 | contact dossiers roughly halve; −20–30% contact-run cost even on v25 | rubric: ≥ 70% of findings class A/B |
 
-(L) for 2–6, 11–13; (A) for 1 (shared middleware), 7–10.
+(L) for 2–6, 9, 12–14; (A) for 1 (shared middleware), 7–8, 10–11.
 
 ### W2 — Platform throughput: evidence calls at provider speed (1–2 weeks, (A)-heavy)
 
 | # | Change | Where | Expected |
 |---|---|---|---|
-| 14 | Remove the worker-wide `_db_lock` from research tool transactions; per-job bounded connections (`CLUE_ARV2_JOB_MAX_DB_CONNECTIONS`, `.env.example` parity); raise the pool / check pgbouncer (20) | `account_research_driver.py:504,1017-1020` | −15 s before and most of the −37 s after each call |
-| 15 | Index once per batch: verify the original once per receipt and pass the body through; skip the re-read in `index_provider_artifacts` for non-AI-Ark rows; return the body from the drain instead of re-reading it; record rows then `gather` the uploads | `quality_evidence.py:136-238`, `quality_acquisition.py:153`, `committee_discovery.py:141`, `research_operations.py:187` | ~54 → ~27 storage calls per search, concurrent; lock-held time 8–12 s → 1–2 s |
-| 16 | Drop per-call `recover_acquisitions` on the success path (keep on replay and at settle); add the two missing indexes (`provider_call_ledger(workspace_id, entity_research_job_id) WHERE phase='result'`, `arv2_evidence_source(workspace_id, ledger_id)`) — hash-id migration, reversible | `account_research_tools.py:~717-726`; `alembic/` | −2–10 s per batched call; O(job) not O(workspace) |
-| 17 | Record one source per *useful* unit (the result, its text) instead of result + text + highlight ×8, and index lazily on first read for the ~90% never opened | `quality_evidence.py`, `quality_acquisition.py` | ~⅓ of today's sources; most indexing never happens |
-| 18 | Instrument the lock wait (`db.critical_section` already exists for publish/persist/import) so this cannot regress silently | `account_research_driver.py` | a number on a dashboard |
+| 15 | Remove the worker-wide `_db_lock` from research tool transactions; per-job bounded connections (`CLUE_ARV2_JOB_MAX_DB_CONNECTIONS`, `.env.example` parity); raise the pool / check pgbouncer (20) | `account_research_driver.py:504,1017-1020` | −15 s before and most of the −37 s after each call |
+| 16 | Index once per batch: verify the original once per receipt and pass the body through; skip the re-read in `index_provider_artifacts` for non-AI-Ark rows; return the body from the drain instead of re-reading it; record rows then `gather` the uploads | `quality_evidence.py:136-238`, `quality_acquisition.py:153`, `committee_discovery.py:141`, `research_operations.py:187` | ~54 → ~27 storage calls per search, concurrent; lock-held time 8–12 s → 1–2 s |
+| 17 | Drop per-call `recover_acquisitions` on the success path (keep on replay and at settle); add the two missing indexes (`provider_call_ledger(workspace_id, entity_research_job_id) WHERE phase='result'`, `arv2_evidence_source(workspace_id, ledger_id)`) — hash-id migration, reversible | `account_research_tools.py:~717-726`; `alembic/` | −2–10 s per batched call; O(job) not O(workspace) |
+| 18 | **Pool evidence per account**: operation identity = (workspace, account, canonical args) so the six jobs of one account never buy the same page or search twice; `/evidence` already mounts per account | `research_operations.py:63-64` | no repurchases across jobs |
+| 19 | Record one source per *useful* unit (the result, its text) instead of result + text + highlight ×8, and index lazily on first read for the ~90% never opened | `quality_evidence.py`, `quality_acquisition.py` | ~⅓ of today's sources; most indexing never happens |
+| 20 | Instrument the lock wait (`db.critical_section` already exists for publish/persist/import) and raise `CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS` once the lock is gone | `account_research_driver.py`; `.env.example` | a number on a dashboard; 6 jobs per account never queue |
 
 Target: `acquire_research_evidence` ≈ provider time + ≤ 8 s; ~10 min off each account on v25.
 
@@ -306,33 +340,34 @@ Target: `acquire_research_evidence` ≈ provider time + ≤ 8 s; ~10 min off eac
 
 | # | Build | Where (new/changed) | Notes |
 |---|---|---|---|
-| 19 | **Acquisition plan in code** (stage A): a fixed, ICP-parameterised list of operations per subject kind, issued as one parallel batch through the existing `ToolRuntime.operate` path; committee candidates via AI Ark at minute 0 | new `arv2/acquisition_plan.py`; reuse `account_research_tools.py` bodies | the agent may add ≤ 6 gap operations later; nothing else |
-| 20 | **Extractor** (stage B): one cheap-model call per source with a strict JSON output; mechanical quote-substring check; typed by the §1 classes; writes `candidates.json` to the job workspace | new `arv2/quality_extract.py`; model via `RESEARCH_EXTRACT_AGENT_MODEL` (+ parity) | reuse the existing substring verification used for media quotes; reject any candidate whose quote is not in the source |
-| 21 | **Judge loop** (stage C): profile `quality-account-research@v26` / `…person@v26` with the §1 brief as the output schema, ≤ 10 / ≤ 8 / ≤ 4 round budgets by tier, context = seller/ICP/persona + candidates; nominate in round 1; gap pass = A+B once | new profiles, prompts, skills; `recipe-v26.json`; `quality_research_wiring.py` round budget per role | the dossier is emitted directly — no separate write phase |
-| 22 | **Person tiers**: top-2 deep, others light; tier chosen at nomination from committee role + evidence strength | `quality_committee_tool.py` nomination output; person launch | product decision D2 |
-| 23 | **Per-section parallel page writer**, written once per subject; small model or Grok low effort (`RESEARCH_NARRATIVE_AGENT_MODEL` already env-driven) | `page_writer.py`, `page_writer_runtime.py`; `scripts/trial_page_writer.py` for replay | the 2026-09-26 trial wrote 8 sections in 51 s |
-| 24 | **Own model setting for person research** (today both profiles share role `account_research`) | profiles; `.env.example` | lets D4 experiments run per role |
+| 21 | **Committee at approval** (A0): AI Ark role searches + ranking as a code step on approval; writes the 4–5 contact jobs immediately with their AI Ark records attached | `arv2/account_research_launch.py` (launch path), `quality_committee_tool.py` ranking reused; `person_research_brief.py` carries the record | contacts never wait for the account run |
+| 22 | **Acquisition plans in code** (A1/A2): fixed, ICP-parameterised operation lists per subject kind, issued as one parallel batch through the existing `ToolRuntime.operate` path; account and contacts at the same time | new `arv2/acquisition_plan.py`; reuse `account_research_tools.py` bodies | the judge may add ≤ 6 (account) / ≤ 4 (contact) gap operations later; nothing else |
+| 23 | **Extractor** (B): one cheap-model call per source, strict JSON output, mechanical quote-substring check, typed by the §1 classes; writes `candidates-*.json` to the job workspace | new `arv2/quality_extract.py`; model via `RESEARCH_EXTRACT_AGENT_MODEL` (+ parity) | reuse the substring verification already used for media quotes; reject any candidate whose quote is not in the source |
+| 24 | **Judge loops** (C): profiles `quality-account-research@v26` / `quality-person-research@v26` with the §1 brief as the output schema, ≤ 10 / ≤ 8 round budgets, context = seller/ICP/persona + candidates (contacts also get the account candidates); one gap pass each | new profiles, prompts, skills; `recipe-v26.json`; `quality_research_wiring.py` round budget per role | the dossier is emitted directly — no separate write phase |
+| 25 | **Per-section parallel page writer**, written once per subject; contact pages wait only for the account brief; one account refresh only if the committee section changed | `page_writer.py`, `page_writer_runtime.py`; `scripts/trial_page_writer.py` for replay | the 2026-09-26 trial wrote 8 sections in 51 s |
+| 26 | **Own model setting for contact research** (today both profiles share role `account_research`) | profiles; `.env.example` | per-role tuning and experiments |
 
 ### W4 — Media: fix it or keep it off (decision D1)
 
 To make recordings usable: install ffmpeg in `docker/backend/Dockerfile`; set `CLUE_DEEPGRAM_API_KEY`
 on the worker VM; add podcast-platform → RSS/audio resolution for the common hosts; surface the
 true outcome in the receipt (W1-5). Until all four are done, media stays out of the allowlist
-(W1-11). Media is worth it only for the "their own words" items of the top-2 contacts; it should
-be a tier-1 person option, never an account-wide sweep.
+(W1-12). When it is back, it is part of A2 for every contact whose searches surface a recording
+of *them* (not a company recording that mentions them), and its quotes are substring-verified
+against the transcript like everything else.
 
 ---
 
 ## 5. Sequencing and what each step buys
 
 1. **Week 1 — W1.** Expected on v25: ~$12–17 and ~35–40 min per account; zero error rounds;
-   people start 8 min earlier; pages shorter and decisive. Replay Dialpad + Loopio after each
-   sub-group (1–6 context/schema; 7–9 timing; 11–13 instructions/pages).
+   contacts start at minute ~2 instead of 23; pages shorter and decisive. Replay Dialpad + Loopio
+   after each sub-group (1–6 context/schema; 7–11 timing; 12–14 instructions/pages).
 2. **Weeks 2–3 — W2 in parallel with W3 design.** Expected on v25: evidence calls ≈ provider +
-   8 s; ~10 more minutes off.
-3. **Weeks 3–5 — W3 behind `CLUE_ARV2_RECIPE_VERSION=26` for one workspace.** Expected: ≈ $3–4
-   and ≈ 12–14 min per account with five people. v25 keeps serving other workspaces until the
-   replay gate passes twice.
+   8 s; ~10 more minutes off; six jobs per account never queue.
+3. **Weeks 3–5 — W3 behind `CLUE_ARV2_RECIPE_VERSION=26` for one workspace.** Expected: ≈ $3–6
+   and ≈ 8–10 min per account with five fully-researched contacts. v25 keeps serving other
+   workspaces until the replay gate passes twice.
 4. **W4 when D1 says so.**
 
 ---
@@ -342,15 +377,17 @@ be a tier-1 person option, never an account-wide sweep.
 Same two accounts (Dialpad, Loopio) after every step, on fixed evidence where possible (the
 2026-09-28 method; `scripts/trial_page_writer.py` for pages). Pass requires all of:
 
-- **Cost** per account + five people (Langfuse + provider ledger) at or below the step's target.
-- **Time** from job start to final pages at or below target; evidence-call time vs provider time.
+- **Cost** per account + five contacts (Langfuse + provider ledger) at or below the step's target.
+- **Time** from approval to final pages at or below target; evidence-call time vs provider time.
 - **Nothing lost that matters:** the seller-critical items found today must still be found and be
   *more* prominent — Dialpad: ABM/field hiring, the new Head of Growth (May 2026), the vacant CMO
   seat since Sept 2025, the SVP Marketing hire (Feb 2026), named marketing leaders, the ABM
   manager's own posts on personalisation and field marketing; Loopio equivalents from its brief.
+  For every contact: remit, current problem, ≥ 2 verbatim quotes with dates, ≥ 1 usable hook.
 - **Fidelity:** every quote on a page is a substring of its source; no misattributed employer
   facts (the September Muse failure mode); use-class gates hold on personal hooks.
-- **Zero**: failed saves, refused finishes, refused listings, media calls (until W4).
+- **Zero**: failed saves, refused finishes, refused listings, media calls (until W4),
+  repurchased operations across the six jobs of an account.
 
 ---
 
@@ -358,13 +395,14 @@ Same two accounts (Dialpad, Loopio) after every step, on fixed evidence where po
 
 | # | Decision | Recommendation |
 |---|---|---|
-| D1 | Media: fix (ffmpeg + Deepgram key + RSS resolution) or keep off | **Off now** (W1-11); fix later only for top-2 contacts' own words |
-| D2 | Person depth: top-2 deep + 3 light | **Yes** — people are 80% of the bill; the light pass still gives remit, problem, quotes, hooks |
-| D3 | Stop the Miscellaneous dump for recipe ≥26 (reverses 2026-09-29) | **Yes** — it is the main source of blabber and a privacy leak path |
-| D4 | Allow a cheap model for extraction (B) and pages (E), Grok stays the judge | **Yes** — behind the replay gate; same OpenRouter exposure class as today |
-| D5 | Account pages written once after the people (optional early draft) | **Yes, with the early draft** so the account is readable at minute ~6 |
-| D6 | Read-only production database user (Aryan) | **Yes** — closes the provider-cost and job-timing blind spots |
-| D7 | Who owns the Head-of-ABM launch latency (W1-10) | assign; it is 4 minutes on every request |
+| D1 | Media: fix (ffmpeg + Deepgram key + RSS resolution) or keep off | **Off now** (W1-12); fix in W4 and switch on for every contact |
+| D2 | ~~Contact depth tiers~~ — **ruled 2026-10-07: every contact gets full research; committee = 4–5** | adopted above |
+| D3 | Stop the Miscellaneous dump for recipe ≥ 26 (reverses 2026-09-29) | **Yes** — the main source of blabber and a privacy leak path |
+| D4 | Allow a cheap model for extraction (B) and pages (E); Grok stays the judge | **Yes** — behind the replay gate; same OpenRouter exposure class as today |
+| D5 | Account pages at ~minute 7, one refresh only if the committee section changes | **Yes** |
+| D6 | Read-only production database user (Aryan) | **Yes** — closes the deep-report price and job-timing blind spots |
+| D7 | Who owns the Head-of-ABM launch latency (W1-11) | assign; it is 4 minutes on every request |
+| D8 | Exa deep-report effort for contacts (fixed-price tier, pinned per request) | pin to the tier the replay shows is enough; never "auto"/metered |
 
 ---
 
@@ -372,15 +410,14 @@ Same two accounts (Dialpad, Loopio) after every step, on fixed evidence where po
 
 - **Extraction recall.** A cheap extractor may miss a nuance a strong reader would catch. The gap
   pass (C) and the replay gate's "nothing lost" list are the guard; if recall is short, the
-  extractor model moves up one class (Flash → Grok-mini-class) before the judge loop grows.
-- **Lenient schema (W1-2).** Defaults must be conservative (`supported` only when a quote is
-  present; otherwise `insufficient_context`), or the import gains unreviewed claims.
-- **Lock removal (W2-14).** Correctness must rest on the database constraints that already exist
-  (idempotent `begin`, manifest `FOR UPDATE`); do W2-15 first so transactions are short; keep the
+  extractor model moves up one class before the judge loop grows.
+- **Lenient schema (W1-2).** Defaults must be conservative, or the import gains unreviewed claims.
+- **Lock removal (W2-15).** Correctness must rest on the database constraints that already exist
+  (idempotent `begin`, manifest `FOR UPDATE`); do W2-16 first so transactions are short; keep the
   critical-section timing on.
+- **Deep-report price.** Six per account; at $0.50 each it is the largest provider line
+  ($3/account). Read it from `provider_call_ledger` (D6) and pin the effort (D8).
 - **Production code version** on Oct 6 is unverified; W2's expected gains assume the current
   main, which fully explains the measured timings.
-- **Exa deep-report price** is not in Langfuse; it may be the largest single provider line and
-  should be read from `provider_call_ledger` once D6 is done.
-- **Fleet capacity** (12 slots) becomes the binding limit once runs are short; raising
-  `arv2_account_max_parallel_jobs` is cheap after W2.
+- **Fleet capacity** becomes the binding limit once runs are short: 6 jobs per account at t=0
+  against 12 slots today; W2-20 raises it without new machines.
