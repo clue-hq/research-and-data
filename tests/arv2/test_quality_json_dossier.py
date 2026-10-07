@@ -27,7 +27,7 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
     assert AgentRole.RESEARCH_CLAIMS not in profile.delegation_roles
     assert not profile.delegation_roles
     assert "acquire_research_evidence" in names
-    assert CURRENT_RECIPE_VERSION == 25
+    assert CURRENT_RECIPE_VERSION == 26
     bundle = load_quality_resources("person" if person else "account")
     manifest = json.loads(bundle.profile.body)
     assert manifest["recipe_version"] == CURRENT_RECIPE_VERSION
@@ -37,11 +37,10 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
         if r.ref.endswith(f"recipe-v{CURRENT_RECIPE_VERSION}.json")
     )
     allowed = recipe["graph"]["nodes"][1]["dynamic_tool_allowlist"]
+    assert {"save_dossier_section@2", "update_dossier_findings@2"} <= set(allowed)
     assert all(
         n + "@1" in allowed
         for n in (
-            "save_dossier_section",
-            "update_dossier_findings",
             "validate_dossier",
             "finish_dossier",
             "begin_dossier_revision",

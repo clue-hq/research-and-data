@@ -1,0 +1,28 @@
+{
+  "catalog_version": "v4",
+  "recipe_version": 26,
+  "resources": {
+    "provider-requests/account-deep/v1/exa-system.md": "283426f186e5f41c847b79f501e9a08dd01d02833976984bc618b22a22a0d83e",
+    "provider-requests/account-deep/v1/request-config.json": "fcc059b0b22ae43063ab8ff4c524357d0c1ec03de0b2ca42423b15bb2f33163f",
+    "skills/person-depth-charter/v1/SKILL.md": "6d8c699dec4a0250be7bbc7ecb3f26ad1c09fa822ce3a2604bae175925d32981",
+    "provider-requests/person-deep/v1/exa-system.md": "f5add6a444e962aaa431425d29599c8593291e31b0d81dcd9ee10c9661f52c6a",
+    "provider-requests/person-deep/v1/request-config.json": "efa29f22347258deaa5cda957c7d4b2af8fc54911e784ba27e0788e54592a7bc",
+    "skills/governed-evidence/v3/SKILL.md": "8a7395a71f1c85e29b6519604c36819f8da553747cea45957211edebf787de22",
+    "prompts/quality-research-claims/v15/SYSTEM.md": "0bddd7b35e4f75db4d07e26c05e4b9a0bd69fd8870468f31633a40579cc05294",
+    "prompts/quality-research-narrative/v15/SYSTEM.md": "8932ca816dd726e6a9ce838c2bf74f00c98c2001099823d6eb74bb5f6df6775d",
+    "skills/governed-evidence/v5/SKILL.md": "96591a52f043298f2c393a9f591290eaa3747536c97562ebfbc2546923b9f990",
+    "skills/claim-ready-account-dossier/v3/SKILL.md": "bfb005463a5a3ecea0785113a85a70c91e2b26033cfec67a63da6359f7db1bbf",
+    "skills/claim-ready-person-dossier/v3/SKILL.md": "59d89ab2478445c4b9ce96f06b17f3c8a83bee323cc1e8ae858ae383757fde8b",
+    "profiles/quality-research-claims/v19/profile.yaml": "c6ed5bf71ede3cd2f9cce8452403e7e479d862ad1aaccb53e212e3edcdfe3340",
+    "profiles/quality-research-narrative/v19/profile.yaml": "33410a4f30dda0dd51894de7b972ad8499445cf6cd239b459a865de363d7b800",
+    "prompts/quality-account-research/v26/SYSTEM.md": "cc946813f5ccb824e979db372a4f65214859e79ab27ba1c36e480963eb9e8cf0",
+    "prompts/quality-person-research/v26-person/SYSTEM.md": "e7044f7682fe783b5df1c01c7667192823e1aa17c89f1dbb97d639e1e38a6b7c",
+    "profiles/quality-account-research/v26/profile.yaml": "43c9cde1c384795840b4b3b9223ec10069a4f661ccda7284a62b8d8eacfe5302",
+    "profiles/quality-person-research/v26-person/profile.yaml": "e25e8e549451326d6feb59b1ed71d914271b1eb351bc9cf0023f3778465cba06",
+    "recipe-v26.json": "0957cbc05142928be7958c8b4e8c0b1645837b7cb426c35c2c9789a6590a24e8",
+    "skills/account-dossier/v9/SKILL.md": "24918accbac2c2d8224a72776ab8da560a13f78939e993eba70c2785d5cc7609",
+    "skills/person-dossier/v5/SKILL.md": "5c58a20c8670bf34b0cda6821afb5fe10580a35f956e413ff3f838a8ec11a433",
+    "skills/person-research-briefing/v4/SKILL.md": "274e3180aba6a4ee36ea3e7b74885d4af3c7ab5a750835598e7f71d32463f9f8"
+  },
+  "review_policy": "advisory"
+}

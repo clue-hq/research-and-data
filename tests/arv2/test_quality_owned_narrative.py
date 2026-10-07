@@ -61,7 +61,7 @@ def test_new_researchers_leave_pages_to_the_writer_while_historical_pins_keep_th
     assert {"read_narrative_inputs", "write_research_narrative"} <= {
         t.name for t in owning.profile.tools
     }
-    assert CURRENT_RECIPE_VERSION == 25
+    assert CURRENT_RECIPE_VERSION == 26
     manifest = json.loads(load_quality_resources("person" if person else "account").profile.body)
     assert manifest["recipe_version"] == CURRENT_RECIPE_VERSION
     for version in range(2, CURRENT_RECIPE_VERSION + 1):
