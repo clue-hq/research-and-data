@@ -4,6 +4,7 @@
 import type { ComponentConfig } from "@puckeditor/core";
 import type { ReactNode } from "react";
 import type { BrandData } from "@/lib/brands";
+import { HEADING_ROLES, SURFACES, SURFACE_LABELS } from "./schemas";
 
 export type Surface = "page" | "card" | "muted" | "brandSubtle" | "brand" | "inverse";
 export type HeadingRole = "display" | "headline" | "title";
@@ -27,23 +28,12 @@ const HEADING_CLASS: Record<HeadingRole, string> = {
 const surfaceField = {
   type: "select" as const,
   label: "Surface",
-  options: [
-    { label: "Page", value: "page" },
-    { label: "Card", value: "card" },
-    { label: "Muted", value: "muted" },
-    { label: "Brand, subtle", value: "brandSubtle" },
-    { label: "Brand", value: "brand" },
-    { label: "Inverse", value: "inverse" },
-  ],
+  options: SURFACES.map((value) => ({ label: SURFACE_LABELS[value], value })),
 };
 const headingRoleField = {
   type: "select" as const,
   label: "Heading size",
-  options: [
-    { label: "Display", value: "display" },
-    { label: "Headline", value: "headline" },
-    { label: "Title", value: "title" },
-  ],
+  options: HEADING_ROLES.map((value) => ({ label: value[0].toUpperCase() + value.slice(1), value })),
 };
 const text = (label: string) => ({ type: "text" as const, label, contentEditable: true });
 const area = (label: string) => ({ type: "textarea" as const, label, contentEditable: true });
