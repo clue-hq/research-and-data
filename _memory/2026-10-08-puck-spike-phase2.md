@@ -36,6 +36,20 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   ingestion defect); read_file without a limit reads up to 1000 lines; trace shows glob/grep
   patterns.
 
+## T4 runs b1, c1 (after the harness fixes)
+- b1 (Conduit x Dana.AI): completed, 17 calls, $0.69, 285 s, 2 renders, 0 invalid. Seller-site proof
+  (fetched Wynwood House), recorded why brand sections, left out unverified "300+ brands". Review
+  caught mobile button wrap + repeated channel copy; hero orphan "Dana.AI." still open after the one
+  allowed re-render (reported honestly).
+- c1 (Conduit x Atrium, thin research): completed, 16 calls, $0.57, 219 s, 2 renders, 0 invalid.
+  Honest name-only page; dropped the 838 headcount (brief over research); Lauderdale Hotel proof,
+  dropped the conditional $500k figure; 3 of 4 sections are clones. Search without include_domains.
+  Missed: empty gap before the closing clone, closing band touching the footer.
+- No late cache miss with clearing off (b1, c1). Zero Puck/validation mistakes across a1, b1, c1.
+- Open founder decisions: render cap (one re-render vs until review passes, up to N); Nightingale as
+  a failing case for the proof rule; multi-page workspace + route-existence check + shell nav
+  before E2; A2 (variance) and E2 not yet run.
+
 ## Known limits
 
 ## Next
