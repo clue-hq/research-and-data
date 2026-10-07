@@ -387,6 +387,11 @@ async def signal_subject_change(conn: AsyncConnection, event: dict[str, Any]) ->
         )
 
 
+#: Recipe 26+: a generation's pages are written once, after every person settles
+#: (docs/superpowers/plans/2026-10-07-research-cost-phase1.md Task 11).
+FINAL_PAGE_STEP = 26
+
+
 async def pending_continuations(
     conn: AsyncConnection, *, limit: int = 100, generation_id: UUID | None = None
 ) -> tuple[Generation, ...]:
@@ -410,8 +415,14 @@ async def pending_continuations(
               JOIN arv2_research_job child ON child.job_id=c.job_id
               WHERE c.generation_id=g.generation_id
                 AND child.status NOT IN ('completed','needs_review','failed')
-                AND NOT EXISTS (SELECT 1 FROM arv2_research_import_ready i
-                  WHERE i.job_id=child.job_id AND i.workspace_id=g.workspace_id))
+                -- Recipe 26: one final page step once every person has settled; a person
+                -- that will never settle (suspended, privacy-stopped) does not hold it.
+                AND CASE WHEN COALESCE((j.input_refs->>'quality_recipe_version')::int,0)
+                    >= :final_step
+                  THEN child.status<>'suspended'
+                    AND COALESCE(child.input_refs->>'privacy_stopped','false')<>'true'
+                  ELSE NOT EXISTS (SELECT 1 FROM arv2_research_import_ready i
+                    WHERE i.job_id=child.job_id AND i.workspace_id=g.workspace_id) END)
             AND NOT EXISTS (SELECT 1 FROM arv2_account_research_generation newer
               JOIN arv2_research_job newer_job ON newer_job.job_id=newer.initial_job_id
               WHERE newer_job.subject_type='account' AND newer.workspace_id=g.workspace_id
@@ -420,7 +431,7 @@ async def pending_continuations(
                 AND (newer.created_at,newer.generation_id)>(g.created_at,g.generation_id))
           ))
         ORDER BY g.updated_at,g.generation_id LIMIT :limit"""),
-                {"limit": limit, "generation": generation_id},
+                {"limit": limit, "generation": generation_id, "final_step": FINAL_PAGE_STEP},
             )
         )
         .mappings()
@@ -431,6 +442,28 @@ async def pending_continuations(
         if row["pending_snapshot"] is not None
         else _generation(dict(row))
         for row in rows
+    )
+
+
+async def deferred_contact_jobs(
+    conn: AsyncConnection, *, workspace_id: str, generation_id: UUID
+) -> list[UUID]:
+    """Recipe 26: the people whose contact page waits for the generation's final page step."""
+    return list(
+        (
+            await conn.execute(
+                text("""SELECT c.job_id FROM arv2_generation_child c
+        JOIN arv2_research_job j ON j.job_id=c.job_id AND j.workspace_id=c.workspace_id
+        WHERE c.generation_id=:generation AND c.workspace_id=:ws
+          AND j.status IN ('completed','needs_review')
+          AND COALESCE(j.input_refs->>'privacy_stopped','false')<>'true'
+          AND j.finalization_json->'coverage'->'deferred_pages' @> CAST('["contact"]' AS jsonb)
+        ORDER BY j.created_at,c.job_id"""),
+                {"generation": generation_id, "ws": workspace_id},
+            )
+        )
+        .scalars()
+        .all()
     )
 
 

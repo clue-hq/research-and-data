@@ -97,6 +97,7 @@ from clue_api.arv2.provider_ledger import (
     LedgerStamp,
     drain_provider_calls,
 )
+from clue_api.arv2.quality_generation import FINAL_PAGE_STEP
 from clue_api.arv2.quality_person_release import RELEASE_AT_NOMINATION, parent_dossier_ready
 from clue_api.arv2.quality_recipe import at_least
 from clue_api.arv2.quality_results import QualityJobOutcome, QualityJobRunner
@@ -876,6 +877,11 @@ class Arv2AccountResearchWorkHandler:
         try:
             if self._page_writer is None:
                 raise RuntimeError("page_writer_not_composed")
+            deferred = (
+                await self._deferred_contacts(scope, generation_id)
+                if at_least(scope, FINAL_PAGE_STEP)
+                else ()
+            )
             async with self._jobs:
                 result = await page_writer_runtime.rewrite_account_pages(
                     conn_factory=leased,
@@ -885,6 +891,7 @@ class Arv2AccountResearchWorkHandler:
                     generation_id=generation_id,
                     revision=revision,
                     models=self._page_writer,
+                    **({"deferred": deferred} if deferred else {}),
                 )
             return WorkResult(outcome="completed", references=cast(dict[str, JsonValue], result))
         except asyncio.CancelledError:
@@ -905,6 +912,23 @@ class Arv2AccountResearchWorkHandler:
                     needs_review=True,
                 )
             return WorkResult(outcome="failed", references={"error": str(error)[:400]})
+
+    async def _deferred_contacts(
+        self, scope: JobScope, generation_id: UUID
+    ) -> tuple[JobScope, ...]:
+        """Recipe 26: the composed scopes of the people whose contact page waits for the
+        generation's final page step."""
+        from clue_api.arv2.quality_generation import deferred_contact_jobs
+
+        scopes: list[JobScope] = []
+        async with self._connection() as conn:
+            for job_id in await deferred_contact_jobs(
+                conn, workspace_id=scope.workspace_id, generation_id=generation_id
+            ):
+                job = await self._store.read_job(conn, job_id=job_id)
+                if job is not None:
+                    scopes.append((await self._compose(conn, job)).scope)
+        return tuple(scopes)
 
     async def sweep_quality(self) -> int:
         """Recover result signals and lost offers; all external effects follow DB commit."""

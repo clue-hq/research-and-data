@@ -180,6 +180,31 @@ def test_the_account_rewrite_runs_the_writer_for_the_revision(
     assert call["models"] is MODELS and rewrites["settled"] == []
 
 
+@pytest.mark.parametrize("recipe", [25, 26])
+def test_the_final_step_passes_the_deferred_contact_pages(
+    rewrites: dict[str, list[Any]], monkeypatch: pytest.MonkeyPatch, recipe: int
+) -> None:
+    job = composition(recipe)
+    person = composition(recipe, person=True).scope
+    asked: list[Any] = []
+
+    async def deferred(self: Any, scope: Any, generation_id: Any) -> tuple[Any, ...]:
+        asked.append(generation_id)
+        return (person,)
+
+    monkeypatch.setattr(Arv2AccountResearchWorkHandler, "_deferred_contacts", deferred)
+    generation_id = uuid4()
+    out = asyncio.run(
+        handler(MODELS)._rewrite_account(
+            work_context(), job.scope, job.run.context_id, generation_id, 3, leased
+        )
+    )
+    assert out.outcome == "completed"
+    passed = rewrites["rewrites"][0].get("deferred", ())
+    assert passed == ((person,) if recipe >= 26 else ())
+    assert asked == ([generation_id] if recipe >= 26 else [])
+
+
 def test_a_failed_rewrite_sends_the_generation_to_review(
     rewrites: dict[str, list[Any]],
 ) -> None:
