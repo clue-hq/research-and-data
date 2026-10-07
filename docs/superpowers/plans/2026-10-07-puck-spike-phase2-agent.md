@@ -104,6 +104,10 @@ What `validate_page` checks:
 - no wording from the brief's "Notes for Design" section;
 - no person named in the account's research.
 
+*Founder ruling 2026-10-08:* the last three are judgement, not contracts, and were removed from
+`validate_page`; they live only in the prompt and skills. The validator checks contracts. One
+primary destination stays a blocking check for now ("none of these should be blocking ideally").
+
 Stretch, only in experiment 5: `write_section`. It writes a new React section file and runs a
 type check plus a token-only lint (no hex colours, no arbitrary pixel values, no inline styles,
 no `className` props). It does not join the catalog without founder approval.

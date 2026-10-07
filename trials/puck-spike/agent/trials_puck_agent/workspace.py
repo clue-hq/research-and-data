@@ -3,8 +3,7 @@
 brief.md, research/ (the account's written pages as plain markdown, no claim ids), seller/ (the
 seller's files), catalog/ and brand/ (scripts/build-catalog.ts), skills/, and .run.json for the
 validator. There is no page.json or shell.json yet: the agent writes both (the file tools refuse to
-overwrite an existing file, so later changes are edits). research/people.json lists the people
-the research names, for the validator's never-name-people check.
+overwrite an existing file, so later changes are edits).
 """
 
 from __future__ import annotations
@@ -128,8 +127,6 @@ def assemble(
         (research / "README.md").write_text(
             f"# {account_name}\n\nThere is no written research for this account yet.\n"
         )
-    people = research_people(overview + insights)
-    (research / "people.json").write_text(json.dumps(people, indent=2))
     seller_files = write_seller_files(knowledge, workspace / "seller") if knowledge else 0
     build_catalog(spike_root, brand, workspace)
     shutil.copytree(SKILLS_DIR, workspace / "skills")
@@ -137,7 +134,7 @@ def assemble(
     (workspace / ".run.json").write_text(json.dumps({"brand": brand, "site": site, "route": "/"}))
     return {
         "research_blocks": len(overview) + len(insights),
-        "people": len(people),
+        "people_in_research": len(research_people(overview + insights)),
         "seller_files": seller_files,
         "clones": len(list((workspace / "catalog" / "clones").glob("*.md"))),
     }

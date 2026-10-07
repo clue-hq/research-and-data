@@ -47,7 +47,6 @@ def workspace(tmp_path: Path) -> Path:
     (ws / "shell.json").write_text(json.dumps(SITE["shell"], indent=2))
     (ws / "brief.md").write_text(BRIEF)
     (ws / "research" / "evidence.md").write_text(EVIDENCE)
-    (ws / "research" / "people.json").write_text(json.dumps(["Nalisa Clark", "Michael Puntschenko"]))
     (ws / ".run.json").write_text(json.dumps({"brand": "garner", "site": "agent-test", "route": "/"}))
     return ws
 
@@ -107,25 +106,16 @@ def test_an_image_must_come_from_the_brand_assets(workspace: Path) -> None:
     assert "stock.jpg" in result and "brand/brand.md" in result
 
 
-def test_a_number_must_appear_in_the_evidence(workspace: Path) -> None:
-    edit_page(workspace, lambda p: section(p, "proof")["props"]["stats"][0].update(value="9.9%"))
-    result = tools_for(workspace).validate_page()
-    assert "9.9%" in result and "fetch_page" in result
-
-
-def test_wording_from_the_briefs_notes_is_refused(workspace: Path) -> None:
-    edit_page(
-        workspace,
-        lambda p: section(p, "proof")["props"].update(intro="This is not independent causal proof of anything."),
-    )
-    result = tools_for(workspace).validate_page()
-    assert "Notes for Design" in result
-
-
-def test_people_from_the_research_are_not_named(workspace: Path) -> None:
-    edit_page(workspace, lambda p: section(p, "proof")["props"].update(eyebrow="For Nalisa Clark"))
-    result = tools_for(workspace).validate_page()
-    assert "Nalisa Clark" in result
+def test_judgement_is_not_a_blocking_check(workspace: Path) -> None:
+    """Founder ruling 2026-10-08: numbers, named people and wording from the brief's notes are the
+    agent's judgement (prompt and skills), never validator errors."""
+    def change(page: dict) -> None:
+        proof = section(page, "proof")["props"]
+        proof["stats"][0]["value"] = "9.9%"
+        proof["intro"] = "This is not independent causal proof of anything."
+        proof["eyebrow"] = "For Nalisa Clark"
+    edit_page(workspace, change)
+    assert tools_for(workspace).validate_page().startswith("VALID")
 
 
 def test_only_one_primary_destination(workspace: Path) -> None:

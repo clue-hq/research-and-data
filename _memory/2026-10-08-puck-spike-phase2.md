@@ -19,9 +19,12 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   15 seller files, 21 clones; B 12 blocks, 3 people, 16 files, 29 clones; C research refused
   (insights_not_written; overview read separately now), 0 people.
 
+## Founder ruling 2026-10-08 (before T4)
+- Judgement is the agent's, not the validator's: numbers-in-evidence, named-people and
+  notes-wording checks removed from validate_page (rules stay in prompt/skills); one destination
+  stays blocking for now. people.json dropped. Runner now prints a live trace (trace.log).
+
 ## Known limits
-- people.json lists only the research's contact references; names that appear only in text
-  (e.g. other officials) are caught by the prompt rule, not the validator.
 - Screenshots are capped at 2000px on the long side (a 1440 page renders ~480px wide): headlines
   and layout readable, body text not. Revisit if E1 reviews miss wrap problems.
 

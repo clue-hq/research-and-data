@@ -95,6 +95,5 @@ Leave `accountLogo` empty unless the workspace gives you the account's logo file
 
 ## When validate_page says INVALID
 
-Each line names the section, the field and the fix. For example, it lists the real slots, says
-where the usable text is, or asks you to fetch a number's source. Fix those lines and validate
-again. If a change made the page worse, `restore_version` brings back the last good version.
+Each line names the section, the field and the fix. For example, it lists the real slots or
+says where the usable text is. Fix those lines and validate again. If a change made the page worse, `restore_version` brings back the last good version.

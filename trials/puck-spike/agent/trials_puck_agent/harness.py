@@ -111,6 +111,42 @@ class OrderedToolCalls(AgentMiddleware):
                 self._turnstile.notify_all()
 
 
+# --- live trace ----------------------------------------------------------------------------------
+
+def _short(text: str, limit: int = 300) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[:limit] + " …"
+
+
+def describe_call(call: dict) -> str:
+    args = call.get("args") or {}
+    name = call["name"]
+    if name in ("write_file", "edit_file"):
+        size = len(args.get("content") or args.get("new_string") or "")
+        return f"{name} {args.get('file_path')} ({size} chars)"
+    for key in ("file_path", "path", "pattern", "query", "url", "version"):
+        if key in args:
+            return f"{name} {args[key]}"
+    return name
+
+
+class LiveTrace(AgentMiddleware):
+    """Prints each tool result as it lands (shortened)."""
+
+    def __init__(self, trace) -> None:
+        super().__init__()
+        self.trace = trace
+
+    def wrap_tool_call(self, request, handler):
+        result = handler(request)
+        content = getattr(result, "content", result)
+        if isinstance(content, list):
+            content = " | ".join(b.get("text", "[image]") if isinstance(b, dict) and b.get("type") == "text"
+                                 else "[image]" for b in content)
+        self.trace(f"    <- {describe_call(request.tool_call)}: {_short(content)}")
+        return result
+
+
 # --- the run record ------------------------------------------------------------------------------
 
 @dataclass
@@ -126,9 +162,10 @@ class TurnRecord:
 class RunRecorder(AgentMiddleware):
     """Usage and cost per model call, the safety stop and the finish guard."""
 
-    def __init__(self, page_tools: PageTools, *, safety_stop: int = SAFETY_STOP_CALLS) -> None:
+    def __init__(self, page_tools: PageTools, *, safety_stop: int = SAFETY_STOP_CALLS, trace=None) -> None:
         super().__init__()
         self.page_tools = page_tools
+        self.trace = trace or (lambda line: None)
         self.safety_stop = safety_stop
         self.turns: list[TurnRecord] = []
         self.prompt_size: dict | None = None
@@ -144,6 +181,7 @@ class RunRecorder(AgentMiddleware):
     def before_model(self, state, runtime):
         if len(self.turn.calls) >= self.safety_stop:
             self.turn.status = "stopped by the safety stop"
+            self.trace(f"    !! safety stop at {self.safety_stop} model calls")
             return {
                 "messages": [AIMessage(content=f"Stopped: {self.safety_stop} model calls in one turn (safety stop).")],
                 "jump_to": "end",
@@ -177,6 +215,16 @@ class RunRecorder(AgentMiddleware):
             "tool_calls": [call["name"] for call in (message.tool_calls if message else [])],
             "messages_sent": len(request.messages),
         })
+        record = self.turn.calls[-1]
+        self.trace(
+            f"[call {len(self.turn.calls)} · {record['seconds']}s · in {record['input_tokens']:,} "
+            f"(cached {record['cached_tokens']:,}) · out {record['output_tokens']:,} · "
+            f"${record['cost_cents'] / 100:.4f}]"
+        )
+        if message is not None and message.text:
+            self.trace(f"    says: {_short(message.text, 600)}")
+        for call in (message.tool_calls if message else []):
+            self.trace(f"    -> {describe_call(call)}")
         return response
 
     @hook_config(can_jump_to=["model"])
@@ -193,6 +241,7 @@ class RunRecorder(AgentMiddleware):
             return None
         errors = "\n".join(f"- {error}" for error in check["errors"])
         self.turn.reminders.append(errors)
+        self.trace(f"    !! finish guard: the page is invalid, reminder {len(self.turn.reminders)}")
         return {
             "messages": [HumanMessage(content=(
                 "The page is still invalid, so this turn cannot finish yet:\n" + errors
@@ -256,7 +305,8 @@ def page_tool_set(page_tools: PageTools) -> list:
     ]
 
 
-def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None, safety_stop: int = SAFETY_STOP_CALLS):
+def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
+                safety_stop: int = SAFETY_STOP_CALLS, trace=None):
     """Returns (agent, recorder)."""
     from deepagents import FilesystemPermission
     from deepagents.backends import FilesystemBackend
@@ -268,7 +318,8 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None, 
     from langgraph.checkpoint.memory import InMemorySaver
 
     backend = FilesystemBackend(root_dir=page_tools.workspace, virtual_mode=True)
-    recorder = RunRecorder(page_tools, safety_stop=safety_stop)
+    trace = trace or (lambda line: None)
+    recorder = RunRecorder(page_tools, safety_stop=safety_stop, trace=trace)
     middleware = [
         SkillsMiddleware(backend=backend, sources=["/skills"], system_prompt=SKILLS_PROMPT),
         FilesystemMiddleware(
@@ -278,6 +329,7 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None, 
         PatchToolCallsMiddleware(),
         ContextEditingMiddleware(edits=[RenderClearing()]),
         OrderedToolCalls(),
+        LiveTrace(trace),
         recorder,
     ]
     agent = create_agent(

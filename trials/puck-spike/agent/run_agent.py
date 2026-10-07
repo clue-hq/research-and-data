@@ -217,7 +217,14 @@ def main() -> int:
         workspace=workspace, spike_root=SPIKE, base_url=BASE_URL,
         reads=inputs["reads"] if inputs else None,
     )
-    agent, recorder = build_agent(page_tools, model=build_model())
+    trace_file = (out / "trace.log").open("a")
+
+    def trace(line: str) -> None:
+        print(line, flush=True)
+        trace_file.write(line + "\n")
+        trace_file.flush()
+
+    agent, recorder = build_agent(page_tools, model=build_model(), trace=trace)
     session = {"configurable": {"thread_id": f"puck_{uuid.uuid4().hex}"}}
     record = {
         "label": args.label, "case": case_name, "account": account, "setup": setup,
@@ -225,7 +232,7 @@ def main() -> int:
     }
     try:
         for prompt in turns:
-            print(f"turn {len(record['turns']) + 1}/{len(turns)}: {prompt[:80]}", flush=True)
+            trace(f"=== turn {len(record['turns']) + 1}/{len(turns)}: {prompt[:120]}")
             recorder.start_turn(prompt)
             events_before = len(page_tools.events)
             started = time.monotonic()
@@ -239,13 +246,12 @@ def main() -> int:
                 recorder.turn.status = "ended"
             summary = summarize_turn(recorder.turn, page_tools.events[events_before:], state.get("messages", []))
             record["turns"].append(summary)
-            print(
-                f"  {summary['status']}: {summary['model_calls']} calls, ${summary['cost_usd']}, "
-                f"{summary['seconds']}s, renders {summary['render_rounds']}",
-                flush=True,
+            trace(
+                f"=== {summary['status']}: {summary['model_calls']} calls, ${summary['cost_usd']}, "
+                f"{summary['seconds']}s, renders {summary['render_rounds']}"
             )
             if summary["status"] == "stopped by the safety stop":
-                print("  ALERT: safety stop reached", flush=True)
+                trace("ALERT: safety stop reached")
             if summary["status"].startswith("crashed"):
                 break
     finally:
