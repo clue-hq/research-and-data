@@ -10,6 +10,8 @@ tools. Each returns text the agent can act on, never a raised exception.
 - fetch_page      opens a page, saves its text under fetched/ (evidence), returns the text
 - web_search      the platform's web search, retried on transient failure
 - restore_version rolls page.json and shell.json back to a saved version
+- view_asset      shows up to four brand images with their descriptions (the platform's
+                  provider-safe image block from lumen_agent/tools/view.py)
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ FETCH_LIMIT = 12_000
 #: cut into pieces of at most TILE_PX tall so a model never shrinks a tall page into a sliver.
 SCALE_BY_WIDTH = {1440: 0.5, 375: 1.0}
 TILE_PX = 1600
+VIEW_ASSET_MAX = 4
+VIEW_ASSET_PX = 1024
 RETRIES = 2
 LOOP_GUARD_AT = 3
 
@@ -242,6 +246,44 @@ class PageTools:
                 page.close()
             browser.close()
         self._record("render", url=url, route=route)
+        return blocks
+
+    # --- images --------------------------------------------------------------------------------
+
+    def _asset_descriptions(self) -> dict[str, str]:
+        assets_file = self.spike_root / "data" / "brands" / self._run()["brand"] / "assets.json"
+        if not assets_file.exists():
+            return {}
+        assets = json.loads(assets_file.read_text())
+        return {a["file"]: (a.get("description") or a.get("label") or "") for a in assets.values()}
+
+    def view_asset(self, files: list[str]) -> list[dict] | str:
+        """Look at up to four of the brand's images (files from brand/brand.md), with their descriptions."""
+        from lumen_agent.tools.view import _image_bytes_block  # the platform's provider-safe image block
+
+        if not files:
+            return "Give one to four image files from brand/brand.md."
+        descriptions = self._asset_descriptions()
+        blocks: list[dict] = []
+        for file in files[:VIEW_ASSET_MAX]:
+            path = self.spike_root / "public" / file.lstrip("/")
+            if not file.startswith("/brands/") or not path.is_file():
+                blocks.append({"type": "text", "text": f"{file}: not one of this brand's images; use a file from brand/brand.md"})
+                continue
+            if path.suffix.lower() in (".mp4", ".webm", ".mov"):
+                blocks.append({"type": "text", "text": f"{file}: a video; it cannot be shown as a picture"})
+                continue
+            try:
+                image = _image_bytes_block(path.read_bytes(), max_px=VIEW_ASSET_PX)
+            except Exception as error:  # an unreadable file is an answer, not a crash
+                blocks.append({"type": "text", "text": f"{file}: could not be opened ({error})"})
+                continue
+            description = descriptions.get(file, "")
+            blocks.append({"type": "text", "text": f"{file}" + (f": {description[:300]}" if description else "")})
+            blocks.append(image)
+        self._record("view_asset", files=list(files[:VIEW_ASSET_MAX]))
+        if files[VIEW_ASSET_MAX:]:
+            blocks.append({"type": "text", "text": f"Showed the first {VIEW_ASSET_MAX}; ask again for the rest."})
         return blocks
 
     # --- research ------------------------------------------------------------------------------

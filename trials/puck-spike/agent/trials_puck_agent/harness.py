@@ -9,9 +9,12 @@ what this spike measures against. The pieces:
   outside page.json, shell.json, plan.md and new notes;
 - skills (deepagents SkillsMiddleware) with a short listing prompt;
 - malformed tool calls patched back to the model (PatchToolCallsMiddleware);
-- context clearing (optional, off by default since run a1 lost the cache on the call after it
-  first cleared): a newer render_page replaces older screenshots in the model request, never in
-  the saved history (ContextEditingMiddleware with RenderClearing);
+- context clearing, as the platform website agent does it: superseded renders and asset views,
+  out-of-date reads of the site files, and finished planning reads become one-line stubs in the
+  model request (never the saved history), changed in batches so the cache holds
+  (ContextEditingMiddleware with SupersededResults). On by default: run a2 showed the cache misses
+  happen with clearing off too;
+- compaction (LangChain SummarizationMiddleware) when one request passes 100k tokens;
 - a read_file without a limit reads the whole file (WholeFileReads);
 - tool calls from one response run one at a time, in the order the model wrote them;
 - RunRecorder: per-call usage and cost, the 40-call safety stop, and the finish guard (a turn
@@ -34,6 +37,9 @@ from .tools import PageTools
 
 AGENT_DIR = Path(__file__).resolve().parents[1]
 SAFETY_STOP_CALLS = 40
+#: Compaction is a safety net for one very long request (the platform compacts more often; with a
+#: fresh session per request and clearing, a request rarely gets here).
+COMPACT_AT_TOKENS = 100_000
 FINISH_REMINDERS = 2
 
 SKILLS_PROMPT = """## Skills
@@ -44,43 +50,113 @@ When a skill's description applies, read its whole file with read_file (limit=10
 {skills_locations}{skills_load_warnings}"""
 
 READ_ONLY = [
-    "/.run.json", "/brief.md", "/skills/**", "/catalog/**", "/brand/**", "/research/**",
+    "/.run.json", "/brief.md", "/site.md", "/history.md", "/skills/**", "/catalog/**", "/brand/**", "/research/**",
     "/seller/**", "/fetched/**", "/versions/**", "/renders/**",
 ]
 
 
 # --- context clearing ----------------------------------------------------------------------------
+#
+# The platform website agent's lesson (lumen_agent/context_clearing.py, 2026-10-06): earlier tool
+# results the model no longer needs become a one-line stub that says what it was and how to get it
+# back. Only the model request is edited; the saved history keeps everything. The cleared set
+# changes only at two moments — planning ends (plan.md written and the first page write), and a new
+# render lands — so between those moments the prompt prefix is byte-identical and the cache holds.
 
-def _is_render(message: Any) -> bool:
-    return isinstance(message, ToolMessage) and message.name == "render_page" and isinstance(message.content, list)
+#: Planning reads: once plan.md records the decisions and building has started, they leave the
+#: request. Skills, the brief, brand.md and sections.md stay (they are needed while building).
+_PLANNING_PREFIXES = ("/catalog/clones/", "/catalog/index.md", "/research/", "/seller/", "/fetched/")
+_PLANNING_TOOLS = ("fetch_page", "web_search", "ls", "glob", "grep")
+_SITE_FILES = ("/page.json", "/shell.json", "/plan.md")
+_WRITERS = ("write_file", "edit_file")
 
 
-def clear_old_renders(messages: list) -> list:
-    """Replace every render_page result but the newest with a one-line stub that keeps its facts.
+def _calls_by_id(messages: list) -> dict[str, dict]:
+    return {
+        call["id"]: call
+        for message in messages if isinstance(message, AIMessage)
+        for call in (message.tool_calls or []) if call.get("id")
+    }
 
-    The result depends only on the message list and changes only when a new render lands, so the
-    prompt cache holds between renders."""
-    renders = [index for index, message in enumerate(messages) if _is_render(message)]
+
+def _is_site_file(path: object) -> bool:
+    return isinstance(path, str) and (path in _SITE_FILES or (path.startswith("/pages/") and path.endswith(".json")))
+
+
+def _stub(message: ToolMessage, text: str) -> ToolMessage:
+    return message.model_copy(update={"content": text, "artifact": None})
+
+
+def clear_superseded_results(messages: list) -> list:
+    """A copy of ``messages`` with superseded tool results replaced by stubs."""
+    calls = _calls_by_id(messages)
+
+    def call_of(message: ToolMessage) -> dict:
+        return calls.get(message.tool_call_id) or {}
+
+    last_render, plan_written, build_started = -1, -1, -1
+    for index, message in enumerate(messages):
+        if not isinstance(message, ToolMessage) or message.status == "error":
+            continue
+        call = call_of(message)
+        path = (call.get("args") or {}).get("file_path")
+        if message.name == "render_page" and isinstance(message.content, list):
+            last_render = index
+        elif message.name in _WRITERS and path == "/plan.md" and plan_written < 0:
+            plan_written = index
+        elif message.name in _WRITERS and _is_site_file(path) and path != "/plan.md" and build_started < 0:
+            build_started = index
+    planning_over = max(plan_written, build_started) if plan_written >= 0 and build_started >= 0 else -1
+
+    # Site files written before the last render: earlier reads of them are out of date.
+    written_before_render: dict[str, int] = {}
+    for index, message in enumerate(messages[: max(last_render, 0)]):
+        if isinstance(message, ToolMessage) and message.name in _WRITERS:
+            path = (call_of(message).get("args") or {}).get("file_path")
+            if _is_site_file(path):
+                written_before_render[path] = index
+
     out = list(messages)
-    for index in renders[:-1]:
-        message = messages[index]
-        facts = " | ".join(
-            block.get("text", "") for block in message.content
-            if isinstance(block, dict) and block.get("type") == "text"
-        )
-        out[index] = message.model_copy(update={
-            "content": "[cleared to save context: screenshots from an earlier render_page; a newer "
-                       f"render replaced them. Facts then: {facts}]",
-        })
+    for index, message in enumerate(messages):
+        if not isinstance(message, ToolMessage) or message.status == "error":
+            continue
+        call = call_of(message)
+        args = call.get("args") or {}
+        name = message.name or call.get("name")
+        path = args.get("file_path")
+        if name == "render_page" and isinstance(message.content, list) and index < last_render:
+            facts = " | ".join(
+                block.get("text", "") for block in message.content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+            out[index] = _stub(message, "[cleared to save context: screenshots from an earlier render_page; "
+                                        f"a newer render replaced them. Facts then: {facts}]")
+        elif name == "view_asset" and index < last_render:
+            files = ", ".join(args.get("files") or [])
+            out[index] = _stub(message, f"[cleared to save context: images you looked at earlier ({files}). "
+                                        "Call view_asset again to see them.]")
+        elif name == "read_file" and _is_site_file(path) and written_before_render.get(path, -1) > index:
+            out[index] = _stub(message, f"[cleared to save context: an older read of {path}; it has changed "
+                                        "since. Read it again for the current version.]")
+        elif index < planning_over and (
+            (name == "read_file" and isinstance(path, str) and path.startswith(_PLANNING_PREFIXES))
+            or name in _PLANNING_TOOLS
+        ):
+            what = f"{name}({path or args.get('url') or args.get('query') or args.get('pattern') or args.get('path') or ''})"
+            saved = ""
+            if name == "fetch_page" and isinstance(message.content, str) and message.content.startswith("Saved to "):
+                saved = " " + message.content.split(" (status")[0] + "."
+            out[index] = _stub(message, f"[cleared to save context: {what} from planning; your decisions are "
+                                        f"in plan.md.{saved} Call it again if you need the details.]")
     return out
 
 
 @dataclass
-class RenderClearing:
+class SupersededResults:
     """A ContextEdit for LangChain's ContextEditingMiddleware."""
 
     def apply(self, messages: list, *, count_tokens: Any) -> None:
-        messages[:] = clear_old_renders(messages)
+        messages[:] = clear_superseded_results(messages)
 
 
 # --- tool calls in order -------------------------------------------------------------------------
@@ -267,6 +343,30 @@ class RunRecorder(AgentMiddleware):
         }
 
 
+class SummaryUsage:
+    """Records the compaction model's calls in the run record (they bypass wrap_model_call)."""
+
+    def __new__(cls, recorder: "RunRecorder"):
+        from langchain_core.callbacks import BaseCallbackHandler
+
+        class _Handler(BaseCallbackHandler):
+            def on_llm_end(self, response, **kwargs):
+                message = getattr(response.generations[0][0], "message", None)
+                usage = (getattr(message, "usage_metadata", None) or {}) if message else {}
+                metadata = (getattr(message, "response_metadata", None) or {}) if message else {}
+                recorder.turn.calls.append({
+                    "seconds": 0.0, "summary": True,
+                    "input_tokens": usage.get("input_tokens", 0), "output_tokens": usage.get("output_tokens", 0),
+                    "cached_tokens": (usage.get("input_token_details") or {}).get("cache_read", 0),
+                    "cost_cents": float(metadata.get("clue_cost_cents") or 0),
+                    "model": metadata.get("clue_answering_model"), "tool_calls": [], "messages_sent": 0,
+                })
+                recorder.trace(f"    !! compacted the conversation (summary: in {usage.get('input_tokens', 0):,}, "
+                               f"${float(metadata.get('clue_cost_cents') or 0) / 100:.4f})")
+
+        return _Handler()
+
+
 # --- the agent -----------------------------------------------------------------------------------
 
 def build_model() -> Any:
@@ -309,6 +409,11 @@ def page_tool_set(page_tools: PageTools) -> list:
             description="Bring back a version saved by validate_page into page.json, shell.json and pages/.",
         ),
         StructuredTool.from_function(
+            page_tools.view_asset, name="view_asset",
+            description="Look at up to four of the brand's images (files from brand/brand.md), each with "
+            "its description, before you choose one for a section.",
+        ),
+        StructuredTool.from_function(
             page_tools.web_search, name="web_search",
             description="Search the web. Set include_domains to the seller's domain to find its own "
             "published case studies and customer stories.",
@@ -322,7 +427,8 @@ def page_tool_set(page_tools: PageTools) -> list:
 
 
 def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
-                safety_stop: int = SAFETY_STOP_CALLS, trace=None, clear_renders: bool = False):
+                safety_stop: int = SAFETY_STOP_CALLS, trace=None, clear_context: bool = True,
+                compact_at_tokens: int | None = COMPACT_AT_TOKENS, summary_model: Any = None):
     """Returns (agent, recorder)."""
     from deepagents import FilesystemPermission
     from deepagents.backends import FilesystemBackend
@@ -330,12 +436,14 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
     from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
     from deepagents.middleware.skills import SkillsMiddleware
     from langchain.agents import create_agent
-    from langchain.agents.middleware import ContextEditingMiddleware
+    from langchain.agents.middleware import ContextEditingMiddleware, SummarizationMiddleware
     from langgraph.checkpoint.memory import InMemorySaver
 
     backend = FilesystemBackend(root_dir=page_tools.workspace, virtual_mode=True)
     trace = trace or (lambda line: None)
     recorder = RunRecorder(page_tools, safety_stop=safety_stop, trace=trace)
+    if summary_model is not None:
+        summary_model.callbacks = [SummaryUsage(recorder)]
     middleware = [
         SkillsMiddleware(backend=backend, sources=["/skills"], system_prompt=SKILLS_PROMPT),
         FilesystemMiddleware(
@@ -343,7 +451,9 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
             _permissions=[FilesystemPermission(operations=["write"], paths=READ_ONLY, mode="deny")],
         ),
         PatchToolCallsMiddleware(),
-        *([ContextEditingMiddleware(edits=[RenderClearing()])] if clear_renders else []),
+        *([SummarizationMiddleware(summary_model or model, trigger=("tokens", compact_at_tokens), keep=("messages", 20))]
+          if compact_at_tokens else []),
+        *([ContextEditingMiddleware(edits=[SupersededResults()])] if clear_context else []),
         WholeFileReads(),
         OrderedToolCalls(),
         LiveTrace(trace),

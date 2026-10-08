@@ -169,14 +169,48 @@ def summarize_turn(turn, events: list[dict], messages: list) -> dict:
     }
 
 
+def history_count(workspace: Path) -> int:
+    path = workspace / "history.md"
+    return path.read_text().count("\n## ") if path.exists() else 0
+
+
+def restore_turn(source: Path, previous: dict, workspace: Path, turn: int) -> None:
+    """Put the site back as it was after `turn` of the source run, and write its history."""
+    snapshot = source / "turns" / str(turn)
+    for name in ("page.json", "shell.json", "plan.md"):
+        shutil.copy2(snapshot / name, workspace / name)
+    shutil.rmtree(workspace / "pages", ignore_errors=True)
+    if (snapshot / "pages").exists():
+        shutil.copytree(snapshot / "pages", workspace / "pages")
+    for leftover in ("versions", "renders"):
+        shutil.rmtree(workspace / leftover, ignore_errors=True)
+    for name in ("site.md", "history.md"):
+        (workspace / name).unlink(missing_ok=True)
+    # Pages fetched after that turn would leak what later turns found.
+    ended = time.mktime(time.strptime(previous["started_at"], "%Y-%m-%dT%H:%M:%S")) + sum(
+        t["seconds"] for t in previous["turns"][:turn]) + 60
+    for fetched in (workspace / "fetched").glob("*.md"):
+        if fetched.stat().st_mtime > ended:
+            fetched.unlink()
+    before: dict = {}
+    for number, entry in enumerate(previous["turns"][:turn], 1):
+        after = ws._site_pages(source / "turns" / str(number))
+        ws.append_history(workspace, number=number, request=entry["prompt"], changes=ws.site_changes(before, after),
+                          shell_changed=False, reply=entry.get("final_message"))
+        before = after
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--label", required=True)
     parser.add_argument("--case", choices=["A", "B", "C"])
     parser.add_argument("--turns", type=Path, help="More turns on the same session, one per line.")
     parser.add_argument("--from-run", help="Start from a finished run's workspace (edits only).")
-    parser.add_argument("--clear-renders", action="store_true",
-                        help="Clear superseded screenshots from the model request (off by default).")
+    parser.add_argument("--from-turn", type=int, help="With --from-run: start from the site as it was after this turn.")
+    parser.add_argument("--fresh-each", action="store_true",
+                        help="A new session for every turn; code writes site.md before and history.md after each.")
+    parser.add_argument("--no-clear", action="store_true",
+                        help="Keep superseded tool results in the model request (clearing is on by default).")
     args = parser.parse_args()
     if not args.case and not args.from_run:
         parser.error("give --case (a build) or --from-run (edits on a finished page)")
@@ -200,8 +234,10 @@ def main() -> int:
         run["site"] = f"agent-{args.label}"
         run_file.write_text(json.dumps(run))
         workspace = out / "workspace"
-        setup = {"from_run": args.from_run}
+        setup = {"from_run": args.from_run, "from_turn": args.from_turn}
         account = previous["account"]
+        if args.from_turn:
+            restore_turn(source, previous, workspace, args.from_turn)
     else:
         case_name = args.case
         case = json.loads((AGENT_DIR / "cases.json").read_text())[case_name]
@@ -236,16 +272,24 @@ def main() -> int:
         trace_file.write(line + "\n")
         trace_file.flush()
 
-    agent, recorder = build_agent(page_tools, model=build_model(), trace=trace, clear_renders=args.clear_renders)
-    session = {"configurable": {"thread_id": f"puck_{uuid.uuid4().hex}"}}
+    agent, recorder = build_agent(page_tools, model=build_model(), trace=trace, clear_context=not args.no_clear,
+                                  summary_model=build_model())
+    new_session = lambda: {"configurable": {"thread_id": f"puck_{uuid.uuid4().hex}"}}  # noqa: E731
+    session = new_session()
     record = {
         "label": args.label, "case": case_name, "account": account, "setup": setup,
-        "clear_renders": args.clear_renders,
+        "clear_context": not args.no_clear, "fresh_each": args.fresh_each,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "turns": [],
     }
     try:
         for prompt in turns:
             trace(f"=== turn {len(record['turns']) + 1}/{len(turns)}: {prompt[:120]}")
+            pages_before = ws._site_pages(workspace)
+            shell_before = (workspace / "shell.json").read_text() if (workspace / "shell.json").exists() else ""
+            if args.fresh_each:
+                session = new_session()
+                if pages_before:
+                    (workspace / "site.md").write_text(ws.site_summary(workspace, SPIKE))
             recorder.start_turn(prompt)
             events_before = len(page_tools.events)
             started = time.monotonic()
@@ -266,6 +310,11 @@ def main() -> int:
                     shutil.copy2(workspace / name, snapshot / name)
             if (workspace / "pages").exists():
                 shutil.copytree(workspace / "pages", snapshot / "pages", dirs_exist_ok=True)
+            if args.fresh_each:
+                shell_after = (workspace / "shell.json").read_text() if (workspace / "shell.json").exists() else ""
+                ws.append_history(workspace, number=history_count(workspace) + 1, request=prompt,
+                                  changes=ws.site_changes(pages_before, ws._site_pages(workspace)),
+                                  shell_changed=shell_before != shell_after, reply=summary["final_message"])
             trace(
                 f"=== {summary['status']}: {summary['model_calls']} calls, ${summary['cost_usd']}, "
                 f"{summary['seconds']}s, renders {summary['render_rounds']}"

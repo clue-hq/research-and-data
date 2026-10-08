@@ -89,3 +89,26 @@ def test_an_account_with_no_written_research_says_so(tmp_path: Path) -> None:
         account_name="Atrium Hospitality", overview=[], insights=[], knowledge=None,
     )
     assert "no written research" in (workspace / "research/README.md").read_text()
+
+
+def test_the_site_summary_names_every_page_section_and_image(tmp_path: Path) -> None:
+    site = json.loads((SPIKE / "data" / "sites" / "garner-syracuse.json").read_text())
+    workspace = tmp_path / "workspace"
+    (workspace / "pages").mkdir(parents=True)
+    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": "t", "route": "/"}))
+    (workspace / "page.json").write_text(json.dumps(site["pages"]["/"]))
+    (workspace / "pages" / "analysis.json").write_text(json.dumps(site["pages"]["/analysis"]))
+    (workspace / "shell.json").write_text(json.dumps(site["shell"]))
+    text = ws.site_summary(workspace, SPIKE)
+    assert "## / (page.json)" in text and "## /analysis (pages/analysis.json)" in text
+    assert "Lower medical spend for SCSD" in text and "Prepared for: Syracuse City School District" in text
+    assert "StatsBand on the brandSubtle surface" in text
+
+
+def test_site_changes_say_what_moved_changed_and_appeared() -> None:
+    before = {"/": {"content": [{"type": "A", "props": {"id": "hero", "x": 1}}, {"type": "B", "props": {"id": "proof"}}]}}
+    after = {"/": {"content": [{"type": "B", "props": {"id": "proof"}}, {"type": "A", "props": {"id": "hero", "x": 2}}]},
+             "/analysis": {"content": []}}
+    notes = ws.site_changes(before, after)
+    assert "added the page /analysis" in notes
+    assert "/: changed hero (x)" in notes and "/: new order proof, hero" in notes

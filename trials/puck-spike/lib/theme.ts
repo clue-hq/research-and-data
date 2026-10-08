@@ -194,7 +194,12 @@ export function themeCss(brand: BrandData): string {
   const cls = (role: string) => `.bg-${colorVar(role)}`;
   const light = SURFACES.filter((s) => lightness(s) > 0.35).map(cls);
   const dark = SURFACES.filter((s) => lightness(s) <= 0.35).map(cls);
-  if (light.length) lines.push(`:is(${light.join(",")}) .brand-heading{color:var(--brand-heading-ink)}`);
+  // The nearest surface decides: each surface sets the heading colour as an inherited variable, so
+  // a dark card inside a light section gets light headings (a descendant rule matched through the
+  // nesting and put the brand's dark heading ink on black).
+  if (light.length) lines.push(`:is(${light.join(",")}){--brand-heading-color:var(--brand-heading-ink)}`);
+  if (dark.length) lines.push(`:is(${dark.join(",")}){--brand-heading-color:currentColor}`);
+  lines.push(".brand-heading{color:var(--brand-heading-color,currentColor)}");
   if (dark.length) {
     lines.push(
       `@layer components{:is(${dark.join(",")}) .brand-btn{background:var(--brand-button-light-bg);color:var(--brand-button-light-fg)}}`,

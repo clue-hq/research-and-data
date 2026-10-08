@@ -139,3 +139,109 @@ def assemble(
         "seller_files": seller_files,
         "clones": len(list((workspace / "catalog" / "clones").glob("*.md"))),
     }
+
+
+# --- memory for a fresh session: written by code, read by the agent ---------------------------------
+
+def _site_pages(workspace: Path) -> dict[str, dict]:
+    pages = {"/": json.loads((workspace / "page.json").read_text())} if (workspace / "page.json").exists() else {}
+    for file in sorted((workspace / "pages").glob("*.json")) if (workspace / "pages").exists() else []:
+        pages[f"/{file.stem}"] = json.loads(file.read_text())
+    return pages
+
+
+def _short(text: object, limit: int = 160) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def site_summary(workspace: Path, spike_root: Path) -> str:
+    """site.md: what is on every page now, in a few lines per section."""
+    brand = json.loads((workspace / ".run.json").read_text())["brand"]
+    data = spike_root / "data" / "brands" / brand
+    clones = {c["id"]: c for c in json.loads((data / "clones.json").read_text())}
+    described = {a["file"]: a.get("description") or "" for a in json.loads((data / "assets.json").read_text()).values()}
+
+    def image(file: object) -> str:
+        return f"{file}" + (f" ({_short(described.get(str(file), ''), 120)})" if described.get(str(file)) else "")
+
+    out = ["# The site as it is now", "",
+           "Written for you at the start of this request. The page files are the truth; this is a summary.", ""]
+    if (workspace / "shell.json").exists():
+        shell = json.loads((workspace / "shell.json").read_text())
+        header = shell.get("header", {})
+        nav = ", ".join(f"{n.get('label')} → {n.get('href')}" for n in header.get("nav") or []) or "none"
+        out += ["## Header and footer",
+                f"- Prepared for: {header.get('preparedFor')}; button \"{header.get('ctaLabel')}\" → {header.get('ctaHref')}",
+                f"- Nav links: {nav}", f"- Footer: {_short(shell.get('footer', {}).get('legal', ''))}", ""]
+    for route, page in _site_pages(workspace).items():
+        file = "page.json" if route == "/" else f"pages/{route[1:]}.json"
+        out += [f"## {route} ({file})"]
+        for n, item in enumerate(page.get("content") or [], 1):
+            props = item.get("props", {})
+            if item.get("type") == "ClonedSection":
+                clone = clones.get(props.get("fragmentId"), {})
+                out.append(f"{n}. {props.get('id')}: the seller's section \"{_short(clone.get('label', ''), 70)}\" ({props.get('fragmentId')})")
+                slots = props.get("slots") or {}
+                for key, slot in (clone.get("slots") or {}).items():
+                    value = slots.get(key)
+                    if slot.get("kind") == "text" and value not in (None, "", slot.get("fallback")):
+                        out.append(f"   - {key}: \"{_short(value)}\"")
+                    elif slot.get("kind") == "image" and value:
+                        out.append(f"   - {key}: {image(value)}")
+                    elif slot.get("kind") == "href" and value:
+                        out.append(f"   - {key} → {value}")
+                    elif slot.get("kind") == "visibility" and value is False:
+                        out.append("   - hidden")
+                for r in props.get("replacements") or []:
+                    out.append(f"   - \"{_short(r.get('find'), 60)}\" now reads \"{_short(r.get('replace'), 80)}\"")
+                for link in props.get("links") or []:
+                    out.append(f"   - link {link.get('find')} → {link.get('replace')}")
+            else:
+                out.append(f"{n}. {props.get('id')}: {item.get('type')} on the {props.get('surface')} surface")
+                for key in ("eyebrow", "kicker", "heading", "metric", "metricLabel", "intro", "body", "source"):
+                    if props.get(key):
+                        out.append(f"   - {key}: \"{_short(props[key])}\"")
+                for stat in props.get("stats") or []:
+                    out.append(f"   - stat: {stat.get('value')} {_short(stat.get('label', ''), 80)}")
+                if props.get("image"):
+                    out.append(f"   - image: {image(props['image'])}")
+                if props.get("buttonLabel"):
+                    out.append(f"   - button \"{props['buttonLabel']}\" → {props.get('buttonHref')}")
+                if props.get("linkLabel"):
+                    out.append(f"   - link \"{props['linkLabel']}\" → {props.get('linkHref')}")
+        out.append("")
+    return "\n".join(out)
+
+
+def site_changes(before: dict[str, dict], after: dict[str, dict]) -> list[str]:
+    """What changed between two snapshots of the pages, in plain words."""
+    notes = []
+    for route in after:
+        if route not in before:
+            notes.append(f"added the page {route}")
+            continue
+        old = {i["props"].get("id"): i for i in before[route].get("content") or []}
+        new = {i["props"].get("id"): i for i in after[route].get("content") or []}
+        for sid in new:
+            if sid not in old:
+                notes.append(f"{route}: added the section {sid} ({new[sid].get('type')})")
+            elif old[sid] != new[sid]:
+                fields = sorted(k for k in set(old[sid]["props"]) | set(new[sid]["props"])
+                                if old[sid]["props"].get(k) != new[sid]["props"].get(k))
+                notes.append(f"{route}: changed {sid} ({', '.join(fields)})")
+        notes += [f"{route}: removed the section {sid}" for sid in old if sid not in new]
+        kept_old = [s for s in old if s in new]
+        kept_new = [s for s in new if s in old]
+        if kept_old != kept_new:
+            notes.append(f"{route}: new order {', '.join(new)}")
+    notes += [f"removed the page {route}" for route in before if route not in after]
+    return notes
+
+
+def append_history(workspace: Path, number: int, request: str, changes: list[str], shell_changed: bool, reply: str | None) -> None:
+    path = workspace / "history.md"
+    text = path.read_text() if path.exists() else "# Earlier requests in this project\n\nOldest first. Written after each request.\n"
+    what = "; ".join(changes + (["changed the header or footer"] if shell_changed else [])) or "nothing changed"
+    text += f"\n## {number}. {request}\n- What changed: {what}\n- The reply: {_short(reply or '', 500)}\n"
+    path.write_text(text)

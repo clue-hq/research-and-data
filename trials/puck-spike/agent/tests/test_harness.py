@@ -14,7 +14,7 @@ import pytest
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from trials_puck_agent.harness import build_agent, clear_old_renders
+from trials_puck_agent.harness import build_agent, clear_superseded_results
 from trials_puck_agent.tools import PageTools
 
 SPIKE = Path(__file__).resolve().parents[2]
@@ -131,20 +131,56 @@ def test_the_safety_stop_ends_a_runaway_turn(workspace: Path) -> None:
     assert "safety stop" in messages[-1].content
 
 
-def test_only_the_newest_render_keeps_its_screenshots() -> None:
-    def render(n: int) -> ToolMessage:
-        return ToolMessage(
-            name="render_page", tool_call_id=f"r{n}",
-            content=[{"type": "text", "text": f"1440 wide: render {n}"},
-                     {"type": "image", "source_type": "base64", "mime_type": "image/png", "data": "AAAA"}],
-        )
+def _ai(calls: list[dict]) -> AIMessage:
+    return AIMessage(content="", tool_calls=calls)
 
-    messages = [HumanMessage(content="build"), render(1), AIMessage(content="fixing"), render(2)]
-    cleared = clear_old_renders(messages)
-    assert isinstance(cleared[1].content, str) and "render 1" in cleared[1].content
-    assert cleared[3] is messages[3]
-    assert clear_old_renders(cleared)[1].content == cleared[1].content  # stable: the cache holds
-    assert messages[1].content[1]["type"] == "image"  # the saved history keeps everything
+
+def _result(name: str, n: str, content) -> ToolMessage:
+    return ToolMessage(name=name, tool_call_id=n, content=content)
+
+
+def _render(n: str) -> ToolMessage:
+    return _result("render_page", n, [{"type": "text", "text": f"1440 wide: render {n}"},
+                                      {"type": "image", "source_type": "base64", "mime_type": "image/png", "data": "AAAA"}])
+
+
+def test_only_the_newest_render_keeps_its_screenshots() -> None:
+    messages = [HumanMessage(content="build"),
+                _ai([call("render_page", {}, 1)]), _render("call_1"),
+                _ai([call("render_page", {}, 2)]), _render("call_2")]
+    cleared = clear_superseded_results(messages)
+    assert isinstance(cleared[2].content, str) and "render call_1" in cleared[2].content
+    assert cleared[4] is messages[4]
+    assert clear_superseded_results(cleared)[2].content == cleared[2].content  # stable: the cache holds
+    assert messages[2].content[1]["type"] == "image"  # the saved history keeps everything
+
+
+def test_planning_reads_clear_once_the_plan_is_written_and_building_starts() -> None:
+    reads = [_ai([call("read_file", {"file_path": "/research/overview.md"}, 1),
+                  call("read_file", {"file_path": "/skills/page-review/SKILL.md"}, 2),
+                  call("fetch_page", {"url": "https://x.example/a"}, 3)]),
+             _result("read_file", "call_1", "research text " * 50),
+             _result("read_file", "call_2", "skill text"),
+             _result("fetch_page", "call_3", "Saved to fetched/x-a.md (status 200).\n\npage text")]
+    plan = [_ai([call("write_file", {"file_path": "/plan.md", "content": "p"}, 4)]), _result("write_file", "call_4", "ok")]
+    build = [_ai([call("write_file", {"file_path": "/page.json", "content": "{}"}, 5)]), _result("write_file", "call_5", "ok")]
+    before = clear_superseded_results([HumanMessage(content="build"), *reads, *plan])
+    assert before[2].content.startswith("research text")  # the plan alone does not end planning
+    after = clear_superseded_results([HumanMessage(content="build"), *reads, *plan, *build])
+    assert after[2].content.startswith("[cleared to save context: read_file(/research/overview.md)")
+    assert after[3].content == "skill text"  # skills stay
+    assert "Saved to fetched/x-a.md." in after[4].content  # the stub says where the page was saved
+
+
+def test_an_old_read_of_a_site_file_clears_only_after_a_newer_render() -> None:
+    read = [_ai([call("read_file", {"file_path": "/page.json"}, 1)]), _result("read_file", "call_1", "old page")]
+    edit = [_ai([call("edit_file", {"file_path": "/page.json", "old_string": "a", "new_string": "b"}, 2)]),
+            _result("edit_file", "call_2", "ok")]
+    render = [_ai([call("render_page", {}, 3)]), _render("call_3")]
+    no_render = clear_superseded_results([HumanMessage(content="edit"), *read, *edit])
+    assert no_render[2].content == "old page"  # unchanged until a render: the prefix stays stable
+    with_render = clear_superseded_results([HumanMessage(content="edit"), *read, *edit, *render])
+    assert "an older read of /page.json" in with_render[2].content
 
 
 def test_a_validate_written_before_the_writes_runs_before_them(workspace: Path) -> None:
@@ -167,3 +203,13 @@ def test_a_read_without_a_limit_gets_the_whole_file(workspace: Path) -> None:
         AIMessage(content="Done."), AIMessage(content="Done."), AIMessage(content="Done."),
     ])
     assert "line 250" in tool_results(messages)["call_1"]
+
+
+def test_view_asset_shows_a_brand_image_with_its_description(workspace: Path) -> None:
+    assets = json.loads((SPIKE / "data" / "brands" / "garner" / "assets.json").read_text())
+    file = next(a["file"] for a in assets.values() if a["file"].endswith(".png") and a.get("description"))
+    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047")
+    blocks = tools.view_asset([file, "/brands/garner/assets/nope.png"])
+    assert any(b.get("type") == "image" for b in blocks)
+    texts = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+    assert file in texts and "not one of this brand's images" in texts

@@ -132,13 +132,12 @@ export function makeSections(
     },
     render: ({ surface, eyebrow, heading, headingRole, body, image, imageSide, buttonLabel, buttonHref }) => (
       <Shell surface={surface}>
-        <div className="grid items-center gap-10 md:grid-cols-2 md:gap-16">
+        {/* No image: one text column, not an empty frame beside the words. */}
+        <div className={image ? "grid items-center gap-10 md:grid-cols-2 md:gap-16" : "max-w-[60ch]"}>
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={image} alt="" className={`w-full rounded-card object-cover ${imageSide === "right" ? "md:order-2" : ""}`} />
-          ) : (
-            <div className={`aspect-[4/3] w-full rounded-card bg-surface-muted ${imageSide === "right" ? "md:order-2" : ""}`} />
-          )}
+          ) : null}
           <div>
             <Eyebrow>{eyebrow}</Eyebrow>
             <h2 className={`brand-heading mt-3 ${HEADING_CLASS[headingRole]}`}>{heading}</h2>
