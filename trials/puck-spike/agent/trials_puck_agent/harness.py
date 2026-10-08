@@ -299,13 +299,14 @@ def page_tool_set(page_tools: PageTools) -> list:
         ),
         StructuredTool.from_function(
             page_tools.render_page, name="render_page",
-            description="Publish the page and return a desktop (1440 wide) and a mobile (375 wide) "
-            "full-page screenshot, with facts about broken images, overflow and console errors. "
-            "Refuses while the page is invalid.",
+            description="Publish the site and return a desktop (1440 wide) and a mobile (375 wide) "
+            "full-page screenshot of one page, with facts about broken images, overflow and console "
+            "errors. route is \"/\" for page.json or \"/<name>\" for pages/<name>.json. Refuses while "
+            "the site is invalid.",
         ),
         StructuredTool.from_function(
             page_tools.restore_version, name="restore_version",
-            description="Bring back a version saved by validate_page into page.json and shell.json.",
+            description="Bring back a version saved by validate_page into page.json, shell.json and pages/.",
         ),
         StructuredTool.from_function(
             page_tools.web_search, name="web_search",

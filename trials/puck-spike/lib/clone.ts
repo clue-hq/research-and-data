@@ -3,7 +3,8 @@
 // (the engine's apply_fragment_text_overrides plays this role for human overrides).
 //
 // Slot kinds: text replaces the element's content with plain text; href sets the element's
-// href; image sets the element's src; visibility removes the element when false.
+// href; image sets the element's src; visibility removes the element when false. Captured links
+// the page does not change are made absolute against the clone's source page.
 // Runs on the server (published pages) and in the browser (editor), so it uses an isomorphic
 // parser rather than the DOM.
 import { parse, TextNode, type HTMLElement } from "node-html-parser";
@@ -33,6 +34,7 @@ export function fillClone(
   links: LinkReplacement[] = [],
 ): string {
   const root = parse(clone.html, { comment: false });
+  const linksWeSet = new Set<HTMLElement>();
 
   for (const [key, slot] of Object.entries(clone.slots)) {
     const value = values[key];
@@ -42,7 +44,10 @@ export function fillClone(
     if (slot.kind !== "visibility" && String(value) === String(slot.fallback ?? "")) continue;
     if (slot.kind === "visibility" && (value === true || value === "true")) continue;
     const elements = root.querySelectorAll(`[data-lumen-slot="${key}"]`);
-    for (const element of elements) applySlot(element, slot.kind, value);
+    for (const element of elements) {
+      applySlot(element, slot.kind, value);
+      if (slot.kind === "href") linksWeSet.add(element);
+    }
   }
 
   const wanted = replacements.filter((r) => r.find && r.find !== r.replace);
@@ -54,7 +59,21 @@ export function fillClone(
     for (const anchor of root.querySelectorAll("a[href]")) {
       if (link.find === "*" || anchor.getAttribute("href") === link.find) {
         anchor.setAttribute("href", link.replace);
+        linksWeSet.add(anchor);
       }
+    }
+  }
+
+  // Every other link keeps going where it went on the seller's site: a captured "/book-a-demo"
+  // is the seller's page, not a page of this site.
+  for (const anchor of root.querySelectorAll("a[href]")) {
+    const href = anchor.getAttribute("href") ?? "";
+    if (linksWeSet.has(anchor) || !href.startsWith("/") || href.startsWith("//")) continue;
+    if (href.startsWith("/asset-store/") || href.startsWith("/brands/")) continue;
+    try {
+      anchor.setAttribute("href", new URL(href, clone.page_url).toString());
+    } catch {
+      /* a page_url that is not a URL leaves the link as captured */
     }
   }
 

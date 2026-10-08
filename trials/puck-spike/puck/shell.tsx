@@ -7,6 +7,8 @@ export type HeaderProps = {
   accountLogo: string;
   ctaLabel: string;
   ctaHref: string;
+  /** Links to the site's other pages; shown on wider screens beside the button. */
+  nav?: { label: string; href: string }[];
 };
 export type FooterProps = { legal: string; privacyHref: string; termsHref: string };
 export type ShellData = { header: HeaderProps; footer: FooterProps };
@@ -41,10 +43,21 @@ export function SiteHeader({ brand, header, href }: { brand: BrandData; header: 
             <span className="font-semibold text-ink-primary">{header.preparedFor}</span>
           </span>
         </div>
-        {/* On phones the hero carries the same action, so the account name gets the room. */}
-        <a href={href(header.ctaHref)} className="brand-btn hidden shrink-0 sm:inline-flex">
-          {header.ctaLabel}
-        </a>
+        <div className="flex shrink-0 items-center gap-6">
+          {header.nav?.length ? (
+            <nav className="hidden items-center gap-5 md:flex">
+              {header.nav.map((item) => (
+                <a key={item.href + item.label} href={href(item.href)} className="font-body text-body text-ink-primary hover:underline">
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+          ) : null}
+          {/* On phones the hero carries the same action, so the account name gets the room. */}
+          <a href={href(header.ctaHref)} className="brand-btn hidden shrink-0 sm:inline-flex">
+            {header.ctaLabel}
+          </a>
+        </div>
       </div>
     </header>
   );

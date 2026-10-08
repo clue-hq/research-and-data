@@ -45,6 +45,8 @@ def workspace(tmp_path: Path) -> Path:
     (ws / "seller").mkdir()
     (ws / "fetched").mkdir()
     (ws / "page.json").write_text(json.dumps(SITE["pages"]["/"], indent=2))
+    (ws / "pages").mkdir()  # the phase-1 home page links to /analysis
+    (ws / "pages" / "analysis.json").write_text(json.dumps(SITE["pages"]["/analysis"], indent=2))
     (ws / "shell.json").write_text(json.dumps(SITE["shell"], indent=2))
     (ws / "brief.md").write_text(BRIEF)
     (ws / "research" / "evidence.md").write_text(EVIDENCE)
@@ -148,6 +150,20 @@ def test_restore_version_rolls_back_a_bad_change(workspace: Path) -> None:
     assert (workspace / "page.json").read_text() == original
 
 
+def test_restore_version_brings_back_every_page(workspace: Path) -> None:
+    tools = tools_for(workspace)
+    assert tools.validate_page().startswith("VALID")
+    (workspace / "pages" / "analysis.json").unlink()
+    (workspace / "pages" / "extra.json").write_text(json.dumps(SITE["pages"]["/analysis"]))
+    tools.restore_version(1)
+    assert sorted(p.name for p in (workspace / "pages").glob("*.json")) == ["analysis.json"]
+
+
+def test_render_page_refuses_an_unknown_page(workspace: Path) -> None:
+    result = tools_for(workspace).render_page("/pricing")
+    assert isinstance(result, str) and "no page /pricing" in result and "/analysis" in result
+
+
 def test_render_page_refuses_an_invalid_page(workspace: Path) -> None:
     edit_page(workspace, lambda p: section(p, "proof")["props"].update(surface="green"))
     result = tools_for(workspace).render_page()
@@ -157,6 +173,13 @@ def test_render_page_refuses_an_invalid_page(workspace: Path) -> None:
 def _server_up() -> bool:
     with socket.socket() as s:
         return s.connect_ex(("127.0.0.1", 3047)) == 0
+
+
+@pytest.mark.skipif(not _server_up(), reason="spike dev server not running on :3047")
+def test_render_page_renders_a_named_page(workspace: Path) -> None:
+    blocks = tools_for(workspace).render_page("/analysis")
+    assert not isinstance(blocks, str), blocks
+    assert sorted(p.name for p in (workspace / "renders").glob("*.png")) == ["1-analysis-1440.png", "1-analysis-375.png"]
 
 
 @pytest.mark.skipif(not _server_up(), reason="spike dev server not running on :3047")

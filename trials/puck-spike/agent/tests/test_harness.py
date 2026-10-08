@@ -68,6 +68,7 @@ def test_a_scripted_build_reads_a_skill_writes_the_page_and_validates(workspace:
         AIMessage(content="", tool_calls=[
             call("write_file", {"file_path": "/page.json", "content": page}, 2),
             call("write_file", {"file_path": "/shell.json", "content": shell}, 3),
+            call("write_file", {"file_path": "/pages/analysis.json", "content": json.dumps(SITE["pages"]["/analysis"])}, 5),
             call("validate_page", {}, 4),
         ]),
         AIMessage(content="Built the page."),
@@ -152,6 +153,7 @@ def test_a_validate_written_before_the_writes_runs_before_them(workspace: Path) 
             call("validate_page", {}, 1),
             call("write_file", {"file_path": "/page.json", "content": json.dumps(SITE["pages"]["/"])}, 2),
             call("write_file", {"file_path": "/shell.json", "content": json.dumps(SITE["shell"])}, 3),
+            call("write_file", {"file_path": "/pages/analysis.json", "content": json.dumps(SITE["pages"]["/analysis"])}, 4),
         ]),
         AIMessage(content="Done."),
     ])

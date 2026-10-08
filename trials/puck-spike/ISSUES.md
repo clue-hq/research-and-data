@@ -36,11 +36,12 @@ means the page agent's behaviour against its skills; "harness" means this spike'
 
 ## Agent: behaviour against its skills (runs a1, b1, c1)
 
-8. **a1 (Garner × Syracuse): proof chosen without checking its conditions.** It used Nightingale
+8. **a1 and a2 (Garner × Syracuse): proof chosen without checking its conditions.** It used Nightingale
    ("kept PPO and HDHP options") and left out that Nightingale's results came with deductible and
    HRA changes, next to a card saying no plan-design change is required. It never ran `web_search`
-   on Garner's site, so it did not find the Aon study. *Open. A candidate failing case for the copy
-   skill's proof rule (founder to decide).*
+   on Garner's site, so it did not find the Aon study. a2 (a second run on the current harness)
+   made the same choice with the same caveat, so this is consistent behaviour, not chance.
+   *Open. A failing case for the copy skill's proof rule (founder to decide the change).*
 9. **a1: brand sections over clones without a recorded reason** (proof and offer), against the
    skill's "record why". b1 and c1 recorded their reasons. *Watch.*
 10. **a1: unbounded reading.** It opened 18 of 21 clone cards and fetched the privacy and terms pages
@@ -65,14 +66,26 @@ name-only brief over the research.
 
 16. **Mobile screenshots reached the model about 132 px wide** (long side capped at 2000 px).
     *Fixed after a1: pieces that keep their width.*
-17. **Context clearing lost the whole prompt cache** on the call after it first cleared (a1, $0.16
-    of $0.82). *Fixed: off by default; no late miss in b1 or c1.*
+17. **Lost prompt cache mid-run.** a1's last call lost the whole cache right after context clearing
+    first cleared ($0.16 of $0.82), so clearing was turned off. **Correction:** a2 lost the cache at
+    call 9 with clearing off ($0.13 for that call), so the misses look provider-side (xAI through
+    OpenRouter), not caused by clearing. *Open: measure misses across runs; clearing stays off.*
 18. **read_file showed 100 lines by default** and cut a skill. *Fixed: whole files.*
 19. **The validator held judgement checks** (numbers in evidence, named people, notes wording).
     *Removed by founder ruling 2026-10-08; one destination stays blocking for now.*
 20. **No check that an internal `/route` link goes to a real page; no nav links in the shell; the
     workspace holds one page.** *Open; needed before multi-page edits.*
 21. **The one-re-render cap trades a known flaw for cost** (see 11). *Open.*
+22. **A clone's own links pointed at pages of our site.** Captured links are mostly relative to the
+    seller's site (Garner 24 of 28, Conduit 51 of 53, e.g. `/book-a-demo`); any the agent did not
+    replace became broken links on our pages (a1, b1, c1 likely have some), and with several pages
+    they could collide with our page names. *Fixed: the clone renderer makes untouched captured
+    links absolute against the clone's source page; links the page writes stay ours.*
+23. **Multi-page support for the agent.** *Built: `pages/<name>.json` beside `page.json`, nav links in
+    the shell (and in the human shell editor), every page validated, links the page writes to
+    `/<name>` must go to a page that exists, one destination checked across the whole site,
+    `render_page(route)`, versions and restore cover every page. Skill and prompt text pending
+    founder review.*
 
 ## Changes made for an Alt Carbon run, not yet run (uncommitted)
 

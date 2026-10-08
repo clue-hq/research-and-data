@@ -101,6 +101,7 @@ class PageTools:
             snapshot = {
                 "page": json.loads((self.workspace / "page.json").read_text()),
                 "shell": json.loads((self.workspace / "shell.json").read_text()),
+                "pages": {route: page for route, page in self._pages().items() if route != "/"},
             }
             (versions / f"{number}.json").write_text(json.dumps(snapshot, indent=2))
             self._seen.clear()
@@ -128,7 +129,7 @@ class PageTools:
         return "\n".join(lines)
 
     def restore_version(self, version: int) -> str:
-        """Roll page.json and shell.json back to a version saved by validate_page."""
+        """Roll page.json, shell.json and pages/ back to a version saved by validate_page."""
         path = self._versions() / f"{int(version)}.json"
         if not path.exists():
             saved = sorted(int(p.stem) for p in self._versions().glob("*.json"))
@@ -136,20 +137,31 @@ class PageTools:
         snapshot = json.loads(path.read_text())
         (self.workspace / "page.json").write_text(json.dumps(snapshot["page"], indent=2))
         (self.workspace / "shell.json").write_text(json.dumps(snapshot["shell"], indent=2))
+        pages_dir = self.workspace / "pages"
+        if pages_dir.exists():
+            for stale in pages_dir.glob("*.json"):
+                stale.unlink()
+        for route, page in (snapshot.get("pages") or {}).items():
+            pages_dir.mkdir(exist_ok=True)
+            (pages_dir / f"{route.strip('/')}.json").write_text(json.dumps(page, indent=2))
         self._record("restore", version=int(version))
-        return f"restored version {version} into page.json and shell.json."
+        return f"restored version {version} into page.json, shell.json and pages/."
 
     # --- render --------------------------------------------------------------------------------
 
-    def _publish_for_preview(self) -> str:
+    def _pages(self) -> dict[str, dict]:
+        """Every page of the site by route: page.json is "/", pages/<name>.json is "/<name>"."""
+        pages = {"/": json.loads((self.workspace / "page.json").read_text())}
+        for file in sorted((self.workspace / "pages").glob("*.json")) if (self.workspace / "pages").exists() else []:
+            pages[f"/{file.stem}"] = json.loads(file.read_text())
+        return pages
+
+    def _publish_for_preview(self, route: str = "/") -> str:
         run = self._run()
         site_file = self.spike_root / "data" / "sites" / f"{run['site']}.json"
-        site = json.loads(site_file.read_text()) if site_file.exists() else {"brand": run["brand"], "pages": {}}
-        site["brand"] = run["brand"]
-        site["shell"] = json.loads((self.workspace / "shell.json").read_text())
-        site["pages"][run.get("route", "/")] = json.loads((self.workspace / "page.json").read_text())
+        site = {"brand": run["brand"], "shell": json.loads((self.workspace / "shell.json").read_text()),
+                "pages": self._pages()}
         site_file.write_text(json.dumps(site, indent=2))
-        route = run.get("route", "/")
         return f"{self.base_url}/s/{run['site']}{'' if route == '/' else route}"
 
     @staticmethod
@@ -173,12 +185,16 @@ class PageTools:
                 })
         return blocks
 
-    def render_page(self) -> list[dict] | str:
-        """Screenshot the page at 1440 and 375 wide. Refuses while the page is invalid."""
+    def render_page(self, route: str = "/") -> list[dict] | str:
+        """Screenshot one page at 1440 and 375 wide ("/" is page.json, "/analysis" is
+        pages/analysis.json). Refuses while the site is invalid."""
         check = self.validate_page()
         if not check.startswith("VALID"):
-            return "NOT RENDERED: the page is invalid.\n" + check
-        url = self._publish_for_preview()
+            return "NOT RENDERED: the site is invalid.\n" + check
+        route = "/" + route.strip("/") if route.strip("/") else "/"
+        if route not in self._pages():
+            return f"NOT RENDERED: no page {route}. Pages: {', '.join(self._pages())}."
+        url = self._publish_for_preview(route)
         from playwright.sync_api import sync_playwright
 
         renders = self.workspace / "renders"
@@ -209,7 +225,8 @@ class PageTools:
                     })"""
                 )
                 png = page.screenshot(full_page=True)
-                (renders / f"{round_number}-{width}.png").write_bytes(png)
+                name = "home" if route == "/" else route.strip("/").replace("/", "-")
+                (renders / f"{round_number}-{name}-{width}.png").write_bytes(png)
                 tiles = self._tiles(png, SCALE_BY_WIDTH.get(width, 1.0))
                 size = "half size" if SCALE_BY_WIDTH.get(width, 1.0) < 1 else "full size"
                 blocks.append({
@@ -224,7 +241,7 @@ class PageTools:
                 blocks.extend(tiles)
                 page.close()
             browser.close()
-        self._record("render", url=url)
+        self._record("render", url=url, route=route)
         return blocks
 
     # --- research ------------------------------------------------------------------------------

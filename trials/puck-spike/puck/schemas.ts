@@ -152,6 +152,7 @@ export const ShellSchema = z
         accountLogo: optionalText,
         ctaLabel: text.min(1),
         ctaHref: link,
+        nav: z.array(z.object({ label: text.min(1), href: link }).strict()).max(6).default([]),
       })
       .strict(),
     footer: z

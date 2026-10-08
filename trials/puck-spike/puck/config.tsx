@@ -74,7 +74,13 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             accountLogo: { type: "text", label: "Account logo URL (optional)" },
             ctaLabel: { type: "text", label: "Button label" },
             ctaHref: { type: "text", label: "Button link" },
-          },
+            nav: {
+              type: "array",
+              label: "Navigation links",
+              arrayFields: { label: { type: "text" }, href: { type: "text", label: "Link (/page or URL)" } },
+              getItemSummary: (item: { label?: string }) => item.label || "Link",
+            },
+          } as never,
           render: (props) => <SiteHeader brand={brand} header={props} href={href} />,
         },
         SiteFooter: {

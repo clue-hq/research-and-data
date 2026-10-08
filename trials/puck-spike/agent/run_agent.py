@@ -259,6 +259,13 @@ def main() -> int:
                 recorder.turn.status = "ended"
             summary = summarize_turn(recorder.turn, page_tools.events[events_before:], state.get("messages", []))
             record["turns"].append(summary)
+            snapshot = out / "turns" / str(len(record["turns"]))  # the site after this turn, for diffs
+            snapshot.mkdir(parents=True, exist_ok=True)
+            for name in ("page.json", "shell.json", "plan.md"):
+                if (workspace / name).exists():
+                    shutil.copy2(workspace / name, snapshot / name)
+            if (workspace / "pages").exists():
+                shutil.copytree(workspace / "pages", snapshot / "pages", dirs_exist_ok=True)
             trace(
                 f"=== {summary['status']}: {summary['model_calls']} calls, ${summary['cost_usd']}, "
                 f"{summary['seconds']}s, renders {summary['render_rounds']}"
