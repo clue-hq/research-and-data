@@ -50,6 +50,17 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   a failing case for the proof rule; multi-page workspace + route-existence check + shell nav
   before E2; A2 (variance) and E2 not yet run.
 
+## JavaScript-heavy capture (founder: note it, come back and test heavily)
+- Notes: docs/superpowers/specs/2026-10-08-capturing-javascript-heavy-sites-notes.md. Root cause:
+  capture saves one moment (scroll to bottom, back to top, serialize); altcarbon.com builds content
+  client-side tied to scroll. Recommendation: record/replay their JS in a sandbox at capture time,
+  save each section in view, ship our own (frozen clone / clone + vetted runtime / rebuilt
+  component / labelled still), gate by fidelity. First experiment: 3-4 day capture prototype, no
+  model spend.
+- Alt Carbon prep parked (7bf25b37e); kit rules in brand.md kept as proposed/kit-rules-in-brand-md.patch.
+  Spike export ignores the platform's `degraded` flag (Alt Carbon hero: dead_height) — fix when we
+  return to Alt Carbon.
+
 ## Known limits
 
 ## Next
