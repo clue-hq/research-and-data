@@ -112,6 +112,8 @@ def test_tool_calls_run_in_the_order_the_model_wrote_them(workspace: Path) -> No
 
 
 def test_a_turn_cannot_finish_on_an_invalid_page(workspace: Path) -> None:
+    (workspace / "page.json").write_text(json.dumps(
+        {"root": {"props": {"title": "x"}}, "content": [{"type": "NoSuchSection", "props": {"id": "a"}}]}))
     messages, recorder = run(workspace, [
         AIMessage(content="All done."),
         AIMessage(content="All done."),
@@ -119,8 +121,15 @@ def test_a_turn_cannot_finish_on_an_invalid_page(workspace: Path) -> None:
     ])
     reminders = [m for m in messages if isinstance(m, HumanMessage) and "still invalid" in m.content]
     assert len(reminders) == 2
-    assert "page.json: does not exist yet" in reminders[0].content
+    assert "shell.json: does not exist yet" in reminders[0].content
     assert recorder.turn.status == "completed with errors"
+
+
+def test_a_turn_with_no_page_yet_finishes_without_reminders(workspace: Path) -> None:
+    """A turn that only builds components (no page asked for yet) is not pushed to make one."""
+    messages, recorder = run(workspace, [AIMessage(content="Rebuilt the hero as a component.")])
+    assert not [m for m in messages if isinstance(m, HumanMessage) and "still invalid" in m.content]
+    assert recorder.turn.status == "completed (no page yet)"
 
 
 def test_the_safety_stop_ends_a_runaway_turn(workspace: Path) -> None:

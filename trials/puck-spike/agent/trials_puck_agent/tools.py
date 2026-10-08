@@ -217,6 +217,7 @@ class PageTools:
                 page.on("pageerror", lambda e: errors.append(str(e)))
                 page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
                 self._retry(lambda: page.goto(url, wait_until="load", timeout=60_000), "render")
+                page.add_style_tag(content="nextjs-portal{display:none!important}")  # the dev server's badge
                 page.wait_for_timeout(1500)
                 height = page.evaluate("document.body.scrollHeight")
                 for y in range(0, height, 600):
@@ -368,7 +369,7 @@ class PageTools:
                     page.wait_for_timeout(60)
                 page.evaluate("window.scrollTo(0,0)")
                 page.wait_for_timeout(300)
-                handles = page.query_selector_all(".brand-root > div.lumen-fragment, .brand-root > section")
+                handles = page.query_selector_all(".brand-root > div.lumen-fragment, .brand-root > [data-agent-section]")
                 if len(handles) >= expected:
                     shots = [(h.screenshot(), h.inner_text()) for h in handles[:expected]]
                     break

@@ -19,7 +19,8 @@ what this spike measures against. The pieces:
 - a read_file without a limit reads the whole file (WholeFileReads);
 - tool calls from one response run one at a time, in the order the model wrote them;
 - RunRecorder: per-call usage and cost, the 40-call safety stop, and the finish guard (a turn
-  cannot end on an invalid page; after two reminders it ends "completed with errors").
+  cannot end on an invalid page; after two reminders it ends "completed with errors"; a site with
+  no page.json yet is not checked).
 """
 
 from __future__ import annotations
@@ -333,6 +334,10 @@ class RunRecorder(AgentMiddleware):
     def after_model(self, state, runtime):
         latest = state["messages"][-1]
         if not isinstance(latest, AIMessage) or latest.tool_calls or self.turn.status != "running":
+            return None
+        if not (self.page_tools.workspace / "page.json").exists():
+            # Nothing to check yet: a turn that only builds components is not pushed to make a page.
+            self.turn.status = "completed (no page yet)"
             return None
         check = self.page_tools._validate_raw()
         if check["valid"]:

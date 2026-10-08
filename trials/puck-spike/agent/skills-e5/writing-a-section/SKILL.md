@@ -39,11 +39,12 @@ The kit gives you:
 - `kit.Shell`: the section and its surface (it sets the right text colour for light and dark).
 - `kit.Button`: the brand's button.
 - `kit.Eyebrow`: the small label above a heading.
-- `kit.Image`: an image from brand/brand.md.
+- `kit.Image`: an image from brand/brand.md; with `fit="fill"` it covers a box you position, for a background photo.
 
 ## Rules
 
-- Style only with the brand's classes: surfaces through `kit.Shell`, type through
+- Style only with the brand's classes: surfaces through `kit.Shell`, or `bg-surface-<role>` with its
+  matching `text-on-surface-<role>` when a section needs panels edge to edge, type through
   `font-<role> text-<role>` (roles in brand/brand.md), colours through `text-ink-*`,
   `bg-surface-*` and `border-line-*`, corners through `rounded-<role>`, and spacing through
   Tailwind's scale (`mt-6`, `gap-8`). No colour values, pixel sizes, `style` or `className`

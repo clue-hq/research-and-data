@@ -114,7 +114,12 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
   const agentSections = Object.fromEntries(
     Object.entries(AGENT_SECTIONS[options.site ?? ""] ?? {}).map(([name, module]) => [
       name,
-      { label: `${name} (agent)`, fields: {}, render: (props: never) => module.render(props, kit) },
+      {
+        label: `${name} (agent)`,
+        fields: {},
+        // The wrapper lets compare_section find the component whatever its root element is.
+        render: (props: never) => <div data-agent-section={name}>{module.render(props, kit)}</div>,
+      },
     ]),
   );
 

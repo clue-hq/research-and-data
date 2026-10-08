@@ -12,7 +12,8 @@ Usage (from the repo root):
     .venv/bin/python trials/puck-spike/agent/run_agent.py --case A --label a1-edits --turns edits.txt
     .venv/bin/python trials/puck-spike/agent/run_agent.py --label a1-edits --from-run a1 --turns edits.txt
 
---turns adds one turn per line after the build, on the same session. --from-run starts a new
+--turns adds one turn per line after the build, on the same session (--no-build: the turns are
+the whole run). --from-run starts a new
 session on a copy of a finished run's workspace and runs only the --turns (no build).
 Everything lands in trials/puck-spike/agent-runs/<label>/.
 """
@@ -211,6 +212,8 @@ def main() -> int:
                         help="A new session for every turn; code writes site.md before and history.md after each.")
     parser.add_argument("--allow-new-sections", action="store_true",
                         help="E5: the agent may write a new section (write_section + the writing-a-section skill).")
+    parser.add_argument("--no-build", action="store_true",
+                        help="With --case: set up the workspace but skip the build turn; --turns gives every turn.")
     parser.add_argument("--no-clear", action="store_true",
                         help="Keep superseded tool results in the model request (clearing is on by default).")
     args = parser.parse_args()
@@ -259,7 +262,8 @@ def main() -> int:
             knowledge=inputs["knowledge"],
         )
         setup["research_errors"] = inputs["research_errors"]
-        turns.append(BUILD_PROMPT.format(account=account, domain=inputs["domain"]))
+        if not args.no_build:
+            turns.append(BUILD_PROMPT.format(account=account, domain=inputs["domain"]))
     if args.turns:
         turns += [line.strip() for line in args.turns.read_text().splitlines() if line.strip()]
 

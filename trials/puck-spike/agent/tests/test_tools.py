@@ -290,6 +290,31 @@ def test_compare_section_needs_the_component_first(workspace: Path) -> None:
     assert "write it with write_section first" in tools_for(workspace).compare_section("Missing", "x", {})
 
 
+PANELS = """import { z } from "zod";
+import type { Kit } from "@/puck/agent-kit";
+
+export const schema = z.object({
+  id: z.string(),
+  surface: z.enum(["page", "card", "muted", "brandSubtle", "brand", "inverse"]),
+  heading: z.string(),
+  photo: z.string(),
+}).strict();
+
+export function render(props: z.infer<typeof schema>, kit: Kit) {
+  return (
+    <div className="grid md:grid-cols-2">
+      <div className="relative min-h-80 bg-surface-inverse text-on-surface-inverse">
+        <kit.Image src={props.photo} fit="fill" />
+      </div>
+      <div className="bg-surface-brand p-16 text-on-surface-brand">
+        <h2 className="brand-heading font-title text-title">{props.heading}</h2>
+      </div>
+    </div>
+  );
+}
+"""
+
+
 @pytest.mark.skipif(not _server_up(), reason="the spike's dev server is not running on :3047")
 def test_view_clone_and_compare_section_show_the_original_and_the_rebuild(workspace: Path) -> None:
     skill = (SPIKE / "agent" / "skills-e5" / "writing-a-section" / "SKILL.md").read_text()
@@ -307,6 +332,14 @@ def test_view_clone_and_compare_section_show_the_original_and_the_rebuild(worksp
         assert isinstance(compared, list), compared
         assert "of the area differs" in compared[0]["text"] and "missing from yours" in compared[0]["text"]
         assert sum(b["type"] == "image" for b in compared) >= 2
+
+        # Edge-to-edge panels without Shell, with a background photo: written, and found by the compare.
+        image = json.loads((SPIKE / "data" / "brands" / "garner" / "assets.json").read_text())
+        photo = next(a["file"] for a in image.values() if a["file"].endswith((".avif", ".png", ".jpg")))
+        panels = PANELS.replace("PHOTO", photo)
+        assert tools.write_section("PhotoPanels", panels).startswith("WRITTEN")
+        compared = tools.compare_section("PhotoPanels", clone, {"heading": "A line.", "photo": photo})
+        assert isinstance(compared, list), compared
     finally:
         shutil.rmtree(root / site, ignore_errors=True)
         tools._write_section_index()
