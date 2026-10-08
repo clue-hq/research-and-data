@@ -139,6 +139,23 @@ Edit 7, a3's failure, now correctly says there are no four cards and asks. 0 val
 34. **Skills are re-read in every session** (about 6k tokens each time). *Open: carry them in the
     cached system prompt.*
 
+## E5: the agent writes a new section (2026-10-08)
+
+The agent checked the catalog first, recorded that no clone or brand section carries a three-step
+process, wrote `AnalysisSteps` with write_section (passed the brand-token check and type check on
+the first attempt), placed it on the light page surface between the proof and the close, and it
+validated first time. 13 calls, $0.35, 3 minutes, 1 render. On the render it reads as Garner's: the
+brand serif heading in its heading ink, the brand eyebrow, card corners, body type and spacing match
+the sections around it; the steps' facts come from Garner's analysis page.
+
+35. **The agent cannot see the exact token class names** (which `text-ink-*`, `border-line-*`,
+    `rounded-*` exist). It probed with grep and listed folders outside its workspace. *Open: a short
+    list of allowed token classes for E5 (from the generated theme).*
+36. **Flat props** (`step1Title`, `step2Title`, `step3Title`) instead of a list of steps, so the section
+    holds exactly three. The skill's example has no list prop. *Watch.*
+37. **Step titles use the body size** (`font-body text-body brand-heading`), so the hierarchy inside
+    the cards is weak. *Watch (taste).*
+
 ## Changes made for an Alt Carbon run, not yet run (uncommitted)
 
 - `export/export_brand.py`: Alt Carbon added (kit `brand_kit_ing_28663a…`, version 1).

@@ -66,6 +66,14 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   -> propose clearing only above ~60k tokens. ISSUES.md 31-34. E5 code written, shared-file part
   pending (announced to founder).
 
+## Efficiency fixes + E5 (2026-10-08)
+- Founder: clearing only above 60k tokens; compaction at 300k (keep 60k); skills in the system prompt
+  (fixed prompt ~6.7k tokens); plan.md upkeep and site.md left as they are. Commit 2c51366da.
+- E5 (73fa923d3 code): write_section + check-section.ts + agent-kit; agent wrote AnalysisSteps, passed
+  first time, on brand next to clones; 13 calls, $0.35. ISSUES.md 35-37. puck/agent-sections/index.ts
+  is modified by the run (left uncommitted so the agent-e5 page still renders; restore before commits).
+- Next: T8 findings doc + production roadmap.
+
 ## JavaScript-heavy capture (founder: note it, come back and test heavily)
 - Notes: docs/superpowers/specs/2026-10-08-capturing-javascript-heavy-sites-notes.md. Root cause:
   capture saves one moment (scroll to bottom, back to top, serialize); altcarbon.com builds content
