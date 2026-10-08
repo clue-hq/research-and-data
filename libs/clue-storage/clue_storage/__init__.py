@@ -15,6 +15,7 @@ from clue_storage.artifacts import (
     release_artifacts,
     retain_artifact,
     sweep_orphan_blobs,
+    verify_artifact_bytes,
 )
 from clue_storage.context import bind_snapshots, current_snapshot_sink, current_storage
 from clue_storage.factory import storage_from_settings
@@ -59,6 +60,7 @@ __all__ = [
     "release_artifacts",
     "retain_artifact",
     "read_verified_artifact",
+    "verify_artifact_bytes",
     "storage_from_settings",
     "sweep_orphan_blobs",
 ]

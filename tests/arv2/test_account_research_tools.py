@@ -3578,3 +3578,21 @@ def test_ai_ark_pacing_gap_runs_from_the_answer_and_indexing_overlaps_it(outside
         assert gap <= waited < gap + drain_s - 0.1
     else:  # the old order: indexing, then the whole gap
         assert waited >= gap + drain_s
+
+
+def test_ai_ark_subject_registration_skips_a_held_non_ai_ark_response_without_storage() -> None:
+    """W2-16: an Exa response is not downloaded just to learn it is not AI Ark."""
+    import clue_api.arv2.committee_discovery as discovery
+
+    class NoStorage:
+        async def get(self, key: str) -> bytes:
+            raise AssertionError("storage was read")
+
+    runtime, _, _, _ = _runtime()
+    runtime.storage = NoStorage()  # type: ignore[assignment]
+    body = json.dumps({"record": {"provider": "exa", "operation": "search"}}).encode()
+    _run(
+        discovery.index_provider_artifacts(
+            runtime, MemoryConn(), ["ws-1/abc"], bodies={"ws-1/abc": body}
+        )
+    )

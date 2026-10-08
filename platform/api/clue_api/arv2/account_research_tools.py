@@ -695,7 +695,9 @@ class ToolRuntime:
                     # responses.
                     from clue_api.arv2.committee_discovery import index_provider_artifacts
 
-                    await index_provider_artifacts(self, conn, report.raw_artifact_keys.values())
+                    await index_provider_artifacts(
+                        self, conn, report.raw_artifact_keys.values(), report.raw_bodies
+                    )
                 if has_capability(
                     self.scope.catalog_version, "committee_discovery"
                 ) and not await operations.job_available(

@@ -46,7 +46,7 @@ from clue_research.identity.provider import (
     register_provider_subjects,
     resolve_provider_contact,
 )
-from clue_storage import read_verified_artifact
+from clue_storage import read_verified_artifact, verify_artifact_bytes
 
 if TYPE_CHECKING:
     from langchain_core.tools import StructuredTool
@@ -133,20 +133,41 @@ def reference_data(op: operations.Operation, subject: str, parent_job_id: UUID) 
     }
 
 
+def _ai_ark_people(record: Mapping[str, Any]) -> bool:
+    # Companies have IDs too, but are not personal-data subjects.
+    return record.get("provider") == "ai_ark" and "people" in str(record.get("operation", ""))
+
+
 async def index_provider_artifacts(
-    runtime: ToolRuntime, conn: AsyncConnection, keys: Iterable[str]
+    runtime: ToolRuntime,
+    conn: AsyncConnection,
+    keys: Iterable[str],
+    bodies: Mapping[str, bytes] | None = None,
 ) -> None:
+    """Register the people in AI Ark responses as provider subjects.
+
+    ``bodies`` are responses the caller has just stored (key -> bytes, W2-16): a response that is
+    not an AI Ark people result is skipped without a download, and an AI Ark one is checked
+    against its row without one.
+    """
     assert runtime.storage is not None
     for key in keys:
-        _, data = await read_verified_artifact(
-            conn, runtime.storage, storage_key=key, workspace_id=runtime.scope.workspace_id
-        )
+        held = (bodies or {}).get(key)
+        if held is not None:
+            record = json.loads(held).get("record", {})
+            if not _ai_ark_people(record):
+                continue
+            await verify_artifact_bytes(
+                conn, storage_key=key, workspace_id=runtime.scope.workspace_id, data=held
+            )
+            data = held
+        else:
+            _, data = await read_verified_artifact(
+                conn, runtime.storage, storage_key=key, workspace_id=runtime.scope.workspace_id
+            )
         envelope = json.loads(data)
         record = envelope.get("record", {})
-        if record.get("provider") != "ai_ark":
-            continue
-        # Companies have IDs too, but are not personal-data subjects.
-        if "people" not in str(record.get("operation", "")):
+        if not _ai_ark_people(record):
             continue
         try:
             response = json.loads(envelope.get("body_utf8", "null"))

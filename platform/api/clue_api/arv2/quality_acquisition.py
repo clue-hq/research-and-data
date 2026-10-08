@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
@@ -19,11 +20,12 @@ from clue_api.arv2.provider_ledger import DrainReport, ledger_id_for
 from clue_api.arv2.quality_evidence import (
     PreparedSource,
     SourceRef,
-    prepare_source,
+    SourceSpec,
+    prepare_sources,
     publish_sources,
 )
 from clue_api.arv2.research_operations import OperationScope
-from clue_storage import StorageBackend, read_verified_artifact
+from clue_storage import StorageBackend, read_verified_artifact, verify_artifact_bytes
 
 
 async def index_acquisition(
@@ -52,6 +54,7 @@ async def index_acquisition(
             for row in report.result_rows
             if row.provider not in ("openrouter", "model")
         ),
+        report.raw_bodies,
     )
     return await publish_sources(conn, scope, prepared)
 
@@ -125,16 +128,19 @@ async def _index_receipts(
     storage: StorageBackend,
     scope: OperationScope,
     rows: tuple[AcquisitionReceipt, ...],
+    bodies: Mapping[str, bytes] | None = None,
 ) -> tuple[PreparedSource, ...]:
-    sources = []
+    """Every receipt's sources, prepared together (W2-16: one batch of parallel uploads).
+
+    ``bodies`` are raw responses this drain has just stored (artifact key -> bytes): they are
+    checked against their rows instead of downloaded again. Recovery passes none and reads them.
+    """
+    sources: list[SourceSpec] = []
     for row in rows:
         key, operation_id = row.key, row.operation_id
         if key is None:
             sources.append(
-                await prepare_source(
-                    conn,
-                    storage,
-                    scope,
+                SourceSpec(
                     kind="acquisition_gap",
                     original_key=None,
                     body={
@@ -150,9 +156,16 @@ async def _index_receipts(
                 )
             )
             continue
-        _, raw = await read_verified_artifact(
-            conn, storage, workspace_id=scope.workspace_id, storage_key=key
-        )
+        held = (bodies or {}).get(key)
+        if held is not None:
+            await verify_artifact_bytes(
+                conn, storage_key=key, workspace_id=scope.workspace_id, data=held
+            )
+            raw = held
+        else:
+            _, raw = await read_verified_artifact(
+                conn, storage, workspace_id=scope.workspace_id, storage_key=key
+            )
         envelope = json.loads(raw)
         try:
             body = json.loads(envelope["body_utf8"])
@@ -161,10 +174,7 @@ async def _index_receipts(
         ledger = row.ledger_id
 
         save = partial(
-            prepare_source,
-            conn,
-            storage,
-            scope,
+            SourceSpec,
             original_key=key,
             observed_at=row.recorded_at,
             ledger_id=ledger,
@@ -180,7 +190,7 @@ async def _index_receipts(
             or not isinstance(body, (dict, list))
         ):
             sources.append(
-                await save(
+                save(
                     kind="acquisition_gap",
                     body={
                         "provider": row.provider,
@@ -193,7 +203,7 @@ async def _index_receipts(
             )
             continue
         sources.append(
-            await save(
+            save(
                 kind="provider_record",
                 body=enrichment_only(body) if row.provider == "ai_ark" else body,
                 origin_locator="response-body",
@@ -217,7 +227,7 @@ async def _index_receipts(
                 else ("output.content" if isinstance(body.get("output"), dict) else "output")
             )
             sources.append(
-                await save(
+                save(
                     kind="research_report",
                     body=report_text,
                     origin_locator=locator,
@@ -231,7 +241,7 @@ async def _index_receipts(
             # A whole result retains links, structured fields and fresh highlights that can be
             # absent from both its text field and Exa's dossier. Existing excerpt IDs stay stable.
             sources.append(
-                await save(
+                save(
                     kind="provider_record",
                     body=result,
                     origin_locator=f"results/{i}",
@@ -249,7 +259,7 @@ async def _index_receipts(
             )
             for locator, content in exa_source_texts(result):
                 sources.append(
-                    await save(
+                    save(
                         kind="web_snapshot",
                         body=content,
                         origin_locator=f"results/{i}/{locator}",
@@ -263,7 +273,7 @@ async def _index_receipts(
                         },
                     )
                 )
-    return tuple(sources)
+    return await prepare_sources(conn, storage, scope, sources, originals=bodies)
 
 
 def exa_source_texts(result: dict[str, Any]) -> list[tuple[str, str]]:

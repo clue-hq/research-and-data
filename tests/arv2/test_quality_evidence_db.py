@@ -457,3 +457,117 @@ def test_recovery_pages_through_more_receipts_than_one_batch_and_terminates(tmp_
             assert await quality_acquisition.recover_acquisitions(conn, storage, scope) == ()
 
     run_async(case())
+
+
+class _CountingStorage:
+    """Counts storage round trips and how many uploads run at once (W2-16)."""
+
+    def __init__(self, inner: FsStorage) -> None:
+        self.inner, self.gets, self.puts, self.inflight, self.max_inflight = inner, 0, 0, 0, 0
+
+    async def get(self, key: str) -> bytes:
+        self.gets += 1
+        return await self.inner.get(key)
+
+    async def put(self, key: str, data: bytes, *, media_type: str) -> None:
+        self.puts += 1
+        self.inflight += 1
+        self.max_inflight = max(self.max_inflight, self.inflight)
+        try:
+            await asyncio.sleep(0.01)  # an upload takes time; parallel uploads overlap
+            await self.inner.put(key, data, media_type=media_type)
+        finally:
+            self.inflight -= 1
+
+    def __getattr__(self, name: str):
+        return getattr(self.inner, name)
+
+
+async def _drained_deep_call(conn, storage, scope):
+    from clue_api.arv2.provider_ledger import (
+        BufferedLedger,
+        BufferedRawSink,
+        LedgerStamp,
+        drain_provider_calls,
+    )
+    from clue_api.arv2.sinks import LedgerRow
+    from tests.arv2.test_committee_discovery_v2_db import Artifacts
+    from tests.arv2.test_provider_ledger import _record
+
+    raw, ledger = BufferedRawSink(), BufferedLedger()
+    results = [
+        {"url": f"https://clinic.test/{i}", "title": f"Page {i}", "text": f"Page {i} text."}
+        for i in range(5)
+    ]
+    ref = raw.save(
+        _record(NOW),
+        json.dumps({"output": {"content": {"report": "A report."}}, "results": results}).encode(),
+    )
+    ledger.record(
+        LedgerRow(
+            row_id=f"test-w216-{uuid4()}",
+            call_id="test-w216-call",
+            phase="result",
+            provider="exa",
+            operation="deep",
+            label="quality",
+            recorded_at=NOW,
+            http_status=200,
+            raw_ref=ref,
+            outcome="ok",
+        )
+    )
+    project = (
+        await conn.execute(
+            text("SELECT project_id FROM arv2_research_run WHERE run_id=:id"), {"id": scope.run_id}
+        )
+    ).scalar_one()
+    return await drain_provider_calls(
+        conn,
+        raw=raw,
+        ledger=ledger,
+        artifacts=Artifacts(conn, storage),
+        stamp=LedgerStamp(workspace_id=scope.workspace_id, project_id=project, job_id=scope.job_id),
+    )
+
+
+def test_indexing_a_drained_call_reads_nothing_back_and_uploads_in_parallel(tmp_path):
+    """W2-16: the drain already holds the response; indexing must not download it again (once
+    per source today), and the source files are uploaded together, not one after another."""
+    from clue_api.arv2.quality_acquisition import index_acquisition
+
+    async def case():
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            scope, _ = await seed(conn, fs)
+            storage = _CountingStorage(fs)
+            report = await _drained_deep_call(conn, storage, scope)
+            (key,) = report.raw_artifact_keys.values()
+            assert report.raw_bodies[key] == await fs.get(key)
+            storage.gets = storage.puts = storage.max_inflight = 0
+            refs = await index_acquisition(conn, storage, scope, report)
+            assert storage.gets == 0
+            assert storage.puts == len({r.artifact_key for r in refs})
+            assert storage.max_inflight > 1
+            kinds = sorted(r.kind for r in refs)
+            assert kinds.count("web_snapshot") == 5 and "research_report" in kinds
+
+    run_async(case())
+
+
+def test_an_original_erased_before_indexing_still_blocks_it(tmp_path):
+    from clue_api.arv2.quality_acquisition import index_acquisition
+
+    async def case():
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            scope, _ = await seed(conn, fs)
+            report = await _drained_deep_call(conn, fs, scope)
+            (key,) = report.raw_artifact_keys.values()
+            await conn.execute(
+                text("UPDATE artifact SET erased_at=now() WHERE storage_key=:key"), {"key": key}
+            )
+            with pytest.raises(ArtifactIntegrityError, match="erased"):
+                await index_acquisition(conn, fs, scope, report)
+
+    run_async(case())

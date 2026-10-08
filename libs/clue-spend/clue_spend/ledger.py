@@ -186,6 +186,10 @@ class DrainReport:
     media_seconds: int
     result_rows: tuple[LedgerRow, ...] = field(default_factory=tuple)
     raw_artifact_keys: Mapping[str, str] = field(default_factory=dict)
+    #: artifact key -> the exact bytes stored under it, for this drain only: a caller indexing the
+    #: batch right away (W2-16) uses them instead of downloading what it has just written. Freed
+    #: with the report.
+    raw_bodies: Mapping[str, bytes] = field(default_factory=dict)
 
 
 def ledger_id_for(row_id: str) -> UUID:
@@ -253,16 +257,19 @@ async def drain_provider_calls(
     with the surface :func:`_surface_for` computed for it.
     """
     keys: dict[str, str] = {}
+    bodies: dict[str, bytes] = {}
     persisted = 0
     for ref, record, body in raw.drain():
         if artifacts is None:
             continue
+        data = artifact_payload(record, body)
         artifact = await artifacts.persist_body(
             workspace_id=stamp.workspace_id,
-            data=artifact_payload(record, body),
+            data=data,
             media_type="application/json",
         )
         keys[ref] = artifact.artifact_key
+        bodies[artifact.artifact_key] = data
         persisted += 1
 
     rows = ledger.drain()
@@ -283,6 +290,7 @@ async def drain_provider_calls(
         media_seconds=sum(row.media_seconds or 0 for row in results),
         result_rows=tuple(results),
         raw_artifact_keys=keys,
+        raw_bodies=bodies,
     )
 
 

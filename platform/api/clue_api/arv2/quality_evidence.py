@@ -6,6 +6,7 @@ sources. Agent briefs and catalog descriptions never pass through this writer as
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from clue_storage import (
     read_verified_artifact,
     record_artifact,
     retain_artifact,
+    verify_artifact_bytes,
 )
 
 log = get_logger(__name__)
@@ -133,6 +135,27 @@ async def _existing_source(conn: AsyncConnection, sid: UUID) -> SourceRef | None
     return None if row is None else SourceRef.model_validate(dict(row))
 
 
+#: Source files of one acquisition uploaded at once (W2-16). Each is a storage round trip that
+#: used to run one after another inside the open transaction.
+UPLOAD_CONCURRENCY = 16
+
+
+@dataclass(frozen=True)
+class SourceSpec:
+    """One source to prepare: the arguments of :func:`prepare_source`."""
+
+    kind: SourceKind
+    body: str | Mapping[str, Any] | list[Any]
+    original_key: str | None
+    origin_locator: str
+    observed_at: datetime
+    source_url: str | None = None
+    ledger_id: UUID | None = None
+    operation_id: UUID | None = None
+    metadata: Mapping[str, JsonValue] | None = None
+    normalizer_version: str = "v1"
+
+
 async def prepare_source(
     conn: AsyncConnection,
     storage: StorageBackend,
@@ -151,89 +174,168 @@ async def prepare_source(
 ) -> PreparedSource:
     """Store, verify and retain one source's bytes WITHOUT the account-wide manifest lock.
 
-    The artifact row is still recorded before the upload (the storage rule); only publication —
+    One source of :func:`prepare_sources`.
+    """
+    (prepared,) = await prepare_sources(
+        conn,
+        storage,
+        scope,
+        [
+            SourceSpec(
+                kind=kind,
+                body=body,
+                original_key=original_key,
+                origin_locator=origin_locator,
+                observed_at=observed_at,
+                source_url=source_url,
+                ledger_id=ledger_id,
+                operation_id=operation_id,
+                metadata=metadata,
+                normalizer_version=normalizer_version,
+            )
+        ],
+    )
+    return prepared
+
+
+async def prepare_sources(
+    conn: AsyncConnection,
+    storage: StorageBackend,
+    scope: OperationScope,
+    specs: Sequence[SourceSpec],
+    *,
+    originals: Mapping[str, bytes] | None = None,
+) -> tuple[PreparedSource, ...]:
+    """Store, verify and retain sources' bytes WITHOUT the account-wide manifest lock, in order.
+
+    Every artifact row is still recorded before its upload (the storage rule); only publication —
     the revision and the ``arv2_evidence_source`` row — needs the account lock
     (:func:`publish_sources`). Research slowness fix 2026-10-03: acquisition saves many sources in
     one transaction, and taking the lock per source held it across every later upload.
+
+    W2-16: the uploads run together (``UPLOAD_CONCURRENCY`` at a time) instead of one after
+    another, and each original is verified once per batch — from ``originals`` (bytes the caller
+    has just stored, checked against their row without a download) when present. Retention still
+    holds every artifact lock before an original is checked and linked, so erasure cannot slip
+    between check and link.
     """
+    if not specs:
+        return ()
     subject = await _subject(conn, scope)
-    raw = (
-        body if isinstance(body, str) else json.dumps(body, sort_keys=True, separators=(",", ":"))
-    ).encode()
-    media = "text/plain" if isinstance(body, str) else "application/json"
-    sha = content_address(raw)
-    key = artifact_key(scope.workspace_id, sha)
-    identity = json.dumps(
-        [
-            str(scope.job_id),
-            str(ledger_id),
-            str(operation_id),
-            original_key,
-            origin_locator,
-            kind,
-            source_url,
-            sha,
-            normalizer_version,
-        ],
-        separators=(",", ":"),
-    )
-    sid = uuid5(NAMESPACE_URL, "research-source:" + identity)
-    existing = await _existing_source(conn, sid)
-    if existing is not None:
-        await _body(conn, storage, existing)
-        return PreparedSource(existing=existing, pending=None)
-    await record_artifact(
-        conn,
-        storage_key=key,
-        workspace_id=scope.workspace_id,
-        content_sha256=sha,
-        media_type=media,
-        size_bytes=len(raw),
-    )
-    await storage.put(key, raw, media_type=media)
-    for retained in sorted({key, *([original_key] if original_key else [])}):
-        await retain_artifact(
+    planned: list[PreparedSource | dict[str, Any]] = []
+    uploads: dict[str, tuple[bytes, str]] = {}
+    for spec in specs:
+        body = spec.body
+        raw = (
+            body
+            if isinstance(body, str)
+            else json.dumps(body, sort_keys=True, separators=(",", ":"))
+        ).encode()
+        media = "text/plain" if isinstance(body, str) else "application/json"
+        sha = content_address(raw)
+        key = artifact_key(scope.workspace_id, sha)
+        identity = json.dumps(
+            [
+                str(scope.job_id),
+                str(spec.ledger_id),
+                str(spec.operation_id),
+                spec.original_key,
+                spec.origin_locator,
+                spec.kind,
+                spec.source_url,
+                sha,
+                spec.normalizer_version,
+            ],
+            separators=(",", ":"),
+        )
+        sid = uuid5(NAMESPACE_URL, "research-source:" + identity)
+        existing = await _existing_source(conn, sid)
+        if existing is not None:
+            await _body(conn, storage, existing)
+            planned.append(PreparedSource(existing=existing, pending=None))
+            continue
+        await record_artifact(
             conn,
+            storage_key=key,
             workspace_id=scope.workspace_id,
-            storage_key=retained,
-            reference_kind="research_source",
-            reference_id=str(sid),
+            content_sha256=sha,
+            media_type=media,
+            size_bytes=len(raw),
         )
-    if original_key and original_key != key:
-        # Retention above holds both artifact locks; erasure cannot slip between check and link.
-        await read_verified_artifact(
-            conn, storage, workspace_id=scope.workspace_id, storage_key=original_key
+        uploads.setdefault(key, (raw, media))
+        planned.append(
+            {
+                "source_id": sid,
+                "workspace_id": scope.workspace_id,
+                "run_id": scope.run_id,
+                "account_id": scope.account_id,
+                "job_id": scope.job_id,
+                "subject_id": subject,
+                "kind": spec.kind,
+                "artifact_key": key,
+                "artifact_sha256": sha,
+                "byte_size": len(raw),
+                "media_type": media,
+                "original_key": spec.original_key,
+                "source_url": spec.source_url,
+                "observed_at": spec.observed_at,
+                "ledger_id": spec.ledger_id,
+                "operation_id": spec.operation_id,
+                "origin_locator": spec.origin_locator,
+                "normalizer_version": spec.normalizer_version,
+                "metadata": dict(spec.metadata or {}),
+            }
         )
+    gate = asyncio.Semaphore(UPLOAD_CONCURRENCY)
+
+    async def upload(key: str, raw: bytes, media: str) -> None:
+        async with gate:
+            await storage.put(key, raw, media_type=media)
+
+    outcomes = await asyncio.gather(
+        *(upload(key, raw, media) for key, (raw, media) in uploads.items()),
+        return_exceptions=True,
+    )
+    if failure := next((o for o in outcomes if isinstance(o, BaseException)), None):
+        raise failure
+    pending = [p for p in planned if isinstance(p, dict)]
+    for item in pending:
+        original = item["original_key"]
+        for retained in sorted({item["artifact_key"], *([original] if original else [])}):
+            await retain_artifact(
+                conn,
+                workspace_id=scope.workspace_id,
+                storage_key=retained,
+                reference_kind="research_source",
+                reference_id=str(item["source_id"]),
+            )
+    verified: set[str] = set()
+    for item in pending:
+        original, key = item["original_key"], item["artifact_key"]
+        if not original or original == key:
+            continue
+        if original not in verified:
+            # Retention above holds both artifact locks; erasure cannot slip between check and link.
+            held = (originals or {}).get(original)
+            if held is not None:
+                await verify_artifact_bytes(
+                    conn, storage_key=original, workspace_id=scope.workspace_id, data=held
+                )
+            else:
+                await read_verified_artifact(
+                    conn, storage, workspace_id=scope.workspace_id, storage_key=original
+                )
+            verified.add(original)
         await conn.execute(
             text(
                 "INSERT INTO artifact_derivation(workspace_id,parent_key,child_key) "
                 "VALUES(:ws,:parent,:child) ON CONFLICT DO NOTHING"
             ),
-            {"ws": scope.workspace_id, "parent": original_key, "child": key},
+            {"ws": scope.workspace_id, "parent": original, "child": key},
         )
-    return PreparedSource(
-        existing=None,
-        pending={
-            "source_id": sid,
-            "workspace_id": scope.workspace_id,
-            "run_id": scope.run_id,
-            "account_id": scope.account_id,
-            "job_id": scope.job_id,
-            "subject_id": subject,
-            "kind": kind,
-            "artifact_key": key,
-            "artifact_sha256": sha,
-            "byte_size": len(raw),
-            "media_type": media,
-            "original_key": original_key,
-            "source_url": source_url,
-            "observed_at": observed_at,
-            "ledger_id": ledger_id,
-            "operation_id": operation_id,
-            "origin_locator": origin_locator,
-            "normalizer_version": normalizer_version,
-            "metadata": dict(metadata or {}),
-        },
+    return tuple(
+        p if isinstance(p, PreparedSource) else PreparedSource(existing=None, pending=p)
+        for p in planned
     )
 
 

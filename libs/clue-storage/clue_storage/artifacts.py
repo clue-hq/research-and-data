@@ -198,6 +198,32 @@ async def read_verified_artifact(
 ) -> tuple[ArtifactRecord, bytes]:
     """Read a live workspace artifact and verify its row, key, size, and content digest."""
 
+    record = await _live_record(conn, storage_key=storage_key, workspace_id=workspace_id)
+    try:
+        data = await storage.get(storage_key)
+    except StorageError as exc:
+        raise ArtifactIntegrityError("artifact blob is missing") from exc
+    _check_bytes(record, storage_key=storage_key, workspace_id=workspace_id, data=data)
+    return record, data
+
+
+async def verify_artifact_bytes(
+    conn: AsyncConnection, *, storage_key: str, workspace_id: str, data: bytes
+) -> ArtifactRecord:
+    """Every check :func:`read_verified_artifact` makes, against bytes the caller already holds.
+
+    For a writer that has just stored ``data`` under ``storage_key`` (a provider drain): the row
+    must exist in this workspace, be live (not erased, expired or purged), and match the bytes'
+    digest and size — without downloading them again.
+    """
+    record = await _live_record(conn, storage_key=storage_key, workspace_id=workspace_id)
+    _check_bytes(record, storage_key=storage_key, workspace_id=workspace_id, data=data)
+    return record
+
+
+async def _live_record(
+    conn: AsyncConnection, *, storage_key: str, workspace_id: str
+) -> ArtifactRecord:
     record = await get_artifact(conn, storage_key)
     if record is None:
         raise ArtifactIntegrityError(f"artifact row is missing for {storage_key!r}")
@@ -209,10 +235,12 @@ async def read_verified_artifact(
         or (record.expires_at is not None and record.expires_at <= datetime.now(UTC))
     ):
         raise ArtifactIntegrityError("artifact was erased, expired or purged")
-    try:
-        data = await storage.get(storage_key)
-    except StorageError as exc:
-        raise ArtifactIntegrityError("artifact blob is missing") from exc
+    return record
+
+
+def _check_bytes(
+    record: ArtifactRecord, *, storage_key: str, workspace_id: str, data: bytes
+) -> None:
     digest = content_address(data)
     expected_key = artifact_key(workspace_id, digest)
     if (
@@ -224,7 +252,6 @@ async def read_verified_artifact(
         raise ArtifactIntegrityError(
             "artifact bytes do not match durable content-addressed metadata"
         )
-    return record, data
 
 
 async def live_claim_count(conn: AsyncConnection, storage_key: str) -> int:
