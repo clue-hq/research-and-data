@@ -36,33 +36,66 @@ from clue_api.arv2.quality_pages import CitedItem, CitedSentence, PageSectionDra
 ModelCall = Callable[[Sequence[Mapping[str, str]], bool], Awaitable[str]]
 
 GUIDES = Path(__file__).resolve().parents[3] / "agents/catalog/research-quality/skills"
-GUIDE_VERSION = "v1"
+#: The writer guides in use when nothing else is configured (``CLUE_ARV2_PAGE_GUIDE_VERSION``).
+#: v2 shows the writer the researcher's interpretation and leads with the argument; ``v1`` is the
+#: previous guides and section order, unchanged, for rollback.
+GUIDE_VERSION = "v2"
 
-SECTIONS: dict[str, tuple[str, ...]] = {
-    "overview": (
-        "what-they-do",
-        "why-they-fit",
-        "why-now",
-        "buying-committee",
-        "how-to-approach",
-        "watch-outs",
-    ),
-    "insights": (
-        "buying-signals",
-        "money-and-momentum",
-        "tools-they-already-use",
-        "how-they-sell",
-        "miscellaneous",
-    ),
-    "contact": (
-        "why-this-person",
-        "problem-right-now",
-        "openers",
-        "angles",
-        "do-not-mention",
-        "miscellaneous",
-    ),
+_INSIGHTS = (
+    "buying-signals",
+    "money-and-momentum",
+    "tools-they-already-use",
+    "how-they-sell",
+    "miscellaneous",
+)
+_SECTIONS_BY_GUIDE: dict[str, dict[str, tuple[str, ...]]] = {
+    "v1": {
+        "overview": (
+            "what-they-do",
+            "why-they-fit",
+            "why-now",
+            "buying-committee",
+            "how-to-approach",
+            "watch-outs",
+        ),
+        "insights": _INSIGHTS,
+        "contact": (
+            "why-this-person",
+            "problem-right-now",
+            "openers",
+            "angles",
+            "do-not-mention",
+            "miscellaneous",
+        ),
+    },
+    "v2": {
+        "overview": (
+            "why-they-fit",
+            "why-now",
+            "what-they-do",
+            "buying-committee",
+            "how-to-approach",
+            "watch-outs",
+        ),
+        "insights": _INSIGHTS,
+        "contact": (
+            "problem-right-now",
+            "why-this-person",
+            "openers",
+            "angles",
+            "do-not-mention",
+            "miscellaneous",
+        ),
+    },
 }
+
+
+def sections_for(version: str = GUIDE_VERSION) -> dict[str, tuple[str, ...]]:
+    """The pages' sections, in the order the guides of ``version`` write them."""
+    return _SECTIONS_BY_GUIDE[version]
+
+
+SECTIONS: dict[str, tuple[str, ...]] = sections_for(GUIDE_VERSION)
 
 OUTPUT_SHAPE = """Return one JSON object, no prose around it:
 {"pages": [{"page": "<page>", "sections": [{"key": "<section key>",
@@ -91,21 +124,21 @@ class PageWriterError(ValueError):
     """The writer could not produce a page that passes the correctness checks."""
 
 
-def guide(name: str) -> str:
-    text = (GUIDES / name / GUIDE_VERSION / "SKILL.md").read_text(encoding="utf-8")
+def guide(name: str, version: str = GUIDE_VERSION) -> str:
+    text = (GUIDES / name / version / "SKILL.md").read_text(encoding="utf-8")
     return text.split("---", 2)[2].strip() if text.startswith("---") else text
 
 
-def account_system() -> str:
-    return guide("research-page-writing") + "\n\n" + guide("account-pages")
+def account_system(version: str = GUIDE_VERSION) -> str:
+    return guide("research-page-writing", version) + "\n\n" + guide("account-pages", version)
 
 
-def contact_system() -> str:
-    return guide("research-page-writing") + "\n\n" + guide("contact-page")
+def contact_system(version: str = GUIDE_VERSION) -> str:
+    return guide("research-page-writing", version) + "\n\n" + guide("contact-page", version)
 
 
-def seller_brief_system() -> str:
-    return guide("seller-brief")
+def seller_brief_system(version: str = GUIDE_VERSION) -> str:
+    return guide("seller-brief", version)
 
 
 def _norm(value: str) -> str:
@@ -132,6 +165,7 @@ def check_pages(
     pages: Sequence[str],
     texts: Mapping[str, str],
     contacts: set[str],
+    version: str = GUIDE_VERSION,
 ) -> list[str]:
     """Correctness problems in a writer result; empty when it can be published."""
     errors: list[str] = []
@@ -141,8 +175,9 @@ def check_pages(
     for page in pages:
         sections = [s for s in got[page].get("sections") or [] if isinstance(s, Mapping)]
         keys = [s.get("key") for s in sections]
-        if tuple(keys) != SECTIONS[page]:
-            errors.append(f"{page}: sections {keys} != {list(SECTIONS[page])}")
+        expected = sections_for(version)[page]
+        if tuple(keys) != expected:
+            errors.append(f"{page}: sections {keys} != {list(expected)}")
         for section in sections:
             where = f"{page}/{section.get('key')}"
             for item in section.get("items") or []:
@@ -275,8 +310,9 @@ def to_drafts(
     return drafts
 
 
-def _request(view: str, pages: Sequence[str]) -> str:
-    lines = "\n".join(f"{page}: {', '.join(SECTIONS[page])}" for page in pages)
+def _request(view: str, pages: Sequence[str], version: str = GUIDE_VERSION) -> str:
+    order = sections_for(version)
+    lines = "\n".join(f"{page}: {', '.join(order[page])}" for page in pages)
     heading = "these pages" if len(pages) > 1 else "this page"
     return f"{view}\n\n# Write {heading}\n\n{lines}\n\n{OUTPUT_SHAPE}"
 
@@ -304,6 +340,7 @@ async def write_account_pages(
     account_name: str,
     account_dossier: Mapping[str, Any],
     people: Sequence[Person],
+    guide_version: str = GUIDE_VERSION,
 ) -> WrittenPages:
     texts = finding_texts(account_dossier)
     claims = claim_ids(account_dossier)
@@ -320,9 +357,13 @@ async def write_account_pages(
             people=people,
         ),
         pages,
+        guide_version,
     )
     written = await write_checked(
-        model, account_system(), user, lambda r: check_pages(r, pages, texts, contacts)
+        model,
+        account_system(guide_version),
+        user,
+        lambda r: check_pages(r, pages, texts, contacts, guide_version),
     )
     return WrittenPages(to_drafts(written.result, claims), written.result, written.attempts)
 
@@ -335,6 +376,7 @@ async def write_contact_page(
     account_story: str,
     person: Person,
     account_dossier: Mapping[str, Any],
+    guide_version: str = GUIDE_VERSION,
 ) -> WrittenPages:
     texts = finding_texts(person.dossier) | finding_texts(account_dossier, prefix="A:")
     claims = claim_ids(person.dossier) | claim_ids(account_dossier, prefix="A:")
@@ -348,9 +390,13 @@ async def write_contact_page(
             account_dossier=account_dossier,
         ),
         pages,
+        guide_version,
     )
     written = await write_checked(
-        model, contact_system(), user, lambda r: check_pages(r, pages, texts, set())
+        model,
+        contact_system(guide_version),
+        user,
+        lambda r: check_pages(r, pages, texts, set(), guide_version),
     )
     return WrittenPages(to_drafts(written.result, claims), written.result, written.attempts)
 

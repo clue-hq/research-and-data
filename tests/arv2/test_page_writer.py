@@ -345,3 +345,103 @@ def test_structured_findings_render_as_their_words() -> None:
     rendered = render_findings(dossier)
     assert "We keep A and B." in rendered and "{" not in rendered
     assert "We keep A and B." in finding_texts(dossier)["F001"]
+
+
+# -- the researcher's interpretation and the v2 guides (audit W1-13) -----------------------------
+
+INTERPRETED = {
+    "document": {
+        "sections": [
+            {
+                "section": "Hiring",
+                "findings": [
+                    {
+                        "id": "F001",
+                        "topic": "ABM specialist role",
+                        "finding": "Dialpad posted a Field & Events Marketing Specialist role.",
+                        "agent_interpretation": "They are staffing account work by hand.",
+                    },
+                    {"id": "F002", "topic": "Office", "finding": "Dialpad has an Austin office."},
+                ],
+            }
+        ]
+    }
+}
+
+
+def test_the_writer_sees_the_researchers_interpretation_only_where_there_is_one() -> None:
+    rendered = render_findings(INTERPRETED)
+    assert "  Interpretation: They are staffing account work by hand." in rendered
+    assert rendered.count("Interpretation:") == 1
+
+
+def test_an_interpretation_is_never_quotable_as_a_source() -> None:
+    # It is the researcher's reading, so quotation marks around it must fail the quote check.
+    assert "staffing account work" not in finding_texts(INTERPRETED)["F001"]
+    from clue_api.arv2.page_writer import SECTIONS as current
+
+    pages = ("contact",)
+    sections = [{"key": k, "intro": [], "items": [], "gaps": []} for k in current["contact"]]
+    sections[0]["intro"] = [
+        {
+            "text": 'She said "staffing account work by hand" is the problem.',
+            "kind": "quote",
+            "refs": ["F001"],
+        }
+    ]
+    errors = check_pages(
+        {"pages": [{"page": "contact", "sections": sections}]},
+        pages,
+        finding_texts(INTERPRETED),
+        set(),
+    )
+    assert any("quote not in cited findings" in e for e in errors)
+
+
+def test_v2_guides_tell_the_writer_about_interpretations_and_lead_with_the_argument() -> None:
+    from clue_api.arv2.page_writer import (
+        GUIDE_VERSION,
+        account_system,
+        contact_system,
+        sections_for,
+    )
+
+    assert GUIDE_VERSION == "v2"
+    note = "Some findings also carry the researcher's interpretation"
+    assert note in account_system("v2") and note in contact_system("v2")
+    assert note not in account_system("v1") and note not in contact_system("v1")
+    v2, v1 = sections_for("v2"), sections_for("v1")
+    assert v2["overview"][:3] == ("why-they-fit", "why-now", "what-they-do")
+    assert v2["contact"][:2] == ("problem-right-now", "why-this-person")
+    assert v1["overview"][0] == "what-they-do" and v1["contact"][0] == "why-this-person"
+    assert v2["insights"] == v1["insights"]
+    assert {k: set(v) for k, v in v2.items()} == {k: set(v) for k, v in v1.items()}
+    # The guide's own section order matches the order the writer is asked for.
+    account = account_system("v2")
+    assert [account.index(f"### {k} ") for k in v2["overview"]] == sorted(
+        account.index(f"### {k} ") for k in v2["overview"]
+    )
+    contact = contact_system("v2")
+    assert [contact.index(f"### {k} ") for k in v2["contact"]] == sorted(
+        contact.index(f"### {k} ") for k in v2["contact"]
+    )
+
+
+def test_v1_guides_are_unchanged_for_rollback() -> None:
+    import hashlib
+
+    from clue_api.arv2.page_writer import GUIDES
+
+    digests = {
+        name: hashlib.sha256((GUIDES / name / "v1" / "SKILL.md").read_bytes()).hexdigest()[:12]
+        for name in ("research-page-writing", "account-pages", "contact-page", "seller-brief")
+    }
+    assert digests == V1_GUIDE_DIGESTS
+
+
+V1_GUIDE_DIGESTS = {
+    "research-page-writing": "0f9e5b5b5f61",
+    "account-pages": "9e22a52932f4",
+    "contact-page": "6d177fdef35f",
+    "seller-brief": "76ed3f189822",
+}

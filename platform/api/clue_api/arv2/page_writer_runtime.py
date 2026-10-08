@@ -140,7 +140,7 @@ def provider_model_call(
         spec = CallSpec(
             provider="openrouter",
             operation="chat/completions",
-            label=f"page-writer-{purpose}-{GUIDE_VERSION}",
+            label=f"page-writer-{purpose}-{settings.arv2_page_guide_version}",
             request=request,
             estimate=SpendEstimate(usd=Decimal("0.20")),
             cost_reader=openrouter_cost_reader,
@@ -177,8 +177,10 @@ def provider_model_call(
     return call
 
 
-def _guides_sha() -> str:
-    body = "\n".join([seller_brief_system(), account_system(), contact_system(), GUIDE_VERSION])
+def _guides_sha(version: str = GUIDE_VERSION) -> str:
+    body = "\n".join(
+        [seller_brief_system(version), account_system(version), contact_system(version), version]
+    )
     return hashlib.sha256(body.encode()).hexdigest()
 
 
@@ -235,9 +237,10 @@ async def seller_brief(
     *,
     scope: JobScope,
     context_id: UUID,
+    guide_version: str = GUIDE_VERSION,
 ) -> str:
     """The project's seller brief: written once per context pin and guide version, then reused."""
-    reference_id = f"{context_id}:{_guides_sha()[:16]}"
+    reference_id = f"{context_id}:{_guides_sha(guide_version)[:16]}"
     async with conn_factory() as conn:
         key = (
             await conn.execute(
@@ -275,7 +278,7 @@ async def seller_brief(
     brief = (
         await model(
             [
-                {"role": "system", "content": seller_brief_system()},
+                {"role": "system", "content": seller_brief_system(guide_version)},
                 {"role": "user", "content": request},
             ],
             False,
@@ -290,7 +293,11 @@ async def seller_brief(
             scope,
             kind=_BRIEF_KIND,
             reference_id=reference_id,
-            value={"brief": brief, "context_id": str(context_id), "guides": _guides_sha()},
+            value={
+                "brief": brief,
+                "context_id": str(context_id),
+                "guides": _guides_sha(guide_version),
+            },
         )
     return brief
 
@@ -472,9 +479,17 @@ async def write_pages(
     *,
     scope: JobScope,
     context_id: UUID,
+    guide_version: str = GUIDE_VERSION,
 ) -> WrittenPages:
     """Write (not publish) this job's pages from its durable inputs."""
-    brief = await seller_brief(conn_factory, storage, model, scope=scope, context_id=context_id)
+    brief = await seller_brief(
+        conn_factory,
+        storage,
+        model,
+        scope=scope,
+        context_id=context_id,
+        guide_version=guide_version,
+    )
     async with conn_factory() as conn:
         own = await read_json_dossier(conn, storage, scope, context_id)
         if scope.person_subject_id is not None:
@@ -496,6 +511,7 @@ async def write_pages(
                 dossier=own,
             ),
             account_dossier=parent,
+            guide_version=guide_version,
         )
     return await write_account_pages(
         model,
@@ -503,6 +519,7 @@ async def write_pages(
         account_name=scope.account_name,
         account_dossier=own,
         people=people,
+        guide_version=guide_version,
     )
 
 
@@ -528,6 +545,7 @@ async def publish_written(
     written: WrittenPages,
     model_id: str,
     input_sha256: str | None = None,
+    guide_version: str = GUIDE_VERSION,
 ) -> tuple[UUID, ...]:
     """Publish written pages under the writer's own execution, in the caller's transaction.
 
@@ -556,7 +574,7 @@ async def publish_written(
         value={
             "result": written.result,
             "attempts": written.attempts,
-            "guides": _guides_sha(),
+            "guides": _guides_sha(guide_version),
             **({"input_sha256": input_sha256} if input_sha256 else {}),
         },
         subjects=sorted(subjects),
@@ -574,7 +592,7 @@ async def publish_written(
                 "project": scope.project_id,
                 "key": key,
                 "sha": key.rsplit("/", 1)[-1],
-                "pin": _guides_sha(),
+                "pin": _guides_sha(guide_version),
             },
         )
     ).scalar_one_or_none()
@@ -611,6 +629,8 @@ class PageWriterModels:
 
     call_for: Callable[[JobScope], ModelCall]
     model_id: str
+    #: The writer guides (``CLUE_ARV2_PAGE_GUIDE_VERSION``); ``v1`` rolls back.
+    guide_version: str = GUIDE_VERSION
 
 
 def page_writer_models(
@@ -630,7 +650,11 @@ def page_writer_models(
             purpose="contact" if scope.person_subject_id is not None else "account",
         )
 
-    return PageWriterModels(call_for=call_for, model_id=writer_model_id(settings))
+    return PageWriterModels(
+        call_for=call_for,
+        model_id=writer_model_id(settings),
+        guide_version=settings.arv2_page_guide_version,
+    )
 
 
 class _Unchanged(Exception):
@@ -731,7 +755,12 @@ async def _write_job_pages(
     ):
         try:
             written = await write_pages(
-                watched, conn_factory, storage, scope=scope, context_id=context_id
+                watched,
+                conn_factory,
+                storage,
+                scope=scope,
+                context_id=context_id,
+                guide_version=models.guide_version,
             )
         except _Unchanged:
             if after_publish is not None:
@@ -748,6 +777,7 @@ async def _write_job_pages(
                 written=written,
                 model_id=models.model_id,
                 input_sha256=hashed[0] if hashed else None,
+                guide_version=models.guide_version,
             )
             if after_publish is not None:
                 await after_publish(conn)

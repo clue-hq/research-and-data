@@ -77,6 +77,9 @@ def render_findings(dossier: Mapping[str, Any] | None, prefix: str = "") -> str:
             f"- **{prefix}{finding['id']}** {finding.get('topic') or ''}{_status(finding)}"
         )
         lines.append(f"  {_words(finding)}")
+        if finding.get("agent_interpretation"):
+            # The researcher's reading. Shown to the writer, never part of the quotable text.
+            lines.append(f"  Interpretation: {finding['agent_interpretation']}")
         for qualification in finding.get("qualifications") or []:
             lines.append(f"  Caveat: {qualification}")
         if finding.get("time_context"):

@@ -609,6 +609,10 @@ class Settings(BaseSettings):
     # role's (``RESEARCH_NARRATIVE_AGENT_MODEL`` / ``_EFFORT``), falling back to
     # ``arv2_display_model``. Env: ``CLUE_ARV2_PAGE_WRITER_TIMEOUT_S``.
     arv2_page_writer_timeout_s: float = 900.0
+    # The page writer's guides: v2 shows the writer the researcher's interpretation of a finding
+    # and writes each page's argument first; v1 is the previous guides and section order.
+    # Env: ``CLUE_ARV2_PAGE_GUIDE_VERSION``.
+    arv2_page_guide_version: Literal["v1", "v2"] = "v2"
     # ``client.what_we_sell`` in the display prompt, until Track O's company-overview artifact
     # supplies it (D2 decision 7). Env: ``CLUE_ARV2_DISPLAY_CLIENT_PITCH``.
     arv2_display_client_pitch: str = (
