@@ -171,6 +171,16 @@ check first time), valid first time; 14 calls, $0.34. Compared with E5:
     what Shell does in the kit's source (input data, not rules).*
 40. **The token list did help** (stat-style step numbers, subtitle-size titles, no probing for names).
 
+## Run a4 (Syracuse, after the proof bullet and the 3-render limit, 2026-10-08)
+
+41. **The proof bullet did not change the choice.** a4 searched, saw Metal Exchange, and still chose
+    Nightingale ("to keep one analog"), next to a page saying no plan-design change is required. The
+    skill ranks "same industry and size" above "same situation", and its fit check is a later bullet.
+    *Open: make the fit check a gate before the preference order (text proposed to the founder).*
+42. **The mobile header truncates a long account name** ("Syracuse City School Dis…"), noted by the
+    agent itself. *Open (harness shell: wrap to two lines on narrow screens).*
+43. **The 3-render limit worked:** two extra review rounds fixed orphan words. 20 calls, $0.99, 7.1 min.
+
 ## Changes made for an Alt Carbon run, not yet run (uncommitted)
 
 - `export/export_brand.py`: Alt Carbon added (kit `brand_kit_ing_28663a…`, version 1).
