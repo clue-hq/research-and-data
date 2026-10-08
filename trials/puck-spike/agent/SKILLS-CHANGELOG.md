@@ -23,3 +23,6 @@ fails without it).
   edge to edge. Failing cases (seen before the run, in the originals): Garner's hero (text over a
   full-bleed video) and closing panels (two panels edge to edge) could not be expressed with
   `kit.Shell` and the fixed `kit.Image`.
+- 2026-10-08 · writing-a-section, kit list: each piece shown with its exact props (`label` for the
+  button's words, `src` for an image). Failing cases: run cl3 turns 1, 2, 3 and 5, each with a write
+  refused for a guessed prop (`file` for `src`; the button's words as children).

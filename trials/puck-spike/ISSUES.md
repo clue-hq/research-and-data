@@ -216,10 +216,10 @@ Our agent rebuilt five Garner clones as components from brand tokens only (`view
     link resolution; a two-panel section must still declare one section `surface`; the check does
     not confirm a brand class exists (`bg-surface-brandSubtle` passed).
 50. **Every fresh session paid one refused write on kit prop names** (`file` for `src`, children for
-    `label`). *Open: show the kit's signatures in writing-a-section (text for founder review).*
+    `label`). *Fixed: the kit list shows each piece's props (founder-approved 2026-10-08).*
 51. **In 3 of 5 turns the agent wrote a fourth version after its last comparison**, so the final
-    version was never compared (I compared them afterwards: no worse). *Open: skill wording, "your
-    last change is compared" (for founder review).*
+    version was never compared (I compared them afterwards: no worse). *Kept as is (founder
+    2026-10-08).*
 52. **The pixel score misleads** when the image must change (hero: 61% → 70% while visibly closer)
     and barely separates dark colours. The pictures carried the judgement.
 53. **With fresh sessions only the last session's transcript is saved**, so earlier turns' exact

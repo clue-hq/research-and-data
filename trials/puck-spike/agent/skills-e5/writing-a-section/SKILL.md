@@ -35,11 +35,13 @@ This is one possible section. Write whatever structure the page needs — steps,
 comparisons, image and text — as long as every colour, type size, corner and button comes from
 the brand.
 
-The kit gives you:
-- `kit.Shell`: the section and its surface (it sets the right text colour for light and dark).
-- `kit.Button`: the brand's button.
-- `kit.Eyebrow`: the small label above a heading.
-- `kit.Image`: an image from brand/brand.md; with `fit="fill"` it covers a box you position, for a background photo.
+The kit gives you these pieces, with exactly these props:
+- `<kit.Shell surface={...}>…</kit.Shell>`: the section and its surface (it sets the right text
+  colour for light and dark).
+- `<kit.Button label="…" href="…" surface={...} />`: the brand's button. Its words go in `label`.
+- `<kit.Eyebrow>…</kit.Eyebrow>`: the small label above a heading.
+- `<kit.Image src="…" alt="…" />`: an image from brand/brand.md, by its file path. Add
+  `fit="fill"` to make it cover a box you position, for a background photo.
 
 ## Rules
 
