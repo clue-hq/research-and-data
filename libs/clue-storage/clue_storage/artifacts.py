@@ -26,6 +26,13 @@ resurrection handled by one design):
   ``erased_at``/``purged_at`` in :func:`record_artifact` (the row again owns a live blob, put
   *after* the row write); conversely the purge re-checks the refcount under its lock and
   *un-erases* instead of deleting when a claim re-cited the snapshot in the window.
+* **The one writer that puts first.** Research with ``CLUE_ARV2_UPLOAD_OUTSIDE_LOCK`` (W2-15
+  option B) puts its source files before it takes the worker's database lock, so the row-first
+  guarantee above does not cover them. :func:`record_uploaded_artifact` says when its recording
+  brought an erased or purged row back, and the writer then puts the blob again under the row
+  lock; it never puts a privacy-erased row's blob, and deletes one that turns out privacy-erased;
+  files it put that nothing recorded are deleted by the writer, and the purge sweep re-deletes
+  the files of recently privacy-purged rows.
 * **Rollback orphans converge.** A transaction that put a blob and then rolled back leaves a
   blob with no row; a retry re-records/re-puts the same content-addressed key, and
   :func:`sweep_orphan_blobs` collects abandoned ones (blobs older than a grace window with no
@@ -514,6 +521,19 @@ async def purge_erased_artifacts(
             {"storage_key": storage_key},
         )
         purged.append(storage_key)
+    if keys is None:
+        # A writer that uploads before recording (W2-15 option B) can, in a crash window, put
+        # bytes back just after their row was privacy-purged; nothing would record them again,
+        # and the orphan sweep skips keys that have a row. Such a writer acts within seconds, so
+        # the sweep re-deletes the files of rows privacy-purged in the last day (idempotent).
+        recent = await conn.execute(
+            text(
+                "SELECT storage_key FROM artifact WHERE privacy_erased "
+                "AND purged_at > now() - interval '1 day'"
+            )
+        )
+        for (storage_key,) in recent.all():
+            await storage.delete(storage_key)
     return PurgeResult(purged_keys=tuple(purged), resurrected_keys=tuple(resurrected))
 
 
@@ -532,6 +552,11 @@ async def sweep_orphan_blobs(
     Writers record the row *before* putting the blob, so a legitimately in-flight blob's row is
     already inserted (just not yet committed/visible) — the grace window (default 24h, far
     beyond any transaction lifetime) is what keeps this sweep from racing an open transaction.
+    One writer breaks the row-first order on purpose: research with
+    ``CLUE_ARV2_UPLOAD_OUTSIDE_LOCK`` puts its source files before it takes the worker's database
+    lock and records them after (W2-15 option B; see :func:`record_uploaded_artifact`). Its
+    blobs exist without a row for that lock wait — seconds to minutes — so the grace must stay far
+    longer than any such wait.
     Purged rows keep their row forever, so an erased blob's key never reads as an orphan."""
     cutoff = (now or datetime.now(UTC)) - grace
     deleted: list[str] = []

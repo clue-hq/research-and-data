@@ -483,6 +483,32 @@ def test_recording_a_blob_put_beforehand_refuses_a_privacy_erased_row() -> None:
     run_async(scenario())
 
 
+def test_the_purge_sweep_removes_a_file_written_back_after_a_privacy_purge(
+    tmp_path: object,
+) -> None:
+    """Review M-4: a writer that uploads before recording (W2-15 option B) can, in a crash
+    window, put bytes back just after their row was privacy-purged. Nothing records them again,
+    and the orphan sweep skips keys that have a row, so the purge sweep re-deletes the files of
+    recently privacy-purged rows (deleting a missing file is a no-op)."""
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path)  # type: ignore[arg-type]
+        async with rollback_conn() as conn:
+            record = await _record(conn, b"withdrawn person")
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                    "erased_at=now(), purged_at=now() WHERE storage_key=:k"
+                ),
+                {"k": record.storage_key},
+            )
+            await storage.put(record.storage_key, b"withdrawn person", media_type="text/markdown")
+            await purge_erased_artifacts(conn, storage)
+            assert not await storage.exists(record.storage_key)
+
+    run_async(scenario())
+
+
 def test_mark_erased_nulls_source_url() -> None:
     """Finding 7: the retained audit row must be genuinely metadata-only — ``source_url`` can
     identify a person (profile URL, sensitive path/query) and must not survive erasure."""
