@@ -128,9 +128,11 @@ async def _copy_raw(source: Any, target: Any, keys: Iterable[str]) -> int:
 class Worker:
     """One emulated fleet worker: one database connection, shared by its jobs behind one lock."""
 
-    def __init__(self, conn: Any) -> None:
+    def __init__(self, conn: Any, early_limit: int = 4) -> None:
         self.conn = conn
         self.lock = asyncio.Lock()
+        # CLUE_ARV2_EARLY_UPLOAD_CONCURRENCY: one bound per process on the work before the lock.
+        self.early_gate = asyncio.Semaphore(early_limit)
 
     async def step(self, call: dict[str, float], name: str, work: Any) -> None:
         asked = time.monotonic()
@@ -180,12 +182,13 @@ async def _replay_call(
     )
     started = time.monotonic()
     if early is not None:
-        body = await storage.get(key)  # the bytes the drain held in memory, from the replay copy
-        await storage.put(key, body, media_type="application/json")
-        held[key] = body
-        uploaded = await upload_sources_early(
-            early, storage, scope, (result_row,), {"replay": key}, held
-        )
+        async with worker.early_gate:
+            body = await storage.get(key)  # the bytes the drain held, from the replay copy
+            await storage.put(key, body, media_type="application/json")
+            held[key] = body
+            uploaded = await upload_sources_early(
+                early, storage, scope, (result_row,), {"replay": key}, held
+            )
         call["early_ms"] = (time.monotonic() - started) * 1000
 
     async def drain(conn: Any) -> None:
@@ -287,7 +290,7 @@ async def bench(args: argparse.Namespace) -> dict[str, Any]:
         for row in rows:
             by_job[row["entity_research_job_id"]].append(row)
         conns.extend([await engine.connect() for _ in range(args.workers)])
-        workers = [Worker(c) for c in conns]
+        workers = [Worker(c, args.early_limit) for c in conns]
         early = None
         if args.upload_outside_lock:
             # Production's privacy check runs on the ordinary pool, not the worker connection.
@@ -319,6 +322,7 @@ async def bench(args: argparse.Namespace) -> dict[str, Any]:
             "run": args.run,
             "storage": args.storage,
             "upload_outside_lock": args.upload_outside_lock,
+            "early_limit": args.early_limit if args.upload_outside_lock else None,
             "workers": args.workers,
             "per_job": args.per_job,
             "jobs": len(by_job),
@@ -367,6 +371,12 @@ def main() -> None:
         "--upload-outside-lock",
         action="store_true",
         help="W2-15 option B: put the files before the worker lock",
+    )
+    parser.add_argument(
+        "--early-limit",
+        type=int,
+        default=4,
+        help="calls per emulated worker doing that early work at once",
     )
     parser.add_argument("--json", help="also write the summary to this file")
     args = parser.parse_args()
