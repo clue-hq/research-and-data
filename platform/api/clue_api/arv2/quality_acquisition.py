@@ -74,6 +74,24 @@ class AcquisitionReceipt:
     operation_id: UUID | None
 
 
+#: Settled ledger results of one job that have no evidence source yet. It runs after every evidence
+#: call, so it must stay an index lookup: ``provider_call_ledger_job`` finds the job's results and
+#: ``arv2_evidence_source_ledger`` answers the NOT EXISTS (migration 702784fe02b7). Without them it
+#: reads both tables whole, and its cost grows with every run ever stored.
+RECOVERY_QUERY = text("""
+  SELECT l.ledger_id,l.provider,l.operation,l.recorded_at,l.http_status,l.error_code,
+         l.response_artifact_key AS key,o.operation_id
+  FROM provider_call_ledger l LEFT JOIN arv2_research_operation o
+    ON o.ledger_id=l.ledger_id AND o.workspace_id=l.workspace_id AND o.job_id=:job
+  WHERE l.workspace_id=:ws AND l.entity_research_job_id=:job AND l.phase='result'
+    AND l.provider NOT IN ('openrouter','model')
+    AND NOT EXISTS(SELECT 1 FROM arv2_evidence_source s
+                   WHERE s.workspace_id=l.workspace_id AND s.ledger_id=l.ledger_id)
+    AND NOT (l.ledger_id = ANY(CAST(:seen AS uuid[])))
+  ORDER BY l.recorded_at,l.ledger_id LIMIT :batch
+""")
+
+
 async def recover_acquisitions(
     conn: AsyncConnection, storage: StorageBackend, scope: OperationScope
 ) -> tuple[SourceRef, ...]:
@@ -90,18 +108,7 @@ async def recover_acquisitions(
         rows = (
             (
                 await conn.execute(
-                    text("""
-          SELECT l.ledger_id,l.provider,l.operation,l.recorded_at,l.http_status,l.error_code,
-                 l.response_artifact_key AS key,o.operation_id
-          FROM provider_call_ledger l LEFT JOIN arv2_research_operation o
-            ON o.ledger_id=l.ledger_id AND o.workspace_id=l.workspace_id AND o.job_id=:job
-          WHERE l.workspace_id=:ws AND l.entity_research_job_id=:job AND l.phase='result'
-            AND l.provider NOT IN ('openrouter','model')
-            AND NOT EXISTS(SELECT 1 FROM arv2_evidence_source s
-                           WHERE s.workspace_id=l.workspace_id AND s.ledger_id=l.ledger_id)
-            AND NOT (l.ledger_id = ANY(CAST(:seen AS uuid[])))
-          ORDER BY l.recorded_at,l.ledger_id LIMIT :batch
-        """),
+                    RECOVERY_QUERY,
                     {
                         "ws": scope.workspace_id,
                         "job": scope.job_id,
