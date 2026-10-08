@@ -9,6 +9,8 @@ import {
 } from "@/lib/clone";
 import { themeCss } from "@/lib/theme";
 import { makeSections } from "./sections";
+import { makeKit } from "./agent-kit";
+import { AGENT_SECTIONS } from "./agent-sections";
 import { SiteFooter, SiteHeader, type FooterProps, type HeaderProps, type ShellData } from "./shell";
 
 type ClonedSectionProps = {
@@ -43,6 +45,8 @@ export type ConfigOptions = {
   shell?: ShellData;
   /** "page" edits a route; "shell" edits the shared header and footer. */
   mode?: "page" | "shell";
+  /** The site id: its agent-written sections (E5) join its pages. */
+  site?: string;
   editor?: EditorParts;
 };
 
@@ -105,6 +109,14 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     })),
   ];
   const sections = makeSections(brand, href, options.editor?.AssetPicker);
+  // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit fields.
+  const kit = makeKit(href);
+  const agentSections = Object.fromEntries(
+    Object.entries(AGENT_SECTIONS[options.site ?? ""] ?? {}).map(([name, module]) => [
+      name,
+      { label: `${name} (agent)`, fields: {}, render: (props: never) => module.render(props, kit) },
+    ]),
+  );
 
   const config: Config<{
     ClonedSection: ClonedSectionProps;
@@ -118,6 +130,9 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     categories: {
       clones: { title: "The seller's sections", components: ["ClonedSection"] },
       brand: { title: "Brand sections", components: ["StatsBand", "FeatureSplit", "ProofCard", "CtaBand"] },
+      ...(Object.keys(agentSections).length
+        ? { agent: { title: "Agent sections", components: Object.keys(agentSections) as never } }
+        : {}),
     },
     components: {
       // Test fixture for the G3 token check (export/check_tokens.py); not offered in the menu.
@@ -133,6 +148,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         ),
       },
       ...(sections as unknown as Record<"StatsBand" | "FeatureSplit" | "ProofCard" | "CtaBand", never>),
+      ...(agentSections as unknown as Record<string, never>),
       ClonedSection: {
         label: "Cloned section",
         defaultProps: { fragmentId: "", slots: {}, replacements: [], links: [] },

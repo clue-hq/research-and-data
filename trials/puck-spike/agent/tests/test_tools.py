@@ -225,3 +225,31 @@ def test_web_search_retries_a_transient_failure(workspace: Path) -> None:
                       reads=FlakyReads(), retry_delay_s=0)
     result = tools.web_search("Aon study", include_domains=["garnerhealth.com"])
     assert "Aon study" in result and FlakyReads.calls == 2
+
+
+def test_write_section_joins_only_its_own_site(workspace: Path) -> None:
+    """E5: a section that passes the brand-token check joins its own site; one that fails never
+    reaches the app; another site cannot use it."""
+    skill = (SPIKE / "agent" / "skills-e5" / "writing-a-section" / "SKILL.md").read_text()
+    example = skill.split("```tsx")[1].split("```")[0]
+    site = "agent-test-e5"
+    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
+    tools = tools_for(workspace)
+    root = SPIKE / "puck" / "agent-sections"
+    try:
+        refused = tools.write_section("BadQuote", example.replace("text-ink-secondary", "text-emerald-600"))
+        assert refused.startswith("NOT WRITTEN") and "palette colour" in refused
+        assert not (root / site / "BadQuote.tsx").exists()
+
+        written = tools.write_section("QuoteBand", example)
+        assert written.startswith("WRITTEN"), written
+        assert '"QuoteBand"' in (root / "index.ts").read_text()
+
+        edit_page(workspace, lambda p: p["content"].append({
+            "type": "QuoteBand", "props": {"id": "q", "surface": "muted", "quote": "A line.", "attribution": "Someone"}}))
+        assert tools.validate_page().startswith("VALID")
+        (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": "another-site", "route": "/"}))
+        assert 'unknown component "QuoteBand"' in tools.validate_page()
+    finally:
+        shutil.rmtree(root / site, ignore_errors=True)
+        tools._write_section_index()

@@ -8,3 +8,5 @@ public/brands/
 data/sites/edit-test.json
 agent-runs/
 data/sites/agent-*.json
+# sections written by the agent in E5 runs (the generated index stays tracked, empty)
+puck/agent-sections/*/

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../puck/agent-sections";
 
 /* Brand tokens: per-brand values arrive at runtime as --brand-* on .brand-root (lib/theme.ts).
    This maps them once into Tailwind v4 theme variables so sections use fixed class names. */

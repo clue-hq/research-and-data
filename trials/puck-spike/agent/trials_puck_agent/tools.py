@@ -34,6 +34,7 @@ FETCH_LIMIT = 12_000
 SCALE_BY_WIDTH = {1440: 0.5, 375: 1.0}
 TILE_PX = 1600
 VIEW_ASSET_MAX = 4
+BUILT_IN_SECTIONS = {"ClonedSection", "StatsBand", "FeatureSplit", "ProofCard", "CtaBand", "TokenProbe"}
 VIEW_ASSET_PX = 1024
 RETRIES = 2
 LOOP_GUARD_AT = 3
@@ -285,6 +286,55 @@ class PageTools:
         if files[VIEW_ASSET_MAX:]:
             blocks.append({"type": "text", "text": f"Showed the first {VIEW_ASSET_MAX}; ask again for the rest."})
         return blocks
+
+    # --- new sections (E5) -----------------------------------------------------------------------
+
+    def write_section(self, name: str, code: str) -> str:
+        """Write a new section as one React file. It must pass the brand-token check and type-check;
+        only then does it join this site, under its name."""
+        if not re.fullmatch(r"[A-Z][A-Za-z0-9]{2,40}", name or ""):
+            return "NOT WRITTEN: a section name is PascalCase letters and digits, for example StepsBand."
+        if name in BUILT_IN_SECTIONS:
+            return f"NOT WRITTEN: {name} is one of the built-in sections; choose another name."
+        site = self._run()["site"]
+        # Checked outside the app first: a broken file inside it would break every page on the dev server.
+        pending_dir = self.spike_root / "agent-runs" / ".section-check" / site
+        pending_dir.mkdir(parents=True, exist_ok=True)
+        pending = pending_dir / f"{name}.tsx"
+        pending.write_text(code)
+        completed = subprocess.run(
+            ["npx", "tsx", "scripts/check-section.ts", str(pending)],
+            cwd=self.spike_root, capture_output=True, text=True, timeout=180,
+        )
+        try:
+            result = json.loads(completed.stdout.strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError):
+            return f"NOT WRITTEN: the check crashed: {completed.stderr.strip()[-500:]}"
+        if not result["ok"]:
+            self._record("section_refused", name=name, errors=result["errors"])
+            return "NOT WRITTEN (fix these, then call write_section again):\n" + "\n".join(f"- {e}" for e in result["errors"])
+        target = self.spike_root / "puck" / "agent-sections" / site / f"{name}.tsx"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(code)
+        self._write_section_index()
+        self._record("section_written", name=name)
+        return (f"WRITTEN: {name} is ready for this site. Place it in a page with \"type\": \"{name}\" and "
+                f"these props:\n{json.dumps(result['props'], indent=1)[:4000]}")
+
+    def _write_section_index(self) -> None:
+        """puck/agent-sections/index.ts: every site's sections, imported for the config and validator."""
+        root = self.spike_root / "puck" / "agent-sections"
+        files = sorted(root.glob("*/*.tsx"))
+        lines = ["// Written by write_section (tools.py). Every site's agent-written sections.",
+                 'import type { AgentSectionModule } from "../agent-kit";']
+        entries: dict[str, list[str]] = {}
+        for n, file in enumerate(files):
+            lines.append(f'import * as s{n} from "./{file.parent.name}/{file.stem}";')
+            entries.setdefault(file.parent.name, []).append(f'"{file.stem}": s{n} as unknown as AgentSectionModule')
+        lines.append("export const AGENT_SECTIONS: Record<string, Record<string, AgentSectionModule>> = {")
+        lines += [f'  "{site}": {{ {", ".join(items)} }},' for site, items in entries.items()]
+        lines.append("};")
+        (root / "index.ts").write_text("\n".join(lines) + "\n")
 
     # --- research ------------------------------------------------------------------------------
 

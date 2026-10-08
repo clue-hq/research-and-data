@@ -209,6 +209,8 @@ def main() -> int:
     parser.add_argument("--from-turn", type=int, help="With --from-run: start from the site as it was after this turn.")
     parser.add_argument("--fresh-each", action="store_true",
                         help="A new session for every turn; code writes site.md before and history.md after each.")
+    parser.add_argument("--allow-new-sections", action="store_true",
+                        help="E5: the agent may write a new section (write_section + the writing-a-section skill).")
     parser.add_argument("--no-clear", action="store_true",
                         help="Keep superseded tool results in the model request (clearing is on by default).")
     args = parser.parse_args()
@@ -272,13 +274,17 @@ def main() -> int:
         trace_file.write(line + "\n")
         trace_file.flush()
 
+    if args.allow_new_sections:  # the E5 skill joins this run's workspace only
+        shutil.rmtree(workspace / "skills-e5", ignore_errors=True)
+        shutil.copytree(AGENT_DIR / "skills-e5", workspace / "skills-e5")
     agent, recorder = build_agent(page_tools, model=build_model(), trace=trace, clear_context=not args.no_clear,
-                                  summary_model=build_model())
+                                  summary_model=build_model(), allow_new_sections=args.allow_new_sections)
     new_session = lambda: {"configurable": {"thread_id": f"puck_{uuid.uuid4().hex}"}}  # noqa: E731
     session = new_session()
     record = {
         "label": args.label, "case": case_name, "account": account, "setup": setup,
         "clear_context": not args.no_clear, "fresh_each": args.fresh_each,
+        "allow_new_sections": args.allow_new_sections,
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "turns": [],
     }
     try:

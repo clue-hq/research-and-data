@@ -38,13 +38,13 @@ const headingRoleField = {
 const text = (label: string) => ({ type: "text" as const, label, contentEditable: true });
 const area = (label: string) => ({ type: "textarea" as const, label, contentEditable: true });
 
-const Shell = ({ surface, children }: { surface: Surface; children: ReactNode }) => (
+export const Shell = ({ surface, children }: { surface: Surface; children: ReactNode }) => (
   <section className={SURFACE_CLASS[surface]}>
     <div className="mx-auto max-w-[75rem] px-6 py-16 md:px-10 md:py-24">{children}</div>
   </section>
 );
 
-const Eyebrow = ({ children }: { children: Text }) =>
+export const Eyebrow = ({ children }: { children: Text }) =>
   children ? <p className="font-eyebrow text-eyebrow uppercase opacity-80">{children}</p> : null;
 
 export function Button({ label, href, surface }: { label: Text; href: string; surface: Surface }) {

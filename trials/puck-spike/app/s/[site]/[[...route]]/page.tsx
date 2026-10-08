@@ -14,7 +14,7 @@ export default async function PublishedPage({
   const stored = readSite(site);
   const data = stored.pages[routeOf(route)];
   if (!data) notFound();
-  const config = makeConfig(loadBrand(stored.brand), { basePath: basePathOf(site), shell: stored.shell });
+  const config = makeConfig(loadBrand(stored.brand), { basePath: basePathOf(site), shell: stored.shell, site });
   return <Render config={config} data={data} />;
 }
 

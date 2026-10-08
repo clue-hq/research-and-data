@@ -14,7 +14,8 @@ import path from "node:path";
 import { parse } from "node-html-parser";
 import { loadBrand } from "../lib/brands";
 import type { Clone } from "../lib/clone";
-import { PageSchema, ShellSchema, formatIssues } from "../puck/schemas";
+import { AGENT_SECTIONS } from "../puck/agent-sections";
+import { ShellSchema, formatIssues, pageSchemaWith } from "../puck/schemas";
 
 type Item = { type: string; props: Record<string, unknown> };
 type Page = { content?: Item[] };
@@ -27,8 +28,13 @@ const visibleText = (clone: Clone) =>
 
 export function validate(workspace: string): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
-  const run = JSON.parse(fs.readFileSync(path.join(workspace, ".run.json"), "utf-8")) as { brand: string };
+  const run = JSON.parse(fs.readFileSync(path.join(workspace, ".run.json"), "utf-8")) as { brand: string; site?: string };
   const brand = loadBrand(run.brand);
+  // This site's agent-written sections (E5) are valid section types here, and only here.
+  const agentSections = AGENT_SECTIONS[run.site ?? ""] ?? {};
+  const PageSchema = pageSchemaWith(
+    Object.fromEntries(Object.entries(agentSections).map(([name, module]) => [name, module.schema as never])),
+  );
 
   const missing = ["page.json", "shell.json"].filter((file) => !fs.existsSync(path.join(workspace, file)));
   if (missing.length) {
@@ -148,6 +154,16 @@ export function validate(workspace: string): { valid: boolean; errors: string[] 
         addWritten(item.props.buttonHref, `${at}.buttonHref`);
       }
       if (item.type === "ProofCard") addWritten(item.props.linkHref, `${at}.linkHref`);
+      if (item.type in agentSections) {
+        // Any brand image path in an agent section's props must be one of the brand's images.
+        const walk = (value: unknown, where: string) => {
+          if (typeof value === "string" && value.startsWith("/brands/") && !imageAllowed(value)) {
+            errors.push(`${where}: image "${value}" is not in the brand's assets; pick a file from brand/brand.md`);
+          } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`));
+          else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`);
+        };
+        walk(item.props, at);
+      }
     });
   }
 

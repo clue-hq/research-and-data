@@ -21,7 +21,7 @@ export default async function EditPage({
       route={path}
       data={shellMode ? shellAsData(stored) : stored.pages[path] ?? EMPTY}
       brand={loadBrand(stored.brand)}
-      options={{ basePath: basePathOf(site), shell: stored.shell, mode: shellMode ? "shell" : "page" }}
+      options={{ basePath: basePathOf(site), shell: stored.shell, mode: shellMode ? "shell" : "page", site }}
     />
   );
 }

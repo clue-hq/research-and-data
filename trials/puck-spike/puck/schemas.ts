@@ -111,7 +111,11 @@ export const COMPONENT_TYPES = Object.keys(COMPONENT_SCHEMAS) as ComponentType[]
 
 const item = z.object({ type: z.string(), props: z.record(z.string(), z.unknown()) }).strict();
 
-export const PageSchema = z
+/** The page schema, optionally with extra section types (a site's agent-written sections, E5). */
+export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
+  const schemas: Record<string, z.ZodType> = { ...COMPONENT_SCHEMAS, ...extra };
+  const allowed = Object.keys(schemas);
+  return z
   .object({
     root: z.object({ props: z.object({ title: text.optional() }).strict() }).strict(),
     content: z.array(item),
@@ -120,12 +124,12 @@ export const PageSchema = z
   .strict()
   .superRefine((page, ctx) => {
     page.content.forEach((entry, index) => {
-      const schema = COMPONENT_SCHEMAS[entry.type as ComponentType];
+      const schema = schemas[entry.type];
       if (!schema) {
         ctx.addIssue({
           code: "custom",
           path: ["content", index, "type"],
-          message: `unknown component "${entry.type}"; allowed: ${COMPONENT_TYPES.join(", ")}`,
+          message: `unknown component "${entry.type}"; allowed: ${allowed.join(", ")}`,
         });
         return;
       }
@@ -142,6 +146,9 @@ export const PageSchema = z
       ctx.addIssue({ code: "custom", path: ["content"], message: `duplicate section id "${String(duplicate)}"` });
     }
   });
+}
+
+export const PageSchema = pageSchemaWith();
 
 export const ShellSchema = z
   .object({
