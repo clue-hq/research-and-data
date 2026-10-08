@@ -3559,7 +3559,10 @@ class _AdvisoryConnFactory:
 
 @pytest.mark.parametrize("outside", [True, False])
 def test_ai_ark_pacing_gap_runs_from_the_answer_and_indexing_overlaps_it(outside: bool) -> None:
-    gap, drain_s = 0.3, 0.5  # far apart, so loaded test machines cannot blur the two orders
+    # The gap outlasts the indexing, as in production (10.5 s vs ~1 s), and the two are far apart,
+    # so a loaded test machine cannot blur the two orders. While the gap runs the pacing lock is
+    # held, so the next call starts at max(gap, indexing) from the answer (review M-1).
+    gap, drain_s = 1.0, 0.5
     runtime, timeline, drains = _timed_runtime(
         outside=outside, drain_s=drain_s, arv2_ai_ark_min_gap_s=gap
     )
@@ -3637,3 +3640,14 @@ def test_early_uploads_are_limited_across_every_job_of_a_worker_process(monkeypa
 
     _run(burst())
     assert peak == 2
+
+
+def test_the_orphan_sweep_waits_far_longer_than_an_early_upload_waits_to_be_recorded() -> None:
+    """Review M-3: with option B a source file exists without its artifact row while its call
+    waits for the worker lock (seconds to minutes). The orphan sweep deletes row-less files only
+    after its grace, so the grace must stay far longer than that wait."""
+    from datetime import timedelta
+
+    from clue_api.storage_wiring import DEFAULT_ORPHAN_SWEEP_GRACE
+
+    assert timedelta(hours=24) <= DEFAULT_ORPHAN_SWEEP_GRACE

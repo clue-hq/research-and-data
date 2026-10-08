@@ -199,6 +199,8 @@ def test_a_wait_for_a_pooled_connection_is_logged_with_the_pool_state(
 
     async def scenario() -> None:
         async with db_lifespan():
+            async with transaction() as conn:  # warm the pool: the next checkouts are fast
+                await conn.execute(text("SELECT 1"))
 
             async def hold() -> None:
                 async with transaction():
@@ -212,6 +214,6 @@ def test_a_wait_for_a_pooled_connection_is_logged_with_the_pool_state(
 
     run_async(scenario())
     waited = [fields for event, fields in lines if event == "db.connection_waited"]
-    assert len(waited) == 1
-    assert waited[0]["wait_ms"] >= 150
-    assert "Checked out" in str(waited[0]["pool"])
+    long = [fields for fields in waited if float(str(fields["wait_ms"])) >= 150]
+    assert len(long) == 1, waited
+    assert "Checked out" in str(long[0]["pool"])

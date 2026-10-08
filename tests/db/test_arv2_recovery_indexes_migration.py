@@ -103,8 +103,15 @@ def test_the_planner_answers_the_recovery_query_from_the_indexes() -> None:
     """With many jobs' rows present, the planner itself picks both indexes; nothing is forced."""
     command.upgrade(_alembic_config(), "head")
 
-    async def plan() -> str:
+    async def plan() -> str | None:
         async with db_lifespan() as engine, engine.connect() as conn:
+            superuser = (
+                await conn.execute(
+                    text("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
+                )
+            ).scalar_one()
+            if not superuser:
+                return None  # the seed needs session_replication_role (review M-6)
             await conn.execute(text("SET LOCAL session_replication_role = replica"))
             for statement in _SEED:
                 await conn.execute(text(statement))
@@ -119,6 +126,8 @@ def test_the_planner_answers_the_recovery_query_from_the_indexes() -> None:
             return found
 
     found = run_async(plan())
+    if found is None:
+        pytest.skip("seeding past foreign keys needs a superuser database role")
     assert "provider_call_ledger_job" in found, found
     assert "arv2_evidence_source_ledger" in found, found
 

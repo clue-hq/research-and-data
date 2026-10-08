@@ -22,6 +22,18 @@ database (which must have no connections) and dropped afterwards unless ``--keep
 
 ``--storage r2`` uses the ``CLUE_STORAGE_S3_*`` settings (a dev bucket); the run's raw responses
 are copied there first (not timed). ``--storage fs`` uses a scratch directory.
+
+What it does NOT replay (review M-7), so compare the modes with each other, not with production's
+absolute numbers — lock wait is measured exactly as the driver's ``_connection`` measures it, but
+the time the lock is held and the early step are understated:
+
+* the drain is a get + put + one ledger INSERT — not ``persist_body``'s own artifact-row
+  transaction, nor the drain transaction's other work (AI Ark subject indexing, media receipts,
+  ``operations.finish``, the ``job_available`` checks);
+* indexing runs with ``operation_id=None``;
+* every source file already has an ``artifact`` row in the template database, so recording takes
+  the cheaper reuse path instead of production's first-time insert;
+* each emulated worker holds one connection for the whole run (no pool checkout).
 """
 
 from __future__ import annotations

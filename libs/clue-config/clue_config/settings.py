@@ -403,13 +403,17 @@ class Settings(BaseSettings):
     arv2_ai_ark_min_gap_s: float = 10.5
     # Free a provider's concurrency slot as soon as the provider answers, and index the result
     # afterwards (the next call no longer waits ~11 s for indexing); AI Ark's pacing gap then runs
-    # from the answer, with indexing inside it. ``false`` restores the old order.
+    # from the answer, with indexing inside it. ``false`` restores the old order. The pacing lock
+    # is held until both the gap and that indexing are done, so the next AI Ark call starts at
+    # max(gap, indexing) after the answer — the gap alone whenever indexing is shorter (review M-1).
     # Env: ``CLUE_ARV2_DRAIN_OUTSIDE_SLOT``.
     arv2_drain_outside_slot: bool = True
     # Run the evidence recovery check after an evidence call that bought and indexed its own
     # result. Off by default (W2-17): that call's result is already indexed, so the check finds
     # nothing; a replayed call still runs it, and the job's settle runs it once before coverage,
-    # so a result whose indexing was cut short is still repaired.
+    # so a result whose indexing was cut short is still repaired. Until then (a replay or the
+    # settle) the agent researches without that one result's evidence; a job that never settles
+    # and never replays keeps it unrepaired, as before (review M-5).
     # Env: ``CLUE_ARV2_RECOVER_ON_SUCCESS``.
     arv2_recover_on_success: bool = False
     # W2-15 option B (prototype): store an evidence call's raw response and source files before
