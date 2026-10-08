@@ -155,6 +155,21 @@ def test_only_the_newest_render_keeps_its_screenshots() -> None:
     assert messages[2].content[1]["type"] == "image"  # the saved history keeps everything
 
 
+def test_only_the_newest_comparison_keeps_its_pictures() -> None:
+    picture = {"type": "image", "source_type": "base64", "mime_type": "image/png", "data": "AAAA"}
+    messages = [HumanMessage(content="rebuild"),
+                _ai([call("view_clone", {"fragment_id": "f"}, 1)]),
+                _result("view_clone", "call_1", [{"type": "text", "text": "card"}, picture]),
+                _ai([call("compare_section", {"name": "Hero"}, 2)]),
+                _result("compare_section", "call_2", [{"type": "text", "text": "1440 wide: 31% differs"}, picture]),
+                _ai([call("compare_section", {"name": "Hero"}, 3)]),
+                _result("compare_section", "call_3", [{"type": "text", "text": "1440 wide: 12% differs"}, picture])]
+    cleared = clear_superseded_results(messages)
+    assert isinstance(cleared[2].content, str) and "card" in cleared[2].content
+    assert isinstance(cleared[4].content, str) and "31% differs" in cleared[4].content
+    assert cleared[6] is messages[6]
+
+
 def test_planning_reads_clear_once_the_plan_is_written_and_building_starts() -> None:
     reads = [_ai([call("read_file", {"file_path": "/research/overview.md"}, 1),
                   call("read_file", {"file_path": "/skills/page-review/SKILL.md"}, 2),

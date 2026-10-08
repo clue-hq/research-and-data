@@ -91,7 +91,7 @@ def clear_superseded_results(messages: list) -> list:
     def call_of(message: ToolMessage) -> dict:
         return calls.get(message.tool_call_id) or {}
 
-    last_render, plan_written, build_started = -1, -1, -1
+    last_render, last_compare, plan_written, build_started = -1, -1, -1, -1
     for index, message in enumerate(messages):
         if not isinstance(message, ToolMessage) or message.status == "error":
             continue
@@ -99,6 +99,8 @@ def clear_superseded_results(messages: list) -> list:
         path = (call.get("args") or {}).get("file_path")
         if message.name == "render_page" and isinstance(message.content, list):
             last_render = index
+        elif message.name == "compare_section" and isinstance(message.content, list):
+            last_compare = index
         elif message.name in _WRITERS and path == "/plan.md" and plan_written < 0:
             plan_written = index
         elif message.name in _WRITERS and _is_site_file(path) and path != "/plan.md" and build_started < 0:
@@ -128,6 +130,13 @@ def clear_superseded_results(messages: list) -> list:
             )
             out[index] = _stub(message, "[cleared to save context: screenshots from an earlier render_page; "
                                         f"a newer render replaced them. Facts then: {facts}]")
+        elif name in ("compare_section", "view_clone") and isinstance(message.content, list) and index < last_compare:
+            facts = " | ".join(
+                block.get("text", "") for block in message.content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+            out[index] = _stub(message, f"[cleared to save context: pictures from an earlier {name}; a newer "
+                                        f"comparison replaced them. Text then: {facts[:1500]}]")
         elif name == "view_asset" and index < last_render:
             files = ", ".join(args.get("files") or [])
             out[index] = _stub(message, f"[cleared to save context: images you looked at earlier ({files}). "
@@ -409,6 +418,17 @@ def page_tool_set(page_tools: PageTools, *, allow_new_sections: bool = False) ->
             page_tools.write_section, name="write_section",
             description="Write a new section as one React file (see the writing-a-section skill). It is "
             "checked for brand tokens and types; if it passes, place it in a page by its name.",
+        ),
+        StructuredTool.from_function(
+            page_tools.view_clone, name="view_clone",
+            description="Look at one of the seller's captured sections on its own: a desktop (1440 wide) "
+            "and a mobile (375 wide) picture, plus its catalog card (words, images, links).",
+        ),
+        StructuredTool.from_function(
+            page_tools.compare_section, name="compare_section",
+            description="Show a seller's section (fragment_id) and your component (name, filled with "
+            "props) side by side at 1440 and 375 wide, with the share of the area that differs, both "
+            "heights, and the original's words that yours is missing.",
         ),
     ] if allow_new_sections else []
     return extra + [

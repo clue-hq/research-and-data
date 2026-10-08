@@ -12,6 +12,8 @@ tools. Each returns text the agent can act on, never a raised exception.
 - restore_version rolls page.json and shell.json back to a saved version
 - view_asset      shows up to four brand images with their descriptions (the platform's
                   provider-safe image block from lumen_agent/tools/view.py)
+- view_clone, compare_section   the component library spike: see a seller's section on its own,
+                  and compare a rebuilt component with it side by side (difference score, missing words)
 """
 
 from __future__ import annotations
@@ -317,6 +319,7 @@ class PageTools:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(code)
         self._write_section_index()
+        self._record_component(name, result["props"] or {})
         self._record("section_written", name=name)
         return (f"WRITTEN: {name} is ready for this site. Place it in a page with \"type\": \"{name}\" and "
                 f"these props:\n{json.dumps(result['props'], indent=1)[:4000]}")
@@ -335,6 +338,111 @@ class PageTools:
         lines += [f'  "{site}": {{ {", ".join(items)} }},' for site, items in entries.items()]
         lines.append("};")
         (root / "index.ts").write_text("\n".join(lines) + "\n")
+
+    # --- rebuilding the seller's sections (component library spike) -----------------------------
+
+    def _scratch_url(self, content: list[dict]) -> str:
+        """A one-page preview site holding just these sections, able to use this run's agent sections."""
+        run = self._run()
+        name = f"{run['site']}-scratch"
+        site = {"brand": run["brand"], "sectionsSite": run["site"],
+                "pages": {"/": {"root": {"props": {"title": "scratch"}}, "content": content}}}
+        (self.spike_root / "data" / "sites" / f"{name}.json").write_text(json.dumps(site))
+        return f"{self.base_url}/s/{name}"
+
+    def _shoot_sections(self, url: str, width: int, expected: int) -> list[tuple[bytes, str]]:
+        """A screenshot and the visible text of each section on the page, in order."""
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": width, "height": 900})
+            shots: list[tuple[bytes, str]] = []
+            for attempt in range(4):  # a just-written section can take a moment to reach the dev server
+                self._retry(lambda: page.goto(url, wait_until="load", timeout=60_000), "preview")
+                page.add_style_tag(content="nextjs-portal{display:none!important}")  # the dev server's badge
+                page.wait_for_timeout(1500)
+                height = page.evaluate("document.body.scrollHeight")
+                for y in range(0, height, 600):
+                    page.evaluate(f"window.scrollTo(0,{y})")
+                    page.wait_for_timeout(60)
+                page.evaluate("window.scrollTo(0,0)")
+                page.wait_for_timeout(300)
+                handles = page.query_selector_all(".brand-root > div.lumen-fragment, .brand-root > section")
+                if len(handles) >= expected:
+                    shots = [(h.screenshot(), h.inner_text()) for h in handles[:expected]]
+                    break
+                page.wait_for_timeout(2000 * (attempt + 1))
+            browser.close()
+        return shots
+
+    def view_clone(self, fragment_id: str) -> list[dict] | str:
+        """Look at one of the seller's sections on its own: desktop and mobile pictures, plus its card."""
+        brand = self._run()["brand"]
+        clones = {c["id"] for c in json.loads((self.spike_root / "data" / "brands" / brand / "clones.json").read_text())}
+        if fragment_id not in clones:
+            return f"No clone {fragment_id}; see catalog/index.md."
+        url = self._scratch_url([{"type": "ClonedSection", "props": {
+            "id": "original", "fragmentId": fragment_id, "slots": {}, "replacements": [], "links": []}}])
+        card_path = self.workspace / "catalog" / "clones" / f"{fragment_id}.md"
+        blocks: list[dict] = [{"type": "text", "text": card_path.read_text()[:4000] if card_path.exists() else fragment_id}]
+        for width in (1440, 375):
+            shots = self._shoot_sections(url, width, expected=1)
+            if not shots:
+                return f"Could not show {fragment_id} (the preview did not render)."
+            tiles = self._tiles(shots[0][0], SCALE_BY_WIDTH.get(width, 1.0))
+            blocks.append({"type": "text", "text": f"The original at {width} wide, in {len(tiles)} part(s), top to bottom."})
+            blocks.extend(tiles)
+        self._record("view_clone", fragment_id=fragment_id)
+        return blocks
+
+    def compare_section(self, name: str, fragment_id: str, props: dict) -> list[dict] | str:
+        """Show the original section and your component side by side, with a difference score and
+        the original's words your version is missing."""
+        site = self._run()["site"]
+        if not (self.spike_root / "puck" / "agent-sections" / site / f"{name}.tsx").exists():
+            return f"No component {name} on this site yet; write it with write_section first."
+        props = {"id": "rebuilt", "surface": "page", **(props or {})}
+        url = self._scratch_url([
+            {"type": "ClonedSection", "props": {"id": "original", "fragmentId": fragment_id, "slots": {}, "replacements": [], "links": []}},
+            {"type": name, "props": props},
+        ])
+        blocks: list[dict] = []
+        summary: list[str] = []
+        scores: dict[int, float] = {}
+        for width in (1440, 375):
+            shots = self._shoot_sections(url, width, expected=2)
+            if len(shots) < 2:
+                return (f"Could not compare: the preview did not show both sections. Check that the props fit "
+                        f"{name}'s schema (catalog/seller-components.md).")
+            (original, original_text), (rebuilt, rebuilt_text) = shots
+            score, pair, heights = _difference(original, rebuilt)
+            scores[width] = score
+            summary.append(f"{width} wide: {score:.0%} of the area differs; heights {heights[0]}px (original) "
+                           f"and {heights[1]}px (yours).")
+            if width == 1440:
+                missing = _missing_words(original_text, rebuilt_text)
+                summary.append("Words of the original missing from yours: "
+                               + (", ".join(missing[:40]) if missing else "none") + ".")
+            tiles = self._tiles(pair, 0.5 if width == 1440 else 1.0)
+            blocks.append({"type": "text", "text": f"Side by side at {width} wide (original left, yours right), "
+                                                   f"in {len(tiles)} part(s)."})
+            blocks.extend(tiles)
+        self._record("compare", name=name, fragment_id=fragment_id, scores=scores)
+        return [{"type": "text", "text": "\n".join(summary)}] + blocks
+
+    def _record_component(self, name: str, props_schema: dict) -> None:
+        """catalog/seller-components.md: every component rebuilt or written for this site, with its props."""
+        path = self.workspace / "catalog" / "seller-components.md"
+        entries: dict[str, str] = {}
+        if path.exists():
+            for chunk in path.read_text().split("\n## ")[1:]:
+                entries[chunk.split("\n", 1)[0].strip()] = chunk.split("\n", 1)[1] if "\n" in chunk else ""
+        entries[name] = f"Use it with `\"type\": \"{name}\"` and these props:\n\n```json\n{json.dumps(props_schema, indent=1)}\n```\n"
+        text = "# The seller's components on this site\n\nWritten for you as each one is written. Use them like any section.\n"
+        text += "".join(f"\n## {n}\n{body}" for n, body in entries.items())
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
 
     # --- research ------------------------------------------------------------------------------
 
@@ -387,3 +495,37 @@ class PageTools:
             return f"SEARCH FAILED: {error}"
         self._record("search", query=query)
         return json.dumps(result, ensure_ascii=False)[:FETCH_LIMIT]
+
+
+def _difference(original: bytes, rebuilt: bytes) -> tuple[float, bytes, tuple[int, int]]:
+    """Share of pixels that differ noticeably (after matching widths and padding heights), and a
+    side-by-side picture: original left, rebuilt right."""
+    from PIL import Image, ImageChops
+
+    a = Image.open(io.BytesIO(original)).convert("RGB")
+    b = Image.open(io.BytesIO(rebuilt)).convert("RGB")
+    if b.width != a.width:
+        b = b.resize((a.width, round(b.height * a.width / b.width)))
+    height = max(a.height, b.height)
+    pa, pb = Image.new("RGB", (a.width, height), "white"), Image.new("RGB", (a.width, height), "white")
+    pa.paste(a, (0, 0))
+    pb.paste(b, (0, 0))
+    diff = ImageChops.difference(pa, pb).convert("L").point(lambda v: 255 if v > 40 else 0)
+    score = sum(diff.histogram()[255:]) / (a.width * height)
+    pair = Image.new("RGB", (a.width * 2 + 24, height), (200, 200, 200))
+    pair.paste(pa, (0, 0))
+    pair.paste(pb, (a.width + 24, 0))
+    buffer = io.BytesIO()
+    pair.save(buffer, format="PNG")
+    return score, buffer.getvalue(), (a.height, b.height)
+
+
+def _missing_words(original: str, rebuilt: str) -> list[str]:
+    """Words (four letters or more) the original shows that the rebuilt section does not."""
+    words = lambda text: re.findall(r"[A-Za-z][A-Za-z'’-]{3,}", text.lower())  # noqa: E731
+    have = set(words(rebuilt))
+    seen: list[str] = []
+    for word in words(original):
+        if word not in have and word not in seen:
+            seen.append(word)
+    return seen

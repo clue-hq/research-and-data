@@ -4,7 +4,13 @@ import path from "node:path";
 import type { Data } from "@puckeditor/core";
 import type { ShellData } from "@/puck/shell";
 
-export type Site = { brand: string; shell?: ShellData; pages: Record<string, Data> };
+export type Site = {
+  brand: string;
+  shell?: ShellData;
+  pages: Record<string, Data>;
+  /** A scratch preview (view_clone, compare_section) uses this site's agent-written sections. */
+  sectionsSite?: string;
+};
 
 export const SHELL_ROUTE = "/_shell";
 const DIR = path.join(process.cwd(), "data", "sites");

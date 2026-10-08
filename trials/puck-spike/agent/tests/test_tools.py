@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from trials_puck_agent.tools import PageTools  # noqa: E402  (path set in conftest)
+from trials_puck_agent.tools import PageTools, _difference, _missing_words  # noqa: E402  (path set in conftest)
 
 SPIKE = Path(__file__).resolve().parents[2]
 SITE = json.loads((SPIKE / "data" / "sites" / "garner-syracuse.json").read_text())
@@ -244,6 +244,8 @@ def test_write_section_joins_only_its_own_site(workspace: Path) -> None:
         written = tools.write_section("QuoteBand", example)
         assert written.startswith("WRITTEN"), written
         assert '"QuoteBand"' in (root / "index.ts").read_text()
+        components = (workspace / "catalog" / "seller-components.md").read_text()
+        assert "## QuoteBand" in components and '"attribution"' in components
 
         edit_page(workspace, lambda p: p["content"].append({
             "type": "QuoteBand", "props": {"id": "q", "surface": "muted", "quote": "A line.", "attribution": "Someone"}}))
@@ -253,3 +255,60 @@ def test_write_section_joins_only_its_own_site(workspace: Path) -> None:
     finally:
         shutil.rmtree(root / site, ignore_errors=True)
         tools._write_section_index()
+
+
+def _png(colour: str, size: tuple[int, int]) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", size, colour).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_the_difference_score_compares_at_one_width_and_pads_heights() -> None:
+    same, _, heights = _difference(_png("white", (200, 100)), _png("white", (100, 50)))
+    assert same == 0 and heights == (100, 100)  # the rebuilt picture is scaled to the original's width
+    taller, pair, heights = _difference(_png("white", (200, 100)), _png("white", (200, 150)))
+    assert heights == (100, 150) and taller == 0  # padding is white, like the page
+    different, _, _ = _difference(_png("white", (200, 100)), _png("black", (200, 100)))
+    assert different == 1.0
+    assert pair[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_missing_words_lists_the_originals_words_once_in_order() -> None:
+    assert _missing_words("Find the right doctors. Find savings!", "the right doctors") == ["find", "savings"]
+    assert _missing_words("Short a an", "") == ["short"]  # words under four letters are ignored
+
+
+def test_view_clone_refuses_an_unknown_clone(workspace: Path) -> None:
+    assert tools_for(workspace).view_clone("nope").startswith("No clone nope")
+
+
+def test_compare_section_needs_the_component_first(workspace: Path) -> None:
+    assert "write it with write_section first" in tools_for(workspace).compare_section("Missing", "x", {})
+
+
+@pytest.mark.skipif(not _server_up(), reason="the spike's dev server is not running on :3047")
+def test_view_clone_and_compare_section_show_the_original_and_the_rebuild(workspace: Path) -> None:
+    skill = (SPIKE / "agent" / "skills-e5" / "writing-a-section" / "SKILL.md").read_text()
+    example = skill.split("```tsx")[1].split("```")[0]
+    site = "agent-test-cmp"
+    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
+    tools = tools_for(workspace)
+    root = SPIKE / "puck" / "agent-sections"
+    clone = json.loads((SPIKE / "data" / "brands" / "garner" / "clones.json").read_text())[0]["id"]
+    try:
+        seen = tools.view_clone(clone)
+        assert isinstance(seen, list) and sum(b["type"] == "image" for b in seen) >= 2, seen
+        assert tools.write_section("QuoteBand", example).startswith("WRITTEN")
+        compared = tools.compare_section("QuoteBand", clone, {"quote": "A line.", "attribution": "Someone"})
+        assert isinstance(compared, list), compared
+        assert "of the area differs" in compared[0]["text"] and "missing from yours" in compared[0]["text"]
+        assert sum(b["type"] == "image" for b in compared) >= 2
+    finally:
+        shutil.rmtree(root / site, ignore_errors=True)
+        tools._write_section_index()
+        for scratch in (SPIKE / "data" / "sites").glob(f"{site}*.json"):
+            scratch.unlink()
