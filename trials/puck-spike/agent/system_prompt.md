@@ -31,8 +31,8 @@ workspace of plain files with a few tools.
 
 ## How to work
 
-1. Read your three skills before anything else: `account-page-copy`, `building-with-puck` and
-   `page-review`.
+1. Your three skills are below this prompt: `account-page-copy`, `building-with-puck` and
+   `page-review`. Follow them.
 2. Read `brief.md`, the research and `catalog/index.md`. Open clone files and seller files when
    you need them, not all at once.
 3. Write `plan.md`. Put the message plan first (account-page-copy, part 1). Then list each

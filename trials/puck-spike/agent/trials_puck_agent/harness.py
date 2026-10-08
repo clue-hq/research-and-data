@@ -7,15 +7,15 @@ what this spike measures against. The pieces:
 
 - file tools over the run workspace (deepagents FilesystemMiddleware), with writes denied
   outside page.json, shell.json, plan.md and new notes;
-- skills (deepagents SkillsMiddleware) with a short listing prompt;
+- skills carried in the system prompt (cached across calls and sessions), files kept in the workspace;
 - malformed tool calls patched back to the model (PatchToolCallsMiddleware);
 - context clearing, as the platform website agent does it: superseded renders and asset views,
   out-of-date reads of the site files, and finished planning reads become one-line stubs in the
   model request (never the saved history), changed in batches so the cache holds
   (ContextEditingMiddleware with SupersededResults). On by default: run a2 showed the cache misses
   happen with clearing off too;
-- compaction (LangChain SummarizationMiddleware) when one request passes 175k tokens, keeping the
-  most recent 60k tokens; no message counts;
+- compaction (LangChain SummarizationMiddleware) when one request passes 300k tokens, keeping the
+  most recent 60k tokens; no message counts; clearing only once a session passes 60k tokens;
 - a read_file without a limit reads the whole file (WholeFileReads);
 - tool calls from one response run one at a time, in the order the model wrote them;
 - RunRecorder: per-call usage and cost, the 40-call safety stop, and the finish guard (a turn
@@ -39,20 +39,15 @@ from .tools import PageTools
 AGENT_DIR = Path(__file__).resolve().parents[1]
 SAFETY_STOP_CALLS = 40
 #: Compaction is a safety net for one very long request, by tokens only (founder, 2026-10-08): it
-#: starts at 175k tokens and keeps the most recent 60k tokens word for word; older turns are summarised.
-COMPACT_AT_TOKENS = 175_000
+#: starts at 300k tokens and keeps the most recent 60k tokens word for word; older turns are summarised.
+COMPACT_AT_TOKENS = 300_000
 COMPACT_KEEP_TOKENS = 60_000
+#: Context clearing starts only once a session passes this many tokens (founder, 2026-10-08).
+CLEAR_FROM_TOKENS = 60_000
 FINISH_REMINDERS = 2
 
-SKILLS_PROMPT = """## Skills
-
-{skills_list}
-
-When a skill's description applies, read its whole file with read_file (limit=1000).
-{skills_locations}{skills_load_warnings}"""
-
 READ_ONLY = [
-    "/.run.json", "/brief.md", "/site.md", "/history.md", "/skills/**", "/catalog/**", "/brand/**", "/research/**",
+    "/.run.json", "/brief.md", "/site.md", "/history.md", "/skills/**", "/skills-e5/**", "/catalog/**", "/brand/**", "/research/**",
     "/seller/**", "/fetched/**", "/versions/**", "/renders/**",
 ]
 
@@ -155,9 +150,14 @@ def clear_superseded_results(messages: list) -> list:
 
 @dataclass
 class SupersededResults:
-    """A ContextEdit for LangChain's ContextEditingMiddleware."""
+    """A ContextEdit for LangChain's ContextEditingMiddleware. It does nothing below
+    CLEAR_FROM_TOKENS: in a short session each clearing made the next call miss the whole cache
+    (E2b: $0.76 of $2.73), more than clearing saved. The count is taken on the full saved history,
+    so once a session passes the threshold it keeps clearing and the prefix stays stable."""
 
     def apply(self, messages: list, *, count_tokens: Any) -> None:
+        if count_tokens(messages) < CLEAR_FROM_TOKENS:
+            return
         messages[:] = clear_superseded_results(messages)
 
 
@@ -371,6 +371,17 @@ class SummaryUsage:
 
 # --- the agent -----------------------------------------------------------------------------------
 
+def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = False) -> str:
+    """The system prompt with the skills after it: the same text every call and every session, so it
+    stays in the prompt cache (E2b re-read about 6k tokens of skills in every session)."""
+    folders = ["skills", *(["skills-e5"] if allow_new_sections else [])]
+    skills = [
+        f"### Skill: {path.parent.name} ({'/' + folder + '/' + path.parent.name}/SKILL.md)\n\n{path.read_text().strip()}"
+        for folder in folders for path in sorted((workspace / folder).glob("*/SKILL.md"))
+    ]
+    return (AGENT_DIR / "system_prompt.md").read_text().rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
+
+
 def build_model() -> Any:
     """The model through our gateway; the model id is the LUMEN_AGENT_MODEL env setting."""
     from lumen_agent.config import AgentRuntimeConfig
@@ -390,10 +401,17 @@ def build_model() -> Any:
     )
 
 
-def page_tool_set(page_tools: PageTools) -> list:
+def page_tool_set(page_tools: PageTools, *, allow_new_sections: bool = False) -> list:
     from langchain_core.tools import StructuredTool
 
-    return [
+    extra = [
+        StructuredTool.from_function(
+            page_tools.write_section, name="write_section",
+            description="Write a new section as one React file (see the writing-a-section skill). It is "
+            "checked for brand tokens and types; if it passes, place it in a page by its name.",
+        ),
+    ] if allow_new_sections else []
+    return extra + [
         StructuredTool.from_function(
             page_tools.validate_page, name="validate_page",
             description="Check page.json and shell.json against the components, the catalog, the brand "
@@ -430,13 +448,13 @@ def page_tool_set(page_tools: PageTools) -> list:
 
 def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
                 safety_stop: int = SAFETY_STOP_CALLS, trace=None, clear_context: bool = True,
-                compact_at_tokens: int | None = COMPACT_AT_TOKENS, summary_model: Any = None):
+                compact_at_tokens: int | None = COMPACT_AT_TOKENS, summary_model: Any = None,
+                allow_new_sections: bool = False):
     """Returns (agent, recorder)."""
     from deepagents import FilesystemPermission
     from deepagents.backends import FilesystemBackend
     from deepagents.middleware.filesystem import FilesystemMiddleware
     from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
-    from deepagents.middleware.skills import SkillsMiddleware
     from langchain.agents import create_agent
     from langchain.agents.middleware import ContextEditingMiddleware, SummarizationMiddleware
     from langgraph.checkpoint.memory import InMemorySaver
@@ -447,7 +465,6 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
     if summary_model is not None:
         summary_model.callbacks = [SummaryUsage(recorder)]
     middleware = [
-        SkillsMiddleware(backend=backend, sources=["/skills"], system_prompt=SKILLS_PROMPT),
         FilesystemMiddleware(
             backend=backend,
             _permissions=[FilesystemPermission(operations=["write"], paths=READ_ONLY, mode="deny")],
@@ -464,8 +481,8 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
     ]
     agent = create_agent(
         model,
-        tools=page_tool_set(page_tools),
-        system_prompt=(AGENT_DIR / "system_prompt.md").read_text(),
+        tools=page_tool_set(page_tools, allow_new_sections=allow_new_sections),
+        system_prompt=system_prompt_with_skills(page_tools.workspace, allow_new_sections=allow_new_sections),
         middleware=middleware,
         checkpointer=checkpointer if checkpointer is not None else InMemorySaver(),
         name="puck-page-agent",

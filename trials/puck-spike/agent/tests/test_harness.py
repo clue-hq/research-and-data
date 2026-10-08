@@ -225,3 +225,25 @@ def test_compaction_is_set_by_tokens_only(workspace: Path) -> None:
     middleware = SummarizationMiddleware(ScriptedModel(messages=iter([])), trigger=("tokens", harness.COMPACT_AT_TOKENS),
                                          keep=("tokens", harness.COMPACT_KEEP_TOKENS))
     assert middleware.keep == ("tokens", harness.COMPACT_KEEP_TOKENS)
+
+
+def test_clearing_waits_until_the_session_passes_the_threshold() -> None:
+    from trials_puck_agent.harness import CLEAR_FROM_TOKENS, SupersededResults
+
+    messages = [HumanMessage(content="build"),
+                _ai([call("render_page", {}, 1)]), _render("call_1"),
+                _ai([call("render_page", {}, 2)]), _render("call_2")]
+    small = list(messages)
+    SupersededResults().apply(small, count_tokens=lambda m: CLEAR_FROM_TOKENS - 1)
+    assert small[2].content == messages[2].content  # a short session keeps everything (cache holds)
+    large = list(messages)
+    SupersededResults().apply(large, count_tokens=lambda m: CLEAR_FROM_TOKENS)
+    assert isinstance(large[2].content, str) and "cleared" in large[2].content
+
+
+def test_the_skills_ride_in_the_system_prompt(workspace: Path) -> None:
+    from trials_puck_agent.harness import system_prompt_with_skills
+
+    prompt = system_prompt_with_skills(workspace)
+    assert "## Your skills" in prompt and "### Skill: building-with-puck" in prompt and "Reuse first" in prompt
+    assert "writing-a-section" not in prompt  # the E5 skill only when new sections are allowed
