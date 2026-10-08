@@ -807,7 +807,11 @@ class ToolRuntime:
                 raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
             await self.call_provider(provider, fn, operation=operation)
         async with self._conn_factory() as conn:
-            if has_capability(self.scope.catalog_version, "research_quality"):
+            # W2-17: a call that won its operation has just indexed its own result, so the check
+            # only runs on a replay (or when the setting asks); the job's settle runs it once.
+            if has_capability(self.scope.catalog_version, "research_quality") and (
+                not won or self.settings.arv2_recover_on_success
+            ):
                 from clue_api.arv2.quality_acquisition import recover_acquisitions
 
                 started = time.monotonic()

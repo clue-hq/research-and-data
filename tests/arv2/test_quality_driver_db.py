@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from clue_agents import AgentWorkspaceFactory, ScriptedAgentChatModel, WorkspaceRootPolicy
 from clue_api.agent_turn_wiring import DurableAgentArtifactStore
+from clue_api.arv2 import quality_acquisition
 from clue_api.arv2.account_research_catalog import arv2_account_profile_sha256
 from clue_api.arv2.account_research_driver import Arv2AccountResearchWorkHandler
 from clue_api.arv2.account_research_launch import launch_arv2_account_research
@@ -67,7 +68,20 @@ def work(job, run, ws):
     )
 
 
-def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tmp_path):
+def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
+    tmp_path, monkeypatch
+):
+    # W2-17: the settle runs the evidence recovery check once for the job, whatever the per-call
+    # setting, so a result whose indexing was cut short is repaired before coverage is measured.
+    recovered: list = []
+    real_recover = quality_acquisition.recover_acquisitions
+
+    async def counting_recover(conn, storage, scope):
+        recovered.append(scope.job_id)
+        return await real_recover(conn, storage, scope)
+
+    monkeypatch.setattr(quality_acquisition, "recover_acquisitions", counting_recover)
+
     async def case():
         async with rollback_conn() as conn:
             storage = FsStorage(tmp_path / "blobs")
@@ -338,6 +352,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(tm
             )
             jid = launch.job_ids[0]
             result = await handler.handle(work(jid, launch.run_id, fixture.workspace_id))
+            assert recovered == [jid]
             initial = await read_job(conn, job_id=jid)
             # Recipe 25: the researcher finalizes without pages; the driver's page writer
             # writes them (one seller-brief call, one page call) before the job settles.

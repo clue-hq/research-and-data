@@ -1890,8 +1890,31 @@ class Arv2AccountResearchWorkHandler:
             meter = await usage(
                 conn, workspace_id=composition.run.workspace_id, job_id=composition.job.job_id
             )
+            from clue_api.arv2.quality_acquisition import recover_acquisitions
             from clue_api.arv2.quality_coverage import coverage
 
+            # W2-17: evidence calls that indexed their own result skip the recovery check, so it
+            # runs once here — any paid result whose indexing was cut short is indexed before
+            # coverage is measured.
+            if self._storage is not None:
+                started = time.monotonic()
+                await recover_acquisitions(
+                    conn,
+                    self._storage,
+                    OperationScope(
+                        composition.run.workspace_id,
+                        composition.run.run_id,
+                        composition.job.job_id,
+                        composition.job.account_entity_id,
+                    ),
+                )
+                log.info(
+                    "arv2.acquisition_recovered",
+                    job_id=str(composition.job.job_id),
+                    operation="settle",
+                    replayed=False,
+                    recover_ms=round((time.monotonic() - started) * 1000, 1),
+                )
             assert composition.run.context_id is not None
             measured = await coverage(
                 conn, composition.scope, composition.run.context_id, deferred=result.deferred_pages

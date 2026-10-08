@@ -16,6 +16,7 @@ from clue_api.arv2.quality_mapping import QualityProviderWriter
 from clue_api.arv2.quality_provider_tools import AcquireResearchInput, AcquireResearchTool
 from clue_api.arv2.quality_views import research_backend
 from clue_api.arv2.transport import ScriptedTransport
+from clue_config import Settings
 from clue_core import ExecutionId, OperationId
 from clue_storage import read_verified_artifact
 from clue_storage.fs import FsStorage
@@ -369,8 +370,15 @@ def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_p
     run_async(case())
 
 
-def test_an_evidence_call_logs_how_long_draining_indexing_and_recovery_took(tmp_path, monkeypatch):
-    """W2-20: the per-call platform steps are timed, so slow indexing is visible in the logs."""
+@pytest.mark.parametrize("recover_on_success", [False, True])
+def test_an_evidence_call_logs_how_long_draining_indexing_and_recovery_took(
+    tmp_path, monkeypatch, recover_on_success
+):
+    """W2-20: the per-call platform steps are timed, so slow indexing is visible in the logs.
+
+    W2-17: a call that won its operation and indexed its own result runs the recovery check only
+    when ``arv2_recover_on_success`` is on; the job's settle step runs it once either way.
+    """
     import clue_api.arv2.account_research_tools as tools_module
 
     lines: list[tuple[str, dict]] = []
@@ -403,6 +411,11 @@ def test_an_evidence_call_logs_how_long_draining_indexing_and_recovery_took(tmp_
                 "results": [{"url": "https://example.test/bdr", "title": "BDR"}],
             }
             rt = runtime(conn, scope, storage, ScriptedTransport([response(body)]))
+            rt.settings = Settings(
+                _env_file=None,  # type: ignore[call-arg]
+                arv2_ai_ark_min_gap_s=0,
+                arv2_recover_on_success=recover_on_success,
+            )
 
             @asynccontextmanager
             async def connections():
@@ -434,4 +447,5 @@ def test_an_evidence_call_logs_how_long_draining_indexing_and_recovery_took(tmp_
     assert drained[0]["drain_ms"] >= 0 and drained[0]["index_ms"] >= 0
     assert drained[0]["job_id"] and drained[0]["provider"]
     recovered = [f for e, f in lines if e == "arv2.acquisition_recovered"]
-    assert len(recovered) == 1 and recovered[0]["recover_ms"] >= 0
+    assert len(recovered) == (1 if recover_on_success else 0)
+    assert all(r["recover_ms"] >= 0 for r in recovered)

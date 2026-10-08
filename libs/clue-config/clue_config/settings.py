@@ -406,6 +406,12 @@ class Settings(BaseSettings):
     # from the answer, with indexing inside it. ``false`` restores the old order.
     # Env: ``CLUE_ARV2_DRAIN_OUTSIDE_SLOT``.
     arv2_drain_outside_slot: bool = True
+    # Run the evidence recovery check after an evidence call that bought and indexed its own
+    # result. Off by default (W2-17): that call's result is already indexed, so the check finds
+    # nothing; a replayed call still runs it, and the job's settle runs it once before coverage,
+    # so a result whose indexing was cut short is still repaired.
+    # Env: ``CLUE_ARV2_RECOVER_ON_SUCCESS``.
+    arv2_recover_on_success: bool = False
     # OpenRouter model id for the structuring pass (prose -> claims against the field catalog).
     # Env: ``CLUE_ARV2_STRUCTURING_MODEL``.
     arv2_structuring_model: str = "openai/gpt-5-mini"
