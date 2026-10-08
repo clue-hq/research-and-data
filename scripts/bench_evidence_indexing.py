@@ -157,11 +157,13 @@ async def _replay_call(
     row_id = f"bench-{uuid4()}"
     key = row["response_artifact_key"]
     call: dict[str, float] = {}
+    held: dict[str, bytes] = {}
     started = time.monotonic()
 
     async def drain(conn: Any) -> None:
         body = await storage.get(key)  # the bytes the drain held in memory, from the replay copy
         await storage.put(key, body, media_type="application/json")
+        held[key] = body
         values = {c: row[c] for c in columns}
         values["ledger_id"], values["call_id"] = ledger_id_for(row_id), uuid4()
         for c, v in values.items():
@@ -197,6 +199,7 @@ async def _replay_call(
                 ),
             ),
             raw_artifact_keys={"replay": key},
+            raw_bodies=held,
         )
         await index_acquisition(conn, storage, scope, report)
 
