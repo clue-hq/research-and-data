@@ -97,6 +97,13 @@ def sections_for(version: str = GUIDE_VERSION) -> dict[str, tuple[str, ...]]:
 
 SECTIONS: dict[str, tuple[str, ...]] = sections_for(GUIDE_VERSION)
 
+
+def shows_interpretations(version: str = GUIDE_VERSION) -> bool:
+    """Whether the writer sees the researcher's ``Interpretation:`` line: only the v2 guides
+    explain it, so a v1 writer gets exactly the v1 findings view."""
+    return version != "v1"
+
+
 OUTPUT_SHAPE = """Return one JSON object, no prose around it:
 {"pages": [{"page": "<page>", "sections": [{"key": "<section key>",
   "intro": [Sentence...], "items": [{"h2": "<heading>", "body": [Sentence...],
@@ -355,6 +362,7 @@ async def write_account_pages(
             account_name=account_name,
             account_dossier=account_dossier,
             people=people,
+            interpretations=shows_interpretations(guide_version),
         ),
         pages,
         guide_version,
@@ -388,6 +396,7 @@ async def write_contact_page(
             account_story=account_story,
             person=person,
             account_dossier=account_dossier,
+            interpretations=shows_interpretations(guide_version),
         ),
         pages,
         guide_version,

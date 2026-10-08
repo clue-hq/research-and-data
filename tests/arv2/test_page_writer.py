@@ -445,3 +445,46 @@ V1_GUIDE_DIGESTS = {
     "contact-page": "6d177fdef35f",
     "seller-brief": "76ed3f189822",
 }
+
+
+@pytest.mark.parametrize(("version", "shown"), [("v1", False), ("v2", True)])
+def test_only_the_v2_guides_get_the_interpretation_line(version: str, shown: bool) -> None:
+    """The v1 guides never explain an ``Interpretation:`` line, so a rollback to v1 must send the
+    writer exactly the v1 request: guides, order and findings view alike."""
+    import copy
+
+    from clue_api.arv2.page_writer import sections_for
+
+    dossier = copy.deepcopy(PERSON_DOSSIER)
+    finding = dossier["document"]["sections"][0]["findings"][0]
+    finding["agent_interpretation"] = "Owns the budget this quarter."
+
+    async def scenario() -> str:
+        person = Person(
+            contact_id=CONTACT, name="Pat Doe", title="VP", suggested_role=None, dossier=dossier
+        )
+        fill = {
+            "why-this-person": _section(
+                "why-this-person", intro=[_sentence("Pat.", ["F001", "A:F001"])]
+            )
+        }
+        sections = sections_for(version)["contact"]
+        reply = {
+            "pages": [
+                {"page": "contact", "sections": [fill.get(k) or _section(k) for k in sections]}
+            ]
+        }
+        model = _Model(reply)
+        await write_contact_page(
+            model,
+            seller_brief="Brief.",
+            account_name="Acme",
+            account_story="Why Acme.",
+            person=person,
+            account_dossier=ACCOUNT_DOSSIER,
+            guide_version=version,
+        )
+        return str(model.calls[0][1]["content"])
+
+    prompt = asyncio.run(scenario())
+    assert ("Interpretation: Owns the budget this quarter." in prompt) is shown

@@ -65,8 +65,13 @@ def _status(finding: Mapping[str, Any]) -> str:
     return "" if status == "supported" else f" [{status.replace('_', ' ')}]"
 
 
-def render_findings(dossier: Mapping[str, Any] | None, prefix: str = "") -> str:
-    """Findings grouped by dossier section, one compact block per finding."""
+def render_findings(
+    dossier: Mapping[str, Any] | None, prefix: str = "", *, interpretations: bool = True
+) -> str:
+    """Findings grouped by dossier section, one compact block per finding.
+
+    ``interpretations`` shows the researcher's reading of each finding; only the v2 guides explain
+    that line, so a v1 writer is given exactly the v1 view."""
     lines: list[str] = []
     current = None
     for section, finding in findings(dossier):
@@ -77,7 +82,7 @@ def render_findings(dossier: Mapping[str, Any] | None, prefix: str = "") -> str:
             f"- **{prefix}{finding['id']}** {finding.get('topic') or ''}{_status(finding)}"
         )
         lines.append(f"  {_words(finding)}")
-        if finding.get("agent_interpretation"):
+        if interpretations and finding.get("agent_interpretation"):
             # The researcher's reading. Shown to the writer, never part of the quotable text.
             lines.append(f"  Interpretation: {finding['agent_interpretation']}")
         for qualification in finding.get("qualifications") or []:
@@ -117,17 +122,21 @@ def account_view(
     account_name: str,
     account_dossier: Mapping[str, Any],
     people: Sequence[Person],
+    interpretations: bool = True,
 ) -> str:
     parts = [
         "# Seller brief\n\n" + seller_brief.strip(),
         f"# Account: {account_name}\n\n## Buying committee\n\n{_committee_lines(people)}",
-        "## Account findings\n\n" + render_findings(account_dossier),
+        "## Account findings\n\n"
+        + render_findings(account_dossier, interpretations=interpretations),
     ]
     for number, person in enumerate(people, start=1):
         if person.dossier:
             parts.append(
                 f"## Findings about P{number}: {person.name}\n\n"
-                + render_findings(person.dossier, prefix=f"P{number}:")
+                + render_findings(
+                    person.dossier, prefix=f"P{number}:", interpretations=interpretations
+                )
             )
     return "\n\n".join(parts)
 
@@ -139,6 +148,7 @@ def contact_view(
     account_story: str,
     person: Person,
     account_dossier: Mapping[str, Any],
+    interpretations: bool = True,
 ) -> str:
     title = f", {person.title}" if person.title else ""
     return "\n\n".join(
@@ -147,9 +157,10 @@ def contact_view(
             f"# Account: {account_name}\n\n## Why this account matters (the account page's short "
             f"version)\n\n{account_story.strip() or 'Not written yet.'}",
             f"# Person: {person.name}{title}",
-            "## Findings about this person\n\n" + render_findings(person.dossier),
+            "## Findings about this person\n\n"
+            + render_findings(person.dossier, interpretations=interpretations),
             "## Account findings (cite as A:F…)\n\n"
-            + render_findings(account_dossier, prefix="A:"),
+            + render_findings(account_dossier, prefix="A:", interpretations=interpretations),
         ]
     )
 
