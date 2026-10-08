@@ -845,6 +845,7 @@ version = "0.0.0"
 source = { editable = "libs/clue-db" }
 dependencies = [
     { name = "asyncpg" },
+    { name = "clue-obs" },
     { name = "pgvector" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
@@ -852,6 +853,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "asyncpg" },
+    { name = "clue-obs", editable = "libs/clue-obs" },
     { name = "pgvector" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
 ]

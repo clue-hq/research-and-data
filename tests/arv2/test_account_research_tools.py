@@ -753,6 +753,7 @@ def _runtime(
     *,
     settings: Settings | None = None,
     conn_factory: Any | None = None,
+    early_gate: asyncio.Semaphore | None = None,
 ) -> tuple[ToolRuntime, FakeClients, FakeWriter, Any]:
     clients = FakeClients()
     writer = FakeWriter()
@@ -770,6 +771,7 @@ def _runtime(
         media_budget=MediaBudget(9000),
         transport_factory=lambda: ScriptedTransport([]),
         now=lambda: datetime(2026, 9, 8, tzinfo=UTC),
+        early_gate=early_gate,
     )
     return runtime, clients, writer, conn_factory
 
@@ -3596,3 +3598,42 @@ def test_ai_ark_subject_registration_skips_a_held_non_ai_ark_response_without_st
             runtime, MemoryConn(), ["ws-1/abc"], bodies={"ws-1/abc": body}
         )
     )
+
+
+def test_early_uploads_are_limited_across_every_job_of_a_worker_process(monkeypatch) -> None:
+    """W2-15 option B: the work done before the worker lock (store the response, check privacy,
+    upload the source files) is bounded per process by one shared limit, so a burst of finished
+    evidence calls cannot exhaust the process's connection pool or flood storage."""
+    import clue_api.arv2.account_research_tools as tools_module
+    from clue_api.arv2.provider_ledger import BufferedLedger, BufferedRawSink, HeldDrain
+    from clue_spend.ledger import DrainReport
+
+    running = peak = 0
+
+    async def slow_hold(**_: Any) -> HeldDrain:
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.05)
+        running -= 1
+        return HeldDrain((), {}, {}, 0)
+
+    async def drained(conn: Any, **_: Any) -> DrainReport:
+        return DrainReport(
+            rows=0, artifacts=0, cost_usd=Decimal(0), credits=Decimal(0), media_seconds=0
+        )
+
+    monkeypatch.setattr(tools_module, "hold_drain", slow_hold)
+    monkeypatch.setattr(tools_module, "drain_provider_calls", drained)
+    monkeypatch.setattr(tools_module, "has_capability", lambda *_: False)
+    gate = asyncio.Semaphore(2)
+    settings = Settings(_env_file=None, arv2_upload_outside_lock=True)  # type: ignore[call-arg]
+    jobs = [_runtime(settings=settings, early_gate=gate)[0] for _ in range(3)]
+
+    async def burst() -> None:
+        await asyncio.gather(
+            *(job._drain(BufferedRawSink(), BufferedLedger()) for job in jobs for _ in range(2))
+        )
+
+    _run(burst())
+    assert peak == 2

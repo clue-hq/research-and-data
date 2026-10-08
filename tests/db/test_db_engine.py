@@ -9,6 +9,7 @@ The DSN-reading behaviour (which needs no live DB) is tested unconditionally.
 
 from __future__ import annotations
 
+import asyncio
 import os
 
 import pytest
@@ -174,3 +175,43 @@ def test_db_tests_skip_cleanly_without_dsn(monkeypatch: pytest.MonkeyPatch) -> N
     """Sanity: the gate helper reports unavailable when the env var is absent."""
     monkeypatch.delenv(DATABASE_URL_ENV, raising=False)
     assert os.environ.get(DATABASE_URL_ENV) is None
+
+
+@pytest.mark.usefixtures("require_db")
+def test_a_wait_for_a_pooled_connection_is_logged_with_the_pool_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every connection a process takes comes from one small pool, shared by its jobs, its agent
+    bookkeeping and its fleet heartbeat. A checkout that had to wait is logged above
+    ``CLUE_DB_CRITICAL_SECTION_LOG_MS``, so a pool that gets tight is visible."""
+    import clue_db.engine as engine_module
+
+    lines: list[tuple[str, dict]] = []
+
+    class Recording:
+        def info(self, event: str, **fields: object) -> None:
+            lines.append((event, fields))
+
+    monkeypatch.setattr(engine_module, "log", Recording())
+    monkeypatch.setenv("CLUE_DB_POOL_SIZE", "1")
+    monkeypatch.setenv("CLUE_DB_MAX_OVERFLOW", "0")
+    monkeypatch.setenv("CLUE_DB_CRITICAL_SECTION_LOG_MS", "100")
+
+    async def scenario() -> None:
+        async with db_lifespan():
+
+            async def hold() -> None:
+                async with transaction():
+                    await asyncio.sleep(0.3)
+
+            holder = asyncio.create_task(hold())
+            await asyncio.sleep(0.05)
+            async with transaction() as conn:
+                await conn.execute(text("SELECT 1"))
+            await holder
+
+    run_async(scenario())
+    waited = [fields for event, fields in lines if event == "db.connection_waited"]
+    assert len(waited) == 1
+    assert waited[0]["wait_ms"] >= 150
+    assert "Checked out" in str(waited[0]["pool"])

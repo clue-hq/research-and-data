@@ -507,6 +507,8 @@ class Arv2AccountResearchWorkHandler:
         self._person_catalog_root = person_catalog_root
         self._clock = clock
         self._db_lock = asyncio.Lock()
+        # W2-15 option B: one bound for this process on evidence work done before the lock.
+        self._early_gate = asyncio.Semaphore(settings.arv2_early_upload_concurrency)
         self._jobs = asyncio.Semaphore(settings.arv2_account_max_parallel_jobs)
 
     @property
@@ -1297,6 +1299,7 @@ class Arv2AccountResearchWorkHandler:
             clients=_clients_for_job(self._clients, media_budget),
             conn_factory=self._connection,
             pacing_conn_factory=self._conn_factory,
+            early_gate=self._early_gate,
             artifacts=self._artifacts,
             storage=self._storage,
             writer=self._writer,

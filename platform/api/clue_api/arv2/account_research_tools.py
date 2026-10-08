@@ -385,6 +385,7 @@ class ToolRuntime:
         now: Callable[[], datetime] = _utcnow,
         storage: StorageBackend | None = None,
         pacing_conn_factory: ConnFactory | None = None,
+        early_gate: asyncio.Semaphore | None = None,
     ) -> None:
         self.storage = storage
         self.scope = scope
@@ -399,6 +400,10 @@ class ToolRuntime:
         # driver's serialized data-connection lock: the hop checks authority and drains
         # receipts through that same data connection before it can finish.
         self._pacing_conn_factory = pacing_conn_factory or conn_factory
+        # W2-15 option B: the work an evidence call does before the worker lock is bounded per
+        # PROCESS — the driver hands every job's runtime the same gate. A runtime built on its
+        # own (tests, tools) gets its own.
+        self._early_gate = early_gate or asyncio.Semaphore(settings.arv2_early_upload_concurrency)
         self._artifacts = artifacts
         self._writer = writer
         self._transport_factory = transport_factory
@@ -687,23 +692,25 @@ class ToolRuntime:
             if self.settings.arv2_upload_outside_lock:
                 # W2-15 option B: store the raw response and the source files BEFORE taking the
                 # worker's database connection, so the lock below covers database work only.
-                held = await hold_drain(
-                    raw=raw, ledger=ledger, artifacts=self._artifacts, stamp=stamp
-                )
-                if (
-                    has_capability(self.scope.catalog_version, "research_quality")
-                    and self.storage is not None
-                ):
-                    from clue_api.arv2.quality_acquisition import upload_sources_early
-
-                    uploaded = await upload_sources_early(
-                        self._pacing_conn_factory,
-                        self.storage,
-                        self.operation_scope,
-                        held.result_rows,
-                        held.raw_artifact_keys,
-                        held.raw_bodies,
+                # The per-process gate bounds how many calls do this at once (pool, storage).
+                async with self._early_gate:
+                    held = await hold_drain(
+                        raw=raw, ledger=ledger, artifacts=self._artifacts, stamp=stamp
                     )
+                    if (
+                        has_capability(self.scope.catalog_version, "research_quality")
+                        and self.storage is not None
+                    ):
+                        from clue_api.arv2.quality_acquisition import upload_sources_early
+
+                        uploaded = await upload_sources_early(
+                            self._pacing_conn_factory,
+                            self.storage,
+                            self.operation_scope,
+                            held.result_rows,
+                            held.raw_artifact_keys,
+                            held.raw_bodies,
+                        )
                 early_ms = (time.monotonic() - started) * 1000
             async with self._conn_factory() as conn:
                 report = await drain_provider_calls(

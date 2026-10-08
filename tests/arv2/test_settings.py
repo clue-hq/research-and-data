@@ -36,6 +36,7 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_drain_outside_slot": True,
     "arv2_recover_on_success": False,
     "arv2_upload_outside_lock": False,
+    "arv2_early_upload_concurrency": 4,
     "arv2_page_guide_version": "v2",
     "arv2_structuring_model": MODEL_ID,
     "arv2_media_short_model": MODEL_ID,

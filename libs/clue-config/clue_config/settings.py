@@ -417,6 +417,11 @@ class Settings(BaseSettings):
     # only. Off until the replay benchmark and a live run have been read (2026-10-08).
     # Env: ``CLUE_ARV2_UPLOAD_OUTSIDE_LOCK``.
     arv2_upload_outside_lock: bool = False
+    # How many evidence calls of one worker process may do that early work at once (storing the
+    # response, the privacy check, the uploads). It bounds the process's own resources — its
+    # database pool, which also carries the fleet heartbeat, and its storage connections — not
+    # what the agent may ask for. Env: ``CLUE_ARV2_EARLY_UPLOAD_CONCURRENCY``.
+    arv2_early_upload_concurrency: int = Field(default=4, ge=1)
     # OpenRouter model id for the structuring pass (prose -> claims against the field catalog).
     # Env: ``CLUE_ARV2_STRUCTURING_MODEL``.
     arv2_structuring_model: str = "openai/gpt-5-mini"
