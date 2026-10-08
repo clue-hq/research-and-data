@@ -62,7 +62,16 @@ def gather_inputs(case: dict) -> dict:
     lifespan = db_lifespan()
     platform.run(lifespan.__aenter__())
     try:
-        source = platform.run(read_source_run(case["source_run"]))
+        if case.get("source_run"):
+            source = platform.run(read_source_run(case["source_run"]))
+        else:  # a workspace with no design run: its project, and a turn whose knowledge pin it reads
+            source = {
+                "workspace_id": case["workspace_id"],
+                "payload": {
+                    "project_id": case["project_id"],
+                    "config": {"delegation_bundle": {"opened_by_turn_id": case["knowledge_turn_id"]}},
+                },
+            }
         payload = source["payload"]
         config = payload["config"]
         bundle = config["delegation_bundle"]

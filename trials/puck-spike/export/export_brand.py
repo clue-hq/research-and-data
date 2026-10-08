@@ -37,6 +37,11 @@ BRANDS = {
         "kit_id": "brand_kit_ing_c162dc8c5b99418284b42a21a7a80298",
         "kit_version": 3,
     },
+    "altcarbon": {
+        "workspace_id": "ws_d4e6f4b1e1514e77bc3cb7dacafe0db3",
+        "kit_id": "brand_kit_ing_28663a7003024d9d82651d9b93427e5f",
+        "kit_version": 1,
+    },
 }
 
 SKIP_ROLES = {"nav", "footer"}

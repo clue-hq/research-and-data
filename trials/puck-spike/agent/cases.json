@@ -20,5 +20,17 @@
     "account_name": "Atrium Hospitality",
     "account_domain": "atriumhospitality.com",
     "why": "Conduit x Atrium Hospitality, a short test brief: thin research, which tests honesty"
+  },
+  "D": {
+    "brand": "altcarbon",
+    "seller": "Alt Carbon",
+    "workspace_id": "ws_d4e6f4b1e1514e77bc3cb7dacafe0db3",
+    "project_id": "prj_2b044a1b5089590fb9a956f16fb8ffb2",
+    "knowledge_turn_id": "00399f4d-7221-5d7a-8d3e-51c509d6d398",
+    "brief_file": "briefs/mhi.md",
+    "account_entity_id": "f4184c00-4e81-4d1e-a6d1-8e2528da92cd",
+    "account_name": "Mitsubishi Heavy Industries",
+    "account_domain": "mhi.com",
+    "why": "Alt Carbon x Mitsubishi Heavy Industries: real research, a sparse and partly broken clone library (scroll-driven sections captured blank)"
   }
 }

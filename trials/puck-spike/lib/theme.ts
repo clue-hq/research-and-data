@@ -160,6 +160,22 @@ export function themeCss(brand: BrandData): string {
       `--brand-button-size:${button.fontSize}`,
       `--brand-button-weight:${button.fontWeight}`,
     );
+  } else {
+    // No solid button in the captured sections: the kit's own (brand colour fill with its pair,
+    // a pill, the cta type role).
+    const cta = typeVar("cta");
+    vars.push(
+      "--brand-button-bg:var(--brand-surface-brand)",
+      "--brand-button-fg:var(--brand-on-surface-brand,#ffffff)",
+      "--brand-button-light-bg:#ffffff",
+      "--brand-button-light-fg:var(--brand-surface-brand)",
+      "--brand-button-radius:var(--brand-radius-full,9999px)",
+      "--brand-button-px:1.25em",
+      "--brand-button-height:2.75rem",
+      `--brand-button-font:var(--brand-font-${cta},inherit)`,
+      `--brand-button-size:var(--brand-text-${cta},1rem)`,
+      `--brand-button-weight:var(--brand-text-${cta}-weight,600)`,
+    );
   }
 
   // Heading ink on light surfaces, measured from the clones (kits often record it as unmapped).
