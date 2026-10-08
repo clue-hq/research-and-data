@@ -92,3 +92,18 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
 
 ## Next
 - T4 E1 builds (A twice, B, C) — waiting on founder go (spend ~$1 per page expected).
+
+## Component library spike (2026-10-08 evening)
+- Tools view_clone + compare_section (0a8ff4ae3), run setup e798fb329 (rebuilding-a-section skill,
+  kit.Image fit="fill", bg-surface panels rule, finish guard skips sites with no page.json,
+  run_agent --no-build). Run cl3 (5 Garner clone rebuilds + Syracuse page): $3.66, 107 calls,
+  58 min; stopped runs cl1/cl2 $0.67. Results in ISSUES.md 44-53; page at /s/agent-cl3.
+- Two harness bugs found mid-run and fixed: write_section's type check was a no-op (300af574a);
+  Tailwind skipped git-ignored agent sections (b1f3ab458; puck/agent-sections/<site>/ is no longer
+  ignored: never commit those folders, nor the regenerated index.ts).
+- Founder ruling: the spike's partial brand kit is fine; production must expose every type role,
+  measure more roles, cover band surfaces (recorded in the roadmap's phase 1).
+- Capture prototype (subagent, worktree-agent-a8b9a099e34d9774a) + cluehq.ai run + reduced-motion
+  probe: reduced-motion second load fixes cluehq.ai fully; Alt Carbon ships a poster under its canvas
+  and a mobile hero (already in the clone); its only gap is the 305vh wrapper. Not yet written into
+  the capture notes/roadmap (offered to founder).

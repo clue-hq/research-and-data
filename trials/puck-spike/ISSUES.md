@@ -181,6 +181,50 @@ check first time), valid first time; 14 calls, $0.34. Compared with E5:
     agent itself. *Open (harness shell: wrap to two lines on narrow screens).*
 43. **The 3-render limit worked:** two extra review rounds fixed orphan words. 20 calls, $0.99, 7.1 min.
 
+## Component library spike (run cl3, 2026-10-08)
+
+Our agent rebuilt five Garner clones as components from brand tokens only (`view_clone`,
+`compare_section`, the `rebuilding-a-section` skill), then built the Syracuse page from them.
+6 turns, 107 calls, $3.66, 58 min; two stopped runs before it cost $0.67.
+
+| Section | Component | Writes (refused) | Difference, first → final (1440 / 375) |
+|---|---|---|---|
+| Hero (video background) | PhotoHero | 3 (1) | 61% / 65% → 54% / 46% |
+| Four cards + logos | AudienceBand | 4 (1) | 4% / 9% → 4% / 9% |
+| How it works (3 rows) | AnalyticsFeatures | 4 (1) | 12% / 22% → 12% / 22% |
+| Proof band (dark) | ProviderInsights | 4 (0) | 12% / 12% → 12% / 13% |
+| Closing panels | SplitCta | 3 (2) | 41% / 72% → 16% / 29% |
+
+44. **Brand tokens carry structure.** Every rebuild matched its original's layout, with repeated
+    items as lists. The page used PhotoHero and AnalyticsFeatures (four rows of Syracuse copy, where
+    the clone could only change some words) plus four brand sections; it left out AudienceBand,
+    ProviderInsights and SplitCta ("brand would be a second dark band"). 23 calls, $1.15, 3 renders.
+45. **Fixed during the run: write_section's type check checked nothing** (it inherited tsconfig's
+    exclude of agent-runs/). Run cl1 stopped; fix 300af574a. E5's section happens to type-check.
+46. **Fixed during the run: Tailwind skipped the agent's section files** (git-ignored; a full scan
+    skips them), so a class used only there got no CSS and comparisons were wrong or flaky. Run cl2
+    stopped; fix b1f3ab458.
+47. **The agent saw 4 of the kit's 12 type roles.** brand.md lists display, headline, title, body;
+    the theme maps all 12. `body.small` (14 px) matches Garner's card text exactly; the agent used
+    16 px. *Open (spike harness): list every role, measured or derived. Founder 2026-10-08: not
+    needed for the spike; required in production.*
+48. **Kit coverage gaps (platform ingestion):** no role for 18 px serif card titles; 8 of 12 roles
+    derived, not measured (subtitle 20 px where the page uses 18); Garner's dark-green bands
+    (#004036) are not a surface (brand is #047464, inverse #111210). *Open: production.*
+49. **Kit gaps (spike, then production):** no "contain" image fit (logos crop); one button style
+    (Garner's outlined button had to be hand-written); links written as plain `<a>` skip the kit's
+    link resolution; a two-panel section must still declare one section `surface`; the check does
+    not confirm a brand class exists (`bg-surface-brandSubtle` passed).
+50. **Every fresh session paid one refused write on kit prop names** (`file` for `src`, children for
+    `label`). *Open: show the kit's signatures in writing-a-section (text for founder review).*
+51. **In 3 of 5 turns the agent wrote a fourth version after its last comparison**, so the final
+    version was never compared (I compared them afterwards: no worse). *Open: skill wording, "your
+    last change is compared" (for founder review).*
+52. **The pixel score misleads** when the image must change (hero: 61% → 70% while visibly closer)
+    and barely separates dark colours. The pictures carried the judgement.
+53. **With fresh sessions only the last session's transcript is saved**, so earlier turns' exact
+    comparison props are lost. *Open (harness): save the transcript per turn.*
+
 ## Changes made for an Alt Carbon run, not yet run (uncommitted)
 
 - `export/export_brand.py`: Alt Carbon added (kit `brand_kit_ing_28663a…`, version 1).

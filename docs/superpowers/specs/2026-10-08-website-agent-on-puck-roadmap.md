@@ -63,6 +63,16 @@ so.
 | 5. Publishing | A static render per page, CSS written once per site, the page origin's package, custom domains as today | 1 week |
 | 6. Hardening | QA across sellers (Garner, Conduit, Alt Carbon), the skills regression set, the decision on existing website documents | 1 week |
 
+**Brand fidelity (required in production; founder 2026-10-08, from the component library spike):**
+- the agent sees every type role in the kit (12 for Garner), with its size and whether it was
+  measured or derived;
+- ingestion measures more roles from the page instead of deriving them (small serif titles, lead
+  paragraphs);
+- surfaces cover the colours the page uses for bands (Garner's dark green exists only as heading
+  ink today);
+- the kit covers logos (a "contain" fit), a second button style, and links that resolve inside the
+  site, and the skill shows the kit's prop names.
+
 **About 8 engineer-weeks; 4–5 calendar weeks with parallel lanes.** Confidence: medium. The biggest
 unknowns are how much polish the editor needs and the agent's chat integration.
 
