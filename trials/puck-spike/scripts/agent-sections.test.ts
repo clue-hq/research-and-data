@@ -5,12 +5,12 @@ import path from "node:path";
 import { test } from "node:test";
 import { lint } from "./check-section";
 
-const skill = fs.readFileSync(path.join(__dirname, "..", "agent", "skills-e5", "writing-a-section", "SKILL.md"), "utf-8");
-const EXAMPLE = skill.split("```tsx")[1].split("```")[0];
+// A section that follows the rules (the example from the first draft of the writing-a-section skill).
+const EXAMPLE = fs.readFileSync(path.join(__dirname, "fixtures", "quote-section.tsx.txt"), "utf-8");
 
 const withClass = (classes: string) => EXAMPLE.replace("mt-6 font-body text-body text-ink-secondary", classes);
 
-test("the skill's own example passes", () => {
+test("a section that follows the rules passes", () => {
   assert.deepEqual(lint(EXAMPLE), []);
 });
 

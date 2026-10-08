@@ -245,3 +245,32 @@ def append_history(workspace: Path, number: int, request: str, changes: list[str
     what = "; ".join(changes + (["changed the header or footer"] if shell_changed else [])) or "nothing changed"
     text += f"\n## {number}. {request}\n- What changed: {what}\n- The reply: {_short(reply or '', 500)}\n"
     path.write_text(text)
+
+
+# --- references for writing a new section (E5, option C) -------------------------------------------
+
+THEME_HEADER = """/* The brand's classes: the real mapping from the app's theme (app/globals.css, @theme).
+   Each variable below is a class you can use; the brand decides its value at runtime.
+   --color-ink-secondary   -> text-ink-secondary, bg-ink-secondary, border-ink-secondary
+   --color-surface-muted   -> bg-surface-muted (and text-, border-)
+   --color-line-subtle     -> border-line-subtle (and text-, bg-)
+   --font-title            -> font-title (the role's font family)
+   --text-title            -> text-title (the role's size, line height, weight and tracking)
+   --radius-card           -> rounded-card
+*/
+"""
+
+
+def write_section_references(workspace: Path, spike_root: Path) -> None:
+    """brand/theme.css (the theme's class-to-token mapping) and brand/agent-kit.tsx (the kit's source)."""
+    css = (spike_root / "app" / "globals.css").read_text()
+    start = css.index("@theme inline")
+    depth, end = 0, start
+    for index in range(css.index("{", start), len(css)):
+        depth += {"{": 1, "}": -1}.get(css[index], 0)
+        if depth == 0:
+            end = index + 1
+            break
+    (workspace / "brand").mkdir(exist_ok=True)
+    (workspace / "brand" / "theme.css").write_text(THEME_HEADER + css[start:end] + "\n")
+    shutil.copy2(spike_root / "puck" / "agent-kit.tsx", workspace / "brand" / "agent-kit.tsx")
