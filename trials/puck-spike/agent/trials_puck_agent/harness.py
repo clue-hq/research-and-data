@@ -14,7 +14,8 @@ what this spike measures against. The pieces:
   model request (never the saved history), changed in batches so the cache holds
   (ContextEditingMiddleware with SupersededResults). On by default: run a2 showed the cache misses
   happen with clearing off too;
-- compaction (LangChain SummarizationMiddleware) when one request passes 100k tokens;
+- compaction (LangChain SummarizationMiddleware) when one request passes 175k tokens, keeping the
+  most recent 60k tokens; no message counts;
 - a read_file without a limit reads the whole file (WholeFileReads);
 - tool calls from one response run one at a time, in the order the model wrote them;
 - RunRecorder: per-call usage and cost, the 40-call safety stop, and the finish guard (a turn
@@ -37,9 +38,10 @@ from .tools import PageTools
 
 AGENT_DIR = Path(__file__).resolve().parents[1]
 SAFETY_STOP_CALLS = 40
-#: Compaction is a safety net for one very long request (the platform compacts more often; with a
-#: fresh session per request and clearing, a request rarely gets here).
-COMPACT_AT_TOKENS = 100_000
+#: Compaction is a safety net for one very long request, by tokens only (founder, 2026-10-08): it
+#: starts at 175k tokens and keeps the most recent 60k tokens word for word; older turns are summarised.
+COMPACT_AT_TOKENS = 175_000
+COMPACT_KEEP_TOKENS = 60_000
 FINISH_REMINDERS = 2
 
 SKILLS_PROMPT = """## Skills
@@ -451,7 +453,8 @@ def build_agent(page_tools: PageTools, *, model: Any, checkpointer: Any = None,
             _permissions=[FilesystemPermission(operations=["write"], paths=READ_ONLY, mode="deny")],
         ),
         PatchToolCallsMiddleware(),
-        *([SummarizationMiddleware(summary_model or model, trigger=("tokens", compact_at_tokens), keep=("messages", 20))]
+        *([SummarizationMiddleware(summary_model or model, trigger=("tokens", compact_at_tokens),
+                                   keep=("tokens", COMPACT_KEEP_TOKENS))]
           if compact_at_tokens else []),
         *([ContextEditingMiddleware(edits=[SupersededResults()])] if clear_context else []),
         WholeFileReads(),

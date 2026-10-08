@@ -213,3 +213,15 @@ def test_view_asset_shows_a_brand_image_with_its_description(workspace: Path) ->
     assert any(b.get("type") == "image" for b in blocks)
     texts = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")
     assert file in texts and "not one of this brand's images" in texts
+
+
+def test_compaction_is_set_by_tokens_only(workspace: Path) -> None:
+    from langchain.agents.middleware import SummarizationMiddleware
+
+    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047")
+    agent, _ = build_agent(tools, model=ScriptedModel(messages=iter([AIMessage(content="ok")])))
+    from trials_puck_agent import harness
+    assert harness.COMPACT_AT_TOKENS >= 175_000
+    middleware = SummarizationMiddleware(ScriptedModel(messages=iter([])), trigger=("tokens", harness.COMPACT_AT_TOKENS),
+                                         keep=("tokens", harness.COMPACT_KEEP_TOKENS))
+    assert middleware.keep == ("tokens", harness.COMPACT_KEEP_TOKENS)
