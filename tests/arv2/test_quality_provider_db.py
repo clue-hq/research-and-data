@@ -449,3 +449,90 @@ def test_an_evidence_call_logs_how_long_draining_indexing_and_recovery_took(
     recovered = [f for e, f in lines if e == "arv2.acquisition_recovered"]
     assert len(recovered) == (1 if recover_on_success else 0)
     assert all(r["recover_ms"] >= 0 for r in recovered)
+
+
+@pytest.mark.parametrize("outside", [False, True])
+def test_an_evidence_call_uploads_nothing_while_it_holds_the_worker_lock(tmp_path, outside):
+    """W2-15 option B: with ``arv2_upload_outside_lock`` the raw response and every source file
+    are put before the worker's database lock is taken, so the lock covers database work only.
+    Off, the files are put while the lock is held (today's order)."""
+    import asyncio as aio
+
+    lock = aio.Lock()
+    under_lock: list[str] = []
+
+    class Watching(FsStorage):
+        async def put(self, key, data, *, media_type):
+            if lock.locked():
+                under_lock.append(key)
+            await super().put(key, data, media_type=media_type)
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = Watching(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4", input_refs={"quality_recipe_version": 8})
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+            body = {
+                "output": {"content": "A substantive report. " * 200},
+                "costDollars": {"total": 0.05},
+                "results": [{"url": "https://example.test/bdr", "title": "BDR", "text": "T."}],
+            }
+            rt = runtime(conn, scope, storage, ScriptedTransport([response(body)]))
+            rt.settings = Settings(
+                _env_file=None,  # type: ignore[call-arg]
+                arv2_ai_ark_min_gap_s=0,
+                arv2_upload_outside_lock=outside,
+            )
+
+            @asynccontextmanager
+            async def locked():
+                async with lock:
+                    yield conn
+
+            rt._conn_factory = rt._pacing_conn_factory = locked
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            result = await AcquireResearchTool(rt).invoke(
+                AcquireResearchInput(
+                    operation="research_deep",
+                    arguments={
+                        "charter": "Investigate the company and its operating workflows. " * 8,
+                        "additional_queries": ["company leadership"],
+                        "num_results": 40,
+                    },
+                ),
+                ctx,
+            )
+            assert result.references["status"] == "completed", result
+            sources = (
+                await conn.execute(
+                    text("SELECT count(*) FROM arv2_evidence_source WHERE job_id=:j"),
+                    {"j": scope.job_id},
+                )
+            ).scalar_one()
+            assert sources > 2
+
+    run_async(case())
+    if outside:
+        assert under_lock == []
+    else:
+        assert under_lock

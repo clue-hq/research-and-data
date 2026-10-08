@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -28,6 +28,7 @@ from clue_storage import (
     content_address,
     read_verified_artifact,
     record_artifact,
+    record_uploaded_artifact,
     retain_artifact,
     verify_artifact_bytes,
 )
@@ -156,6 +157,16 @@ class SourceSpec:
     normalizer_version: str = "v1"
 
 
+def source_file(scope: OperationScope, spec: SourceSpec) -> tuple[str, bytes, str]:
+    """The storage key, bytes and media type a source's file is stored under."""
+    body = spec.body
+    raw = (
+        body if isinstance(body, str) else json.dumps(body, sort_keys=True, separators=(",", ":"))
+    ).encode()
+    media = "text/plain" if isinstance(body, str) else "application/json"
+    return artifact_key(scope.workspace_id, content_address(raw)), raw, media
+
+
 async def prepare_source(
     conn: AsyncConnection,
     storage: StorageBackend,
@@ -205,6 +216,7 @@ async def prepare_sources(
     specs: Sequence[SourceSpec],
     *,
     originals: Mapping[str, bytes] | None = None,
+    uploaded: Collection[str] = frozenset(),
 ) -> tuple[PreparedSource, ...]:
     """Store, verify and retain sources' bytes WITHOUT the account-wide manifest lock, in order.
 
@@ -218,6 +230,13 @@ async def prepare_sources(
     has just stored, checked against their row without a download) when present. Retention still
     holds every artifact lock before an original is checked and linked, so erasure cannot slip
     between check and link.
+
+    ``uploaded`` names source files the caller already put before this transaction (W2-15
+    option B, :func:`~clue_api.arv2.quality_acquisition.upload_sources_early`). Their rows are
+    recorded with :func:`record_uploaded_artifact` and they are not uploaded again — unless the
+    recording brought an erased or purged row back, when a purge may have deleted the file after
+    the early upload, so it is put again here under the row lock. A file whose row turns out to
+    be privacy-erased is deleted before the refusal propagates.
     """
     if not specs:
         return ()
@@ -225,15 +244,8 @@ async def prepare_sources(
     planned: list[PreparedSource | dict[str, Any]] = []
     uploads: dict[str, tuple[bytes, str]] = {}
     for spec in specs:
-        body = spec.body
-        raw = (
-            body
-            if isinstance(body, str)
-            else json.dumps(body, sort_keys=True, separators=(",", ":"))
-        ).encode()
-        media = "text/plain" if isinstance(body, str) else "application/json"
-        sha = content_address(raw)
-        key = artifact_key(scope.workspace_id, sha)
+        key, raw, media = source_file(scope, spec)
+        sha = key.rsplit("/", 1)[1]
         identity = json.dumps(
             [
                 str(scope.job_id),
@@ -254,15 +266,31 @@ async def prepare_sources(
             await _body(conn, storage, existing)
             planned.append(PreparedSource(existing=existing, pending=None))
             continue
-        await record_artifact(
-            conn,
-            storage_key=key,
-            workspace_id=scope.workspace_id,
-            content_sha256=sha,
-            media_type=media,
-            size_bytes=len(raw),
-        )
-        uploads.setdefault(key, (raw, media))
+        if key in uploaded:
+            try:
+                _, restored = await record_uploaded_artifact(
+                    conn,
+                    storage_key=key,
+                    workspace_id=scope.workspace_id,
+                    content_sha256=sha,
+                    media_type=media,
+                    size_bytes=len(raw),
+                )
+            except ArtifactIntegrityError:
+                await storage.delete(key)
+                raise
+            if restored:
+                uploads.setdefault(key, (raw, media))
+        else:
+            await record_artifact(
+                conn,
+                storage_key=key,
+                workspace_id=scope.workspace_id,
+                content_sha256=sha,
+                media_type=media,
+                size_bytes=len(raw),
+            )
+            uploads.setdefault(key, (raw, media))
         planned.append(
             {
                 "source_id": sid,

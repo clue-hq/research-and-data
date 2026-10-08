@@ -571,3 +571,210 @@ def test_an_original_erased_before_indexing_still_blocks_it(tmp_path):
                 await index_acquisition(conn, fs, scope, report)
 
     run_async(case())
+
+
+# -- W2-15 option B: source files are uploaded before the worker's database lock ---------------
+
+
+def _connections(conn):
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def factory():
+        yield conn
+
+    return factory
+
+
+async def _early(conn, storage, scope, report):
+    from clue_api.arv2.quality_acquisition import upload_sources_early
+
+    return await upload_sources_early(
+        _connections(conn),
+        storage,
+        scope,
+        report.result_rows,
+        report.raw_artifact_keys,
+        report.raw_bodies,
+    )
+
+
+def _report_key(scope, report) -> str:
+    """The storage key of the drained call's research-report source file."""
+    from clue_api.arv2.quality_acquisition import planned_source_files
+
+    files = planned_source_files(
+        scope, report.result_rows, report.raw_artifact_keys, report.raw_bodies
+    )
+    return next(key for key, (data, _) in files.items() if data == b"A report.")
+
+
+async def _gone(storage, key) -> bool:
+    try:
+        await storage.get(key)
+    except Exception:
+        return True
+    return False
+
+
+def test_source_files_uploaded_before_the_lock_are_not_uploaded_again(tmp_path):
+    from clue_api.arv2.quality_acquisition import index_acquisition
+
+    async def case():
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            scope, _ = await seed(conn, fs)
+            storage = _CountingStorage(fs)
+            report = await _drained_deep_call(conn, storage, scope)
+            storage.puts = 0
+            uploaded = await _early(conn, storage, scope, report)
+            assert storage.puts == len(uploaded) > 5
+            storage.puts = storage.gets = 0
+            refs = await index_acquisition(conn, storage, scope, report, uploaded=uploaded)
+            assert storage.puts == 0 and storage.gets == 0
+            assert {r.artifact_key for r in refs} <= uploaded
+            for ref in refs:
+                assert await fs.get(ref.artifact_key)
+
+    run_async(case())
+
+
+def test_a_source_file_purged_after_its_early_upload_is_uploaded_again(tmp_path):
+    """The race the row lock used to exclude: an erased row's purge deletes the blob between the
+    early upload and indexing. Indexing resurrects the row and must put the blob back."""
+    from clue_api.arv2.quality_acquisition import index_acquisition
+    from clue_storage import mark_erased, record_artifact
+
+    async def case():
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            scope, _ = await seed(conn, fs)
+            report = await _drained_deep_call(conn, fs, scope)
+            key = _report_key(scope, report)
+            await record_artifact(
+                conn,
+                storage_key=key,
+                workspace_id=scope.workspace_id,
+                content_sha256=key.rsplit("/", 1)[1],
+                media_type="text/plain",
+                size_bytes=len(b"A report."),
+            )
+            await mark_erased(conn, key)
+            uploaded = await _early(conn, fs, scope, report)
+            assert key in uploaded
+            # The purge runs now: blob deleted, row stamped purged.
+            await fs.delete(key)
+            await conn.execute(
+                text("UPDATE artifact SET purged_at=now() WHERE storage_key=:k"), {"k": key}
+            )
+            await index_acquisition(conn, fs, scope, report, uploaded=uploaded)
+            assert await fs.get(key) == b"A report."
+            row = (
+                await conn.execute(
+                    text("SELECT erased_at, purged_at FROM artifact WHERE storage_key=:k"),
+                    {"k": key},
+                )
+            ).one()
+            assert row.erased_at is None and row.purged_at is None
+
+    run_async(case())
+
+
+async def _privacy_erase(conn, key) -> None:
+    await conn.execute(
+        text(
+            "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+            "erased_at=now(), purged_at=now(), source_url=NULL WHERE storage_key=:k"
+        ),
+        {"k": key},
+    )
+
+
+def test_a_privacy_erased_source_file_is_never_uploaded_early(tmp_path):
+    from clue_api.arv2.quality_acquisition import index_acquisition
+    from clue_storage import record_artifact
+
+    async def case():
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            scope, _ = await seed(conn, fs)
+            report = await _drained_deep_call(conn, fs, scope)
+            key = _report_key(scope, report)
+            await record_artifact(
+                conn,
+                storage_key=key,
+                workspace_id=scope.workspace_id,
+                content_sha256=key.rsplit("/", 1)[1],
+                media_type="text/plain",
+                size_bytes=len(b"A report."),
+            )
+            await _privacy_erase(conn, key)
+            uploaded = await _early(conn, fs, scope, report)
+            assert key not in uploaded and await _gone(fs, key)
+            with pytest.raises(ArtifactIntegrityError):
+                await index_acquisition(conn, fs, scope, report, uploaded=uploaded)
+            assert await _gone(fs, key)
+
+    run_async(case())
+
+
+def test_a_source_file_privacy_erased_after_its_early_upload_is_deleted(tmp_path):
+    from clue_api.arv2.quality_acquisition import index_acquisition
+    from clue_storage import record_artifact
+
+    async def case():
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            scope, _ = await seed(conn, fs)
+            report = await _drained_deep_call(conn, fs, scope)
+            key = _report_key(scope, report)
+            uploaded = await _early(conn, fs, scope, report)
+            assert key in uploaded and await fs.get(key) == b"A report."
+            await record_artifact(
+                conn,
+                storage_key=key,
+                workspace_id=scope.workspace_id,
+                content_sha256=key.rsplit("/", 1)[1],
+                media_type="text/plain",
+                size_bytes=len(b"A report."),
+            )
+            await _privacy_erase(conn, key)
+            with pytest.raises(ArtifactIntegrityError):
+                await index_acquisition(conn, fs, scope, report, uploaded=uploaded)
+            assert await _gone(fs, key)
+
+    run_async(case())
+
+
+def test_an_early_upload_that_cannot_reach_the_database_falls_back_to_the_lock(tmp_path):
+    """The early step runs after the drain has taken its ledger rows and before it writes them,
+    so it must never fail the call: on any error nothing counts as uploaded early and indexing
+    stores every file under the lock, as before."""
+    from contextlib import asynccontextmanager
+
+    from clue_api.arv2.quality_acquisition import index_acquisition, upload_sources_early
+
+    @asynccontextmanager
+    async def unreachable():
+        raise ConnectionError("database unavailable")
+        yield
+
+    async def case():
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            scope, _ = await seed(conn, fs)
+            report = await _drained_deep_call(conn, fs, scope)
+            uploaded = await upload_sources_early(
+                unreachable,
+                fs,
+                scope,
+                report.result_rows,
+                report.raw_artifact_keys,
+                report.raw_bodies,
+            )
+            assert uploaded == frozenset()
+            refs = await index_acquisition(conn, fs, scope, report, uploaded=uploaded)
+            for ref in refs:
+                assert await fs.get(ref.artifact_key)
+
+    run_async(case())

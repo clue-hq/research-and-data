@@ -412,6 +412,11 @@ class Settings(BaseSettings):
     # so a result whose indexing was cut short is still repaired.
     # Env: ``CLUE_ARV2_RECOVER_ON_SUCCESS``.
     arv2_recover_on_success: bool = False
+    # W2-15 option B (prototype): store an evidence call's raw response and source files before
+    # taking the worker's database connection, so that connection's lock covers database work
+    # only. Off until the replay benchmark and a live run have been read (2026-10-08).
+    # Env: ``CLUE_ARV2_UPLOAD_OUTSIDE_LOCK``.
+    arv2_upload_outside_lock: bool = False
     # OpenRouter model id for the structuring pass (prose -> claims against the field catalog).
     # Env: ``CLUE_ARV2_STRUCTURING_MODEL``.
     arv2_structuring_model: str = "openai/gpt-5-mini"

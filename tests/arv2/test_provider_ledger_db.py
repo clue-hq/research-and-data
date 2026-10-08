@@ -448,3 +448,39 @@ def test_an_onboarding_row_counts_as_onboarding_even_though_it_stamps_a_job_id()
             assert incident.surfaces == {"onboarding": 1}
 
     run_async(scenario())
+
+
+def test_a_held_drain_stores_its_bodies_first_and_records_its_rows_later() -> None:
+    """W2-15 option B: the raw bodies are stored before the worker's database lock is taken; the
+    rows are written later, inside the locked transaction, citing those bodies — once."""
+    from clue_api.arv2.provider_ledger import hold_drain
+
+    call_id = "5d0c7f21-6a8b-4e3c-9f10-1b2c3d4e5f60"
+    job_id = uuid4()
+
+    async def scenario():  # type: ignore[no-untyped-def]
+        raw, ledger = BufferedRawSink(), BufferedLedger()
+        artifacts = FakeArtifacts()
+        ref = raw.save(_record(b'{"ok":true}'), b'{"ok":true}')
+        ledger.record(_result_row(row_id="held-r1", call_id=call_id, raw_ref=ref))
+        stamp = _stamp(job_id)
+        held = await hold_drain(raw=raw, ledger=ledger, artifacts=artifacts, stamp=stamp)
+        assert len(artifacts.bodies) == 1 and held.raw_artifact_keys[ref].startswith("art/")
+        assert [r.row_id for r in held.result_rows] == ["held-r1"]
+        async with rollback_conn(seed_pack=False) as conn:
+            report = await drain_provider_calls(
+                conn, raw=raw, ledger=ledger, artifacts=artifacts, stamp=stamp, held=held
+            )
+            cited = (
+                await conn.execute(
+                    text("SELECT response_artifact_key FROM provider_call_ledger WHERE call_id=:c"),
+                    {"c": call_id},
+                )
+            ).scalar_one()
+        return report, cited, held, artifacts.bodies
+
+    report, cited, held, bodies = run_async(scenario())
+    assert len(bodies) == 1  # stored once, before the rows
+    assert report.rows == 1 and report.artifacts == 1
+    assert cited == next(iter(held.raw_artifact_keys.values()))
+    assert report.raw_bodies == held.raw_bodies

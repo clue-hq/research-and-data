@@ -135,8 +135,10 @@ from clue_api.arv2.provider_ledger import (
     ArtifactSink,
     BufferedLedger,
     BufferedRawSink,
+    HeldDrain,
     LedgerStamp,
     drain_provider_calls,
+    hold_drain,
 )
 from clue_api.arv2.sinks import LedgerSink
 from clue_api.arv2.structuring_client import (
@@ -672,19 +674,45 @@ class ToolRuntime:
         drain_ms: float | None = None
         index_ms: float | None = None
         index_started: float | None = None
+        early_ms: float | None = None
+        stamp = LedgerStamp(
+            workspace_id=self.scope.workspace_id,
+            project_id=self.scope.project_id,
+            project_run_id=str(self.scope.project_run_id),
+            job_id=self.scope.job_id,
+        )
+        held: HeldDrain | None = None
+        uploaded: frozenset[str] = frozenset()
         try:
+            if self.settings.arv2_upload_outside_lock:
+                # W2-15 option B: store the raw response and the source files BEFORE taking the
+                # worker's database connection, so the lock below covers database work only.
+                held = await hold_drain(
+                    raw=raw, ledger=ledger, artifacts=self._artifacts, stamp=stamp
+                )
+                if (
+                    has_capability(self.scope.catalog_version, "research_quality")
+                    and self.storage is not None
+                ):
+                    from clue_api.arv2.quality_acquisition import upload_sources_early
+
+                    uploaded = await upload_sources_early(
+                        self._pacing_conn_factory,
+                        self.storage,
+                        self.operation_scope,
+                        held.result_rows,
+                        held.raw_artifact_keys,
+                        held.raw_bodies,
+                    )
+                early_ms = (time.monotonic() - started) * 1000
             async with self._conn_factory() as conn:
                 report = await drain_provider_calls(
                     conn,
                     raw=raw,
                     ledger=ledger,
                     artifacts=self._artifacts,
-                    stamp=LedgerStamp(
-                        workspace_id=self.scope.workspace_id,
-                        project_id=self.scope.project_id,
-                        project_run_id=str(self.scope.project_run_id),
-                        job_id=self.scope.job_id,
-                    ),
+                    stamp=stamp,
+                    held=held,
                 )
 
                 if (
@@ -759,6 +787,7 @@ class ToolRuntime:
                         self.operation_scope,
                         report,
                         operation_id=operation.operation_id if operation else None,
+                        uploaded=uploaded,
                     )
         finally:
             finished = time.monotonic()
@@ -769,6 +798,7 @@ class ToolRuntime:
                 job_id=str(self.scope.job_id),
                 provider=provider,
                 operation=operation.kind if operation else None,
+                early_ms=None if early_ms is None else round(early_ms, 1),
                 drain_ms=None if drain_ms is None else round(drain_ms, 1),
                 index_ms=None if index_ms is None else round(index_ms, 1),
                 total_ms=round((finished - started) * 1000, 1),

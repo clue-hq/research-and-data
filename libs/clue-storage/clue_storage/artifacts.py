@@ -120,6 +120,66 @@ async def record_artifact(
     surfaces the winner's row is committed, so the retry resolves through the arbiter and keeps the
     resurrect/row-lock guarantees above intact.
     """
+    record, _ = await _record_artifact(
+        conn,
+        storage_key=storage_key,
+        workspace_id=workspace_id,
+        content_sha256=content_sha256,
+        media_type=media_type,
+        size_bytes=size_bytes,
+        source_key=source_key,
+        source_url=source_url,
+        report_restored=False,
+    )
+    return record
+
+
+async def record_uploaded_artifact(
+    conn: AsyncConnection,
+    *,
+    storage_key: str,
+    workspace_id: str | None,
+    content_sha256: str,
+    media_type: str,
+    size_bytes: int,
+    source_key: str | None = None,
+    source_url: str | None = None,
+) -> tuple[ArtifactRecord, bool]:
+    """:func:`record_artifact` for a writer that put the blob BEFORE recording it (W2-15 option B:
+    research uploads its source files before it takes the worker's database lock).
+
+    That order gives up the guarantee the row lock gives :func:`record_artifact`'s callers: a
+    purge of an erased row can delete the blob between the caller's put and this call. So the
+    second value says whether this call made an erased or purged row live again; when it is
+    ``True`` the caller must put the blob once more before its transaction ends — the row lock is
+    held until then, so no purge can run in between. A privacy-erased row is refused exactly as in
+    :func:`record_artifact`; a caller that already put that blob must delete it.
+    """
+    return await _record_artifact(
+        conn,
+        storage_key=storage_key,
+        workspace_id=workspace_id,
+        content_sha256=content_sha256,
+        media_type=media_type,
+        size_bytes=size_bytes,
+        source_key=source_key,
+        source_url=source_url,
+        report_restored=True,
+    )
+
+
+async def _record_artifact(
+    conn: AsyncConnection,
+    *,
+    storage_key: str,
+    workspace_id: str | None,
+    content_sha256: str,
+    media_type: str,
+    size_bytes: int,
+    source_key: str | None,
+    source_url: str | None,
+    report_restored: bool,
+) -> tuple[ArtifactRecord, bool]:
     live = (
         (
             await conn.execute(
@@ -144,7 +204,7 @@ async def record_artifact(
     if live is not None:
         data = dict(live)
         data["artifact_id"] = str(data["artifact_id"])
-        return ArtifactRecord.model_validate(data)
+        return ArtifactRecord.model_validate(data), False
 
     statement = text(
         "INSERT INTO artifact (storage_key, workspace_id, content_sha256, media_type, "
@@ -163,6 +223,21 @@ async def record_artifact(
         "source_key": source_key,
         "source_url": source_url,
     }
+    restored = False
+    if report_restored:
+        # The upsert takes this row lock anyway; taking it one statement earlier lets the caller
+        # learn whether the row was erased or purged before this call made it live again.
+        restored = bool(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT erased_at IS NOT NULL OR purged_at IS NOT NULL FROM artifact "
+                        "WHERE storage_key=:key AND NOT privacy_erased FOR UPDATE"
+                    ),
+                    {"key": storage_key},
+                )
+            ).scalar_one_or_none()
+        )
     try:
         async with conn.begin_nested():
             await conn.execute(statement, parameters)
@@ -173,7 +248,7 @@ async def record_artifact(
         raise RuntimeError(f"artifact {storage_key!r} vanished during record")
     if record.privacy_erased:
         raise ArtifactIntegrityError("privacy-erased artifact cannot be restored")
-    return record
+    return record, restored
 
 
 async def get_artifact(conn: AsyncConnection, storage_key: str) -> ArtifactRecord | None:

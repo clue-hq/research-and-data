@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from clue_db import db_lifespan
 from clue_storage import (
+    ArtifactIntegrityError,
     FsStorage,
     artifact_key,
     content_address,
@@ -28,6 +29,7 @@ from clue_storage import (
     mark_erased,
     purge_erased_artifacts,
     record_artifact,
+    record_uploaded_artifact,
     retain_artifact,
     sweep_orphan_blobs,
 )
@@ -420,6 +422,63 @@ def test_record_resurrects_an_erased_row() -> None:
             assert revived.artifact_id == record.artifact_id  # same row, resurrected
             assert revived.erased_at is None
             assert revived.purged_at is None
+
+    run_async(scenario())
+
+
+async def _record_uploaded(conn: AsyncConnection, data: bytes, workspace_id: str = "ws_t"):
+    sha = content_address(data)
+    return await record_uploaded_artifact(
+        conn,
+        storage_key=artifact_key(workspace_id, sha),
+        workspace_id=workspace_id,
+        content_sha256=sha,
+        media_type="text/markdown",
+        size_bytes=len(data),
+    )
+
+
+def test_recording_a_blob_put_beforehand_says_when_it_brought_an_erased_row_back() -> None:
+    """W2-15 option B: a writer that uploaded BEFORE recording must upload again, under the row
+    lock, whenever its recording resurrected an erased or purged row — a purge may have deleted
+    the blob between the upload and the recording."""
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            fresh, restored = await _record_uploaded(conn, b"new bytes")
+            assert restored is False and fresh.erased_at is None
+
+            live, restored = await _record_uploaded(conn, b"new bytes")
+            assert restored is False and live.artifact_id == fresh.artifact_id
+
+            await mark_erased(conn, fresh.storage_key)
+            revived, restored = await _record_uploaded(conn, b"new bytes")
+            assert restored is True and revived.erased_at is None
+
+            await mark_erased(conn, fresh.storage_key)
+            await conn.execute(
+                text("UPDATE artifact SET purged_at = now() WHERE storage_key = :k"),
+                {"k": fresh.storage_key},
+            )
+            revived, restored = await _record_uploaded(conn, b"new bytes")
+            assert restored is True and revived.purged_at is None
+
+    run_async(scenario())
+
+
+def test_recording_a_blob_put_beforehand_refuses_a_privacy_erased_row() -> None:
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            record, _ = await _record_uploaded(conn, b"private bytes")
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                    "erased_at=now() WHERE storage_key=:k"
+                ),
+                {"k": record.storage_key},
+            )
+            with pytest.raises(ArtifactIntegrityError):
+                await _record_uploaded(conn, b"private bytes")
 
     run_async(scenario())
 
