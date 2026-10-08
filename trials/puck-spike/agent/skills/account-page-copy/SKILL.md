@@ -41,6 +41,8 @@ your mind, change the plan first and write down why.
 
 ## 3. Find proof on the seller's own site
 
+- The brief may suggest a proof or a structure. Treat it as a suggestion: run the same checks on
+  it, and search the seller's site for a better fit.
 - Start with the seller's files. Then search the seller's own website for case studies,
   customer stories and studies the seller has published: `web_search` with `include_domains`
   set to the seller's domain.
@@ -76,7 +78,7 @@ The usual shape is five sections, as short as the decision allows (rarely more t
 2. **Their priorities:** two to four short cards. Each starts from their situation in their
    words, then says what changes.
 3. **How it works:** in their setting, naming their systems where you know them.
-4. **Proof:** attributed to the customer or study it came from, next to the claim it supports.
+4. **Proof:** attributed to the customer or study it came from, next to the claim it supports. Say whose result it is in the kicker or the source line; keep the heading about the result.
 5. **Offer:** what they get and the one button.
 
 For every sentence:

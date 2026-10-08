@@ -20,7 +20,8 @@ through this list.
    clones; if it does, choose another surface.
 6. **The words.** Run the final check in `account-page-copy` (part 6) on the visible words.
 
-Then fix only what failed, all in one go. Validate, and render once more only if something
-visible changed. Then stop. Do not re-render to compare small differences.
+Then fix only what failed, all in one go. Validate, and render again if something visible
+changed. Repeat until the review passes, up to 3 renders in all. Do not re-render to compare small
+differences.
 
 In your report, say what you checked and anything you could not fix.
