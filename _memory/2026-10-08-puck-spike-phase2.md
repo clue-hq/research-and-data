@@ -72,7 +72,10 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
 - E5 (73fa923d3 code): write_section + check-section.ts + agent-kit; agent wrote AnalysisSteps, passed
   first time, on brand next to clones; 13 calls, $0.35. ISSUES.md 35-37. puck/agent-sections/index.ts
   is modified by the run (left uncommitted so the agent-e5 page still renders; restore before commits).
-- Next: T8 findings doc + production roadmap.
+- E5b (trimmed skill, contract in words, brand/theme.css + brand/agent-kit.tsx read-only, 9d42c3a55):
+  props still flat (founder's overspecification hypothesis not confirmed); lost brand-heading and
+  Shell-spacing conventions the example carried (heading near-black, double padding). ISSUES 38-40.
+- Next: decide reference fixes / E5c, then T8 findings doc + production roadmap.
 
 ## JavaScript-heavy capture (founder: note it, come back and test heavily)
 - Notes: docs/superpowers/specs/2026-10-08-capturing-javascript-heavy-sites-notes.md. Root cause:

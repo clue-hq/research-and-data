@@ -156,6 +156,21 @@ the sections around it; the steps' facts come from Garner's analysis page.
 37. **Step titles use the body size** (`font-body text-body brand-heading`), so the hierarchy inside
     the cards is weak. *Watch (taste).*
 
+## E5b: the same request, the skill without its example, theme and kit to read (2026-10-08)
+
+It read brand/theme.css and brand/agent-kit.tsx without searching, wrote AnalysisSteps (passed the
+check first time), valid first time; 14 calls, $0.34. Compared with E5:
+
+38. **Props stayed flat** (`step1…step3`) without the example, so the example was not the cause; the
+    request naming three steps is the likelier one. (Founder hypothesis tested; not confirmed.)
+39. **The example had carried two conventions the references do not:** `brand-heading` (the class that
+    gives headings the brand's measured heading ink: E5b's heading is near-black, rgb(14,17,16),
+    beside Garner's green, rgb(1,64,54)) and "kit.Shell already sets the width and padding" (E5b added
+    its own container: the cards sit 24 px in from the proof card's edges and the section is 154 px
+    taller). Its render review did not catch either. *Open: list brand-heading in theme.css and show
+    what Shell does in the kit's source (input data, not rules).*
+40. **The token list did help** (stat-style step numbers, subtitle-size titles, no probing for names).
+
 ## Changes made for an Alt Carbon run, not yet run (uncommitted)
 
 - `export/export_brand.py`: Alt Carbon added (kit `brand_kit_ing_28663a…`, version 1).
