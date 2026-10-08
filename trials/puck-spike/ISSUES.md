@@ -118,6 +118,27 @@ sound; edit 2 chose Metal Exchange for the right reason (same plan and network a
 edits 6 and 8 correctly said there was nothing to change; multi-page (a new page, header nav, a
 link) worked first time.
 
+## E2b: the same ten edits, a fresh session each (2026-10-08)
+
+Edits cost $2.73 in total ($0.27 average, 2.7 minutes average) against a3's $6.03 ($0.60, 7
+minutes). 8 of 10 exact or sound, 2 partial (edit 4 again lightened the closing band; edit 9
+re-pointed the offer's main button to /analysis, adding a click before the request), 0 failed.
+Edit 7, a3's failure, now correctly says there are no four cards and asks. 0 validation errors in
+102 calls.
+
+31. **Context clearing costs more than it saves in short sessions.** Each clearing (planning over,
+    a new render) made the next call miss the whole cache (128 tokens cached): $0.76 of E2b's $2.73
+    went on those calls, while clearing saved about 10k tokens a call. Grok reuses only an unchanged
+    prefix, so stubbing an early message invalidates everything after it. *Open: clear only once a
+    session passes about 60k tokens.*
+32. **`plan.md` upkeep takes many calls in edit sessions** (edit 2: 9 of 15 calls, including a
+    refused full rewrite; edit 5: a mixed-up plan repaired). *Open: with history.md written by code,
+    small edits may not need plan.md updated.*
+33. **site.md does not say what is inside the seller's sections** (edit 6 spent 9 calls looking for
+    a logo row in clone cards and an old screenshot). *Open: a one-line "contains" note per clone.*
+34. **Skills are re-read in every session** (about 6k tokens each time). *Open: carry them in the
+    cached system prompt.*
+
 ## Changes made for an Alt Carbon run, not yet run (uncommitted)
 
 - `export/export_brand.py`: Alt Carbon added (kit `brand_kit_ing_28663a…`, version 1).

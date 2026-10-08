@@ -60,6 +60,12 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   hidden logo row). 0 invalid in 79 calls. Context grew 83k->214k; one cache miss cost $0.83.
   Details in trials/puck-spike/ISSUES.md 24-30. Next to test: fresh session per edit.
 
+## E2b (fresh session per edit, after the lean-harness pass)
+- $2.73 for 10 edits ($0.27 avg, 2.7 min) vs a3 $6.03 ($0.60, 7 min); 8 exact/sound, 2 partial, 0
+  fail; edit-7 rule works. Clearing caused full cache misses after each boundary ($0.76 of $2.73)
+  -> propose clearing only above ~60k tokens. ISSUES.md 31-34. E5 code written, shared-file part
+  pending (announced to founder).
+
 ## JavaScript-heavy capture (founder: note it, come back and test heavily)
 - Notes: docs/superpowers/specs/2026-10-08-capturing-javascript-heavy-sites-notes.md. Root cause:
   capture saves one moment (scroll to bottom, back to top, serialize); altcarbon.com builds content
