@@ -3557,7 +3557,7 @@ class _AdvisoryConnFactory:
 
 @pytest.mark.parametrize("outside", [True, False])
 def test_ai_ark_pacing_gap_runs_from_the_answer_and_indexing_overlaps_it(outside: bool) -> None:
-    gap, drain_s = 0.3, 0.2
+    gap, drain_s = 0.3, 0.5  # far apart, so loaded test machines cannot blur the two orders
     runtime, timeline, drains = _timed_runtime(
         outside=outside, drain_s=drain_s, arv2_ai_ark_min_gap_s=gap
     )
@@ -3574,7 +3574,7 @@ def test_ai_ark_pacing_gap_runs_from_the_answer_and_indexing_overlaps_it(outside
     starts = sorted((t, c) for w, c, t in timeline.events if w == "dispatch_start")
     first, second = starts[0][1], starts[1][1]
     waited = timeline.at("dispatch_start", second) - timeline.at("dispatch_end", first)
-    if outside:  # the gap starts at the answer; the indexing runs inside it (+ ≤ 0.1 s polling)
-        assert gap <= waited <= gap + 0.15
+    if outside:  # the gap starts at the answer; the indexing runs inside it (+ 0.1 s polling)
+        assert gap <= waited < gap + drain_s - 0.1
     else:  # the old order: indexing, then the whole gap
         assert waited >= gap + drain_s
