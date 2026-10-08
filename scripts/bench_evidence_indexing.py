@@ -6,7 +6,8 @@ response) is replayed the way a research job lands it after the provider answers
 
 1. drain    — the raw response is written to storage again and a fresh ledger row is recorded;
 2. index    — the real ``index_acquisition`` turns it into evidence sources (files + rows);
-3. recover  — the real ``recover_acquisitions`` sweep that ``operate()`` runs after each call.
+3. recover  — the real ``recover_acquisitions`` pass, once per job when it settles (W2-17; a call
+   that indexed its own result no longer runs it).
 
 Each step runs in its own transaction through an emulated worker connection guarded by one lock,
 exactly like ``Arv2AccountResearchWorkHandler._connection``. Jobs run concurrently, spread across
@@ -57,7 +58,7 @@ def percentile(values: Sequence[float], q: float) -> float:
 def summarise(calls: Sequence[dict[str, float]]) -> dict[str, dict[str, float]]:
     """p50 / p95 / mean / total (ms) of each timed step across the replayed calls."""
     out: dict[str, dict[str, float]] = {}
-    for step in ("lock_wait_ms", "drain_ms", "index_ms", "recover_ms", "total_ms"):
+    for step in ("early_ms", "lock_wait_ms", "drain_ms", "index_ms", "recover_ms", "total_ms"):
         values = [c[step] for c in calls if step in c]
         if values:
             out[step] = {
@@ -142,11 +143,17 @@ class Worker:
 
 
 async def _replay_call(
-    worker: Worker, storage: TimedStorage, row: dict[str, Any], columns: Sequence[str]
+    worker: Worker,
+    storage: TimedStorage,
+    row: dict[str, Any],
+    columns: Sequence[str],
+    early: Any = None,
 ) -> dict[str, float]:
+    """``early`` (a connection factory) replays W2-15 option B: the raw response and the source
+    files are put before the worker lock, and only database work runs under it."""
     from sqlalchemy import text
 
-    from clue_api.arv2.quality_acquisition import index_acquisition, recover_acquisitions
+    from clue_api.arv2.quality_acquisition import index_acquisition, upload_sources_early
     from clue_api.arv2.research_operations import OperationScope
     from clue_spend.ledger import DrainReport, ledger_id_for
     from clue_spend.sinks import LedgerRow
@@ -158,12 +165,34 @@ async def _replay_call(
     key = row["response_artifact_key"]
     call: dict[str, float] = {}
     held: dict[str, bytes] = {}
+    uploaded: frozenset[str] = frozenset()
+    result_row = LedgerRow(
+        row_id=row_id,
+        call_id=row_id,
+        phase="result",
+        provider=row["provider"],
+        operation=row["operation"],
+        label=row["label"],
+        recorded_at=row["recorded_at"],
+        http_status=row["http_status"],
+        error_code=row["error_code"],
+        raw_ref="replay",
+    )
     started = time.monotonic()
-
-    async def drain(conn: Any) -> None:
+    if early is not None:
         body = await storage.get(key)  # the bytes the drain held in memory, from the replay copy
         await storage.put(key, body, media_type="application/json")
         held[key] = body
+        uploaded = await upload_sources_early(
+            early, storage, scope, (result_row,), {"replay": key}, held
+        )
+        call["early_ms"] = (time.monotonic() - started) * 1000
+
+    async def drain(conn: Any) -> None:
+        if early is None:
+            body = await storage.get(key)  # the bytes the drain held, from the replay copy
+            await storage.put(key, body, media_type="application/json")
+            held[key] = body
         values = {c: row[c] for c in columns}
         values["ledger_id"], values["call_id"] = ledger_id_for(row_id), uuid4()
         for c, v in values.items():
@@ -184,33 +213,33 @@ async def _replay_call(
             cost_usd=Decimal(row["cost_usd"] or 0),
             credits=Decimal(row["credits"] or 0),
             media_seconds=row["media_seconds"] or 0,
-            result_rows=(
-                LedgerRow(
-                    row_id=row_id,
-                    call_id=row_id,
-                    phase="result",
-                    provider=row["provider"],
-                    operation=row["operation"],
-                    label=row["label"],
-                    recorded_at=row["recorded_at"],
-                    http_status=row["http_status"],
-                    error_code=row["error_code"],
-                    raw_ref="replay",
-                ),
-            ),
+            result_rows=(result_row,),
             raw_artifact_keys={"replay": key},
             raw_bodies=held,
         )
-        await index_acquisition(conn, storage, scope, report)
+        await index_acquisition(conn, storage, scope, report, uploaded=uploaded)
+
+    await worker.step(call, "drain_ms", drain)
+    await worker.step(call, "index_ms", index)
+    call["total_ms"] = (time.monotonic() - started) * 1000
+    return call
+
+
+async def _settle(worker: Worker, storage: TimedStorage, row: dict[str, Any]) -> dict[str, float]:
+    """The one recovery pass a job runs when it settles (W2-17: not after every call)."""
+    from clue_api.arv2.quality_acquisition import recover_acquisitions
+    from clue_api.arv2.research_operations import OperationScope
+
+    scope = OperationScope(
+        row["job_ws"], row["run_id"], row["entity_research_job_id"], row["account_entity_id"]
+    )
+    timing: dict[str, float] = {}
 
     async def recover(conn: Any) -> None:
         await recover_acquisitions(conn, storage, scope)
 
-    await worker.step(call, "drain_ms", drain)
-    await worker.step(call, "index_ms", index)
-    await worker.step(call, "recover_ms", recover)
-    call["total_ms"] = (time.monotonic() - started) * 1000
-    return call
+    await worker.step(timing, "recover_ms", recover)
+    return timing
 
 
 async def bench(args: argparse.Namespace) -> dict[str, Any]:
@@ -231,7 +260,7 @@ async def bench(args: argparse.Namespace) -> dict[str, Any]:
             text(f'CREATE DATABASE "{bench_db}" TEMPLATE "{lane_url.rsplit("/", 1)[1]}"')
         )
     engine = create_async_engine(
-        f"{lane_url.rsplit('/', 1)[0]}/{bench_db}", pool_size=args.workers + 2
+        f"{lane_url.rsplit('/', 1)[0]}/{bench_db}", pool_size=args.workers + 2, max_overflow=40
     )
     lane_storage = FsStorage(Path(os.environ.get("CLUE_STORAGE_FS_ROOT", ".artifacts")))
     scratch = None
@@ -259,16 +288,27 @@ async def bench(args: argparse.Namespace) -> dict[str, Any]:
             by_job[row["entity_research_job_id"]].append(row)
         conns.extend([await engine.connect() for _ in range(args.workers)])
         workers = [Worker(c) for c in conns]
+        early = None
+        if args.upload_outside_lock:
+            # Production's privacy check runs on the ordinary pool, not the worker connection.
+            @contextlib.asynccontextmanager
+            async def early_connection() -> Any:
+                async with engine.connect() as conn:
+                    yield conn
+
+            early = early_connection
         results: list[dict[str, float]] = []
+        settles: list[dict[str, float]] = []
 
         async def run_job(worker: Worker, job_rows: list[dict[str, Any]]) -> None:
             gate = asyncio.Semaphore(args.per_job)
 
             async def one(row: dict[str, Any]) -> None:
                 async with gate:
-                    results.append(await _replay_call(worker, storage, row, columns))
+                    results.append(await _replay_call(worker, storage, row, columns, early))
 
             await asyncio.gather(*(one(r) for r in job_rows))
+            settles.append(await _settle(worker, storage, job_rows[0]))
 
         started = time.monotonic()
         await asyncio.gather(
@@ -278,6 +318,7 @@ async def bench(args: argparse.Namespace) -> dict[str, Any]:
         return {
             "run": args.run,
             "storage": args.storage,
+            "upload_outside_lock": args.upload_outside_lock,
             "workers": args.workers,
             "per_job": args.per_job,
             "jobs": len(by_job),
@@ -285,6 +326,7 @@ async def bench(args: argparse.Namespace) -> dict[str, Any]:
             "raw_files_copied": copied,
             "wall_s": round(wall_s, 1),
             "steps": summarise(results),
+            "settle": summarise(settles),
             "storage_ops": dict(storage.ops),
             "storage_ms": {k: round(v, 1) for k, v in storage.ms.items()},
         }
@@ -321,6 +363,11 @@ def main() -> None:
     parser.add_argument("--per-job", type=int, default=4, help="concurrent calls within one job")
     parser.add_argument("--limit", type=int, default=0, help="replay only the first N results")
     parser.add_argument("--keep-db", action="store_true")
+    parser.add_argument(
+        "--upload-outside-lock",
+        action="store_true",
+        help="W2-15 option B: put the files before the worker lock",
+    )
     parser.add_argument("--json", help="also write the summary to this file")
     args = parser.parse_args()
     summary = asyncio.run(bench(args))
