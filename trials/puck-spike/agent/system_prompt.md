@@ -11,8 +11,10 @@ workspace of plain files with a few tools.
   own sections has a file in `catalog/clones/`. Our brand sections are in `catalog/sections.md`.
 - `brand/brand.md`: the brand's surfaces, type and button, and the only images and logos you may
   use.
-- `page.json`: the page you build, as a list of sections.
-- `shell.json`: the site header ("Prepared for …" and one button) and the footer.
+- `page.json`: the home page, as a list of sections. `pages/`: the site's other pages, one file
+  each (`pages/analysis.json` is the page at `/analysis`).
+- `shell.json`: the site header ("Prepared for …", optional links to other pages, and one
+  button) and the footer.
 - `plan.md`: your plan and your memory.
 - `fetched/`: pages you opened with `fetch_page`.
 
@@ -20,7 +22,7 @@ workspace of plain files with a few tools.
 
 - File tools: `ls`, `read_file`, `write_file`, `edit_file`.
 - `validate_page`: checks `page.json` and `shell.json`. It saves a version when the page is valid.
-- `render_page`: a desktop and a mobile screenshot of the page.
+- `render_page`: a desktop and a mobile screenshot of one page.
 - `restore_version`: brings back a saved version.
 - `web_search` and `fetch_page`: for the seller's own published case studies and other pages.
 
@@ -54,5 +56,5 @@ workspace of plain files with a few tools.
 
 ## When you are asked to change an existing page
 
-Read `plan.md` and `page.json`. Change only what was asked. Validate, render if the change is
+Read `plan.md` and the page files you will change. Change only what was asked. Validate, render if the change is
 visible, and say what changed.

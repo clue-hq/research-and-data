@@ -93,6 +93,19 @@ Fields and choices are in `catalog/sections.md`.
 
 Leave `accountLogo` empty unless the workspace gives you the account's logo file.
 
+## More than one page
+
+The home page is `page.json`. Another page is `pages/<name>.json`, with the same shape, and its
+address is `/<name>`: `pages/analysis.json` is the page at `/analysis`. Names use lowercase
+letters, digits and dashes.
+
+- Link to another page with its address, for example a button or a clone link set to
+  `/analysis`. A link to a page that does not exist is an error.
+- Add a page to the header's `nav` when visitors should reach it from every page:
+  `"nav": [{ "label": "The analysis", "href": "/analysis" }]`.
+- The header, the footer and the one destination for the offer are shared by every page.
+- Render each page you changed: `render_page("/analysis")`.
+
 ## When validate_page says INVALID
 
 Each line names the section, the field and the fix. For example, it lists the real slots or
