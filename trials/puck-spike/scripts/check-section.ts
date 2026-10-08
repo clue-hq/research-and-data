@@ -54,7 +54,7 @@ export function lint(source: string): string[] {
   return errors;
 }
 
-function typeCheck(file: string): string[] {
+export function typeCheck(file: string): string[] {
   const dir = path.dirname(file);
   const spike = path.resolve(__dirname, "..");
   fs.writeFileSync(
@@ -63,6 +63,9 @@ function typeCheck(file: string): string[] {
       extends: path.relative(dir, path.join(spike, "tsconfig.json")),
       compilerOptions: { incremental: false, noEmit: true },
       include: [path.basename(file), path.relative(dir, path.join(spike, "next-env.d.ts"))],
+      // The spike's tsconfig excludes agent-runs/, where this file is checked; inheriting that
+      // exclude would silently type-check nothing.
+      exclude: [],
     }),
   );
   try {

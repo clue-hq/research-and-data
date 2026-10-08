@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { lint } from "./check-section";
+import { lint, typeCheck } from "./check-section";
 
 const skill = fs.readFileSync(path.join(__dirname, "..", "agent", "skills-e5", "writing-a-section", "SKILL.md"), "utf-8");
 const EXAMPLE = skill.split("```tsx")[1].split("```")[0];
@@ -37,4 +37,20 @@ test("inline style, raw colour values and other imports are refused", () => {
   assert.ok(lint(EXAMPLE.replace("<p className", "<p style={{ color: 'red' }} className")).some((e) => e.includes("inline style")));
   assert.ok(lint(EXAMPLE.replace("max-w-[30ch]", "max-w-[30ch]\" data-c=\"#ff0000")).some((e) => e.includes("colour value #ff0000")));
   assert.ok(lint(`import x from "lodash";\n${EXAMPLE}`).some((e) => e.includes('import "lodash"')));
+});
+
+test("the type check runs where write_section checks a file (inside agent-runs/)", () => {
+  const dir = path.join(__dirname, "..", "agent-runs", ".section-check", "type-check-test");
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    const good = path.join(dir, "Good.tsx");
+    fs.writeFileSync(good, EXAMPLE);
+    assert.deepEqual(typeCheck(good), []);
+    const bad = path.join(dir, "Bad.tsx");
+    fs.writeFileSync(bad, EXAMPLE.replace("</kit.Shell>", "<kit.Button href=\"/x\">Go</kit.Button></kit.Shell>"));
+    const errors = typeCheck(bad);
+    assert.ok(errors.some((e) => e.includes("TS2322")), errors.join("; ") || "no type errors");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
