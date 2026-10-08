@@ -118,6 +118,9 @@ from clue_storage import ArtifactIntegrityError, StorageBackend, read_verified_a
 
 log = get_logger("clue_api.arv2.account_research_driver")
 
+#: How long a settling quality job waits for provider calls still landing (as the old lane does).
+_INFLIGHT_LANDING_S = 60.0
+
 __all__ = [
     "ARV2_ACCOUNT_DEDUP_PREFIX",
     "ARV2_ACCOUNT_TASK_PRIORITY",
@@ -1225,6 +1228,11 @@ class Arv2AccountResearchWorkHandler:
                     objective=composition.task_instruction,
                     model_id=composition.model_id,
                 )
+                # Review I-2: a provider call can still be landing when the agent stops (hops are
+                # shielded from its cancellation). Let it land before the pages are written and the
+                # job settles, so neither runs without its evidence and the settle's recovery
+                # never races the call's own indexing.
+                await runtime.wait_for_inflight(timeout_s=_INFLIGHT_LANDING_S)
                 result = await self._write_pages(composition, result)
             return await self._settle_quality(composition, result)
         if has_capability(composition.scope.catalog_version, "committee_discovery"):

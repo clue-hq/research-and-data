@@ -73,11 +73,16 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
 ):
     # W2-17: the settle runs the evidence recovery check once for the job, whatever the per-call
     # setting, so a result whose indexing was cut short is repaired before coverage is measured.
+    #
+    # Review I-2: the agent may stop while a provider call is still landing; the driver waits for
+    # it before the pages are written and the job settles, so neither runs without its evidence.
     recovered: list = []
+    events: list[str] = []
     real_recover = quality_acquisition.recover_acquisitions
 
     async def counting_recover(conn, storage, scope):
         recovered.append(scope.job_id)
+        events.append("recovered")
         return await real_recover(conn, storage, scope)
 
     monkeypatch.setattr(quality_acquisition, "recover_acquisitions", counting_recover)
@@ -292,6 +297,12 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
                     checkpointer_factory=checkpoints,
                 )
                 result = await owner.run(objective=objective)
+
+                async def still_landing():
+                    await asyncio.sleep(0.2)
+                    events.append("landed")
+
+                runtime._inflight.add(asyncio.create_task(still_landing()))
                 return QualityJobOutcome(
                     result.execution_id,
                     result.status.value,
@@ -304,6 +315,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
 
             async def writer_model(messages, json_mode):
                 writes.append(json_mode)
+                events.append("page")
                 if not json_mode:
                     return "The seller sells account-based marketing."
                 return json.dumps(
@@ -353,6 +365,7 @@ def test_launch_pins_persona_and_worker_continuation_preserves_initial_result(
             jid = launch.job_ids[0]
             result = await handler.handle(work(jid, launch.run_id, fixture.workspace_id))
             assert recovered == [jid]
+            assert events[0] == "landed", events
             initial = await read_job(conn, job_id=jid)
             # Recipe 25: the researcher finalizes without pages; the driver's page writer
             # writes them (one seller-brief call, one page call) before the job settles.
