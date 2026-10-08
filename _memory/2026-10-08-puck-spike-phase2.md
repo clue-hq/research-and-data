@@ -50,6 +50,16 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   a failing case for the proof rule; multi-page workspace + route-existence check + shell nav
   before E2; A2 (variance) and E2 not yet run.
 
+## a2, multi-page, a3/E2 (2026-10-08)
+- a2: $0.63, 16 calls, valid first time; same page as a1 incl. Nightingale proof (consistent).
+- Multi-page built (83d3bd94c) + founder-approved prompt/skill text (9f0af2f9f); clone renderer now
+  absolutizes captured links the page did not change (they were broken on our pages).
+- a3 (build + 10 edits, one session): build $0.62 (same page as a2, word-for-word headline); edits
+  $6.03 total (avg $0.60, ~7 min each) vs bar $0.05/1 min; 7 exact, 2 partial (4 side change, 10
+  removed earlier work), 1 fail (7 added a section for cards that did not exist, brought back the
+  hidden logo row). 0 invalid in 79 calls. Context grew 83k->214k; one cache miss cost $0.83.
+  Details in trials/puck-spike/ISSUES.md 24-30. Next to test: fresh session per edit.
+
 ## JavaScript-heavy capture (founder: note it, come back and test heavily)
 - Notes: docs/superpowers/specs/2026-10-08-capturing-javascript-heavy-sites-notes.md. Root cause:
   capture saves one moment (scroll to bottom, back to top, serialize); altcarbon.com builds content

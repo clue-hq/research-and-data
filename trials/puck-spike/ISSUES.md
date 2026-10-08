@@ -87,6 +87,37 @@ name-only brief over the research.
     `render_page(route)`, versions and restore cover every page. Skill and prompt text pending
     founder review.*
 
+## E2: ten edits in one session (run a3, 2026-10-08)
+
+24. **Edit 7 invented a change.** Asked to shorten "the four cards" on a page that had none, the agent
+    added Garner's four-card clone with new text instead of saying so (as it did for the logo row in
+    edit 6). The clone brought back the customer-logo row edit 6 had asked to hide; the agent knew
+    and went ahead. *Open. A failing case for "change only what was asked" (candidate prompt rule:
+    when the request names something not on the page, say so and ask).*
+25. **Edits removed earlier work without asking.** Edit 10 ("more premium") dropped the four cards
+    and the offer-area link to /analysis that edit 9 added (the page stays reachable from the header
+    nav). Edit 4 also changed the closing band's surface to keep the rhythm rule. Both explained.
+    *Open (judgement).*
+26. **One growing session makes edits slow and expensive.** Input per call grew from 83k to 214k
+    tokens over the run; calls took 50–160 s; edits cost $0.21–1.65 (average $0.60) and about 7
+    minutes each, against the plan's $0.05 and one minute. One cache miss on a 208k-token call cost
+    $0.83 alone. *Open: test a fresh session per edit with the files as memory.*
+27. **The agent cannot see images.** It tried `read_file` on asset paths, failed, and picked an image
+    blind (a Garner graphic with its own baked-in text). *Open: a way to view an asset, or a contact
+    sheet of the brand's images (relates to issue 4).*
+28. **Theme bug: on the `inverse` surface, ProofCard's heading and metric use the brand heading ink**
+    (Garner's forest green on near-black, nearly unreadable). The agent spotted it in the render and
+    switched surfaces. *Open (harness theme).*
+29. **A FeatureSplit with no image looks like an empty frame** (edit 9's "see the analysis" band;
+    edit 10 removed it). *Open (component: a text-only layout when there is no image).*
+30. **Defensive copy on the proof heading** ("Another employer's result — not SCSD's"), against the
+    copy skill's positive framing. *Watch.*
+
+What went right in E2: zero validation errors in 79 calls; edits 1, 2, 3, 5, 6, 8 and 9 exact or
+sound; edit 2 chose Metal Exchange for the right reason (same plan and network as the new hero);
+edits 6 and 8 correctly said there was nothing to change; multi-page (a new page, header nav, a
+link) worked first time.
+
 ## Changes made for an Alt Carbon run, not yet run (uncommitted)
 
 - `export/export_brand.py`: Alt Carbon added (kit `brand_kit_ing_28663a…`, version 1).
