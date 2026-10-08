@@ -32,6 +32,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -110,6 +111,7 @@ from clue_db import ConnFactory, transaction
 from clue_fleet import FleetTaskKind, WorkId, WorkQueue
 from clue_fleet.work_worker import WorkContext, WorkResult
 from clue_obs import get_logger
+from clue_obs.critical_section import slow_threshold_ms
 from clue_research.claimstore import WorkspaceScope, claims_for
 from clue_research.identity import get_account, get_contact
 from clue_storage import ArtifactIntegrityError, StorageBackend, read_verified_artifact
@@ -1041,8 +1043,15 @@ class Arv2AccountResearchWorkHandler:
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[AsyncConnection]:
-        async with self._db_lock, self._conn_factory() as conn:
-            yield conn
+        # Every research job in this worker shares this one connection (W2-20: measure the wait
+        # before deciding whether to remove the lock). Logged above CLUE_DB_CRITICAL_SECTION_LOG_MS.
+        started = time.monotonic()
+        async with self._db_lock:
+            waited_ms = (time.monotonic() - started) * 1000
+            if waited_ms >= slow_threshold_ms():
+                log.info("arv2.db_lock_waited", wait_ms=round(waited_ms, 1))
+            async with self._conn_factory() as conn:
+                yield conn
 
     async def _suspend(self, scope: _Scope, *, attempt: int) -> None:
         """Park this attempt's job for requeue. A failure here is logged, never raised into the

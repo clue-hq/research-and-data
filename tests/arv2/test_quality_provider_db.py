@@ -367,3 +367,71 @@ def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_p
             assert len(wire.requests) == 1
 
     run_async(case())
+
+
+def test_an_evidence_call_logs_how_long_draining_indexing_and_recovery_took(tmp_path, monkeypatch):
+    """W2-20: the per-call platform steps are timed, so slow indexing is visible in the logs."""
+    import clue_api.arv2.account_research_tools as tools_module
+
+    lines: list[tuple[str, dict]] = []
+
+    class Recording:
+        def _record(self, event, **fields):
+            lines.append((event, fields))
+
+        info = warning = error = exception = debug = _record
+
+    monkeypatch.setattr(tools_module, "log", Recording())
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4", input_refs={"quality_recipe_version": 8})
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+            body = {
+                "output": {"content": "A substantive report. " * 200},
+                "costDollars": {"total": 0.05},
+                "results": [{"url": "https://example.test/bdr", "title": "BDR"}],
+            }
+            rt = runtime(conn, scope, storage, ScriptedTransport([response(body)]))
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            result = await AcquireResearchTool(rt).invoke(
+                AcquireResearchInput(
+                    operation="research_deep",
+                    arguments={
+                        "charter": "Investigate the company and its operating workflows. " * 8,
+                        "additional_queries": ["company leadership"],
+                        "num_results": 40,
+                    },
+                ),
+                ctx,
+            )
+            assert result.references["status"] == "completed", result
+
+    run_async(case())
+    drained = [f for e, f in lines if e == "arv2.drain_completed"]
+    assert len(drained) == 1
+    assert drained[0]["drain_ms"] >= 0 and drained[0]["index_ms"] >= 0
+    assert drained[0]["job_id"] and drained[0]["provider"]
+    recovered = [f for e, f in lines if e == "arv2.acquisition_recovered"]
+    assert len(recovered) == 1 and recovered[0]["recover_ms"] >= 0

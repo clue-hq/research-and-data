@@ -26,6 +26,7 @@ import contextlib
 import hashlib
 import json
 import re
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -611,6 +612,7 @@ class ToolRuntime:
         await self._drain(
             dispatched.raw,
             dispatched.ledger,
+            provider=provider,
             operation=operation,
             error=dispatched.error_code,
             preferred_row=getattr(cost, "ledger_row_id", None),
@@ -659,93 +661,116 @@ class ToolRuntime:
         raw: BufferedRawSink,
         ledger: BufferedLedger,
         *,
+        provider: str | None = None,
         operation: operations.Operation | None = None,
         error: str | None = None,
         preferred_row: str | None = None,
         semantic_empty: bool = False,
     ) -> None:
-        async with self._conn_factory() as conn:
-            report = await drain_provider_calls(
-                conn,
-                raw=raw,
-                ledger=ledger,
-                artifacts=self._artifacts,
-                stamp=LedgerStamp(
-                    workspace_id=self.scope.workspace_id,
-                    project_id=self.scope.project_id,
-                    project_run_id=str(self.scope.project_run_id),
-                    job_id=self.scope.job_id,
-                ),
-            )
-
-            if (
-                has_capability(self.scope.catalog_version, "committee_discovery")
-                and self.storage is not None
-            ):
-                # Register every attempt, including unselected people and unsuccessful responses.
-                from clue_api.arv2.committee_discovery import index_provider_artifacts
-
-                await index_provider_artifacts(self, conn, report.raw_artifact_keys.values())
-            if has_capability(
-                self.scope.catalog_version, "committee_discovery"
-            ) and not await operations.job_available(
-                conn, self.operation_scope, operation.kind if operation else None
-            ):
-                await conn.execute(
-                    text(
-                        "UPDATE artifact SET "
-                        "privacy_erased=true,erasure_reason='privacy',"
-                        "erased_at=now(),source_url=NULL WHERE "
-                        "workspace_id=:ws AND storage_key=ANY(:keys)"
-                    ),
-                    {
-                        "ws": self.scope.workspace_id,
-                        "keys": list(report.raw_artifact_keys.values()),
-                    },
-                )
-            if has_capability(self.scope.catalog_version, "media_research"):
-                from clue_api.arv2.media_operations import attach_receipts
-                from clue_api.arv2.provider_ledger import ledger_id_for
-
-                if operation is not None and operation.kind == "media_discovery":
-                    from clue_api.arv2.media_store import subjects
-
-                    for key in report.raw_artifact_keys.values():
-                        await subjects(self, conn, key, [])
-                await attach_receipts(
-                    self,
-                    conn,
-                    list(report.raw_artifact_keys.values()),
-                    [ledger_id_for(r.row_id) for r in report.result_rows],
-                    error,
-                )
-            if operation is not None:
-                await operations.finish(
-                    conn,
-                    self.operation_scope,
-                    operation,
-                    report.result_rows,
-                    error=error,
-                    preferred_row=preferred_row,
-                    semantic_empty=semantic_empty,
-                )
-        # A failed evidence normalization must never roll back the paid provider ledger.
-        # The separate transaction still completes before a source handle reaches an agent.
-        if has_capability(self.scope.catalog_version, "research_quality"):
+        # W2-20: time the money trail and the evidence indexing that follow every provider call.
+        started = time.monotonic()
+        drain_ms: float | None = None
+        index_ms: float | None = None
+        index_started: float | None = None
+        try:
             async with self._conn_factory() as conn:
-                from clue_api.arv2.quality_acquisition import index_acquisition
-
-                if self.storage is None:
-                    raise RuntimeError("quality research requires durable source storage")
-                if not await operations.job_available(conn, self.operation_scope):
-                    return
-                await index_acquisition(
+                report = await drain_provider_calls(
                     conn,
-                    self.storage,
-                    self.operation_scope,
-                    report,
-                    operation_id=operation.operation_id if operation else None,
+                    raw=raw,
+                    ledger=ledger,
+                    artifacts=self._artifacts,
+                    stamp=LedgerStamp(
+                        workspace_id=self.scope.workspace_id,
+                        project_id=self.scope.project_id,
+                        project_run_id=str(self.scope.project_run_id),
+                        job_id=self.scope.job_id,
+                    ),
                 )
+
+                if (
+                    has_capability(self.scope.catalog_version, "committee_discovery")
+                    and self.storage is not None
+                ):
+                    # Register every attempt, including unselected people and unsuccessful
+                    # responses.
+                    from clue_api.arv2.committee_discovery import index_provider_artifacts
+
+                    await index_provider_artifacts(self, conn, report.raw_artifact_keys.values())
+                if has_capability(
+                    self.scope.catalog_version, "committee_discovery"
+                ) and not await operations.job_available(
+                    conn, self.operation_scope, operation.kind if operation else None
+                ):
+                    await conn.execute(
+                        text(
+                            "UPDATE artifact SET "
+                            "privacy_erased=true,erasure_reason='privacy',"
+                            "erased_at=now(),source_url=NULL WHERE "
+                            "workspace_id=:ws AND storage_key=ANY(:keys)"
+                        ),
+                        {
+                            "ws": self.scope.workspace_id,
+                            "keys": list(report.raw_artifact_keys.values()),
+                        },
+                    )
+                if has_capability(self.scope.catalog_version, "media_research"):
+                    from clue_api.arv2.media_operations import attach_receipts
+                    from clue_api.arv2.provider_ledger import ledger_id_for
+
+                    if operation is not None and operation.kind == "media_discovery":
+                        from clue_api.arv2.media_store import subjects
+
+                        for key in report.raw_artifact_keys.values():
+                            await subjects(self, conn, key, [])
+                    await attach_receipts(
+                        self,
+                        conn,
+                        list(report.raw_artifact_keys.values()),
+                        [ledger_id_for(r.row_id) for r in report.result_rows],
+                        error,
+                    )
+                if operation is not None:
+                    await operations.finish(
+                        conn,
+                        self.operation_scope,
+                        operation,
+                        report.result_rows,
+                        error=error,
+                        preferred_row=preferred_row,
+                        semantic_empty=semantic_empty,
+                    )
+            drain_ms = (time.monotonic() - started) * 1000
+            # A failed evidence normalization must never roll back the paid provider ledger.
+            # The separate transaction still completes before a source handle reaches an agent.
+            index_started = time.monotonic()
+            if has_capability(self.scope.catalog_version, "research_quality"):
+                async with self._conn_factory() as conn:
+                    from clue_api.arv2.quality_acquisition import index_acquisition
+
+                    if self.storage is None:
+                        raise RuntimeError("quality research requires durable source storage")
+                    if not await operations.job_available(conn, self.operation_scope):
+                        return
+                    await index_acquisition(
+                        conn,
+                        self.storage,
+                        self.operation_scope,
+                        report,
+                        operation_id=operation.operation_id if operation else None,
+                    )
+        finally:
+            finished = time.monotonic()
+            if index_started is not None:
+                index_ms = (finished - index_started) * 1000
+            log.info(
+                "arv2.drain_completed",
+                job_id=str(self.scope.job_id),
+                provider=provider,
+                operation=operation.kind if operation else None,
+                drain_ms=None if drain_ms is None else round(drain_ms, 1),
+                index_ms=None if index_ms is None else round(index_ms, 1),
+                total_ms=round((finished - started) * 1000, 1),
+            )
 
     @property
     def operation_scope(self) -> operations.OperationScope:
@@ -783,7 +808,15 @@ class ToolRuntime:
             if has_capability(self.scope.catalog_version, "research_quality"):
                 from clue_api.arv2.quality_acquisition import recover_acquisitions
 
+                started = time.monotonic()
                 await recover_acquisitions(conn, self.storage, self.operation_scope)
+                log.info(
+                    "arv2.acquisition_recovered",
+                    job_id=str(self.scope.job_id),
+                    operation=kind,
+                    replayed=not won,
+                    recover_ms=round((time.monotonic() - started) * 1000, 1),
+                )
             return await operations.body(
                 conn, self.storage, self.operation_scope, operation.operation_id
             )
