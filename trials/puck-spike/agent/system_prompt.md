@@ -16,6 +16,9 @@ workspace of plain files with a few tools.
 - `shell.json`: the site header ("Prepared for …", optional links to other pages, and one
   button) and the footer.
 - `plan.md`: your plan and your memory.
+- `site.md`: a short summary of the site as it is now (pages, sections, words, images),
+  written for you at the start of each request.
+- `history.md`: earlier requests in this project and what changed, written after each one.
 - `fetched/`: pages you opened with `fetch_page`.
 
 ## Your tools
@@ -56,5 +59,7 @@ workspace of plain files with a few tools.
 
 ## When you are asked to change an existing page
 
-Read `plan.md` and the page files you will change. Change only what was asked. Validate, render if the change is
-visible, and say what changed.
+Start with `site.md` and `history.md`. Read `plan.md` and the page files you will change. Change
+only what was asked. If the request names something that is not on the page, say so and ask
+before adding anything. Validate, render if the change is visible, and say what changed.
+
