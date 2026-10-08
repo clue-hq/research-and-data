@@ -345,3 +345,36 @@ def test_view_clone_and_compare_section_show_the_original_and_the_rebuild(worksp
         tools._write_section_index()
         for scratch in (SPIKE / "data" / "sites").glob(f"{site}*.json"):
             scratch.unlink()
+
+
+@pytest.mark.skipif(not _server_up(), reason="the spike's dev server is not running on :3047")
+def test_a_class_used_only_in_a_written_section_reaches_the_page(workspace: Path) -> None:
+    """Tailwind must scan the agent's sections: a class no other file uses still gets its CSS."""
+    from playwright.sync_api import sync_playwright
+
+    site = "agent-test-css"
+    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
+    tools = tools_for(workspace)
+    root = SPIKE / "puck" / "agent-sections"
+    value = ".".join(["41", "5"])  # assembled here so the class appears in no source file Tailwind scans
+    code = PANELS.replace('"relative min-h-80 ', f'"relative h-[{value}rem] ').replace("PHOTO", "")
+    try:
+        assert tools.write_section("TallPanels", code).startswith("WRITTEN")
+        url = tools._scratch_url([{"type": "TallPanels", "props": {"id": "t", "surface": "page", "heading": "x", "photo": ""}}])
+        height = None
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            page = browser.new_page(viewport={"width": 1440, "height": 900})
+            for _ in range(8):  # the dev server recompiles the CSS after the file lands
+                page.goto(url, wait_until="load")
+                page.wait_for_timeout(1500)
+                height = page.evaluate("getComputedStyle(document.querySelector('[data-agent-section] .relative')).height")
+                if height == "664px":
+                    break
+            browser.close()
+        assert height == "664px", height
+    finally:
+        shutil.rmtree(root / site, ignore_errors=True)
+        tools._write_section_index()
+        for scratch in (SPIKE / "data" / "sites").glob(f"{site}*.json"):
+            scratch.unlink()
