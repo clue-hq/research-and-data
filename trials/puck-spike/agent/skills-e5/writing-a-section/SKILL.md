@@ -8,19 +8,34 @@ description: Use when you have been asked to add something that no clone and no 
 A new section is one small React file built only from the brand's tokens. Write it with
 `write_section`, which checks it and makes it available to this page.
 
-## What the file must have
+## The file
 
-- `export const schema`: a zod object (`z.object({...}).strict()`) of the section's props. It
-  needs `id` (a string) and `surface` (one of page, card, muted, brandSubtle, brand, inverse).
-  Every other prop is yours to design: whatever content this section needs.
-- `export function render(props, kit)`: returns the section inside `kit.Shell`.
-- Imports only from `zod`, `react` (types) and `@/puck/agent-kit` (the `Kit` type).
+```tsx
+import { z } from "zod";
+import type { Kit } from "@/puck/agent-kit";
 
-Design the section around what the page needs — steps, grids, comparisons, image and text — as
-long as every colour, type size, corner and button comes from the brand.
+export const schema = z.object({
+  id: z.string(),
+  surface: z.enum(["page", "card", "muted", "brandSubtle", "brand", "inverse"]),
+  quote: z.string().min(1),
+  attribution: z.string(),
+}).strict();
 
-## The kit
+export function render(props: z.infer<typeof schema>, kit: Kit) {
+  return (
+    <kit.Shell surface={props.surface}>
+      <blockquote className="brand-heading max-w-[30ch] font-headline text-headline">{props.quote}</blockquote>
+      <p className="mt-6 font-body text-body text-ink-secondary">{props.attribution}</p>
+    </kit.Shell>
+  );
+}
+```
 
+This is one possible section. Write whatever structure the page needs — steps, grids,
+comparisons, image and text — as long as every colour, type size, corner and button comes from
+the brand.
+
+The kit gives you:
 - `kit.Shell`: the section and its surface (it sets the right text colour for light and dark).
 - `kit.Button`: the brand's button.
 - `kit.Eyebrow`: the small label above a heading.
@@ -28,8 +43,8 @@ long as every colour, type size, corner and button comes from the brand.
 
 ## Rules
 
-- Style only with the brand's classes; the full list is in brand/theme.css. Surfaces through
-  `kit.Shell`, type through `font-<role> text-<role>`, colours through `text-ink-*`,
+- Style only with the brand's classes: surfaces through `kit.Shell`, type through
+  `font-<role> text-<role>` (roles in brand/brand.md), colours through `text-ink-*`,
   `bg-surface-*` and `border-line-*`, corners through `rounded-<role>`, and spacing through
   Tailwind's scale (`mt-6`, `gap-8`). No colour values, pixel sizes, `style` or `className`
   props: write_section refuses them.

@@ -274,10 +274,9 @@ def main() -> int:
         trace_file.write(line + "\n")
         trace_file.flush()
 
-    if args.allow_new_sections:  # the E5 skill and its references join this run's workspace only
+    if args.allow_new_sections:  # the E5 skill joins this run's workspace only
         shutil.rmtree(workspace / "skills-e5", ignore_errors=True)
         shutil.copytree(AGENT_DIR / "skills-e5", workspace / "skills-e5")
-        ws.write_section_references(workspace, SPIKE)
     agent, recorder = build_agent(page_tools, model=build_model(), trace=trace, clear_context=not args.no_clear,
                                   summary_model=build_model(), allow_new_sections=args.allow_new_sections)
     new_session = lambda: {"configurable": {"thread_id": f"puck_{uuid.uuid4().hex}"}}  # noqa: E731

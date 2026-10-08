@@ -230,7 +230,8 @@ def test_web_search_retries_a_transient_failure(workspace: Path) -> None:
 def test_write_section_joins_only_its_own_site(workspace: Path) -> None:
     """E5: a section that passes the brand-token check joins its own site; one that fails never
     reaches the app; another site cannot use it."""
-    example = (SPIKE / "scripts" / "fixtures" / "quote-section.tsx.txt").read_text()
+    skill = (SPIKE / "agent" / "skills-e5" / "writing-a-section" / "SKILL.md").read_text()
+    example = skill.split("```tsx")[1].split("```")[0]
     site = "agent-test-e5"
     (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
     tools = tools_for(workspace)

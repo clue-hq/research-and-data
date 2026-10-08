@@ -112,11 +112,3 @@ def test_site_changes_say_what_moved_changed_and_appeared() -> None:
     notes = ws.site_changes(before, after)
     assert "added the page /analysis" in notes
     assert "/: changed hero (x)" in notes and "/: new order proof, hero" in notes
-
-
-def test_section_references_hold_the_real_theme_and_the_kit(tmp_path: Path) -> None:
-    ws.write_section_references(tmp_path, SPIKE)
-    theme = (tmp_path / "brand" / "theme.css").read_text()
-    assert theme.startswith("/* The brand's classes") and "@theme inline" in theme
-    assert "--color-ink-secondary" in theme and "--radius-card" in theme and "--text-title" in theme
-    assert "export function makeKit" in (tmp_path / "brand" / "agent-kit.tsx").read_text()
