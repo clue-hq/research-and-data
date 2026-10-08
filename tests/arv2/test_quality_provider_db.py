@@ -536,3 +536,100 @@ def test_an_evidence_call_uploads_nothing_while_it_holds_the_worker_lock(tmp_pat
         assert under_lock == []
     else:
         assert under_lock
+
+
+@pytest.mark.parametrize("ending", ["job_withdrawn", "indexing_fails"])
+def test_files_uploaded_early_are_deleted_when_indexing_never_records_them(
+    tmp_path, monkeypatch, ending
+):
+    """Review I-1: with option B the source files are put before the lock. If the job is
+    withdrawn (a privacy stop, a suspension) before indexing, or indexing fails, nothing records
+    them — no purge or erasure could ever find them. They must be deleted, not left for the
+    orphan sweep's 24-hour grace."""
+    import contextlib
+
+    import clue_api.arv2.quality_acquisition as acquisition
+
+    real_early = acquisition.upload_sources_early
+
+    async def case():
+        async with rollback_conn() as conn:
+            storage = FsStorage(tmp_path)
+            op, scope, cid = await setup(conn, storage)
+            scope = replace(scope, catalog_version="v4", input_refs={"quality_recipe_version": 8})
+            parent = await execution(conn, op, scope.project_id)
+            await bind_execution(
+                conn,
+                op,
+                execution_id=parent,
+                context_id=cid,
+                role="account_research",
+                limits=Allowance(20, 40, 4),
+            )
+
+            async def early_then_withdraw(*args, **kwargs):
+                uploaded = await real_early(*args, **kwargs)
+                await conn.execute(
+                    text("UPDATE arv2_research_job SET status='suspended' WHERE job_id=:j"),
+                    {"j": scope.job_id},
+                )
+                return uploaded
+
+            async def failing_index(*args, **kwargs):
+                raise RuntimeError("indexing failed")
+
+            if ending == "job_withdrawn":
+                monkeypatch.setattr(acquisition, "upload_sources_early", early_then_withdraw)
+            else:
+                monkeypatch.setattr(acquisition, "index_acquisition", failing_index)
+            body = {
+                "output": {"content": "A substantive report. " * 200},
+                "costDollars": {"total": 0.05},
+                "results": [{"url": "https://example.test/bdr", "title": "BDR", "text": "T."}],
+            }
+            rt = runtime(conn, scope, storage, ScriptedTransport([response(body)]))
+            rt.settings = Settings(
+                _env_file=None,  # type: ignore[call-arg]
+                arv2_ai_ark_min_gap_s=0,
+                arv2_upload_outside_lock=True,
+            )
+
+            @asynccontextmanager
+            async def connections():
+                yield conn
+
+            ctx = ToolContext(
+                workspace_id=scope.workspace_id,
+                actor="agent",
+                conn_factory=connections,
+                execution_id=ExecutionId(parent),
+                operation_id=OperationId(uuid4()),
+            )
+            # The call's own outcome on a withdrawn job or a failed index is not this test's
+            # concern; what storage is left holding is.
+            with contextlib.suppress(Exception):
+                await AcquireResearchTool(rt).invoke(
+                    AcquireResearchInput(
+                        operation="research_deep",
+                        arguments={
+                            "charter": "Investigate the company and its workflows. " * 8,
+                            "additional_queries": ["company leadership"],
+                            "num_results": 40,
+                        },
+                    ),
+                    ctx,
+                )
+            stored = [key async for key, _ in storage.list_blobs()]
+            recorded = set(
+                (
+                    await conn.execute(
+                        text("SELECT storage_key FROM artifact WHERE storage_key = ANY(:k)"),
+                        {"k": stored},
+                    )
+                ).scalars()
+            )
+            return stored, recorded
+
+    stored, recorded = run_async(case())
+    assert stored, "the call stored its response"
+    assert [key for key in stored if key not in recorded] == []

@@ -388,6 +388,41 @@ def _receipt_specs(row: AcquisitionReceipt, raw: bytes | None) -> list[SourceSpe
     return sources
 
 
+async def discard_early_uploads(
+    connections: ConnFactory, storage: StorageBackend, keys: Collection[str]
+) -> tuple[str, ...]:
+    """Delete files :func:`upload_sources_early` put that indexing never recorded — the job was
+    withdrawn before indexing (a privacy stop, a suspension) or indexing failed. Nothing else
+    could find them: purge and erasure work from artifact rows, and the orphan sweep waits a day.
+
+    A key with a live artifact row is kept: other evidence cites those same bytes. Accepted race
+    (founder, 2026-10-08): another job uploading byte-identical content at this very moment can
+    lose its file and then hold a live row whose read fails — fail-closed, never a leak. Never
+    raises; returns the keys it deleted.
+    """
+    if not keys:
+        return ()
+    try:
+        async with connections() as conn:
+            live = set(
+                (
+                    await conn.execute(
+                        text(
+                            "SELECT storage_key FROM artifact WHERE storage_key = ANY(:keys) "
+                            "AND erased_at IS NULL AND purged_at IS NULL AND NOT privacy_erased"
+                        ),
+                        {"keys": list(keys)},
+                    )
+                ).scalars()
+            )
+        doomed = sorted(key for key in keys if key not in live)
+        await asyncio.gather(*(storage.delete(key) for key in doomed))
+        return tuple(doomed)
+    except Exception as error:  # noqa: BLE001 - cleanup must not mask the call's own outcome
+        log.warning("arv2.early_upload_discard_failed", keys=len(keys), error=repr(error))
+        return ()
+
+
 def exa_source_texts(result: dict[str, Any]) -> list[tuple[str, str]]:
     """Keep each returned excerpt addressable; a highlights-only response is not a full page."""
     texts = []

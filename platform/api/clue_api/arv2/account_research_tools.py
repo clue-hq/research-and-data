@@ -688,6 +688,7 @@ class ToolRuntime:
         )
         held: HeldDrain | None = None
         uploaded: frozenset[str] = frozenset()
+        indexed = False
         try:
             if self.settings.arv2_upload_outside_lock:
                 # W2-15 option B: store the raw response and the source files BEFORE taking the
@@ -796,7 +797,13 @@ class ToolRuntime:
                         operation_id=operation.operation_id if operation else None,
                         uploaded=uploaded,
                     )
+                indexed = True  # the indexing transaction committed
         finally:
+            if uploaded and not indexed and self.storage is not None:
+                # Review I-1: files put before the lock that indexing never recorded.
+                from clue_api.arv2.quality_acquisition import discard_early_uploads
+
+                await discard_early_uploads(self._pacing_conn_factory, self.storage, uploaded)
             finished = time.monotonic()
             if index_started is not None:
                 index_ms = (finished - index_started) * 1000
