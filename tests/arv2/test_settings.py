@@ -33,6 +33,7 @@ ROUTED_MODEL_FIELDS: dict[str, bool] = {
 ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_account_research_enabled": True,
     "arv2_ai_ark_min_gap_s": 10.5,
+    "arv2_drain_outside_slot": True,
     "arv2_structuring_model": MODEL_ID,
     "arv2_media_short_model": MODEL_ID,
     "arv2_media_transcribe_model": MODEL_ID,

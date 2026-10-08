@@ -401,6 +401,11 @@ class Settings(BaseSettings):
     # Minimum seconds between AI Ark calls (the proof-of-concept pacing, kept until the paid
     # tier's real rate limit is confirmed). Env: ``CLUE_ARV2_AI_ARK_MIN_GAP_S``.
     arv2_ai_ark_min_gap_s: float = 10.5
+    # Free a provider's concurrency slot as soon as the provider answers, and index the result
+    # afterwards (the next call no longer waits ~11 s for indexing); AI Ark's pacing gap then runs
+    # from the answer, with indexing inside it. ``false`` restores the old order.
+    # Env: ``CLUE_ARV2_DRAIN_OUTSIDE_SLOT``.
+    arv2_drain_outside_slot: bool = True
     # OpenRouter model id for the structuring pass (prose -> claims against the field catalog).
     # Env: ``CLUE_ARV2_STRUCTURING_MODEL``.
     arv2_structuring_model: str = "openai/gpt-5-mini"

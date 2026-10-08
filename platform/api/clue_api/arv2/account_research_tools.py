@@ -30,7 +30,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 from langchain_core.messages import ToolMessage
@@ -214,6 +214,18 @@ PERSON_TOOL_NAMES: tuple[str, ...] = (
 #: concurrent call would defeat the pacing and earn a 429), and media work is measured in minutes of
 #: audio against one enforced ceiling, so two at once would race the reservation.
 _SERIAL_PROVIDERS: frozenset[str] = frozenset({"ai_ark", "media"})
+
+
+@dataclass
+class _Dispatched:
+    """One provider call's buffers and outcome, between dispatch and landing (W1-7)."""
+
+    raw: BufferedRawSink
+    ledger: BufferedLedger
+    result: Any = None
+    error_code: str | None = None
+    error: BaseException | None = None
+
 
 #: How much of a job posting's body the model is shown inline. Enough to judge whether the role is
 #: an ABM/GTM signal; the whole description is on the claim.
@@ -469,6 +481,7 @@ class ToolRuntime:
         if provider != "ai_ark" or not token:
             return await self._perform_hop(provider, fn, operation)
         started = asyncio.get_running_loop().time()
+        gap = self.settings.arv2_ai_ark_min_gap_s
         while True:
             async with self._pacing_conn_factory() as pacing_conn:
                 won = (
@@ -483,12 +496,15 @@ class ToolRuntime:
                         job_id=str(self.scope.job_id),
                         provider=provider,
                         wait_ms=round((asyncio.get_running_loop().time() - started) * 1000),
-                        cooldown_s=self.settings.arv2_ai_ark_min_gap_s,
+                        cooldown_s=gap,
                     )
+                    if self.settings.arv2_drain_outside_slot:
+                        # The gap runs from the provider's answer; indexing happens inside it.
+                        return await self._perform_hop(provider, fn, operation, cooldown_s=gap)
                     try:
                         return await self._perform_hop(provider, fn, operation)
                     finally:
-                        await asyncio.sleep(self.settings.arv2_ai_ark_min_gap_s)
+                        await asyncio.sleep(gap)
             await asyncio.sleep(0.1)
 
     async def _perform_hop[T](
@@ -496,73 +512,118 @@ class ToolRuntime:
         provider: str,
         fn: Callable[[ProviderCaller], T],
         operation: operations.Operation | None = None,
+        *,
+        cooldown_s: float | None = None,
     ) -> T:
-        async with self._semaphore(provider):
-            raw, ledger = BufferedRawSink(), BufferedLedger()
-            transport = self._transport_factory()
-            if provider == "media_public" and isinstance(transport, HttpxTransport):
-                from clue_api.arv2.media_resolution import PublicMediaTransport
+        """Dispatch under the provider's slot, then land the money trail and the evidence.
 
-                transport = PublicMediaTransport()
-            if provider == "media_youtube" and isinstance(transport, HttpxTransport):
-                from clue_api.arv2.media_recording import YouTubeAudioTransport
-
-                transport = YouTubeAudioTransport()
-            caller = ProviderCaller(
-                transport=transport,
-                raw_sink=raw,
-                ledger=ledger,
-                now=self._now,
-            )
-            self._ledgers[id(caller)] = ledger
-            result = None
-            error_code = None
-            try:
-                if has_capability(self.scope.catalog_version, "committee_discovery"):
-                    async with self._conn_factory() as conn:
-                        available = await operations.job_available(
-                            conn, self.operation_scope, operation.kind if operation else None
-                        )
-                    if not available:
-                        error_code = "privacy_stopped"
-                        raise RefusalError("tool_error", "research authority was withdrawn")
-                if provider in self.halted:
-                    error_code = "provider_halted_pre_dispatch"
-                    raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
-                result = await asyncio.to_thread(fn, caller)
-                return result
-            except ProviderHalted as halted:
-                error_code = "provider_halted"
-                detail = str(halted)
-                self.halted[provider] = detail
-                # Latch the *wire* provider as well as the tool's label for it. One media hop can
-                # spend on OpenRouter, so "OpenRouter is out of credit" learned inside a media call
-                # must also stop the structuring calls, which reach the same account under their
-                # own label. Money truth blocks whoever meets it first.
-                self.halted.setdefault(halted.provider, detail)
-                raise RefusalError(f"provider_halted:{provider}", detail) from halted
-            except BaseException as error:
-                error_code = error_code or type(error).__name__
-                raise
-            finally:
-                self._ledgers.pop(id(caller), None)
-                cost = getattr(result, "cost", None)
-                await self._drain(
-                    raw,
-                    ledger,
-                    operation=operation,
-                    error=error_code,
-                    preferred_row=getattr(cost, "ledger_row_id", None),
-                    semantic_empty=(
-                        provider == "ai_ark"
-                        and result is not None
-                        and (
-                            (hasattr(result, "people") and not result.people)
-                            or (hasattr(result, "numbers") and not result.numbers)
-                            or (hasattr(result, "found") and not result.found)
-                        )
-                    ),
+        With ``arv2_drain_outside_slot`` the slot is freed as soon as the provider answers, so the
+        next call does not wait for this one's indexing (W1-7); otherwise both run inside it.
+        """
+        slot = self._semaphore(provider)
+        await slot.acquire()
+        held = True
+        try:
+            dispatched = await self._dispatch(provider, fn, operation)
+            if self.settings.arv2_drain_outside_slot:
+                slot.release()
+                held = False
+            if cooldown_s is None:
+                await self._land(provider, dispatched, operation)
+            else:
+                landed, _ = await asyncio.gather(
+                    self._land(provider, dispatched, operation),
+                    asyncio.sleep(cooldown_s),
+                    return_exceptions=True,
                 )
+                if isinstance(landed, BaseException):
+                    raise landed
+        finally:
+            if held:
+                slot.release()
+        if dispatched.error is not None:
+            raise dispatched.error
+        return cast(T, dispatched.result)
+
+    async def _dispatch[T](
+        self,
+        provider: str,
+        fn: Callable[[ProviderCaller], T],
+        operation: operations.Operation | None,
+    ) -> _Dispatched:
+        """Call the provider once. Never raises: the outcome, or the error, rides the result."""
+        raw, ledger = BufferedRawSink(), BufferedLedger()
+        transport = self._transport_factory()
+        if provider == "media_public" and isinstance(transport, HttpxTransport):
+            from clue_api.arv2.media_resolution import PublicMediaTransport
+
+            transport = PublicMediaTransport()
+        if provider == "media_youtube" and isinstance(transport, HttpxTransport):
+            from clue_api.arv2.media_recording import YouTubeAudioTransport
+
+            transport = YouTubeAudioTransport()
+        caller = ProviderCaller(
+            transport=transport,
+            raw_sink=raw,
+            ledger=ledger,
+            now=self._now,
+        )
+        self._ledgers[id(caller)] = ledger
+        dispatched = _Dispatched(raw=raw, ledger=ledger)
+        try:
+            if has_capability(self.scope.catalog_version, "committee_discovery"):
+                async with self._conn_factory() as conn:
+                    available = await operations.job_available(
+                        conn, self.operation_scope, operation.kind if operation else None
+                    )
+                if not available:
+                    dispatched.error_code = "privacy_stopped"
+                    raise RefusalError("tool_error", "research authority was withdrawn")
+            if provider in self.halted:
+                dispatched.error_code = "provider_halted_pre_dispatch"
+                raise RefusalError(f"provider_halted:{provider}", self.halted[provider])
+            dispatched.result = await asyncio.to_thread(fn, caller)
+        except ProviderHalted as halted:
+            dispatched.error_code = "provider_halted"
+            detail = str(halted)
+            self.halted[provider] = detail
+            # Latch the *wire* provider as well as the tool's label for it. One media hop can
+            # spend on OpenRouter, so "OpenRouter is out of credit" learned inside a media call
+            # must also stop the structuring calls, which reach the same account under their
+            # own label. Money truth blocks whoever meets it first.
+            self.halted.setdefault(halted.provider, detail)
+            refusal = RefusalError(f"provider_halted:{provider}", detail)
+            refusal.__cause__ = halted
+            dispatched.error = refusal
+        except BaseException as error:
+            dispatched.error_code = dispatched.error_code or type(error).__name__
+            dispatched.error = error
+        finally:
+            self._ledgers.pop(id(caller), None)
+        return dispatched
+
+    async def _land(
+        self, provider: str, dispatched: _Dispatched, operation: operations.Operation | None
+    ) -> None:
+        """Drain one dispatched call's raw bodies and ledger rows, then index its evidence."""
+        result = dispatched.result
+        cost = getattr(result, "cost", None)
+        await self._drain(
+            dispatched.raw,
+            dispatched.ledger,
+            operation=operation,
+            error=dispatched.error_code,
+            preferred_row=getattr(cost, "ledger_row_id", None),
+            semantic_empty=(
+                provider == "ai_ark"
+                and result is not None
+                and (
+                    (hasattr(result, "people") and not result.people)
+                    or (hasattr(result, "numbers") and not result.numbers)
+                    or (hasattr(result, "found") and not result.found)
+                )
+            ),
+        )
 
     def _semaphore(self, provider: str) -> asyncio.Semaphore:
         if provider not in self._semaphores:

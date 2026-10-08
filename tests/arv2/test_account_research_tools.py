@@ -3435,3 +3435,146 @@ def test_a_person_tool_emitting_a_code_outside_the_person_set_is_a_tool_error(
 
     assert refused["code"] == "tool_error:AssertionError"
     assert refused["recoverable"] is True
+
+
+# -- the provider slot is freed when the provider answers (W1-7) ----------------------------------
+
+
+class _Timeline:
+    """Monotonic timestamps of each hop's dispatch and drain, shared with the provider thread."""
+
+    def __init__(self) -> None:
+        import threading
+        import time
+
+        self.lock, self.clock = threading.Lock(), time.monotonic
+        self.events: list[tuple[str, int, float]] = []
+
+    def mark(self, what: str, call: int) -> None:
+        with self.lock:
+            self.events.append((what, call, self.clock()))
+
+    def at(self, what: str, call: int) -> float:
+        return next(t for w, c, t in self.events if w == what and c == call)
+
+
+def _timed_runtime(*, outside: bool, drain_s: float = 0.2, **settings: Any) -> Any:
+    runtime, _, _, _ = _runtime(
+        settings=Settings(
+            _env_file=None,  # type: ignore[call-arg]
+            arv2_drain_outside_slot=outside,
+            **settings,
+        )
+    )
+    timeline = _Timeline()
+    drains: list[str | None] = []
+
+    async def drain(raw: Any, ledger: Any, **kwargs: Any) -> None:
+        call = len(drains)
+        drains.append(kwargs.get("error"))
+        await asyncio.sleep(drain_s)
+        timeline.mark("drain_end", call)
+
+    runtime._drain = drain
+    return runtime, timeline, drains
+
+
+def _provider_call(timeline: _Timeline, call: int, *, raise_error: bool = False) -> Any:
+    import time
+
+    def fn(caller: Any) -> str:
+        timeline.mark("dispatch_start", call)
+        time.sleep(0.01)
+        timeline.mark("dispatch_end", call)
+        if raise_error:
+            raise RuntimeError("provider exploded")
+        return f"result-{call}"
+
+    return fn
+
+
+@pytest.mark.parametrize("outside", [True, False])
+def test_a_free_slot_is_handed_on_before_the_previous_result_is_indexed(outside: bool) -> None:
+    runtime, timeline, drains = _timed_runtime(outside=outside, arv2_account_provider_concurrency=2)
+
+    async def five() -> list[Any]:
+        return await asyncio.gather(
+            *(runtime.call_provider("exa", _provider_call(timeline, i)) for i in range(5))
+        )
+
+    assert _run(five()) == [f"result-{i}" for i in range(5)]
+    assert len(drains) == 5  # every call is indexed exactly once
+    first_indexed = min(timeline.at("drain_end", i) for i in range(5))
+    third_started = sorted(t for w, _, t in timeline.events if w == "dispatch_start")[2]
+    if outside:
+        assert third_started < first_indexed
+    else:  # the old order: both slots are held through indexing
+        assert third_started >= first_indexed
+
+
+@pytest.mark.parametrize("outside", [True, False])
+def test_a_failed_call_is_still_indexed_and_its_error_still_raised(outside: bool) -> None:
+    runtime, timeline, drains = _timed_runtime(outside=outside, drain_s=0.01)
+
+    with pytest.raises(RuntimeError, match="provider exploded"):
+        _run(runtime.call_provider("exa", _provider_call(timeline, 0, raise_error=True)))
+    assert drains == ["RuntimeError"]
+    # The slot was given back: the next call goes through.
+    assert _run(runtime.call_provider("exa", _provider_call(timeline, 1))) == "result-1"
+
+
+class _AdvisoryConnFactory:
+    """One process-wide advisory lock, as ``pg_try_advisory_xact_lock`` behaves across jobs."""
+
+    def __init__(self) -> None:
+        self.holder: object | None = None
+
+    def __call__(self) -> Any:
+        return self._open()
+
+    @asynccontextmanager
+    async def _open(self) -> AsyncIterator[Any]:
+        factory, me = self, object()
+
+        class Conn:
+            async def execute(self, statement: Any, parameters: Any = None) -> Any:
+                won = factory.holder is None
+                if won:
+                    factory.holder = me
+
+                class Result:
+                    def scalar_one(self) -> bool:
+                        return won
+
+                return Result()
+
+        try:
+            yield Conn()
+        finally:
+            if self.holder is me:
+                self.holder = None
+
+
+@pytest.mark.parametrize("outside", [True, False])
+def test_ai_ark_pacing_gap_runs_from_the_answer_and_indexing_overlaps_it(outside: bool) -> None:
+    gap, drain_s = 0.3, 0.2
+    runtime, timeline, drains = _timed_runtime(
+        outside=outside, drain_s=drain_s, arv2_ai_ark_min_gap_s=gap
+    )
+    runtime.clients.ai_ark_token_scope = "token-1"
+    runtime._pacing_conn_factory = _AdvisoryConnFactory()
+
+    async def two() -> list[Any]:
+        return await asyncio.gather(
+            *(runtime.call_provider("ai_ark", _provider_call(timeline, i)) for i in range(2))
+        )
+
+    assert sorted(_run(two())) == ["result-0", "result-1"]
+    assert len(drains) == 2
+    starts = sorted((t, c) for w, c, t in timeline.events if w == "dispatch_start")
+    first, second = starts[0][1], starts[1][1]
+    waited = timeline.at("dispatch_start", second) - timeline.at("dispatch_end", first)
+    if outside:  # the gap starts at the answer; the indexing runs inside it (+ ≤ 0.1 s polling)
+        assert gap <= waited <= gap + 0.15
+    else:  # the old order: indexing, then the whole gap
+        assert waited >= gap + drain_s
