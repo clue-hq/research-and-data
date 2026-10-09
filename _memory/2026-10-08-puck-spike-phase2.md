@@ -158,3 +158,12 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   statement type + notes. Real data: Syracuse 36 labelled, Dana.AI 50, held 0; claims.md ~20 KB each.
   Production needs a governed design read for cited claims (B2). R1 runs (with/without, --no-claims)
   need the founder's go.
+- R3 build (c87a973ca, founder-approved wording): generate_image (platform image provider, ≤3 brand
+  photo style refs, saved public/generated/<site>/ + index.json prompt, shown to the agent),
+  account logo fetched at build via fetch_logo_family into public/accounts/<site>/ and listed in
+  brand.md (Dana.AI: marks only; Syracuse: none — Brandfetch identity mismatch and the district's
+  domain does not resolve from this machine), validate-page accepts own-site generated images and
+  own-site account logo only, images-and-logos skill. public/generated|accounts gitignored.
+  Production image search = design/linkedin-ad-skill-testing (B4, founder 2026-10-09).
+  Earlier single builds cost $0.57–0.99. Next: R1+R3 runs (Syracuse, Dana.AI × claims/--no-claims)
+  need the founder's go and the spike dev server on :3047.
