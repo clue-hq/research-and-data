@@ -107,3 +107,17 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   probe: reduced-motion second load fixes cluehq.ai fully; Alt Carbon ships a poster under its canvas
   and a mobile hero (already in the clone); its only gap is the 305vh wrapper. Not yet written into
   the capture notes/roadmap (offered to founder).
+
+## Integration plan (2026-10-09)
+- Readiness map `docs/superpowers/specs/2026-10-08-puck-production-readiness-map.md` (corrected twice:
+  inline editing is native in Puck 0.23 and proven in phase 1; inline text, asset library, versions
+  and reorder handles are already designed; only the insert palette and delete/duplicate need designs).
+- Founder rulings 2026-10-09: option A for agent-written sections (no iframes; strict presentational
+  check; compiled per workspace; loaded at runtime into Puck's config); one Node renderer; per-workspace
+  flag; Head of ABM unchanged (doc_kind="web" births a site for listed workspaces).
+- Plan `docs/superpowers/plans/2026-10-09-website-agent-on-puck-integration.md`: Wave 1 detailed
+  (site-kit package, site kind migration + DAL, site birth behind CLUE_DESIGN_SITE_ENGINE_WORKSPACES
+  failing closed until the site executor, D2 runtime-loading spike, R1/R3 experiments); Lanes A/B/C
+  outlined against cited switch points (design_leg_tools.py:540/1002, documents.py:188/595,
+  design_leg_wiring.py:2568, fleet_handler.py:213/679, artifact-stage.tsx:471, publishes.py:94).
+  Not yet executed; founder to pick the execution method.
