@@ -62,6 +62,7 @@ from clue_core import Claim, EntityId, UseClass, VerificationStatus
 from clue_db import ConnFactory, transaction
 from clue_obs.langfuse import tag_entities
 from clue_research.claimstore import WorkspaceScope, claims_for_entities
+from clue_research.narrative.fields import VALUE_NARRATIVE
 from clue_spine import get_project
 from clue_toolbelt import (
     ExternalReplayBoundary,
@@ -1003,6 +1004,19 @@ def _is_unverified_synthesis(claim: Claim) -> bool:
     return claim.source_tier == 4 and claim.verification_status is not VerificationStatus.VERIFIED
 
 
+#: Claims born ``outreach_safe=false`` only because nobody has verified them yet. Founder ruling
+#: 2026-10-09: while verification is off, reads serve them (the research pages already print what
+#: they say). Every other outreach-unsafe claim (a reputation risk, a biography or milestone the
+#: person rules caught, a media gap) is held back by a real rule and stays held back.
+UNVERIFIED_ONLY_UNSAFE_FIELDS = frozenset({"account.research_finding", VALUE_NARRATIVE})
+
+
+def _unsafe_only_until_verified(claim: Claim, settings: Settings) -> bool:
+    if settings.verification_enabled:
+        return False
+    return str(claim.field_key) in UNVERIFIED_ONLY_UNSAFE_FIELDS
+
+
 def gate_claims(
     claims: Iterable[Claim], *, settings: Settings
 ) -> tuple[list[Claim], dict[str, int]]:
@@ -1018,6 +1032,10 @@ def gate_claims(
     gentler answer than the first: ``read_claims`` holds back exactly what ``read_account_research``
     holds back because it is this function that decides, not each caller's copy of it.
 
+    One deliberate difference from the page's gate: while verification is off, an account research
+    finding or value narrative is served although it is outreach-unsafe, because that flag only says
+    it is unverified (:data:`UNVERIFIED_ONLY_UNSAFE_FIELDS`).
+
     Exclusions are **counted, not hidden**: a subject whose every claim is held back comes back
     with an empty list and a non-zero count, which says "there is something here and you may not
     have it" rather than "there is nothing here".
@@ -1032,7 +1050,7 @@ def gate_claims(
         if settings.verification_enabled and _is_unverified_synthesis(claim):
             excluded["unverified"] += 1
             continue
-        if not claim.outreach_safe:
+        if not claim.outreach_safe and not _unsafe_only_until_verified(claim, settings):
             excluded["outreach_unsafe"] += 1
             continue
         servable.append(claim)

@@ -837,6 +837,69 @@ def test_the_claims_read_holds_back_exactly_what_the_account_page_holds_back() -
     run_async(scenario())
 
 
+def test_with_verification_off_findings_and_narratives_are_served_and_real_rules_hold() -> None:
+    """Founder ruling 2026-10-09: a research finding or a value narrative is born outreach-unsafe
+    only because nobody has verified it yet. While verification is off, the claims read serves
+    them. A claim held back by a real rule (here a reputation risk) stays held back either way."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn, claims, project, account, label="finding",
+                field_key="account.research_finding",
+                value={"topic": "Budget", "finding": "Healthcare up $4.2 million", "notes": []},
+                outreach_safe=False,
+            )
+            await _seed_claim(
+                conn, claims, project, account, label="narrative",
+                field_key="account.value_narrative",
+                value={"persona": "economic_buyer", "argument": "Cut specialty waste in network"},
+                outreach_safe=False,
+            )
+            await _seed_claim(
+                conn, claims, project, account, label="risk",
+                field_key="account.reputation_risk",
+                value={"what": "An unresolved customer dispute"},
+                outreach_safe=False,
+            )
+
+            permissive = await read_account_research(
+                conn, workspace_id=project.workspace_id, account_entity_id=str(account),
+                section="claims", settings=PERMISSIVE,
+            )
+            unverified_only = {claims["finding"], claims["narrative"]}
+            assert {c.claim_id for c in permissive.claims} == unverified_only
+            assert permissive.excluded == {
+                "sensitive": 0,
+                "unverified": 0,
+                "outreach_unsafe": 1,
+            }
+
+            query = await read_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                settings=PERMISSIVE,
+            )
+            assert {c.claim_id for c in query.claims} == unverified_only
+
+            verifying = await read_account_research(
+                conn, workspace_id=project.workspace_id, account_entity_id=str(account),
+                section="claims", settings=VERIFYING,
+            )
+            assert verifying.claims == ()
+            assert verifying.excluded == {
+                "sensitive": 0,
+                "unverified": 0,
+                "outreach_unsafe": 3,
+            }
+
+    run_async(scenario())
+
+
 def test_the_claims_read_fits_the_governed_receipt_and_pages_the_rest() -> None:
     """The 2026-09-13 live defect: 72 claims built a valid result the runtime then refused
     ("bounded operation receipt exceeds 16 KiB"). The read now stops at the byte budget, says so,
