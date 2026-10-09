@@ -164,14 +164,14 @@ Experiment R1 (§7) confirms this before we commit.
 | Inspector per element kind (Tailwind class "facets") | Each component's fields, rendered with our `inspector-primitives`. Brand choices (surface, heading role) are selects, not class strings. | Build (moderate) |
 | Inline rich-text editing (Lexical in the iframe) | **Native in Puck 0.23:** text, textarea and rich-text fields take `contentEditable: true`, and rich text uses a built-in TipTap editor whose inline menu we can render ourselves (`renderInlineMenu`). Phase 1 already edits our sections' text and clone slot text in place (T5, T9). Left to do: use the rich-text field where formatting is wanted, and skin its menu. | Small |
 | Clone text edits | The `ClonedSection` component's slots and replacements as fields, plus in-place editing of slot text (built in phase 1, `puck/clone-editor.tsx`) | Done in the spike; port |
-| Replace image (**upload only today**) | An asset field using the ad lane's asset-library panel: library, upload, generate | **Upgrade** |
+| Replace image (**upload only today**) | An asset field using the asset-library panel the ad editor already has (library, upload, generate). The design exists; it just isn't wired for websites. | **Upgrade, no new design** |
 | Layers (depth 1, no reorder) | Puck outline: full depth, drag to reorder | Upgrade |
 | Layout controls (flex/grid/gap/padding) | Whatever props each component exposes (governed by the brand). No free positioning, as today. | Same scope |
-| Insert, delete, duplicate, reorder sections (**agent-only today**) | Native in Puck | Upgrade (needs a UI design ruling, D4) |
+| Insert, delete, duplicate, reorder sections (**agent-only today**; the website canvas draws drag handles, but dropping does nothing) | Native in Puck: drag to reorder was proven in phase 1 (T9) | Upgrade. Reordering can reuse the existing handles. Only an insert palette and delete/duplicate controls need a design. |
 | Annotations sent to the agent | Port the reducer and popover; refs become component id plus prop path | Port, plus a backend change (§6, point 7) |
 | Chat edits interleaved with manual edits | Same seam: reload on the agent's events, refuse manual writes during a run | Port |
 | Undo/redo (server inverse ops) | Puck history in the client, plus server versions as JSON snapshots | Simpler |
-| Version history (**a placeholder today**) | Real: full JSON snapshots per version (pages are small) | Upgrade |
+| Version history (**a placeholder today**: the menu is designed but unwired) | Real: full JSON snapshots per version, behind the existing menu | Upgrade, no new design |
 | Multi-page: page switcher, page settings | The site model from the spike | Port |
 | Publish, share, export (ZIP, PDF) | New publish package builder (§6, point 11); the menus stay | Build (backend) |
 | Custom domains; gallery and artifacts library; tabs; rename and archive | Unchanged | Same |
@@ -280,6 +280,6 @@ It is higher than the roadmap's 8 weeks because of the site renderer and agent s
 | D1 | Where site documents live | A new `site` kind in `design_document`, in a shape that satisfies today's contract |
 | D2 | Agent-written code in production | Decide after R6. The options: TSX built in a sandbox and loaded per workspace; a JSON layout language instead of code; or no agent code at first (which would delay on-demand rebuilds) |
 | D3 | Research input | Display pages in files plus `read_claims` on demand; confirm with R1 |
-| D4 | Which new Puck abilities get UI now | Insert/reorder/delete, versions, the asset library and the rich-text menu, each with a design from the dummy UI first |
+| D4 | Which new Puck abilities get UI now | Only two need new designs: the section insert palette, and delete/duplicate. Inline text (the existing toolbar's look), the asset library, the Versions menu and the reorder handles are already designed. |
 | D5 | Where the renderer runs | The frontend app's server rendering, or a separate Node render service |
 | D6 | Coexistence | A per-workspace flag. Existing WebDoc documents stay on the old engine; no conversion |
