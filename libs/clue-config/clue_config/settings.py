@@ -1033,12 +1033,16 @@ class Settings(BaseSettings):
     scrape_backend: Literal["firecrawl", "scrapling"] = "firecrawl"
 
     # --- orphan-blob sweep cadence (Phase B2 review-hardening; append-only per treaty §3.2) ---
-    # How often the fleet worker process runs ``clue_storage.sweep_orphan_blobs`` in the background
-    # (the orphan leg the retention sweep does not cover — an abandoned rolled-back upload leaves a
-    # blob with no ``artifact`` row). ``0`` (or any non-positive value) disables the loop. Sized
-    # well above any transaction lifetime; the sweep's own grace window is the actual race guard.
-    # Env: ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``.
-    storage_orphan_sweep_interval_s: float = 21600.0  # 6h
+    # How often the FLEET runs its storage sweep (purge erased/expired artifacts, then
+    # ``clue_storage.sweep_orphan_blobs`` — an abandoned rolled-back upload leaves a blob with no
+    # ``artifact`` row). One sweep per interval for the whole fleet, its last run kept in
+    # ``maintenance_run`` so deploys never reset it (2026-10-09; it was every 6 h in every worker
+    # process). ``0`` (or any non-positive value) disables it. The sweep's own grace window is the
+    # actual race guard. Env: ``CLUE_STORAGE_ORPHAN_SWEEP_INTERVAL_S``.
+    storage_orphan_sweep_interval_s: float = 172800.0  # 48h
+    # How often each fleet worker process asks whether that sweep is due (one small query).
+    # Env: ``CLUE_STORAGE_ORPHAN_SWEEP_CHECK_INTERVAL_S``.
+    storage_orphan_sweep_check_interval_s: float = 3600.0  # 1h
 
     # --- fleet run-start composition (PB-B4 slice 1; append-only per treaty §3.2) ---
     # LRU capacity of the ``ComposingRunDriver``'s per-``(workspace_id, icp_key, icp_version)``

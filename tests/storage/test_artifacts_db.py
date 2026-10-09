@@ -509,6 +509,66 @@ def test_the_purge_sweep_removes_a_file_written_back_after_a_privacy_purge(
     run_async(scenario())
 
 
+class _CountingDeletes(FsStorage):
+    """Counts deletes per key (review N-2)."""
+
+    def __init__(self, root: object) -> None:
+        super().__init__(root)  # type: ignore[arg-type]
+        self.deleted: dict[str, int] = {}
+
+    async def delete(self, key: str) -> None:
+        self.deleted[key] = self.deleted.get(key, 0) + 1
+        await super().delete(key)
+
+
+def test_a_purge_pass_deletes_each_file_once(tmp_path: object) -> None:
+    """Review N-2: the write-back re-delete skips the files the same pass has just purged."""
+
+    async def scenario() -> None:
+        storage = _CountingDeletes(tmp_path)
+        async with rollback_conn() as conn:
+            record = await _record(conn, b"privacy erased, not yet purged")
+            await conn.execute(
+                text(
+                    "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                    "erased_at=now() WHERE storage_key=:k"
+                ),
+                {"k": record.storage_key},
+            )
+            await purge_erased_artifacts(conn, storage)
+            assert storage.deleted[record.storage_key] == 1
+
+    run_async(scenario())
+
+
+def test_the_write_back_check_looks_back_only_to_the_time_it_is_given(tmp_path: object) -> None:
+    """The fleet sweep passes the time of its last run (less a margin), so a longer sweep
+    interval never leaves a gap; rows purged before that time were checked by an earlier pass."""
+
+    async def scenario() -> None:
+        storage = FsStorage(tmp_path)  # type: ignore[arg-type]
+        async with rollback_conn() as conn:
+            old = await _record(conn, b"purged three days ago")
+            new = await _record(conn, b"purged an hour ago")
+            for record, age in ((old, timedelta(days=3)), (new, timedelta(hours=1))):
+                await conn.execute(
+                    text(
+                        "UPDATE artifact SET privacy_erased=true, erasure_reason='privacy', "
+                        "erased_at=now(), purged_at=now() - CAST(:age AS interval) "
+                        "WHERE storage_key=:k"
+                    ),
+                    {"k": record.storage_key, "age": age},
+                )
+                await storage.put(record.storage_key, b"x", media_type="text/markdown")
+            await purge_erased_artifacts(
+                conn, storage, privacy_purged_since=datetime.now(UTC) - timedelta(days=2)
+            )
+            assert not await storage.exists(new.storage_key)
+            assert await storage.exists(old.storage_key)
+
+    run_async(scenario())
+
+
 def test_mark_erased_nulls_source_url() -> None:
     """Finding 7: the retained audit row must be genuinely metadata-only — ``source_url`` can
     identify a person (profile URL, sensitive path/query) and must not survive erasure."""

@@ -461,6 +461,7 @@ async def purge_erased_artifacts(
     storage: StorageBackend,
     *,
     keys: tuple[str, ...] | None = None,
+    privacy_purged_since: datetime | None = None,
 ) -> PurgeResult:
     """Phase 2 of erasure: physically delete the blobs of erased-but-unpurged rows and stamp
     ``purged_at``. Run in a **fresh transaction after** the transaction that stamped
@@ -524,13 +525,17 @@ async def purge_erased_artifacts(
     if keys is None:
         # A writer that uploads before recording (W2-15 option B) can, in a crash window, put
         # bytes back just after their row was privacy-purged; nothing would record them again,
-        # and the orphan sweep skips keys that have a row. Such a writer acts within seconds, so
-        # the sweep re-deletes the files of rows privacy-purged in the last day (idempotent).
+        # and the orphan sweep skips keys that have a row. So the sweep re-deletes the files of
+        # rows privacy-purged since ``privacy_purged_since`` — the fleet sweep passes its previous
+        # run less a margin; default one day — skipping what this pass has just deleted (review
+        # N-2; ``artifact_privacy_purged`` keeps the lookup off the whole table). Idempotent.
+        since = privacy_purged_since or datetime.now(UTC) - timedelta(days=1)
         recent = await conn.execute(
             text(
-                "SELECT storage_key FROM artifact WHERE privacy_erased "
-                "AND purged_at > now() - interval '1 day'"
-            )
+                "SELECT storage_key FROM artifact WHERE privacy_erased AND purged_at > :since "
+                "AND NOT (storage_key = ANY(:done))"
+            ),
+            {"since": since, "done": purged},
         )
         for (storage_key,) in recent.all():
             await storage.delete(storage_key)
