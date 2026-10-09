@@ -26,3 +26,11 @@ fails without it).
 - 2026-10-08 · writing-a-section, kit list: each piece shown with its exact props (`label` for the
   button's words, `src` for an image). Failing cases: run cl3 turns 1, 2, 3 and 5, each with a write
   refused for a guessed prop (`file` for `src`; the button's words as children).
+- 2026-10-09 · system prompt, R1 (founder-approved wording, founder ruling D3): the brief is
+  direction (goal, reader and offer fixed; suggested facts, proof and structure are suggestions,
+  say why in plan.md when choosing differently); `research/` names the claim labels, the claims file
+  and the background-only sections; new rule: check a research number or quote in
+  `research/claims.md`. No failing case yet: the R1 runs test it. Code side: research files now keep
+  every statement type, its notes, and the Watch-outs / Context only sections (marked background);
+  the claims file comes from the claims the research cites (the source drawer's read), gated by the
+  platform rule.

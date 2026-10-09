@@ -891,6 +891,19 @@ git commit -m "Puck spike: D2, agent sections compiled, served per workspace and
 - `trials/puck-spike/scripts/validate-page.ts` (accept generated images for their own site)
 - New skill text `agent/skills/images-and-logos/SKILL.md`, **only after founder review**
 
+**Changed 2026-10-09 (founder rulings D3 and the outreach-safe gate), replacing Steps 1–2:**
+- the brief is direction; the page agent chooses its own facts (prompt wording approved);
+- the research files keep every statement type and its notes, plus the Watch-outs and Context only
+  sections marked as background, never on the page;
+- each statement ends with short claim labels (`[c4, c9]`), and `research/claims.md` lists each
+  claim (what it says, topic, notes, source link). It is read from the claims the research cites,
+  through the source drawer's read (`inspectable_claims_by_ids`), and gated by `gate_claims`;
+- platform: `gate_claims` (`arv2/read_tools.py`) serves account research findings and value
+  narratives while `CLUE_VERIFICATION_ENABLED=false`. Reputation risks, biography, milestones,
+  sensitive facts and media gaps stay held back, and statements citing them are left out of the
+  research files;
+- production needs a governed design read for the cited claims (B2).
+
 - [ ] **Step 1: R1, keep claim ids in the research files.** In `workspace.research_markdown`
 (`trials_puck_agent/workspace.py:42`), append each statement's `cited_claim_ids` as
 ` [claims: id1, id2]`. Test: a section with `cited_claim_ids` renders them; one without renders

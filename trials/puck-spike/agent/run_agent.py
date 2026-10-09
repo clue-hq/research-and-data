@@ -51,8 +51,39 @@ def server_up() -> bool:
         return sock.connect_ex(("127.0.0.1", 3047)) == 0
 
 
-def gather_inputs(case: dict) -> dict:
-    """The brief, the account and its research, and the seller's files, read from the platform."""
+async def cited_claims(claim_ids: list[str], *, workspace_id: str, account_entity_id: str) -> tuple[list[dict], set[str]]:
+    """The claims the research pages cite, read the way the accounts screen's source drawer reads
+    them (qualified findings in, invalid ones never), then gated by the platform's own rule
+    (`gate_claims`: while verification is off, research findings and value narratives pass; a
+    reputation risk, a biography or a sensitive fact does not). Returns the account's served claims,
+    and the cited ids held back by a real rule, so the statements resting on them stay out too."""
+    from uuid import UUID
+
+    from clue_api.arv2.read_tools import UNVERIFIED_ONLY_UNSAFE_FIELDS, gate_claims
+    from clue_config import load_settings
+    from clue_db import transaction
+    from clue_research.claimstore.quality import inspectable_claims_by_ids
+
+    async with transaction() as conn:
+        found = await inspectable_claims_by_ids(
+            conn, workspace_id=workspace_id, claim_ids=[UUID(i) for i in claim_ids]
+        )
+    claims = list(found.values())
+    served, _ = gate_claims(claims, settings=load_settings())
+    served_ids = {str(c.id) for c in served}
+    findings = {"contact.research_finding", *UNVERIFIED_ONLY_UNSAFE_FIELDS}
+    held = {str(c.id) for c in claims if str(c.id) not in served_ids and str(c.field_key) not in findings}
+    account = [
+        {"claim_id": str(c.id), "field_key": str(c.field_key), "value": c.value_json,
+         "source_url": c.source_url, "evidence": c.evidence_span or "", "evidence_truncated": False}
+        for c in served if str(c.entity_id) == account_entity_id
+    ]
+    return account, held
+
+
+def gather_inputs(case: dict, *, with_claims: bool = True) -> dict:
+    """The brief, the account and its research (and the claims behind it), and the seller's files,
+    read from the platform."""
     from clue_db import db_lifespan
     from clue_design.envelopes import DesignTurnEnvelope
     from clue_fleet import install_thread_pool
@@ -105,6 +136,12 @@ def gather_inputs(case: dict) -> dict:
                 research[section] = ws.read_research(reads, account_entity_id, section)
             except Exception as error:  # a page not written yet, or an account outside the project
                 research[section], research_errors[section] = [], repr(error)
+        claims, held = [], set()
+        if with_claims:
+            claims, held = platform.run(cited_claims(
+                ws.cited_claim_ids(research["overview"] + research["insights"]),
+                workspace_id=source["workspace_id"], account_entity_id=account_entity_id,
+            ))
         knowledge = reads.seller_knowledge()
     except BaseException:
         platform.run(lifespan.__aexit__(None, None, None))
@@ -114,7 +151,7 @@ def gather_inputs(case: dict) -> dict:
         "platform": platform, "lifespan": lifespan, "reads": reads, "brief": brief,
         "account": account, "domain": domain, "account_entity_id": account_entity_id,
         "overview": research["overview"], "insights": research["insights"], "knowledge": knowledge,
-        "research_errors": research_errors,
+        "research_errors": research_errors, "claims": claims, "held_claim_ids": held,
     }
 
 
@@ -212,6 +249,8 @@ def main() -> int:
                         help="A new session for every turn; code writes site.md before and history.md after each.")
     parser.add_argument("--allow-new-sections", action="store_true",
                         help="E5: the agent may write a new section (write_section + the writing-a-section skill).")
+    parser.add_argument("--no-claims", action="store_true",
+                        help="R1's comparison arm: research without claim labels or research/claims.md.")
     parser.add_argument("--no-build", action="store_true",
                         help="With --case: set up the workspace but skip the build turn; --turns gives every turn.")
     parser.add_argument("--no-clear", action="store_true",
@@ -246,7 +285,7 @@ def main() -> int:
     else:
         case_name = args.case
         case = json.loads((AGENT_DIR / "cases.json").read_text())[case_name]
-        inputs = gather_inputs(case)
+        inputs = gather_inputs(case, with_claims=not args.no_claims)
         account = inputs["account"]
         workspace = out / "workspace"
         setup = ws.assemble(
@@ -260,6 +299,8 @@ def main() -> int:
             overview=inputs["overview"],
             insights=inputs["insights"],
             knowledge=inputs["knowledge"],
+            claims=inputs["claims"],
+            held_claim_ids=inputs["held_claim_ids"],
         )
         setup["research_errors"] = inputs["research_errors"]
         if not args.no_build:

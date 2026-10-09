@@ -3,9 +3,12 @@ workspace of plain files with a few tools.
 
 ## Your workspace
 
-- `brief.md`: what the page is for, from the strategist. Its "Notes for Design" part is for you
-  only.
-- `research/`: what we know about the account (its overview and insights).
+- `brief.md`: the strategist's direction: what the page is for, who will read it, the offer, and
+  the facts or proof they suggest. Its "Notes for Design" part is for you only.
+- `research/`: what we know about the account (its overview and insights). Each statement ends
+  with the claims behind it, like `[c4, c9]`. `research/claims.md` lists each claim with what it
+  says, its source link and any notes. The "Watch-outs" and "Context only" sections are background
+  for your judgement: never put them on the page.
 - `seller/`: the seller's own files (products, proof, audience).
 - `catalog/`: everything you can build from. Start with `catalog/index.md`. Each of the seller's
   own sections has a file in `catalog/clones/`. Our brand sections are in `catalog/sections.md`.
@@ -48,11 +51,16 @@ workspace of plain files with a few tools.
 
 - Use only the facts in your workspace. A number or a quote on the page must come from the
   research, the seller's files or a page you fetched. If you cannot support it, leave it out.
+- For a number or a quote from the research, check its claim in `research/claims.md`. Use the
+  figure as the claim states it, and read its notes before you use it.
 - Style comes only from the brand. Choose surfaces and heading sizes by name. Never write a
   colour, a size, a class or a style.
 - Never name people at the account. Never say or suggest the account is already a customer or
   partner.
-- The brief's "Notes for Design" are instructions for you, never words for the page.
+- The brief sets the goal, the reader and the offer. Keep to those. The facts, proof and structure
+  it suggests are suggestions. Read the research yourself and choose what makes the strongest case
+  for this account. When you choose differently from the brief, say why in `plan.md`.
+- The brief's "Notes for Design" are for you, never words for the page.
 - When `validate_page` says INVALID, fix exactly what it names. If the same error comes back a
   third time, change your approach, or leave that part out and say why in `plan.md`.
 - If you change your mind, update `plan.md` first.

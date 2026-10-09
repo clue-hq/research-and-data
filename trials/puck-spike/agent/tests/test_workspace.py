@@ -51,8 +51,18 @@ def test_research_becomes_plain_markdown_without_claim_ids() -> None:
     assert "- (inference) A new CHCO" in text and "- (quote) Costs" in text
     assert "- The budget added $4.2 million for healthcare." in text
     assert "61ba3351" not in text and "claimIds" not in text
-    assert "Private" not in text  # restricted sections stay out
+    assert "## Private (background only, never on the page)" in text  # held back from outreach, kept
     assert "cut off" in text  # a block that is not valid JSON is kept as text, not dropped
+
+
+def test_every_statement_type_and_its_notes_are_shown() -> None:
+    section = {"section_key": "fit", "body_text": json.dumps({"h1": "Fit", "intro": [
+        {"kind": "qualified", "text": "Autonomy is 80%.", "qualifications": ["Profile-authored, not measured."]},
+        {"kind": "gap", "text": "Their PMS is not known."},
+    ]})}
+    text = ws.research_markdown("Dana.AI: overview", [section])
+    assert "- (qualified) Autonomy is 80%. (note: Profile-authored, not measured.)" in text
+    assert "- (gap) Their PMS is not known." in text
 
 
 def test_people_come_from_the_contact_references() -> None:
@@ -112,3 +122,84 @@ def test_site_changes_say_what_moved_changed_and_appeared() -> None:
     notes = ws.site_changes(before, after)
     assert "added the page /analysis" in notes
     assert "/: changed hero (x)" in notes and "/: new order proof, hero" in notes
+
+
+# --- R1: short claim labels in the research, and research/claims.md ----------------------------
+
+QUOTE_ID = "87b908a3-e799-5ee6-8b39-175a98e55ea9"
+BUDGET_ID = "cc0805bc-da90-57c5-b90b-785e98bee92a"
+INFERENCE_ID = "61ba3351-157f-53c9-a6e4-7ee89856b693"
+CLAIMS = [
+    {"claim_id": BUDGET_ID, "field_key": "account.research_finding",
+     "value": {"topic": "Budget", "finding": "Healthcare up $4.2 million", "notes": ["The reporter's estimate."],
+               "review": {"status": "supported"}},
+     "source_url": "https://example.org/budget.pdf", "evidence": "", "evidence_truncated": False},
+    {"claim_id": QUOTE_ID, "field_key": "account.employee_count", "value": 4108,
+     "source_url": "https://example.org/nces", "evidence": "Total staff FTE 4,108.72 for the district",
+     "evidence_truncated": True},
+    {"claim_id": "aa000000-0000-0000-0000-000000000001", "field_key": "account.value_narrative",
+     "value": {"persona": "economic_buyer", "argument": "Cut specialty waste in network", "angle_label": "Cost",
+               "icp_key": "x"}},
+]
+
+
+def test_claim_labels_follow_first_appearance_and_skip_claims_not_served() -> None:
+    labels = ws.claim_labels([WHY_NOW], served={QUOTE_ID, BUDGET_ID})
+    assert labels == {QUOTE_ID: "c1", BUDGET_ID: "c2"}  # the inference's claim is not served: no label
+
+
+def test_research_carries_the_short_labels_and_never_the_ids() -> None:
+    labels = {QUOTE_ID: "c1", BUDGET_ID: "c2"}
+    text = ws.research_markdown("SCSD: overview", [WHY_NOW], labels)
+    assert "- (quote) Costs “will rise 8% in the coming school year.” [c1]" in text
+    assert "- The budget added $4.2 million for healthcare. [c2]" in text
+    assert "- (inference) A new CHCO and cost testimony make a first call timely.\n" in text
+    assert QUOTE_ID not in text and INFERENCE_ID not in text
+
+
+def test_the_claims_file_says_what_each_claim_says_with_its_source_and_notes() -> None:
+    narrative = "aa000000-0000-0000-0000-000000000001"
+    text = ws.claims_markdown("Syracuse City School District",
+                              {QUOTE_ID: "c1", BUDGET_ID: "c2", narrative: "c3"}, CLAIMS)
+    assert text.index("## c1") < text.index("## c2") < text.index("## c3")
+    assert "Says: Healthcare up $4.2 million\nTopic: Budget\nNotes: The reporter's estimate.\n" in text
+    assert "Source: https://example.org/budget.pdf" in text and "review" not in text
+    assert "Says: 4108" in text and "Quote (shortened): “Total staff FTE 4,108.72 for the district”" in text
+    assert "Says: Cut specialty waste in network\nFor: economic_buyer\nAngle: Cost" in text
+    assert "icp_key" not in text and QUOTE_ID not in text
+
+
+def test_assemble_with_claims_writes_the_labels_and_the_claims_file(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    summary = ws.assemble(
+        workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site="agent-test", brief="For the page\n",
+        account_name="Syracuse City School District", overview=[WHY_NOW], insights=[], knowledge=None,
+        claims=CLAIMS,
+    )
+    assert "[c1]" in (workspace / "research/overview.md").read_text()
+    assert "## c2" in (workspace / "research/claims.md").read_text()
+    assert summary["claims_labelled"] == 2
+
+
+def test_assemble_without_claims_writes_no_claims_file(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    summary = ws.assemble(
+        workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site="agent-test", brief="For the page\n",
+        account_name="Syracuse City School District", overview=[WHY_NOW], insights=[], knowledge=None,
+    )
+    assert not (workspace / "research/claims.md").exists()
+    assert "[c" not in (workspace / "research/overview.md").read_text()
+    assert summary["claims_labelled"] == 0
+
+
+def test_cited_claim_ids_cover_every_section_held_back_ones_included() -> None:
+    held_back = {"section_key": "watch-outs", "body_text": json.dumps({"h1": "Watch-outs", "restricted": True, "items": [
+        {"h2": "Careful", "body": [{"kind": "inference", "text": "Do not lean on the deficit.", "claimIds": ["d1"]}]},
+    ]})}
+    assert ws.cited_claim_ids([WHY_NOW, held_back]) == [INFERENCE_ID, QUOTE_ID, BUDGET_ID, "d1"]
+
+
+def test_a_statement_resting_on_a_claim_held_back_by_a_real_rule_is_left_out() -> None:
+    text = ws.research_markdown("SCSD: overview", [WHY_NOW], {QUOTE_ID: "c1"}, held={BUDGET_ID})
+    assert "Costs “will rise 8% in the coming school year.” [c1]" in text
+    assert "The budget added $4.2 million" not in text

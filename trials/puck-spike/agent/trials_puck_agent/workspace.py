@@ -1,8 +1,9 @@
 """Assemble one run's workspace: the plain files the agent works in (T3 of the phase-2 spike).
 
-brief.md, research/ (the account's written pages as plain markdown, no claim ids), seller/ (the
-seller's files), catalog/ and brand/ (scripts/build-catalog.ts), skills/, and .run.json for the
-validator. There is no page.json or shell.json yet: the agent writes both (the file tools refuse to
+brief.md, research/ (the account's written pages as plain markdown; with claims, each statement
+ends with short labels like [c4, c9] and research/claims.md gives each label its source and quote),
+seller/ (the seller's files), catalog/ and brand/ (scripts/build-catalog.ts), skills/, and .run.json
+for the validator. There is no page.json or shell.json yet: the agent writes both (the file tools refuse to
 overwrite an existing file, so later changes are edits).
 """
 
@@ -18,14 +19,25 @@ AGENT_DIR = Path(__file__).resolve().parents[1]
 SKILLS_DIR = AGENT_DIR / "skills"
 
 
-def _statements(items: Iterable[Any]) -> list[str]:
+def _claim_ids(item: dict) -> list[str]:
+    return [str(i) for i in item.get("claimIds") or item.get("claim_ids") or []]
+
+
+def _statements(
+    items: Iterable[Any], labels: dict[str, str] | None = None, held: set[str] | None = None
+) -> list[str]:
     lines = []
     for item in items or []:
         if not isinstance(item, dict) or not item.get("text"):
             continue
+        if held and held.intersection(_claim_ids(item)):
+            continue  # it rests on a claim held back by a real rule (a reputation risk, a biography)
         kind = item.get("kind")
-        tag = f"({kind}) " if kind in ("inference", "quote") else ""
-        lines.append(f"- {tag}{item['text']}")
+        tag = f"({kind}) " if kind in ("inference", "quote", "qualified", "gap") else ""
+        notes = [str(n) for n in item.get("qualifications") or [] if n]
+        note = f" (note: {'; '.join(notes)})" if notes else ""
+        refs = [labels[i] for i in _claim_ids(item) if labels and i in labels]
+        lines.append(f"- {tag}{item['text']}{note}" + (f" [{', '.join(refs)}]" if refs else ""))
     return lines
 
 
@@ -39,22 +51,103 @@ def _section_body(section: dict) -> dict | None:
         return None
 
 
-def research_markdown(title: str, sections: list[dict]) -> str:
-    """One research page (overview or insights) as markdown: headings and statements only."""
+def research_markdown(
+    title: str, sections: list[dict], labels: dict[str, str] | None = None, held: set[str] | None = None
+) -> str:
+    """One research page (overview or insights) as markdown: headings and statements, each statement
+    with its type and notes, and ending with the short labels of its claims when `labels` is given
+    (never the claim ids). Sections held back from outreach (Watch-outs, Context only) are kept and
+    marked as background, never words for the page. A statement citing a claim in `held` is left out."""
     out = [f"# {title}"]
     for section in sections:
         body = _section_body(section)
         if body is None:
             out += ["", f"## {section.get('section_key', 'Section')}", str(section.get("body_text", ""))]
             continue
+        heading = body.get("h1") or section.get("section_key")
         if body.get("restricted"):
-            continue
-        out += ["", f"## {body.get('h1') or section.get('section_key')}"]
-        out += _statements(body.get("intro"))
+            heading = f"{heading} (background only, never on the page)"
+        out += ["", f"## {heading}"]
+        out += _statements(body.get("intro"), labels, held)
         for item in body.get("items") or []:
             out += ["", f"### {item.get('h2', '')}".rstrip()]
-            out += _statements(item.get("body"))
+            out += _statements(item.get("body"), labels, held)
     return "\n".join(out).strip() + "\n"
+
+
+def _section_statements(section: dict) -> list[dict]:
+    body = _section_body(section)
+    if body is None:
+        return []
+    statements = list(body.get("intro") or [])
+    for item in body.get("items") or []:
+        statements += item.get("body") or []
+    return [s for s in statements if isinstance(s, dict)]
+
+
+def cited_claim_ids(sections: list[dict]) -> list[str]:
+    """Every claim the research statements cite, held-back sections included, in first-seen order."""
+    ids: list[str] = []
+    for section in sections:
+        for statement in _section_statements(section):
+            ids += [i for i in _claim_ids(statement) if i not in ids]
+    return ids
+
+
+def claim_labels(sections: list[dict], served: set[str]) -> dict[str, str]:
+    """c1, c2, … for every claim a visible statement cites, in the order they first appear. A claim
+    the read did not serve (held back by the display gate) gets no label, so no label dangles."""
+    labels: dict[str, str] = {}
+    for claim_id in cited_claim_ids(sections):
+        if claim_id in served:
+            labels[claim_id] = f"c{len(labels) + 1}"
+    return labels
+
+
+def _plain(value: Any) -> str:
+    if isinstance(value, dict):
+        return "; ".join(f"{k}: {_plain(v)}" for k, v in value.items())
+    if isinstance(value, list):
+        return "; ".join(_plain(v) for v in value)
+    return " ".join(str(value).split())
+
+
+def _claim_lines(claim: dict) -> list[str]:
+    """What one claim says, in plain lines. A research finding says its finding (with its topic and
+    notes); a value narrative says its argument (with the persona and angle it is for)."""
+    value = claim.get("value")
+    if not isinstance(value, dict):
+        return [f"Says: {_plain(value)}"]
+    if "finding" in value:
+        lines = [f"Says: {_plain(value['finding'])}"]
+        if value.get("topic"):
+            lines.append(f"Topic: {_plain(value['topic'])}")
+        if value.get("notes"):
+            lines.append(f"Notes: {_plain(value['notes'])}")
+        return lines
+    if "argument" in value:
+        lines = [f"Says: {_plain(value['argument'])}"]
+        lines += [f"{label}: {_plain(value[key])}" for key, label in (("persona", "For"), ("angle_label", "Angle"))
+                  if value.get(key)]
+        return lines
+    return [f"Says: {_plain(value)}"]
+
+
+def claims_markdown(account_name: str, labels: dict[str, str], claims: list[dict]) -> str:
+    """research/claims.md: each label's claim with what it says, its source link and any notes."""
+    by_id = {str(c.get("claim_id")): c for c in claims}
+    out = [f"# {account_name}: the claims behind the research", "",
+           "Each label in the research files (like [c4]) is one claim below: what it says, its source link,",
+           "and any notes. A shortened quote is only the opening of the source's words."]
+    for claim_id, label in labels.items():
+        claim = by_id[claim_id]
+        out += ["", f"## {label}", *_claim_lines(claim)]
+        if claim.get("source_url"):
+            out.append(f"Source: {claim['source_url']}")
+        if claim.get("evidence"):
+            mark = " (shortened)" if claim.get("evidence_truncated") else ""
+            out.append(f"Quote{mark}: “{' '.join(str(claim['evidence']).split())}”")
+    return "\n".join(out) + "\n"
 
 
 def research_people(sections: list[dict]) -> list[str]:
@@ -115,15 +208,23 @@ def assemble(
     overview: list[dict],
     insights: list[dict],
     knowledge: Any,
+    claims: list[dict] | None = None,
+    held_claim_ids: set[str] | None = None,
 ) -> dict:
-    """Write the whole workspace. Returns a summary for the run record."""
+    """Write the whole workspace. Returns a summary for the run record. With `claims` (the account's
+    served claims), the research carries short labels and research/claims.md is written. Statements
+    citing a claim in `held_claim_ids` (held back by a real rule) are left out of the research."""
     workspace.mkdir(parents=True, exist_ok=False)
     (workspace / "brief.md").write_text(brief)
     research = workspace / "research"
     research.mkdir()
+    labels = claim_labels(overview + insights, {str(c.get("claim_id")) for c in claims or []})
     if overview or insights:
-        (research / "overview.md").write_text(research_markdown(f"{account_name}: overview", overview))
-        (research / "insights.md").write_text(research_markdown(f"{account_name}: insights", insights))
+        held = held_claim_ids or set()
+        (research / "overview.md").write_text(research_markdown(f"{account_name}: overview", overview, labels, held))
+        (research / "insights.md").write_text(research_markdown(f"{account_name}: insights", insights, labels, held))
+        if labels:
+            (research / "claims.md").write_text(claims_markdown(account_name, labels, claims or []))
     else:
         (research / "README.md").write_text(
             f"# {account_name}\n\nThere is no written research for this account yet.\n"
@@ -135,6 +236,7 @@ def assemble(
     (workspace / ".run.json").write_text(json.dumps({"brand": brand, "site": site, "route": "/"}))
     return {
         "research_blocks": len(overview) + len(insights),
+        "claims_labelled": len(labels),
         "people_in_research": len(research_people(overview + insights)),
         "seller_files": seller_files,
         "clones": len(list((workspace / "catalog" / "clones").glob("*.md"))),

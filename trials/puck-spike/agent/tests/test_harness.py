@@ -271,3 +271,19 @@ def test_the_skills_ride_in_the_system_prompt(workspace: Path) -> None:
     prompt = system_prompt_with_skills(workspace)
     assert "## Your skills" in prompt and "### Skill: building-with-puck" in prompt and "Reuse first" in prompt
     assert "writing-a-section" not in prompt  # the E5 skill only when new sections are allowed
+
+
+def test_the_prompt_names_the_claims_file_only_when_the_workspace_has_one(workspace: Path) -> None:
+    from trials_puck_agent.harness import system_prompt_with_skills
+
+    without = system_prompt_with_skills(workspace)
+    assert "research/claims.md" not in without and "[c4, c9]" not in without
+    assert "- `research/`: what we know about the account (its overview and insights). The" in without
+    assert "never put them on the page." in without  # the background sections are named either way
+    assert "- The brief sets the goal, the reader and the offer. Keep to those." in without  # the brief rule stays
+
+    (workspace / "research").mkdir(exist_ok=True)
+    (workspace / "research" / "claims.md").write_text("# Claims\n")
+    with_claims = system_prompt_with_skills(workspace)
+    assert "`research/claims.md` lists each claim with what it" in with_claims
+    assert "check its claim in `research/claims.md`" in with_claims

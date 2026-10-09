@@ -385,6 +385,32 @@ class SummaryUsage:
 
 # --- the agent -----------------------------------------------------------------------------------
 
+# The two places the system prompt names research/claims.md. A workspace built without claims (R1's
+# comparison arm) gets the research line without them and no claims rule.
+CLAIMS_RESEARCH_LINE = (
+    "- `research/`: what we know about the account (its overview and insights). Each statement ends\n"
+    "  with the claims behind it, like `[c4, c9]`. `research/claims.md` lists each claim with what it\n"
+    "  says, its source link and any notes. The \"Watch-outs\" and \"Context only\" sections are background\n"
+    "  for your judgement: never put them on the page.\n"
+)
+PLAIN_RESEARCH_LINE = (
+    "- `research/`: what we know about the account (its overview and insights). The \"Watch-outs\" and\n"
+    "  \"Context only\" sections are background for your judgement: never put them on the page.\n"
+)
+CLAIMS_RULE = (
+    "- For a number or a quote from the research, check its claim in `research/claims.md`. Use the\n"
+    "  figure as the claim states it, and read its notes before you use it.\n"
+)
+
+
+def _base_prompt(workspace: Path) -> str:
+    text = (AGENT_DIR / "system_prompt.md").read_text()
+    if (workspace / "research" / "claims.md").exists():
+        return text
+    assert CLAIMS_RESEARCH_LINE in text and CLAIMS_RULE in text, "system_prompt.md drifted from harness.py"
+    return text.replace(CLAIMS_RESEARCH_LINE, PLAIN_RESEARCH_LINE).replace(CLAIMS_RULE, "")
+
+
 def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = False) -> str:
     """The system prompt with the skills after it: the same text every call and every session, so it
     stays in the prompt cache (E2b re-read about 6k tokens of skills in every session)."""
@@ -393,7 +419,7 @@ def system_prompt_with_skills(workspace: Path, *, allow_new_sections: bool = Fal
         f"### Skill: {path.parent.name} ({'/' + folder + '/' + path.parent.name}/SKILL.md)\n\n{path.read_text().strip()}"
         for folder in folders for path in sorted((workspace / folder).glob("*/SKILL.md"))
     ]
-    return (AGENT_DIR / "system_prompt.md").read_text().rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
+    return _base_prompt(workspace).rstrip() + "\n\n## Your skills\n\n" + "\n\n".join(skills) + "\n"
 
 
 def build_model() -> Any:

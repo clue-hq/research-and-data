@@ -148,3 +148,13 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   confirm at C11. R1/D3 ruling: Head of ABM's brief = direction/suggestions; the page agent reads the
   research and chooses facts on its own reasoning. Task 5 next: prompt wording + claims file, shown
   to the founder before writing; runs need the founder's go.
+- R1 build (2026-10-09, founder-approved): read_claims served none of the research's cited claims —
+  findings are born outreach_safe=false (quality_findings.py:70) and the claim store's quality
+  predicate drops "qualified"/"unresolved" findings from ordinary reads (Syracuse: 10 supported, 25
+  qualified, 1 unresolved, 1 invalid). Fixes: platform gate_claims serves account research findings +
+  value narratives while CLUE_VERIFICATION_ENABLED=false (0a8b16734; real-rule claims stay held); the
+  spike reads the CITED claims via inspectable_claims_by_ids (the source drawer's read) + gate_claims,
+  drops statements citing real-rule claims, keeps Watch-outs/Context only (marked background) and every
+  statement type + notes. Real data: Syracuse 36 labelled, Dana.AI 50, held 0; claims.md ~20 KB each.
+  Production needs a governed design read for cited claims (B2). R1 runs (with/without, --no-claims)
+  need the founder's go.
