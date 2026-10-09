@@ -78,7 +78,39 @@ more than a clone allows (2026-10-08).
 | `write_todos`, `task` (and a probable unintended general-purpose subagent) | Drop | Keep the harness lean. |
 | Limits: 75 mutations per render, recursion 200 | Align | The spike's 40-call safety stop should follow the standing ruling (100 rounds, 50 calls per round, 30 min). |
 
-### 2.5 Tools to add (nothing like them exists on the platform)
+### 2.5 The resulting tool set
+
+**Removed completely (27):**
+- **Engine authoring:** `author_web_page`, `author_web_subtree`, `patch_web_page`, `web_ops`.
+- **Pages:** `list_pages`, `add_page`, `remove_page`, `switch_page`.
+- **Clone placement and repair:** `search_cloned_sections`, `inspect_cloned_section`, `insert_cloned_section`, `assemble_cloned_sections`, `recreate_cloned_page`, `repair_cloned_section`, `compose_web_section`, `release_repair`.
+- **Campaign shells:** `mint_campaign_shells`, `assemble_abm_page`.
+- **Rendering and checks:** `render_web_preview` and its many `view` targets, `set_web_typography_reference`.
+- **Custom components:** `list_custom_components`, `inspect_custom_component`, `write_custom_component_source`, `compile_custom_component`, `place_custom_component`.
+- **Other:** `provenance`, `bind_account_logo` (until templates), `write_todos`, `task`.
+- **Moved out of the agent:** `review_cloned_page` stays in ingestion.
+
+**Reused from the platform (8):**
+- `fetch_logo`
+- image generation
+- `search_assets`, with the CLIP search merged in
+- `read_project_accounts`
+- `read_account_research` (used at session start to write the research files)
+- `read_claims`
+- `web_search`
+- `fetch_page`'s safety guards
+
+The image block behind `view_asset` is already reused. The run-result contract lives in the harness, not in a tool.
+
+**The Puck agent's tools (about 19):**
+- file tools (6);
+- `validate_page`, `render_page`, `restore_version`, `view_asset`;
+- `web_search`, `fetch_page`, `fetch_logo`, `generate_image`, `search_assets`, `read_claims`, `read_project_accounts`;
+- with section writing: `write_section`, `view_clone`, `compare_section`.
+
+That is about 19 tools against about 46 today.
+
+### 2.6 Tools to add (nothing like them exists on the platform)
 
 The tools the spike added stay: `validate_page`, `restore_version`, `write_section`, `view_clone`
 and `compare_section`.
@@ -130,8 +162,8 @@ Experiment R1 (§7) confirms this before we commit.
 | Edit/View toggle; device preview (desktop, tablet, mobile) | Puck preview and viewports | Same / small |
 | Select an element | Puck selects a **section** (component). Selecting inner elements needs per-item fields or inline editing. | Port, with a design question (D4) |
 | Inspector per element kind (Tailwind class "facets") | Each component's fields, rendered with our `inspector-primitives`. Brand choices (surface, heading role) are selects, not class strings. | Build (moderate) |
-| Inline rich-text editing (Lexical in the iframe) | Not native to Puck. Needs a contentEditable/Lexical bridge onto props. | **Build (the riskiest editor item)** |
-| Clone text edits | The `ClonedSection` component's slots and replacements as fields; click-to-edit on the canvas is extra | Port |
+| Inline rich-text editing (Lexical in the iframe) | **Native in Puck 0.23:** text, textarea and rich-text fields take `contentEditable: true`, and rich text uses a built-in TipTap editor whose inline menu we can render ourselves (`renderInlineMenu`). Phase 1 already edits our sections' text and clone slot text in place (T5, T9). Left to do: use the rich-text field where formatting is wanted, and skin its menu. | Small |
+| Clone text edits | The `ClonedSection` component's slots and replacements as fields, plus in-place editing of slot text (built in phase 1, `puck/clone-editor.tsx`) | Done in the spike; port |
 | Replace image (**upload only today**) | An asset field using the ad lane's asset-library panel: library, upload, generate | **Upgrade** |
 | Layers (depth 1, no reorder) | Puck outline: full depth, drag to reorder | Upgrade |
 | Layout controls (flex/grid/gap/padding) | Whatever props each component exposes (governed by the brand). No free positioning, as today. | Same scope |
@@ -222,7 +254,7 @@ On Puck the engine, bridge and class facets go away; the chrome (tabs, header, s
 | R2 | On-demand rebuild during edits | Three edits a clone can't do on a built page; time, look, cost | about $2–3 |
 | R3 | Images | Wire `generate_image` and `search_assets` (with CLIP) into the spike; two builds | about $2 plus images |
 | R4 | Quality parity with the platform agent | Blind founder rating: 3 accounts × 2 sellers, platform against Puck | about $15–20 |
-| R5 | Inline text editing in Puck with our UI | An engineering prototype, no model spend | 2–3 days |
+| R5 | Rich-text formatting with our own inline menu (plain in-place editing is already proven in phase 1) | A short engineering check, no model spend | 1 day |
 | R6 | Agent sections in production (build and isolation) | A design spike on D2 | 2–3 days |
 
 ## 8. Effort (revised from the roadmap's 8 engineer-weeks)
@@ -233,13 +265,13 @@ On Puck the engine, bridge and class facets go away; the chrome (tabs, header, s
 | 2. Storage and the `site` kind (§6, points 1–9, 12–13) | 1 |
 | 3. Site renderer and publish (points 10–11) | 1.5 |
 | 4. Agent on the fleet (executor, workspace view, ported tools: logo, images, CLIP search, reads, fetch guards; result contract; legs) | 2–3 |
-| 5. Editor in our UI (fields with our primitives, asset field, annotations, inline text, pages, versions, live reload) | 2–3 |
+| 5. Editor in our UI (fields with our primitives, asset field, annotations, rich-text menu, pages, versions, live reload) | 2 |
 | 6. Agent sections in production (after D2) | 1–2 |
 | 7. Hardening: QA across sellers, the skills regression set, coexistence with WebDoc | 1 |
-| **Total** | **about 10–12 engineer-weeks; 5–7 calendar weeks with 2–3 lanes** |
+| **Total** | **about 9.5–11 engineer-weeks; 5–6 calendar weeks with 2–3 lanes** |
 
-It is higher than the roadmap's 8 weeks because of the site renderer, agent sections in production,
-and inline editing.
+It is higher than the roadmap's 8 weeks because of the site renderer and agent sections in production.
+(Correction 2026-10-09: inline editing is native in Puck and was proven in phase 1; it is not a risk.)
 
 ## 9. Decisions to make
 
@@ -248,6 +280,6 @@ and inline editing.
 | D1 | Where site documents live | A new `site` kind in `design_document`, in a shape that satisfies today's contract |
 | D2 | Agent-written code in production | Decide after R6. The options: TSX built in a sandbox and loaded per workspace; a JSON layout language instead of code; or no agent code at first (which would delay on-demand rebuilds) |
 | D3 | Research input | Display pages in files plus `read_claims` on demand; confirm with R1 |
-| D4 | Which new Puck abilities get UI now | Inline text, insert/reorder/delete, versions and the asset library, each with a design from the dummy UI first |
+| D4 | Which new Puck abilities get UI now | Insert/reorder/delete, versions, the asset library and the rich-text menu, each with a design from the dummy UI first |
 | D5 | Where the renderer runs | The frontend app's server rendering, or a separate Node render service |
 | D6 | Coexistence | A per-workspace flag. Existing WebDoc documents stay on the old engine; no conversion |
