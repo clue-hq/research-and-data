@@ -157,8 +157,8 @@ Each failure mode has a test in its owning task.
 **The design.**
 - **The editor domain.** The whole Puck editor (canvas, fields, outline) is a page on a separate
   registrable domain that never holds the marketer's login. app.cluehq.ai embeds it as one
-  `<iframe>` and keeps chat, header, gallery, asset library, versions and publish. Recommended,
-  to confirm in C11: one subdomain per workspace (Framer's per-project pattern) on one wildcard
+  `<iframe>` and keeps chat, header, gallery, asset library, versions and publish. Decided
+  (founder, 2026-10-09): one subdomain per workspace (Framer's per-project pattern) on one wildcard
   domain. That is one deployment, one wildcard DNS record and one wildcard certificate; no servers
   per workspace.
 - **Frame attributes.** `sandbox="allow-scripts allow-same-origin"`, with no `allow-top-navigation`
@@ -981,7 +981,7 @@ then and including Wave 1's results. The outlines fix the scope, files and accep
 | C8. Pages | The page switcher and page settings for the site model | Add, rename and remove a page; nav links follow |
 | C9. Agent sections | Load modules at runtime per B6/Task 4, inside the editor domain only | A loaded section edits in place |
 | C10. Insert, delete, duplicate | **After the founder's designs** | Per the design |
-| C11. The editor domain (D2) | A host page for Puck on its own registrable domain (deploy, DNS, TLS; a dev-stack equivalent on a second local site); the frame attributes and headers in "D2" above; the message bridge between `SiteArtifactCanvas` and the editor page (load, batched save through the BFF, agent updates, selection, asset picker); warm the frame when the project opens. Confirm one subdomain per workspace (recommended; one wildcard DNS record and certificate) | The spike's hostile sections cannot read app cookies or call our API, cannot send a pixel, cannot reach `Function`, and cannot navigate the tab (Review focus 6); a forged frame message for another document is refused; edit, save and agent reload work end to end |
+| C11. The editor domain (D2) | A host page for Puck on its own registrable domain (deploy, DNS, TLS; a dev-stack equivalent on a second local site); the frame attributes and headers in "D2" above; the message bridge between `SiteArtifactCanvas` and the editor page (load, batched save through the BFF, agent updates, selection, asset picker); warm the frame when the project opens. One subdomain per workspace (decided 2026-10-09; one wildcard DNS record and certificate; list the domain on the Public Suffix List) | The spike's hostile sections cannot read app cookies or call our API, cannot send a pixel, cannot reach `Function`, and cannot navigate the tab (Review focus 6); a forged frame message for another document is refused; edit, save and agent reload work end to end |
 
 ## Wave 4: hardening and rollout (about 1 week)
 
