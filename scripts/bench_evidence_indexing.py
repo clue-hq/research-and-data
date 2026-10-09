@@ -198,9 +198,11 @@ async def _replay_call(
             body = await storage.get(key)  # the bytes the drain held, from the replay copy
             await storage.put(key, body, media_type="application/json")
             held[key] = body
-            uploaded = await upload_sources_early(
-                early, storage, scope, (result_row,), {"replay": key}, held
-            )
+            uploaded = (
+                await upload_sources_early(
+                    early, storage, scope, (result_row,), {"replay": key}, held
+                )
+            ).keys
         call["early_ms"] = (time.monotonic() - started) * 1000
 
     async def drain(conn: Any) -> None:

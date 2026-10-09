@@ -589,7 +589,7 @@ def _connections(conn):
 async def _early(conn, storage, scope, report):
     from clue_api.arv2.quality_acquisition import upload_sources_early
 
-    return await upload_sources_early(
+    early = await upload_sources_early(
         _connections(conn),
         storage,
         scope,
@@ -597,6 +597,7 @@ async def _early(conn, storage, scope, report):
         report.raw_artifact_keys,
         report.raw_bodies,
     )
+    return early.keys
 
 
 def _report_key(scope, report) -> str:
@@ -772,9 +773,49 @@ def test_an_early_upload_that_cannot_reach_the_database_falls_back_to_the_lock(t
                 report.raw_artifact_keys,
                 report.raw_bodies,
             )
-            assert uploaded == frozenset()
-            refs = await index_acquisition(conn, fs, scope, report, uploaded=uploaded)
+            assert not uploaded.keys and not uploaded.fresh
+            refs = await index_acquisition(conn, fs, scope, report, uploaded=uploaded.keys)
             for ref in refs:
                 assert await fs.get(ref.artifact_key)
+
+    run_async(case())
+
+
+def test_a_cleanup_keeps_a_file_that_already_had_a_record_when_it_was_uploaded_early(tmp_path):
+    """Review N-1: a cleanup deletes only files that were new to the workspace when they were
+    uploaded early. A file that already had an artifact row belongs to other evidence — here an
+    erased row that another call may be restoring right now, its re-put not yet committed."""
+    from clue_api.arv2.quality_acquisition import discard_early_uploads, upload_sources_early
+    from clue_storage import mark_erased, record_artifact
+
+    async def case():
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            scope, _ = await seed(conn, fs)
+            report = await _drained_deep_call(conn, fs, scope)
+            key = _report_key(scope, report)
+            await record_artifact(
+                conn,
+                storage_key=key,
+                workspace_id=scope.workspace_id,
+                content_sha256=key.rsplit("/", 1)[1],
+                media_type="text/plain",
+                size_bytes=len(b"A report."),
+            )
+            await mark_erased(conn, key)
+            early = await upload_sources_early(
+                _connections(conn),
+                fs,
+                scope,
+                report.result_rows,
+                report.raw_artifact_keys,
+                report.raw_bodies,
+            )
+            assert key in early.keys and key not in early.fresh
+            assert early.fresh and early.fresh < early.keys
+            deleted = await discard_early_uploads(_connections(conn), fs, early.fresh)
+            assert key not in deleted and await fs.get(key) == b"A report."
+            for fresh in early.fresh:
+                assert await _gone(fs, fresh)
 
     run_async(case())

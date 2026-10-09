@@ -98,6 +98,17 @@ def planned_source_files(
     return files
 
 
+@dataclass(frozen=True)
+class EarlyUploads:
+    """What :func:`upload_sources_early` put: every key (pass to :func:`index_acquisition` as
+    ``uploaded``), and the ``fresh`` ones that had no artifact row at all when they were put — the
+    only ones a cleanup may delete (:func:`discard_early_uploads`). A key that already had a row
+    belongs to other evidence."""
+
+    keys: frozenset[str] = frozenset()
+    fresh: frozenset[str] = frozenset()
+
+
 async def upload_sources_early(
     connections: ConnFactory,
     storage: StorageBackend,
@@ -105,10 +116,10 @@ async def upload_sources_early(
     result_rows: Sequence[LedgerRow],
     raw_artifact_keys: Mapping[str, str],
     raw_bodies: Mapping[str, bytes],
-) -> frozenset[str]:
+) -> EarlyUploads:
     """W2-15 option B: put a drained call's source files BEFORE the worker's database lock, so
-    the lock is held only for database work. Returns the keys that were put; pass them to
-    :func:`index_acquisition` as ``uploaded``. It never raises: it runs after the drain has taken
+    the lock is held only for database work. Returns what was put (:class:`EarlyUploads`). It
+    never raises: it runs after the drain has taken
     its ledger rows and before it writes them, so on any error it uploads nothing and indexing
     stores every file under the lock, as before.
 
@@ -116,27 +127,27 @@ async def upload_sources_early(
     written back, and no sweep would find it again (the orphan sweep skips keys that have a
     row). Indexing still refuses that row under the lock, as before. A failed upload is simply
     left out; indexing then stores that file under the lock as before. A file put here whose
-    indexing never happens has no row, so the orphan sweep removes it after its grace window.
+    indexing never happens is deleted by :func:`discard_early_uploads` if it was fresh.
     """
     try:
         files = planned_source_files(scope, result_rows, raw_artifact_keys, raw_bodies)
         if not files:
-            return frozenset()
+            return EarlyUploads()
         async with connections() as conn:
-            blocked = set(
-                (
-                    await conn.execute(
-                        text(
-                            "SELECT storage_key FROM artifact WHERE storage_key = ANY(:keys) "
-                            "AND privacy_erased"
-                        ),
-                        {"keys": list(files)},
-                    )
-                ).scalars()
-            )
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT storage_key, privacy_erased FROM artifact "
+                        "WHERE storage_key = ANY(:keys)"
+                    ),
+                    {"keys": list(files)},
+                )
+            ).all()
+        recorded = {row.storage_key for row in rows}
+        blocked = {row.storage_key for row in rows if row.privacy_erased}
     except Exception as error:  # noqa: BLE001 - the drain's rows are not written yet; never fail it
         log.warning("arv2.early_upload_skipped", job_id=str(scope.job_id), error=repr(error))
-        return frozenset()
+        return EarlyUploads()
     gate = asyncio.Semaphore(UPLOAD_CONCURRENCY)
 
     async def put(key: str, data: bytes, media: str) -> str:
@@ -148,7 +159,8 @@ async def upload_sources_early(
         *(put(key, data, media) for key, (data, media) in files.items() if key not in blocked),
         return_exceptions=True,
     )
-    return frozenset(o for o in outcomes if isinstance(o, str))
+    put_keys = frozenset(o for o in outcomes if isinstance(o, str))
+    return EarlyUploads(put_keys, put_keys - recorded)
 
 
 _RECOVERY_BATCH = 100
@@ -395,10 +407,12 @@ async def discard_early_uploads(
     withdrawn before indexing (a privacy stop, a suspension) or indexing failed. Nothing else
     could find them: purge and erasure work from artifact rows, and the orphan sweep waits a day.
 
-    A key with a live artifact row is kept: other evidence cites those same bytes. Accepted race
-    (founder, 2026-10-08): another job uploading byte-identical content at this very moment can
-    lose its file and then hold a live row whose read fails — fail-closed, never a leak. Never
-    raises; returns the keys it deleted.
+    Pass only :attr:`EarlyUploads.fresh` — keys that had no artifact row when they were put; a
+    key that already had one belongs to other evidence (review N-1). A fresh key that has since
+    gained a live row is kept too. Accepted race (founder, 2026-10-08): another call that has
+    just recorded byte-identical, workspace-new content and not yet committed can lose its file
+    and then hold a live row whose read fails — fail-closed, never a leak. Never raises; returns
+    the keys it deleted.
     """
     if not keys:
         return ()

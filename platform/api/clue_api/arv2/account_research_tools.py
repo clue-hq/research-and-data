@@ -686,8 +686,10 @@ class ToolRuntime:
             project_run_id=str(self.scope.project_run_id),
             job_id=self.scope.job_id,
         )
+        from clue_api.arv2.quality_acquisition import EarlyUploads
+
         held: HeldDrain | None = None
-        uploaded: frozenset[str] = frozenset()
+        early = EarlyUploads()
         indexed = False
         try:
             if self.settings.arv2_upload_outside_lock:
@@ -704,7 +706,7 @@ class ToolRuntime:
                     ):
                         from clue_api.arv2.quality_acquisition import upload_sources_early
 
-                        uploaded = await upload_sources_early(
+                        early = await upload_sources_early(
                             self._pacing_conn_factory,
                             self.storage,
                             self.operation_scope,
@@ -795,16 +797,27 @@ class ToolRuntime:
                         self.operation_scope,
                         report,
                         operation_id=operation.operation_id if operation else None,
-                        uploaded=uploaded,
+                        uploaded=early.keys,
                     )
                 indexed = True  # the indexing transaction committed
         finally:
-            if uploaded and not indexed and self.storage is not None:
-                # Review I-1: files put before the lock that indexing never recorded.
+            finished = time.monotonic()
+            if early.fresh and not indexed and self.storage is not None:
+                # Review I-1: files put before the lock that indexing never recorded. Only the
+                # ones new to the workspace (N-1); timed and logged on their own (N-3).
                 from clue_api.arv2.quality_acquisition import discard_early_uploads
 
-                await discard_early_uploads(self._pacing_conn_factory, self.storage, uploaded)
-            finished = time.monotonic()
+                discarded = await discard_early_uploads(
+                    self._pacing_conn_factory, self.storage, early.fresh
+                )
+                log.info(
+                    "arv2.early_uploads_discarded",
+                    job_id=str(self.scope.job_id),
+                    provider=provider,
+                    uploaded=len(early.keys),
+                    discarded=len(discarded),
+                    discard_ms=round((time.monotonic() - finished) * 1000, 1),
+                )
             if index_started is not None:
                 index_ms = (finished - index_started) * 1000
             log.info(

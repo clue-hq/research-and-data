@@ -548,9 +548,19 @@ def test_files_uploaded_early_are_deleted_when_indexing_never_records_them(
     orphan sweep's 24-hour grace."""
     import contextlib
 
+    import clue_api.arv2.account_research_tools as tools_module
     import clue_api.arv2.quality_acquisition as acquisition
 
     real_early = acquisition.upload_sources_early
+    lines: list[tuple[str, dict]] = []
+
+    class Recording:
+        def _record(self, event, **fields):
+            lines.append((event, fields))
+
+        info = warning = error = exception = debug = _record
+
+    monkeypatch.setattr(tools_module, "log", Recording())
 
     async def case():
         async with rollback_conn() as conn:
@@ -633,3 +643,6 @@ def test_files_uploaded_early_are_deleted_when_indexing_never_records_them(
     stored, recorded = run_async(case())
     assert stored, "the call stored its response"
     assert [key for key in stored if key not in recorded] == []
+    # Review N-3: the cleanup is logged on its own, with what it deleted and how long it took.
+    (discard,) = [fields for event, fields in lines if event == "arv2.early_uploads_discarded"]
+    assert discard["discarded"] >= 1 and discard["discard_ms"] >= 0
