@@ -30,6 +30,7 @@ from clue_agents.execution import (
     AgentTurnOutcome,
     GovernedOperationReceipt,
 )
+from clue_agents.model_session import ModelSessionAffinity
 from clue_agents.ports import (
     AgentExecutionAdapter,
     AgentModelProvider,
@@ -631,6 +632,7 @@ class DeepAgentTurnRuntime:
         governed_tools: Sequence[BaseTool],
         checkpointer: Any,
         compaction: CompactionSettings,
+        session_id: str,
     ) -> Any:
         profile = resolved_profile.profile
         summariser, compact_tool = build_compaction_middleware(model, backend, compaction)
@@ -639,6 +641,8 @@ class DeepAgentTurnRuntime:
             tools=list(governed_tools),
             system_prompt=resolved_profile.prompt_body,
             middleware=(
+                # One routing key per agent conversation, so its prompt cache stays warm.
+                ModelSessionAffinity(session_id),
                 ToolRepairRoundsMiddleware(),
                 ExactAgentToolSurfaceMiddleware(
                     profile=resolved_profile,
@@ -697,6 +701,7 @@ class DeepAgentTurnRuntime:
                 governed_tools=governed_tools,
                 checkpointer=checkpointer,
                 compaction=await self._compaction(resolved_profile.profile),
+                session_id=str(request.constitution.execution_id),
             )
             previous = await graph.aget_state(cast(RunnableConfig, dict(self._continuation_config)))
         return bool(previous.values.get("messages")) and not previous.next
@@ -729,6 +734,7 @@ class DeepAgentTurnRuntime:
                 governed_tools=governed_tools,
                 checkpointer=checkpointer,
                 compaction=await self._compaction(profile),
+                session_id=str(constitution.execution_id),
             )
             state: Any = {
                 "messages": cast(Any, list(context.messages)),

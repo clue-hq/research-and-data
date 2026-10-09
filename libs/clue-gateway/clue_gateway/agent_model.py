@@ -1130,6 +1130,10 @@ class OpenRouterAgentModelProvider:
             extra_body["provider"] = {"sort": self._config.openrouter_provider_sort}
         if self._config.openrouter_usage_include:
             extra_body["usage"] = {"include": True}
+        if model_id.startswith("anthropic/"):
+            # Anthropic caches only when asked; OpenRouter places this top-level breakpoint at the
+            # end of the prompt on every call. xAI, OpenAI and Gemini cache on their own.
+            extra_body["cache_control"] = {"type": "ephemeral"}
         if self._config.openrouter_chat_completions_fallback and not model_id.startswith("openai/"):
             # OpenRouter's ``/responses`` translation for non-OpenAI providers rejects the
             # platform conversation's array-shaped message content (grok-4.6 400s
