@@ -5,6 +5,9 @@ next-env.d.ts
 # exported brand data and media (regenerate with export/export_brand.py)
 data/brands/
 public/brands/
+# images generated for a run's site, and the account logos fetched for it (R3)
+public/generated/
+public/accounts/
 data/sites/edit-test.json
 agent-runs/
 data/sites/agent-*.json

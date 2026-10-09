@@ -378,3 +378,83 @@ def test_a_class_used_only_in_a_written_section_reaches_the_page(workspace: Path
         tools._write_section_index()
         for scratch in (SPIKE / "data" / "sites").glob(f"{site}*.json"):
             scratch.unlink()
+
+
+# --- R3: generated images (founder-approved 2026-10-09) ------------------------------------------
+
+def _tiny_png(width: int = 32, height: int = 18) -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (20, 90, 70)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+class FakeImages:
+    def __init__(self, fail: bool = False) -> None:
+        self.calls: list[dict] = []
+        self.fail = fail
+
+    def __call__(self, **kwargs):
+        from types import SimpleNamespace
+
+        self.calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError("provider down")
+        return SimpleNamespace(image_bytes=_tiny_png(), mime_type="image/png", width=32, height=18,
+                               model="test-image-model")
+
+
+@pytest.fixture()
+def image_site(workspace: Path):
+    import uuid
+
+    site = f"agent-test-{uuid.uuid4().hex[:8]}"
+    (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site, "route": "/"}))
+    yield site
+    shutil.rmtree(SPIKE / "public" / "generated" / site, ignore_errors=True)
+
+
+def _brand_photo() -> str:
+    assets = json.loads((SPIKE / "data" / "brands" / "garner" / "assets.json").read_text())
+    return next(a["file"] for a in assets.values() if a["file"].endswith((".png", ".avif", ".jpg")))
+
+
+def test_generate_image_saves_it_for_this_site_and_shows_it(workspace: Path, image_site: str) -> None:
+    fake = FakeImages()
+    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047", image_generate=fake)
+    reference = _brand_photo()
+    blocks = tools.generate_image("A calm school-district scene at dusk", "16:9", [reference])
+    text = blocks[0]["text"]
+    assert text.startswith(f"/generated/{image_site}/") and "32x18" in text
+    path = SPIKE / "public" / text.split()[0].lstrip("/")
+    assert path.is_file() and blocks[1]["type"] == "image"
+    call = fake.calls[0]
+    assert call["prompt"] == "A calm school-district scene at dusk" and call["aspect_ratio"] == "16:9"
+    assert len(call["reference_images"]) == 1 and call["reference_images"][0][1] == "image/png"
+    index = json.loads((SPIKE / "public" / "generated" / image_site / "index.json").read_text())
+    assert index[text.split()[0]]["prompt"] == "A calm school-district scene at dusk"
+
+
+def test_generate_image_refuses_bad_references_and_reports_a_failure(workspace: Path, image_site: str) -> None:
+    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047", image_generate=FakeImages())
+    photo = _brand_photo()
+    assert "at most three" in tools.generate_image("x", "16:9", [photo] * 4)
+    assert "not one of this brand's images" in tools.generate_image("x", "16:9", ["/brands/conduit/a.png"])
+    svg = next(a["file"] for a in json.loads((SPIKE / "data" / "brands" / "garner" / "assets.json").read_text()).values()
+               if a["file"].endswith(".svg"))
+    assert "a photo or picture" in tools.generate_image("x", "16:9", [svg])
+    failing = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047",
+                        image_generate=FakeImages(fail=True))
+    assert "could not make the image" in failing.generate_image("x", "16:9", [])
+
+
+def test_view_asset_shows_this_site_s_generated_image_but_not_another_site_s(workspace: Path, image_site: str) -> None:
+    tools = PageTools(workspace=workspace, spike_root=SPIKE, base_url="http://localhost:3047", image_generate=FakeImages())
+    made = tools.generate_image("Abstract green waves", "1:1", [])[0]["text"].split()[0]
+    blocks = tools.view_asset([made, "/generated/other-site/x.png"])
+    assert blocks[0]["text"].startswith(made) and "Abstract green waves" in blocks[0]["text"]
+    assert blocks[1]["type"] == "image"
+    assert "not one of this site's images" in blocks[2]["text"]

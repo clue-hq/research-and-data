@@ -196,6 +196,29 @@ def build_catalog(spike_root: Path, brand: str, dest: Path, seller: str) -> None
     )
 
 
+LOGO_CELLS = {
+    "light_lockup": "the full logo, for light backgrounds",
+    "dark_lockup": "the full logo, for dark backgrounds",
+    "light_mark": "the symbol only, for light backgrounds",
+    "dark_mark": "the symbol only, for dark backgrounds",
+}
+LOGO_EXTENSIONS = {"image/svg+xml": ".svg", "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
+
+
+def account_logo_section(spike_root: Path, site: str, logos: list[dict] | None) -> str:
+    """Save the account's logo files under public/accounts/<site>/ and describe them for brand.md."""
+    out = ["", "## The account's logo (header only)", ""]
+    if not logos:
+        return "\n".join(out + ["None was found. Leave `accountLogo` empty.", ""])
+    folder = spike_root / "public" / "accounts" / site
+    folder.mkdir(parents=True, exist_ok=True)
+    for logo in logos:
+        name = logo["cell"] + LOGO_EXTENSIONS.get(logo["content_type"], ".png")
+        (folder / name).write_bytes(logo["body"])
+        out.append(f"- `/accounts/{site}/{name}`: {LOGO_CELLS.get(logo['cell'], logo['cell'])}")
+    return "\n".join(out + [""])
+
+
 def assemble(
     workspace: Path,
     *,
@@ -210,6 +233,7 @@ def assemble(
     knowledge: Any,
     claims: list[dict] | None = None,
     held_claim_ids: set[str] | None = None,
+    account_logo: list[dict] | None = None,
 ) -> dict:
     """Write the whole workspace. Returns a summary for the run record. With `claims` (the account's
     served claims), the research carries short labels and research/claims.md is written. Statements
@@ -231,6 +255,8 @@ def assemble(
         )
     seller_files = write_seller_files(knowledge, workspace / "seller") if knowledge else 0
     build_catalog(spike_root, brand, workspace, seller)
+    brand_file = workspace / "brand" / "brand.md"
+    brand_file.write_text(brand_file.read_text().rstrip() + "\n" + account_logo_section(spike_root, site, account_logo))
     shutil.copytree(SKILLS_DIR, workspace / "skills")
     (workspace / "fetched").mkdir()
     (workspace / ".run.json").write_text(json.dumps({"brand": brand, "site": site, "route": "/"}))
@@ -263,6 +289,10 @@ def site_summary(workspace: Path, spike_root: Path) -> str:
     data = spike_root / "data" / "brands" / brand
     clones = {c["id"]: c for c in json.loads((data / "clones.json").read_text())}
     described = {a["file"]: a.get("description") or "" for a in json.loads((data / "assets.json").read_text()).values()}
+    site = json.loads((workspace / ".run.json").read_text()).get("site", "")
+    generated = spike_root / "public" / "generated" / site / "index.json"
+    if site and generated.exists():
+        described.update({f: f"generated: {e.get('prompt', '')}" for f, e in json.loads(generated.read_text()).items()})
 
     def image(file: object) -> str:
         return f"{file}" + (f" ({_short(described.get(str(file), ''), 120)})" if described.get(str(file)) else "")

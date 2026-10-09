@@ -54,7 +54,7 @@ Open the clone's file in `catalog/clones/` first.
 - **`slots`:** set only what you change. Leaving a slot out keeps the original exactly.
   - A text slot takes plain text. Keep about the original's length and number of lines.
   - A link slot takes a URL or a `/route`.
-  - An image slot takes a file from `brand/brand.md`.
+  - An image slot takes a file from `brand/brand.md` or an image you generated.
   - `visible: false` hides the whole section.
 - **`replacements`:** for visible text with no slot, such as button labels. `find` must be exact
   text from the clone file's "Other visible text".
@@ -67,7 +67,7 @@ Open the clone's file in `catalog/clones/` first.
 Fields and choices are in `catalog/sections.md`.
 
 - Choose `surface` and `headingRole` by name.
-- Images come only from `brand/brand.md`.
+- Images come only from `brand/brand.md` or from `generate_image` (see `images-and-logos`).
 - Text fields take plain text.
 
 ## Rhythm

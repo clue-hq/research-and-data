@@ -10,8 +10,11 @@ tools. Each returns text the agent can act on, never a raised exception.
 - fetch_page      opens a page, saves its text under fetched/ (evidence), returns the text
 - web_search      the platform's web search, retried on transient failure
 - restore_version rolls page.json and shell.json back to a saved version
-- view_asset      shows up to four brand images with their descriptions (the platform's
-                  provider-safe image block from lumen_agent/tools/view.py)
+- view_asset      shows up to four images (the brand's, or this site's generated ones) with their
+                  descriptions (the platform's provider-safe image block from lumen_agent/tools/view.py)
+- generate_image  makes a new image for this site with the platform's image provider, in the
+                  brand's style (up to three brand images as references), saves it under
+                  public/generated/<site>/ with its prompt as its description, and shows it
 - view_clone, compare_section   the component library spike: see a seller's section on its own,
                   and compare a rebuilt component with it side by side (difference score, missing words)
 """
@@ -38,6 +41,9 @@ TILE_PX = 1600
 VIEW_ASSET_MAX = 4
 BUILT_IN_SECTIONS = {"ClonedSection", "StatsBand", "FeatureSplit", "ProofCard", "CtaBand", "TokenProbe"}
 VIEW_ASSET_PX = 1024
+STYLE_REFERENCES_MAX = 3
+REFERENCE_PX = 1024
+IMAGE_EXTENSIONS = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 RETRIES = 2
 LOOP_GUARD_AT = 3
 
@@ -51,12 +57,14 @@ class PageTools:
         base_url: str,
         reads: Any = None,
         retry_delay_s: float = 1.0,
+        image_generate: Callable[..., Any] | None = None,
     ) -> None:
         self.workspace = Path(workspace)
         self.spike_root = Path(spike_root)
         self.base_url = base_url.rstrip("/")
         self.reads = reads
         self.retry_delay_s = retry_delay_s
+        self._image_generate = image_generate
         self._seen: Counter[str] = Counter()
         self.events: list[dict] = []  # for the run record: what failed and how it ended
 
@@ -254,25 +262,36 @@ class PageTools:
 
     # --- images --------------------------------------------------------------------------------
 
+    def _generated_dir(self) -> Path:
+        return self.spike_root / "public" / "generated" / self._run()["site"]
+
+    def _generated_index(self) -> dict[str, dict]:
+        index = self._generated_dir() / "index.json"
+        return json.loads(index.read_text()) if index.exists() else {}
+
     def _asset_descriptions(self) -> dict[str, str]:
         assets_file = self.spike_root / "data" / "brands" / self._run()["brand"] / "assets.json"
-        if not assets_file.exists():
-            return {}
-        assets = json.loads(assets_file.read_text())
-        return {a["file"]: (a.get("description") or a.get("label") or "") for a in assets.values()}
+        assets = json.loads(assets_file.read_text()) if assets_file.exists() else {}
+        described = {a["file"]: (a.get("description") or a.get("label") or "") for a in assets.values()}
+        described.update({file: f"generated: {entry['prompt']}" for file, entry in self._generated_index().items()})
+        return described
 
     def view_asset(self, files: list[str]) -> list[dict] | str:
-        """Look at up to four of the brand's images (files from brand/brand.md), with their descriptions."""
+        """Look at up to four images (the brand's from brand/brand.md, or this site's generated ones),
+        with their descriptions."""
         from lumen_agent.tools.view import _image_bytes_block  # the platform's provider-safe image block
 
         if not files:
-            return "Give one to four image files from brand/brand.md."
+            return "Give one to four image files from brand/brand.md or ones you generated."
         descriptions = self._asset_descriptions()
+        run = self._run()
+        own = (f"/brands/{run['brand']}/", f"/generated/{run['site']}/", f"/accounts/{run['site']}/")
         blocks: list[dict] = []
         for file in files[:VIEW_ASSET_MAX]:
             path = self.spike_root / "public" / file.lstrip("/")
-            if not file.startswith("/brands/") or not path.is_file():
-                blocks.append({"type": "text", "text": f"{file}: not one of this brand's images; use a file from brand/brand.md"})
+            if not file.startswith(own) or not path.is_file():
+                blocks.append({"type": "text", "text": f"{file}: not one of this site's images; use a file from "
+                               "brand/brand.md or one you generated"})
                 continue
             if path.suffix.lower() in (".mp4", ".webm", ".mov"):
                 blocks.append({"type": "text", "text": f"{file}: a video; it cannot be shown as a picture"})
@@ -289,6 +308,67 @@ class PageTools:
         if files[VIEW_ASSET_MAX:]:
             blocks.append({"type": "text", "text": f"Showed the first {VIEW_ASSET_MAX}; ask again for the rest."})
         return blocks
+
+    def _reference(self, file: str) -> tuple[bytes, str] | str:
+        """One brand image as a PNG reference for the image model, or the reason it cannot be one."""
+        from PIL import Image
+
+        path = self.spike_root / "public" / file.lstrip("/")
+        if not file.startswith(f"/brands/{self._run()['brand']}/") or not path.is_file():
+            return f"{file}: not one of this brand's images; use a file from brand/brand.md"
+        if path.suffix.lower() in (".svg", ".mp4", ".webm", ".mov"):
+            return f"{file}: a style reference must be a photo or picture, not a logo file or a video"
+        try:
+            image = Image.open(path)
+            image.thumbnail((REFERENCE_PX, REFERENCE_PX))
+            buffer = io.BytesIO()
+            image.convert("RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB").save(buffer, format="PNG")
+        except Exception as error:  # an unreadable file is an answer, not a crash
+            return f"{file}: could not be opened ({error})"
+        return buffer.getvalue(), "image/png"
+
+    def generate_image(
+        self, prompt: str, aspect_ratio: str = "16:9", style_references: list[str] | None = None
+    ) -> list[dict] | str:
+        """Make a new image for this site, in the brand's style (see the images-and-logos skill)."""
+        from lumen_agent.tools.view import _image_bytes_block
+
+        references = list(style_references or [])
+        if len(references) > STYLE_REFERENCES_MAX:
+            return f"Give at most three style references (you gave {len(references)})."
+        prepared: list[tuple[bytes, str]] = []
+        for file in references:
+            reference = self._reference(file)
+            if isinstance(reference, str):
+                return reference
+            prepared.append(reference)
+        generate = self._image_generate
+        if generate is None:
+            from lumen_api.image_provider import generate  # the platform's image provider
+        try:
+            result = generate(prompt=prompt, aspect_ratio=aspect_ratio, reference_images=prepared or None)
+        except Exception as error:  # the provider failing is an answer, not a crash
+            self._record("generate_image", ok=False, error=str(error)[:200])
+            return f"The image model could not make the image ({str(error)[:200]}). Try once more with a shorter " \
+                   "prompt, or choose a section without an image."
+        extension = IMAGE_EXTENSIONS.get(result.mime_type, ".png")
+        name = hashlib.sha256(result.image_bytes).hexdigest()[:16] + extension
+        folder = self._generated_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / name).write_bytes(result.image_bytes)
+        file = f"/generated/{self._run()['site']}/{name}"
+        index = self._generated_index()
+        index[file] = {"prompt": prompt, "aspect_ratio": aspect_ratio, "style_references": references,
+                       "width": result.width, "height": result.height, "model": getattr(result, "model", None),
+                       "at": datetime.now(timezone.utc).isoformat()}
+        (folder / "index.json").write_text(json.dumps(index, indent=2))
+        self._record("generate_image", ok=True, file=file, model=getattr(result, "model", None))
+        size = f"{result.width}x{result.height}" if result.width and result.height else "size unknown"
+        return [
+            {"type": "text", "text": f"{file} ({size}). Look at it before you use it: put this path in an image "
+             "slot or image prop, or leave it out if it breaks the images-and-logos rules."},
+            _image_bytes_block(result.image_bytes, max_px=VIEW_ASSET_PX),
+        ]
 
     # --- new sections (E5) -----------------------------------------------------------------------
 

@@ -481,8 +481,15 @@ def page_tool_set(page_tools: PageTools, *, allow_new_sections: bool = False) ->
         ),
         StructuredTool.from_function(
             page_tools.view_asset, name="view_asset",
-            description="Look at up to four of the brand's images (files from brand/brand.md), each with "
-            "its description, before you choose one for a section.",
+            description="Look at up to four images (files from brand/brand.md, or images you generated), "
+            "each with its description, before you choose one for a section.",
+        ),
+        StructuredTool.from_function(
+            page_tools.generate_image, name="generate_image",
+            description="Make a new image for this site in the brand's style (see the images-and-logos "
+            "skill). prompt says what it shows; aspect_ratio is the section's shape, such as \"16:9\", "
+            "\"4:3\" or \"1:1\"; style_references are one to three of the brand's own photos from "
+            "brand/brand.md. Returns the image's path and shows it to you.",
         ),
         StructuredTool.from_function(
             page_tools.web_search, name="web_search",

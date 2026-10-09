@@ -236,7 +236,7 @@ def test_view_asset_shows_a_brand_image_with_its_description(workspace: Path) ->
     blocks = tools.view_asset([file, "/brands/garner/assets/nope.png"])
     assert any(b.get("type") == "image" for b in blocks)
     texts = " ".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-    assert file in texts and "not one of this brand's images" in texts
+    assert file in texts and "not one of this site's images" in texts
 
 
 def test_compaction_is_set_by_tokens_only(workspace: Path) -> None:
@@ -287,3 +287,12 @@ def test_the_prompt_names_the_claims_file_only_when_the_workspace_has_one(worksp
     with_claims = system_prompt_with_skills(workspace)
     assert "`research/claims.md` lists each claim with what it" in with_claims
     assert "check its claim in `research/claims.md`" in with_claims
+
+
+def test_the_images_skill_and_generate_image_reach_the_agent(workspace: Path) -> None:
+    from trials_puck_agent.harness import system_prompt_with_skills
+
+    prompt = system_prompt_with_skills(workspace)
+    assert "### Skill: images-and-logos" in prompt and "Generate only a scene or a mood" in prompt
+    assert "- `generate_image`:" in prompt and "- `view_asset`: shows you one image." in prompt
+    assert "Your four skills" in prompt

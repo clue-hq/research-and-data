@@ -34,3 +34,10 @@ fails without it).
   every statement type, its notes, and the Watch-outs / Context only sections (marked background);
   the claims file comes from the claims the research cites (the source drawer's read), gated by the
   platform rule.
+- 2026-10-09 · new skill images-and-logos (founder-approved wording, R3): reuse the brand's real
+  images; generate only a scene or a mood (no words, logos, real people, product screens, or the
+  account's own places); no image beats a weak image; the account's logo only in the header; a
+  customer-logo row must not imply the account is a customer. System prompt: brand.md holds the
+  account's logo; view_asset and generate_image listed; four skills. building-with-puck: images
+  come from brand.md or generate_image. Written before a run (the agent had no way to make an
+  image); R3 runs test it.

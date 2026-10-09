@@ -203,3 +203,61 @@ def test_a_statement_resting_on_a_claim_held_back_by_a_real_rule_is_left_out() -
     text = ws.research_markdown("SCSD: overview", [WHY_NOW], {QUOTE_ID: "c1"}, held={BUDGET_ID})
     assert "Costs “will rise 8% in the coming school year.” [c1]" in text
     assert "The budget added $4.2 million" not in text
+
+
+# --- R3: the account's logo, listed in brand.md for the header ------------------------------------
+
+def test_assemble_saves_the_account_logo_and_lists_it_in_brand_md(tmp_path: Path) -> None:
+    import shutil as _shutil
+    import uuid
+
+    site = f"agent-test-{uuid.uuid4().hex[:8]}"
+    workspace = tmp_path / "workspace"
+    try:
+        ws.assemble(
+            workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site=site, brief="For the page\n",
+            account_name="Syracuse City School District", overview=[], insights=[], knowledge=None,
+            account_logo=[{"cell": "light_lockup", "body": b"<svg/>", "content_type": "image/svg+xml"},
+                          {"cell": "dark_mark", "body": b"\x89PNG", "content_type": "image/png"}],
+        )
+        brand = (workspace / "brand/brand.md").read_text()
+        assert "## The account's logo (header only)" in brand
+        assert f"`/accounts/{site}/light_lockup.svg`: the full logo, for light backgrounds" in brand
+        assert f"`/accounts/{site}/dark_mark.png`: the symbol only, for dark backgrounds" in brand
+        assert (SPIKE / "public" / "accounts" / site / "light_lockup.svg").read_bytes() == b"<svg/>"
+    finally:
+        _shutil.rmtree(SPIKE / "public" / "accounts" / site, ignore_errors=True)
+
+
+def test_assemble_without_an_account_logo_says_none_was_found(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    ws.assemble(
+        workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site="agent-test", brief="For the page\n",
+        account_name="Syracuse City School District", overview=[], insights=[], knowledge=None,
+    )
+    brand = (workspace / "brand/brand.md").read_text()
+    assert "## The account's logo (header only)\n\nNone was found. Leave `accountLogo` empty." in brand
+
+
+def test_the_site_summary_describes_a_generated_image_by_its_prompt(tmp_path: Path) -> None:
+    import shutil as _shutil
+    import uuid
+
+    site_name = f"agent-test-{uuid.uuid4().hex[:8]}"
+    generated = SPIKE / "public" / "generated" / site_name
+    try:
+        generated.mkdir(parents=True)
+        file = f"/generated/{site_name}/abc.png"
+        (generated / "index.json").write_text(json.dumps({file: {"prompt": "A calm school scene"}}))
+        site = json.loads((SPIKE / "data" / "sites" / "garner-syracuse.json").read_text())
+        page = site["pages"]["/"]
+        page["content"].append({"type": "FeatureSplit", "props": {"id": "gen", "surface": "page", "heading": "H",
+                                                                 "body": "B", "image": file}})
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        (workspace / ".run.json").write_text(json.dumps({"brand": "garner", "site": site_name, "route": "/"}))
+        (workspace / "page.json").write_text(json.dumps(page))
+        (workspace / "shell.json").write_text(json.dumps(site["shell"]))
+        assert f"{file} (generated: A calm school scene)" in ws.site_summary(workspace, SPIKE)
+    finally:
+        _shutil.rmtree(generated, ignore_errors=True)

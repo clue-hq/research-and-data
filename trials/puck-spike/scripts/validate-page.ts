@@ -78,8 +78,17 @@ export function validate(workspace: string): { valid: boolean; errors: string[] 
   if (!shellResult.success) errors.push(...formatIssues(shellResult.error).split("\n").map((e) => `shell.${e}`));
 
   const assetFiles = new Set(Object.values(brand.assets).map((asset) => asset.file));
+  // R3: an image generated for this site (public/generated/<site>/) is the site's own; another
+  // site's, or a file that was never generated, is refused.
+  const generatedPrefix = `/generated/${run.site ?? ""}/`;
+  const generatedHere = (value: string) =>
+    value.startsWith(generatedPrefix) && fs.existsSync(path.join(__dirname, "..", "public", value));
   const imageAllowed = (value: unknown) =>
-    value === "" || value === undefined || (typeof value === "string" && assetFiles.has(value));
+    value === "" || value === undefined || (typeof value === "string" && (assetFiles.has(value) || generatedHere(value)));
+  const imageError = (where: string, value: unknown) =>
+    String(value).startsWith("/generated/")
+      ? `${where}: image "${String(value)}" was not generated for this site; use a brand image or one generate_image made for this site`
+      : `${where}: image "${String(value)}" is not in the brand's assets; pick a file from brand/brand.md`;
 
   // Links the page writes (not the clones' own captured links, which keep pointing at the seller).
   const written: { where: string; href: string }[] = [];
@@ -127,7 +136,7 @@ export function validate(workspace: string): { valid: boolean; errors: string[] 
           if (slot.kind === "href" && value !== String(slot.fallback ?? "")) addWritten(value, `${at}.slots.${key}`);
           if (slot.kind === "href" && key.startsWith("cta")) addDestination(value, `${at}.slots.${key}`);
           if (slot.kind === "image" && !imageAllowed(value)) {
-            errors.push(`${at}.slots.${key}: image "${String(value)}" is not in the brand's assets; pick a file from brand/brand.md`);
+            errors.push(imageError(`${at}.slots.${key}`, value));
           }
           if (slot.kind === "visibility" && typeof value !== "boolean") errors.push(`${at}.slots.${key}: a visibility slot takes true or false`);
         }
@@ -147,7 +156,7 @@ export function validate(workspace: string): { valid: boolean; errors: string[] 
         });
       }
       if (item.type === "FeatureSplit" && !imageAllowed(item.props.image)) {
-        errors.push(`${at}.image: "${String(item.props.image)}" is not in the brand's assets; pick a file from brand/brand.md`);
+        errors.push(imageError(`${at}.image`, item.props.image));
       }
       if ((item.type === "FeatureSplit" && item.props.buttonLabel) || item.type === "CtaBand") {
         addDestination(item.props.buttonHref, `${at}.buttonHref`);
@@ -157,8 +166,8 @@ export function validate(workspace: string): { valid: boolean; errors: string[] 
       if (item.type in agentSections) {
         // Any brand image path in an agent section's props must be one of the brand's images.
         const walk = (value: unknown, where: string) => {
-          if (typeof value === "string" && value.startsWith("/brands/") && !imageAllowed(value)) {
-            errors.push(`${where}: image "${value}" is not in the brand's assets; pick a file from brand/brand.md`);
+          if (typeof value === "string" && /^\/(brands|generated)\//.test(value) && !imageAllowed(value)) {
+            errors.push(imageError(where, value));
           } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`));
           else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`);
         };
@@ -168,8 +177,8 @@ export function validate(workspace: string): { valid: boolean; errors: string[] 
   }
 
   const accountLogo = shell.header?.accountLogo;
-  if (accountLogo && !imageAllowed(accountLogo) && !String(accountLogo).startsWith("/accounts/")) {
-    errors.push(`shell.header.accountLogo: "${String(accountLogo)}" is neither a brand asset nor an account asset`);
+  if (accountLogo && !imageAllowed(accountLogo) && !String(accountLogo).startsWith(`/accounts/${run.site ?? ""}/`)) {
+    errors.push(`shell.header.accountLogo: "${String(accountLogo)}" is not this account's logo; use a file from "The account's logo" in brand/brand.md, or leave it empty`);
   }
   addDestination(shell.header?.ctaHref, "shell.header.ctaHref");
   addWritten(shell.header?.ctaHref, "shell.header.ctaHref");
