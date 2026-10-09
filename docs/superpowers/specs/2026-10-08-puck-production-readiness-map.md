@@ -136,6 +136,10 @@ Three candidate sources:
 
 Experiment R1 (§7) confirms this before we commit.
 
+**Founder ruling (2026-10-09):** Head of ABM's brief gives direction and may suggest facts, proof
+and structure. The page agent reads the research itself and chooses on its own reasoning. So the
+research files are the agent's main input, not just a backup to the brief.
+
 ## 4. Skills: platform skill → Puck skill
 
 | Platform skills | Verdict |
@@ -269,10 +273,14 @@ On Puck the engine, bridge and class facets go away; the chrome (tabs, header, s
     passes a section's `<script>`, raw `onerror` handlers and outside images straight into the
     HTML (tested 2026-10-09). Published pages also send a security policy that blocks scripts and
     images from other hosts.
-  - **Open question (owner: Lane A, founder decision):** published pages default to
-    `*.pages.cluehq.ai` (`.env.example:601`), the same registrable domain as the app. The research
-    recommends a distinct one: GitHub moved Pages off github.com over cookie tossing, and abuse on
-    a shared domain took Notion and CodeSandbox offline. Custom domains are already separate.
+  - **Published-page domain (founder decision, 2026-10-09): a separate registrable domain from
+    the start.** Today the system address defaults to `*.pages.cluehq.ai` (`.env.example:601`),
+    the app's own registrable domain. Why move: GitHub moved Pages off github.com over cookie
+    tossing, and abuse on a shared domain took Notion and CodeSandbox offline. The domain name
+    is still to be chosen and registered. It must also differ from the editor domain, so abuse
+    reports against a published page can't take the editor down. The setting is shared with the
+    WebDoc lane, so check existing published hostnames before switching. Custom domains are
+    already separate.
 - **Head of ABM:** `open_design_leg` gains `doc_kind: site`, behind a per-workspace flag.
 
 ## 7. Readiness
@@ -320,8 +328,8 @@ estimate, not a measurement.)
 | # | Decision | Recommendation |
 |---|---|---|
 | D1 | Where site documents live | A new `site` kind in `design_document`, in a shape that satisfies today's contract |
-| D2 | Agent-written code in production | **Decided by the founder, 2026-10-09:** agent sections stay TSX, compiled and stored per workspace. In the editor they run only inside a Puck editor served from its own domain, with no login there, embedded in app.cluehq.ai as one frame (§5). On the server they run only in a locked container per workspace. Published HTML is sanitized (§6). Rejected: a sandbox per section (no builder does it; the costs multiply per section); server-rendered agent sections in locked frames (cheaper, but agent sections could not be edited live); a JSON layout language (caps how distinctive pages can look). Still open: one shared editor domain or one per workspace (Lane C), and the published-page domain (§6). |
-| D3 | Research input | Display pages in files plus `read_claims` on demand; confirm with R1 |
+| D2 | Agent-written code in production | **Decided by the founder, 2026-10-09:** agent sections stay TSX, compiled and stored per workspace. In the editor they run only inside a Puck editor served from its own domain, with no login there, embedded in app.cluehq.ai as one frame (§5). On the server they run only in a locked container per workspace. Published HTML is sanitized (§6). Rejected: a sandbox per section (no builder does it; the costs multiply per section); server-rendered agent sections in locked frames (cheaper, but agent sections could not be edited live); a JSON layout language (caps how distinctive pages can look). Published pages move to their own registrable domain (§6, founder 2026-10-09). Recommended, to confirm in C11: one editor subdomain per workspace on a single wildcard domain. That is one deployment, one wildcard DNS record and one wildcard certificate, with no extra servers per workspace (Framer's per-project canvas and Google's SafeContentFrame both work this way). |
+| D3 | Research input | **Founder ruling, 2026-10-09:** Head of ABM's brief gives direction and suggestions; the page agent reads the research itself and chooses its facts on its own reasoning. Form: display pages in files, plus the claims behind them (R1 tests how) |
 | D4 | Which new Puck abilities get UI now | Only two need new designs: the section insert palette, and delete/duplicate. Inline text (the existing toolbar's look), the asset library, the Versions menu and the reorder handles are already designed. |
 | D5 | Where the renderer runs | The frontend app's server rendering, or a separate Node render service |
 | D6 | Coexistence | A per-workspace flag. Existing WebDoc documents stay on the old engine; no conversion |

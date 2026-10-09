@@ -142,3 +142,9 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
 - Open: one shared editor domain vs one per workspace (C11); published pages default to
   *.pages.cluehq.ai, same registrable domain as the app — research recommends a distinct one (A7,
   founder decision). R1 question to founder still unanswered; Task 5 not started.
+- Founder 2026-10-09 (later): published pages get their own registrable domain from the start (name
+  TBD; distinct from the editor domain; CLUE_PAGES_SYSTEM_SUFFIX is shared with WebDoc). Editor:
+  one subdomain per workspace recommended (one wildcard DNS + cert, no per-workspace servers),
+  confirm at C11. R1/D3 ruling: Head of ABM's brief = direction/suggestions; the page agent reads the
+  research and chooses facts on its own reasoning. Task 5 next: prompt wording + claims file, shown
+  to the founder before writing; runs need the founder's go.

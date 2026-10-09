@@ -157,8 +157,10 @@ Each failure mode has a test in its owning task.
 **The design.**
 - **The editor domain.** The whole Puck editor (canvas, fields, outline) is a page on a separate
   registrable domain that never holds the marketer's login. app.cluehq.ai embeds it as one
-  `<iframe>` and keeps chat, header, gallery, asset library, versions and publish. One shared
-  domain or one subdomain per workspace (Framer's pattern) is decided in C11.
+  `<iframe>` and keeps chat, header, gallery, asset library, versions and publish. Recommended,
+  to confirm in C11: one subdomain per workspace (Framer's per-project pattern) on one wildcard
+  domain. That is one deployment, one wildcard DNS record and one wildcard certificate; no servers
+  per workspace.
 - **Frame attributes.** `sandbox="allow-scripts allow-same-origin"`, with no `allow-top-navigation`
   or popups. `allow-same-origin` is safe here only because the editor domain differs from the
   app's; Puck needs it for its own canvas frame and browser storage.
@@ -178,8 +180,11 @@ Each failure mode has a test in its owning task.
   pages.
 - **Accepted latency (founder, 2026-10-09).** First open a few hundred ms; a few ms per message.
   No measurement spike.
-- **Open (founder decision, owner A7):** published pages default to `*.pages.cluehq.ai`
-  (`.env.example:601`), the app's registrable domain. The research recommends a distinct one.
+- **Published-page domain (founder decision, 2026-10-09): its own registrable domain from the
+  start.** It replaces the `*.pages.cluehq.ai` default (`.env.example:601`) and is distinct from
+  the editor domain. The name is to be chosen. Owner A7.
+- **Research input (founder ruling, 2026-10-09, D3):** the brief gives direction and suggestions;
+  the page agent reads the research and chooses its facts on its own reasoning (Task 5).
 
 ---
 
@@ -947,7 +952,7 @@ then and including Wave 1's results. The outlines fix the scope, files and accep
 | A4. Gallery and library | `design_leg_wiring.py:578` (`project_design_documents`), `:721` (`workspace_design_documents`): include site documents; map the kind | A site document appears in the project gallery and the library |
 | A5. Renderer bundle | `@clue/site-kit` `bin/render-site.ts` bundled with esbuild to `dist/render-site.mjs` (React, Puck and components inlined). Design API: `LUMEN_SITE_RENDERER` (path; in both `.env.example` files), a `render_site(site, brand, sections) -> {pages:[{route, html}], css}` subprocess wrapper next to `web_export.py`'s Node call (`:72`). Asset paths become `/asset-store/<digest>`. Agent sections render only in the locked container per workspace (D2): no network, read-only, only that workspace's modules, `--init`, timeout, memory and output caps | A page renders to HTML; the CSS is compiled once; the snapshot matches the spike's `/s/` render; the spike's fs-read and huge-output probes are refused |
 | A6. Thumbnails | `clue_design/thumbnails.py`, `lumen_api/document_thumbnails.py`: site → `render_site` + Playwright | The thumbnail endpoint returns an image for a site |
-| A7. Site publish package | `build_site_publish_package(...) -> PublishPackage` beside `web_export.build_publish_package`; `toolbelt/publishes.py:94` accepts `site`; a missing agent module refuses (`site_publish.section_module_missing`) (Review focus 5). Agent-section HTML passes an allow-list sanitizer, and published pages send a security policy blocking scripts and images from other hosts (Review focus 7, D2). Bring the published-page domain question (D2 "Open") to the founder | Publish a two-page site; the page origin serves both routes; republish locks the hostname once; missing module refused; a section emitting `<script>`, `onerror` and an outside image publishes without them |
+| A7. Site publish package | `build_site_publish_package(...) -> PublishPackage` beside `web_export.build_publish_package`; `toolbelt/publishes.py:94` accepts `site`; a missing agent module refuses (`site_publish.section_module_missing`) (Review focus 5). Agent-section HTML passes an allow-list sanitizer, and published pages send a security policy blocking scripts and images from other hosts (Review focus 7, D2). Switch the system address to the published-page domain (D2; founder 2026-10-09): `CLUE_PAGES_SYSTEM_SUFFIX` and `CLUE_PAGES_CNAME_TARGET` in `.env.example`, checking existing published hostnames first | Publish a two-page site; the page origin serves both routes; republish locks the hostname once; missing module refused; a section emitting `<script>`, `onerror` and an outside image publishes without them |
 | A8. Export | ZIP and PDF for site (the `/web/export` siblings) | ZIP has every route; PDF renders |
 
 ### Lane B: the agent on the fleet (about 3 weeks)
@@ -976,7 +981,7 @@ then and including Wave 1's results. The outlines fix the scope, files and accep
 | C8. Pages | The page switcher and page settings for the site model | Add, rename and remove a page; nav links follow |
 | C9. Agent sections | Load modules at runtime per B6/Task 4, inside the editor domain only | A loaded section edits in place |
 | C10. Insert, delete, duplicate | **After the founder's designs** | Per the design |
-| C11. The editor domain (D2) | A host page for Puck on its own registrable domain (deploy, DNS, TLS; a dev-stack equivalent on a second local site); the frame attributes and headers in "D2" above; the message bridge between `SiteArtifactCanvas` and the editor page (load, batched save through the BFF, agent updates, selection, asset picker); warm the frame when the project opens. Decide one shared domain or one per workspace | The spike's hostile sections cannot read app cookies or call our API, cannot send a pixel, cannot reach `Function`, and cannot navigate the tab (Review focus 6); a forged frame message for another document is refused; edit, save and agent reload work end to end |
+| C11. The editor domain (D2) | A host page for Puck on its own registrable domain (deploy, DNS, TLS; a dev-stack equivalent on a second local site); the frame attributes and headers in "D2" above; the message bridge between `SiteArtifactCanvas` and the editor page (load, batched save through the BFF, agent updates, selection, asset picker); warm the frame when the project opens. Confirm one subdomain per workspace (recommended; one wildcard DNS record and certificate) | The spike's hostile sections cannot read app cookies or call our API, cannot send a pixel, cannot reach `Function`, and cannot navigate the tab (Review focus 6); a forged frame message for another document is refused; edit, save and agent reload work end to end |
 
 ## Wave 4: hardening and rollout (about 1 week)
 
