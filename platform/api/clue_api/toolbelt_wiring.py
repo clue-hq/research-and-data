@@ -3184,6 +3184,11 @@ def build_toolbelt(
         conn_factory=conn_factory,
         storage=storage,
         enabled=resolved_settings.design_runtime_enabled,
+        site_engine_workspaces=frozenset(
+            w.strip()
+            for w in resolved_settings.design_site_engine_workspaces.split(",")
+            if w.strip()
+        ),
     ):
         registry.register(tool, make_default=True)
     return registry

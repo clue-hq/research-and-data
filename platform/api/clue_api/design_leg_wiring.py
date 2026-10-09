@@ -125,11 +125,13 @@ __all__ = [
     "DESIGN_LEG_ACCOUNT_UNRESOLVED",
     "DESIGN_LEG_BUDGET_LIMIT_MILLICENTS",
     "DESIGN_LEG_DOCUMENT_FINALIZED",
+    "DESIGN_LEG_SITE_RUNTIME_NOT_COMPOSED",
     "DESIGN_LEG_TURN_CRASHED",
     "DESIGN_LEG_TURN_FAILED",
     "DesignLegLaneDriver",
     "DesignLegTurnResult",
     "DesignLegTurnRunner",
+    "SiteRuntimeNotComposedError",
     "batch_summary",
     "design_leg_execution_id",
     "design_leg_run_id",
@@ -171,6 +173,27 @@ DESIGN_LEG_TURN_CRASHED = "design_leg_turn_crashed"
 #: asking them to say it again against the scene as it now stands.
 DESIGN_LEG_TARGET_UNRESOLVED = "design_leg_target_unresolved"
 DESIGN_LEG_MEMORY_SCOPE_UNRESOLVED = "design_leg_memory_scope_unresolved"
+
+#: Website agent on Puck (2026-10-09 plan): the addressed document is a Puck ``site`` document,
+#: whose runtime (Lane B, B5 ``execute_site_turn_job``) is not composed yet. The turn refuses
+#: before any design run row instead of handing a site to the scene runtime.
+DESIGN_LEG_SITE_RUNTIME_NOT_COMPOSED = "design_leg_site_runtime_not_composed"
+
+
+class SiteRuntimeNotComposedError(RuntimeError):
+    """A turn addressed a ``site`` document before the site runtime exists (until B5).
+
+    Raised while BUILDING the envelope, so no run row, task or leg-state write has happened;
+    the runner turns it into the typed ``DESIGN_LEG_SITE_RUNTIME_NOT_COMPOSED`` refusal.
+    """
+
+    def __init__(self, document_id: str) -> None:
+        super().__init__(
+            f"design document {document_id} is a site document and the site runtime is not "
+            "composed yet"
+        )
+        self.document_id = document_id
+
 
 _EXECUTION_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-execution")
 _RUN_NAMESPACE = uuid5(NAMESPACE_URL, "clue-design-leg-run")
@@ -1539,6 +1562,22 @@ class DesignLegTurnRunner:
                     failure_code=DESIGN_LEG_MEMORY_SCOPE_UNRESOLVED,
                     stream=stream,
                 )
+            except SiteRuntimeNotComposedError as exc:
+                # Raised while building the envelope, like the target refusal below: no run
+                # row exists and the leg was never marked running, so it stays
+                # open_awaiting_user. On a batch, one site document refuses the whole turn.
+                log.warning(
+                    "design_leg.site_runtime_not_composed",
+                    leg_id=leg_id,
+                    turn_id=str(turn_id),
+                    document_id=exc.document_id,
+                )
+                return await self._fail_turn(
+                    submission=submission,
+                    execution_id=execution_id,
+                    failure_code=DESIGN_LEG_SITE_RUNTIME_NOT_COMPOSED,
+                    stream=stream,
+                )
             except DesignTurnTargetError as exc:
                 # Raised while BUILDING the envelope (before any run row or leg-state
                 # write): the durable node targets validated at acceptance no longer
@@ -2560,6 +2599,10 @@ class DesignLegTurnRunner:
         reference_asset_ids = tuple(
             ref.object_id for ref in focus_refs if ref.object_type == "design_asset"
         )
+        if document.get("doc_kind") == "site":
+            # The Puck site runtime lands in Lane B (B5, `execute_site_turn_job`). Until then a
+            # site document must never fall into the scene runtime (the `else "agent_turn"` arm).
+            raise SiteRuntimeNotComposedError(str(document_id))
         # B1: the leg document's kind decides which design runtime executes the turn. A web
         # document takes the ``web_turn`` path with a ``WebTurnRequest``-shaped request; a
         # scene document (or no pinned document at all — nothing to read a kind from) keeps

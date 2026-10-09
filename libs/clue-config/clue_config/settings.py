@@ -631,6 +631,12 @@ class Settings(BaseSettings):
     # app installed cannot execute a design turn — registering the handler there would claim work
     # it must then fail. Env: ``CLUE_DESIGN_RUNTIME_ENABLED``.
     design_runtime_enabled: bool = False
+    # Website agent on Puck (2026-10-09 plan): workspaces whose NEW websites are born as Puck
+    # `site` documents instead of WebDocs. Comma-separated workspace ids; empty = off everywhere,
+    # so every existing path is byte-identical. Head of ABM is unchanged: `open_design_leg`
+    # with doc_kind="web" births a site for listed workspaces.
+    # Env: CLUE_DESIGN_SITE_ENGINE_WORKSPACES.
+    design_site_engine_workspaces: str = ""
     # Staged until output-history erasure closure and explicit preference writes are validated.
     # Gates only production scene preference selection/resolution, not ordinary platform memory.
     # Env: ``CLUE_DESIGN_PREFERENCE_CONTEXT_ENABLED``.
