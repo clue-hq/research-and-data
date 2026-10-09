@@ -35,5 +35,7 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // The site kit's section-example fixture imports the agent kit by the alias agent-written
+  // sections use (@/puck/agent-kit), which only the site kit's own tsconfig maps.
+  "exclude": ["node_modules", "packages/site-kit/test/fixtures/section-example.tsx"]
 }

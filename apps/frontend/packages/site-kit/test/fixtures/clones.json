@@ -1,0 +1,236 @@
+[
+  {
+    "id": "frag_95041c54da629d99",
+    "role": "hero",
+    "label": "Hero \u2014 Top Providers. Bottom line results.",
+    "page_url": "https://garnerhealth.com/",
+    "section_index": 1,
+    "wrapper_class": "lumen-frag-95041c54da629d99",
+    "html": "<ls-h style=\"display:contents!important\" lang=\"en\"><ls-b style=\"display:contents!important\"><section class=\"section is-home-header\" data-lumen-slot=\"visible\"><div class=\"padding-global padding-section-large z-index-2\"><div class=\"container-large\"><div class=\"hero-content\"><h1 data-lumen-slot=\"headline\">Top Providers.<br>Bottom line results.<br></h1><div class=\"spacer rg\"></div><button data-wf--button--variant=\"white\" class=\"button w-variant-f4bc6497-47d0-f4aa-c4fd-9b4e7ba65b23\"><div>Request a demo</div><a aria-label=\"{{wf {&quot;propId&quot;:&quot;fc0003a1-20ca-e1d5-3f31-6f172ac626e4&quot;,&quot;type&quot;:&quot;PlainText&quot;} }}\" href=\"/book-a-demo\" class=\"button_link w-inline-block\" data-lumen-slot=\"cta_href\"></a><div class=\"icon-1x1-medium\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" width=\"100%\" height=\"100%\" aria-hidden=\"true\" focusable=\"false\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 12px 12px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(13, 43, 37) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></button></div></div></div><div class=\"bg_img-wrap\"><div class=\"bg_vid w-embed\"><div id=\"video-container\">\n</div>\n<video id=\"video\" autoplay=\"autoplay\" muted=\"muted\" loop=\"loop\" playsinline=\"\">\n  <source src=\"/brands/garner/assets/8f0b4bcad72e3477b095419569cd3f320862061180b06da60f6bfdc8d107c436.mp4\" type=\"video/mp4\">\n</video>\n\n</div><div class=\"bg_overlay\"></div></div></section></ls-b></ls-h>",
+    "css": ".x{}",
+    "slots": {
+      "cta_href": {
+        "kind": "href",
+        "fallback": "/book-a-demo"
+      },
+      "headline": {
+        "kind": "text",
+        "fallback": "Top Providers.Bottom line results."
+      },
+      "visible": {
+        "kind": "visibility",
+        "fallback": true
+      }
+    },
+    "native_dependencies": null,
+    "viewport_width": 1920
+  },
+  {
+    "id": "frag_79934268c8621bd2",
+    "role": "other",
+    "label": "Other \u2014 For Individuals & Families",
+    "page_url": "https://garnerhealth.com/",
+    "section_index": 2,
+    "wrapper_class": "lumen-frag-79934268c8621bd2",
+    "html": "<ls-h style=\"display:contents!important\" lang=\"en\"><ls-b style=\"display:contents!important\"><section class=\"section bg-background\" data-lumen-slot=\"visible\"><div class=\"padding-global padding-section-medium\"><div class=\"container-large\"><div data-stagger=\"\" class=\"grid cols-4x gap-2-5rem\"><a aria-label=\"For Individuals &amp; Families\" href=\"/how-it-works\" class=\"hero_item w-inline-block\" style=\"translate: none; rotate: none; scale: none; transform: translate(0px, 0px); opacity: 1;\"><img src=\"/brands/garner/assets/8c519cc9b7e30124d57860ec2458599497c9e7fe09bf67206a31dfc2450ad351.avif\" loading=\"lazy\" width=\"32\" height=\"32\" alt=\"Lowercase letter g inside a green circle with a gradient background.\" class=\"hero_item-img\" data-lumen-slot=\"image\"><div><div class=\"hero_item-top\"><h2 class=\"text-size-medium\" data-lumen-slot=\"headline\">For Individuals &amp; Families</h2><div class=\"hero_item-icon w-embed\"><svg width=\"100%\" height=\"100%\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" data-label=\"svg\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 11px 11px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(1, 64, 54) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></div><p class=\"text-size-small text-color-light-grey\" data-lumen-slot=\"body\">Use the Garner app to find the best doctors in your network, and get help covering your medical bills.</p></div></a><a aria-label=\"For Employers\" href=\"/for-employers\" class=\"hero_item w-inline-block\" style=\"translate: none; rotate: none; scale: none; transform: translate(0px, 0px); opacity: 1;\"><img src=\"/brands/garner/assets/47bd64b9e0f218349a5f39f47e7b366b97fe207d7585b1edf66a768fccb87974.avif\" loading=\"lazy\" width=\"32\" height=\"32\" alt=\"\" class=\"hero_item-img\" data-lumen-slot=\"image_2\"><div><div class=\"hero_item-top\"><h2 class=\"text-size-medium\" data-lumen-slot=\"headline_2\">For Employers</h2><div class=\"hero_item-icon w-embed\"><svg width=\"100%\" height=\"100%\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" data-label=\"svg\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 11px 11px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(1, 64, 54) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></div><p class=\"text-size-small text-color-light-grey\" data-lumen-slot=\"body_2\">Improve care quality and reduce healthcare spend \u2014 without changing plans or networks.</p></div></a><a aria-label=\"For Advisors\" href=\"/for-advisors\" class=\"hero_item w-inline-block\" style=\"translate: none; rotate: none; scale: none; transform: translate(0px, 0px); opacity: 1;\"><img src=\"/brands/garner/assets/399fdfafdd5ef285eec52d6e5c30e71296981165f147a0dda6590de25ed41185.avif\" loading=\"lazy\" width=\"32\" height=\"32\" alt=\"\" class=\"hero_item-img\" data-lumen-slot=\"image_3\"><div><div class=\"hero_item-top\"><h2 class=\"text-size-medium\" data-lumen-slot=\"headline_3\">For Advisors</h2><div class=\"hero_item-icon w-embed\"><svg width=\"100%\" height=\"100%\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" data-label=\"svg\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 11px 11px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(1, 64, 54) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></div><p class=\"text-size-small text-color-light-grey\" data-lumen-slot=\"body_3\">Offer clients a nondisruptive benefit that drives employee engagement and real savings.</p></div></a><a aria-label=\"For Providers\" href=\"/for-providers\" class=\"hero_item w-inline-block\" style=\"translate: none; rotate: none; scale: none; transform: translate(0px, 0px); opacity: 1;\"><img src=\"/brands/garner/assets/86a602e9142c4f1d5ded69480e9de400a6c21b210b04d0cbd8b7f69233997937.avif\" loading=\"lazy\" width=\"32\" height=\"32\" alt=\"\" class=\"hero_item-img\" data-lumen-slot=\"image_4\"><div><div class=\"hero_item-top\"><h2 class=\"text-size-medium\" data-lumen-slot=\"headline_4\">For Providers</h2><div class=\"hero_item-icon w-embed\"><svg width=\"100%\" height=\"100%\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" data-label=\"svg\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 11px 11px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(1, 64, 54) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></div><p class=\"text-size-small text-color-light-grey\" data-lumen-slot=\"body_4\">Power value-based care and growth with Garner\u2019s data-driven provider insights.</p></div></a></div><div class=\"header_divider\"></div><div class=\"max-width-medium align-center text-align-center\"><div class=\"text-size-small text-color-dull\">From 50-life employers to Fortune 50 companies, more than 700 organizations partner with Garner to raise the standard of care.<br></div></div><div class=\"spacer m\"></div><div class=\"w-dyn-list\"><div role=\"list\" class=\"company_list w-dyn-items\"><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/6a768dd2bba3fa1113afc18f0d8062ec7a5ee6c5ce0cfccdea5d40de9f2dfaec.svg\" alt=\"MarketStar company logo\" class=\"company_img img-active\" data-lumen-slot=\"image_5\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/c39a3b6788cfccaaf7ff1446f8131fac8fa4d904b04e3fd859db6c286ef88db6.svg\" alt=\"University of Oklahoma partner logo\" class=\"company_img img-active\" data-lumen-slot=\"image_6\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/a390f9beeb49adff9510f26ea5a8a5df3a6bd5125dcb06cc9ed6fab4ddc85b9c.svg\" alt=\"City of Portland partner logo\" class=\"company_img img-active\" data-lumen-slot=\"image_7\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/ec3ff5ed2df9ab84c4a88e2e933302d7d2dd5753f1a0ce41ad75abe04dc5cf9b.svg\" alt=\"USA Today media logo\" class=\"company_img img-active\" data-lumen-slot=\"image_8\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/12801d1f931c1a8438180b076fa7c4e36d9b95778ee7cbc11fc76bbf6e6a10d1.svg\" alt=\"Advance Auto Parts company logo\" class=\"company_img img-active\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/26eb8c7e08bd0ed9c178ed2ac8bd35de588bb5cf1611f930e6c1b793ef0b430c.svg\" alt=\"Mercy Health partner logo\" class=\"company_img img-active\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/c39a3b6788cfccaaf7ff1446f8131fac8fa4d904b04e3fd859db6c286ef88db6.svg\" loading=\"lazy\" alt=\"University of Oklahoma partner logo\" height=\"96\" class=\"company_img\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/15dc916a85187e3752c0986ef1cecb60e6953d77a15f22c6da98aa6e4e1602e0.svg\" loading=\"lazy\" alt=\"Clayton Homes company logo\" height=\"96\" class=\"company_img\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/c14bc955625e4a724e7671514f8f75de168833feeebf19517dd8646d00fc8e57.svg\" loading=\"lazy\" alt=\"Mohawk Industries company logo\" height=\"96\" class=\"company_img\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/9fb2764be5cb47bc017942ed25e2c3de79c1738c178cd8aa0eca56fdac733620.svg\" loading=\"lazy\" alt=\"Optum company logo\" height=\"96\" class=\"company_img\"></div><div role=\"listitem\" class=\"company_item w-dyn-item\"><img src=\"/brands/garner/assets/20128200b62ff3565a8c6fc680e13b69464bdbeb6dae61ce837c4e556b15aa25.svg\" loading=\"lazy\" alt=\"Benefitfocus company logo\" height=\"96\" class=\"company_img\"></div></div></div></div></div></section></ls-b></ls-h>",
+    "css": ".x{}",
+    "slots": {
+      "body": {
+        "kind": "text",
+        "fallback": "Use the Garner app to find the best doctors in your network, and get help covering your medical bills."
+      },
+      "body_2": {
+        "kind": "text",
+        "fallback": "Improve care quality and reduce healthcare spend \u2014 without changing plans or networks."
+      },
+      "body_3": {
+        "kind": "text",
+        "fallback": "Offer clients a nondisruptive benefit that drives employee engagement and real savings."
+      },
+      "body_4": {
+        "kind": "text",
+        "fallback": "Power value-based care and growth with Garner\u2019s data-driven provider insights."
+      },
+      "headline": {
+        "kind": "text",
+        "fallback": "For Individuals & Families"
+      },
+      "headline_2": {
+        "kind": "text",
+        "fallback": "For Employers"
+      },
+      "headline_3": {
+        "kind": "text",
+        "fallback": "For Advisors"
+      },
+      "headline_4": {
+        "kind": "text",
+        "fallback": "For Providers"
+      },
+      "image": {
+        "kind": "image",
+        "fallback": "8c519cc9b7e30124d57860ec2458599497c9e7fe09bf67206a31dfc2450ad351"
+      },
+      "image_2": {
+        "kind": "image",
+        "fallback": "47bd64b9e0f218349a5f39f47e7b366b97fe207d7585b1edf66a768fccb87974"
+      },
+      "image_3": {
+        "kind": "image",
+        "fallback": "399fdfafdd5ef285eec52d6e5c30e71296981165f147a0dda6590de25ed41185"
+      },
+      "image_4": {
+        "kind": "image",
+        "fallback": "86a602e9142c4f1d5ded69480e9de400a6c21b210b04d0cbd8b7f69233997937"
+      },
+      "image_5": {
+        "kind": "image",
+        "fallback": "6a768dd2bba3fa1113afc18f0d8062ec7a5ee6c5ce0cfccdea5d40de9f2dfaec"
+      },
+      "image_6": {
+        "kind": "image",
+        "fallback": "c39a3b6788cfccaaf7ff1446f8131fac8fa4d904b04e3fd859db6c286ef88db6"
+      },
+      "image_7": {
+        "kind": "image",
+        "fallback": "a390f9beeb49adff9510f26ea5a8a5df3a6bd5125dcb06cc9ed6fab4ddc85b9c"
+      },
+      "image_8": {
+        "kind": "image",
+        "fallback": "ec3ff5ed2df9ab84c4a88e2e933302d7d2dd5753f1a0ce41ad75abe04dc5cf9b"
+      },
+      "visible": {
+        "kind": "visibility",
+        "fallback": true
+      }
+    },
+    "native_dependencies": null,
+    "viewport_width": 1920
+  },
+  {
+    "id": "frag_9a8550d2f42f1196",
+    "role": "other",
+    "label": "Other \u2014 More data and new analytics to evaluate providers",
+    "page_url": "https://garnerhealth.com/",
+    "section_index": 4,
+    "wrapper_class": "lumen-frag-9a8550d2f42f1196",
+    "html": "<ls-h style=\"display:contents!important\" lang=\"en\"><ls-b style=\"display:contents!important\"><section class=\"section\" data-lumen-slot=\"visible\"><div class=\"padding-global padding-section-medium btm-5\"><div class=\"container-large\"><div class=\"grid gap-4rem center\"><div class=\"layout_img-container\"><img src=\"/brands/garner/assets/183c54b76eafd12319b991d4a9fe1ab918fdcb48fcc90931a527d96058ef9308.avif\" loading=\"lazy\" width=\"568\" height=\"543\" alt=\"Map of the United States showing state boundaries with numerous white dots scattered across each state representing specific locations.\" srcset=\"/brands/garner/assets/97c3cc95733862682ab136de29119aad53684a9522f7185bfca2f8606c578f74.avif 500w, /brands/garner/assets/535ed1f88b3c0c5c3f5ab7ad2d74d3631fd99ef293b9b31860d4a657eddf6407.avif 800w, /brands/garner/assets/183c54b76eafd12319b991d4a9fe1ab918fdcb48fcc90931a527d96058ef9308.avif 1136w\" sizes=\"(max-width: 767px) 100vw, 568px\" class=\"layout_img\" data-lumen-slot=\"image\"></div><div class=\"max-width-medium align-center\"><div data-animation=\"slide-up\" class=\"text-align-center\" style=\"translate: none; rotate: none; scale: none; transform: translate(0px, 0px); opacity: 1;\"><h2 data-lumen-slot=\"headline\">More data and new analytics to evaluate providers<br></h2><div class=\"spacer rg\"></div><p class=\"text-size-medium is-grey\" data-lumen-slot=\"body\">We\u2019ve compiled the largest claims database in the U.S.\u2014over 60 billion medical records from 320 million patients\u2014to identify which doctors diagnose more accurately and have better patient outcomes.<br></p><div class=\"spacer m\"></div><div class=\"flex is-center\"><button data-wf--button--variant=\"secondary\" class=\"button w-variant-09e8974d-7a2b-56d4-54dd-ccfba1b9eec9\"><div>See how it works</div><a aria-label=\"{{wf {&quot;propId&quot;:&quot;fc0003a1-20ca-e1d5-3f31-6f172ac626e4&quot;,&quot;type&quot;:&quot;PlainText&quot;} }}\" href=\"/how-it-works\" class=\"button_link w-inline-block\" data-lumen-slot=\"cta_href\"></a><div class=\"icon-1x1-medium\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" width=\"100%\" height=\"100%\" aria-hidden=\"true\" focusable=\"false\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 12px 12px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(14, 17, 16) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></button></div></div></div></div><div class=\"spacer-xhuge\"></div><div class=\"grid gap-4rem center\"><div class=\"max-width-medium align-center\"><div data-animation=\"slide-up\" class=\"text-align-center\" style=\"translate: none; rotate: none; scale: none; transform: translate(0px, 0px); opacity: 1;\"><h2 data-lumen-slot=\"headline_2\">The easiest way to choose your doctor<br></h2><div class=\"spacer rg\"></div><p class=\"text-size-medium is-grey\" data-lumen-slot=\"body_2\">Garner Assistant makes it easy to find the best providers that are in-network, available, and near you.<br></p></div></div><div class=\"layout_img-container\"><img src=\"/brands/garner/assets/a8f5e015e053a28e325bf8734fc1e60f140466a26ec5c94a0625fe9814831485.avif\" loading=\"lazy\" width=\"568\" height=\"543\" alt=\"Chat screen showing a request for orthopedic surgeons near Lyme, CT with three doctor profiles listed.\" srcset=\"/brands/garner/assets/1eb7b3b127e4adeefada779d0946991416e2c337b07169e1891fb310424c7eb8.avif 500w, /brands/garner/assets/9068ce7e6108bc4e71c92e9ab5a2e30a8d3c02cdfbb704f354ab43cc8c7f39c4.avif 800w, /brands/garner/assets/c61d7c48a3568af700dc0958de25d1dbd694dca5dbf30d01a405860df51fda37.avif 1080w, /brands/garner/assets/65aab35774018462739560d2e595ec33e33b7257e345b23e3da5f0d25edcdc45.avif 1600w, /brands/garner/assets/426f271bc2b1ccb6fdce3e28ccf0c8753bfd31a8f5499d1052843590411b115f.avif 2000w, /brands/garner/assets/a8f5e015e053a28e325bf8734fc1e60f140466a26ec5c94a0625fe9814831485.avif 2367w\" sizes=\"(max-width: 767px) 100vw, 568px\" class=\"layout_img\" data-lumen-slot=\"image_2\"></div></div><div class=\"spacer-xhuge\"></div><div class=\"grid gap-4rem center\"><div class=\"layout_img-container\"><img src=\"/brands/garner/assets/b0c4188c1661edee86e8b6afa4a7d14abefb9b7e376e7ceab3f9819a2fac11d7.avif\" loading=\"lazy\" width=\"568\" height=\"543\" alt=\"Woman in a navy blouse sitting at a desk with a stack of papers, smartphone, and tablet, in a bright room with plants.\" srcset=\"/brands/garner/assets/82039a491bb17144a00b88f41a014d876e1f910f1919b5ac36d6c71f14d3e46a.avif 500w, /brands/garner/assets/59c458f7c523a140fe0fa0e2b409f172d6543ac2baa8ef586d9ad47febca5463.avif 800w, /brands/garner/assets/02631978d2a95284955276d30fadeb6a36512bf618742f16cb0fd234f53c2646.avif 1080w, /brands/garner/assets/b0c4188c1661edee86e8b6afa4a7d14abefb9b7e376e7ceab3f9819a2fac11d7.avif 1136w\" sizes=\"(max-width: 767px) 100vw, 568px\" class=\"layout_img\" data-lumen-slot=\"image_3\"></div><div class=\"max-wdth-rg align-center\"><div data-animation=\"slide-up\" class=\"text-align-center\" style=\"translate: none; rotate: none; scale: none; transform: translate(0px, 0px); opacity: 1;\"><div class=\"max-width-medium is-sm align-center\"><h2 data-lumen-slot=\"headline_3\">Get reimbursed for medical costs<br></h2></div><div class=\"spacer rg\"></div><p class=\"text-size-medium is-grey\" data-lumen-slot=\"body_3\">When you visit Top Providers, Garner can reimburse your out-of-pocket medical costs, including copays, office visits, medical tests and surgeries.<br></p></div></div></div></div></div></section></ls-b></ls-h>",
+    "css": ".x{}",
+    "slots": {
+      "body": {
+        "kind": "text",
+        "fallback": "We\u2019ve compiled the largest claims database in the U.S.\u2014over 60 billion medical records from 320 million patients\u2014to identify which doctors diagnose more accurately and have better patient outcomes."
+      },
+      "body_2": {
+        "kind": "text",
+        "fallback": "Garner Assistant makes it easy to find the best providers that are in-network, available, and near you."
+      },
+      "body_3": {
+        "kind": "text",
+        "fallback": "When you visit Top Providers, Garner can reimburse your out-of-pocket medical costs, including copays, office visits, medical tests and surgeries."
+      },
+      "cta_href": {
+        "kind": "href",
+        "fallback": "/how-it-works"
+      },
+      "headline": {
+        "kind": "text",
+        "fallback": "More data and new analytics to evaluate providers"
+      },
+      "headline_2": {
+        "kind": "text",
+        "fallback": "The easiest way to choose your doctor"
+      },
+      "headline_3": {
+        "kind": "text",
+        "fallback": "Get reimbursed for medical costs"
+      },
+      "image": {
+        "kind": "image",
+        "fallback": "183c54b76eafd12319b991d4a9fe1ab918fdcb48fcc90931a527d96058ef9308"
+      },
+      "image_2": {
+        "kind": "image",
+        "fallback": "a8f5e015e053a28e325bf8734fc1e60f140466a26ec5c94a0625fe9814831485"
+      },
+      "image_3": {
+        "kind": "image",
+        "fallback": "b0c4188c1661edee86e8b6afa4a7d14abefb9b7e376e7ceab3f9819a2fac11d7"
+      },
+      "visible": {
+        "kind": "visibility",
+        "fallback": true
+      }
+    },
+    "native_dependencies": null,
+    "viewport_width": 1920
+  },
+  {
+    "id": "frag_1f86b8d67557b66b",
+    "role": "other",
+    "label": "Other \u2014 Best-in-class data for provider recommendations",
+    "page_url": "https://garnerhealth.com/",
+    "section_index": 5,
+    "wrapper_class": "lumen-frag-1f86b8d67557b66b",
+    "html": "<ls-h style=\"display:contents!important\" lang=\"en\"><ls-b style=\"display:contents!important\"><section class=\"section bg-dark\" data-lumen-slot=\"visible\"><div class=\"padding-global padding-section-small\"><div class=\"container-large\"><div class=\"grid gap-4rem center\"><div class=\"layout_img-container\"><img src=\"/brands/garner/assets/4a43eef6ee5c92b337154d165997246f45dede5997b1c677092858b1b2157a23.avif\" loading=\"lazy\" width=\"568\" height=\"543\" alt=\"Woman in a white lab coat analyzing data charts on a computer monitor in an office setting.\" srcset=\"/brands/garner/assets/ebc664f6966082dc91369437c6e9400a2630c23747ed5ebfb8073b15991f5e02.avif 500w, /brands/garner/assets/a55e6040946d13441e1137020af057ccdf6460d766a66efc69481d827d32b642.avif 800w, /brands/garner/assets/4a43eef6ee5c92b337154d165997246f45dede5997b1c677092858b1b2157a23.avif 1076w\" sizes=\"(max-width: 767px) 100vw, 568px\" class=\"layout_img\" data-lumen-slot=\"image\"></div><div class=\"max-width-medium align-center\"><div data-animation=\"slide-up\" class=\"text-align-center\" style=\"translate: none; rotate: none; scale: none; transform: translate(0px, 0px); opacity: 1;\"><h2 data-lumen-slot=\"headline\">Best-in-class data for provider recommendations<br></h2><div class=\"spacer rg\"></div><p class=\"text-size-medium\" data-lumen-slot=\"body\">Garner delivers trusted performance data that powers accurate, outcomes-based insights and referrals.<br></p><div class=\"spacer m\"></div><div class=\"flex is-center\"><button data-wf--button--variant=\"tertiary\" class=\"button w-variant-3698d1f6-261e-f58f-d5ac-12f91bd51790\"><div>Learn more about Garner Insights</div><a aria-label=\"{{wf {&quot;propId&quot;:&quot;fc0003a1-20ca-e1d5-3f31-6f172ac626e4&quot;,&quot;type&quot;:&quot;PlainText&quot;} }}\" href=\"/for-providers\" class=\"button_link w-inline-block\" data-lumen-slot=\"cta_href\"></a><div class=\"icon-1x1-medium\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" width=\"100%\" height=\"100%\" aria-hidden=\"true\" focusable=\"false\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 12px 12px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(255, 255, 255) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></button></div></div></div></div></div></div></section></ls-b></ls-h>",
+    "css": ".x{}",
+    "slots": {
+      "body": {
+        "kind": "text",
+        "fallback": "Garner delivers trusted performance data that powers accurate, outcomes-based insights and referrals."
+      },
+      "cta_href": {
+        "kind": "href",
+        "fallback": "/for-providers"
+      },
+      "headline": {
+        "kind": "text",
+        "fallback": "Best-in-class data for provider recommendations"
+      },
+      "image": {
+        "kind": "image",
+        "fallback": "4a43eef6ee5c92b337154d165997246f45dede5997b1c677092858b1b2157a23"
+      },
+      "visible": {
+        "kind": "visibility",
+        "fallback": true
+      }
+    },
+    "native_dependencies": null,
+    "viewport_width": 1920
+  },
+  {
+    "id": "frag_9fa31f37a0b94447",
+    "role": "other",
+    "label": "Other \u2014 Create your free account",
+    "page_url": "https://garnerhealth.com/",
+    "section_index": 9,
+    "wrapper_class": "lumen-frag-9fa31f37a0b94447",
+    "html": "<ls-h style=\"display:contents!important\" lang=\"en\"><ls-b style=\"display:contents!important\"><section class=\"section text-color-white\" data-lumen-slot=\"visible\"><div class=\"padding-global padding-section-medium is-cta\"><div class=\"container-large\"><div class=\"grid center is-cta\"><div class=\"cta_left\"><h2 data-lumen-slot=\"headline\">Create your free account</h2><div class=\"spacer-medium\"></div><button data-wf--button--variant=\"white\" class=\"button w-variant-f4bc6497-47d0-f4aa-c4fd-9b4e7ba65b23\"><div>Get started</div><a aria-label=\"{{wf {&quot;propId&quot;:&quot;fc0003a1-20ca-e1d5-3f31-6f172ac626e4&quot;,&quot;type&quot;:&quot;PlainText&quot;} }}\" href=\"https://app.getgarner.com/sign-up?utm_source=garner&amp;utm_medium=website&amp;utm_campaign=gr-web-act-websiteen-2025-05-all-sign&amp;utm_term=all&amp;utm_content=signup&amp;__hstc=93956290.f61d58f132d5f13e2b4f77b563edefdc.1791206946902.1791206946902.1791206946902.1&amp;__hssc=93956290.1.1791206946902&amp;__hsfp=cb20d0388c17d0432e7f743c8522bf03\" class=\"button_link w-inline-block\" data-lumen-slot=\"cta_href\"></a><div class=\"icon-1x1-medium\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" width=\"100%\" height=\"100%\" aria-hidden=\"true\" focusable=\"false\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 12px 12px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(13, 43, 37) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></button></div><div class=\"cta_right\"><h2 data-lumen-slot=\"headline_2\">Give your employees the best care</h2><div class=\"spacer-medium\"></div><button data-wf--button--variant=\"light\" class=\"button w-variant-ed2c9269-64ef-ba07-221f-525c076387d8\"><div>Book a demo</div><a aria-label=\"{{wf {&quot;propId&quot;:&quot;fc0003a1-20ca-e1d5-3f31-6f172ac626e4&quot;,&quot;type&quot;:&quot;PlainText&quot;} }}\" href=\"/book-a-demo\" class=\"button_link w-inline-block\" data-lumen-slot=\"cta_href_2\"></a><div class=\"icon-1x1-medium\"><svg xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" width=\"100%\" height=\"100%\" aria-hidden=\"true\" focusable=\"false\" style=\"display: block !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 12px 12px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important;\"><path stroke=\"currentColor\" d=\"M6 12h12m-5-5 5 5-5 5\" style=\"display: inline !important; visibility: visible !important; opacity: 1 !important; transform: none !important; transform-origin: 0px 0px !important; filter: none !important; clip-path: none !important; mask: none !important; mix-blend-mode: normal !important; fill: none !important; fill-opacity: 1 !important; fill-rule: nonzero !important; stroke: rgb(255, 255, 255) !important; stroke-opacity: 1 !important; stroke-width: 1px !important; stroke-linecap: butt !important; stroke-linejoin: miter !important; stroke-miterlimit: 4 !important; stroke-dasharray: none !important; stroke-dashoffset: 0px !important; vector-effect: none !important;\"></path></svg></div></button></div></div></div></div><div class=\"bg_wrap\"><div class=\"bg-fill\"></div><div class=\"bg-fill is-green\"></div></div></section></ls-b></ls-h>",
+    "css": ".x{}",
+    "slots": {
+      "cta_href": {
+        "kind": "href",
+        "fallback": "https://app.getgarner.com/sign-up?utm_source=garner&utm_medium=website&utm_campaign=gr-web-act-websiteen-2025-05-all-sign&utm_term=all&utm_content=signup&__hstc=93956290.f61d58f132d5f13e2b4f77b563edefdc.1791206946902.1791206946902.1791206946902.1&__hssc=93956290.1.1791206946902&__hsfp=cb20d0388c17d0432e7f743c8522bf03"
+      },
+      "cta_href_2": {
+        "kind": "href",
+        "fallback": "/book-a-demo"
+      },
+      "headline": {
+        "kind": "text",
+        "fallback": "Create your free account"
+      },
+      "headline_2": {
+        "kind": "text",
+        "fallback": "Give your employees the best care"
+      },
+      "visible": {
+        "kind": "visibility",
+        "fallback": true
+      }
+    },
+    "native_dependencies": null,
+    "viewport_width": 1920
+  }
+]

@@ -1,0 +1,366 @@
+{
+  "asset_ing_26b2c29961e77956": {
+    "kind": "raster_image",
+    "logo": null,
+    "label": "slurp-26b2c29961e7-69b1632501c39c64dedeed60_Logo_Mist-256x256.png",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A square, 256x256 raster image containing a solid dark green circular field that fills the frame. Centered on the circle is a single large lowercase letterform 'g' rendered in an off-white / very pale mint tone. The letterform has a closed circular bowl at the top with a round counter, and a lower loop with a wide oval counter, giving the glyph a stacked, figure-eight-like silhouette. The stroke weight is heavy and uniform, with rounded terminals and no serifs. No other text, iconography, imagery or border is visible.",
+    "mime": "image/png",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/26b2c29961e77956a53bcf516df3c730eb0a05f350c18dcd54b97ed3ee9d020c.png"
+  },
+  "asset_ing_d091e3f5741e0937": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-d091e3f5741e-logo-light.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A horizontal wordmark reading 'Garner' in black serif type on a white background. The word begins with an uppercase G followed by lowercase arner. No additional symbols, taglines, or graphic elements are visible.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/d091e3f5741e0937889d9ebefd73345eff78025cf4a1af6eaa84464d61685c61.svg"
+  },
+  "asset_ing_bcb438506e0a71a0": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-bcb438506e0a-69ae9b3093502c4e5b4c7bab_garner-dark-green-logo.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A single-line, all-lowercase wordmark reading \u201cgarner\u201d rendered in a very heavy geometric sans-serif style, set in one dark green/teal ink color. The letterforms are tightly spaced with large circular bowls; the \u201cg\u201d has a fully rounded bowl and a descender that hooks/loops down and to the left, extending below the baseline of the remaining letters. The \u201ca\u201d \u201cr\u201d \u201cn\u201d \u201ce\u201d \u201cr\u201d are of matching weight, with the final \u201cr\u201d terminating in a short outward arm. A small superscript \u201cTM\u201d sits at the upper-right, aligned near the cap/ascender height of the final letter and smaller than the wordmark letters. Everything is flat, single-color, with no gradients, shadows, outlines or decorative elements. The mark is shown against a plain light background in the supplied preview.",
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/bcb438506e0a71a0acef8061939a4039b90566fd9358091f11fe2d7760392bfe.avif"
+  },
+  "asset_ing_33d3e6a8304f037e": {
+    "kind": "raster_image",
+    "logo": null,
+    "label": "slurp-33d3e6a8304f-69b15a86b59f244f1a4d372e_Open%20graph%20img.png",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A wide, dark forest-green graphic split into two zones. On the left, a small lowercase white serif wordmark 'garner' sits above a three-line white serif headline reading 'Choose your doctor with confidence'. On the right, a cluster of overlapping circular and oval vignettes contains flat, stylized illustrations of people: an older man with glasses in a teal shirt beside a woman with dark hair, a smiling woman in blue scrubs, a man in a white coat with a stethoscope, and a woman with brown hair in a green top. The vignettes overlap each other and bleed toward the right edge of the frame.",
+    "mime": "image/png",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/33d3e6a8304f037e0bdd00e877d3ff259862f9aa1570cf0aecd55e309d7d7c5d.png"
+  },
+  "asset_ing_426f271bc2b1ccb6": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-426f271bc2b1-6a1838666e860fb6f2f033d0_1.Homepage-1-p-2000.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A centered smartphone mockup with a white screen displays a chat interface. The phone sits over a large mint/teal rounded rectangle on a white background. The screen header reads 'Garner Assistant' with a back arrow. Chat bubbles alternate: user messages in dark green right-aligned, assistant messages in light gray left-aligned. Three doctor profile cards appear with circular avatar photos, names, specialties, star ratings, distances, and complication-rate badges. Bottom input bar reads 'Send a message...' with paperclip and send icons. Status bar shows 9:41 and signal/wifi/battery icons.",
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/426f271bc2b1ccb6fdce3e28ccf0c8753bfd31a8f5499d1052843590411b115f.avif"
+  },
+  "asset_ing_02631978d2a95284": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-02631978d2a9-69b1ae12945a4b90d9abfc15_Homepage_3-p-1080.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A medium shot shows a woman with shoulder-length brown hair wearing a dark navy button-up blouse. She is positioned behind a light wood desk, looking slightly up and to the viewer's left with a gentle smile. Her left hand rests on a stack of white papers at the right side of the desk; her right arm is bent near the papers. On the desk in the foreground are a dark smartphone lying flat on the left and a tablet lying flat in the center with a dark bezel. The tablet screen displays a small teal/light-green circular mark. The background is a bright room with white walls, an exposed white ceiling, a window on the left casting natural light, and two potted green plants in dark pots\u2014one near the window on the left and one behind the desk on the right. The image has rounded corners and white/indeterminate corner areas.",
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/02631978d2a95284955276d30fadeb6a36512bf618742f16cb0fd234f53c2646.avif"
+  },
+  "asset_ing_535ed1f88b3c0c5c": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-535ed1f88b3c-69b199cd4696bd8bc343a7a9_Homepage_1-p-800.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A simplified, stylized silhouette of the United States filled in a deep teal-green, with thin darker outlines delineating the boundaries of the contiguous 48 states. Many small, uniform, round white dots are scattered across the landmass, distributed fairly evenly but with visibly tighter groupings through the Northeast, Midwest, Southeast and coastal West, and sparser clusters through parts of the interior West. Alaska appears as a separate shape in the lower-left corner, with a further small chain/cluster of dots immediately to its lower right. The whole map sits inside a pale blue, generously rounded square card, and two subtly lighter blue rounded shapes overlap behind the map, one toward the upper-left and one toward the lower-right. The canvas is near-square (original 800 \u00d7 765). No legend, key, scale bar, state labels, caption, logo or other text is legible anywhere in the pixels.",
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/535ed1f88b3c0c5c3f5ab7ad2d74d3631fd99ef293b9b31860d4a657eddf6407.avif"
+  },
+  "asset_ing_a55e6040946d1344": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-a55e6040946d-69b1ae74af5365e8f756d326_Homepage_4-p-800.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": null,
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/a55e6040946d13441e1137020af057ccdf6460d766a66efc69481d827d32b642.avif"
+  },
+  "asset_ing_e5596dda7e0f8ce7": {
+    "kind": "raster_image",
+    "logo": null,
+    "label": "slurp-e5596dda7e0f-6ab52846169bd6a1ba38aa65_Webinar%20009_A-p-2000.png",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A website-embedded photographic promo card with two rounded-square headshot crops placed side by side. Left portrait: a smiling man with dark hair and a beard, wearing a dark gray blazer over a light blue collared shirt, set against a dark/black portrait background. Right portrait: a smiling man with short brown hair, wearing a blue blazer over a light blue collared shirt, set against a white portrait background. Below each portrait is a left-aligned text block with a name, role, and company affiliation in white/light gray sans-serif type. The background is dark forest green with a large muted teal/blue-green angled geometric shape in the upper-left area. No product UI, logo mark, or central headline is visible in the pixels.",
+    "mime": "image/png",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/e5596dda7e0f8ce73a90716670d16ef2a2c5d4023d117bf69f17711d98a44265.png"
+  },
+  "asset_ing_872c19c777231d93": {
+    "kind": "raster_image",
+    "logo": null,
+    "label": "slurp-872c19c77723-6abd1958bf824242f5bdac34_Q3%20Product%20Announcement%20Blog%20Header%20(4)-p-1600.png",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "Layered mobile app screens on a dark green background. Center shows a dark green Visa debit card with 'garner', 'DEBIT', 'VISA' and a 'Hold Near Reader' contactless icon. Left shows a care-team profile with avatar, 'Katie Gibbs, Ch', 'Nurse Practitioner', 'Added to Care Team', and bullet points about chronic conditions and high-risk patients. Right shows a map with green pins and 'Yes, near 10025'. Far-right shows sign-in UI with 'to Garner', 'our account', 'Sign in', and 'password?'.",
+    "mime": "image/png",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/872c19c777231d93765dd0db8f8a5d206685e95343e6d464d2d9010f52dc676f.png"
+  },
+  "asset_ing_399fdfafdd5ef285": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-399fdfafdd5e-6998baadc6562c3fb313478e_icon-2.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A low-resolution, flat-style icon on a white-looking field: a blue-outlined magnifying glass tilted diagonally, its circular lens containing a small ascending green bar chart on a pale cream/peach circular field. The handle points down-left, is filled in a lighter blue with a white diagonal highlight stripe, and joins the lens ring through a short dark/near-black connector. Inside the lens, three green vertical bars increase in height from left to right, with a faint light line/arrow rising across the top of the taller bars. The lens rim is a fairly thick mid-blue stroke; the interior circle is a soft warm off-white behind the chart. No human figures, no environment, no photographic texture.",
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/399fdfafdd5ef285eec52d6e5c30e71296981165f147a0dda6590de25ed41185.avif"
+  },
+  "asset_ing_86a602e9142c4f1d": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-86a602e9142c-6998baadcc1f28fea626878d_icon-3.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "Square, very small (declared ariginal 64x64) raster depection af a stethascape on a light, near-white background. The tube is rendered in a medium blue with a lighter, pastel-blue segment acrass the lawer right af the laap; the twa earpieces at the tap left are darker gray/charcoal with small angled tips; the chest piece at the upper right is a gray circular disc with a darker inner ring/dat; a madeated highlight is visible at the point where the headset and the chest-piece branch meet. The tubing farms a wide dang thet hangs belaw and between the twa upper elements. The stethascape is angled diaganaly acrass the frame, its two ends (earpieces and chest piece) sitting near the tap edgs and the laap extending dawnward toward the battam center/left. Backgraund is essentially uniform and very light, with faint blue/gray anti-aliasing alang the shape dege. The image is visibly blarry ar saft when viewed large, cansis tent with an upscaled tany surce ar a lav-resalutian asset.",
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/86a602e9142c4f1d5ded69480e9de400a6c21b210b04d0cbd8b7f69233997937.avif"
+  },
+  "asset_ing_47bd64b9e0f21834": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-47bd64b9e0f2-6998baad05525d511327080d_icon-1.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A small square image containing a stylized briefcase with a handle on top, filled with brown and tan tones and shaded with darker olive-brown on the lower and right portions. Centered on the briefcase face is a white plus sign (cross) enclosed inside a thin, low-contrast circular ring. A slim lighter vertical highlight appears near the left edge of the case. The background is plain white with no scene, shadow, or environment.",
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/47bd64b9e0f218349a5f39f47e7b366b97fe207d7585b1edf66a768fccb87974.avif"
+  },
+  "asset_ing_8c519cc9b7e30124": {
+    "kind": "other",
+    "logo": null,
+    "label": "slurp-8c519cc9b7e3-69bd024f3bf4eb21bf811cfd_Homepage_Icon-1.avif",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A small square image with a white or off-white background containing a portrait-oriented dark green rounded-rectangle tile. Centered within the tile is a single white lowercase letter 'g' with a visible bowl and descender loop. No other text or imagery is legible. The tile has rounded corners and flat top and bottom edges, reading as an icon or logo tile rather than a perfect circle. The green appears predominantly solid at this resolution, though a subtle tonal variation is possible.",
+    "mime": "application/octet-stream",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/8c519cc9b7e30124d57860ec2458599497c9e7fe09bf67206a31dfc2450ad351.avif"
+  },
+  "asset_ing_a390f9beeb49adff": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-a390f9beeb49-69dd6ea45f3539ebe275e94e_CityofPortland.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "Landscape-oriented raster preview on a white background. Centered in the frame is a small, monochrome medium-gray circular seal. The seal has a thick outer ring containing curved uppercase text and a bottom numeral; inside the ring is a smaller circular vignette with line-art details. The vignette appears to include a standing figure and vertical staff-like element, with indistinct landscape or tree forms around it. The seal occupies a small portion of the canvas, leaving large white margins. No other graphical elements, wordmarks, or lockups are visible.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/a390f9beeb49adff9510f26ea5a8a5df3a6bd5125dcb06cc9ed6fab4ddc85b9c.svg"
+  },
+  "asset_ing_12801d1f931c1a84": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-12801d1f931c-69a1b88bf95e7e1756908321_Advance.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A grayscale logo lockup centered on a solid black background. The main word 'ADVANCE' is set in large, bold, italic, uppercase sans-serif letters. To its left are three forward-slash-like diagonal strokes. Below and aligned toward the right side of the main word is 'AUTO PARTS' in smaller, bold, italic, uppercase sans-serif letters. A small superscript mark follows 'ADVANCE' but is not clearly legible. The logo is light gray against black.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/12801d1f931c1a8438180b076fa7c4e36d9b95778ee7cbc11fc76bbf6e6a10d1.svg"
+  },
+  "asset_ing_c14bc955625e4a72": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-c14bc955625e-69a1b8cab9d412a742a72f7e_Mohawk.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A centered, monochrome gray logo lockup on a solid black background. At top is an abstract mark made of three angled, ribbon-like strokes forming a stylized zigzag or M shape. Below is the large uppercase wordmark MOHAWK in a serif-style face, followed by a small registered trademark symbol. Beneath that is the smaller uppercase sub-wordmark INDUSTRIES, INC. in a sans-serif-style face. The lockup is surrounded by generous black negative space.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/c14bc955625e4a724e7671514f8f75de168833feeebf19517dd8646d00fc8e57.svg"
+  },
+  "asset_ing_15dc916a85187e37": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-15dc916a8518-69a1b8b2211b52c1585eb1f8_clayton-homes.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A photograph of a woman standing in a field at sunset. She is seen from behind, facing left, with her hair down and wearing a light-colored top. The sun is low on the horizon, creating a warm golden glow and a silhouette effect. Tall grass or crops fill the foreground, and the sky transitions from bright yellow near the sun to softer orange and blue tones above.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/15dc916a85187e3752c0986ef1cecb60e6953d77a15f22c6da98aa6e4e1602e0.svg"
+  },
+  "asset_ing_9fb2764be5cb47bc": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-9fb2764be5cb-69a1b8ddcbfb9b87609fa0ce_optum.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A single-line, horizontally centered wordmark reading 'Optum' set in a heavy, rounded sans-serif, rendered in flat medium gray on a plain white field. The initial 'O' is a perfect circular ring with a thin counter; the following letters ('p', 't', 'u', 'm') share the same weight and rounded terminals. The descender of the 'p' drops below the baseline of the remaining letters. The wordmark occupies roughly the middle third of the frame horizontally and about a third of the height vertically. There is generous, even white negative space on all four sides, with no other graphic elements, icons, taglines, borders, or texture.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/9fb2764be5cb47bc017942ed25e2c3de79c1738c178cd8aa0eca56fdac733620.svg"
+  },
+  "asset_ing_20128200b62ff356": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-20128200b62f-69a1b8f0a41e002786e2d9cb_benefitfocus.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A horizontal wordmark logo displaying the text \"Benefitfocus\" in a bold, rounded sans-serif typeface, accompanied by a registered trademark symbol (\u00ae) placed at the upper right after the final letter. The logo is solid gray on a plain white background.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/20128200b62ff3565a8c6fc680e13b69464bdbeb6dae61ce837c4e556b15aa25.svg"
+  },
+  "asset_ing_26eb8c7e08bd0ed9": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-26eb8c7e08bd-69ae9e634bbbaba338b1a700_Mercy.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A horizontal logo lockup centered on a plain white or very light background. The word 'Mercy' is set in medium gray, with a capital M followed by lowercase e-r-c-y. To the right of the wordmark is a gray cross/plus-like symbol made of intersecting rectangular bars, with a small square/block detail at the upper left. The lockup is surrounded by wide, even negative space. No other text or imagery is visible. The supplied preview is a downscaled, rasterized SVG preview; background transparency cannot be confirmed from the pixels alone.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/26eb8c7e08bd0ed9c178ed2ac8bd35de588bb5cf1611f930e6c1b793ef0b430c.svg"
+  },
+  "asset_ing_6a768dd2bba3fa11": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-6a768dd2bba3-69dd6e7e9cc278cc6fc4c080_MarketStar.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": null,
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/6a768dd2bba3fa1113afc18f0d8062ec7a5ee6c5ce0cfccdea5d40de9f2dfaec.svg"
+  },
+  "asset_ing_ec3ff5ed2df9ab84": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-ec3ff5ed2df9-69dd6e96f43109bab601a780_USAToday.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A horizontal lockup centered on a plain white field. On the left is a single solid, filled circle rendered in a flat neutral mid-gray with no outline, gradient, highlight, or texture. Immediately to its right is the set text 'USA TODAY' in a heavy, tightly spaced, all-uppercase sans-serif face, in the same flat neutral mid-gray as the disc. Both the disc and the letters are horizontally aligned along a shared optical baseline; the disc's diameter is slightly taller than the cap height of the adjacent letters. The entire mark sits in the middle of a wide white area with generous, roughly equal empty margins on all four sides, so the lockup occupies only the central band of the frame and the surrounding white reads as deliberate negative space.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/ec3ff5ed2df9ab84c4a88e2e933302d7d2dd5753f1a0ce41ad75abe04dc5cf9b.svg"
+  },
+  "asset_ing_c39a3b6788cfccaa": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-c39a3b6788cf-69a1b89edfb6a001d5c3f4bb_OU.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A monochrome, mid-gray interlocking monogram \u2014 a rounded-octagonal closed 'O' form with a 'U' form nested below and to the right \u2014 centered on a plain white field with wide margins on all four sides. A very small superscript-style mark sits at the lower-left of the 'O'.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/c39a3b6788cfccaaf7ff1446f8131fac8fa4d904b04e3fd859db6c286ef88db6.svg"
+  },
+  "asset_ing_53d12bb16cc4bcbe": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-53d12bb16cc4-6a739eb320a0786c96265d14_arrow-down-svgrepo-com.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "A square abstract illustration composed of layered geometric forms, including a central circular shape, overlapping rounded rectangles, and triangular wedges. Colors include deep indigo, violet, warm coral, orange, and pale cream. The composition is centered and balanced, with soft gradients and flat color fields. No text, logos, or recognizable objects are visible.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/53d12bb16cc4bcbe4ef5168ffddc7d1c6ff5bf42888486c5c6238ba64ec346d7.svg"
+  },
+  "asset_ing_121f8dc257d116b5": {
+    "kind": "vector",
+    "logo": null,
+    "label": "slurp-121f8dc257d1-custom-checkbox-checkmark.589d534424.svg",
+    "tags": [
+      "brand-ingestion",
+      "image"
+    ],
+    "description": "The supplied preview renders as a uniform white field across the full frame. No shapes, strokes, gradients, textures, figures, text, logos, or edges are discernible at the delivered resolution. The original is reported as a 605x512 SVG that was rasterized and downscaled to 512px for preview; the resulting image is visually empty.",
+    "mime": "image/svg+xml",
+    "width": null,
+    "height": null,
+    "file": "/brands/garner/assets/121f8dc257d116b52e8d91b2c735fd52e7516c268b6c721c60ac45d22d5e6404.svg"
+  }
+}

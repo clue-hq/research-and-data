@@ -1,0 +1,3 @@
+node_modules/
+# typeCheck test files (test/check-section.test.ts removes them)
+.section-check/

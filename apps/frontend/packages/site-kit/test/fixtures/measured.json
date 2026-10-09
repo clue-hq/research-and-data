@@ -1,0 +1,24 @@
+{
+  "primary_button": {
+    "text": "Request the analysis",
+    "background": "rgb(255, 255, 255)",
+    "color": "rgb(13, 43, 37)",
+    "borderRadius": "999.008px",
+    "borderColor": "rgb(255, 255, 255)",
+    "borderWidth": "1px",
+    "paddingY": "8px",
+    "paddingX": "24px",
+    "height": "42px",
+    "fontFamily": "\"Open Sans\", Arial, sans-serif",
+    "fontSize": "14px",
+    "fontWeight": "500",
+    "letterSpacing": "normal"
+  },
+  "heading_on_light": {
+    "text": "More data and new analytics to evaluate providers\n",
+    "color": "rgb(1, 64, 54)",
+    "fontFamily": "\"Stix Two Text\", Arial, sans-serif",
+    "fontWeight": "500"
+  },
+  "measured_from": "garner clones on /s/garner-v0 at 1440"
+}
