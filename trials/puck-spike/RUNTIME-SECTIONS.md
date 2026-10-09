@@ -97,3 +97,12 @@ Timings are from this machine (Apple silicon, Docker 29.8.1, dev server on :3047
   containment, at the cost of the shared-React ergonomics — this is the B6/C9 trade-off to decide
   with the founder. At minimum, publish must re-run the full check **and** render the section in the
   bounded subprocess, and refuse a missing/stale module (A7's `section_module_missing`).
+
+## Decision (founder, 2026-10-09)
+
+D2 is decided: **the separate-domain editor.** The whole Puck editor runs on its own domain, with
+no login there, embedded in app.cluehq.ai as one frame. Agent code runs on the server only in the
+locked container, and published HTML is sanitized. A per-section sandbox was not adopted. See the
+readiness map (`docs/superpowers/specs/2026-10-08-puck-production-readiness-map.md` §5, §6, §9),
+the plan's "D2" section, and the research report
+(`docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).

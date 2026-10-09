@@ -13,9 +13,11 @@ per-workspace flag.
 - **The platform keeps:** legs, runs, the fleet, SSE, stop, the exit judge, research reads, cost
   ledgers, publish storage, the page origin and domains.
 - **Puck plugs in at five existing switch points,** cited below.
-- **Two pieces are new:**
+- **Three pieces are new:**
   - a Node site renderer feeding the existing `PublishPackage` contract;
-  - runtime loading of agent-written sections (option A, settled by the Wave 1 spike).
+  - runtime loading of agent-written sections (option A, proven by the Wave 1 spike);
+  - the editor domain: the Puck editor served from its own domain, with no login there, embedded
+    in app.cluehq.ai as one frame (D2, decided 2026-10-09; see "D2" below).
 - **Shared code** lives in one workspace package, `@clue/site-kit`, inside `apps/frontend`.
 
 **Tech stack.**
@@ -30,6 +32,7 @@ per-workspace flag.
 `docs/superpowers/specs/2026-10-08-website-agent-on-puck-roadmap.md` and the founder rulings
 recorded there and below. Both are drafts. The founder approved this direction on 2026-10-09:
 option A for agent code, one Node renderer, a per-workspace flag, and Head of ABM unchanged.
+The founder decided D2 later the same day: the separate-domain editor.
 
 ---
 
@@ -116,6 +119,8 @@ height, …)`.
 - **Brand fidelity (production requirement, roadmap phase 1):** the agent sees every kit type
   role; surfaces cover band colours; the kit covers logos (`contain`), a second button style and
   in-site links.
+- **Agent-written code never runs on app.cluehq.ai or in a platform process (D2):** in the
+  browser only on the editor domain; on the server only in the locked container.
 
 ## Review focus
 
@@ -131,6 +136,50 @@ Each failure mode has a test in its owning task.
    modules, in the editor or the renderer. Tests in Task 4 (spike) and B6.
 5. **Publish with a missing or stale agent-section module** refuses with a typed reason. It never
    publishes a blank section. Test in A7.
+6. **An agent section reaching the marketer's session:** in the editor, the spike's hostile
+   sections (tracking pixel, `Function` via a constructor, `top`/`parent` navigation, cookie and
+   API reads) are contained by the editor domain and its policy. Test in C11.
+7. **Agent script in published HTML:** a section that emits `<script>`, an `on*` handler or an
+   off-allowlist URL publishes without it. Test in A7.
+
+---
+
+## D2: where agent-written code runs (decided 2026-10-09)
+
+**Why.**
+- Task 4 showed option A gives no containment. Puck mounts components into its `srcDoc` canvas
+  with `createPortal`, so section code runs in the editor's window, with the marketer's session.
+  Four hostile probes passed the lint (`trials/puck-spike/RUNTIME-SECTIONS.md`).
+- The research found every AI and code-first builder runs generated code away from the logged-in
+  app, one boundary per surface, never per section
+  (`docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
+
+**The design.**
+- **The editor domain.** The whole Puck editor (canvas, fields, outline) is a page on a separate
+  registrable domain that never holds the marketer's login. app.cluehq.ai embeds it as one
+  `<iframe>` and keeps chat, header, gallery, asset library, versions and publish. One shared
+  domain or one subdomain per workspace (Framer's pattern) is decided in C11.
+- **Frame attributes.** `sandbox="allow-scripts allow-same-origin"`, with no `allow-top-navigation`
+  or popups. `allow-same-origin` is safe here only because the editor domain differs from the
+  app's; Puck needs it for its own canvas frame and browser storage.
+- **The editor domain's headers.** A content security policy:
+  - `script-src 'self'`, with no `'unsafe-eval'` and no `blob:`;
+  - `connect-src` limited to the editor domain and the asset store;
+  - `img-src` and `font-src` limited to the asset store (plus `data:`);
+  - `frame-ancestors` limited to app.cluehq.ai.
+- **Messages.**
+  - App → frame: page data, agent updates, the brand catalog, short-lived module links, chosen
+    assets.
+  - Frame → app: page changes (batched), selections, asset-picker requests.
+  - The app checks the source, schema and document id of every message, and saves with the
+    marketer's login.
+- **Server render.** A locked container per workspace, plus memory and output caps.
+- **Publish.** An allow-list sanitizer over agent-section HTML, and a security policy on published
+  pages.
+- **Accepted latency (founder, 2026-10-09).** First open a few hundred ms; a few ms per message.
+  No measurement spike.
+- **Open (founder decision, owner A7):** published pages default to `*.pages.cluehq.ai`
+  (`.env.example:601`), the app's registrable domain. The research recommends a distinct one.
 
 ---
 
@@ -140,9 +189,10 @@ Each failure mode has a test in its owning task.
 Wave 1 (week 1)        T1 site-kit package ─┬─> Lane A (backend + renderer)
                        T2 site kind (DB)    ─┤   Lane B (agent on the fleet)
                        T3 site birth + flag ─┤   Lane C (editor)
-                       T4 D2 spike (option A) ──> B6, C9, A7
+                       T4 D2 spike (option A, done; D2 decided) ──> B6, C9, C11, A7
                        T5 R1 + R3 experiments ──> B2, B3
-Waves 2–3 (weeks 2–5)  Lanes A, B, C in parallel (outlines below; each expanded into its own plan)
+Waves 2–3 (weeks 2–5)  Lanes A, B, C in parallel (outlines below; each expanded into its own plan;
+                       Lane C may run into week 6 with the editor domain)
 Wave 4 (week 6)        Hardening and rollout
 ```
 
@@ -749,6 +799,9 @@ git commit -m "design legs: birth Puck site documents for listed workspaces (CLU
 
 ### Task 4: D2 spike, loading agent-written sections at runtime (option A, no iframes)
 
+**Done** (`412193a51`). Results are in `trials/puck-spike/RUNTIME-SECTIONS.md`; they led to the
+D2 decision above.
+
 A throwaway experiment in the spike app; the answer is a results note, not production code. It
 uses the five cl3 components (`trials/puck-spike/puck/agent-sections/agent-cl3/*.tsx`) and E5's
 `AnalysisSteps` as fixtures.
@@ -892,9 +945,9 @@ then and including Wave 1's results. The outlines fix the scope, files and accep
 | A2. Site write, undo, redo | Design API: `PUT /documents/{id}/site` (CAS on `base_version`), `POST /documents/{id}/site/undo|redo`, via `update_web_document` with snapshot inverse ops (`documents.py:595`) | Write, conflict (409), undo, redo, undo past the start |
 | A3. Composer targets | `chat/composer_context.py:240-330`, `design_turn_targets.py` (`validate_web_targets`): accept `site_component` refs `{page, component_id, prop?}` checked against the stored pages | Valid ref accepted; unknown component refused |
 | A4. Gallery and library | `design_leg_wiring.py:578` (`project_design_documents`), `:721` (`workspace_design_documents`): include site documents; map the kind | A site document appears in the project gallery and the library |
-| A5. Renderer bundle | `@clue/site-kit` `bin/render-site.ts` bundled with esbuild to `dist/render-site.mjs` (React, Puck and components inlined). Design API: `LUMEN_SITE_RENDERER` (path; in both `.env.example` files), a `render_site(site, brand, sections) -> {pages:[{route, html}], css}` subprocess wrapper next to `web_export.py`'s Node call (`:72`). Asset paths become `/asset-store/<digest>` | A page renders to HTML; the CSS is compiled once; the snapshot matches the spike's `/s/` render |
+| A5. Renderer bundle | `@clue/site-kit` `bin/render-site.ts` bundled with esbuild to `dist/render-site.mjs` (React, Puck and components inlined). Design API: `LUMEN_SITE_RENDERER` (path; in both `.env.example` files), a `render_site(site, brand, sections) -> {pages:[{route, html}], css}` subprocess wrapper next to `web_export.py`'s Node call (`:72`). Asset paths become `/asset-store/<digest>`. Agent sections render only in the locked container per workspace (D2): no network, read-only, only that workspace's modules, `--init`, timeout, memory and output caps | A page renders to HTML; the CSS is compiled once; the snapshot matches the spike's `/s/` render; the spike's fs-read and huge-output probes are refused |
 | A6. Thumbnails | `clue_design/thumbnails.py`, `lumen_api/document_thumbnails.py`: site → `render_site` + Playwright | The thumbnail endpoint returns an image for a site |
-| A7. Site publish package | `build_site_publish_package(...) -> PublishPackage` beside `web_export.build_publish_package`; `toolbelt/publishes.py:94` accepts `site`; a missing agent module refuses (`site_publish.section_module_missing`) (Review focus 5) | Publish a two-page site; the page origin serves both routes; republish locks the hostname once; missing module refused |
+| A7. Site publish package | `build_site_publish_package(...) -> PublishPackage` beside `web_export.build_publish_package`; `toolbelt/publishes.py:94` accepts `site`; a missing agent module refuses (`site_publish.section_module_missing`) (Review focus 5). Agent-section HTML passes an allow-list sanitizer, and published pages send a security policy blocking scripts and images from other hosts (Review focus 7, D2). Bring the published-page domain question (D2 "Open") to the founder | Publish a two-page site; the page origin serves both routes; republish locks the hostname once; missing module refused; a section emitting `<script>`, `onerror` and an outside image publishes without them |
 | A8. Export | ZIP and PDF for site (the `/web/export` siblings) | ZIP has every route; PDF renders |
 
 ### Lane B: the agent on the fleet (about 3 weeks)
@@ -906,14 +959,14 @@ then and including Wave 1's results. The outlines fix the scope, files and accep
 | B3. Tools | `validate_page`/`render_page` via the site-kit CLIs and A5; `fetch_page` with `lumen_ingestion.capture.net` guards; `web_search`, `read_claims`, `read_project_accounts` via `config.platform_reads`; `fetch_logo` via `RT/tools/logo_fetch.py`; `generate_image` via `image_provider`; `search_assets` | One test per tool with fakes; guards refuse private IPs |
 | B4. CLIP search | Cherry-pick `deb3a0e98` (branch `design/linkedin-ad-skill-testing`: `lumen_api/asset_embeddings.py`, migration `9429b503cc9d`, `LUMEN_ASSET_EMBEDDING_MODEL_DIR`); then `alembic merge` to one head; wire into the site agent's `search_assets` | Hybrid ranking test from that commit passes; one head |
 | B5. Site executor | `execute_site_turn_job` in `lumen_api/main.py` (mirrors `:11099`: spend scope, model-call collector, CAS persist); `fleet_handler.py:213` (capability) and `:679` (selection); `design_leg_wiring.py:2568` replaces the Task 3 refusal with `site_turn`; result contract `{status, summary, current_version, model_calls, clarification?}` | A queued site turn runs, persists under CAS, and emits receipts; stop cancels it |
-| B6. Agent sections in production | After Task 4: store compiled modules per workspace, content-addressed (the platform's custom-component artifacts pattern); the document's `agent_sections` holds `{name: digest}` | Workspace isolation (Review focus 4); write → visible under the measured target |
+| B6. Agent sections in production | Store compiled modules per workspace, content-addressed (the platform's custom-component artifacts pattern); the document's `agent_sections` holds `{name: digest}`. Compile and extract the props schema inside the locked container, never in a platform process. Hand the editor domain short-lived links for this document's modules (D2) | Workspace isolation (Review focus 4); write → visible under the measured target |
 | B7. Cost and tracing | `agent_model_call` rows via `model_calls`; Langfuse via the injected callbacks | A site turn's cost appears on the turn |
 
-### Lane C: the editor (about 2–3 weeks)
+### Lane C: the editor (about 3–4 weeks, including the editor domain)
 
 | Task | Files (evidence) | Acceptance test |
 |---|---|---|
-| C1. Kind and canvas switch | `design-editor/model/artifact.ts:17,31` (add `"site"`); `chat-shell/components/artifact-stage.tsx:471` (`site` → `SiteArtifactCanvas`) | A site artifact opens the Puck canvas; web and ad are unchanged |
+| C1. Kind and canvas switch | `design-editor/model/artifact.ts:17,31` (add `"site"`); `chat-shell/components/artifact-stage.tsx:471` (`site` → `SiteArtifactCanvas`, the frame that embeds the editor domain, C11) | A site artifact opens the Puck editor; web and ad are unchanged |
 | C2. Site data | A repository plus Zod model for the A2 endpoints through the BFF (`/api/clue/design/*`) | Load, save (CAS), 409 note, undo/redo |
 | C3. Puck in the chat-shell layout | Puck's parts (preview, fields, outline) with `overrides`; fields drawn with `chat-shell/components/inspector-primitives.tsx`; styles from `chat-shell.module.css` and the design-system tokens | Visual parity check against the dummy UI for the inspector |
 | C4. Images | `chat-shell/components/asset-library-panel.tsx` as the asset field (library, upload, generate) | Replace an image from the library and by generation |
@@ -921,8 +974,9 @@ then and including Wave 1's results. The outlines fix the scope, files and accep
 | C6. Edit toggle and live reload | Edit off = Puck `previewMode` "interactive"; reload on agent events via `use-project-chat-controller.ts` `designRefreshForEvent` | The canvas reloads after an agent turn; nothing saves with edit off |
 | C7. Versions | `artifact-action-menu.tsx:91-96` (today a placeholder) wired to document snapshots | Restore a version |
 | C8. Pages | The page switcher and page settings for the site model | Add, rename and remove a page; nav links follow |
-| C9. Agent sections | Load modules at runtime per B6/Task 4 | A loaded section edits in place |
+| C9. Agent sections | Load modules at runtime per B6/Task 4, inside the editor domain only | A loaded section edits in place |
 | C10. Insert, delete, duplicate | **After the founder's designs** | Per the design |
+| C11. The editor domain (D2) | A host page for Puck on its own registrable domain (deploy, DNS, TLS; a dev-stack equivalent on a second local site); the frame attributes and headers in "D2" above; the message bridge between `SiteArtifactCanvas` and the editor page (load, batched save through the BFF, agent updates, selection, asset picker); warm the frame when the project opens. Decide one shared domain or one per workspace | The spike's hostile sections cannot read app cookies or call our API, cannot send a pixel, cannot reach `Function`, and cannot navigate the tab (Review focus 6); a forged frame message for another document is refused; edit, save and agent reload work end to end |
 
 ## Wave 4: hardening and rollout (about 1 week)
 
@@ -936,6 +990,6 @@ then and including Wave 1's results. The outlines fix the scope, files and accep
 - **Spec coverage:** the readiness map's §2 tool verdicts are covered by B3 and B4; §3 research
   by Task 5 and B2; §4 skills by B1 and Task 5's images skill; §5 editor by Lane C; §6 coupling
   points by Tasks 2–3 and A1–A8; §8 effort by the waves; §9 decisions D1 (site kind, Task 2), D2
-  (Task 4), D3 (Task 5), D4 (C10), D5 (Node renderer, A5) and D6 (the flag, Task 3).
+  (Task 4, then the "D2" section, A5, A7, B6, C9 and C11), D3 (Task 5), D4 (C10), D5 (Node renderer, A5) and D6 (the flag, Task 3).
 - **Open by design:** Lanes A, B and C are outlines, expanded into their own plans when the wave
   starts. The detail depends on Wave 1's results, which is why it is not written now.

@@ -9,8 +9,12 @@ Built from three read-only code surveys of this branch, plus my own checks:
 - the website editor: 24 features;
 - the backend surfaces, with 14 places that assume the WebDoc format or the Rust engine.
 
-Founder ruling already in force: clones first; a component is made only when a request needs
-more than a clone allows (2026-10-08).
+Founder rulings already in force:
+- clones first; a component is made only when a request needs more than a clone allows
+  (2026-10-08);
+- **D2 decided (2026-10-09): the Puck editor runs on its own domain**, where the marketer is not
+  logged in, embedded in app.cluehq.ai as one frame (§5 and §9). Small delays on first open, save
+  and agent updates are accepted.
 
 ## 1. The two agents side by side
 
@@ -63,7 +67,7 @@ more than a clone allows (2026-10-08).
 | `repair_cloned_section`, `compose_web_section`, `release_repair` | Replace | Clone slots, replacements and links cover small changes. Bigger changes go through an on-demand rebuild into a component (`view_clone`, `write_section`, `compare_section`; the founder ruling). No raw HTML composition. |
 | `mint_campaign_shells`, `assemble_abm_page` | Replace | The spike's `shell.json` (a header with "prepared for", and a footer), built from the brand. |
 | `review_cloned_page` | Stays in ingestion | A capture-quality check, not the page agent's job. Its `degraded` verdicts feed the catalog. |
-| Custom components (5 tools; sandboxed TSX, account-local) | Replace | `write_section` (brand-token lint, type check, schema). How agent code runs safely in production is decision D2. |
+| Custom components (5 tools; sandboxed TSX, account-local) | Replace | `write_section` (brand-token lint, type check, schema). How agent code runs safely in production is decided in D2 (§9): in the editor it runs only on the editor's own domain; on the server only in a locked container. |
 
 ### 2.4 Building, rendering and finishing
 
@@ -178,6 +182,27 @@ Experiment R1 (§7) confirms this before we commit.
 | Custom component props form | Fields generated from each agent section's zod schema (already computed by the check) | Upgrade |
 | Brand kit controls | Theme from the kit; token selects | Same |
 
+**Where the editor runs (D2, decided 2026-10-09):**
+- **Why:** Puck's canvas is a `srcDoc` iframe, but Puck mounts components into it with
+  `createPortal`, so section code runs in the editor's own window, with the marketer's login,
+  cookies and our API. The Task 4 spike showed agent code passing the lint and still sending a
+  tracking pixel, reaching `Function`, and reaching `top`/`parent`
+  (`trials/puck-spike/RUNTIME-SECTIONS.md`). The research found every AI and code-first builder
+  runs generated code away from the logged-in app: Framer, Figma, v0, Lovable, Claude, Canva,
+  Google, and the MCP Apps standard
+  (`docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
+- **What we do:** the whole Puck editor (canvas, fields, outline) is a page served from a separate
+  registrable domain that never holds the marketer's login. app.cluehq.ai embeds it as one frame
+  and keeps everything else: chat, header, gallery, asset library, versions, publish.
+- **How data moves:** our app sends the page data, agent updates and chosen assets into the frame;
+  the frame sends page changes (batched), selections (for chat and annotations) and asset-picker
+  requests back. Our app checks every message and saves with the marketer's login. The frame
+  never calls our API with credentials.
+- **What it costs:** a second domain to run, the message bridge, and the editor domain's headers.
+  Puck itself is unchanged, so in-place editing works on every section, agent ones included.
+  Accepted delays: a few hundred ms on first open (it can be warmed when the project opens) and a
+  few ms per message on save and agent updates.
+
 **Visual design:**
 - **We don't use Puck's own UI.** We use its parts (preview, fields, outline, component list) inside the chat-shell layout, skinned with:
   - `inspector-primitives` (1,852 lines);
@@ -232,7 +257,22 @@ On Puck the engine, bridge and class facets go away; the chrome (tabs, header, s
   - the site's current files.
 
   The page JSON is written back under CAS on `current_version`.
-- **Agent-written sections in production** (D2): where their code lives (database or blob, not repo files), how it's built safely, and how the renderer loads it per workspace.
+- **Agent-written sections in production** (D2, decided 2026-10-09):
+  - **Storage:** compiled modules are stored per workspace, keyed by content hash (the platform's
+    custom-component artifact pattern); the document keeps `{name: digest}`.
+  - **Editor:** modules load only inside the editor domain's frame, through short-lived links our
+    app hands it for this document; never by a URL segment alone.
+  - **Server render:** a locked container per workspace (no network, read-only, only that
+    workspace's modules, `--init`, a timeout), plus memory and output caps. Node's permission
+    flags are an extra layer, not the boundary.
+  - **Publish:** agent-section HTML goes through an allow-list sanitizer. React's server render
+    passes a section's `<script>`, raw `onerror` handlers and outside images straight into the
+    HTML (tested 2026-10-09). Published pages also send a security policy that blocks scripts and
+    images from other hosts.
+  - **Open question (owner: Lane A, founder decision):** published pages default to
+    `*.pages.cluehq.ai` (`.env.example:601`), the same registrable domain as the app. The research
+    recommends a distinct one: GitHub moved Pages off github.com over cookie tossing, and abuse on
+    a shared domain took Notion and CodeSandbox offline. Custom domains are already separate.
 - **Head of ABM:** `open_design_leg` gains `doc_kind: site`, behind a per-workspace flag.
 
 ## 7. Readiness
@@ -255,7 +295,7 @@ On Puck the engine, bridge and class facets go away; the chrome (tabs, header, s
 | R3 | Images | Wire `generate_image` and `search_assets` (with CLIP) into the spike; two builds | about $2 plus images |
 | R4 | Quality parity with the platform agent | Blind founder rating: 3 accounts × 2 sellers, platform against Puck | about $15–20 |
 | R5 | Rich-text formatting with our own inline menu (plain in-place editing is already proven in phase 1) | A short engineering check, no model spend | 1 day |
-| R6 | Agent sections in production (build and isolation) | A design spike on D2 | 2–3 days |
+| R6 | Agent sections in production (build and isolation) | **Done** (2026-10-09): the Task 4 spike (`trials/puck-spike/RUNTIME-SECTIONS.md`) and the isolation research; D2 decided | — |
 
 ## 8. Effort (revised from the roadmap's 8 engineer-weeks)
 
@@ -263,22 +303,24 @@ On Puck the engine, bridge and class facets go away; the chrome (tabs, header, s
 |---|---|
 | 1. Shared package (components, schemas, theme, clone renderer, validator, catalog) | 1 |
 | 2. Storage and the `site` kind (§6, points 1–9, 12–13) | 1 |
-| 3. Site renderer and publish (points 10–11) | 1.5 |
+| 3. Site renderer and publish (points 10–11, plus the publish sanitizer and published-page policy) | 1.5 |
 | 4. Agent on the fleet (executor, workspace view, ported tools: logo, images, CLIP search, reads, fetch guards; result contract; legs) | 2–3 |
-| 5. Editor in our UI (fields with our primitives, asset field, annotations, rich-text menu, pages, versions, live reload) | 2 |
-| 6. Agent sections in production (after D2) | 1–2 |
+| 5. Editor in our UI (fields with our primitives, asset field, annotations, rich-text menu, pages, versions, live reload) **plus the editor domain** (host page, deploy, headers, message bridge) | 3 |
+| 6. Agent sections in production (storage, loading in the editor domain, locked render) | 1–2 |
 | 7. Hardening: QA across sellers, the skills regression set, coexistence with WebDoc | 1 |
-| **Total** | **about 9.5–11 engineer-weeks; 5–6 calendar weeks with 2–3 lanes** |
+| **Total** | **about 10.5–12 engineer-weeks; about 6 calendar weeks with 2–3 lanes** |
 
 It is higher than the roadmap's 8 weeks because of the site renderer and agent sections in production.
 (Correction 2026-10-09: inline editing is native in Puck and was proven in phase 1; it is not a risk.)
+(Update 2026-10-09: the editor domain from D2 adds about one week to workstream 5. That is my
+estimate, not a measurement.)
 
 ## 9. Decisions to make
 
 | # | Decision | Recommendation |
 |---|---|---|
 | D1 | Where site documents live | A new `site` kind in `design_document`, in a shape that satisfies today's contract |
-| D2 | Agent-written code in production | Decide after R6. The options: TSX built in a sandbox and loaded per workspace; a JSON layout language instead of code; or no agent code at first (which would delay on-demand rebuilds) |
+| D2 | Agent-written code in production | **Decided by the founder, 2026-10-09:** agent sections stay TSX, compiled and stored per workspace. In the editor they run only inside a Puck editor served from its own domain, with no login there, embedded in app.cluehq.ai as one frame (§5). On the server they run only in a locked container per workspace. Published HTML is sanitized (§6). Rejected: a sandbox per section (no builder does it; the costs multiply per section); server-rendered agent sections in locked frames (cheaper, but agent sections could not be edited live); a JSON layout language (caps how distinctive pages can look). Still open: one shared editor domain or one per workspace (Lane C), and the published-page domain (§6). |
 | D3 | Research input | Display pages in files plus `read_claims` on demand; confirm with R1 |
 | D4 | Which new Puck abilities get UI now | Only two need new designs: the section insert palette, and delete/duplicate. Inline text (the existing toolbar's look), the asset library, the Versions menu and the reorder handles are already designed. |
 | D5 | Where the renderer runs | The frontend app's server rendering, or a separate Node render service |

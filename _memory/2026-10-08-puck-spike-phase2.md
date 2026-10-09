@@ -121,3 +121,24 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   outlined against cited switch points (design_leg_tools.py:540/1002, documents.py:188/595,
   design_leg_wiring.py:2568, fleet_handler.py:213/679, artifact-stage.tsx:471, publishes.py:94).
   Not yet executed; founder to pick the execution method.
+
+## D2 decided (2026-10-09)
+- Task 4 spike (412193a51): runtime loading works, but option A gives no containment — Puck mounts
+  components via createPortal, so section code runs in the editor window with the marketer's session;
+  4 hostile probes passed the lint. React's server render passes <script>, raw onerror (via a split
+  dangerouslySetInnerHTML key) and outside images into "static" HTML (tested; no sanitizer exists yet).
+- Research (8 researchers incl. engineering blogs): every AI/code-first builder runs generated code on
+  a separate origin, one boundary per surface (Framer framercanvas.com, Figma figma.site, v0, Lovable,
+  Claude, Canva, Google usercontent.goog, MCP Apps). Per-section frames only where distrusting authors
+  share a page. Ploy (ploy.ai, Bryant Chou): Astro/React repo in a cloud sandbox, sandboxed builds,
+  static on Cloudflare, no CSP, preview origin not public. Report:
+  docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md (its per-section
+  recommendation NOT adopted).
+- Founder decision: separate-domain editor — whole Puck editor on its own domain (no login), one frame
+  in app.cluehq.ai, message bridge; locked render container; publish sanitizer + published-page CSP.
+  Small latency explicitly accepted ("not streaming trading data"); no measurement spike.
+- Recorded in readiness map §5/§6/§7/§8/§9 and the plan (new "D2" section, Review focus 6–7, A5, A7,
+  B6, C1, C9, new C11; Lane C now 3–4 weeks; total 10.5–12 eng-weeks).
+- Open: one shared editor domain vs one per workspace (C11); published pages default to
+  *.pages.cluehq.ai, same registrable domain as the app — research recommends a distinct one (A7,
+  founder decision). R1 question to founder still unanswered; Task 5 not started.
