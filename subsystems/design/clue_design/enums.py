@@ -17,10 +17,11 @@ from enum import StrEnum
 
 
 class DesignDocKind(StrEnum):
-    """``design_doc_kind`` — the two document families (scene engine vs WebDoc)."""
+    """``design_doc_kind`` — the document families (scene engine, WebDoc, Puck site)."""
 
     SCENE = "scene"
     WEB = "web"
+    SITE = "site"
 
 
 class DesignEffectiveBrandSource(StrEnum):
@@ -95,6 +96,7 @@ class DesignRunKind(StrEnum):
 
     AGENT_TURN = "agent_turn"
     WEB_TURN = "web_turn"
+    SITE_TURN = "site_turn"
 
 
 class DesignRunStatus(StrEnum):

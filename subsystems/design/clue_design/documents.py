@@ -198,7 +198,7 @@ async def create_document(
     template_doc_version: int | None = None,
     account_id: str | None = None,
 ) -> JsonObject:
-    if doc_kind == "web":
+    if doc_kind in ("web", "site"):
         scene = await _stamp_approved_brand_kit_at_birth(
             conn, workspace_id=workspace_id, web_doc=scene
         )
@@ -376,10 +376,10 @@ async def rename_document(
     document = await get_document(
         conn, workspace_id=workspace_id, document_id=document_id, for_update=True
     )
-    # The jsonb path to the document's own title: a web doc carries it at the top level, a
+    # The jsonb path to the document's own title: a web or site doc carries it at the top level, a
     # scene under ``meta``. Passed as a list, not the ``{a,b}`` literal — the driver binds a
     # text[] argument from a sized iterable and refuses a string.
-    path = ["title"] if document["doc_kind"] == "web" else ["meta", "title"]
+    path = ["title"] if document["doc_kind"] in ("web", "site") else ["meta", "title"]
     await conn.execute(
         text(
             "UPDATE design_document"

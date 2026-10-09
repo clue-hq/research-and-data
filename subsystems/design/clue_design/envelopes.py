@@ -62,14 +62,15 @@ class _DesignEnvelopeBase(BaseModel):
 
 
 class DesignTurnEnvelope(_DesignEnvelopeBase):
-    """One design-agent turn — the ``agent_turn`` (scene) and ``web_turn`` (web) shapes.
+    """One design-agent turn — the ``agent_turn`` (scene), ``web_turn`` (web) and ``site_turn``
+    (Puck site) shapes.
 
     ``checkpoint_thread_id`` is the LangGraph thread the turn runs on and, per the D5 ruling,
     equals ``run_id``: the design run IS the checkpoint thread, so a resumed turn resumes the
     same graph instead of starting a second one beside it.
     """
 
-    kind: Literal["agent_turn", "web_turn"]
+    kind: Literal["agent_turn", "web_turn", "site_turn"]
     run_id: str = Field(min_length=1)
     checkpoint_thread_id: str = Field(min_length=1)
     #: The platform project this turn's spend belongs to, when the offerer has one (lane 3

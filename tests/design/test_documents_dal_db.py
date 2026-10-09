@@ -38,6 +38,17 @@ def _web_doc(doc_id: str, title: str = "W") -> dict[str, object]:
     return {"id": doc_id, "title": title, "theme": {}, "pages": [], "assets": {}}
 
 
+def _site_doc(doc_id: str, title: str = "S") -> dict[str, object]:
+    return {
+        "id": doc_id,
+        "title": title,
+        "theme": {},
+        "pages": {"/": {"root": {"props": {"title": title}}, "content": []}},
+        "shell": None,
+        "agent_sections": {},
+    }
+
+
 async def _seed_ws(conn: AsyncConnection) -> str:
     ws = f"ws_test_docs_{uuid4().hex[:12]}"
     await conn.execute(
@@ -156,6 +167,42 @@ def test_web_documents_stamp_only_the_latest_approved_kit_at_birth(
                 conn, workspace_id=ws, scene=explicit_doc, doc_kind="web"
             )
             assert explicit["scene"]["theme"]["brand_kit"] == explicit_ref
+            await txn.rollback()
+
+    run_async(_check())
+
+
+def test_site_documents_are_born_like_web_documents(require_design_db: None) -> None:
+    async def _check() -> None:
+        async with db_lifespan() as engine, engine.connect() as conn, conn.begin() as txn:
+            ws = await _seed_ws(conn)
+            await _seed_brand_kit(conn, workspace_id=ws, version=1, approval_status="approved")
+            doc_id = f"site_{uuid4().hex}"
+            born = await design_documents.create_document(
+                conn, workspace_id=ws, scene=_site_doc(doc_id), doc_kind="site"
+            )
+            assert born["doc_kind"] == "site"
+            assert born["title"] == "S"
+            assert born["scene"]["theme"]["brand_kit"] == {
+                "id": "kit_workspace_brand",
+                "version": 1,
+            }
+            renamed = await design_documents.rename_document(
+                conn, workspace_id=ws, document_id=doc_id, title="Renamed"
+            )
+            assert renamed["scene"]["title"] == "Renamed"  # top-level title, not meta.title
+            updated = await design_documents.update_web_document(
+                conn,
+                workspace_id=ws,
+                document_id=doc_id,
+                web_doc={**renamed["scene"], "shell": {"header": {}}},
+                intent="site_write",
+                checkpoint_label=None,
+                operations=[{"op": "replace_site"}],
+                inverse_operations=[{"op": "replace_site", "site": renamed["scene"]}],
+                expected_base_version=renamed["current_version"],
+            )
+            assert updated["current_version"] == renamed["current_version"] + 1
             await txn.rollback()
 
     run_async(_check())
