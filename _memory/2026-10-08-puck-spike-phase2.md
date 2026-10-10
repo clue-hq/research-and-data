@@ -187,3 +187,9 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   chapters copied with links repointed), stage0-interview v46; registry/composer/tests at v73;
   profile hash pin c598d5c3…; 480 tests green. Spike now lists the logo tool's alternatives in
   brand.md after the recommended logos (7c81ecbb7). Next: R1+R3 runs await the founder's go.
+- 2026-10-10 R1/R3 runs (r1a/r1b; $3.74 model cost; image charge not yet visible on the key): no
+  untraced figure in any arm; the claims file adds account detail (+$0.07–0.13/build). Founder: D3 =
+  the claims file is standard; account-page-copy part 2 gains "the research's notes on how to
+  approach the account … are for you. Never put them on the page." (efd3c9b9f; failing case
+  r1b-base). Open: the generated school image beside "For SCSD" (ISSUES 56) awaits the founder's
+  judgement. Week 1 left: whole-branch review, lane DB upgrade go, branch merge decision.
