@@ -348,6 +348,9 @@ def test_account_deep_receipt_links_sources_and_replay_does_not_repurchase(tmp_p
                 preview = result.references["preview"]
                 assert preview and preview[0]["title"] == "Report"
                 assert any(h["url"] == "https://example.test/bdr" for h in preview)
+                # Each source is previewed with what it says, not as a bare link (2026-10-10).
+                bdr = next(h for h in preview if h["url"] == "https://example.test/bdr")
+                assert bdr["snippet"] == "The role uses a named sales tool."
                 assert result.references["result_count"]
             else:
                 assert "preview" not in result.references

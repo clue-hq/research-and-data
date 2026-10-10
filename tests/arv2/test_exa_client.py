@@ -589,3 +589,35 @@ def test_thin_response_retry_is_logged_separately_from_http_attempts():
     assert retry["label"] == "person-depth" and retry["next_label"] == "person-depth-retry"
     assert retry["report_chars"] == 5 and retry["first_ledger_row_id"]
     assert "private query" not in str(logs) and "test-secret" not in str(logs)
+
+
+def test_result_rows_keep_rank_order_and_a_short_snippet_per_result() -> None:
+    """2026-10-10: search and deep calls return one short row per result, so the receipt preview
+    can show what each result says (run 3's preview showed four bare links of ten)."""
+    from clue_api.arv2.exa_client import exa_result_rows
+
+    raw = {
+        "results": [
+            {
+                "url": "https://a.test",
+                "title": "A",
+                "publishedDate": "2026-01-02",
+                "highlights": ["First highlight.", "Second highlight."],
+                "text": "ignored",
+            },
+            {"url": "https://b.test", "title": "B", "summary": "A summary.", "text": "ignored"},
+            {"url": "https://c.test", "title": "C", "text": "x" * 5000},
+            {"title": "No link"},
+        ]
+    }
+    rows = exa_result_rows(raw)
+    assert [r["url"] for r in rows] == ["https://a.test", "https://b.test", "https://c.test"]
+    assert rows[0] == {
+        "url": "https://a.test",
+        "title": "A",
+        "published": "2026-01-02",
+        "text_head": "First highlight. Second highlight.",
+    }
+    assert rows[1]["text_head"] == "A summary."
+    assert len(rows[2]["text_head"]) == 300
+    assert exa_result_rows({}) == []

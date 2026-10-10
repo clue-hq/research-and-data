@@ -1598,7 +1598,13 @@ async def _search_web(runtime: ToolRuntime, args: SearchWebArgs) -> dict[str, An
                 else f"search-{runtime.scope.account_domain}",
             ),
         )
-        return {"result_ref": str(operation.operation_id), "n_results": len(raw.get("results", []))}
+        from clue_api.arv2.exa_client import exa_result_rows
+
+        return {
+            "result_ref": str(operation.operation_id),
+            "n_results": len(raw.get("results", [])),
+            "results": exa_result_rows(raw),
+        }
 
     def hop(caller: ProviderCaller) -> Any:
         return runtime.clients.exa(caller).search(
@@ -2182,13 +2188,14 @@ async def _research_deep(
                 **person_args, label=f"person-deep-{scope.account_domain}"
             ),
         )
-        from clue_api.arv2.exa_client import read_deep_report
+        from clue_api.arv2.exa_client import exa_result_rows, read_deep_report
 
         report = read_deep_report(raw, text_output=True) or ""
         return {
             "report": report,
             "result_ref": str(operation.operation_id),
             "n_results": len(raw.get("results", [])),
+            "results": exa_result_rows(raw),
             "source_artifact_key": operation.artifact_key,
             "source_from_saved_response": True,
             "gaps": [] if report.strip() else ["deep_report_empty_review_returned_sources"],

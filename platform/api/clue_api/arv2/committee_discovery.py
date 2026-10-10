@@ -40,7 +40,7 @@ from clue_api.arv2.ai_ark_client import (
 )
 from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.claim_writer import WriteReceipt
-from clue_api.arv2.exa_client import read_deep_report
+from clue_api.arv2.exa_client import exa_result_rows, read_deep_report
 from clue_core import ExtractionMethod
 from clue_research.identity.provider import (
     register_provider_subjects,
@@ -569,6 +569,7 @@ def deep_result(
         "report": report,
         "result_ref": str(op.operation_id),
         "n_results": len(raw.get("results", [])),
+        "results": exa_result_rows(raw),
         "source_artifact_key": op.artifact_key,
         "source_from_saved_response": True,
     }

@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, JsonValue, ValidationError
 from sqlalchemy import text
 
+from clue_agents.execution import SPILL_THRESHOLD_BYTES
 from clue_api.arv2 import research_operations as operations
 from clue_api.arv2.account_exa_brief import uses_account_discovery
 from clue_api.arv2.account_research_tools import (
@@ -337,9 +338,21 @@ class AcquireResearchTool(Tool):
         )
 
 
-PREVIEW_HITS = 8
 PREVIEW_SNIPPET = 300
-PREVIEW_MAX_BYTES = 6 * 1024
+#: Every entry is previewed (founder ruling 2026-10-10). The preview stays this far under the spill
+#: line, leaving room for the rest of the receipt, so a long result list is never replaced by a file
+#: pointer; when it would not fit, the snippets shorten in these steps and no entry is dropped.
+PREVIEW_MAX_BYTES = SPILL_THRESHOLD_BYTES - 2 * 1024
+#: (snippet, title) lengths, tried in order: snippets go first, titles only after them.
+_SHORTENING_STEPS = (
+    (PREVIEW_SNIPPET, 300),
+    (200, 300),
+    (120, 300),
+    (60, 300),
+    (0, 300),
+    (0, 120),
+    (0, 60),
+)
 
 
 class ReceiptHit(BaseModel):
@@ -356,72 +369,94 @@ class AcquireResearchReceiptV2(AcquireResearchReceipt):
     preview: list[ReceiptHit] = Field(default_factory=list)
 
 
-def _snippet(*parts: Any) -> str | None:
+def _snippet(*parts: Any, limit: int = PREVIEW_SNIPPET) -> str | None:
+    if limit <= 0:
+        return None
     for part in parts:
         if isinstance(part, list):
             part = " ".join(str(p) for p in part if p)
         if isinstance(part, str) and part.strip():
             text = " ".join(part.split())
-            return text[: PREVIEW_SNIPPET - 1] + "…" if len(text) > PREVIEW_SNIPPET else text
+            return text[: limit - 1] + "…" if len(text) > limit else text
     return None
 
 
 def receipt_preview(value: Any) -> tuple[list[dict[str, str | None]], int | None, bool]:
     """``(hits, result_count, empty)`` for a settled acquisition body.
 
-    A short, bounded view of what came back (titles, links, evidence paths, snippets) so the
-    agent need not spend a model round opening the result file to find out.
+    One entry per result, in the provider's order, so the agent sees everything that came back
+    without spending a model round opening the result file. Every entry is kept; only the snippets
+    shorten, and only as far as the spill line needs (2026-10-10: run 3's preview, capped at eight
+    saved files, showed four of ten results and hid the account's ABM case study).
     """
     if not isinstance(value, dict):
         return [], None, False
-    sources = (value.get("source_navigation") or {}).get("sources") or []
-    by_url = {str(s.get("url")): s for s in sources if isinstance(s, dict) and s.get("url")}
+    sources = [
+        s
+        for s in (value.get("source_navigation") or {}).get("sources") or []
+        if isinstance(s, dict) and s.get("url")
+    ]
+    # A result is saved as its provider record and then its page snapshot: the last file for a
+    # link is the page text, the one worth opening.
+    by_url = {str(s.get("url")): s for s in sources}
     rows = value.get("results") or value.get("hits") or []
-    hits: list[dict[str, str | None]] = []
+    entries: list[tuple[dict[str, str | None], tuple[Any, ...]]] = []
     for row in rows if isinstance(rows, list) else []:
         if not isinstance(row, dict):
             continue
         url = row.get("url")
         source = by_url.get(str(url), {})
-        hits.append(
-            ReceiptHit(
-                title=_snippet(row.get("title"), source.get("title")),
-                url=url,
-                published=row.get("published")
-                or row.get("publishedDate")
-                or source.get("published_at"),
-                path=source.get("path"),
-                snippet=_snippet(
-                    row.get("highlights"), row.get("summary"), row.get("text"), row.get("text_head")
-                ),
-            ).model_dump()
+        entries.append(
+            (
+                {
+                    "title": _snippet(row.get("title"), source.get("title")),
+                    "url": url,
+                    "published": row.get("published")
+                    or row.get("publishedDate")
+                    or source.get("published_at"),
+                    "path": source.get("path"),
+                },
+                (row.get("highlights"), row.get("summary"), row.get("text"), row.get("text_head")),
+            )
         )
-    if not hits:
-        hits = [
-            ReceiptHit(
-                title=_snippet(s.get("title")),
-                url=s.get("url"),
-                published=s.get("published_at"),
-                path=s.get("path"),
-            ).model_dump()
-            for s in sources
-            if isinstance(s, dict)
+    if not entries:
+        entries = [
+            (
+                {
+                    "title": _snippet(s.get("title")),
+                    "url": url,
+                    "published": s.get("published_at"),
+                    "path": s.get("path"),
+                },
+                (),
+            )
+            for url, s in by_url.items()
         ]
     report = value.get("report")
     if isinstance(report, str) and report.strip():
-        hits.insert(0, ReceiptHit(title="Report", snippet=_snippet(report)).model_dump())
+        entries.insert(
+            0, ({"title": "Report", "url": None, "published": None, "path": None}, (report,))
+        )
     count = value.get("n_results")
     if not isinstance(count, int):
-        count = len(rows) if isinstance(rows, list) and rows else len(sources) or None
+        count = len(rows) if isinstance(rows, list) and rows else len(by_url) or None
     # Only a body that lists results (a search, page read or report) can come back empty; an
     # enrichment profile, a queued job or a media item always came back with something.
     listed = any(key in value for key in ("results", "hits", "n_results", "report"))
     empty = listed and (
-        (count == 0) or (not hits and not (isinstance(report, str) and report.strip()))
+        (count == 0) or (not entries and not (isinstance(report, str) and report.strip()))
     )
-    hits = hits[:PREVIEW_HITS]
-    while hits and len(json.dumps(hits, default=str)) > PREVIEW_MAX_BYTES:
-        hits.pop()
+    hits: list[dict[str, str | None]] = []
+    for snippet_limit, title_limit in _SHORTENING_STEPS:
+        hits = [
+            ReceiptHit(
+                **{**fields, "title": _snippet(fields["title"], limit=title_limit)},
+                snippet=_snippet(*parts, limit=snippet_limit),
+            ).model_dump()
+            for fields, parts in entries
+        ]
+        if len(json.dumps(hits, default=str)) <= PREVIEW_MAX_BYTES:
+            break
     return hits, count, empty
 
 
