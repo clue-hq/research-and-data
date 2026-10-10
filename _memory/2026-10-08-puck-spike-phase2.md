@@ -167,3 +167,17 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   Production image search = design/linkedin-ad-skill-testing (B4, founder 2026-10-09).
   Earlier single builds cost $0.57–0.99. Next: R1+R3 runs (Syracuse, Dana.AI × claims/--no-claims)
   need the founder's go and the spike dev server on :3047.
+
+## Merge of design/linkedin-ad-skill-testing (2026-10-10, a18a3e6af)
+- Founder asked to merge the scene-ad lane (38 commits: logo ladder AVIF/ICO/real-ink + every site
+  logo, hybrid CLIP asset search + migration 9429b503cc9d, generated-imagery guide, design-agent
+  compaction window, fleet/ARV2 fixes). 15 conflicts. Rulings: keep our Head of ABM v71/v72 (manual
+  v18, stage0 v45), drop theirs' v71 (prompt v19 removed); drop the "unrelated topic" line; the
+  "suggest a headline only as a suggestion" line returns scoped to scene ads in a later re-mint
+  (v73 — wording to show the founder first); privacy test left for later (it passes anyway).
+  compaction_for now in clue_agents.compaction_config (theirs). alembic join b4bff1ecca97
+  (db-smoke on clue_trenton_wave1; lane DB still 10edab6dd974 — needs upgrade before CLIP search
+  runs on the lane stack). .env gained CLUE_AGENT_MODEL_CONTEXT_WINDOWS, CLUE_FLEET_THREAD_POOL_SIZE,
+  LUMEN_ASSET_EMBEDDINGS, LUMEN_ASSET_EMBEDDING_MODEL_DIR (~/.cache/clue/models/clip-vit-base-patch32-onnx).
+  uv sync --inexact added onnxruntime + tokenizers. Tests: platform 130, design api 190 +
+  agent_runtime 159, spike 57 + TS 26 — all green.
