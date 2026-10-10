@@ -264,7 +264,11 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # keeps private notes apart, Design writes every word, and research is offered for an
     # unresearched account as a recommendation. `stage0-interview@v45` only repoints its manual
     # paths. Prompt v18 and the recipe stay.
-    AgentRole.HEAD_OF_ABM: "v72",
+    # v73 (2026-10-10): v72's surface exactly. The open_design_leg description adds that, for an ad,
+    # Head of ABM may suggest what its headline could say, but only as a suggestion. The manual
+    # re-mints at `manual-*@v19` (its tools chapter renders that description) and
+    # `stage0-interview@v46` only repoints its manual paths. Prompt v18 and the recipe stay.
+    AgentRole.HEAD_OF_ABM: "v73",
     AgentRole.RESEARCH: "v7",
     AgentRole.CONTENT_DRAFTER: "v5",
     AgentRole.REVIEWER: "v5",
