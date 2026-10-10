@@ -181,3 +181,9 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   LUMEN_ASSET_EMBEDDINGS, LUMEN_ASSET_EMBEDDING_MODEL_DIR (~/.cache/clue/models/clip-vit-base-patch32-onnx).
   uv sync --inexact added onnxruntime + tokenizers. Tests: platform 130, design api 190 +
   agent_runtime 159, spike 57 + TS 26 — all green.
+- 2026-10-10: Head of ABM v73 (cb232f004) — open_design_leg description gains "For an ad, you may
+  suggest what its headline could say, but only as a suggestion" (founder-approved wording);
+  manual v19 (tools chapter regenerated via `python -m clue_api.manual_build --write`, hand-written
+  chapters copied with links repointed), stage0-interview v46; registry/composer/tests at v73;
+  profile hash pin c598d5c3…; 480 tests green. Spike now lists the logo tool's alternatives in
+  brand.md after the recommended logos (7c81ecbb7). Next: R1+R3 runs await the founder's go.
