@@ -36,6 +36,8 @@ your mind, change the plan first and write down why.
 - Prefer the account's own documents (budget, plans, filings, its website) over press about it.
 - Use their words. Use at most one or two of their own figures on the whole page.
 - Say what they did in plain words. Never put file names, line codes or claim ids on the page.
+- The research's notes on how to approach the account (who to call, what to offer, where you
+  overlap or compete) are for you. Never put them on the page.
 - If a figure needs a condition to be true (it is combined with other costs, it is a reporter's
   estimate), leave it out rather than explain it.
 

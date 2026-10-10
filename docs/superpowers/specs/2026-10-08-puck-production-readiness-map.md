@@ -298,9 +298,9 @@ On Puck the engine, bridge and class facets go away; the chrome (tabs, header, s
 
 | # | Open question | Test | Cost |
 |---|---|---|---|
-| R1 | Research input: display pages alone, or plus `read_claims` | Syracuse and Dana.AI builds both ways; compare fact accuracy, quotes and cost | about $3 |
+| R1 | Research input: display pages alone, or plus `read_claims` | **Done** (2026-10-10, runs r1a/r1b): no untraced figure in either arm; the claims file added account-specific detail for about $0.07–0.13 a build; D3 decided | $3.74 |
 | R2 | On-demand rebuild during edits | Three edits a clone can't do on a built page; time, look, cost | about $2–3 |
-| R3 | Images | Wire `generate_image` and `search_assets` (with CLIP) into the spike; two builds | about $2 plus images |
+| R3 | Images | **Built and run** (2026-10-10): `generate_image`, the account logo and the images-and-logos skill; one image generated in four builds (spike ISSUES.md 56–58). CLIP search arrived with the scene-ad merge; wiring it is B4 | in the R1 runs |
 | R4 | Quality parity with the platform agent | Blind founder rating: 3 accounts × 2 sellers, platform against Puck | about $15–20 |
 | R5 | Rich-text formatting with our own inline menu (plain in-place editing is already proven in phase 1) | A short engineering check, no model spend | 1 day |
 | R6 | Agent sections in production (build and isolation) | **Done** (2026-10-09): the Task 4 spike (`trials/puck-spike/RUNTIME-SECTIONS.md`) and the isolation research; D2 decided | — |
@@ -329,7 +329,7 @@ estimate, not a measurement.)
 |---|---|---|
 | D1 | Where site documents live | A new `site` kind in `design_document`, in a shape that satisfies today's contract |
 | D2 | Agent-written code in production | **Decided by the founder, 2026-10-09:** agent sections stay TSX, compiled and stored per workspace. In the editor they run only inside a Puck editor served from its own domain, with no login there, embedded in app.cluehq.ai as one frame (§5). On the server they run only in a locked container per workspace. Published HTML is sanitized (§6). Rejected: a sandbox per section (no builder does it; the costs multiply per section); server-rendered agent sections in locked frames (cheaper, but agent sections could not be edited live); a JSON layout language (caps how distinctive pages can look). Published pages move to their own registrable domain (§6, founder 2026-10-09). Decided (founder, 2026-10-09): one editor subdomain per workspace on a single wildcard domain. That is one deployment, one wildcard DNS record and one wildcard certificate, with no extra servers per workspace (Framer's per-project canvas and Google's SafeContentFrame both work this way). |
-| D3 | Research input | **Founder ruling, 2026-10-09:** Head of ABM's brief gives direction and suggestions; the page agent reads the research itself and chooses its facts on its own reasoning. Form: display pages in files, plus the claims behind them (R1 tests how) |
+| D3 | Research input | **Decided (founder, 2026-10-09 and 2026-10-10):** Head of ABM's brief gives direction and suggestions; the page agent reads the research itself and chooses its facts. Form, confirmed by the R1 runs (spike ISSUES.md 54): the display pages in files with every statement's type and notes, the Watch-outs / Context only sections as background, short claim labels on each statement, and `research/claims.md` built from the cited claims (the source drawer's read, gated by `gate_claims`). Production needs a governed design read for the cited claims (B2) |
 | D4 | Which new Puck abilities get UI now | Only two need new designs: the section insert palette, and delete/duplicate. Inline text (the existing toolbar's look), the asset library, the Versions menu and the reorder handles are already designed. |
 | D5 | Where the renderer runs | The frontend app's server rendering, or a separate Node render service |
 | D6 | Coexistence | A per-workspace flag. Existing WebDoc documents stay on the old engine; no conversion |

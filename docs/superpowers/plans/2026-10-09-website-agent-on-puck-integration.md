@@ -903,6 +903,9 @@ git commit -m "Puck spike: D2, agent sections compiled, served per workspace and
   sensitive facts and media gaps stay held back, and statements citing them are left out of the
   research files;
 - production needs a governed design read for the cited claims (B2).
+- **Result (2026-10-10, runs r1a/r1b, spike ISSUES.md 54–58):** no untraced figure in either arm;
+  the claims file is the standard (D3 decided); account-page-copy now keeps the research's notes on
+  how to approach the account off the page.
 
 - [ ] **Step 1: R1, keep claim ids in the research files.** In `workspace.research_markdown`
 (`trials_puck_agent/workspace.py:42`), append each statement's `cited_claim_ids` as

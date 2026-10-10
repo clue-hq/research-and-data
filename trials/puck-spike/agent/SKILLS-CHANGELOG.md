@@ -41,3 +41,7 @@ fails without it).
   account's logo; view_asset and generate_image listed; four skills. building-with-puck: images
   come from brand.md or generate_image. Written before a run (the agent had no way to make an
   image); R3 runs test it.
+- 2026-10-10 · account-page-copy, part 2 (founder-approved wording): "The research's notes on how
+  to approach the account (who to call, what to offer, where you overlap or compete) are for you.
+  Never put them on the page." Failing case: r1b-base (its closing line said "overlap, coexistence,
+  a geographic split, or a referral into hotels", from a research inference on approaching Dana.AI).

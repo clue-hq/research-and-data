@@ -243,15 +243,16 @@ background, `generate_image`, and the account's logo in brand.md.
 the research, the claims file, the seller's files or a page it fetched. No run put a quote on the
 page.
 
-54. **R1: no fabricated figure in either arm.** With the claims file the agent opened it (2× and
-    4×) and wrote more account-specific detail (Syracuse: the plan names, Excellus, the actuaries
+54. **R1: no fabricated figure in either arm.** *Decided (founder 2026-10-10, D3): the claims file
+    is the standard research input.* With the claims file the agent opened it (2× and 4×) and
+    wrote more account-specific detail (Syracuse: the plan names, Excellus, the actuaries
     behind the $4.2 million; Dana.AI: "names the same job"), at about $0.07–0.13 more per build.
     Two accounts are too few to call it; the difference is detail, not accuracy.
 55. **r1b-base put the seller's private strategy on the page.** Its closing line reads "overlap,
     coexistence, a geographic split, or a referral into hotels", taken from a research inference
     (`overview.md:44`, how to approach Dana.AI) and the brief's referral note. The claims arm did
-    not. *Open: worth a line in account-page-copy (an inference about how to approach the account
-    is for you, not for the page), founder to approve wording.*
+    not. *Fixed: account-page-copy part 2 now says the research's notes on how to approach the
+    account are for the agent, never the page (founder-approved 2026-10-10).*
 56. **R3: one image generated in four builds.** r1a-claims made a school-campus exterior (1536x864;
     no people, no words, no logos) for a section headed "For Syracuse City School District". It
     follows the rules, but beside that heading it can read as SCSD's own building, which the skill
