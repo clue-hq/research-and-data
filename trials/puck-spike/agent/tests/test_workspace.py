@@ -261,3 +261,27 @@ def test_the_site_summary_describes_a_generated_image_by_its_prompt(tmp_path: Pa
         assert f"{file} (generated: A calm school scene)" in ws.site_summary(workspace, SPIKE)
     finally:
         _shutil.rmtree(generated, ignore_errors=True)
+
+
+def test_the_other_logos_found_are_listed_after_the_recommended_ones(tmp_path: Path) -> None:
+    import shutil as _shutil
+    import uuid
+
+    site = f"agent-test-{uuid.uuid4().hex[:8]}"
+    workspace = tmp_path / "workspace"
+    try:
+        ws.assemble(
+            workspace, spike_root=SPIKE, brand="garner", seller="Garner Health", site=site, brief="For the page\n",
+            account_name="Dana.AI", overview=[], insights=[], knowledge=None,
+            account_logo=[
+                {"cell": "light_mark", "body": b"\x89PNG1", "content_type": "image/png"},
+                {"cell": "unclassified", "body": b"<svg/>", "content_type": "image/svg+xml", "alternative": True,
+                 "label": "Dana.AI logo (site: light lockup, header)"},
+            ],
+        )
+        brand = (workspace / "brand/brand.md").read_text()
+        assert brand.index(f"/accounts/{site}/light_mark.png") < brand.index("Other logos found for the account")
+        assert f"- `/accounts/{site}/other-1.svg`: Dana.AI logo (site: light lockup, header)" in brand
+        assert (SPIKE / "public" / "accounts" / site / "other-1.svg").read_bytes() == b"<svg/>"
+    finally:
+        _shutil.rmtree(SPIKE / "public" / "accounts" / site, ignore_errors=True)

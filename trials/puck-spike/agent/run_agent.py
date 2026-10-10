@@ -53,7 +53,8 @@ def server_up() -> bool:
 
 def fetch_account_logo(domain: str | None, account: str | None) -> list[dict] | None:
     """The account's logo family through the platform's logo fetch (Brandfetch, then the account's
-    own site), as files for the header. None when nothing was found."""
+    own site), as files for the header: the recommended light/dark logos, then every other real
+    logo it found (its alternatives, with their labels). None when nothing was found."""
     if not domain:
         return None
     from lumen_agent.tools.logo_fetch import fetch_logo_family
@@ -63,7 +64,10 @@ def fetch_account_logo(domain: str | None, account: str | None) -> list[dict] | 
     except Exception as error:  # a blocked site or a vendor miss: the header goes without a logo
         print(f"account logo: none found ({str(error)[:200]})", file=sys.stderr)
         return None
-    return [{"cell": p.cell, "body": p.body, "content_type": p.content_type} for p in outcome.prepared] or None
+    recommended = [{"cell": p.cell, "body": p.body, "content_type": p.content_type} for p in outcome.prepared]
+    others = [{"cell": a.cell, "body": a.body, "content_type": a.content_type, "alternative": True, "label": a.label}
+              for a in outcome.alternatives]
+    return recommended + others or None
 
 
 async def cited_claims(claim_ids: list[str], *, workspace_id: str, account_entity_id: str) -> tuple[list[dict], set[str]]:

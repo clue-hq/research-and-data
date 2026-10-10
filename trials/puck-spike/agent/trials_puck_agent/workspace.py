@@ -206,16 +206,26 @@ LOGO_EXTENSIONS = {"image/svg+xml": ".svg", "image/png": ".png", "image/jpeg": "
 
 
 def account_logo_section(spike_root: Path, site: str, logos: list[dict] | None) -> str:
-    """Save the account's logo files under public/accounts/<site>/ and describe them for brand.md."""
+    """Save the account's logo files under public/accounts/<site>/ and describe them for brand.md:
+    the recommended light/dark logos first, then every other real logo the fetch found (the
+    platform tool's alternatives), each with its label."""
     out = ["", "## The account's logo (header only)", ""]
     if not logos:
         return "\n".join(out + ["None was found. Leave `accountLogo` empty.", ""])
     folder = spike_root / "public" / "accounts" / site
     folder.mkdir(parents=True, exist_ok=True)
-    for logo in logos:
+    recommended = [logo for logo in logos if not logo.get("alternative")]
+    others = [logo for logo in logos if logo.get("alternative")]
+    for logo in recommended:
         name = logo["cell"] + LOGO_EXTENSIONS.get(logo["content_type"], ".png")
         (folder / name).write_bytes(logo["body"])
         out.append(f"- `/accounts/{site}/{name}`: {LOGO_CELLS.get(logo['cell'], logo['cell'])}")
+    if others:
+        out += ["", "Other logos found for the account. Use one only when none of the above fits the header:"]
+        for number, logo in enumerate(others, start=1):
+            name = f"other-{number}" + LOGO_EXTENSIONS.get(logo["content_type"], ".png")
+            (folder / name).write_bytes(logo["body"])
+            out.append(f"- `/accounts/{site}/{name}`: {logo.get('label') or 'another logo of the account'}")
     return "\n".join(out + [""])
 
 
