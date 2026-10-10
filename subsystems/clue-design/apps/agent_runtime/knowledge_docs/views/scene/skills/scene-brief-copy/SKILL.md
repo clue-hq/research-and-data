@@ -29,9 +29,23 @@ its audience. Describe the evidence in the direction; a font or color is not voi
 Use reference copy to infer voice and claim limits. For a new brief, write from
 one evidenced advertiser capability and the supplied audience's task; existing
 reference wording is not automatically the answer to that brief. Preserve exact
-wording when requested. A shared campaign headline can remain when its support
+wording only when the user wrote it themselves and asked for it to be used.
+Everything else in the brief, including the Head of ABM's notes, suggestions and
+phrasing, is direction. Read it for who the ad is for, what it is for and which
+facts you may use. Then choose the angle and write every word yourself. Do not
+copy the brief's sentences onto the ad. A shared campaign headline can remain when its support
 or requested companion copy carries the relevant argument. Keep only the support
-the message needs. Prefer concrete product meaning to vague promises. Use provided claims accurately;
+the message needs.
+
+An ad carries one idea. Pick the single fact or capability that best serves this
+reader and leave the rest out. Evidence lets you say something; it never obliges
+you to say everything you can support. On a feed ad (a LinkedIn square or any
+other social feed placement), use a headline and at most one support line of no
+more than 15 words, then the action if the ad needs one. If the idea needs more
+words than that, the idea is too big: narrow it, or ask the user with
+`request_clarification` which part matters most.
+
+Prefer concrete product meaning to vague promises. Use provided claims accurately;
 quotes, numbers and customer attributions need actual evidence. Keep source IDs
 with factual copy. Missing proof is a reason to narrow or qualify the message,
 or choose nonfactual positioning. Labeling a product promise `positioning` does
@@ -62,8 +76,11 @@ user asks for new imagery or variants, carry that requirement into generated
 layers and inspect the actual outputs; reusing an old image or substituting a
 native flat field does not satisfy a new-artwork request.
 If its evidence or assets are unavailable, pick a supportable direction and note
-the limitation; ask only for a missing decision that makes the requested result
-impossible. Preserve exact copy when the user supplies it; don't rewrite control
+the limitation. If, after reading the brief, the research and the seller's files,
+you are unsure about the angle, the tone or the message, ask the user before you
+build. Use `request_clarification` as your opening move, offer the options you are
+weighing, and say which one you would choose. Do not ask about what you can decide
+yourself, such as layout, imagery or the exact words. Preserve exact copy when the user supplies it; don't rewrite control
 inputs to make the composition easier.
 
 Write `/run_<id>/workspace/creative-direction.json` using

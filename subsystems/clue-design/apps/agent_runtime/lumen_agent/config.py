@@ -166,6 +166,11 @@ class AgentRuntimeConfig:
     # The runtime only returns/places records from this manifest; None means the
     # library is unavailable for this turn, never that an asset may be invented.
     asset_library: dict | None = None
+    # Hybrid asset search (2026-10-05): {asset_id: [512 floats]} CLIP image vectors for the
+    # library above, read by the API from design_asset_embedding and passed BY VALUE like the
+    # library itself. None or {} means visual search is unavailable this turn and
+    # `search_assets` ranks by keyword alone (and says so).
+    asset_embeddings: dict | None = None
     # API-owned lazy byte reader; accepts only an id from the frozen manifest.
     asset_materializer: Any | None = None
     # P6.4: an account-bound durable custom-component capability supplied by

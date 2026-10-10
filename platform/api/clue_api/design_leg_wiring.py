@@ -1040,13 +1040,18 @@ def _account_card(account: dict[str, Any]) -> dict[str, JsonValue]:
 
 
 def receipts_from_design_run(
-    run_result: Mapping[str, Any], *, request: AgentTurnRequest, sequence_offset: int = 0
+    run_result: Mapping[str, Any],
+    *,
+    turn_id: UUID,
+    workspace_id: str,
+    sequence_offset: int = 0,
 ) -> tuple[AgentModelCallReceipt, ...]:
     """The design run's collected model calls as receipts on the leg's own turn.
 
     The collector on the design side stamped each call from the governed gateway's metadata; this
     only re-keys them onto the platform's turn and writes ``role=design`` (the profile role, the
-    one the ledger's CHECK knows). The sub-role stays in Langfuse and the logs.
+    one the ledger's CHECK knows). The sub-role stays in Langfuse and the logs. The execution is
+    the turn's derived design-leg execution, the one every run of the turn is stamped with.
 
     ``cost_cents`` arrives as a STRING (the collector's ``as_json``, so the Decimal survives the
     jsonb round trip) and becomes USD here; ``None`` stays ``None`` — an unpriced call is never a
@@ -1069,9 +1074,9 @@ def receipts_from_design_run(
         receipts.append(
             AgentModelCallReceipt(
                 model_call_id=UUID(str(item["run_id"])),
-                turn_id=request.turn_id,
-                execution_id=request.constitution.execution_id,
-                workspace_id=request.constitution.workspace_id,
+                turn_id=turn_id,
+                execution_id=design_leg_execution_id(turn_id),
+                workspace_id=workspace_id,
                 sequence=int(item["sequence"]) + sequence_offset,
                 requested_model=str(item["requested_model"]),
                 answering_model=item.get("answering_model"),
@@ -2204,7 +2209,29 @@ class DesignLegTurnRunner:
             await self._lane.drive(envelope=envelopes[0])
         elif envelopes:
             await self._lane.drive_batch(envelopes=envelopes)
+        await self._record_stopped_turn_receipts(workspace_id=workspace_id, turn_id=turn_id)
         await self._hand_back_stopped_leg(workspace_id=workspace_id, turn_id=turn_id)
+
+    async def _record_stopped_turn_receipts(self, *, workspace_id: str, turn_id: UUID) -> None:
+        """A stopped turn's model calls were paid for; land them like a finished turn's.
+
+        Live 2026-10-04: a design turn stopped after 75 metered calls ($3.81) left nothing on
+        ``agent_model_call`` — only the dispatch path recorded receipts, and a stop never returns
+        there. Every terminal run of the batch is recorded in position order with the same
+        offsets the dispatch path computes, so a stop racing a normal finish converges on the
+        rows already written (``record_model_call`` is idempotent on the call id).
+        """
+        async with self._conn_factory() as conn:
+            runs = await self._batch_runs(conn, workspace_id=workspace_id, turn_id=turn_id)
+        # Position order, recovered from the run id each position derives (``design_leg_run_id``).
+        positions = {design_leg_run_id(turn_id, k): k for k in range(len(runs))}
+        sequence_offset = 0
+        for run in sorted(runs, key=lambda run: positions.get(str(run["run_id"]), len(runs))):
+            if run["status"] not in _TERMINAL_RUN_STATUSES:
+                continue
+            sequence_offset = await self._record_design_receipts(
+                run, turn_id=turn_id, workspace_id=workspace_id, sequence_offset=sequence_offset
+            )
 
     async def _hand_back_stopped_leg(self, *, workspace_id: str, turn_id: UUID) -> None:
         async with self._conn_factory() as conn:
@@ -2223,7 +2250,7 @@ class DesignLegTurnRunner:
     # -- dispatch ------------------------------------------------------------------------------
 
     async def _record_design_receipts(
-        self, run: dict[str, Any], *, request: AgentTurnRequest, sequence_offset: int = 0
+        self, run: dict[str, Any], *, turn_id: UUID, workspace_id: str, sequence_offset: int = 0
     ) -> int:
         """Land a terminal design run's collected model calls on the leg's own turn.
 
@@ -2245,7 +2272,10 @@ class DesignLegTurnRunner:
         """
 
         receipts = receipts_from_design_run(
-            run.get("result") or {}, request=request, sequence_offset=sequence_offset
+            run.get("result") or {},
+            turn_id=turn_id,
+            workspace_id=workspace_id,
+            sequence_offset=sequence_offset,
         )
         for call in receipts:
             await self._turns.record_model_call(receipt=call)
@@ -2497,7 +2527,10 @@ class DesignLegTurnRunner:
         sequence_offset = 0
         for item in prepared:
             sequence_offset = await self._record_design_receipts(
-                results[item.run_id], request=turn_request, sequence_offset=sequence_offset
+                results[item.run_id],
+                turn_id=turn_request.turn_id,
+                workspace_id=turn_request.constitution.workspace_id,
+                sequence_offset=sequence_offset,
             )
 
         return [(item.document, results[item.run_id]) for item in prepared]

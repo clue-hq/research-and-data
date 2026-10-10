@@ -23,6 +23,10 @@ if ! id clue > /dev/null 2>&1; then
 fi
 usermod -aG docker clue
 mkdir -p /srv/clue/workspaces /srv/clue/lumen-agent /srv/clue/engine-cache
+# CLIP model for the hybrid asset search, mounted read-only into the workers. Fill it once per host
+# from a dev machine: subsystems/clue-design/scripts/export_clip_onnx.py <dir>, then copy <dir> to
+# /srv/clue/models/clip-vit-base-patch32-onnx (~420 MB). Empty, visual search stays off.
+mkdir -p /srv/clue/models/clip-vit-base-patch32-onnx
 # The checkout and env files belong to clue; the two directories the containers write belong to
 # UID 1000, which every container runs as (compose.yaml `user: "1000:1000"`).
 chown clue:clue /srv/clue

@@ -9237,6 +9237,13 @@ def run_agent_turn_preview(
                 asset_materializer=asset_materializer(asset_library, turn_blobs, str(turn_cache_root)),
                 asset_store_root=turn_cache_root,
             )
+        if asset_library is not None or config.brand_kit_assets:
+            # Hybrid asset search (founder ruling 2026-10-05): the workspace's CLIP image vectors
+            # ride BY VALUE next to the library, read here where the database is. {} when visual
+            # search is off or unavailable on this host; search_assets then ranks by keyword.
+            from lumen_api.asset_embeddings import load_workspace_embeddings
+
+            config = replace(config, asset_embeddings=load_workspace_embeddings(turn_workspace_id))
         for manifest in (config.brand_kit_assets or {},):
             for aid, entry in manifest.items():
                 if aid in (asset_library or {}):

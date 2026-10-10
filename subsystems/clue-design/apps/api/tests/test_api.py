@@ -1014,6 +1014,39 @@ def test_agent_turn_forwards_the_workspace_asset_library_into_config(
     assert all(cache_blob_path(cache_dir, digest).is_file() for digest in digests)
 
 
+def test_agent_turn_forwards_the_workspace_image_vectors_into_config(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hybrid asset search (2026-10-05): the scene turn's config carries the workspace's CLIP
+    vectors BY VALUE next to the library, read for the turn's own workspace — and an empty map
+    (visual search off or unavailable) still lets the turn run."""
+    from lumen_api import asset_embeddings
+    from lumen_api.main import repo_root, run_agent_turn_preview
+    from lumen_api.models import AgentTurnPreviewRequest
+
+    monkeypatch.setattr(settings, "lumen_asset_store_root", tmp_path / "engine-cache")
+    asset_id = upload_logo(client).json()["asset"]["id"]
+    asked = []
+
+    def fake_load(workspace_id, asset_ids=None):
+        asked.append(workspace_id)
+        return {asset_id: [0.0] * 511 + [1.0]}
+
+    monkeypatch.setattr(asset_embeddings, "load_workspace_embeddings", fake_load)
+    captured = _stub_scene_turn_runtime(monkeypatch)
+    workspace = os.environ["LUMEN_DEV_WORKSPACE_ID"]
+    run_agent_turn_preview(AgentTurnPreviewRequest(prompt="Design an ad", scene=minimal_scene()),
+                           repo_root(), workspace_id=workspace)
+    assert asked == [workspace]
+    assert list(captured["config"].asset_embeddings) == [asset_id]
+
+    monkeypatch.setattr(asset_embeddings, "load_workspace_embeddings", lambda *a, **k: {})
+    captured = _stub_scene_turn_runtime(monkeypatch)
+    run_agent_turn_preview(AgentTurnPreviewRequest(prompt="Design an ad", scene=minimal_scene()),
+                           repo_root(), workspace_id=workspace)
+    assert captured["config"].asset_embeddings == {}
+
+
 def test_agent_turn_asset_library_keeps_older_assets_without_a_recent_cap(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

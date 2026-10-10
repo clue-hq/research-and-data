@@ -133,9 +133,11 @@ compile_dsl_block(source='''page sample size(640,240,px)
   artwork fr p(11,23) s(480,128) rd(12) clip(true)
   caption text "Independent native copy" p(11,170) s(480,hug) font_size(20)
 ''')
-# When new artwork is needed; [] deliberately uses no references in this example.
+# When new artwork is needed: purpose, subject and look decided under
+# /.deepagent/skills/generative-imagery/SKILL.md; ref_id is a seller image you viewed.
 generated = json.loads(asset(action="generate_image", target_node_id="artwork",
-    prompt="An isolated folded paper form, no text or logos", reference_asset_ids=[]))
+    prompt="<the image's job, its subject if any, its shape, and the look kept from the reference>",
+    reference_asset_ids=[ref_id], reference_roles=["treatment"]))
 art_id = generated["image"]["asset_id"]
 view(target=f"asset:{art_id}")
 # After inspecting a successful real output:
@@ -175,10 +177,10 @@ image asset. Inspect it before explicitly placing it in an independent image nod
 with `asset(action="place", ..., fit="contain")`. Cropping cannot remove a background
 baked inside the selected rectangle or recover missing/occluded product content.
 
-An inspected reference's soft material, blur, tonal variation or texture is part
-of its treatment. A flat brand-color rectangle does not preserve those properties.
-Reuse appropriate source artwork or generate the separately placeable treatment;
-use a flat field only when that is the intended and justified visual direction.
+**Generated imagery.** Before writing any `generate_image` call, read
+`/.deepagent/skills/generative-imagery/SKILL.md` if you have not read it this
+turn. In short: decide what the image is for, take its look only from the
+seller's own imagery, and ask for nothing those references do not show.
 
 Author through `compile_dsl_block` or supported checked operations only. The
 DSL grammar/directives and artboard-frame reference are authoritative mechanics.

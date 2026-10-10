@@ -231,11 +231,14 @@ class Settings(BaseSettings):
     # project. The client attaches to the process's tracer provider but exports only the agent
     # harness (2026-10-03: no HTTP or ``fleet.task`` spans; each fleet task is its own trace,
     # linked to its launcher). ``langfuse_environment`` names the
-    # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only).
+    # deployment posture on every trace (Langfuse allows ``[a-z0-9-_]`` only): ``production`` on
+    # the production deployment (deploy/check_prod_env.py requires it there) and Langfuse's own
+    # ``default`` everywhere else, so every development lane lands in one place (founder,
+    # 2026-10-04).
     # Env: ``CLUE_LANGFUSE_ENABLED`` / ``CLUE_LANGFUSE_HOST`` / ``CLUE_LANGFUSE_ENVIRONMENT``.
     langfuse_enabled: bool = True
     langfuse_host: str = "https://cloud.langfuse.com"
-    langfuse_environment: str = "lane-san-salvador"
+    langfuse_environment: str = "default"
 
     # --- fleet worker (PB-B1; append-only per the Phase B treaty §3.2) ----------------------
     # How often an idle worker polls the task queue. Env: ``CLUE_FLEET_POLL_INTERVAL_S``.

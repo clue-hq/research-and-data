@@ -291,7 +291,16 @@ class Settings(BaseSettings):
 
     # The vision model that distils harvested creatives into the ad-DNA card. Same shape and
     # same gateway as the asset describer above (OpenRouter chat-completions, multimodal).
-    lumen_ad_dna_model: str = "x-ai/grok-4.5"
+    lumen_ad_dna_model: str = "deepseek/deepseek-v4.1-flash"
+    # Hybrid asset search (founder ruling 2026-10-05): ingestion stores a CLIP image vector per
+    # asset and the scene agent's `search_assets` fuses its keyword ranking with a visual one.
+    # Runs on ONNX Runtime from a model directory holding image.onnx (fp32, ingestion only),
+    # text.onnx (int8, every search), tokenizer.json and preprocess.json — built by
+    # scripts/export_clip_onnx.py. An empty directory setting, a missing directory or a model
+    # that will not load turns the visual half off and search stays keyword-only (said so in
+    # the tool result); it never fails ingestion or a turn.
+    lumen_asset_embeddings: bool = True
+    lumen_asset_embedding_model_dir: str = ""
 
     # --- Agent runtime (lumen_deepagent) ---
     # OpenRouter is the SOLE LLM gateway: the model id must be "openai:<id>" and
