@@ -225,6 +225,45 @@ Our agent rebuilt five Garner clones as components from brand tokens only (`view
 53. **With fresh sessions only the last session's transcript is saved**, so earlier turns' exact
     comparison props are lost. *Open (harness): save the transcript per turn.*
 
+## R1 (research input) and R3 (images): runs r1a/r1b, 2026-10-10
+
+Syracuse (case A) and Dana.AI (case B), each built twice in one build turn: with the claim labels
+and `research/claims.md` (`-claims`) and without (`-base`, `--no-claims`). All four had the brief
+as direction, every statement type with its notes, the Watch-outs / Context only sections as
+background, `generate_image`, and the account's logo in brand.md.
+
+| Run | Cost | Calls | Time | Renders | claims.md opened | Figures on the page | Untraced | Images |
+|---|---|---|---|---|---|---|---|---|
+| r1a-base | $0.91 | 20 | 6 min | 3 | — | 6 | 0 | clone images only |
+| r1a-claims | $0.98 | 21 | 7 min | 3 | 2× | 9 | 0 | 1 generated (used) |
+| r1b-base | $0.86 | 19 | 6 min | 3 | — | 2 | 0 | 1 brand image placed |
+| r1b-claims | $0.99 | 20 | 7 min | 2 | 4× | 2 | 0 | 1 brand screenshot placed |
+
+"Figures" are the numbers the agent wrote (years and small counts left out); every one traced to
+the research, the claims file, the seller's files or a page it fetched. No run put a quote on the
+page.
+
+54. **R1: no fabricated figure in either arm.** With the claims file the agent opened it (2× and
+    4×) and wrote more account-specific detail (Syracuse: the plan names, Excellus, the actuaries
+    behind the $4.2 million; Dana.AI: "names the same job"), at about $0.07–0.13 more per build.
+    Two accounts are too few to call it; the difference is detail, not accuracy.
+55. **r1b-base put the seller's private strategy on the page.** Its closing line reads "overlap,
+    coexistence, a geographic split, or a referral into hotels", taken from a research inference
+    (`overview.md:44`, how to approach Dana.AI) and the brief's referral note. The claims arm did
+    not. *Open: worth a line in account-page-copy (an inference about how to approach the account
+    is for you, not for the page), founder to approve wording.*
+56. **R3: one image generated in four builds.** r1a-claims made a school-campus exterior (1536x864;
+    no people, no words, no logos) for a section headed "For Syracuse City School District". It
+    follows the rules, but beside that heading it can read as SCSD's own building, which the skill
+    forbids. *Open: judge with the founder.* The Dana.AI runs looked at one brand image each
+    (`view_asset`) and placed it; r1a-base changed no image.
+57. **R3: the account's logo.** Dana.AI's symbol (`light_mark`) sits in both Dana.AI headers;
+    Syracuse has none (Brandfetch identity mismatch, and the district's domain does not resolve from
+    this machine).
+58. **Image cost not yet measured.** The spike opens no spend scope, so the provider records no cost;
+    the OpenRouter key's usage rose by exactly the four builds' model cost ($3.74) right after the
+    runs, so the image charge had not landed yet. *Open: re-read the key's usage later.*
+
 ## Changes made for an Alt Carbon run, not yet run (uncommitted)
 
 - `export/export_brand.py`: Alt Carbon added (kit `brand_kit_ing_28663a…`, version 1).
