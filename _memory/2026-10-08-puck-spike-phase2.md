@@ -193,3 +193,7 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   approach the account … are for you. Never put them on the page." (efd3c9b9f; failing case
   r1b-base). Open: the generated school image beside "For SCSD" (ISSUES 56) awaits the founder's
   judgement. Week 1 left: whole-branch review, lane DB upgrade go, branch merge decision.
+- 2026-10-10: lane DB clue_trenton upgraded 10edab6dd974 → b4bff1ecca97 (founder go): site/site_turn
+  enum values, design_asset_embedding table; 67 design documents intact. The lane stack (design API
+  :8019 + fleet workers, started 2026-10-06 on pre-merge code) stayed up; /healthz 200 after.
+  Founder: the whole-branch review waits until a few Wave 2 slices are done.
