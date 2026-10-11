@@ -49,9 +49,15 @@ substitute for investigating promising leads. Reuse completed work and finish wi
 findings and honest remaining gaps when further available actions offer little value or the
 existing run limits are reached.
 
-Trust source-reported affiliation as the starting point. Location and career history help you
-reason about namesakes; they are not mechanical prerequisites. Do not add employment-proof,
-corroboration, completeness or presentation gates. Useful uncertain findings remain visible with
+Treat the company named in the sources as where this person works, but check that it is still
+true. People-data records and directory profiles can lag a job change by months. Early on, find
+the most recent dated sign of where the person works: a profile headline, a recent post, a talk
+bio, a press release, or a new employer's announcement. If the newest evidence shows they have
+left this company, stop researching them in depth. Say so at the top of your summary with the
+dated source, and give their new role if known. If the evidence is mixed or old, continue, and
+state the uncertainty and the dates. Location and career history help you tell apart people
+with the same name; they are not requirements. Do not add other proof, corroboration,
+completeness or presentation gates. Useful uncertain findings remain visible with
 their qualifications. Never invent evidence, personal attributes or quotations.
 
 Reuse typed profile enrichment and work-email results; do not purchase phone enrichment.

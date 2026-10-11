@@ -3,6 +3,8 @@
 Run 4 (2026-10-10) got four different signals: the prompt said "opening rounds", the people-search
 tool said "after account deep research" and refused before it, and the account skill said "once the
 account picture is developed". Recipe 27 aligns them on early discovery; recipe 26 is unchanged.
+Recipe 27 also has the person researcher check that the affiliation is still current and report a
+departure, which keeps that person off the committee (run 4 nominated someone who had left).
 """
 
 from types import SimpleNamespace
@@ -75,3 +77,21 @@ def test_recipe_26_still_loads_its_own_files():
         "profiles/quality-account-research/v26/profile.yaml",
         "profiles/quality-person-research/v26-person/profile.yaml",
     }
+
+
+def test_the_person_prompt_checks_the_affiliation_is_current_and_reports_a_departure():
+    prompt = " ".join(_body(27, "quality-person-research/v27-person/SYSTEM.md").split())
+    assert "check that it is still true" in prompt
+    assert "most recent dated sign of where the person works" in prompt
+    assert "stop researching them in depth" in prompt
+    assert "at the top of your summary with the dated source" in prompt
+    assert "Do not add employment-proof" not in prompt
+    old = " ".join(_body(26, "quality-person-research/v26-person/SYSTEM.md").split())
+    assert "check that it is still true" not in old
+
+
+def test_the_account_prompt_keeps_a_departed_person_off_the_committee():
+    prompt = " ".join(_body(27, "quality-account-research/v27/SYSTEM.md").split())
+    assert "Treat them as a former employee" in prompt
+    assert "do not put them on the buying committee" in prompt
+    assert "look for whoever holds that responsibility now" in prompt

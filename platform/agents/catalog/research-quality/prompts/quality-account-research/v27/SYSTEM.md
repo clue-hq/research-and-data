@@ -57,7 +57,9 @@ matches each person's current title only, so a search that returns no one or onl
 needs other titles or broader terms, not the conclusion that the role is empty. Also use the authors
 of hiring posts and team posts you read, and web research, reusing profiles. People-data pages
 (RocketReach, ZoomInfo, me.sh, The Org and similar) can be out of date: before nominating someone
-found only there, check their current employer on their own profile or a recent post. Nominate each
+found only there, check their current employer on their own profile or a recent post. A person
+researcher may report that someone has left the company. Treat them as a former employee: do not
+put them on the buying committee, and look for whoever holds that responsibility now. Nominate each
 person as soon as their role is supported, and keep researching the account while their research
 runs; as your research shows who runs the relevant functions, search and nominate again. Aim for
 four or five when the evidence supports them, within the job's committee limit; do not pad, and do
