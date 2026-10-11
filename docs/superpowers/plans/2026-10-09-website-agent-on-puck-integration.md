@@ -230,6 +230,21 @@ first, with the founder's sign-off where it is product-facing.
   domains. The domain name is the founder's to register.
 - **The frontend's Railway build** must copy `packages/site-kit` before `npm ci`
   (`apps/frontend/Dockerfile.railway:10-12`); it is Lane C's first task.
+- **Plan review (controller, 2026-10-11)** — rulings applied to the contracts below and to the lane
+  plans (each lane plan lists them under "Controller review rulings"):
+  - **Site tools are registered ungranted** (R6). `design_write_site`, `design_undo_site`,
+    `design_redo_site` and `design_publish_site` are called by the editor's routes (as the person)
+    and by the site turn's executor (from code), never named by a model, so they sit on the
+    ad-assets lane's footing. Granting them to the design role without a profile pin would have
+    stopped `build_agent_profile_registry` composing at platform start-up. No model can save, undo,
+    redo or publish a site directly; granting one later is a reviewed profile bump.
+  - **The marketer's selection reaches the site agent** (R9, Contract 7). The first plans carried it
+    only as far as the composer.
+  - **Order:** Lane C's C1 before Lane A's mapper (Contract 8); Lane A Task 9 (labels, summaries,
+    account card) before Lane B Task 13; Lane B2's `BrandData` builder before Lane C's saves, the
+    renderer, thumbnails, publish and export work against a real workspace (until then they refuse
+    with 503 `site_inputs.unavailable`); Lane B6's section loader before a site with agent sections
+    saves or publishes.
 
 ### Contract 1: the site document
 
@@ -237,7 +252,7 @@ Stored in `design_document.current_scene_json` for `doc_kind = 'site'`:
 
 ```json
 {
-  "id": "doc_…", "title": "…", "theme": {"brand_kit": {"brand_kit_id": "…", "version": 2}},
+  "id": "doc_…", "title": "…", "theme": {"brand_kit": {"id": "…", "version": 2}},
   "pages": {
     "/":         {"root": {"props": {"title": "…"}}, "content": [{"type": "Hero", "props": {"id": "Hero-1a2b", "…": "…"}}]},
     "/analysis": {"root": {"props": {"title": "…"}}, "content": []}
@@ -250,7 +265,10 @@ Stored in `design_document.current_scene_json` for `doc_kind = 'site'`:
 - Routes are `/` or `/<name>` with `<name>` matching `^[a-z0-9][a-z0-9-]*$` (site-kit `validate.ts`).
 - Every image, logo and generated picture in props is `/asset-store/<sha256>`, a blob of this
   workspace. No `/brands/…`, `/generated/…` or `/accounts/…` paths in production.
-- `props.id` is unique within a page; the shell's header and footer carry `id` `header`/`footer`.
+- `props.id` is unique within a page and matches `^[A-Za-z0-9_-]{1,200}$` (the site-kit validator
+  refuses anything else, R10), so `site:<route>#<id>.<field>` is never ambiguous; the shell's header
+  and footer carry `id` `header`/`footer`.
+- The kit ref under `theme.brand_kit` uses the design DAL's own key, `id` (`clue_design/brand.py:299`).
 - A component in an agent section is `type == <Name>` where `<Name>` is a key of
   `agent_sections`.
 
@@ -258,10 +276,11 @@ Stored in `design_document.current_scene_json` for `doc_kind = 'site'`:
 
 | Route | Body | Success | Refusals |
 |---|---|---|---|
-| `PUT /documents/{id}/site` | `{site, base_version, intent?}` | 200 `{document: {id, current_version, doc_kind: "site"}}` | 409 `edits.base_version_mismatch` + `current_version`; 422 `site.invalid` + `errors[]`; 409 `document.agent_run_active` while a site turn runs; 409 `document.kind_unsupported` for a non-site |
+| `PUT /documents/{id}/site` | `{site, base_version, intent?}` | 200 `{schema_version: 1, document: {id, current_version, doc_kind: "site"}}` | 409 `edits.base_version_mismatch` + `current_version`; 422 `site.invalid` + `errors[]`; 409 `document.agent_run_active` while a site turn runs; 409 `document.kind_unsupported` for a non-site; 409 `document.finalized`; 503 `site_inputs.unavailable` (no brand builder yet) / `site_validator.unavailable` |
 | `POST /documents/{id}/site/undo` · `/redo` | `{base_version}` | 200 `{document, undone_batch_id}` · `{document, redone_batch_id}` | 409 `undo.empty` · `redo.empty`; 409 `edits.base_version_mismatch` |
 | `GET /documents/{id}/site/versions?limit=` | | 200 `{versions: [{batch_id, version, actor_kind, intent, created_at}]}` newest first | |
 | `POST /documents/{id}/site/versions/{batch_id}/restore` | `{base_version}` | 200 `{document}`; the restore is itself an undoable write | 404 `version.not_found` |
+| `GET /documents/{id}/site/brand` (R3) | | 200 `{schema_version: 1, brand: BrandData}`, every `file` `/asset-store/<sha256>`; the editor frame's `init` | 503 `site_inputs.unavailable` until Lane B2; 409 `document.kind_unsupported` |
 
 - One save is one undo step; one agent turn is one undo step; the stack cap is 50 (the web cap).
 - History is `design_edit_envelope` with whole-site snapshots: `operations = [{"kind":
@@ -269,21 +288,30 @@ Stored in `design_document.current_scene_json` for `doc_kind = 'site'`:
 - Validation is contracts only: the site-kit validator run as a Node CLI over JSON, with agent
   sections checked against their **stored props JSON Schema**, never by importing the module.
 - Governed tools (all four registries updated together): `design_write_site`,
-  `design_undo_site`, `design_redo_site`.
+  `design_undo_site`, `design_redo_site`, registered **ungranted** (R6).
+- `GET /documents/{id}` answers a site like a web document (`scene`, `current_version`,
+  `undo_stack`/`redo_stack`, no scene `render_context`); the editor reads the stack depths there and
+  counts between loads, as the web editor does.
 
 ### Contract 3: the renderer and the cleaner (Lane A; Lane B calls it)
 
 - `lumen_api/site_render.py`:
-  - `render_site(site, brand, sections, *, base_path, routes=None, timeout_s=20.0) -> SiteRender`
+  - `render_site(site, brand, sections, *, base_path, routes=None, timeout_s=20.0, max_output_bytes=…, node_bin="node") -> SiteRender`
   - `SiteRender(pages: list[RenderedPage], css: str, warnings: list[str])`,
     `RenderedPage(route: str, html: str)`
   - `SectionModule(name: str, digest: str, module_js: str, css: str, props_schema: dict)`
   - `read_section_schema(module_js: str, *, timeout_s=10.0) -> dict`: imports one compiled agent
     section inside the hardened render page and returns its props JSON Schema (Lane B6 calls it at
     compile time; nothing else ever imports an agent module on the server).
-  - `capture_site_screenshot(page: RenderedPage, css: str, *, width: int, full_page: bool = True)
-    -> bytes`: a PNG of rendered, sanitized HTML in a hardened page with the network blocked (Lane
-    B3's `render_page`, Lane A6's thumbnails).
+  - `capture_site_screenshot(page: RenderedPage, css: str, *, width: int, full_page: bool = True,
+    height=…, scale=…, timeout_s=…) -> bytes`: a PNG of rendered, sanitized HTML in a hardened page
+    with JavaScript off and the network blocked (Lane B3's `render_page`, Lane A6's thumbnails).
+    It can only show images that are already `data:` URIs, so callers inline `/asset-store/`
+    references first (`web_pdf.inline_asset_store_refs`).
+  - `read_section_schema` also refuses a module whose schema is not a Zod object, lacks `id` or
+    `surface`, carries `className`/`style`, or has no `render`.
+  - WebSockets are mocked by a route that never connects and never calls `ws.close()` (closing from
+    the handler hung the render page under its CSP, Playwright 1.61).
   - Failures raise `SiteRenderError(code)` with `code` in `render.timeout`,
     `render.output_too_large`, `render.section_module_missing`, `render.failed`.
 - How it works: one headless Chromium page per render, in a fresh context, loads a render shell
@@ -308,19 +336,24 @@ Stored in `design_document.current_scene_json` for `doc_kind = 'site'`:
   `get_site_sections(conn, *, workspace_id, digests) -> list[...]`.
 - Compile (esbuild, tsc, the lint) runs in Node and never executes the module. The props schema is
   read inside the hardened render page.
-- **Never served through `/asset-store`.** The editor gets a module through a short-lived link:
+- **Never served through `/asset-store`:** the public byte read skips blobs whose `source_key` is
+  `design_site_section` (Lane B Task 2). The editor gets a module through a short-lived link:
   the app asks `POST /documents/{id}/site/section-links` (the document must reference the digest)
-  and receives `[{name, digest, token, expires_at}]`; the token is an HMAC over
-  `(workspace_id, document_id, digest, expires_at)` with `CLUE_SITE_SECTION_LINK_SECRET`, 10
-  minutes; the editor app's own server route `GET /sections/<digest>.mjs?t=<token>` verifies it
-  with the design API and returns the module from the editor origin.
+  and receives `{"schema_version": 1, "links": [{name, digest, token, expires_at, props_schema}]}`
+  (R1); the token is an HMAC over `(workspace_id, document_id, digest, expires_at)` with
+  `CLUE_SITE_SECTION_LINK_SECRET`, 10 minutes. The editor app's own server routes
+  `GET /sections/<digest>.mjs|.css?t=<token>` call the design API's headerless, token-gated
+  `GET /site-sections/{digest}.mjs?t=` (the module) and `GET /site-sections/{digest}.css?t=` (its
+  stored CSS, possibly empty), which answer `x-clue-workspace-id: <the token's workspace>`; the
+  editor server refuses a module whose workspace is not the one its `Host` label names (R2).
 
 ### Contract 5: the cited-claims read (Lane B)
 
 `read_cited_claims@1`, input `{entity_id, claim_ids: [≤ 200]}`, output `{claims:
 [AccountClaimView], dispositions: {claim_id: "served" | "held:<reason>" | "not_found"}}`, built
 from `inspectable_claims_by_ids` then `gate_claims`. Granted to `AgentRole.DESIGN` through a
-`design@v5` profile.
+`design@v5` profile (Lane B Task 14), which also pins `design_record_site_section@1` and nothing
+else new.
 
 ### Contract 6: the editor protocol (Lane C; shared Zod in site-kit `src/editor-protocol.ts`)
 
@@ -337,6 +370,12 @@ from `inspectable_claims_by_ids` then `gate_claims`. Granted to `AgentRole.DESIG
   componentId, prop}`, `annotate {route, componentId, geometry}`, `error {code, message}`.
 - `FieldDescription = {name, label, kind: "text" | "textarea" | "select" | "image" | "link" |
   "number" | "boolean" | "list", options?, item?: FieldDescription[]}`.
+- **Refinements (Lane C plan, 2026-10-11, K6; additive, not product-facing):**
+  - frame → app `shortcut {action: "undo" | "redo"}`: ⌘Z/⇧⌘Z pressed while focus is in the frame (Puck's in-frame history is not the source of undo; the server stack is);
+  - `route` in `selected`, `annotate`, `request_asset`, `set_props`, `select` and `insert_asset` is a page route or the literal `"shell"` (the header/footer), which is what makes the C7 object id `site:shell#header`;
+  - the frame posts `navigated {route}` once after it has applied an `init`; the app treats it as "the frame now shows this document";
+  - component ids match `^[A-Za-z0-9_-]{1,200}$` at the protocol seam (plan K5).
+  The schemas live in `apps/frontend/packages/site-kit/src/editor-protocol.ts`.
 
 ### Contract 7: the site turn (Lane B)
 
@@ -346,7 +385,13 @@ from `inspectable_claims_by_ids` then `gate_claims`. Granted to `AgentRole.DESIG
 - It emits `site_document_saved {document_id, version}` (never an `operations` key), which the
   event forwarder turns into the `design.checkpoint` frame, so the frontend's existing
   `designRefreshForEvent` reloads the canvas.
-- `design_leg_wiring` treats `doc_kind == "site"` like web in its labels and summaries.
+- `design_leg_wiring` treats `doc_kind == "site"` like web in its labels and summaries — **Lane A
+  Task 9** makes those changes (R8); Lane B Task 13 does the envelope, the refusal removal and the
+  forwarder.
+- The site request is `{prompt, base_version}`, plus `targets: [{object_id, note}]` in submission
+  order when the person pointed at parts of the site (R9; object ids `site:<route>#<id>[.<field>]`
+  or `site:shell#header|footer`). The executor appends one short block naming them after the
+  person's words (Lane B Task 13a; its wording is founder-approved text T15).
 
 ### Contract 8: kinds on the wire
 
