@@ -104,3 +104,55 @@ def test_boundary_holds_when_the_protected_rounds_slide_forward():
     first = plan_clearing(messages, trigger=TRIGGER, target=TARGET)
     messages += _round(4, 1_000 * 4)  # a small round: no threshold crossing
     assert plan_clearing(messages, trigger=TRIGGER, target=TARGET) == first
+
+
+def _counted(messages, ratio):
+    """Mark the newest reply as the provider having counted its request at ``ratio`` real tokens
+    per estimated token (what the summariser records on every reply)."""
+    from clue_agents.context_tokens import PROMPT_ESTIMATE_KEY
+
+    reply = next(m for m in reversed(messages) if isinstance(m, AIMessage))
+    reply.response_metadata[PROMPT_ESTIMATE_KEY] = 100_000
+    reply.usage_metadata = {
+        "input_tokens": int(100_000 * ratio),
+        "output_tokens": 1,
+        "total_tokens": int(100_000 * ratio) + 1,
+    }
+    return messages
+
+
+def test_clearing_counts_the_models_real_tokens():
+    """~120k estimated tokens is only ~60k real for a model the estimate overcounts 2x."""
+    assert plan_clearing(_conversation(12), trigger=TRIGGER, target=TARGET)
+    overcounted = _counted(_conversation(12), 0.5)
+    assert plan_clearing(overcounted, trigger=TRIGGER, target=TARGET) == []
+    undercounted = _counted(_conversation(8), 1.5)  # ~80k estimated, ~120k real
+    assert plan_clearing(undercounted, trigger=TRIGGER, target=TARGET)
+
+
+def test_the_system_prompt_and_tool_schemas_count_toward_the_trigger():
+    """The provider is sent them on every call, so they are part of the conversation's size."""
+    from langchain_core.messages import SystemMessage
+
+    messages = _conversation(9)  # ~90k tokens of messages: under the trigger alone
+    assert plan_clearing(messages, trigger=TRIGGER, target=TARGET) == []
+    system = SystemMessage("s" * 60_000)  # ~15k
+    tools = [{"name": "read_file", "description": "d" * 40_000, "parameters": {}}]  # ~10k
+    assert plan_clearing(
+        messages, trigger=TRIGGER, target=TARGET, system_message=system, tools=tools
+    )
+
+    seen = {}
+
+    async def handler(request):
+        seen["messages"] = request.messages
+        return "ok"
+
+    request = _Request(messages)
+    request.system_message, request.tools = system, tools
+    middleware = BatchedToolResultClearing(trigger_tokens=TRIGGER, target_tokens=TARGET)
+    asyncio.run(middleware.awrap_model_call(request, handler))
+    assert any(
+        isinstance(m, ToolMessage) and m.content.startswith("[Earlier result removed")
+        for m in seen["messages"]
+    )
