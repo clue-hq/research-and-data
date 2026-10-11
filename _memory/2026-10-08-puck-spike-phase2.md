@@ -212,3 +212,10 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   footer fields), page switcher/settings after designs.
 - Open, under discussion: where the locked render runs in production (only VM fleet workers have
   docker; design API on Railway does not).
+- 2026-10-11 founder: server-side render of sites = HARDENED HEADLESS CHROMIUM for every site (no
+  container, no has-agent-sections split): fresh context per render, stripped env, network blocked in
+  layers (render-page CSP, --host-resolver-rules, dead proxy, WebRTC off, route abort), time limit,
+  output cap, HTML sanitized before publish. Node never executes agent code (esbuild/tsc/Tailwind only
+  transform/scan). Container = documented upgrade if agent sections become common. Pages UI: Ploy-like
+  stage top bar for sites — "Pages" toggle opening a page list panel (search, home icon) + a URL
+  toolbar (back/forward, device menu, route field, reload); page add/rename/delete stays with the agent.
