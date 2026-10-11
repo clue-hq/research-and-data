@@ -219,3 +219,23 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   transform/scan). Container = documented upgrade if agent sections become common. Pages UI: Ploy-like
   stage top bar for sites — "Pages" toggle opening a page list panel (search, home icon) + a URL
   toolbar (back/forward, device menu, route field, reload); page add/rename/delete stays with the agent.
+- 2026-10-11: lane plans written by three Opus writers from the surveys, then controller-reviewed
+  against the code and committed `6734c57bd` (A: 25 tasks, B: 21 incl. new 13a, C: 18). Review
+  rulings, applied to the plans and to the master plan's contracts:
+  - R6 (CRITICAL, caught in review): Lane A granted design_write/undo/redo_site (and publish) to
+    AgentRole.DESIGN with no profile pin; build_agent_profile_registry refuses that and runs at
+    platform start-up (agent_platform_wiring.py:474) -> API would not boot. Now registered
+    UNGRANTED on the ad-assets footing (routes + executor call them, no model names them); audit test
+    gets SITE_DOCUMENT_LANE. Lane B Task 14 mints design@v5 (read_cited_claims + record_site_section).
+  - R9 (gap): the marketer's selected parts (site:<route>#<id>[.<field>]) never reached the site
+    agent. Lane B Task 13a: request.targets [{object_id, note}] + a block after the user's words
+    (agent-facing text T15, awaiting founder).
+  - R1/R2/R3: section-links -> {"links": [...]}; module/CSS routes /site-sections/{digest}.mjs|.css
+    answer x-clue-workspace-id; GET /documents/{id}/site/brand (Lane A Task 13, brand-loader seam).
+  - R7 Docker: whole apps/frontend/node_modules copy accepted (residual: prune before prod deploy).
+    R8: Lane A Task 9 owns design_leg_wiring labels; Lane B Task 13 needs it landed. R10: site-kit
+    validator refuses section ids outside [A-Za-z0-9_-]{1,200} (Lane C's schema parses the whole site
+    with that pattern; all 50 spike ids comply). R5/K7: no undo-depth contract change (web counts too).
+  - Open for founder: docs/superpowers/plans/2026-10-11-wave2-founder-review.md — 16 product
+    questions + R6 confirm + execution method; agent-facing texts (A Task 1/6/7, B T1-T15, design@v5);
+    Lane C design points DR1-DR7. Nothing executes before the answers.
