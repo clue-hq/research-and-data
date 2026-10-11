@@ -197,3 +197,6 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   enum values, design_asset_embedding table; 67 design documents intact. The lane stack (design API
   :8019 + fleet workers, started 2026-10-06 on pre-merge code) stayed up; /healthz 200 after.
   Founder: the whole-branch review waits until a few Wave 2 slices are done.
+- 2026-10-11: trenton stack restarted on the merged code (founder ask) via
+  `./scripts/dev_stack_trenton.sh down` then `nohup ... up & disown`; all 5 processes + 4 fleet
+  workers + ingestion pool UP, no tracebacks in /tmp/trenton_*.log.
