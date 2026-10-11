@@ -41,6 +41,7 @@ from clue_api.arv2.ai_ark_client import (
 from clue_api.arv2.ai_ark_research import enrichment_only
 from clue_api.arv2.claim_writer import WriteReceipt
 from clue_api.arv2.exa_client import exa_result_rows, read_deep_report
+from clue_api.arv2.quality_recipe import RECIPE_27, at_least
 from clue_core import ExtractionMethod
 from clue_research.identity.provider import (
     register_provider_subjects,
@@ -262,8 +263,11 @@ async def discover_people(runtime: ToolRuntime, args: DiscoverPeopleArgs) -> dic
         )
     except ValueError as error:
         raise RefusalError("invalid_arguments", str(error)) from error
+    # Recipe 27 starts the committee in the opening rounds, as its prompt says; earlier recipes keep
+    # their rule that the account's deep research comes first.
+    early = at_least(runtime.scope, RECIPE_27)
     async with runtime._conn_factory() as conn:
-        attempted = await operations.deep_attempted(conn, runtime.operation_scope)
+        attempted = early or await operations.deep_attempted(conn, runtime.operation_scope)
     if not attempted:
         raise RefusalError(
             "invalid_arguments",
@@ -795,6 +799,28 @@ async def lookup_bound_person(runtime: ToolRuntime, args: Any) -> dict[str, Any]
     }
 
 
+_DISCOVER_PEOPLE_BEFORE_27 = (
+    "Discover unknown people at this exact account through SMART job titles"
+    " after account deep research. Choose role-specific titles, optional "
+    "filters, page and size. Each result is reusable without another "
+    "purchase. Choose this or web search according to the account evidence; "
+    "neither discovery method is only a fallback."
+)
+_DISCOVER_PEOPLE = (
+    "Find people at this exact account by job title, using AI Ark SMART matching. SMART loosens "
+    "wording but not role or seniority, and matches each person's current title only. Send several "
+    "titles per role cluster: titles you have seen in sources, plus short terms for the function "
+    'itself (for example "procurement", "clinical operations", "information security", '
+    '"marketing operations"). Results are saved and reusable without another purchase. Use it '
+    "alongside web research; neither is only a fallback."
+)
+
+
+def discover_people_description(scope: Any) -> str:
+    """The people-search description the agent reads, as its recipe pinned it."""
+    return _DISCOVER_PEOPLE if at_least(scope, RECIPE_27) else _DISCOVER_PEOPLE_BEFORE_27
+
+
 def account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
     from clue_api.arv2.account_research_tools import _tool
 
@@ -802,13 +828,7 @@ def account_tools(runtime: ToolRuntime) -> list[StructuredTool]:
         _tool(
             runtime,
             name="discover_people",
-            description=(
-                "Discover unknown people at this exact account through SMART job titles"
-                " after account deep research. Choose role-specific titles, optional "
-                "filters, page and size. Each result is reusable without another "
-                "purchase. Choose this or web search according to the account evidence; "
-                "neither discovery method is only a fallback."
-            ),
+            description=discover_people_description(runtime.scope),
             model=DiscoverPeopleArgs,
             body=discover_people,
         ),

@@ -319,7 +319,9 @@ def quality_profiles(
         engine_tool_ceiling=frozenset(authority),
         required_roles=active_roles,
         selected_profile_versions={
-            role: ("v26-person" if person else "v26")
+            role: ("v27-person" if person else "v27")
+            if version >= 27 and role == AgentRole.ACCOUNT_RESEARCH
+            else ("v26-person" if person else "v26")
             if version >= 26 and role == AgentRole.ACCOUNT_RESEARCH
             else ("v25-person" if person else "v25")
             if version >= 25 and role == AgentRole.ACCOUNT_RESEARCH

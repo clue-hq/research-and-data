@@ -360,6 +360,49 @@ def test_search_before_account_deep_spends_nothing():
     run_async(scenario())
 
 
+def test_recipe_27_searches_people_in_the_opening_rounds_before_account_deep():
+    """Recipe 27 aligns the tool with the prompt: people search no longer waits for deep research
+    (run 4, 2026-10-10: the prompt said "opening rounds", the tool refused, the agent nominated from
+    web results instead)."""
+
+    async def scenario():
+        async with rollback_conn(seed_pack=True) as conn:
+            run, account, job_id = await _seed(conn)
+            scope = replace(
+                _scope(run, account),
+                job_id=job_id,
+                catalog_version="v2",
+                input_refs={"quality_recipe_version": 27},
+            )
+            wire = ScriptedTransport(
+                [
+                    response(
+                        {
+                            "content": [
+                                {
+                                    "id": "company-1",
+                                    "link": {"domain": "probook.ai"},
+                                    "summary": {"name": "Probook"},
+                                }
+                            ]
+                        }
+                    ),
+                    response(
+                        {"content": [person()], "last": True, "totalPages": 1, "totalElements": 1}
+                    ),
+                ]
+            )
+            rt = runtime(conn, scope, _MemoryStorage(), wire)
+            result = await discover_people(
+                rt,
+                DiscoverPeopleArgs(role_key="growth", rationale="Relevant role", titles=["CMO"]),
+            )
+            assert result["returned"] == 1
+            assert len(wire.requests) == 2
+
+    run_async(scenario())
+
+
 def test_deep_retry_replays_the_chosen_response_not_the_last_attempt():
     from clue_api.arv2.account_research_tools import ResearchDeepArgs, _research_deep
 

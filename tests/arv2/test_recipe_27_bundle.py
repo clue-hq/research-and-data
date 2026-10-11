@@ -1,0 +1,77 @@
+"""Recipe 27: every instruction about finding people agrees with the prompt.
+
+Run 4 (2026-10-10) got four different signals: the prompt said "opening rounds", the people-search
+tool said "after account deep research" and refused before it, and the account skill said "once the
+account picture is developed". Recipe 27 aligns them on early discovery; recipe 26 is unchanged.
+"""
+
+from types import SimpleNamespace
+
+import yaml
+
+from clue_api.arv2.committee_discovery import discover_people_description
+from clue_api.arv2.quality_catalog import CURRENT_RECIPE_VERSION, load_quality_resources
+
+
+def _bundle(version):
+    return load_quality_resources("arv2-account", version=version)
+
+
+def _body(version, suffix):
+    return next(r.body for r in _bundle(version).skills if r.ref.endswith(suffix))
+
+
+def _profiles(version):
+    return {
+        r.ref.split(":", 1)[1]: yaml.safe_load(r.body)
+        for r in _bundle(version).skills
+        if r.ref.endswith("profile.yaml") and "research/v" in r.ref
+    }
+
+
+def test_recipe_27_is_current_and_loads_hash_verified():
+    assert CURRENT_RECIPE_VERSION == 27
+    assert set(_profiles(27)) == {
+        "profiles/quality-account-research/v27/profile.yaml",
+        "profiles/quality-person-research/v27-person/profile.yaml",
+    }
+
+
+def test_the_account_profile_pins_the_v27_prompt_and_the_v10_skill():
+    profile = _profiles(27)["profiles/quality-account-research/v27/profile.yaml"]
+    assert profile["prompt"]["version"] == "v27"
+    skills = {s["name"]: s["version"] for s in profile["skills"]}
+    assert skills["account-dossier"] == "v10"
+
+
+def test_the_v27_prompt_starts_the_committee_early_with_evidence_titles_and_retries():
+    prompt = " ".join(_body(27, "quality-account-research/v27/SYSTEM.md").split())
+    assert "Start the buying committee early, in your opening rounds" in prompt
+    assert "several titles per role cluster" in prompt
+    assert "matches each person's current title only" in prompt
+    assert "check their current employer" in prompt
+    assert "search and nominate again" in prompt
+    assert "do not stop short of what the evidence supports" in prompt
+    # Industry-agnostic examples: the harness is not GTM-specific.
+    assert '"clinical operations"' in prompt and '"procurement"' in prompt
+
+
+def test_the_v10_skill_no_longer_waits_for_the_account_picture():
+    skill = " ".join(_body(27, "skills/account-dossier/v10/SKILL.md").split())
+    assert "Once the account picture is developed, reason about" not in skill
+    assert "Start reasoning about responsibilities and people in your opening rounds" in skill
+
+
+def test_the_people_search_description_follows_the_recipe():
+    new = discover_people_description(SimpleNamespace(input_refs={"quality_recipe_version": 27}))
+    old = discover_people_description(SimpleNamespace(input_refs={"quality_recipe_version": 26}))
+    assert "after account deep research" not in new
+    assert "current title only" in new and '"procurement"' in new
+    assert "after account deep research" in old
+
+
+def test_recipe_26_still_loads_its_own_files():
+    assert set(_profiles(26)) == {
+        "profiles/quality-account-research/v26/profile.yaml",
+        "profiles/quality-person-research/v26-person/profile.yaml",
+    }

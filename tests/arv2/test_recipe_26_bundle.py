@@ -23,7 +23,7 @@ def _profiles(version):
 
 
 def test_recipe_26_loads_hash_verified_and_pins_the_v2_tools():
-    assert CURRENT_RECIPE_VERSION == 26
+    assert CURRENT_RECIPE_VERSION >= 26
     profiles = _profiles(26)
     assert set(profiles) == {
         "profiles/quality-account-research/v26/profile.yaml",
