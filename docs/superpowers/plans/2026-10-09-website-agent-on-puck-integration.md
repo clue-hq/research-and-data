@@ -120,7 +120,9 @@ height, …)`.
   role; surfaces cover band colours; the kit covers logos (`contain`), a second button style and
   in-site links.
 - **Agent-written code never runs on app.cluehq.ai or in a platform process (D2):** in the
-  browser only on the editor domain; on the server only in the locked container.
+  browser only on the editor domain; on the server only inside the hardened headless-Chromium
+  render page (founder 2026-10-11). Node only transforms or scans agent code (esbuild, tsc,
+  Tailwind); it never imports or runs it.
 
 ## Review focus
 
@@ -141,6 +143,9 @@ Each failure mode has a test in its owning task.
    API reads) are contained by the editor domain and its policy. Test in C11.
 7. **Agent script in published HTML:** a section that emits `<script>`, an `on*` handler or an
    off-allowlist URL publishes without it. Test in A7.
+8. **A server render that misbehaves:** a section that loops forever, prints a huge page, tries the
+   network (fetch, an image, a WebSocket) or tries to read local files ends as a typed render
+   failure with nothing sent out and the worker unharmed. Test in A5.
 
 ---
 
@@ -155,9 +160,12 @@ Each failure mode has a test in its owning task.
   (`docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
 
 **The design.**
-- **The editor domain.** The whole Puck editor (canvas, fields, outline) is a page on a separate
-  registrable domain that never holds the marketer's login. app.cluehq.ai embeds it as one
-  `<iframe>` and keeps chat, header, gallery, asset library, versions and publish. Decided
+- **The editor domain.** The Puck canvas is a page on a separate registrable domain that never
+  holds the marketer's login. app.cluehq.ai embeds it as one `<iframe>` in the stage and keeps chat,
+  header, gallery, asset library, versions and publish. **Fields and Layers stay in the app's
+  designed dock** (founder 2026-10-11): the frame describes the selected component's fields as
+  data, the app draws them with the inspector primitives, and edits go back to the frame as
+  messages. Agent code still only ever runs in the frame. Decided
   (founder, 2026-10-09): one subdomain per workspace (Framer's per-project pattern) on one wildcard
   domain. That is one deployment, one wildcard DNS record and one wildcard certificate; no servers
   per workspace.
@@ -175,7 +183,12 @@ Each failure mode has a test in its owning task.
   - Frame → app: page changes (batched), selections, asset-picker requests.
   - The app checks the source, schema and document id of every message, and saves with the
     marketer's login.
-- **Server render.** A locked container per workspace, plus memory and output caps.
+- **Server render (founder 2026-10-11): hardened headless Chromium for every site,** with no
+  container and no split by content. A fresh browser context per render, Chromium launched with a
+  stripped environment, the network blocked in layers (the render page's CSP,
+  `--host-resolver-rules`, a dead-end proxy, WebRTC off, Playwright request blocking), a time limit
+  and an output cap; the HTML is sanitized before it is published. The locked container stays the
+  documented upgrade if agent sections become common.
 - **Publish.** An allow-list sanitizer over agent-section HTML, and a security policy on published
   pages.
 - **Accepted latency (founder, 2026-10-09).** First open a few hundred ms; a few ms per message.
@@ -185,6 +198,173 @@ Each failure mode has a test in its owning task.
   the editor domain. The name is to be chosen. Owner A7.
 - **Research input (founder ruling, 2026-10-09, D3):** the brief gives direction and suggestions;
   the page agent reads the research and chooses its facts on its own reasoning (Task 5).
+
+---
+
+## Wave 2: rulings and cross-lane contracts (2026-10-11)
+
+The lane plans (`2026-10-11-lane-a-…`, `-lane-b-…`, `-lane-c-…`) implement these contracts. A lane
+may refine a detail inside its own code, but a change to anything below is a change to this section
+first, with the founder's sign-off where it is product-facing.
+
+### Rulings
+
+- **R4 is dropped** (founder). The week-6 regression run adds: each page is at least as good as its
+  spike version, plus a founder look beside the platform pages already on record.
+- **R2 (on-demand rebuild during edits) → Lane B; R5 (rich text with our inline menu) → Lane C.**
+- **Brand fidelity is split:** site-kit's kit, theme and `brand.md` (all 12 type roles marked
+  measured or derived, `contain` image fit, a second button style, `kit.Link`, extra and band
+  surfaces, the kit's own rules) → Lane A; turning the stored kit into `BrandData` → Lane B. There
+  is no production "measured" button: button styles come from the kit's tokens, `brief.constraints`
+  and `brief.component_recipes`.
+- **B4 is wiring only:** the hybrid image search arrived with the scene-ad merge (`deb3a0e98`).
+- **Editor layout:** canvas in the frame, fields and Layers in the app (see D2).
+- **Pages UI (founder 2026-10-11, the Ploy reference):** for sites, the stage's top bar gets a
+  **Pages** toggle that opens a page panel on the left of the canvas (a count, a search box, one row
+  per page with a home icon for `/`), and a browser-style **URL toolbar** (back, forward, the device
+  menu, the current route, editable to jump, and reload). Adding, renaming and deleting pages stays
+  with the agent until designed. Header and footer are edited by selecting them on the canvas.
+- **Server render:** hardened headless Chromium (see D2).
+- **Published-pages domain (founder 2026-10-11):** every workspace moves to the new registrable
+  domain; old `*.pages.cluehq.ai` URLs redirect at the edge; `cluehq.ai` stays reserved for custom
+  domains. The domain name is the founder's to register.
+- **The frontend's Railway build** must copy `packages/site-kit` before `npm ci`
+  (`apps/frontend/Dockerfile.railway:10-12`); it is Lane C's first task.
+
+### Contract 1: the site document
+
+Stored in `design_document.current_scene_json` for `doc_kind = 'site'`:
+
+```json
+{
+  "id": "doc_…", "title": "…", "theme": {"brand_kit": {"brand_kit_id": "…", "version": 2}},
+  "pages": {
+    "/":         {"root": {"props": {"title": "…"}}, "content": [{"type": "Hero", "props": {"id": "Hero-1a2b", "…": "…"}}]},
+    "/analysis": {"root": {"props": {"title": "…"}}, "content": []}
+  },
+  "shell": {"header": {"id": "header", "…": "…"}, "footer": {"id": "footer", "…": "…"}},
+  "agent_sections": {"AnalysisSteps": "<sha256 of the compiled module>"}
+}
+```
+
+- Routes are `/` or `/<name>` with `<name>` matching `^[a-z0-9][a-z0-9-]*$` (site-kit `validate.ts`).
+- Every image, logo and generated picture in props is `/asset-store/<sha256>`, a blob of this
+  workspace. No `/brands/…`, `/generated/…` or `/accounts/…` paths in production.
+- `props.id` is unique within a page; the shell's header and footer carry `id` `header`/`footer`.
+- A component in an agent section is `type == <Name>` where `<Name>` is a key of
+  `agent_sections`.
+
+### Contract 2: writing, undoing and versions (design API, Lane A)
+
+| Route | Body | Success | Refusals |
+|---|---|---|---|
+| `PUT /documents/{id}/site` | `{site, base_version, intent?}` | 200 `{document: {id, current_version, doc_kind: "site"}}` | 409 `edits.base_version_mismatch` + `current_version`; 422 `site.invalid` + `errors[]`; 409 `document.agent_run_active` while a site turn runs; 409 `document.kind_unsupported` for a non-site |
+| `POST /documents/{id}/site/undo` · `/redo` | `{base_version}` | 200 `{document, undone_batch_id}` · `{document, redone_batch_id}` | 409 `undo.empty` · `redo.empty`; 409 `edits.base_version_mismatch` |
+| `GET /documents/{id}/site/versions?limit=` | | 200 `{versions: [{batch_id, version, actor_kind, intent, created_at}]}` newest first | |
+| `POST /documents/{id}/site/versions/{batch_id}/restore` | `{base_version}` | 200 `{document}`; the restore is itself an undoable write | 404 `version.not_found` |
+
+- One save is one undo step; one agent turn is one undo step; the stack cap is 50 (the web cap).
+- History is `design_edit_envelope` with whole-site snapshots: `operations = [{"kind":
+  "replace_site", "site": new}]`, `inverse_operations = [{"kind": "replace_site", "site": old}]`.
+- Validation is contracts only: the site-kit validator run as a Node CLI over JSON, with agent
+  sections checked against their **stored props JSON Schema**, never by importing the module.
+- Governed tools (all four registries updated together): `design_write_site`,
+  `design_undo_site`, `design_redo_site`.
+
+### Contract 3: the renderer and the cleaner (Lane A; Lane B calls it)
+
+- `lumen_api/site_render.py`:
+  - `render_site(site, brand, sections, *, base_path, routes=None, timeout_s=20.0) -> SiteRender`
+  - `SiteRender(pages: list[RenderedPage], css: str, warnings: list[str])`,
+    `RenderedPage(route: str, html: str)`
+  - `SectionModule(name: str, digest: str, module_js: str, css: str, props_schema: dict)`
+  - `read_section_schema(module_js: str, *, timeout_s=10.0) -> dict`: imports one compiled agent
+    section inside the hardened render page and returns its props JSON Schema (Lane B6 calls it at
+    compile time; nothing else ever imports an agent module on the server).
+  - `capture_site_screenshot(page: RenderedPage, css: str, *, width: int, full_page: bool = True)
+    -> bytes`: a PNG of rendered, sanitized HTML in a hardened page with the network blocked (Lane
+    B3's `render_page`, Lane A6's thumbnails).
+  - Failures raise `SiteRenderError(code)` with `code` in `render.timeout`,
+    `render.output_too_large`, `render.section_module_missing`, `render.failed`.
+- How it works: one headless Chromium page per render, in a fresh context, loads a render shell
+  (site-kit's browser render bundle, the page data, `BrandData` and the section modules) through
+  `set_content`, waits for the shell's done signal and reads back each route's HTML. The CSS is
+  compiled by Node Tailwind over that HTML (scanning text only).
+- `lumen_api/site_sanitize.py`: `sanitize_site_html(html) -> SanitizedHtml(html, removed)` strips
+  `script`, `iframe`, `object`, `embed`, `form`, `base`, `meta`, `link`, every `on*` attribute,
+  `javascript:` URLs, and any `src`, `srcset`, `poster` or CSS `url()` that is not
+  `/asset-store/<sha256>`, a relative site route or `data:`. It strips; it does not refuse.
+- The published page's CSP: `default-src 'none'; script-src 'none'; style-src 'self'
+  'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; media-src 'self'; connect-src
+  'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`, chosen per publish at the
+  page origin.
+
+### Contract 4: agent sections (Lane B stores, Lane A renders, Lane C loads)
+
+- Table `design_site_section`: `workspace_id`, `digest` (sha256 of the compiled module),
+  `name`, `source_sha256`, `module_sha256`, `css_sha256`, `props_schema_json`, `created_at`,
+  `created_by_run_id`; primary key `(workspace_id, digest)`. Bytes live in `DesignBlobStore`.
+- DAL `subsystems/design/clue_design/site_sections.py`: `record_site_section(...)`,
+  `get_site_sections(conn, *, workspace_id, digests) -> list[...]`.
+- Compile (esbuild, tsc, the lint) runs in Node and never executes the module. The props schema is
+  read inside the hardened render page.
+- **Never served through `/asset-store`.** The editor gets a module through a short-lived link:
+  the app asks `POST /documents/{id}/site/section-links` (the document must reference the digest)
+  and receives `[{name, digest, token, expires_at}]`; the token is an HMAC over
+  `(workspace_id, document_id, digest, expires_at)` with `CLUE_SITE_SECTION_LINK_SECRET`, 10
+  minutes; the editor app's own server route `GET /sections/<digest>.mjs?t=<token>` verifies it
+  with the design API and returns the module from the editor origin.
+
+### Contract 5: the cited-claims read (Lane B)
+
+`read_cited_claims@1`, input `{entity_id, claim_ids: [≤ 200]}`, output `{claims:
+[AccountClaimView], dispositions: {claim_id: "served" | "held:<reason>" | "not_found"}}`, built
+from `inspectable_claims_by_ids` then `gate_claims`. Granted to `AgentRole.DESIGN` through a
+`design@v5` profile.
+
+### Contract 6: the editor protocol (Lane C; shared Zod in site-kit `src/editor-protocol.ts`)
+
+- Every message: `{channel: "clue-site-editor", v: 1, documentId, nonce, type, payload}`. The app
+  checks `event.origin` against the workspace's exact editor origin, `event.source`, the nonce and
+  the document id; the frame checks `event.source === window.parent` and the app origin. No
+  `"*"` target origins.
+- App → frame: `init {site, brand, sections: [{name, digest, token, propsSchema}], mode, route,
+  device}`, `replace_site {site, version}`, `set_mode {mode}`, `navigate {route}`, `set_props
+  {route, componentId, props}`, `select {route, componentId | null}`, `insert_asset {route,
+  componentId, prop, url}`.
+- Frame → app: `ready`, `changed {site}` (debounced), `selected {route, componentId, componentType,
+  fields: FieldDescription[], props}`, `deselected`, `navigated {route}`, `request_asset {route,
+  componentId, prop}`, `annotate {route, componentId, geometry}`, `error {code, message}`.
+- `FieldDescription = {name, label, kind: "text" | "textarea" | "select" | "image" | "link" |
+  "number" | "boolean" | "list", options?, item?: FieldDescription[]}`.
+
+### Contract 7: the site turn (Lane B)
+
+- Envelope `kind = "site_turn"`; the executor returns `{status, summary, current_version,
+  model_calls, doc_kind: "site", clarification?, error?, stop_reason?}`.
+- It persists through `design_write_site` under CAS (one turn, one undo step).
+- It emits `site_document_saved {document_id, version}` (never an `operations` key), which the
+  event forwarder turns into the `design.checkpoint` frame, so the frontend's existing
+  `designRefreshForEvent` reloads the canvas.
+- `design_leg_wiring` treats `doc_kind == "site"` like web in its labels and summaries.
+
+### Contract 8: kinds on the wire
+
+`"site"` is a new value everywhere a kind travels: backend `Literal`s (`chat/schemas.py:698`,
+`frontend_read/contract_v1.py:481`) and frontend Zod enums (`design-editor/model/artifact.ts:17,31`,
+`artifacts/model/artifact-library.ts:14`). **Lane C's acceptance of `"site"` lands before Lane A's
+mapper starts sending it**; until both land, no workspace is in the flag.
+
+### Contract 9: domains
+
+- **Editor:** `https://<label>.<CLUE_SITE_EDITOR_SUFFIX>`, where `<label>` is an opaque token
+  derived from the workspace id (never the renameable handle); dev
+  `http://<label>.editor.localhost:<DEV_STACK_EDITOR_PORT>`. Both settings go into `.env` and
+  `.env.example` the moment they are introduced.
+- **Published pages:** `CLUE_PAGES_SYSTEM_SUFFIX` set to the new domain; a migration script
+  rewrites every system hostname (label kept); the edge Worker answers an old
+  `*.pages.cluehq.ai` host with a 301 to the new one; `validate_custom_hostname` reserves both
+  registrable domains.
 
 ---
 
@@ -953,57 +1133,41 @@ writing it**.
 
 ---
 
-## Waves 2–3: lane outlines
+## Waves 2–3: the lanes (detailed plans written 2026-10-11)
 
-Each lane gets its own bite-sized plan when its wave starts, written against the code as it is
-then and including Wave 1's results. The outlines fix the scope, files and acceptance tests.
+Each lane has its own plan, written against the code at `d723a17ae` and the four code surveys of
+2026-10-11. They implement the contracts above.
 
-### Lane A: backend and renderer (about 3 weeks)
+- **Lane A, backend, renderer and publishing** —
+  `docs/superpowers/plans/2026-10-11-lane-a-site-backend-and-publishing.md`:
+  A0 site-kit catch-up (spike R3 and D2 lint, catalog CLI, `/asset-store` assets, schema-based
+  validation); A1 kind-branch audit; A2 write, undo, redo and versions; A3 composer targets;
+  A4 gallery and library; A5 the hardened-browser renderer and the cleaner; A6 thumbnails;
+  A7 publish with the per-publish CSP; A8 export; A9 brand fidelity in site-kit; A10 the
+  published-pages domain move.
+- **Lane B, the agent on the platform** —
+  `docs/superpowers/plans/2026-10-11-lane-b-site-agent-on-platform.md`:
+  B0 `read_cited_claims@1` and `design@v5`; B1 the site harness package; B2 the workspace view
+  from the database; B3 tools; B4 hybrid image search wiring; B5 the site executor; B6 agent
+  sections (compile, schema, store, links); B7 cost and tracing; B8 R2 on-demand rebuild.
+- **Lane C, the editor** — `docs/superpowers/plans/2026-10-11-lane-c-site-editor.md`:
+  C0 the Railway build fix; C1 the `site` kind in the frontend; C2 the site repository and save
+  policy; C3 the editor app on the editor domain; C4 the app's frame host and protocol; C5 fields
+  and Layers in the dock; C6 images; C7 annotations; C8 edit toggle, live reload, run lock, undo;
+  C9 versions; C10 the Pages toggle and URL toolbar; C11 dev stack, deploy and the hostile
+  probes; C12 R5 rich text; C13 insert, delete and duplicate (after the founder's designs).
 
-| Task | Files (evidence) | Acceptance test |
-|---|---|---|
-| A1. The kind-branch audit | Every site in the "Kind branches" list above. Wire kinds: `artifact_read_tools.py:170`, `design_leg_wiring.py:714`, `composer_context.py:784`, `router.py:1415` map `site` → `"site"`. Labels: `design_leg_wiring.py:315` ("web page"). Refusals: `main.py:2507/2606/8161/8190` refuse site with a typed error until A2/A7 | A parametrized test per branch: a site document never takes the scene arm |
-| A2. Site write, undo, redo | Design API: `PUT /documents/{id}/site` (CAS on `base_version`), `POST /documents/{id}/site/undo|redo`, via `update_web_document` with snapshot inverse ops (`documents.py:595`) | Write, conflict (409), undo, redo, undo past the start |
-| A3. Composer targets | `chat/composer_context.py:240-330`, `design_turn_targets.py` (`validate_web_targets`): accept `site_component` refs `{page, component_id, prop?}` checked against the stored pages | Valid ref accepted; unknown component refused |
-| A4. Gallery and library | `design_leg_wiring.py:578` (`project_design_documents`), `:721` (`workspace_design_documents`): include site documents; map the kind | A site document appears in the project gallery and the library |
-| A5. Renderer bundle | `@clue/site-kit` `bin/render-site.ts` bundled with esbuild to `dist/render-site.mjs` (React, Puck and components inlined). Design API: `LUMEN_SITE_RENDERER` (path; in both `.env.example` files), a `render_site(site, brand, sections) -> {pages:[{route, html}], css}` subprocess wrapper next to `web_export.py`'s Node call (`:72`). Asset paths become `/asset-store/<digest>`. Agent sections render only in the locked container per workspace (D2): no network, read-only, only that workspace's modules, `--init`, timeout, memory and output caps | A page renders to HTML; the CSS is compiled once; the snapshot matches the spike's `/s/` render; the spike's fs-read and huge-output probes are refused |
-| A6. Thumbnails | `clue_design/thumbnails.py`, `lumen_api/document_thumbnails.py`: site → `render_site` + Playwright | The thumbnail endpoint returns an image for a site |
-| A7. Site publish package | `build_site_publish_package(...) -> PublishPackage` beside `web_export.build_publish_package`; `toolbelt/publishes.py:94` accepts `site`; a missing agent module refuses (`site_publish.section_module_missing`) (Review focus 5). Agent-section HTML passes an allow-list sanitizer, and published pages send a security policy blocking scripts and images from other hosts (Review focus 7, D2). Switch the system address to the published-page domain (D2; founder 2026-10-09): `CLUE_PAGES_SYSTEM_SUFFIX` and `CLUE_PAGES_CNAME_TARGET` in `.env.example`, checking existing published hostnames first | Publish a two-page site; the page origin serves both routes; republish locks the hostname once; missing module refused; a section emitting `<script>`, `onerror` and an outside image publishes without them |
-| A8. Export | ZIP and PDF for site (the `/web/export` siblings) | ZIP has every route; PDF renders |
-
-### Lane B: the agent on the fleet (about 3 weeks)
-
-| Task | Files (evidence) | Acceptance test |
-|---|---|---|
-| B1. Harness port | `trials/puck-spike/agent/trials_puck_agent/{harness,tools,workspace}.py` → `subsystems/clue-design/apps/agent_runtime/lumen_agent/site/` beside `harness_web.py`; the system prompt and skills move with their changelog | The spike's agent tests pass in the new home |
-| B2. Workspace view from the database | Brand kit: `clue_design/brand.py` → `brandData` → site-kit `buildCatalog` (via the CLI). Clones: the `agent_cloned_sections.py` registry (released only, degraded honoured) + `read_web_fragment`. Seller pin and project context: `RT/platform_reads.py` (`seller/`, `project-context/`). Research: `read_account_research` with claim ids (R1). Site files from the document | A workspace view for Garner matches the spike's export (same catalog, same `brand.md`) |
-| B3. Tools | `validate_page`/`render_page` via the site-kit CLIs and A5; `fetch_page` with `lumen_ingestion.capture.net` guards; `web_search`, `read_claims`, `read_project_accounts` via `config.platform_reads`; `fetch_logo` via `RT/tools/logo_fetch.py`; `generate_image` via `image_provider`; `search_assets` | One test per tool with fakes; guards refuse private IPs |
-| B4. CLIP search | Cherry-pick `deb3a0e98` (branch `design/linkedin-ad-skill-testing`: `lumen_api/asset_embeddings.py`, migration `9429b503cc9d`, `LUMEN_ASSET_EMBEDDING_MODEL_DIR`); then `alembic merge` to one head; wire into the site agent's `search_assets` | Hybrid ranking test from that commit passes; one head |
-| B5. Site executor | `execute_site_turn_job` in `lumen_api/main.py` (mirrors `:11099`: spend scope, model-call collector, CAS persist); `fleet_handler.py:213` (capability) and `:679` (selection); `design_leg_wiring.py:2568` replaces the Task 3 refusal with `site_turn`; result contract `{status, summary, current_version, model_calls, clarification?}` | A queued site turn runs, persists under CAS, and emits receipts; stop cancels it |
-| B6. Agent sections in production | Store compiled modules per workspace, content-addressed (the platform's custom-component artifacts pattern); the document's `agent_sections` holds `{name: digest}`. Compile and extract the props schema inside the locked container, never in a platform process. Hand the editor domain short-lived links for this document's modules (D2) | Workspace isolation (Review focus 4); write → visible under the measured target |
-| B7. Cost and tracing | `agent_model_call` rows via `model_calls`; Langfuse via the injected callbacks | A site turn's cost appears on the turn |
-
-### Lane C: the editor (about 3–4 weeks, including the editor domain)
-
-| Task | Files (evidence) | Acceptance test |
-|---|---|---|
-| C1. Kind and canvas switch | `design-editor/model/artifact.ts:17,31` (add `"site"`); `chat-shell/components/artifact-stage.tsx:471` (`site` → `SiteArtifactCanvas`, the frame that embeds the editor domain, C11) | A site artifact opens the Puck editor; web and ad are unchanged |
-| C2. Site data | A repository plus Zod model for the A2 endpoints through the BFF (`/api/clue/design/*`) | Load, save (CAS), 409 note, undo/redo |
-| C3. Puck in the chat-shell layout | Puck's parts (preview, fields, outline) with `overrides`; fields drawn with `chat-shell/components/inspector-primitives.tsx`; styles from `chat-shell.module.css` and the design-system tokens | Visual parity check against the dummy UI for the inspector |
-| C4. Images | `chat-shell/components/asset-library-panel.tsx` as the asset field (library, upload, generate) | Replace an image from the library and by generation |
-| C5. Annotations | `design-editor/adapter/annotations.ts` reducer and popover; refs become `site_component` (A3) | An annotation sent to chat reaches the agent as a target |
-| C6. Edit toggle and live reload | Edit off = Puck `previewMode` "interactive"; reload on agent events via `use-project-chat-controller.ts` `designRefreshForEvent` | The canvas reloads after an agent turn; nothing saves with edit off |
-| C7. Versions | `artifact-action-menu.tsx:91-96` (today a placeholder) wired to document snapshots | Restore a version |
-| C8. Pages | The page switcher and page settings for the site model | Add, rename and remove a page; nav links follow |
-| C9. Agent sections | Load modules at runtime per B6/Task 4, inside the editor domain only | A loaded section edits in place |
-| C10. Insert, delete, duplicate | **After the founder's designs** | Per the design |
-| C11. The editor domain (D2) | A host page for Puck on its own registrable domain (deploy, DNS, TLS; a dev-stack equivalent on a second local site); the frame attributes and headers in "D2" above; the message bridge between `SiteArtifactCanvas` and the editor page (load, batched save through the BFF, agent updates, selection, asset picker); warm the frame when the project opens. One subdomain per workspace (decided 2026-10-09; one wildcard DNS record and certificate; list the domain on the Public Suffix List) | The spike's hostile sections cannot read app cookies or call our API, cannot send a pixel, cannot reach `Function`, and cannot navigate the tab (Review focus 6); a forged frame message for another document is refused; edit, save and agent reload work end to end |
+Order between lanes: A0 first (B and C consume site-kit); C1 before A1's mapper (Contract 8);
+A2 before B5's persist and C2; A5 before B3's `render_page` and A6–A8; B6's section links before
+C3 loads agent sections.
 
 ## Wave 4: hardening and rollout (about 1 week)
 
 - **End to end on Garner, Conduit and Alt Carbon:** chat → build → edit → publish to a domain.
 - **The skills regression set:** cases A, B and C, the ten edits, E5, cl3.
 - **Cost and Langfuse check per turn.**
+- **Each regression page at least as good as its spike version,** and a founder look beside the
+  platform pages already on record (this replaces R4, founder 2026-10-11).
 - **Flag on for chosen workspaces.** The WebDoc path stays as it is.
 
 ## Self-review notes
