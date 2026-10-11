@@ -200,3 +200,15 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
 - 2026-10-11: trenton stack restarted on the merged code (founder ask) via
   `./scripts/dev_stack_trenton.sh down` then `nohup ... up & disown`; all 5 processes + 4 fleet
   workers + ingestion pool UP, no tracebacks in /tmp/trenton_*.log.
+
+## Wave 2 planning (2026-10-11)
+- Four read-only code surveys (Lane A, B, C, brand+domains) in the session scratchpad
+  (wave2-survey-*.md); key claims spot-checked first-hand. Found: Dockerfile.railway copies only
+  design-system before `npm ci` but the lockfile now needs @clue/site-kit (frontend deploy risk).
+- Founder rulings: R4 dropped (folded into the week-6 regression run, "as good as the spike" check);
+  editor layout = Puck canvas in the editor-domain frame, fields + Layers in the app's designed dock
+  from a field description; published-pages domain = move ALL workspaces to the new domain, old
+  *.pages.cluehq.ai URLs redirect at the edge; Lane C = single-page editing first (home + header/
+  footer fields), page switcher/settings after designs.
+- Open, under discussion: where the locked render runs in production (only VM fleet workers have
+  docker; design API on Railway does not).
