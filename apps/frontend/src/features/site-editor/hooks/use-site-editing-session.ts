@@ -97,6 +97,11 @@ export function useSiteEditingSession({
   const handleFrameMessage = useCallback((message: FrameToAppMessage) => {
     const now = latest.current;
     switch (message.type) {
+      case "ready":
+        // A rebooted frame shows no document until its next init lands: the canvas reads
+        // "Loading preview…" until the new `navigated`.
+        setShownDocumentId(null);
+        return;
       case "navigated":
         setShownDocumentId(message.documentId);
         setRouteState({ documentId: message.documentId, route: message.payload.route });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useArtifactRename } from "../hooks/use-artifact-rename";
 import {
   useEditorShellController,
@@ -118,6 +118,19 @@ export function EditorSurface({
     locked: siteLocked,
     warm: (artifacts ?? []).some((artifact) => artifact.documentKind === "site"),
   });
+  // This route has no turn stream: an agent write to an open site is seen only by the poll above,
+  // whose `reloadNonce` moves when the document's version does. The persistent site stage takes no
+  // reload token, so a moved nonce reloads the site session. The nonce starts at 0 for each
+  // document (and resets on a switch), so 0 never reloads; web and ad tabs never reload here.
+  const agentReloadNonce = agentRun.reloadNonce;
+  const siteOpen = controller.artifactKind === "site";
+  const reloadSiteSession = siteSession.reload;
+  const seenAgentReloadNonce = useRef(agentReloadNonce);
+  useEffect(() => {
+    if (agentReloadNonce === seenAgentReloadNonce.current) return;
+    seenAgentReloadNonce.current = agentReloadNonce;
+    if (siteOpen && agentReloadNonce > 0) reloadSiteSession();
+  }, [agentReloadNonce, reloadSiteSession, siteOpen]);
   // Exactly one lane can be enabled, so this is the active document either way
   // — the canvas branch inside the stage picks the surface by kind.
   const activeDocumentId =
