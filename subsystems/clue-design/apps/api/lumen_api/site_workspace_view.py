@@ -269,6 +269,22 @@ def referenced_library_assets(asset_library: Mapping[str, Mapping[str, Any]], di
     }
 
 
+#: Images and logos only: a font or a document is never a section image.
+_SEARCHABLE_KINDS = frozenset({"raster_image", "vector"})
+
+
+def search_candidates(kit_assets: Mapping[str, Any] | None, asset_library: Mapping[str, Any] | None) -> dict:
+    """search_assets' inventory: the kit's assets, then the workspace library, images only."""
+
+    candidates: dict[str, dict] = {}
+    for origin, manifest in (("brand_kit", kit_assets or {}), ("library", asset_library or {})):
+        for asset_id, entry in manifest.items():
+            record = entry.get("record") or {}
+            if record.get("kind") in _SEARCHABLE_KINDS and record.get("status", "ready") != "archived":
+                candidates.setdefault(asset_id, {**entry, "origin": origin})
+    return candidates
+
+
 def seller_name(store: Any, kit_ref: Mapping[str, Any] | None, kit: Mapping[str, Any] | None) -> str:
     """The seller's name for brand/brand.md: the brand the kit belongs to, else the kit's own name."""
 
@@ -332,6 +348,13 @@ def build_site_turn_inputs(
         overview, insights, _errors = read_research_pages(platform_reads, account_entity_id)
         claims, held = cited_claims(platform_reads, account_entity_id, overview + insights)
     artifact = bundle.get("artifact") if isinstance(bundle.get("artifact"), dict) else {}
+    candidates = search_candidates(kit_assets, asset_library)
+    if candidates:
+        from .asset_embeddings import load_workspace_embeddings
+
+        embeddings = load_workspace_embeddings(blobs.workspace_id)
+    else:
+        embeddings = {}
     return SiteTurnInputs(
         document_id=document_id,
         workspace_id=blobs.workspace_id,
@@ -347,6 +370,8 @@ def build_site_turn_inputs(
         project_files=project_files_from(platform_reads) if platform_reads is not None else [],
         account_logos=fetch_account_logos(blobs, card, cache=logo_cache),
         agent_sections=site_sections_for_turn(store, blobs, site),
+        asset_candidates=candidates,
+        asset_embeddings=embeddings,
         platform_reads=platform_reads,
         assets=assets,
         sections=sections,

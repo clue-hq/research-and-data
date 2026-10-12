@@ -228,11 +228,13 @@ def test_the_turn_inputs_put_it_together(monkeypatch) -> None:
 
     document = {"id": "doc_a", "scene": {"id": "doc_a", "title": "T", "theme": {"brand_kit": {"id": "kit_1", "version": 2}},
                                           "pages": {"/": {"content": []}}, "shell": None, "agent_sections": {}}}
+    monkeypatch.setattr("lumen_api.asset_embeddings.load_workspace_embeddings", lambda workspace_id: {})
     inputs = view.build_site_turn_inputs(
         document=document, store=SimpleNamespace(), blobs=SimpleNamespace(workspace_id="ws_1"), cache_dir="/tmp",
         platform_reads=Reads(), account_card={"name": "Syracuse City School District", "domain": "syracusecityschools.com"},
         delegation_bundle={"brief": "B", "artifacts": [{"document_id": "doc_a", "account_id": "acc_1"}]},
-        brand_kit={"name": "kit"}, kit_assets={}, font_spec=None, asset_library={},
+        brand_kit={"name": "kit"}, kit_assets={}, font_spec=None,
+        asset_library={"asset_photo": {"record": {"kind": "raster_image"}}},
     )
     assert inputs.document_id == "doc_a" and inputs.workspace_id == "ws_1" and inputs.brief == "B"
     assert inputs.account_name == "Syracuse City School District" and inputs.seller == "Garner Health"
@@ -240,6 +242,8 @@ def test_the_turn_inputs_put_it_together(monkeypatch) -> None:
     assert inputs.brand["slug"] == "kit_1" and "measured" not in inputs.brand
     assert len(inputs.overview) == 1 and len(inputs.insights) == 1  # both sections read through the same fake
     assert inputs.claims == [{"claim_id": "c1"}] and inputs.held_claim_ids == frozenset()
+    assert set(inputs.asset_candidates) == {"asset_photo"}
+    assert inputs.asset_embeddings == {}
 
 
 def test_the_brand_loader_lane_a_validates_with_is_the_same_builder(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -253,3 +257,11 @@ def test_the_brand_loader_lane_a_validates_with_is_the_same_builder(monkeypatch:
     document = {"id": "doc_a", "scene": {"id": "doc_a", "theme": {"brand_kit": {"id": "kit_1", "version": 2}}, "pages": {}}}
     brand = load(None, SimpleNamespace(workspace_id="ws_b"), document)
     assert brand["slug"] == "kit_1" and brand["clones"] == {} and asked == ["ws_b"]
+
+
+def test_search_candidates_are_the_kits_and_the_librarys_images() -> None:
+    kit = {"asset_logo": {"record": {"kind": "vector"}}, "asset_font": {"record": {"kind": "font"}}}
+    library = {"asset_logo": {"record": {"kind": "raster_image"}}, "asset_photo": {"record": {"kind": "raster_image"}},
+               "asset_old": {"record": {"kind": "raster_image", "status": "archived"}}}
+    candidates = view.search_candidates(kit, library)
+    assert {k: v["origin"] for k, v in candidates.items()} == {"asset_logo": "brand_kit", "asset_photo": "library"}

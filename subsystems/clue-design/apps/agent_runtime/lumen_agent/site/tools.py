@@ -260,6 +260,35 @@ class SiteTools:
             blocks.append({"type": "text", "text": f"Showed the first {VIEW_ASSET_MAX}; ask again for the rest."})
         return blocks
 
+    def search_assets(self, q: str, kind: str | None = None, limit: int = 8) -> str:
+        """Search the seller's images by what they show and how they look."""
+
+        import json
+
+        from lumen_agent.tools.asset_catalog import hybrid_search
+
+        candidates = {
+            asset_id: (entry, str(entry.get("origin") or "library"))
+            for asset_id, entry in (self.inputs.asset_candidates or {}).items()
+        }
+        answer = hybrid_search(candidates, q, kind, limit, self.inputs.asset_embeddings)
+        for row in answer.get("results") or []:
+            row.pop("view", None)
+            entry, _ = candidates[row["asset_id"]]
+            record = entry.get("record") or {}
+            digest = ((record.get("media") or {}).get("digest") or {}).get("value")
+            if not isinstance(digest, str) or not _ASSET_FILE.match(f"/asset-store/{digest}"):
+                continue
+            row["file"] = f"/asset-store/{digest}"
+            # Found by search, so placeable: the validator checks images against the turn's brand.
+            self.brand.setdefault("assets", {}).setdefault(row["asset_id"], {
+                "kind": record.get("kind") or "other", "label": entry.get("title") or record.get("label"),
+                "description": entry.get("description"), "mime": (record.get("media") or {}).get("mime_type"),
+                "file": row["file"], "logo": record.get("logo"),
+            })
+        self._record("search_assets", query=q, count=len(answer.get("results") or []))
+        return json.dumps(answer)
+
     # --- research ------------------------------------------------------------------------------
 
     def fetch_page(self, url: str) -> str:
