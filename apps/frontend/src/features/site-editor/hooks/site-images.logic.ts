@@ -1,3 +1,4 @@
+import type { FieldDescription } from "@clue/site-kit/editor-protocol";
 import {
   REMOVE_BACKGROUND_INSTRUCTION,
   sceneGeneratedAssetLabel,
@@ -26,6 +27,11 @@ export interface SiteImageTarget {
 
 export function sameImageTarget(left: SiteImageTarget, right: SiteImageTarget): boolean {
   return left.target === right.target && left.componentId === right.componentId && left.prop === right.prop;
+}
+
+/** Whether the selection shows any image field, a list item's own fields included. */
+export function fieldsHaveImage(fields: readonly FieldDescription[]): boolean {
+  return fields.some((field) => field.kind === "image" || fieldsHaveImage(field.item ?? []));
 }
 
 /** Contract 1: an image in a site is `/asset-store/<sha256>` of a blob of this workspace. */

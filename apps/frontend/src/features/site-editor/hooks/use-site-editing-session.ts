@@ -28,7 +28,7 @@ import { useSiteEditorOrigin } from "./use-site-editor-origin";
 import { useSiteFrameHost, type SiteFrameHost } from "./use-site-frame-host";
 import { useSiteImages, type SiteImageFieldBinding, type SiteImages } from "./use-site-images";
 import { useSiteSaves, type SiteSaves } from "./use-site-saves";
-import type { SiteImageTarget } from "./site-images.logic";
+import { fieldsHaveImage, type SiteImageTarget } from "./site-images.logic";
 
 const DEFAULT_REPOSITORY = httpSiteRepository();
 
@@ -281,7 +281,7 @@ export function useSiteEditingSession({
     clearMessages: saves.clearMessages,
     currentUrl,
     documentId: activeDocumentId,
-    imagesVisible: Boolean(activeSelection?.fields.some((field) => field.kind === "image")),
+    imagesVisible: activeSelection ? fieldsHaveImage(activeSelection.fields) : false,
     kit: load.brand?.kit ?? null,
     onError: saves.reportError,
     place: insertAsset,

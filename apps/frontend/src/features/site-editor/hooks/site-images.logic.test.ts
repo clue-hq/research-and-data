@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { FieldDescription } from "@clue/site-kit/editor-protocol";
 import type { AssetRecord } from "@/features/design-editor/engine/scene/contracts";
 import {
   EMPTY_SITE_IMAGE_AI,
@@ -9,6 +10,7 @@ import {
   assetIdForUrl,
   assetStoreUrlOf,
   createSiteImageAiRunner,
+  fieldsHaveImage,
   siteImageAiBinding,
   type SiteImageAiDeps,
   type SiteImageAiState,
@@ -107,4 +109,17 @@ test("the binding shows a candidate and a notice only on the field they belong t
   assert.equal(own.hasImage, true);
   assert.equal(other.candidate, null);
   assert.equal(other.hasImage, false);
+});
+
+test("an image field anywhere in the selection, even inside a list's items, loads the library", () => {
+  const text: FieldDescription = { kind: "text", label: "Heading", name: "heading" };
+  const image: FieldDescription = { kind: "image", label: "Image", name: "image" };
+  assert.equal(fieldsHaveImage([text, image]), true, "a top-level image");
+  assert.equal(
+    fieldsHaveImage([text, { item: [{ kind: "text", label: "Name", name: "name" }, { ...image, name: "photo" }], kind: "list", label: "People", name: "people" }]),
+    true,
+    "an image only inside a list's item",
+  );
+  assert.equal(fieldsHaveImage([text, { item: [text], kind: "list", label: "Stats", name: "stats" }]), false, "no image at all");
+  assert.equal(fieldsHaveImage([]), false);
 });

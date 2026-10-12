@@ -130,6 +130,18 @@ export function useSiteImages({
     [category, inUseAssetId, kitEntries, query, registry],
   );
 
+  // A placement that can bring a NEW asset (an upload, a generation, an accepted edit) reloads the
+  // registry, so the field's Edit / Remove background rows can find the picture it now holds. A
+  // library pick places a record the registry already has, so it calls `place` directly.
+  const placeAndRefresh = useCallback(
+    (target: SiteImageTarget, url: string): boolean => {
+      const placed = latest.current.place(target, url);
+      if (placed) refresh();
+      return placed;
+    },
+    [refresh],
+  );
+
   const placeFile = useCallback(async (target: SiteImageTarget, file: File) => {
     const now = latest.current;
     if (!now.writable()) throw new Error("not writable");
@@ -144,8 +156,8 @@ export function useSiteImages({
       now.onError(SITE_IMAGE_NOT_SAVED);
       throw new Error(SITE_IMAGE_NOT_SAVED);
     }
-    if (!latest.current.place(target, url)) throw new Error("not placed");
-  }, []);
+    if (!placeAndRefresh(target, url)) throw new Error("not placed");
+  }, [placeAndRefresh]);
 
   const pick = useCallback((assetId: string) => {
     const now = latest.current;
@@ -168,10 +180,10 @@ export function useSiteImages({
     async (file: File) => {
       const target = latest.current.libraryTarget;
       if (!target) return;
+      // placeFile refreshes the registry once the upload is placed.
       await placeFile(target, file);
-      refresh();
     },
-    [placeFile, refresh],
+    [placeFile],
   );
 
   // A stable publisher rather than the raw setter, so the dependency-less effect below carries no
@@ -186,7 +198,7 @@ export function useSiteImages({
       edit: editSceneAsset,
       generate: generateSceneAsset,
       onError,
-      place,
+      place: placeAndRefresh,
       publish: publishAi,
       sourceAssetId: (url) => assetIdForUrl(latest.current.registry, url),
       writable,
