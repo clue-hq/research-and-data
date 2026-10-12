@@ -147,9 +147,11 @@ def document_failures(
     if kind is not None and actual != kind:
         return (
             PreconditionFailure(
-                reason_code=(
-                    "design_document_not_scene" if kind == "scene" else "design_document_not_web"
-                ),
+                reason_code={
+                    "scene": "design_document_not_scene",
+                    "web": "design_document_not_web",
+                    "site": "design_document_not_site",
+                }[kind],
                 message=(
                     f"document {document_id} is a {actual!r} document; this "
                     f"endpoint operates only on {kind} documents"
