@@ -7,6 +7,7 @@ import {
   type SlotValues,
   type TextReplacement,
 } from "./clone";
+import { CloneMarkup } from "./clone-markup";
 import { themeCss } from "./theme";
 import { makeSections } from "./sections";
 import { makeKit, type AgentSectionModule } from "./agent-kit";
@@ -211,17 +212,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           const html = fillClone(clone, resolvedSlots, replacements, resolvedLinks);
           const Editor = options.editor?.CloneEditor;
           if (puck?.isEditing && Editor) return <Editor itemId={id} clone={clone} html={html} />;
-          return (
-            <>
-              <style dangerouslySetInnerHTML={{ __html: clone.css }} />
-              <div
-                className={`lumen-fragment ${clone.wrapper_class}`}
-                data-lumen-fragment="true"
-                data-fragment-id={clone.id}
-                dangerouslySetInnerHTML={{ __html: html }}
-              />
-            </>
-          );
+          return <CloneMarkup clone={clone} html={html} />;
         },
       },
     },

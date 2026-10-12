@@ -91,6 +91,65 @@ def test_the_editor_renders_a_site_and_reports_selections(
     assert frame.locator(".brand-root > header[data-site-shell-selected]").count() == 1
 
 
+# The clones' state: their editable text slots, the canvas's scroll, the height of `stands`, and
+# whether the first clone still holds the DOM node recorded in `window.__cloneNode`.
+CLONE_STATE = """() => ({
+  editable: document.querySelectorAll('[data-lumen-fragment] [contenteditable="true"]').length,
+  sameNode: document.querySelector('[data-lumen-fragment] > *') === window.__cloneNode,
+  scroll: document.getElementById('root').scrollTop,
+  stands: document.querySelector('[data-puck-component="stands"]').getBoundingClientRect().height,
+})"""
+
+
+def test_an_edit_elsewhere_never_rebuilds_a_cloned_section(
+    app: Any, browser_page: Any, editor_origin: str
+) -> None:
+    page, _ = browser_page
+    app.init_payload = garner_init()
+    page.goto(app.origin + "/")
+    frame = editor_frame(page, editor_origin)
+    frame.get_by_text(PROOF).first.wait_for(timeout=20000)
+    # The cloned sections sit above `proof`: with `proof` in view, a clone that shrinks moves the
+    # canvas's scroll (scroll anchoring) as well as its own height.
+    frame.evaluate(
+        "document.querySelector('[data-puck-component=\"proof\"]')"
+        ".scrollIntoView({ block: 'center' })"
+    )
+    page.wait_for_timeout(1000)
+    frame.evaluate("window.__cloneNode = document.querySelector('[data-lumen-fragment] > *')")
+    before = frame.evaluate(CLONE_STATE)
+    assert before["editable"] > 0, "the clones' text slots are editable in place before the edit"
+    assert before["scroll"] > 0
+
+    # An inspector edit of `proof` (the app's `set_props`, with the section's full props). The new
+    # heading has the same length, so `proof` keeps its own height: the canvas is scrolled to its
+    # end, and a shorter `proof` would pull the scroll back by itself.
+    proof = next(
+        entry
+        for entry in app.init_payload["site"]["pages"]["/"]["content"]
+        if entry["props"]["id"] == "proof"
+    )
+    edited = PROOF.replace("changes.", "changes!")
+    props = {**proof["props"], "heading": edited}
+    page.evaluate(
+        "(props) => window.__send('set_props', { route: '/', componentId: 'proof', props })", props
+    )
+    frame.get_by_text(edited).first.wait_for(timeout=10000)
+    page.wait_for_timeout(500)
+
+    after = frame.evaluate(CLONE_STATE)
+    assert after["editable"] == before["editable"], (
+        f"the clones' in-place editable slots went {before['editable']} -> {after['editable']}"
+    )
+    assert abs(after["stands"] - before["stands"]) < 1, (
+        f"an edit of `proof` reflowed the section above it: {before['stands']} -> {after['stands']}"
+    )
+    assert abs(after["scroll"] - before["scroll"]) < 1, (
+        f"an edit of `proof` moved the canvas's scroll: {before['scroll']} -> {after['scroll']}"
+    )
+    assert after["sameNode"], "an edit of another section rebuilt a cloned section's DOM"
+
+
 def test_the_app_navigates_the_frame_and_the_frame_never_navigates_the_app(
     app: Any, browser_page: Any, editor_origin: str
 ) -> None:

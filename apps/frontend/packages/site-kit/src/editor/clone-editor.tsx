@@ -6,6 +6,7 @@
 import { useEffect, useRef } from "react";
 import { useGetPuck } from "@puckeditor/core";
 import type { Clone } from "../clone";
+import { CloneMarkup } from "../clone-markup";
 
 export function CloneEditor({ itemId, clone, html }: { itemId: string; clone: Clone; html: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -53,16 +54,7 @@ export function CloneEditor({ itemId, clone, html }: { itemId: string; clone: Cl
     return () => cleanups.forEach((cleanup) => cleanup());
   }, [html, clone, itemId, getPuck]);
 
-  return (
-    <>
-      <style dangerouslySetInnerHTML={{ __html: clone.css }} />
-      <div
-        ref={ref}
-        className={`lumen-fragment ${clone.wrapper_class}`}
-        data-lumen-fragment="true"
-        data-fragment-id={clone.id}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    </>
-  );
+  // The effect re-marks the slots whenever `html` changes, which is exactly when CloneMarkup
+  // rebuilds the markup; an unchanged clone keeps its DOM and its marks.
+  return <CloneMarkup clone={clone} html={html} ref={ref} />;
 }
