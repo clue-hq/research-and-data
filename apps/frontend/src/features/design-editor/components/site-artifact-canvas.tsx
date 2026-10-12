@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { SiteCanvasBinding } from "@/features/site-editor/model/site-stage";
 import type { VeilRenderKind } from "../adapter/generating-veil";
+import { addressKey } from "../engine/webBridge";
 import { CanvasEmptyState, CanvasErrorState, CanvasLoadingState } from "./canvas-states";
+import { WebAnnotationPopover } from "./web-annotation-popover";
 import styles from "./web-artifact-canvas.module.css";
 
 /**
@@ -22,7 +25,7 @@ export function SiteArtifactCanvas({
 }) {
   // Destructured first: `binding` carries the iframe ref, so react-hooks/refs flags every
   // `binding.*` read during render as a ref read ("Cannot access refs during render").
-  const { errorMessage, iframeRef, renderKind, src } = binding;
+  const { annotations, editing, errorMessage, iframeRef, renderKind, src } = binding;
   const reporting = onRenderKindChange !== undefined;
   const onRenderKindChangeRef = useRef(onRenderKindChange);
   useEffect(() => {
@@ -48,6 +51,22 @@ export function SiteArtifactCanvas({
       {renderKind === "loading" ? <CanvasLoadingState /> : null}
       {renderKind === "error" ? <CanvasErrorState message={errorMessage ?? ""} /> : null}
       {renderKind === "empty" ? <CanvasEmptyState /> : null}
+      {/* C7: the web lane's comment box, positioned from the iframe's rect plus the geometry the
+       * frame reported; portalled to <body> because `.artifactWorkspace` carries a transform. */}
+      {renderKind === "ready" && editing && annotations?.pending
+        ? createPortal(
+            <WebAnnotationPopover
+              iframeRef={iframeRef}
+              key={addressKey(annotations.pending.address)}
+              onAdd={(note) => annotations?.add(note)}
+              onDismiss={annotations.dismiss}
+              onEditNote={annotations.editNote}
+              onSend={annotations.onSend}
+              pending={annotations.pending}
+            />,
+            window.document.body,
+          )
+        : null}
     </>
   );
 }

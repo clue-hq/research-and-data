@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
-import { canonicalJson, componentProps, getAtPath, withAssetAt } from "@clue/site-kit/editor-site";
+import { canonicalJson, componentProps, getAtPath, pageFor, withAssetAt } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import type { PendingAnnotation } from "@/features/design-editor/adapter/annotations";
+import { useWebAnnotations, type WebAnnotationsSession } from "@/features/design-editor/hooks/use-web-annotations";
 import { httpSiteRepository, type SiteRepository } from "../data/site.repository";
+import { siteAnnotationAddress } from "../model/site-annotations";
 import { siteCanvasState } from "../model/site-canvas-state";
 import {
   acceptsFrameEdits,
@@ -15,7 +18,7 @@ import {
   siteFrameMode,
   siteInitKey,
 } from "../model/site-frame-sync";
-import { cloneLabelsOf, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
+import { cloneLabelsOf, componentLabel, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
 import {
   commitFieldEdit,
   siteInspectorTitle,
@@ -41,6 +44,7 @@ export interface AppSite {
 
 export interface SiteEditingSession {
   activeDocumentId: string | null;
+  annotations: WebAnnotationsSession;
   imageField: (path: string, value: string) => SiteImageFieldBinding | null;
   images: SiteImages;
   inspector: SiteInspectorBinding;
@@ -63,6 +67,7 @@ export function useSiteEditingSession({
   editing,
   enabled,
   locked,
+  onSendAnnotation,
   repository = DEFAULT_REPOSITORY,
   warm,
 }: {
@@ -71,6 +76,7 @@ export function useSiteEditingSession({
   editing: boolean;
   enabled: boolean;
   locked: boolean;
+  onSendAnnotation?: (note: string) => void;
   repository?: SiteRepository;
   warm: boolean;
 }): SiteEditingSession {
@@ -104,6 +110,7 @@ export function useSiteEditingSession({
   const mode = siteFrameMode({ editing, locked });
   const [selection, setSelection] = useState<SiteSelection | null>(null);
   const openLibraryRef = useRef<((target: SiteImageTarget) => void) | null>(null);
+  const annotateRef = useRef<((payload: { componentId: string; geometry: PendingAnnotation["geometry"]; route: string }) => void) | null>(null);
 
   const latest = useRef({ currentSite, editing, locked, save: saves.save });
   useEffect(() => {
@@ -152,8 +159,11 @@ export function useSiteEditingSession({
       case "request_asset":
         openLibraryRef.current?.({ componentId: message.payload.componentId, prop: message.payload.prop, target: message.payload.route });
         return;
+      case "annotate":
+        annotateRef.current?.(message.payload);
+        return;
       default:
-        // annotate / shortcut: Tasks 11-12 add their cases here.
+        // shortcut: Task 12 adds its case here.
         return;
     }
   }, []);
@@ -295,6 +305,33 @@ export function useSiteEditingSession({
       activeSelection ? images.field({ componentId: activeSelection.componentId, prop: path, target: activeSelection.target }, value) : null,
     [activeSelection, images],
   );
+  // C7: the web lane's annotations, one session per document, scoped by route.
+  const annotations = useWebAnnotations(activeDocumentId, route);
+  const openAnnotation = annotations.open;
+  useEffect(() => {
+    annotateRef.current = ({ componentId, geometry, route: target }) => {
+      if (!acceptsFrameEdits({ editing, locked }) || !currentSite) return;
+      const shellPart = target === "shell" ? componentId : null;
+      const item = shellPart ? null : pageFor(currentSite.site, target)?.content.find((entry) => entry.props.id === componentId);
+      const componentType = shellPart ? (shellPart === "header" ? "SiteHeader" : "SiteFooter") : (item?.type ?? "Section");
+      const name = shellPart
+        ? shellPart === "header" ? "Header" : "Footer"
+        : componentLabel(componentType, item?.props ?? {}, cloneLabels);
+      openAnnotation({ address: siteAnnotationAddress(target, componentId, componentType), geometry, name, textLike: false });
+    };
+  });
+  const canvasAnnotations = useMemo(
+    () => ({
+      add: (note?: string) => {
+        annotations.add(note);
+      },
+      dismiss: annotations.dismiss,
+      editNote: annotations.editNote,
+      onSend: onSendAnnotation,
+      pending: annotations.state.pending,
+    }),
+    [annotations, onSendAnnotation],
+  );
   const inspector: SiteInspectorBinding = {
     disabled: locked,
     error: saves.error,
@@ -323,6 +360,7 @@ export function useSiteEditingSession({
 
   return {
     activeDocumentId,
+    annotations,
     imageField,
     images,
     inspector,
@@ -335,7 +373,14 @@ export function useSiteEditingSession({
     setSite,
     site: currentSite?.site ?? null,
     stage: {
-      canvas: { errorMessage: canvas.message, iframeRef: frame.iframeRef, renderKind: canvas.kind, src: frame.src },
+      canvas: {
+        annotations: canvasAnnotations,
+        editing: acceptsFrameEdits({ editing, locked }),
+        errorMessage: canvas.message,
+        iframeRef: frame.iframeRef,
+        renderKind: canvas.kind,
+        src: frame.src,
+      },
       mounted: siteStageMounted({ editorOrigin: origin.origin, enabled, warm }),
     },
     version: currentSite?.version ?? null,

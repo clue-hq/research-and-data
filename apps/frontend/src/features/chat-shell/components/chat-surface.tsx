@@ -258,6 +258,8 @@ export function ChatSurface({
   // design leg a `design_node` ref means nothing, so rather than send a turn
   // that silently drops its annotations, the button is simply absent.
   const annotationLaneOpen = chat.designLegOpen && shell.artifactKind === "web";
+  // C7: the site lane opens the same annotation lane beside an open design leg.
+  const siteAnnotationLaneOpen = chat.designLegOpen && shell.artifactKind === "site";
   const sendAnnotationRef = useRef<((note: string) => void) | null>(null);
   const dispatchSendAnnotation = useCallback((note: string) => {
     sendAnnotationRef.current?.(note);
@@ -282,6 +284,7 @@ export function ChatSurface({
     editing: shell.editing,
     enabled: shell.artifactKind === "site",
     locked: siteLocked,
+    onSendAnnotation: siteAnnotationLaneOpen ? dispatchSendAnnotation : undefined,
     warm: feedArtifacts.some((artifact) => artifact.documentKind === "site") || chat.designLegOpen,
   });
   // Exactly one lane can be enabled, so this is the active document either
@@ -486,8 +489,16 @@ export function ChatSurface({
   // own document.
   const webAnnotationsEnabled =
     annotationLaneOpen && session.activeDocumentId !== null;
-  const annotationChipList = webAnnotationsEnabled
-    ? annotationChips(session.annotations.state.items)
+  const siteAnnotationsEnabled =
+    siteAnnotationLaneOpen && siteSession.activeDocumentId !== null;
+  // One annotation lane at a time: the open artifact's.
+  const activeAnnotations = webAnnotationsEnabled
+    ? { annotations: session.annotations, documentId: session.activeDocumentId, version: session.webSelection.document?.currentVersion ?? null }
+    : siteAnnotationsEnabled
+      ? { annotations: siteSession.annotations, documentId: siteSession.activeDocumentId, version: siteSession.saves.baseVersion ?? siteSession.version }
+      : null;
+  const annotationChipList = activeAnnotations
+    ? annotationChips(activeAnnotations.annotations.state.items)
     : [];
 
   // The clarification card (spec 2026-09-20 §2.5): a design document that
@@ -794,15 +805,14 @@ export function ChatSurface({
     }
     // Slice 2 (R-A2): the annotations, snapshotted for the same reason — the
     // turn owns the notes that were on screen when it was sent.
-    const annotationItems = webAnnotationsEnabled
-      ? [...session.annotations.state.items, ...(justAdded ? [justAdded] : [])]
+    const annotationItems = activeAnnotations
+      ? [...activeAnnotations.annotations.state.items, ...(justAdded ? [justAdded] : [])]
       : [];
     const annotationSnapshot =
-      webAnnotationsEnabled && session.activeDocumentId && annotationItems.length
+      activeAnnotations?.documentId && annotationItems.length
         ? {
-            documentId: session.activeDocumentId,
-            documentVersion:
-              session.webSelection.document?.currentVersion ?? null,
+            documentId: activeAnnotations.documentId,
+            documentVersion: activeAnnotations.version,
             items: annotationItems,
           }
         : null;
@@ -852,6 +862,7 @@ export function ChatSurface({
     // the canvas go together. Only on an ACCEPTED submit — a refused one leaves
     // the marketer their notes.
     session.annotations.clear();
+    siteSession.annotations.clear();
     controller.completeSubmissionContext(
       entityContextRefs.map((reference) => reference.objectId),
     );
@@ -863,7 +874,7 @@ export function ChatSurface({
   // popover's Send button already refuses), and the composer's own text rides
   // along — "Send to chat" is a send, not a second, separate channel.
   const sendAnnotation = (note: string) => {
-    const stored = session.annotations.add(note);
+    const stored = (activeAnnotations?.annotations ?? session.annotations).add(note);
     if (stored === null) return;
     void submitTurn(controller.prompt, controller.selectedEntityIds, stored).then(
       (accepted) => {
@@ -1063,7 +1074,7 @@ export function ChatSurface({
                       <button
                         aria-label={`Remove annotation ${chip.n}`}
                         className={styles.editTargetRemove}
-                        onClick={() => session.annotations.remove(chip.n)}
+                        onClick={() => activeAnnotations?.annotations.remove(chip.n)}
                         type="button"
                       >
                         ×
