@@ -1543,14 +1543,20 @@ fn glyph_ok(text: &str) -> bool {
     (1..=4).contains(&count) && !text.chars().any(|c| c.is_control() || "<>&\"'".contains(c))
 }
 
+/// An `on<letters>=` event attribute counts wherever HTML would start a new attribute: after
+/// whitespace, after a `/`, or straight after a quoted value — not only after a space.
 fn has_event_attribute(lower: &str) -> bool {
-    lower.match_indices(" on").any(|(index, _)| {
-        let rest = &lower[index + 3..];
+    let bytes = lower.as_bytes();
+    (1..bytes.len()).any(|index| {
+        if !b" \t\n\r\x0c/\"'".contains(&bytes[index - 1]) || !bytes[index..].starts_with(b"on") {
+            return false;
+        }
+        let rest = &bytes[index + 2..];
         let name = rest
-            .bytes()
+            .iter()
             .take_while(|byte| byte.is_ascii_alphabetic())
             .count();
-        name > 0 && rest[name..].trim_start().starts_with('=')
+        name > 0 && rest[name..].iter().find(|byte| !byte.is_ascii_whitespace()) == Some(&b'=')
     })
 }
 

@@ -119,6 +119,22 @@ fn each_unsafe_or_dangling_style_token_is_refused_by_its_code() {
             json!({"kind": "svg", "markup": "<svg><use href=\"#a\"></use></svg>", "width": 12.0, "height": 12.0}),
         ),
         (
+            "LUMB0265",
+            json!({"kind": "svg", "markup": "<svg/onload=x()></svg>", "width": 12.0, "height": 12.0}),
+        ),
+        (
+            "LUMB0265",
+            json!({"kind": "svg", "markup": "<svg\nonload=x()></svg>", "width": 12.0, "height": 12.0}),
+        ),
+        (
+            "LUMB0265",
+            json!({"kind": "svg", "markup": "<svg\tonload=x()></svg>", "width": 12.0, "height": 12.0}),
+        ),
+        (
+            "LUMB0265",
+            json!({"kind": "svg", "markup": "<svg a=\"1\"onload=\"x()\"></svg>", "width": 12.0, "height": 12.0}),
+        ),
+        (
             "LUMB0266",
             json!({"kind": "animation", "keyframes": "motion.keyframes.missing", "duration": "x",
             "easing": "y", "delay": null, "iterations": "1", "direction": "normal", "fill_mode": "none"}),

@@ -55,3 +55,16 @@ def test_the_engine_refuses_a_style_token_ingestion_would_never_mint() -> None:
     validation = CoreClient().validate_brand_kit(kit, product_ready=False, raise_on_error=False)
     errors = {d["code"] for d in validation["diagnostics"] if d["severity"] == "error"}
     assert "LUMB0260" in errors
+
+
+def test_the_engine_refuses_an_svg_event_handler_without_a_space() -> None:
+    kit = _kit()
+    kit["tokens"]["styles"]["button.solid-047464.case"]["value"]["default"] = {
+        "kind": "svg",
+        "markup": "<svg/onload=x()></svg>",
+        "width": 12.0,
+        "height": 12.0,
+    }
+    validation = CoreClient().validate_brand_kit(kit, product_ready=False, raise_on_error=False)
+    errors = {d["code"] for d in validation["diagnostics"] if d["severity"] == "error"}
+    assert "LUMB0265" in errors
