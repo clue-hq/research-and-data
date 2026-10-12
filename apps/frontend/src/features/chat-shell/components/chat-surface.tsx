@@ -1244,6 +1244,7 @@ export function ChatSurface({
             id: artifact.id,
             title: artifact.title,
             type: artifact.source?.type,
+            documentKind: artifact.source?.documentKind,
             document: artifact.document,
           });
           if (target.surface === "plan") {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DesignDocumentKindSchema } from "@/features/design-editor/model/artifact";
 
 export const ProjectRenameResponseSchema = z.object({
   data: z.object({ id: z.string().min(1), title: z.string().min(1).max(200) }),
@@ -134,6 +135,10 @@ export const ProjectArtifactSchema = z.object({
   // The design document behind a design artifact, and its current version — what a
   // composer tag of this artifact sends. Absent on table/presentation cards.
   documentId: z.string().min(1).optional(),
+  // The design document's own kind (Contract 8). Present on design artifacts so a
+  // card opens in the right editor; `type` stays the gallery vocabulary, where a
+  // site is a website. Absent on table/presentation cards and older sources.
+  documentKind: DesignDocumentKindSchema.optional(),
   editedLabel: z.string().min(1),
   id: z.string().min(1),
   // Design artifacts now carry a versioned BFF thumbnail URL, so this is

@@ -101,6 +101,7 @@ export function toProjectArtifact(
         : {}),
     createdAt: utcInstant(item.createdAt),
     documentId: item.documentId,
+    documentKind: item.kind,
     ...(version ? { version } : {}),
     editedLabel: editedLabelFor(item.updatedAt, now),
     id: item.id,

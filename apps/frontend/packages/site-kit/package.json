@@ -8,7 +8,11 @@
     "./editor": "./src/editor/index.ts",
     "./validate": "./src/validate.ts",
     "./catalog": "./src/catalog.ts",
-    "./check-section": "./src/check-section.ts"
+    "./check-section": "./src/check-section.ts",
+    "./site-document": "./src/site-document.ts",
+    "./editor-protocol": "./src/editor-protocol.ts",
+    "./editor-site": "./src/editor-site.ts",
+    "./editor-origin": "./src/editor-origin.ts"
   },
   "scripts": { "test": "tsx --test test/*.test.ts", "typecheck": "tsc --noEmit", "build": "node bin/build-bundles.mjs" },
   "dependencies": { "@puckeditor/core": "0.23.0", "node-html-parser": "^7.1.0", "zod": "^4.4.3" },
