@@ -10,13 +10,20 @@ reveals become named motion entries. Three rules, each enforced here:
   suits the slot wins (a fill prefers `surface.*`, a label `text.*`, a border `border.*`), then a
   token that was not minted, then the name. Identical values used by several styles of one component
   share one token when they fill the same kind of slot (hover fills across buttons, shadows,
-  durations); a minted token is never reused for another kind (a 2px outline offset is not a link's
-  underline thickness) or another component (a link's text is not a button's label), since its name
-  says what it is.
-* Stable names made by code from where the value was measured: `button.solid-047464.fill`,
-  `button.solid-047464.hover.fill`, `motion.button.solid-047464.duration-1`, `motion.keyframes.pulse`,
-  `motion.reveal.<digest>`. The same page yields the same names on every extraction; no model names
-  anything.
+  durations), named by its value rather than by any of those styles (next rule); a minted token is
+  never reused for another kind (a 2px outline offset is not a link's underline thickness) or another
+  component (a link's text is not a button's label), since its name says what it is.
+* Stable names made by code. A value one style uses is named from where it was measured:
+  `button.solid-047464.fill`, `button.solid-047464.hover.fill`, `motion.button.solid-047464.duration-1`.
+  A value two or more styles of one component use in one kind of slot is named by that component,
+  that kind and the value: `button.shared-035a4e.fill` (a colour's hex), `button.shared-ded46d.shadow`
+  and `motion.button.shared-b23804.duration` (any other value: six hex digits of the sha1 of its
+  canonical JSON). A first pass over every style finds those values and mints nothing
+  (`_shared_values`). Named after one of its styles, a shared value took the name of the style the page
+  uses most, so it was renamed whenever usage counts moved (founder ruling 2026-10-13); a shared name
+  now depends only on its component, kind and value. The page's own motion is `motion.keyframes.pulse`,
+  `motion.animation.pulse`, `motion.reveal.<digest>`. The same page yields the same names on every
+  extraction; no model names anything.
 * A per-kit cap. The web author's prompt lists every colour token of the kit
   (`web_theme_token_names`) and the brief agent reads every token row, so a kit's ~60-token
   vocabulary may grow by at most `MAX_MINTED_TOKENS` (and `MAX_MINTED_COLORS` colours); buttons are
@@ -232,9 +239,29 @@ def _same(group: str, a: Any, b: Any) -> bool:
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
+#: Per `(component, group, kind of slot)`, the values two or more styles of that component ask for.
+_SharedValues = dict[tuple[str, str, str], list[dict]]
+
+
+def _shared_path(path: str, group: str, value: dict) -> str:
+    """The neutral name of a shared value: `button.shared-035a4e.fill`, `motion.button.shared-b23804.duration`.
+
+    The key is a colour's hex (lower case, no `#`) or the first six hex digits of the sha1 of the
+    value's canonical JSON; it sits where the style slug sits in a per-style name, so `_component`
+    and `_slot_kind` read a shared name as they read any other.
+    """
+    if group == "colors":
+        key = str(value["value"]).lstrip("#").lower()
+    else:
+        key = hashlib.sha1(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:6]
+    prefix = f"{MOTION_ROOT}." if path.startswith(f"{MOTION_ROOT}.") else ""
+    return f"{prefix}{_component(path)}.shared-{key}.{_slot_kind(path)}"
+
+
 @dataclass
 class _Minter:
     kit: dict
+    shared: _SharedValues = field(default_factory=dict)
     minted: list[str] = field(default_factory=list)
     colors: int = 0
     dropped: list[str] = field(default_factory=list)
@@ -243,7 +270,8 @@ class _Minter:
         return self.kit.setdefault("tokens", {}).setdefault(group, {})
 
     def name(self, path: str, group: str, value: dict, *, pointer: str, slot: str = "", description: str | None = None) -> str | None:
-        """The token holding `value`: an existing exact match, a new token at `path`, or None (cap)."""
+        """The token holding `value`: an existing exact match, a new token at `path` (at its shared
+        name when several styles of this component ask for it), or None (cap)."""
         existing = self._exact(group, value, slot, path)
         if existing:
             return existing
@@ -251,6 +279,9 @@ class _Minter:
             self.dropped.append(path)
             return None
         entries = self.entries(group)
+        shared = self.shared.get((_component(path), group, _slot_kind(path)), ())
+        if any(_same(group, known, value) for known in shared):
+            path = _shared_path(path, group, value)
         name, suffix = path, 2
         while name in entries:
             name, suffix = f"{path}-{suffix}", suffix + 1
@@ -400,7 +431,7 @@ def _state_font(rest: StyleLook, state: StyleLook, fonts: dict[str, str]) -> dic
     return _font(rest.model_copy(update=changed), fonts) if changed else None
 
 
-def _mint_style(m: _Minter, style: MeasuredStyle, fonts: dict[str, str], page: str) -> dict:
+def _mint_style(m: _Minter | _Requests, style: MeasuredStyle, fonts: dict[str, str], page: str) -> dict:
     root = COMPONENT_ROOTS[style.surface]
     slug = style.variant.replace(".", "-")
     base, stem = f"{root}.{slug}", f"{MOTION_ROOT}.{root}.{slug}"
@@ -544,6 +575,33 @@ def _mint_reveal(m: _Minter, reveal: MeasuredReveal, page: str) -> str | None:
 
 
 @dataclass
+class _Requests:
+    """Pass one: what one style asks to mint, recorded instead of minted (`_mint_style` runs as is)."""
+
+    asked: list[tuple[str, str, dict]] = field(default_factory=list)
+
+    def name(self, path: str, group: str, value: dict, **_: Any) -> str:
+        self.asked.append((path, group, value))
+        return path
+
+
+def _shared_values(styles: list[MeasuredStyle], fonts: dict[str, str], page: str) -> _SharedValues:
+    """The values two or more distinct styles of one component ask for in slots of one kind."""
+    asked: dict[tuple[str, str, str], list[tuple[dict, set[int]]]] = {}
+    for index, style in enumerate(styles):
+        requests = _Requests()
+        _mint_style(requests, style, fonts, page)
+        for path, group, value in requests.asked:
+            bucket = asked.setdefault((_component(path), group, _slot_kind(path)), [])
+            users = next((users for known, users in bucket if _same(group, known, value)), None)
+            if users is None:
+                bucket.append((value, {index}))
+            else:
+                users.add(index)
+    return {key: [value for value, users in bucket if len(users) > 1] for key, bucket in asked.items()}
+
+
+@dataclass
 class MintResult:
     #: The `measured_components` payload (validated in `lumen_ingestion.measured_components`), or None.
     section: dict | None
@@ -562,8 +620,9 @@ def mint_component_tokens(kit: dict, styles: list[MeasuredStyle], motion: Motion
         for key, font in ((kit.get("assets") or {}).get("fonts") or {}).items()
         if isinstance(font, dict) and font.get("family")
     }
-    minter = _Minter(kit)
-    recipes = [_mint_style(minter, style, fonts, page) for style in styles if style.surface in COMPONENT_ROOTS]
+    components = [style for style in styles if style.surface in COMPONENT_ROOTS]
+    minter = _Minter(kit, shared=_shared_values(components, fonts, page))
+    recipes = [_mint_style(minter, style, fonts, page) for style in components]
     used: set[str] = set()
     animations = [
         name for animation in sorted(motion.animations, key=lambda a: a.name)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -65,11 +66,10 @@ def test_measured_values_become_tokens_named_for_where_they_were_measured() -> N
     assert solid["rest"]["fill"] == "surface.brand", "Garner's surface.brand holds exactly #047464"
     assert solid["rest"]["label"] == "text.inverse"
     assert solid["rest"]["radius"] == "radius.full", "a pill is 9999px, radius.full exactly"
-    # `.btn:hover` paints #035A4E on the `.lift` button too, measured first (buttons in capture order),
-    # so the one shared token is named where that button measured it.
+    # `.btn:hover` paints #035A4E on the `.lift` button too, so the one shared token is named by its
+    # value; its provenance is where it was measured first (buttons in capture order: `.lift`).
     lift = _recipe(kit, result, "button", "#28241E")
-    slug = lift["variant"].replace(".", "-")
-    hover_fill = f"button.{slug}.hover.fill"
+    hover_fill = "button.shared-035a4e.fill"
     assert solid["states"]["hover"]["fill"] == lift["states"]["hover"]["fill"] == hover_fill
     assert _value(kit, "colors", hover_fill) == {"kind": "hex", "value": "#035A4E"}
     entry = kit["tokens"]["colors"][hover_fill]
@@ -95,6 +95,70 @@ def test_measured_values_become_tokens_named_for_where_they_were_measured() -> N
     (reveal,) = result.section["motion"]["reveals"]
     assert reveal.startswith("motion.reveal.") and _value(kit, "styles", reveal)["kind"] == "reveal"
     assert result.section["motion"]["scripted"] == [{"kind": "scripted", "where": "div#spin.spin"}]
+
+
+def _digest(value: dict) -> str:
+    """The key of a shared non-colour value: sha1 of its canonical JSON, six hex digits."""
+    return hashlib.sha1(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:6]
+
+
+def test_a_value_several_styles_share_is_named_by_its_value() -> None:
+    """A value two buttons share is named after the value, never after whichever button the page
+    uses most (founder ruling 2026-10-13, option C)."""
+    kit, result = _mint()
+    solid = _recipe(kit, result, "button", "#047464")
+    lift = _recipe(kit, result, "button", "#28241E")
+    assert solid["states"]["hover"]["fill"] == lift["states"]["hover"]["fill"] == "button.shared-035a4e.fill"
+    assert _value(kit, "colors", "button.shared-035a4e.fill") == {"kind": "hex", "value": "#035A4E"}
+    shadows = {
+        recipe["states"]["hover"]["shadow-1"]
+        for recipe in result.section["styles"]
+        if recipe["component"] == "button" and "shadow-1" in recipe["states"].get("hover", {})
+    }
+    (shadow,) = shadows
+    assert re.fullmatch(r"button\.shared-[0-9a-f]{6}\.shadow", shadow), shadow
+    assert shadow == f"button.shared-{_digest(_value(kit, 'shadows', shadow))}.shadow"
+
+
+def test_a_value_one_style_uses_keeps_its_own_name() -> None:
+    kit, result = _mint()
+    solid = _recipe(kit, result, "button", "#047464")
+    assert solid["states"]["hover"]["icon-transform"] == "button.solid-047464.hover.icon-transform"
+    assert solid["icon"]["token"] == "button.solid-047464.icon"
+    # One style using a value in two slots of one kind still names it from where it measured it first.
+    js = _recipe(kit, result, "button", "#7C4CFF")
+    assert js["rest"]["padding-top"] == js["rest"]["padding-bottom"] == "button.solid-7c4cff.padding-top"
+
+
+def _button_styles_reversed(styles: list) -> list:
+    """The same styles with the buttons in reverse order and every other style where it was."""
+    buttons = iter(reversed([style for style in styles if style.surface == "button"]))
+    return [next(buttons) if style.surface == "button" else style for style in styles]
+
+
+def test_shared_names_do_not_depend_on_style_order() -> None:
+    """A re-extraction whose usage counts move reorders the buttons; no name may move with them."""
+    parsed = parse_geometry(HARVEST, page_url="https://fixture.test/")
+    motion = attach_keyframes(parsed.motion, [Stylesheet(url="https://fixture.test/", text=CSS)])
+    reordered = _button_styles_reversed(parsed.styles)
+    assert [s.variant for s in reordered] != [s.variant for s in parsed.styles]
+    first_kit, second_kit = _kit(), _kit()
+    first = mint_component_tokens(first_kit, parsed.styles, motion)
+    second = mint_component_tokens(second_kit, reordered, motion)
+
+    def by_style(result) -> dict:
+        return {(r["component"], r["variant"]): r for r in result.section["styles"]}
+
+    assert by_style(first) == by_style(second)
+
+    def minted(kit: dict, result) -> dict:
+        return {
+            name: entries[name]["value"]["default"]
+            for entries in kit["tokens"].values() for name in result.minted if name in entries
+        }
+
+    assert set(first.minted) == set(second.minted)
+    assert minted(first_kit, first) == minted(second_kit, second)
 
 
 def test_identical_values_share_one_token() -> None:
