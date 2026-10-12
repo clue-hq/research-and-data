@@ -10,9 +10,13 @@ objects through the protocols in `lumen_agent/site/inputs.py`:
 
 from __future__ import annotations
 
+import base64
+import copy
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-__all__ = ["PlatformSiteRenderer", "SiteRenderPortError"]
+__all__ = ["DurableSiteAssetPort", "PlatformSiteRenderer", "SiteAssetError", "SiteRenderPortError"]
 
 
 class SiteRenderPortError(RuntimeError):
@@ -60,3 +64,67 @@ class PlatformSiteRenderer:
             html, _missing = inline_asset_store_refs(html, self.read_blob, cache=self._inlined)
             css, _missing = inline_asset_store_refs(css, self.read_blob, cache=self._inlined)
         return site_render.capture_site_screenshot(site_render.RenderedPage(route="/", html=html), css, width=width, full_page=True)
+
+
+class SiteAssetError(RuntimeError):
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+
+class DurableSiteAssetPort:
+    """SiteAssetPort over this workspace's design blobs and its asset library."""
+
+    def __init__(self, *, blobs: Any, cache_dir: Any, core: Any, invocations: Any, run_id: str) -> None:
+        self.blobs = blobs
+        self.cache_dir = Path(cache_dir)
+        self.core = core
+        self.invocations = invocations
+        self.run_id = run_id
+
+    def read(self, digest: str) -> tuple[str, bytes]:
+        return self.blobs.read_blob(digest)
+
+    def exists(self, digest: str) -> bool:
+        from .design_store import CustodyState
+
+        return self.blobs.custody_states([digest]).get(digest) is CustodyState.READABLE
+
+    def register_generated(
+        self, *, image_bytes: bytes, mime_type: str, prompt: str, model: str | None,
+        license: dict | None, provenance: dict,
+    ) -> dict:
+        """Ingest, give durable custody, and register an AI-generated library asset (the web lane's
+        `_generate_image_record` source shape, and the account-logo binder's custody discipline)."""
+
+        from clue_design.storage import SOURCE_KEY_ASSET
+
+        from .asset_custody import register_engine_write
+
+        asset_id = f"asset_gen_{uuid4().hex}"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        ingest = self.core.ingest_asset(
+            store_root=str(self.cache_dir),
+            bytes_base64=base64.b64encode(image_bytes).decode("ascii"),
+            asset_id=asset_id,
+            label=prompt[:200],
+            declared_mime_type=mime_type,
+            kind="raster_image",
+            license=license,
+            provenance=provenance,
+            source={"kind": "generated", "request_id": asset_id, "model": model},
+            raise_on_error=False,
+        )
+        if not ingest.get("ok"):
+            raise SiteAssetError("site_asset.ingest_failed", str((ingest.get("error") or {}).get("message") or "unknown"))
+        record = copy.deepcopy((ingest.get("asset") or {}).get("record") or {})
+        register_engine_write(self.blobs, self.cache_dir, source_key=SOURCE_KEY_ASSET, record=record)
+        digest = str(((record.get("media") or {}).get("digest") or {}).get("value") or "")
+        if not digest or not self.exists(digest):
+            raise SiteAssetError("site_asset.bytes_unavailable", f"no durable bytes for {asset_id}")
+        self.invocations.invoke(
+            "design_register_asset_record", {"record": record},
+            workspace_id=self.blobs.workspace_id, actor="agent", actor_id=self.run_id,
+        )
+        return {"asset_id": str(record.get("id") or asset_id), "digest": digest, "file": f"/asset-store/{digest}"}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import sys
 from dataclasses import dataclass, field
 from types import ModuleType
@@ -9,8 +11,11 @@ from types import ModuleType
 import pytest
 
 import lumen_api
+from conftest import make_blob_store
 from lumen_agent.site.inputs import SiteSection
-from lumen_api.site_turn_ports import PlatformSiteRenderer, SiteRenderPortError
+from lumen_api.asset_custody import write_cache_blob
+from lumen_api.main import create_app
+from lumen_api.site_turn_ports import DurableSiteAssetPort, PlatformSiteRenderer, SiteAssetError, SiteRenderPortError
 
 
 @dataclass
@@ -86,3 +91,70 @@ def test_a_route_the_renderer_did_not_return_is_a_typed_refusal(monkeypatch: pyt
     with pytest.raises(SiteRenderPortError) as refused:
         PlatformSiteRenderer().render({}, {}, [], route="/")
     assert refused.value.code == "render.failed"
+
+
+class FakeCore:
+    """The engine's ingest, minus the engine: writes the cache blob and returns a record."""
+
+    def __init__(self, ok: bool = True) -> None:
+        self.ok = ok
+
+    def ingest_asset(self, *, store_root, bytes_base64, asset_id, label, declared_mime_type, kind, license,
+                     provenance, source, raise_on_error):
+        if not self.ok:
+            return {"ok": False, "error": {"message": "not an image"}}
+        data = base64.b64decode(bytes_base64)
+        digest = hashlib.sha256(data).hexdigest()
+        write_cache_blob(store_root, digest, data)
+        return {"ok": True, "asset": {"record": {
+            "id": asset_id, "kind": kind, "label": label, "status": "ready", "source": source, "provenance": provenance,
+            "media": {"mime_type": declared_mime_type, "digest": {"algorithm": "sha256", "value": digest},
+                      "location": {"provider": "local-store", "opaque_ref": f"sha256/{digest[:2]}/{digest}"}}}}}
+
+
+class RecordingInvocations:
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    def invoke(self, name, body, *, workspace_id, actor, actor_id=None):
+        self.calls.append((name, body, workspace_id, actor, actor_id))
+
+
+def test_a_generated_image_becomes_durable_bytes_and_an_ai_generated_library_row(tmp_path, design_storage) -> None:
+    blobs = make_blob_store(create_app(tmp_path / "engine-cache", storage=design_storage))
+    invocations = RecordingInvocations()
+    port = DurableSiteAssetPort(blobs=blobs, cache_dir=tmp_path / "cache", core=FakeCore(),
+                                invocations=invocations, run_id="run_site_1")
+    image = b"\x89PNG\r\n\x1a\nfake image"
+    stored = port.register_generated(image_bytes=image, mime_type="image/png", prompt="A calm classroom",
+                                     model="m", license=None, provenance={"source": "test"})
+    digest = hashlib.sha256(image).hexdigest()
+    assert stored["digest"] == digest and stored["file"] == f"/asset-store/{digest}"
+    assert stored["asset_id"].startswith("asset_gen_")
+    assert port.read(digest) == ("image/png", image) and port.exists(digest) and not port.exists("0" * 64)
+    [(name, body, workspace_id, actor, actor_id)] = invocations.calls
+    assert (name, workspace_id, actor, actor_id) == ("design_register_asset_record", blobs.workspace_id, "agent", "run_site_1")
+    assert body["record"]["source"]["kind"] == "generated" and body["record"]["label"] == "A calm classroom"
+    assert body["record"]["media"]["location"]["provider"] == "clue-storage"
+
+
+def test_an_image_the_engine_refuses_is_a_typed_error(tmp_path, design_storage) -> None:
+    blobs = make_blob_store(create_app(tmp_path / "engine-cache", storage=design_storage))
+    port = DurableSiteAssetPort(blobs=blobs, cache_dir=tmp_path / "cache", core=FakeCore(ok=False),
+                                invocations=RecordingInvocations(), run_id="run_site_1")
+    with pytest.raises(SiteAssetError) as refused:
+        port.register_generated(image_bytes=b"x", mime_type="image/png", prompt="p", model=None, license=None, provenance={})
+    assert refused.value.code == "site_asset.ingest_failed"
+
+
+def test_reading_a_digest_the_workspace_lacks_is_not_found(tmp_path, design_storage) -> None:
+    """The renderer's image inlining leaves a NotFoundError digest broken; any other error would
+    fail the whole render (Task 9's PlatformSiteRenderer reads blobs through this port)."""
+
+    from lumen_api.database import NotFoundError
+
+    blobs = make_blob_store(create_app(tmp_path / "engine-cache", storage=design_storage))
+    port = DurableSiteAssetPort(blobs=blobs, cache_dir=tmp_path / "cache", core=FakeCore(),
+                                invocations=RecordingInvocations(), run_id="run_site_1")
+    with pytest.raises(NotFoundError):
+        port.read("0" * 64)

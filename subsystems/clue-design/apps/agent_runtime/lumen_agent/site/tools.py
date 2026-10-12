@@ -41,6 +41,10 @@ LOOP_GUARD_AT = 3
 #: cut into pieces of at most TILE_PX tall so a model never shrinks a tall page into a sliver.
 SCALE_BY_WIDTH = {1440: 0.5, 375: 1.0}
 TILE_PX = 1600
+STYLE_REFERENCES_MAX = 3
+REFERENCE_PX = 1024
+#: Kinds that are not the brand's own photos: never a style reference.
+_NOT_REFERENCES = frozenset({"generated_image", "account_logo"})
 _SOURCES = re.compile(r'\bsrc="([^"]*)"|url\(\s*[\'"]?([^\'")\s]+)[\'"]?\s*\)')
 _ASSET_FILE = re.compile(r"^/asset-store/([0-9a-f]{64})$")
 
@@ -392,6 +396,80 @@ class SiteTools:
             })
         self._record("search_assets", query=q, count=len(answer.get("results") or []))
         return json.dumps(answer)
+
+    def _reference(self, file: str) -> tuple[bytes, str] | str:
+        """One brand image as a PNG reference for the image model, or the reason it cannot be one."""
+
+        import io
+
+        from PIL import Image
+
+        asset = self._asset_by_file().get(file)
+        digest = digest_of_file(file)
+        if asset is None or digest is None or asset.get("kind") in _NOT_REFERENCES or self.inputs.assets is None:
+            return f"{file}: not one of this brand's images; use a file from brand/brand.md"
+        try:
+            mime, data = self.inputs.assets.read(digest)
+        except Exception as error:  # an unreadable file is an answer, not a crash
+            return f"{file}: could not be opened ({error})"
+        if "svg" in (mime or "") or (mime or "").startswith("video/"):
+            return f"{file}: a style reference must be a photo or picture, not a logo file or a video"
+        try:
+            image = Image.open(io.BytesIO(data))
+            image.thumbnail((REFERENCE_PX, REFERENCE_PX))
+            buffer = io.BytesIO()
+            image.convert("RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB").save(buffer, format="PNG")
+        except Exception as error:  # an unreadable file is an answer, not a crash
+            return f"{file}: could not be opened ({error})"
+        return buffer.getvalue(), "image/png"
+
+    def generate_image(
+        self, prompt: str, aspect_ratio: str = "16:9", style_references: list[str] | None = None
+    ) -> list[dict] | str:
+        """Make a new image for this site, in the brand's style (see the images-and-logos skill)."""
+
+        from lumen_agent.tools.view import _image_bytes_block
+
+        references = list(style_references or [])
+        if len(references) > STYLE_REFERENCES_MAX:
+            return f"Give at most three style references (you gave {len(references)})."
+        prepared: list[tuple[bytes, str]] = []
+        for file in references:
+            reference = self._reference(file)
+            if isinstance(reference, str):
+                return reference
+            prepared.append(reference)
+        generate = self.inputs.image_generate
+        if generate is None:
+            from lumen_api.image_provider import generate  # the platform's image provider, spend-scoped
+        try:
+            result = generate(prompt=prompt, aspect_ratio=aspect_ratio, reference_images=prepared or None)
+        except Exception as error:  # the provider failing is an answer, not a crash
+            self._record("generate_image", ok=False, error=str(error)[:200])
+            return (f"The image model could not make the image ({str(error)[:200]}). Try once more with a shorter "
+                    "prompt, or choose a section without an image.")
+        try:
+            stored = self.inputs.assets.register_generated(
+                image_bytes=result.image_bytes, mime_type=result.mime_type, prompt=prompt,
+                model=getattr(result, "model", None), license=getattr(result, "license", None),
+                provenance=dict(getattr(result, "provenance", None) or {}),
+            )
+        except Exception as error:  # noqa: BLE001 - storage failing is an answer, not a crash
+            self._record("generate_image", ok=False, error=str(error)[:200])
+            return (f"The image was made but could not be saved ({str(error)[:200]}). Try once more, or choose a "
+                    "section without an image.")
+        file = stored["file"]
+        self.brand.setdefault("assets", {})[stored["asset_id"]] = {
+            "kind": "generated_image", "label": prompt[:80], "description": f"generated: {prompt}",
+            "mime": result.mime_type, "file": file, "logo": None,
+        }
+        self._record("generate_image", ok=True, file=file, model=getattr(result, "model", None))
+        size = f"{result.width}x{result.height}" if result.width and result.height else "size unknown"
+        return [
+            {"type": "text", "text": f"{file} ({size}). Look at it before you use it: put this path in an image "
+             "slot or image prop, or leave it out if it breaks the images-and-logos rules."},
+            _image_bytes_block(result.image_bytes, max_px=VIEW_ASSET_PX),
+        ]
 
     # --- research ------------------------------------------------------------------------------
 
