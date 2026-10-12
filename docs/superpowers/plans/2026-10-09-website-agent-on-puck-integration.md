@@ -212,11 +212,18 @@ first, with the founder's sign-off where it is product-facing.
 - **R4 is dropped** (founder). The week-6 regression run adds: each page is at least as good as its
   spike version, plus a founder look beside the platform pages already on record.
 - **R2 (on-demand rebuild during edits) → Lane B; R5 (rich text with our inline menu) → Lane C.**
-- **Brand fidelity is split:** site-kit's kit, theme and `brand.md` (all 12 type roles marked
-  measured or derived, `contain` image fit, a second button style, `kit.Link`, extra and band
-  surfaces, the kit's own rules) → Lane A; turning the stored kit into `BrandData` → Lane B. There
-  is no production "measured" button: button styles come from the kit's tokens, `brief.constraints`
-  and `brief.component_recipes`.
+- **Brand fidelity is split:** site-kit's kit, theme and `brand.md` → Lane A; turning the stored kit
+  into `BrandData` → Lane B (the kit passed whole). **Superseded 2026-10-12 by the founder's brand
+  rulings** (plan `2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`, replacing Lane A Tasks 4, 5, 7):
+  the extraction measures every button, link, card and nav style in rest, hover, pressed, focus and
+  disabled, with its motion, and code mints every measured value as a token of that brand's kit
+  (exact-match reuse, names keyed by the measured look, section backgrounds as `surface.band.<hex>`);
+  a code-owned `measured_components` kit section names them per style; site-kit draws buttons and
+  every other component from those measured tokens first, then the kit's other tokens, and a named
+  fallback only where the kit has neither — no style value lives in site-kit's components. The agent
+  chooses a button style by name (`look`, `buttonLook`, `ctaLook`); our sections offer the brand's own
+  surfaces; the Brand page shows the new values; existing kits gain them only when the founder asks
+  for a re-extraction.
 - **B4 is wiring only:** the hybrid image search arrived with the scene-ad merge (`deb3a0e98`).
 - **Editor layout:** canvas in the frame, fields and Layers in the app (see D2).
 - **Pages UI (founder 2026-10-11, the Ploy reference):** for sites, the stage's top bar gets a
@@ -414,6 +421,39 @@ mapper starts sending it**; until both land, no workspace is in the flag.
   registrable domains.
 
 ---
+
+## Execution order across the plan files (founder: subagent-driven, 2026-10-12)
+
+Four plan files, executed one task at a time in one branch (each file keeps its own SDD ledger):
+**A** = `2026-10-11-lane-a-site-backend-and-publishing.md`, **A9** =
+`2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`, **B** = `2026-10-11-lane-b-site-agent-on-platform.md`,
+**C** = `2026-10-11-lane-c-site-editor.md`. The order follows the cross-lane dependencies; inside a
+block, tasks run in their file's order.
+
+1. **C Tasks 1–2** (the frontend build fix; `site` accepted on the wire) — Contract 8: before A's mapper.
+2. **A Tasks 1–3** (site-kit catch-up), then **A9 Tasks X1–X6** (extraction: engine `styles` group,
+   state and motion probe, evidence, minting, `measured_components`, the Brand page), then **A9 Task 4,
+   A9 Task 5, A Task 6, A9 Task 6b, A9 Task 7** (site-kit drawn from measured tokens; validator;
+   `brand.md`). A's Tasks 4, 5 and 7 are stubs pointing here.
+3. **B Tasks 0–2** (text review record, cited-claims read, section table) — independent of A; can run
+   any time after step 1.
+4. **A Tasks 8–14** (kind branches — Task 10's mapper only after C Task 2 —, site inputs, governed
+   tools, site routes incl. the brand read, composer targets).
+5. **B Tasks 3–8** (Node runner, agent package, workspace, tools, harness, BrandData builder — fills
+   A's brand seam).
+6. **A Tasks 15–17** (render bundle, cleaner, hardened renderer), then **A9 Task 16b**.
+7. **B Tasks 9–13a** (render tool, images, search, executor, platform side incl. the selection
+   targets), then **B Tasks 14–17** (profile `design@v5`, sections, section links, cost proofs).
+8. **C Tasks 3–14** (repository, protocol, editor app and frame host, dock, images, annotations, lock,
+   versions, pages UI) — C Tasks 3–8 can start after step 4; live use needs B Task 8 (brand) and
+   B Task 16 (section links); C Task 9 Step 7b needs A9 Task 5.
+9. **A Tasks 18–22** (thumbnails, publishing, export), then **A Tasks 23–25** (pages-domain move).
+10. **B Task 18** (rebuild a seller's section; its live check spends money and needs the founder's
+    go), **C Tasks 15–16** (editor domain in the dev stack and on Railway; the R5 rich-text spike),
+    then the close-outs (A's last section, B Task 19, C Task 18). C Task 17 stays blocked on designs.
+
+A task whose plan text says another lane's task must have landed checks it first (each such task names
+the grep); a missing dependency stops that task, not the run.
 
 ## Waves and lanes
 

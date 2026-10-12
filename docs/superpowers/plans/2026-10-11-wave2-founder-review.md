@@ -590,3 +590,10 @@ model's own recipe slots and notes use the exact tokens):
   designed. (Lane C Task 13 as written.)
 - 2026-10-12 — **Q17:** (a) subagent-driven execution: a fresh Opus implementer per task, the
   controller reviews each task personally, then one whole-branch review.
+- 2026-10-12 — **Remaining items, approved:** the founder ruled "write and complete the plan now; I
+  have cleared enough doubts", so the items still open in this sheet are recorded as approved as
+  shown: **R6** (no model can save, undo, redo or publish a site), **Lane A Task 1** refusals (ported
+  from the spike), **Lane A Task 6** three refusals, **Lane B T1–T15** (all rows), **Lane B Task 14**
+  design profile bump (`design@v5`), and **Part 3 DR1–DR7**. Lane A Task 7's brand.md template is
+  superseded by T-A9-1 (approved). Pending only: T-A9-8 (the Brand page's new headings and labels)
+  and the Brand page's design review points, which come with the A9 plan update.

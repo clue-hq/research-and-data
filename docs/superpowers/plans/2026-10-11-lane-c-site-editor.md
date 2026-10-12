@@ -73,6 +73,10 @@ assumed here:
 
 ## Design review points
 
+**Status (2026-10-12): approved by the founder** (DR5 explicitly; the rest as shown in the review
+sheet, Part 3, with the ruling "I have cleared enough doubts"). Each stays marked `DESIGN REVIEW` in
+its code comment so a later design pass can find it.
+
 Built from existing chat-shell styles and primitives; where no existing style fits, the plan uses the closest existing tokens and records the point here instead of inventing a look. Each is marked `DESIGN REVIEW` in the code comment that implements it.
 
 - **DR1** The Pages toggle's placement: first item of the header's action group (Ploy puts it at the far left of the toolbar). Uses `.artifactActionButton` + `.artifactActionButtonActive` and lucide `FilesIcon`.
@@ -7154,6 +7158,30 @@ replace `const inspectorVisible = webInspectorVisible || adInspectorVisible;` wi
       ) : null}
 ```
 
+- [ ] **Step 7b: The brand's own choices reach the dock (founder Q3/Q4; the A9 rewrite).** Needs the
+A9 rewrite's Task 5 landed (site-kit's sections carry `buttonLook` and the brand's surfaces; plan
+`docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`). No dock code changes: the
+frame's `describeFields` already turns a Puck `select`'s options into `FieldDescription.options`, and
+the dock draws a select with the existing control. Append to
+`apps/frontend/packages/site-editor/test/fields.test.ts`:
+
+```ts
+test("the button style and surface choices come from this brand", () => {
+  const fields = byName(fieldsForComponent(config, brand, "FeatureSplit", { id: "what" }));
+  assert.equal(fields.buttonLook.kind, "select");
+  assert.deepEqual(fields.buttonLook.options?.[0], { label: "Standard", value: "" });
+  const looks = fields.buttonLook.options!.slice(1);
+  assert.ok(looks.length > 0, "Garner's kit records button styles");
+  // The marketer sees words ("Outline", "Text only", "Filled 2"), never a variant or token name.
+  assert.ok(looks.every((option) => option.label.length > 0 && !option.label.includes(".")), JSON.stringify(looks));
+  const surfaces = fields.surface.options!.map((option) => option.value);
+  assert.deepEqual(surfaces.slice(0, 6), ["page", "card", "muted", "brandSubtle", "brand", "inverse"]);
+  assert.ok(surfaces.length > 6 && surfaces.includes("canvas"), "the brand's own surfaces follow the six");
+});
+```
+Run: `cd apps/frontend && npx tsx --test packages/site-editor/test/fields.test.ts`
+Expected: PASS once the A9 rewrite's Task 5 has landed (before it, FAIL on `fields.buttonLook`).
+
 - [ ] **Step 8: Run the suite and the gate.**
 
 Run: `cd apps/frontend && npm test 2>&1 | tail -6 && npm run design-system:build && npm run lint && npm run build`
@@ -7161,7 +7189,7 @@ Expected: `# fail 0`; all three gate commands exit 0.
 
 - [ ] **Step 9: Commit.**
 ```bash
-git add apps/frontend/src/features/site-editor apps/frontend/src/features/chat-shell/components
+git add apps/frontend/src/features/site-editor apps/frontend/src/features/chat-shell/components apps/frontend/packages/site-editor/test/fields.test.ts
 git commit -m "site editor: fields and Layers in the app's dock — FieldDescriptions drawn with the inspector primitives, set_props back to the frame, one save per commit"
 ```
 

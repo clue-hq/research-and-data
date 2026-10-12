@@ -166,7 +166,7 @@ Tasks 1–3 (A0), 4–7 (A9 brand fidelity), 8–10 (A1 kind branches), 11–13 
 | From | Name and shape Lane B uses | Used in |
 |---|---|---|
 | Lane A Task 3 | `apps/frontend/packages/site-kit/dist/validate-site.mjs` (stdin `{"files": {"pages": {route: page or text}, "shell": shell or text or null}, "brand": BrandData, "agentSectionSchemas": {"<Name>": <JSON Schema>}, "images": {"siteImages": [...], "accountLogos": [...]}}` → `{"valid", "errors"}`) and `dist/build-catalog.mjs` (stdin `{"brand", "seller"}` → `{relativePath: markdown}`), built by `npm run build -w @clue/site-kit` | Tasks 3, 6, 8 |
-| Lane A Task 4 | site-kit `src/theme.ts`: `tailwindThemeCss(brand)`, `extraSurfaceRoles(brand)` | Task 15 |
+| Lane A A9 rewrite (`2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`) Tasks 4 and 6b | site-kit `src/theme.ts`: `tailwindThemeCss(brand)`; `src/check-section.ts`: `lintOptionsFor(brand)` | Task 15 |
 | Lane A Task 6 | site-kit `src/check-section.ts`: `lint(source, { extraSurfaces })` (banned names, links, brand colour classes) and `typeCheck(file)` | Task 15 |
 | Lane A Task 11 | `lumen_api/site_doc_validate.py`: `run_site_validator(site, brand, *, section_schemas, site_images, node_bin="node") -> list[str]`, `SiteValidatorUnavailable`, `VALIDATOR_TIMEOUT_S`; `lumen_api/site_render.py` (first half): `site_kit_dist()`, `SectionModule(name, digest, module_js, css, props_schema)`, `SiteRenderError(code, message)`, `SECTION_MODULE_MISSING`, `pinned_modules`; `lumen_api/site_doc_inputs.py`: `load_section_modules`, `brand_loader_not_composed`, `sections_not_stored`; test helper `site_kit_support.ensure_site_kit_dist()` | Tasks 3, 12, 15 |
 | Lane A Task 12 | governed `design_write_site@1`, input `{"document_id", "site", "intent", "checkpoint_label", "actor_kind", "source", "expected_base_version"}`; raises `WebDocumentVersionConflict(expected, current)` on CAS loss and `SiteDocumentInvalid(errors)` on a contract refusal; `HybridRepository.update_site_document(...)`; the seams `app.state.site_brand_loader` / `app.state.site_section_loader` and `design_tool_host(..., site_brand_loader=, site_section_loader=)` that Lane B fills | Tasks 12, 15 |
@@ -351,11 +351,16 @@ No code. The prompt and skills are carried verbatim first (Task 4); these are th
 changes Lane B proposes, each needed because production differs from the spike. Each implementing
 task repeats its text and has a "confirm approved" step.
 
+**Status (2026-10-12): every row is APPROVED.** T3, T6e, T16a, T16b and T-A9-5 were approved
+explicitly; the founder approved the rest as shown in the review sheet
+(`docs/superpowers/plans/2026-10-11-wave2-founder-review.md`, Part 2) by ruling "I have cleared enough
+doubts" when asking for the plan to be completed. Steps 1 and 2 are done; Step 3 still records it.
+
 **Files:** none (the founder's answers are recorded in `_memory/` in Step 3).
 
 **Interfaces:** Produces the approved texts T1–T15 used by Tasks 4, 6, 7, 8, 9, 10, 11, 12, 13a, 15.
 
-- [ ] **Step 1: Show the founder this table, exactly as written, and ask for approval or edits.**
+- [x] **Step 1: Show the founder this table, exactly as written, and ask for approval or edits (DONE 2026-10-12).**
 
 | # | Where | Today (spike, verbatim) | Proposed |
 |---|---|---|---|
@@ -389,13 +394,14 @@ task repeats its text and has a "confirm approved" step.
 | T14 | FYI, no wording | — | The platform's compaction adds deepagents' `compact_conversation` tool to the agent's tools (as on the scene agent). Its description is deepagents' own. |
 | T16a | `render_page` result facts line (open question 1, answer (b)) | "1440 wide: page height …px, broken images: N, horizontal overflow: no, console errors: N (…). Shown at …" | **Approved 2026-10-12:** "1440 wide: page height 3120px, broken images: 0, horizontal overflow: no. Shown at half size in 4 parts, top to bottom." (the console clause removed) |
 | T16b | `skills/page-review/SKILL.md`, first paragraph | "`render_page` gives you two pictures: desktop (1440 wide) and mobile (375 wide), with facts about broken images, overflow and console errors. Look at them as the reader would, then go through this list." | **Approved 2026-10-12:** "`render_page` gives you two pictures: desktop (1440 wide) and mobile (375 wide), with facts about broken images and overflow. Look at them as the reader would, then go through this list." |
+| T-A9-5 | `skills-e5/writing-a-section/SKILL.md` (the A9 rewrite's text, carried here by Task 4) | the spike's kit list and `surface: z.enum([...six])` example | **Approved 2026-10-12** — exactly the wording in `docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`, section T-A9-5 (the kit list with `look`, `kit.Link`, `kit.Card`, motion classes; `surface: z.string()`; the spacing bullet). Task 4 copies the spike's skill verbatim, then applies T-A9-5 as one edit with a dated SKILLS-CHANGELOG entry. |
 | T15 | the agent's message for a request where the person pointed at parts of the site (Task 13a), appended after their words | (none) | ``The person also pointed at parts of the site:`` / one line per part, in their order: ``- Page /analysis, the section with id "analysis-hero", its "title" field. Their note: "1. Make it warmer."`` (the header or footer reads ``- The header.`` / ``- The footer, its "ctaLabel" field.``; no note reads `` (No note.)``) / ``Work through these in the order listed. Change only these parts, unless their message asks for more. If a part is no longer on the site, say so in your report and use your judgement. In your report, say what you did for each part, or why you did not.`` |
 
 Code-written files whose only change is a path (`brand/brand.md`'s account-logo section now lists
 `/asset-store/<sha256>` instead of `/accounts/<site>/…`; `generate_image` returns
 `/asset-store/<sha256>` instead of `/generated/<site>/…`) are not wording changes.
 
-- [ ] **Step 2: Wait for the founder's answer.** Do not start Task 4 Step 6, Task 6 Step 3 or any
+- [x] **Step 2: Wait for the founder's answer (DONE 2026-10-12: all approved).** Do not start Task 4 Step 6, Task 6 Step 3 or any
   step marked "approved text" until the founder has approved or edited each row. A row the founder
   edits is implemented with the founder's words, not the table's.
 
@@ -1492,7 +1498,6 @@ FIXTURES = SITE_KIT_DIR / "test" / "fixtures"
 def _brand() -> dict:
     return {
         "slug": "garner",
-        "measured": None,
         "kit": json.loads((FIXTURES / "kit.json").read_text()),
         "fonts": [],
         "assets": {},
@@ -2020,7 +2025,7 @@ class SiteTurnInputs:
 Run: RT `test_site_package.py`
 Expected: PASS.
 
-- [ ] **Step 7: Apply the founder-approved prompt and skill changes (T1, T2a–c, T3, T4, T5).**
+- [ ] **Step 7: Apply the founder-approved prompt and skill changes (T1, T2a–c, T3, T4, T5, T-A9-5).**
 Only the rows the founder approved in Task 0, with the founder's words. With the table's words:
 
 In `site/system_prompt.md`:
@@ -2043,6 +2048,14 @@ In `site/skills/building-with-puck/SKILL.md:112` replace
 
 In `site/skills/images-and-logos/SKILL.md`, after the last bullet of section 1 add
 ``- The seller's other images (uploads, and images made for earlier pages) are not in `brand/brand.md`. Find them with `search_assets`, and look at one with `view_asset` before you use it.`` (T5).
+
+In `site/skills-e5/writing-a-section/SKILL.md`, apply T-A9-5 (approved 2026-10-12) exactly as written
+in `docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`, section "T-A9-5": the
+example's `surface: z.enum(["page", "card", "muted", "brandSubtle", "brand", "inverse"]),` becomes
+`surface: z.string(),`, the "The kit gives you these pieces" list is replaced by T-A9-5's list, and
+the Rules bullet's spacing phrase becomes T-A9-5's. (It names `look`, `kit.Link`, `kit.Card` and the
+brand's motion classes, which the A9 rewrite's site-kit tasks provide; the skill is only read by the
+agent, so it can land before them.)
 
 Append to `site/SKILLS-CHANGELOG.md` one line per applied row, in the file's format, for example:
 ``- 2026-10-11 · system prompt, tools: validate_page no longer saves versions; restore_version brings back a saved document version (production versions are the document's history, founder-approved). No failing case: production differs from the spike.``
@@ -2154,7 +2167,7 @@ def garner_brand() -> dict:
                 "mime": None, "file": file, "logo": None,
             }
     return {
-        "slug": "garner", "kit": read_fixture("kit.json"), "measured": read_fixture("measured.json"),
+        "slug": "garner", "kit": read_fixture("kit.json"),
         "fonts": read_fixture("fonts.json"), "assets": {**read_fixture("assets.json"), **captured},
         "clones": {clone["id"]: clone for clone in clones},
     }
@@ -4255,7 +4268,8 @@ def test_every_file_is_a_workspace_blob_and_generated_images_say_so() -> None:
         library_assets={"asset_gen_1": {"record": _record("asset_gen_1", D3, label="A calm classroom",
                                                           source={"kind": "generated"})}},
     )
-    assert brand["measured"] is None and brand["slug"] == "kit_1" and brand["kit"] == {"name": "Garner"}
+    # The A9 rewrite (2026-10-12): BrandData has no `measured`; every value reaches site-kit in `kit`.
+    assert "measured" not in brand and brand["slug"] == "kit_1" and brand["kit"] == {"name": "Garner"}
     assert brand["assets"]["asset_logo"] == {"kind": "raster_image", "label": "asset_logo", "description": "The mark",
                                              "mime": "image/png", "file": asset_store_file(D1), "logo": None}
     assert "asset_nobytes" not in brand["assets"]
@@ -4294,8 +4308,10 @@ Expected: FAIL at import — `ModuleNotFoundError: No module named 'lumen_api.si
 ONE builder for every consumer of a site's brand: the site agent's workspace (Lane B), the
 renderer, the write validator and publish (Lane A), and the editor read (Lane C). Every image and
 font is named ``/asset-store/<sha256>``, a blob of this workspace (Contract 1); nothing names
-``/brands/…``. ``measured`` is None: there is no production measured button (Wave 2 rulings), so
-the theme falls back to the kit's own tokens and recipes.
+``/brands/…``. There is no ``measured`` key: what the extraction measured reaches site-kit inside
+``kit`` (its minted tokens, ``tokens.styles`` and ``measured_components``; Lane A's A9 rewrite), so
+``kit`` is the stored ``brand_kit_json`` passed WHOLE — ``brief``, ``grammar_audit``,
+``measured_components`` and ``tokens.styles`` included.
 """
 
 from __future__ import annotations
@@ -4394,7 +4410,6 @@ def site_brand_data(
     ]
     return {
         "slug": slug,
-        "measured": None,
         "kit": dict(kit),
         "fonts": fonts,
         "assets": assets,
@@ -4670,7 +4685,7 @@ def test_the_turn_inputs_put_it_together(monkeypatch) -> None:
     assert inputs.document_id == "doc_a" and inputs.workspace_id == "ws_1" and inputs.brief == "B"
     assert inputs.account_name == "Syracuse City School District" and inputs.seller == "Garner Health"
     assert inputs.catalog == {"brand/brand.md": "# Brand: Garner Health\n"}
-    assert inputs.brand["slug"] == "kit_1" and inputs.brand["measured"] is None
+    assert inputs.brand["slug"] == "kit_1" and "measured" not in inputs.brand
     assert len(inputs.overview) == 1 and len(inputs.insights) == 1  # both sections read through the same fake
     assert inputs.claims == [{"claim_id": "c1"}] and inputs.held_claim_ids == frozenset()
 
@@ -7934,7 +7949,8 @@ PY
 Expected before Step 10: nothing after the `# from vK` line (no grant yet). It is run again in
 Step 11.
 
-- [ ] **Step 9: Show the founder the profile change and wait for a yes.** A profile bump is a
+- [ ] **Step 9: The profile change — APPROVED by the founder on 2026-10-12** (review sheet Part 2,
+"Lane B Task 14"). Record it as below and continue; the text shown to the founder follows. A profile bump is a
 reviewed act. Show exactly this:
 
 > **design@v<N>** — design@vK plus two tools, nothing else moves (same prompt, model, workspace
@@ -7948,7 +7964,7 @@ reviewed act. Show exactly this:
 > Lane A's site writes and site publish stay granted to nobody (ruling R6): no model can save,
 > undo, redo or publish a site directly.
 
-Do not continue until the founder says yes. Record the answer in
+Record the approval in
 `_memory/2026-10-11-lane-b-site-agent.md` under "design profile bump".
 
 - [ ] **Step 10: Grant the two tools and select the new profile.** In
@@ -8064,9 +8080,9 @@ publish of a site that places a section finds its module), and the agent's `writ
   `apps/api/tests/test_site_section_tool.py`, `apps/agent_runtime/tests/test_site_sections_tool.py` (new)
 
 **Interfaces:**
-- Consumes: site-kit `lint(source, { extraSurfaces })` and `typeCheck(file)` (`src/check-section.ts`,
-  Lane A Task 6), `extraSurfaceRoles(brand)` and `tailwindThemeCss(brand)` (`src/theme.ts`, Lane A
-  Task 4); `lumen_api.web_export.compile_tailwind_css(html, input_css, node_bin, timeout_seconds=120) -> str`
+- Consumes: site-kit `lint(source, options)`, `lintOptionsFor(brand): LintOptions` and
+  `typeCheck(file)` (`src/check-section.ts`, Lane A Task 6 and the A9 rewrite's Task 6b), and
+  `tailwindThemeCss(brand)` (`src/theme.ts`, the A9 rewrite's Task 4); `lumen_api.web_export.compile_tailwind_css(html, input_css, node_bin, timeout_seconds=120) -> str`
   (Lane A Task 17); `lumen_api.site_render.{SectionModule, SiteRenderError, SECTION_MODULE_MISSING}`
   (Lane A Task 11); `app.state.site_section_loader` and `DesignToolHost.site_section_loader`
   (Lane A Task 12); `design_record_site_section`, `SiteSectionRefused` (Task 14);
@@ -8158,8 +8174,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import type { BrandData } from "../src/brand";
-import { lint, typeCheck } from "../src/check-section";
-import { extraSurfaceRoles, tailwindThemeCss } from "../src/theme";
+import { lint, lintOptionsFor, typeCheck } from "../src/check-section";
+import { tailwindThemeCss } from "../src/theme";
 
 const NAME = /^[A-Z][A-Za-z0-9]{2,40}$/;
 /** The only imports a compiled module may keep; each host (editor, renderer) provides them. */
@@ -8174,7 +8190,8 @@ export async function compileSection(input: { name: string; source: string; bran
   const { name, source, brand } = input;
   const fail = (errors: string[]): Compiled => ({ ok: false, name, errors });
   if (!NAME.test(name)) return fail([`section name "${name}" is not PascalCase letters and digits`]);
-  const errors = lint(source, { extraSurfaces: extraSurfaceRoles(brand) });
+  // The A9 rewrite (Lane A Task 6b): checked against this brand's looks, surfaces and motion classes.
+  const errors = lint(source, lintOptionsFor(brand));
   if (errors.length) return fail(errors);
 
   // Type-checked in a throwaway folder inside the package (where zod and react resolve), never
