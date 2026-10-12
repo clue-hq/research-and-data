@@ -83,6 +83,7 @@ from .publishes import (
     RollbackWebPublishTool,
     UnpublishWebDocumentTool,
 )
+from .site_documents import RedoSiteTool, UndoSiteTool, WriteSiteTool
 from .turns import StartAgentTurnTool, StartWebTurnTool
 from .web_documents import (
     ApplyWebOperationsTool,
@@ -130,6 +131,10 @@ DESIGN_TOOL_TYPES = (
     ApplyWebOperationsTool,
     UndoWebDocumentTool,
     RedoWebDocumentTool,
+    # Wave 2 Lane A — Puck site documents (Contract 2).
+    WriteSiteTool,
+    UndoSiteTool,
+    RedoSiteTool,
     # Round B domain 3 — turn enqueues.
     StartAgentTurnTool,
     StartWebTurnTool,

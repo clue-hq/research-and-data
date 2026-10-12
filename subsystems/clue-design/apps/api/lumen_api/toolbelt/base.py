@@ -82,6 +82,10 @@ class DesignToolHost:
     compiler_worker_path: Callable[[], Path] | None = None
     compiler_timeout_seconds: Callable[[], float] | None = None
     compile_fn: Callable[[], Callable[..., dict[str, Any]]] | None = None
+    #: Puck sites (Wave 2): the BrandData builder and the agent-section store (lumen_api.
+    #: site_doc_inputs). Lane B2/B6 compose the real ones; the defaults refuse honestly.
+    site_brand_loader: Callable[[], Callable[..., Any]] | None = None
+    site_section_loader: Callable[[], Callable[..., Any]] | None = None
 
     def need(self, name: str) -> Any:
         """Resolve one required thunk, loudly."""

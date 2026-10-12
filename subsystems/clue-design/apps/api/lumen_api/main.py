@@ -130,6 +130,7 @@ from .database import (
 )
 from . import run_stream
 from .spend import drain_safely as _drain_spend
+from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, sections_not_stored
 from .design_store import (
     DesignBlobStore,
     HybridRepository,
@@ -850,6 +851,11 @@ def create_app(
     # to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
     # to exercise the honest compile-failure path.
     app.state.web_export_node_bin = "node"
+    # Puck sites (Wave 2, Lane A gap 1): the site's BrandData builder and its agent-section store.
+    # Lane B2 and B6 replace these two assignments; until then a site check, render or publish that
+    # needs them refuses with a typed reason instead of guessing (lumen_api.site_doc_inputs).
+    app.state.site_brand_loader = brand_loader_not_composed
+    app.state.site_section_loader = sections_not_stored
     # Part II D6: THE governed design write path. Every converted domain's mutation runs through
     # this invoker — the platform's own `ToolInvoker`, over the platform's own `tool_invocation`
     # + execution-journal tables (see `lumen_api.toolbelt.wiring`). The host's members are
@@ -872,6 +878,8 @@ def create_app(
             # Read through the module global on every call: the compiler suites replace
             # `main.compile_custom_component` to drive fake compiler responses.
             compile_fn=lambda: compile_custom_component,
+            site_brand_loader=lambda: app.state.site_brand_loader,
+            site_section_loader=lambda: app.state.site_section_loader,
         ),
         storage=app.state.storage,
     )
