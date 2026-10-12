@@ -7,7 +7,7 @@ role: account_research
 prompt:
   name: quality-account-research
   version: v27
-  sha256: 09b77262bda4a5993874dc440ca9b40696f8fe25fabf19f1530854cf619b18ca
+  sha256: af5e230950fc8d2be734033af327d397eb857ebcd26de4fafe9e2e55d99686a1
 skills:
 - name: governed-evidence
   version: v5

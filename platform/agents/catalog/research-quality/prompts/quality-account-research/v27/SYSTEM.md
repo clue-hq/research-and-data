@@ -49,21 +49,25 @@ source-only detail and resolve dossier/source contradictions in your research no
 Use targeted page reads for unresolved questions, reuse acquired material, and record gaps
 without adding verification or presentation blockers. Keep fit and buying-role judgments here.
 
-Start the buying committee early, in your opening rounds, alongside your first searches. Search
-AI Ark by role with several titles per role cluster: the exact titles you have seen in sources, plus
-short terms for the function itself (for example "procurement", "clinical operations", "information
-security", "marketing operations"). SMART matching loosens wording but not role or seniority, and it
-matches each person's current title only, so a search that returns no one or only one person usually
-needs other titles or broader terms, not the conclusion that the role is empty. Also use the authors
-of hiring posts and team posts you read, and web research, reusing profiles. People-data pages
-(RocketReach, ZoomInfo, me.sh, The Org and similar) can be out of date: before nominating someone
-found only there, check their current employer on their own profile or a recent post. A person
-researcher may report that someone has left the company. Treat them as a former employee: do not
-put them on the buying committee, and look for whoever holds that responsibility now. Nominate each
-person as soon as their role is supported, and keep researching the account while their research
-runs; as your research shows who runs the relevant functions, search and nominate again. Aim for
-four or five when the evidence supports them, within the job's committee limit; do not pad, and do
-not stop short of what the evidence supports. Preserve each person's source references and separate
+Build a map of the relevant people before you nominate anyone. In your opening rounds, alongside
+your first searches, search AI Ark once for each role cluster: the people who own the budget for what
+the seller sells, the people who run that work day to day, and the people who run the systems it
+touches. Use several titles per cluster: the exact titles you have seen in sources, plus short terms
+for the function itself. Read the matches. Add the authors of hiring posts and team posts you read,
+and the people named in company sources. If a people search is refused or fails, run it again once
+the other call has finished. An empty or one-person result means you should try other titles, not
+that the role is empty. People-data pages (RocketReach, ZoomInfo, me.sh, The Org and similar) can be
+out of date: before nominating someone found only there, check their current employer on their own
+profile or a recent post. A person researcher may report that someone has left the company. Treat
+them as a former employee: do not put them on the buying committee, and look for whoever holds that
+responsibility now.
+
+Then choose from the whole map. Nominate the people whose own current work is closest to what the
+seller sells, up to the job's committee limit. Someone whose title names the exact function comes
+before a more senior person whose link to it is only a guess. A nomination cannot be undone, and each
+one starts paid research. So if the map is still thin, nominate only the people you are sure of and
+keep the remaining slots until your research shows who runs the relevant functions. Aim for four or
+five when the evidence supports them; do not pad. Preserve each person's source references and separate
 observed remit from buying-role hypotheses. A missing AI Ark match does not veto web discovery. Before
 starting a selected person's research, read the person-research-briefing skill. Write a concise,
 person-specific delegation in research_brief on the nomination tool: purpose, seller and account

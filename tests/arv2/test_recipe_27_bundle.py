@@ -46,16 +46,23 @@ def test_the_account_profile_pins_the_v27_prompt_and_the_v10_skill():
     assert skills["account-dossier"] == "v10"
 
 
-def test_the_v27_prompt_starts_the_committee_early_with_evidence_titles_and_retries():
+def test_the_v27_prompt_maps_the_people_first_and_then_chooses_the_committee():
+    """Founder-approved wording 2026-10-13. Runs 6 and 7 nominated each person "as soon as their
+    role is supported": run 7 filled all five slots in rounds 14-16 and first saw the account's
+    ABM manager in round 17. Searching stays early; nominating waits for the map."""
     prompt = " ".join(_body(27, "quality-account-research/v27/SYSTEM.md").split())
-    assert "Start the buying committee early, in your opening rounds" in prompt
-    assert "several titles per role cluster" in prompt
-    assert "matches each person's current title only" in prompt
+    assert "Build a map of the relevant people before you nominate anyone" in prompt
+    assert "search AI Ark once for each role cluster" in prompt
+    assert "run it again once the other call has finished" in prompt
+    assert "try other titles, not that the role is empty" in prompt
+    assert "Then choose from the whole map" in prompt
+    assert "A nomination cannot be undone, and each one starts paid research" in prompt
+    assert "keep the remaining slots until your research shows" in prompt
+    assert "Nominate each person as soon as their role is supported" not in prompt
+    assert "Start the buying committee early" not in prompt
+    # Kept from the earlier wording.
     assert "check their current employer" in prompt
-    assert "search and nominate again" in prompt
-    assert "do not stop short of what the evidence supports" in prompt
-    # Industry-agnostic examples: the harness is not GTM-specific.
-    assert '"clinical operations"' in prompt and '"procurement"' in prompt
+    assert "several titles per cluster" in prompt
 
 
 def test_the_v10_skill_no_longer_waits_for_the_account_picture():
@@ -69,6 +76,8 @@ def test_the_people_search_description_follows_the_recipe():
     old = discover_people_description(SimpleNamespace(input_refs={"quality_recipe_version": 26}))
     assert "after account deep research" not in new
     assert "current title only" in new and '"procurement"' in new
+    # Industry-agnostic examples: the harness is not GTM-specific.
+    assert '"clinical operations"' in new
     assert "after account deep research" in old
 
 

@@ -263,8 +263,9 @@ async def discover_people(runtime: ToolRuntime, args: DiscoverPeopleArgs) -> dic
         )
     except ValueError as error:
         raise RefusalError("invalid_arguments", str(error)) from error
-    # Recipe 27 starts the committee in the opening rounds, as its prompt says; earlier recipes keep
-    # their rule that the account's deep research comes first.
+    # Recipe 27 searches for people in the opening rounds, as its prompt says (it nominates once
+    # the map is built); earlier recipes keep their rule that the account's deep research comes
+    # first.
     early = at_least(runtime.scope, RECIPE_27)
     async with runtime._conn_factory() as conn:
         attempted = early or await operations.deep_attempted(conn, runtime.operation_scope)
