@@ -263,3 +263,11 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   Execution method: subagent-driven, Opus implementers, controller reviews each task personally.
   Last plan commit 1abb8ede1. Next: start SDD at C Task 1 (frontend Dockerfile manifests) on the
   founder's go; ledger per plan file under .superpowers/sdd/.
+
+## 2026-10-12 — Wave 2 split into four parallel worktrees (founder)
+Lane C stays in trenton; Lanes A, A9 and B run in their own worktrees on `puck/w2-lane-a`,
+`puck/w2-a9`, `puck/w2-lane-b`, handing work over by `w2/<plan>-task-<N>` tags. Charter:
+`docs/superpowers/plans/2026-10-12-wave2-parallel-lanes.md`. Test databases `clue_w2_lane_a`,
+`clue_w2_a9`, `clue_w2_lane_b` created on :55160 from `clue_trenton_wave1` (head b4bff1ecca97);
+the three plan files now name their own lane's database. From here each lane writes only its own
+note (`_memory/2026-10-12-wave2-<lane>.md`); this note gets no more Wave 2 entries.

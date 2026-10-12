@@ -143,7 +143,7 @@ one is an ordering gap between lanes that the master plan should record.
   is introduced. A design-API flag (`LUMEN_*`) also goes into `subsystems/clue-design/.env.example`.
   Mirror each new line into the lane's own `.env` at its default (never committed).
 - **Alembic:** Lane A adds no migration. If one becomes necessary: `alembic revision -m "<slug>"`,
-  a matching `downgrade()`, exactly one head, `make db-smoke` on `clue_trenton_wave1` only.
+  a matching `downgrade()`, exactly one head, `make db-smoke` on `clue_w2_lane_a` only.
 - **WebDoc stays untouched.** With the flag off, every existing path behaves byte-identically. No
   old-lane gate may block the new lane. Every refactor of a web function in this plan
   (`compile_tailwind_css`, `_commit_publish_package`, `_print_page`, `delivery_csp`) keeps the web
@@ -167,13 +167,13 @@ one is an ordering gap between lanes that the master plan should record.
 - **Tests:**
   - never assert which model a setting names;
   - never run `*_live.py` or broad suites with real keys (`--ignore-glob='*_live.py'`);
-  - database suites run only on `clue_trenton_wave1`, with the design stack down;
+  - database suites run only on `clue_w2_lane_a`, with the design stack down;
   - never run the whole design suite (over an hour); run the named files only.
 - **Exact test commands:**
   - design API, from `subsystems/clue-design`:
-    `set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/api/tests/<file> -q -o addopts="" --ignore-glob='*_live.py'`
+    `set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_a"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/api/tests/<file> -q -o addopts="" --ignore-glob='*_live.py'`
   - platform, from the repo root:
-    `set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; .venv/bin/python -m pytest tests/<file> -q -o addopts="" --ignore-glob='*_live.py'`
+    `set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_a"; .venv/bin/python -m pytest tests/<file> -q -o addopts="" --ignore-glob='*_live.py'`
   - site-kit: `cd apps/frontend/packages/site-kit && npx tsx --test test/*.test.ts`
   - edge Worker, from the repo root: `node --test 'infra/cloudflare/pages-edge/*.test.js'`
   Below, `DESIGN_PYTEST <file>` and `PLATFORM_PYTEST <file>` stand for these two lines with the
@@ -2991,7 +2991,7 @@ Run: `DESIGN_PYTEST test_site_tools.py` then `DESIGN_PYTEST test_write_path_gove
 `PLATFORM_PYTEST tests/agents/test_tool_authority_audit.py tests/api/test_toolbelt_wiring.py tests/api/test_agent_registry_wiring.py`
 Expected: `test_site_tools.py` passes; the governance file has exactly **1 failure** left (the
 pre-existing `asset_enrichment.py:51` one); the platform files pass, including
-`test_out_of_order_matrix` on `clue_trenton_wave1`.
+`test_out_of_order_matrix` on `clue_w2_lane_a`.
 
 - [ ] **Step 11: Commit.**
 

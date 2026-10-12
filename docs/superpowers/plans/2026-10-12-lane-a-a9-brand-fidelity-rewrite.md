@@ -590,7 +590,7 @@ makes `py-section`, `mt-stack-tight`, `gap-stack-tight` and `p-card-padding` rea
 
 - Never run a brand-kit extraction against a real site, never call a paid model, never write to the
   lane database. Every capture test drives the local fixture page through `file://`.
-- Design DB suites (`test_api.py`) only on `clue_trenton_wave1`, design stack down.
+- Design DB suites (`test_api.py`) only on `clue_w2_a9`, design stack down.
 - Engine change gate (`subsystems/clue-design/AGENTS.md` §3): `cargo test --workspace` (after the
   untracked raster goldens and visual baselines are generated from the base commit in a temp
   worktree — never from HEAD), `cargo build -p lumen-api-helper --release`, the wasm rebuild, then
@@ -4758,7 +4758,7 @@ if __name__ == "__main__":
 
 Run: `CAPTURE_PYTEST test_measured_components.py test_ingestion_component_tokens.py test_ingestion_brief.py`
 Expected: PASS.
-Run (design stack down, DB `clue_trenton_wave1`): `DESIGN_PYTEST test_api.py -k "logo or describe_assets"`
+Run (design stack down, DB `clue_w2_a9`): `DESIGN_PYTEST test_api.py -k "logo or describe_assets"`
 Expected: PASS, including `test_logo_curation_keeps_the_kit_sections_the_engine_does_not_know`.
 
 - [ ] **Step 8: Commit.**

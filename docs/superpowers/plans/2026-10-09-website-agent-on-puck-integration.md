@@ -424,6 +424,11 @@ mapper starts sending it**; until both land, no workspace is in the flag.
 
 ## Execution order across the plan files (founder: subagent-driven, 2026-10-12)
 
+> **Parallel lanes (founder, 2026-10-12).** Wave 2 now runs in four worktrees at once — Lane C in
+> trenton, Lanes A, A9 and B in their own worktrees — with tags and merges between them. The split,
+> the merge points, the setup and the start notes are in `2026-10-12-wave2-parallel-lanes.md`, which
+> replaces the "one branch" sentence below. The order below still holds inside each lane.
+
 Four plan files, executed one task at a time in one branch (each file keeps its own SDD ledger):
 **A** = `2026-10-11-lane-a-site-backend-and-publishing.md`, **A9** =
 `2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`, **B** = `2026-10-11-lane-b-site-agent-on-platform.md`,

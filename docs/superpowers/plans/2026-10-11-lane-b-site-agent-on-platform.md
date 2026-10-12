@@ -200,7 +200,7 @@ Tasks 1–3 (A0), 4–7 (A9 brand fidelity), 8–10 (A1 kind branches), 11–13 
   gets the same key (secrets: a local value in `.env`, a placeholder in the examples).
 - **Alembic:** `alembic revision -m "<slug>"` (generated id, never hand-picked); every
   `upgrade()` has a `downgrade()`; exactly one head; `make db-smoke` only against
-  `clue_trenton_wave1`.
+  `clue_w2_lane_b`.
 - **WebDoc stays untouched:** with the workspace flag off every existing path is byte-identical;
   no old-lane gate may block the new lane.
 - **Agent-written code never runs on app.cluehq.ai or in a platform process (D2):** Node only
@@ -219,7 +219,7 @@ Tasks 1–3 (A0), 4–7 (A9 brand fidelity), 8–10 (A1 kind branches), 11–13 
   orchestrator model (`LUMEN_AGENT_MODEL`), no new model env; agent sections are per workspace;
   E5 tools and skills are on by default; a new design tool updates all four registries.
 - **Tests:** never assert which model a setting names; never run `*_live.py` or broad suites with
-  real keys; database suites only on `clue_trenton_wave1` with the design stack down; agent
+  real keys; database suites only on `clue_w2_lane_b` with the design stack down; agent
   runtime and design API suites in separate pytest sessions (their `conftest` modules collide);
   never the whole design suite.
 - **Live model runs spend money and need the founder's go** (Task 18 Step 9 is the only one).
@@ -228,13 +228,13 @@ Tasks 1–3 (A0), 4–7 (A9 brand fidelity), 8–10 (A1 kind branches), 11–13 
 
 ```bash
 # Agent runtime (from subsystems/clue-design)
-cd subsystems/clue-design && set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/agent_runtime/tests/<file> -q -o addopts="" --ignore-glob='*_live.py'
+cd subsystems/clue-design && set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/agent_runtime/tests/<file> -q -o addopts="" --ignore-glob='*_live.py'
 
 # Design API (from subsystems/clue-design, a separate session)
-cd subsystems/clue-design && set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/api/tests/<file> -q -o addopts="" --ignore-glob='*_live.py'
+cd subsystems/clue-design && set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/api/tests/<file> -q -o addopts="" --ignore-glob='*_live.py'
 
 # Platform (from the repo root)
-set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; .venv/bin/python -m pytest tests/<file> -q -o addopts="" --ignore-glob='*_live.py'
+set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; .venv/bin/python -m pytest tests/<file> -q -o addopts="" --ignore-glob='*_live.py'
 
 # site-kit (from apps/frontend)
 cd apps/frontend && npx tsx --test packages/site-kit/test/<file>
@@ -970,7 +970,7 @@ Expected: PASS.
 - [ ] **Step 10: Move the inventory counts.** Run:
 
 ```bash
-set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; .venv/bin/python -m pytest tests/api/test_toolbelt_wiring.py tests/agents/test_tool_authority_audit.py tests/api/test_agent_registry_wiring.py -q -o addopts="" --ignore-glob='*_live.py' 2>&1 | grep -E "assert|FAILED" | head -20
+set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; .venv/bin/python -m pytest tests/api/test_toolbelt_wiring.py tests/agents/test_tool_authority_audit.py tests/api/test_agent_registry_wiring.py -q -o addopts="" --ignore-glob='*_live.py' 2>&1 | grep -E "assert|FAILED" | head -20
 ```
 
 Expected failures, each one more than the number written (at `d723a17ae`: names 144, addresses
@@ -1176,7 +1176,7 @@ Expected: FAIL at import — `ImportError: cannot import name 'site_sections' fr
 - [ ] **Step 3: Generate the migration.**
 
 ```bash
-set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; .venv/bin/alembic revision -m "design site section"
+set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; .venv/bin/alembic revision -m "design site section"
 ```
 
 Expected: `Generating …/alembic/versions/<hash>_design_site_section.py ... done`. Replace the
@@ -1399,14 +1399,14 @@ and add one sentence to its docstring: "It never serves an agent-written section
 - [ ] **Step 6: Migrate the lane test database and prove reversibility.**
 
 ```bash
-set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"
+set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"
 .venv/bin/alembic heads
 .venv/bin/alembic upgrade head && .venv/bin/alembic downgrade -1 && .venv/bin/alembic upgrade head
 make db-smoke
 ```
 
 Expected: exactly one head (the new revision); the three-step round trip succeeds; `db-smoke`
-finishes with `upgrade head` succeeding (it targets `clue_trenton_wave1` through the exported URL).
+finishes with `upgrade head` succeeding (it targets `clue_w2_lane_b` through the exported URL).
 
 - [ ] **Step 7: Run the tests.**
 
@@ -7255,7 +7255,7 @@ Run: PLATFORM `tests/api/test_site_leg_birth_db.py`, PLATFORM `tests/api/test_si
 then the existing leg suites:
 
 ```bash
-set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; .venv/bin/python -m pytest tests/api/test_genweb_web_turn_dispatch_db.py tests/api/test_genad_leg_document_birth_db.py tests/design/test_design_checkpoint_forwarding.py -q -o addopts="" --ignore-glob='*_live.py'
+set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; .venv/bin/python -m pytest tests/api/test_genweb_web_turn_dispatch_db.py tests/api/test_genad_leg_document_birth_db.py tests/design/test_design_checkpoint_forwarding.py -q -o addopts="" --ignore-glob='*_live.py'
 ```
 
 Expected: PASS for all (web and scene legs unchanged).
@@ -8043,10 +8043,10 @@ value recorded in Step 1):
 - [ ] **Step 13: Run the platform registry suites.**
 
 ```bash
-set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; .venv/bin/python -m pytest tests/agents/test_tool_authority_audit.py tests/agents/test_catalog.py tests/api/test_toolbelt_wiring.py tests/api/test_agent_registry_wiring.py tests/api/test_design_platform_reads_db.py -q -o addopts="" --ignore-glob='*_live.py'
+set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; .venv/bin/python -m pytest tests/agents/test_tool_authority_audit.py tests/agents/test_catalog.py tests/api/test_toolbelt_wiring.py tests/api/test_agent_registry_wiring.py tests/api/test_design_platform_reads_db.py -q -o addopts="" --ignore-glob='*_live.py'
 ```
 
-Expected: PASS, including `test_out_of_order_matrix` on `clue_trenton_wave1`.
+Expected: PASS, including `test_out_of_order_matrix` on `clue_w2_lane_b`.
 
 - [ ] **Step 14: Commit.**
 
@@ -9533,15 +9533,15 @@ git commit -m "R2 on the platform: view_clone and compare_section draw each sect
 pytest process (the runtime and API `conftest` modules collide):
 
 ```bash
-cd subsystems/clue-design && set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/agent_runtime/tests/test_site_package.py apps/agent_runtime/tests/test_site_workspace.py apps/agent_runtime/tests/test_site_tools.py apps/agent_runtime/tests/test_site_harness.py apps/agent_runtime/tests/test_site_render_tool.py apps/agent_runtime/tests/test_site_images.py apps/agent_runtime/tests/test_site_search_assets.py apps/agent_runtime/tests/test_site_sections_tool.py apps/agent_runtime/tests/test_site_clone_rebuild.py apps/agent_runtime/tests/test_site_cost_and_tracing.py apps/agent_runtime/tests/test_session_sync.py apps/agent_runtime/tests/test_search_assets_hybrid.py -q -o addopts="" --ignore-glob='*_live.py'
+cd subsystems/clue-design && set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/agent_runtime/tests/test_site_package.py apps/agent_runtime/tests/test_site_workspace.py apps/agent_runtime/tests/test_site_tools.py apps/agent_runtime/tests/test_site_harness.py apps/agent_runtime/tests/test_site_render_tool.py apps/agent_runtime/tests/test_site_images.py apps/agent_runtime/tests/test_site_search_assets.py apps/agent_runtime/tests/test_site_sections_tool.py apps/agent_runtime/tests/test_site_clone_rebuild.py apps/agent_runtime/tests/test_site_cost_and_tracing.py apps/agent_runtime/tests/test_session_sync.py apps/agent_runtime/tests/test_search_assets_hybrid.py -q -o addopts="" --ignore-glob='*_live.py'
 ```
 
 ```bash
-cd subsystems/clue-design && set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/api/tests/test_site_kit_cli.py apps/api/tests/test_site_brand.py apps/api/tests/test_site_workspace_view.py apps/api/tests/test_site_turn_ports.py apps/api/tests/test_site_turn_executor.py apps/api/tests/test_site_fleet_dispatch.py apps/api/tests/test_site_section_tool.py apps/api/tests/test_site_section_links.py apps/api/tests/test_design_job_trace.py apps/api/tests/test_write_path_governance.py apps/api/tests/test_workspace_seam_route_table.py -q -o addopts="" --ignore-glob='*_live.py'
+cd subsystems/clue-design && set -a; source ../../.env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; LUMEN_INGESTION_DESCRIBE=0 LUMEN_INGESTION_VISION=0 PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python -m pytest apps/api/tests/test_site_kit_cli.py apps/api/tests/test_site_brand.py apps/api/tests/test_site_workspace_view.py apps/api/tests/test_site_turn_ports.py apps/api/tests/test_site_turn_executor.py apps/api/tests/test_site_fleet_dispatch.py apps/api/tests/test_site_section_tool.py apps/api/tests/test_site_section_links.py apps/api/tests/test_design_job_trace.py apps/api/tests/test_write_path_governance.py apps/api/tests/test_workspace_seam_route_table.py -q -o addopts="" --ignore-glob='*_live.py'
 ```
 
 ```bash
-set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_trenton_wave1"; .venv/bin/python -m pytest tests/api/test_arv2_read_tools.py tests/arv2/test_read_tools_db.py tests/api/test_design_platform_reads_db.py tests/design/test_site_sections_dal_db.py tests/api/test_site_leg_birth_db.py tests/api/test_site_turn_summaries.py tests/api/test_site_checkpoint_forwarding.py tests/agents/test_tool_authority_audit.py tests/agents/test_catalog.py tests/api/test_toolbelt_wiring.py tests/api/test_agent_registry_wiring.py tests/test_site_section_link_settings.py tests/deploy/test_backend_image.py -q -o addopts="" --ignore-glob='*_live.py'
+set -a; source .env; set +a; export CLUE_DATABASE_URL="${CLUE_DATABASE_URL%/*}/clue_w2_lane_b"; .venv/bin/python -m pytest tests/api/test_arv2_read_tools.py tests/arv2/test_read_tools_db.py tests/api/test_design_platform_reads_db.py tests/design/test_site_sections_dal_db.py tests/api/test_site_leg_birth_db.py tests/api/test_site_turn_summaries.py tests/api/test_site_checkpoint_forwarding.py tests/agents/test_tool_authority_audit.py tests/agents/test_catalog.py tests/api/test_toolbelt_wiring.py tests/api/test_agent_registry_wiring.py tests/test_site_section_link_settings.py tests/deploy/test_backend_image.py -q -o addopts="" --ignore-glob='*_live.py'
 ```
 
 ```bash
