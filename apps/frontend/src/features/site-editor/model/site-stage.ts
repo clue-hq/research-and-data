@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import type { ArtifactVersionsBinding } from "@/features/chat-shell/model/artifact-actions";
 import type { PendingAnnotation } from "@/features/design-editor/adapter/annotations";
 import type { VeilRenderKind } from "@/features/design-editor/adapter/generating-veil";
+import type { SitePageRow, SiteUrlBinding } from "./site-pages";
 
 /** The comment box's half of the web lane's annotation binding (badges are not drawn in a site). */
 export interface SiteCanvasAnnotations {
@@ -28,6 +29,8 @@ export interface SiteCanvasBinding {
 export interface SiteStageBinding {
   canvas: SiteCanvasBinding;
   mounted: boolean;
+  pages: { open: (route: string) => void; rows: SitePageRow[] };
+  url: SiteUrlBinding;
   versions: ArtifactVersionsBinding | null;
 }
 

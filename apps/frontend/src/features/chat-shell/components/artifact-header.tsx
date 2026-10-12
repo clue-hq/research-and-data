@@ -5,6 +5,7 @@ import {
   ChevronDownIcon,
   DownloadIcon,
   EllipsisIcon,
+  FilesIcon,
   MonitorIcon,
   RectangleHorizontalIcon,
   RectangleVerticalIcon,
@@ -12,6 +13,7 @@ import {
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { SceneExportStatus } from "@/features/design-editor/adapter/scene-export";
+import type { SiteUrlBinding } from "@/features/site-editor/model/site-pages";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 import type {
   ImageExportFormat,
@@ -33,6 +35,7 @@ import { ArtifactActionMenu } from "./artifact-action-menu";
 import { ArtifactShareMenu } from "./artifact-share-menu";
 import { ChatShellIcon } from "./chat-shell-icon";
 import { ImageExportMenu } from "./image-export-menu";
+import { SiteUrlBar } from "./site-url-bar";
 import styles from "./chat-shell.module.css";
 
 const PREVIEW_DEVICES = ["Desktop", "Tablet", "Mobile"] as const;
@@ -66,6 +69,7 @@ export function ArtifactHeader({
   onZoomChange,
   pages,
   redoDisabled,
+  site = null,
   title,
   undoDisabled,
   versions = null,
@@ -131,6 +135,8 @@ export function ArtifactHeader({
   pages?: readonly ArtifactPageOption[];
   /** W3.4: empty-stack disable for the action menu's Redo. */
   redoDisabled?: boolean;
+  /** C10 (sites): the Pages toggle's state and the URL toolbar. Absent on every other kind. */
+  site?: { onTogglePages: () => void; pagesOpen: boolean; url: SiteUrlBinding } | null;
   title: string;
   /** W3.4: empty-stack disable for the action menu's Undo. */
   undoDisabled?: boolean;
@@ -218,6 +224,48 @@ export function ArtifactHeader({
     toggleArtifactActionMenu();
   };
   const PreviewDeviceIcon = PREVIEW_DEVICE_ICONS[activeDevice];
+  // The existing device menu, unchanged; for a site it sits inside the URL toolbar (C10).
+  const deviceMenu = (
+    <div className={styles.toolbarMenuAnchor} ref={deviceMenuRef}>
+      <button
+        aria-expanded={deviceMenuOpen}
+        aria-haspopup="menu"
+        aria-label={`Preview device: ${activeDevice}`}
+        className={styles.deviceButton}
+        onClick={() => {
+          closeArtifactActionMenu();
+          sharingController.closeMenu();
+          toggleDeviceMenu();
+        }}
+        type="button"
+      >
+        <PreviewDeviceIcon
+          absoluteStrokeWidth
+          aria-hidden="true"
+          size={16}
+          strokeWidth={1.25}
+        />
+        <ChatShellIcon name="chevron-down" size={8} />
+      </button>
+      {deviceMenuOpen ? (
+        <div aria-label="Preview device" className={styles.toolbarMenu} role="menu">
+          {PREVIEW_DEVICES.map((option) => (
+            <button
+              aria-checked={activeDevice === option}
+              className={`${styles.toolbarMenuItem} ${activeDevice === option ? styles.toolbarMenuItemActive : ""}`}
+              key={option}
+              onClick={() => chooseDevice(option)}
+              role="menuitemradio"
+              type="button"
+            >
+              <span>{option}</span>
+              {activeDevice === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
     <header className={styles.artifactHeader}>
@@ -268,6 +316,19 @@ export function ArtifactHeader({
         </div>
       </div>
       <div className={styles.artifactHeaderActions}>
+        {/* DESIGN REVIEW (DR1): the Pages toggle (founder ruling 2026-10-11, the Ploy reference) —
+            the Edit pill's own button style and pressed state. */}
+        {site ? (
+          <button
+            aria-pressed={site.pagesOpen}
+            className={`${styles.artifactActionButton} ${site.pagesOpen ? styles.artifactActionButtonActive : ""}`}
+            onClick={site.onTogglePages}
+            type="button"
+          >
+            <FilesIcon absoluteStrokeWidth aria-hidden="true" size={14} strokeWidth={1.25} />
+            <span>Pages</span>
+          </button>
+        ) : null}
         {/* FLAGGED F5 T18: no designed slot in the dummy frontend for a page
          * switcher — minimal neutral control pending founder/design ruling.
          * Styled as the device/zoom menus already are, so it reads as one of
@@ -362,46 +423,10 @@ export function ArtifactHeader({
               </div>
             ) : null}
           </div>
+        ) : site ? (
+          <SiteUrlBar binding={site.url} deviceMenu={deviceMenu} />
         ) : (
-          <div className={styles.toolbarMenuAnchor} ref={deviceMenuRef}>
-            <button
-              aria-expanded={deviceMenuOpen}
-              aria-haspopup="menu"
-              aria-label={`Preview device: ${activeDevice}`}
-              className={styles.deviceButton}
-              onClick={() => {
-                closeArtifactActionMenu();
-                sharingController.closeMenu();
-                toggleDeviceMenu();
-              }}
-              type="button"
-            >
-              <PreviewDeviceIcon
-                absoluteStrokeWidth
-                aria-hidden="true"
-                size={16}
-                strokeWidth={1.25}
-              />
-              <ChatShellIcon name="chevron-down" size={8} />
-            </button>
-            {deviceMenuOpen ? (
-              <div aria-label="Preview device" className={styles.toolbarMenu} role="menu">
-                {PREVIEW_DEVICES.map((option) => (
-                  <button
-                    aria-checked={activeDevice === option}
-                    className={`${styles.toolbarMenuItem} ${activeDevice === option ? styles.toolbarMenuItemActive : ""}`}
-                    key={option}
-                    onClick={() => chooseDevice(option)}
-                    role="menuitemradio"
-                    type="button"
-                  >
-                    <span>{option}</span>
-                    {activeDevice === option ? <CheckIcon aria-hidden="true" size={12} strokeWidth={1.5} /> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          deviceMenu
         )}
         <button
           aria-pressed={editing}

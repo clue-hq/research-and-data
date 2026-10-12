@@ -21,6 +21,14 @@ import {
 import { siteHistoryActionFromEvent, siteHistoryDisabled } from "../model/site-history";
 import { cloneLabelsOf, componentLabel, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
 import {
+  EMPTY_ROUTE_HISTORY,
+  parseRouteInput,
+  sitePageRows,
+  stepRoute,
+  visitRoute,
+  type RouteHistory,
+} from "../model/site-pages";
+import {
   commitFieldEdit,
   siteInspectorTitle,
   type SiteInspectorBinding,
@@ -108,6 +116,9 @@ export function useSiteEditingSession({
 
   const [routeState, setRouteState] = useState<{ documentId: string; route: string } | null>(null);
   const route = routeState && routeState.documentId === activeDocumentId ? routeState.route : "/";
+  const [routeHistory, setRouteHistory] = useState<{ documentId: string; history: RouteHistory } | null>(null);
+  const routeTrail = routeHistory && routeHistory.documentId === activeDocumentId ? routeHistory.history : EMPTY_ROUTE_HISTORY;
+  const [initGeneration, setInitGeneration] = useState(0);
   const [shownDocumentId, setShownDocumentId] = useState<string | null>(null);
   const [frameError, setFrameError] = useState<{ documentId: string; message: string } | null>(null);
   const mode = siteFrameMode({ editing, locked });
@@ -134,6 +145,10 @@ export function useSiteEditingSession({
         setShownDocumentId(message.documentId);
         setRouteState({ documentId: message.documentId, route: message.payload.route });
         setFrameError(null);
+        setRouteHistory((previous) => ({
+          documentId: message.documentId,
+          history: visitRoute(previous && previous.documentId === message.documentId ? previous.history : EMPTY_ROUTE_HISTORY, message.payload.route),
+        }));
         return;
       case "changed": {
         const current = now.currentSite;
@@ -181,7 +196,8 @@ export function useSiteEditingSession({
   const sent = useRef<{ initKey: string | null; version: number | null }>({ initKey: null, version: null });
   useEffect(() => {
     if (!activeDocumentId || !currentSite || load.status !== "ready" || !load.brand || boot === 0) return;
-    const initKey = siteInitKey(activeDocumentId, currentSite.site, boot);
+    // The URL toolbar's reload bumps `initGeneration`, which forces a fresh init from a fresh read.
+    const initKey = `${siteInitKey(activeDocumentId, currentSite.site, boot)}|${initGeneration}`;
     const sync = frameSyncFor({
       frameReady: true,
       initKey,
@@ -222,7 +238,7 @@ export function useSiteEditingSession({
       sent.current = { ...sent.current, version: sync.version };
       post("replace_site", { site: currentSite.site, version: sync.version }, activeDocumentId);
     }
-  }, [activeDocumentId, boot, currentSite, load.brand, load.links, load.loadedAt, load.status, mode, post, reload, route]);
+  }, [activeDocumentId, boot, currentSite, initGeneration, load.brand, load.links, load.loadedAt, load.status, mode, post, reload, route]);
 
   // Edit / preview, sent once per change after the frame shows this document.
   const sentMode = useRef<string | null>(null);
@@ -378,6 +394,41 @@ export function useSiteEditingSession({
     restore: saves.restore,
     version: saves.baseVersion ?? currentSite?.version ?? null,
   });
+  // C10: the page panel and the URL toolbar. Navigation always goes through the frame; its
+  // `navigated` answer moves the active row, the route field and the history.
+  const navigate = useCallback(
+    (target: string) => {
+      if (activeDocumentId) post("navigate", { route: target }, activeDocumentId);
+    },
+    [activeDocumentId, post],
+  );
+  const step = useCallback(
+    (direction: -1 | 1) => {
+      if (!activeDocumentId) return;
+      const moved = stepRoute(routeTrail, direction);
+      if (!moved.route) return;
+      setRouteHistory({ documentId: activeDocumentId, history: moved.history });
+      post("navigate", { route: moved.route }, activeDocumentId);
+    },
+    [activeDocumentId, routeTrail, post],
+  );
+  const pages = { open: navigate, rows: sitePageRows(currentSite?.site ?? null, route) };
+  const url = {
+    back: () => step(-1),
+    canBack: routeTrail.index > 0,
+    canForward: routeTrail.index >= 0 && routeTrail.index < routeTrail.entries.length - 1,
+    forward: () => step(1),
+    go: (text: string) => {
+      const target = parseRouteInput(text, currentSite?.site ?? null);
+      if (target) navigate(target);
+      return target !== null;
+    },
+    reload: () => {
+      setInitGeneration((generation) => generation + 1);
+      reload();
+    },
+    route,
+  };
   const inspector: SiteInspectorBinding = {
     disabled: locked,
     error: saves.error,
@@ -430,6 +481,8 @@ export function useSiteEditingSession({
         src: frame.src,
       },
       mounted: siteStageMounted({ editorOrigin: origin.origin, enabled, warm }),
+      pages,
+      url,
       versions: activeDocumentId ? versions : null,
     },
     version: currentSite?.version ?? null,

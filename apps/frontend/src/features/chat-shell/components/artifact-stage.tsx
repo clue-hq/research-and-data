@@ -67,6 +67,7 @@ import type { SiteStageBinding } from "@/features/site-editor/model/site-stage";
 import { isWebsiteKind } from "../model/artifact-kind";
 import { ArtifactHeader } from "./artifact-header";
 import { ArtifactTabs } from "./artifact-tabs";
+import { SitePagesPanel } from "./site-pages-panel";
 import styles from "./chat-shell.module.css";
 // The cofounder's approved motion (handoff ad4f30bb) is a plain stylesheet, not
 // a CSS module — its class names are the contract between the sheet and the
@@ -367,6 +368,8 @@ export function ArtifactStage({
   // only: presentation state, nothing persisted.
   const [previewDevice, setPreviewDevice] =
     useState<ArtifactPreviewDevice>("Desktop");
+  // C10: the page panel's open state is presentation, owned here like the device choice.
+  const [pagesOpen, setPagesOpen] = useState(false);
   const webCanvasClass = [
     styles.webCanvas,
     // `.clue-gen-host` (generating.css) supplies the positioning context and
@@ -472,6 +475,11 @@ export function ArtifactStage({
             onRequestExportPreview={onRequestExportPreview}
             onZoomChange={onSceneZoomChange}
             redoDisabled={redoDisabled}
+            site={
+              artifactKind === "site" && site
+                ? { onTogglePages: () => setPagesOpen((open) => !open), pagesOpen, url: site.url }
+                : null
+            }
             title={artifactTitle}
             undoDisabled={undoDisabled}
             versions={artifactKind === "site" ? (site?.versions ?? null) : null}
@@ -583,13 +591,16 @@ export function ArtifactStage({
           className={`${styles.outputStage} ${styles.webOutputStage} ${styles.siteStage}`}
           hidden={!siteFrameShown}
         >
-          <div aria-label="Web output canvas" className={webCanvasClass}>
-            <SiteArtifactCanvas
-              binding={site.canvas}
-              onRenderKindChange={siteFrameShown ? setRenderKind : undefined}
-            />
-            <WebsiteGeneratingVeil active={siteFrameShown && veilActive} />
-            <GeneratingGlow active={siteFrameShown && veilActive} />
+          <div className={styles.siteStageBody}>
+            {pagesOpen ? <SitePagesPanel onOpen={site.pages.open} rows={site.pages.rows} /> : null}
+            <div aria-label="Web output canvas" className={webCanvasClass}>
+              <SiteArtifactCanvas
+                binding={site.canvas}
+                onRenderKindChange={siteFrameShown ? setRenderKind : undefined}
+              />
+              <WebsiteGeneratingVeil active={siteFrameShown && veilActive} />
+              <GeneratingGlow active={siteFrameShown && veilActive} />
+            </div>
           </div>
         </div>
       ) : null}

@@ -1813,6 +1813,72 @@
   display: none;
 }
 
+/* Lane C (sites): the canvas row — the page panel (when open) beside the canvas. */
+.siteStageBody {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* DESIGN REVIEW (DR2): the page panel from the founder's Ploy reference. Built from the inspector
+   rail's tokens; rows reuse `.layerRow*`, the search box `InspectorInput`. */
+.sitePagesPanel {
+  display: flex;
+  flex: 0 0 280px;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 0.5px solid var(--chat-shell-border);
+  background: var(--chat-shell-neutral);
+}
+
+.sitePagesPanelHead {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 16px 12px;
+  border-bottom: 0.5px solid var(--chat-shell-border);
+}
+
+.sitePagesPanelList {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+/* DESIGN REVIEW (DR3): the browser-style URL toolbar. Buttons reuse `.deviceButton`; the field
+   borrows `.artifactHeadingRenameInput`'s tokens. */
+.siteUrlBar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.siteUrlField {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 34px;
+  padding: 0 4px;
+  border: 0.5px solid var(--chat-shell-border);
+  border-radius: 4px;
+  background: var(--chat-shell-page);
+}
+
+.siteUrlInput {
+  width: 200px;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 13px;
+  line-height: 18px;
+}
+
 /*
  * AD2.10 (founder ruling, 2026-08-20): a MOUNTED ad canvas is an infinite
  * workspace, so its stage is the viewport — no centring frame, no padding
