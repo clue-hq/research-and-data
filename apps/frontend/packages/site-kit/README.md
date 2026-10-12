@@ -23,7 +23,9 @@ The trial stays in `trials/puck-spike/` as the frozen reference.
   `{"files": {"pages": {route: page}, "shell": shell | null}, "brand": BrandData, "agentSectionModules": {"<Name>": "<absolute path to a .mjs or .tsx module>"}}`
   and prints `{"valid": bool, "errors": [...]}`. Each agent section module is imported for its zod
   `schema`, since a zod schema cannot travel as JSON.
-- `tsx src/check-section.ts <file.tsx>`: prints `{"ok": bool, "errors": [...], "props": <JSON Schema>}`.
+- `tsx src/check-section.ts <file.tsx>`: prints `{"ok": bool, "errors": [...]}`. It never imports
+  the section (D2); the props schema is read inside the design API's hardened render page
+  (`lumen_api.site_render.read_section_schema`).
 
 ## Notes
 
