@@ -33,6 +33,18 @@ Thumbnails are not on the wire: `/api/clue/design/documents/{document_id}/thumbn
   Governed tool `design_set_document_archived@1`; no version bump; archive and publish are independent.
 Both tools are registered ungranted and human-only.
 
+### Site documents (Wave 2 Contract 2; read by `src/features/site-editor/data/site.repository.ts`)
+
+- `GET /documents/{id}` → for `doc_kind: "site"`: `{ id, doc_kind: "site", title, scene: <Contract 1 site>, current_version, undo_stack: [], redo_stack: [] }` (plan K4; anything but `site` is refused by the seam).
+- `PUT /documents/{id}/site` body `{ site, base_version, intent? }` → `{ document: { id, current_version, doc_kind: "site" } }`. Refusals: 409 `edits.base_version_mismatch` (+ `current_version`), 422 `site.invalid` (+ `errors[]`), 409 `document.agent_run_active`, 409 `document.kind_unsupported`.
+- `POST /documents/{id}/site/undo` · `/redo` body `{ base_version }` → `{ document, undone_batch_id | redone_batch_id }`; 409 `undo.empty` · `redo.empty`.
+- `GET /documents/{id}/site/versions?limit=` → `{ versions: [{ batch_id, version, actor_kind, intent, created_at }] }`, newest first.
+- `POST /documents/{id}/site/versions/{batch_id}/restore` body `{ base_version }` → `{ document }`; 404 `version.not_found`. The restore is itself an undoable write.
+- `POST /documents/{id}/site/section-links` → `{ schema_version: 1, links: [{ name, digest, token, expires_at, props_schema }] }` (Contract 4; Lane B Task 16).
+- `GET /documents/{id}/site/brand` → `{ schema_version: 1, brand: BrandData }` (Lane A Task 13).
+- Refusal bodies are FastAPI `{ detail: { code, message, current_version?, errors? } }` or `{ detail: "<string>" }`.
+- Save policy (frontend): one request in flight, edits coalesce into the newest site, a 409 shows "Document moved on — reloaded." and reloads; the app is the only side that saves.
+
 ## Chats route vocabulary
 
 `?open=<artifactId>` on `/projects/:id/chats/:chatId` is read ONCE at mount, resolved against the
