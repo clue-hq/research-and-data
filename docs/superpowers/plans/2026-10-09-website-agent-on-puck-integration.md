@@ -403,7 +403,9 @@ mapper starts sending it**; until both land, no workspace is in the flag.
 ### Contract 9: domains
 
 - **Editor:** `https://<label>.<CLUE_SITE_EDITOR_SUFFIX>`, where `<label>` is an opaque token
-  derived from the workspace id (never the renameable handle); dev
+  derived from the workspace id (never the renameable handle). Production suffix
+  `edit.deeppresence.ai` (founder 2026-10-12; nothing with a login may run on `deeppresence.ai`
+  while the editor lives there); dev
   `http://<label>.editor.localhost:<DEV_STACK_EDITOR_PORT>`. Both settings go into `.env` and
   `.env.example` the moment they are introduced.
 - **Published pages:** `CLUE_PAGES_SYSTEM_SUFFIX` set to the new domain; a migration script

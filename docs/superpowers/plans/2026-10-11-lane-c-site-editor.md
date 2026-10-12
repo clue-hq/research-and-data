@@ -16,7 +16,10 @@
 
 Each question has a recommendation. The plan's code implements the recommendation and names the step to drop or change if the answer differs. Nothing here blocks Tasks 1–8.
 
-- **Q1. The editor's registrable domain.** Contract 9 needs `CLUE_SITE_EDITOR_SUFFIX` in production; the name is the founder's to register.
+- **Q1 — ANSWERED 2026-10-12: `edit.deeppresence.ai`** (founder: nothing else runs on
+  deeppresence.ai, so no login shares the registrable domain). Each workspace's editor is
+  `https://<label>.edit.deeppresence.ai`; `.env.example` defaults to it, as `CLUE_PAGES_SYSTEM_SUFFIX`
+  already defaults to its production value. Original question: **The editor's registrable domain.** Contract 9 needs `CLUE_SITE_EDITOR_SUFFIX` in production; the name is the founder's to register.
   - (a) A new registrable domain used only for editing (for example `<name>-edit.com`), wildcard DNS + wildcard certificate on it. **Recommended** — it is what D2 decided (separate registrable domain, one subdomain per workspace).
   - (b) A subdomain of the new published-pages domain. Not recommended: D2 keeps the published-pages domain distinct from the editor domain.
   - Until answered, `.env.example` ships `CLUE_SITE_EDITOR_SUFFIX=` (empty) and a site in production shows the canvas's existing error state with "The website editor is not configured for this environment." Dev uses `editor.localhost:<port>` (Task 15).
@@ -2875,7 +2878,7 @@ This task builds the server and its tests; Task 6 builds the client and the buil
 - Modify: `apps/frontend/package-lock.json` (via `npm install`)
 - Modify: `apps/frontend/Dockerfile.railway` (copy the new manifest before `npm ci`)
 - Modify: `apps/frontend/eslint.config.mjs` (ignore `packages/*/dist/**`)
-- Modify: `.env.example`, `.env` (untracked), `apps/frontend/.env.example` (`CLUE_SITE_EDITOR_SUFFIX`, empty by default)
+- Modify: `.env.example`, `.env` (untracked), `apps/frontend/.env.example` (`CLUE_SITE_EDITOR_SUFFIX`, default `edit.deeppresence.ai`)
 
 **Interfaces:**
 - Consumes: `@clue/site-kit/editor-origin` (`editorLabelFor`, `editorLabelFromHost`) from Task 4; plan assumption K1 (design-API routes `GET /site-sections/{digest}.mjs|css?t=` answering `X-Clue-Workspace-Id`).
@@ -2961,9 +2964,10 @@ The editor server introduces `CLUE_SITE_EDITOR_SUFFIX`, so the parity rule puts 
 # --- Site editor domain (Wave 2 Contract 9; Lane C) ---------------------------------------------
 # The Puck site editor is served at https://<label>.<CLUE_SITE_EDITOR_SUFFIX>, one subdomain per
 # workspace (<label> = an opaque token derived from the workspace id). Empty = no editor domain is
-# configured, and a site shows the canvas's error state. The registrable domain is the founder's to
-# choose (Lane C plan Q1). scripts/dev_stack.sh overrides it per process with editor.localhost:<port>.
-CLUE_SITE_EDITOR_SUFFIX=
+# configured, and a site shows the canvas's error state. Founder's choice (Lane C plan Q1,
+# 2026-10-12): edit.deeppresence.ai, a registrable domain nothing else with a login uses.
+# scripts/dev_stack.sh overrides it per process with editor.localhost:<port>.
+CLUE_SITE_EDITOR_SUFFIX=edit.deeppresence.ai
 ```
 In `apps/frontend/.env.example`, append:
 ```bash
@@ -2971,7 +2975,7 @@ In `apps/frontend/.env.example`, append:
 # Wave 2 Contract 9: the site editor's domain suffix; the app frames https://<label>.<suffix>.
 # Empty = no editor domain (a site shows the canvas error state). scripts/dev_stack.sh passes
 # editor.localhost:<DEV_STACK_EDITOR_PORT> to the dev frontend process.
-CLUE_SITE_EDITOR_SUFFIX=
+CLUE_SITE_EDITOR_SUFFIX=edit.deeppresence.ai
 ```
 
 Run: `cd apps/frontend && npm install`
@@ -9188,9 +9192,9 @@ def _value(path: str, key: str) -> str | None:
 
 
 def test_the_editor_settings_are_documented_with_their_defaults() -> None:
-    assert _value(".env.example", "CLUE_SITE_EDITOR_SUFFIX") == ""
+    assert _value(".env.example", "CLUE_SITE_EDITOR_SUFFIX") == "edit.deeppresence.ai"
     assert _value(".env.example", "DEV_STACK_EDITOR_PORT") == "3120"
-    assert _value("apps/frontend/.env.example", "CLUE_SITE_EDITOR_SUFFIX") == ""
+    assert _value("apps/frontend/.env.example", "CLUE_SITE_EDITOR_SUFFIX") == "edit.deeppresence.ai"
     package = "apps/frontend/packages/site-editor/.env.example"
     for key in ("PORT", "HOST", "CLUE_APP_ORIGIN", "LUMEN_API_BASE_URL", "CLUE_SITE_EDITOR_SUFFIX"):
         assert _value(package, key) is not None, f"{package} does not document {key}"
@@ -9356,9 +9360,12 @@ no secret and no database access.
 - Variables: `PORT` (Railway sets it); `HOST=0.0.0.0` (the image sets it); `CLUE_APP_ORIGIN` — the
   app's canonical origin, the only origin allowed to frame and message the editor; `LUMEN_API_BASE_URL`
   — the design API's private URL (the token-checked section route and the public asset store);
-  `CLUE_SITE_EDITOR_SUFFIX` — the editor domain (founder's choice, Lane C plan Q1).
-- Domain: a wildcard custom domain `*.<editor domain>`, a wildcard DNS record pointing at the service,
-  and a wildcard certificate. Nothing is configured per workspace.
+  `CLUE_SITE_EDITOR_SUFFIX=edit.deeppresence.ai` — the editor domain (founder's choice, 2026-10-12).
+- Domain: the wildcard custom domain `*.edit.deeppresence.ai`, a wildcard DNS record
+  (`*.edit.deeppresence.ai` CNAME to the service's Railway target) and a wildcard certificate.
+  Nothing is configured per workspace. Nothing with a login may ever run on `deeppresence.ai` or any
+  subdomain of it while the editor lives there: code in the editor frame can set cookies for the
+  whole registrable domain.
 - The app service sets the same `CLUE_SITE_EDITOR_SUFFIX`; with it empty, a site shows the canvas
   error "The website editor is not configured for this environment."
 - Never give this service Clerk keys, a database URL or any workspace secret.
@@ -9373,7 +9380,7 @@ In `DEV_STACK.md`:
 - add after the page-origin paragraph ("The page-origin keys are the one exception …"):
 ```markdown
 The site editor follows the same rule: `.env` keeps the production `CLUE_SITE_EDITOR_SUFFIX`
-(empty until the founder registers the editor domain), and `scripts/dev_stack.sh` passes
+(`edit.deeppresence.ai`, the founder's choice), and `scripts/dev_stack.sh` passes
 `CLUE_SITE_EDITOR_SUFFIX=editor.localhost:<DEV_STACK_EDITOR_PORT>` to the editor and to the frontend
 per process. Its log is `<prefix>_site_editor.log`. Its browser tests are opt-in:
 `cd apps/frontend && npm run build -w @clue/site-editor && cd ../.. && CLUE_SITE_EDITOR_BROWSER=1 .venv/bin/python -m pytest tests/site_editor -q`.

@@ -296,3 +296,7 @@ Built from existing chat-shell styles and primitives; where no existing style fi
 - 2026-10-12 — **Q10:** T3 approved: "Your skills are below this prompt: `account-page-copy`,
   `building-with-puck`, `images-and-logos` and `page-review`, and for new sections
   `writing-a-section` and `rebuilding-a-section`. Follow them."
+- 2026-10-12 — **Q11:** the editor domain is `edit.deeppresence.ai` (`CLUE_SITE_EDITOR_SUFFIX`); each
+  workspace's editor is `https://<label>.edit.deeppresence.ai`. Nothing runs on `deeppresence.ai`
+  today, and nothing with a login may run there while the editor does. Founder's operational step:
+  a wildcard DNS record and certificate for `*.edit.deeppresence.ai` pointing at the editor service.
