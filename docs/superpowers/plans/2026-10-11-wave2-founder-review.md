@@ -597,3 +597,6 @@ model's own recipe slots and notes use the exact tokens):
   design profile bump (`design@v5`), and **Part 3 DR1–DR7**. Lane A Task 7's brand.md template is
   superseded by T-A9-1 (approved). Pending only: T-A9-8 (the Brand page's new headings and labels)
   and the Brand page's design review points, which come with the A9 plan update.
+- 2026-10-12 — **No further approvals:** the founder ruled "for all the other remaining things, don't
+  ask for my approval; just go ahead with them for now". T-A9-8 and the Brand page's design review
+  points are recorded as approved as the A9 plan writes them; later plan details follow the same rule.
