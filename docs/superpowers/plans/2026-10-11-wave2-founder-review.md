@@ -283,3 +283,6 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   - not in the library: `This page uses a section that isn't in your brand's library. Ask the agent to replace it, then publish again.`
 - 2026-10-12 — **Q6:** approved: "Hostnames under Clue's own domains cannot be connected." (Lane A
   Task 23 Step 9, now unconditional.)
+- 2026-10-12 — **Q7:** (b) `render_page` drops the console-errors fact (the production screenshot runs
+  no script); section crashes arrive as render notes or NOT RENDERED. Approved wording: the facts
+  line (T16a), the tool description (T6e) and the page-review skill's first paragraph (T16b).

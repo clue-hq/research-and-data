@@ -37,7 +37,8 @@ and 7, and consumes Contracts 1–3 from Lane A. The spike being ported is `tria
 Each has a recommendation; the plan is written to the recommendation and names the task that
 changes if the answer differs.
 
-1. **`render_page`'s "console errors" fact.** The production render is static and script-free, so
+1. **ANSWERED 2026-10-12: (b) — the clause is dropped; the three wordings below (T6e, T16) are
+   approved.** **`render_page`'s "console errors" fact.** The production render is static and script-free, so
    no console error can occur. Broken images (checked against the workspace's blobs) and
    horizontal overflow (the screenshot is wider than the viewport) are still measured.
    - (a) keep the spike's sentence word for word, with `console errors: 0` always;
@@ -365,7 +366,7 @@ task repeats its text and has a "confirm approved" step.
 | T6b | tool description `restore_version` | "Bring back a version saved by validate_page into page.json, shell.json and pages/." | "Bring back the site as it was at an earlier saved version (site.md lists them) into page.json, shell.json and pages/." |
 | T6c | tool description `view_asset` | "Look at up to four images (files from brand/brand.md, or images you generated), each with its description, before you choose one for a section." | "Look at up to four images (files from brand/brand.md, images you generated, or images search_assets found), each with its description, before you choose one for a section." |
 | T6d | tool description `search_assets` (new) | (none) | "Search the seller's images by what they show and how they look. Write what you need in plain words, for example \"calm classroom, morning light\" or \"product dashboard screenshot\". Returns the best matches first (up to limit, 1 to 20), each with its file, type, title and a one-line description. Look at one with view_asset before you use it. kind narrows to image or logo." |
-| T6e | tool description `render_page` | "Publish the site and return a desktop (1440 wide) …" | "Render the site and return a desktop (1440 wide) …" (the rest unchanged) |
+| T6e | tool description `render_page` | "Publish the site and return a desktop (1440 wide) and a mobile (375 wide) full-page screenshot of one page, with facts about broken images, overflow and console errors. route is …" | **Approved 2026-10-12:** "Render the site and return a desktop (1440 wide) and a mobile (375 wide) full-page screenshot of one page, with facts about broken images and overflow. route is \"/\" for page.json or \"/<name>\" for pages/<name>.json. Refuses while the site is invalid." |
 | T7 | `validate_page` result when valid | "VALID. Saved as version {n} (restore_version can bring it back)." | "VALID." |
 | T8a | `render_page` result, appended to the 1440 facts line when the renderer warns | (none) | " Render notes: {first three warnings joined by '; '}." |
 | T8b | `render_page` result when the renderer fails | (none) | "NOT RENDERED: the page could not be drawn ({code}). Validate it and try again; if this repeats, say so in your report." |
@@ -382,6 +383,8 @@ task repeats its text and has a "confirm approved" step.
 | T12h | `generate_image` result when the image was made but could not be stored | (none) | "The image was made but could not be saved ({error}). Try once more, or choose a section without an image." |
 | T13 | `write_section` error item when the props schema cannot be read in the render page | (none) | "the section could not be loaded to read its props ({code}: {the render page's reason}); check that it exports `schema` (a zod object with `id` and `surface`) and `render`" |
 | T14 | FYI, no wording | — | The platform's compaction adds deepagents' `compact_conversation` tool to the agent's tools (as on the scene agent). Its description is deepagents' own. |
+| T16a | `render_page` result facts line (open question 1, answer (b)) | "1440 wide: page height …px, broken images: N, horizontal overflow: no, console errors: N (…). Shown at …" | **Approved 2026-10-12:** "1440 wide: page height 3120px, broken images: 0, horizontal overflow: no. Shown at half size in 4 parts, top to bottom." (the console clause removed) |
+| T16b | `skills/page-review/SKILL.md`, first paragraph | "`render_page` gives you two pictures: desktop (1440 wide) and mobile (375 wide), with facts about broken images, overflow and console errors. Look at them as the reader would, then go through this list." | **Approved 2026-10-12:** "`render_page` gives you two pictures: desktop (1440 wide) and mobile (375 wide), with facts about broken images and overflow. Look at them as the reader would, then go through this list." |
 | T15 | the agent's message for a request where the person pointed at parts of the site (Task 13a), appended after their words | (none) | ``The person also pointed at parts of the site:`` / one line per part, in their order: ``- Page /analysis, the section with id "analysis-hero", its "title" field. Their note: "1. Make it warmer."`` (the header or footer reads ``- The header.`` / ``- The footer, its "ctaLabel" field.``; no note reads `` (No note.)``) / ``Work through these in the order listed. Change only these parts, unless their message asks for more. If a part is no longer on the site, say so in your report and use your judgement. In your report, say what you did for each part, or why you did not.`` |
 
 Code-written files whose only change is a path (`brand/brand.md`'s account-logo section now lists
@@ -3143,7 +3146,7 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "render_page": (
         "Render the site and return a desktop (1440 wide) and a mobile (375 wide) full-page "
-        "screenshot of one page, with facts about broken images, overflow and console errors. route "
+        "screenshot of one page, with facts about broken images and overflow. route "
         "is \"/\" for page.json or \"/<name>\" for pages/<name>.json. Refuses while the site is invalid."
     ),
     "restore_version": (
@@ -5056,6 +5059,7 @@ git commit -m "site turn inputs from the database: the one BrandData builder, re
 ### Task 9: `render_page` on Lane A's hardened renderer (B3, part 2; needs A5)
 
 **Files:**
+- Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/site/skills/page-review/SKILL.md` (T16b) and `lumen_agent/site/SKILLS-CHANGELOG.md`
 - Modify: `subsystems/clue-design/apps/agent_runtime/lumen_agent/site/tools.py` (add `render_page`,
   `_tiles`, `_broken_images`, `_png_size`, constants)
 - Create: `subsystems/clue-design/apps/api/lumen_api/site_turn_ports.py` (`PlatformSiteRenderer`,
@@ -5123,7 +5127,8 @@ def test_render_page_returns_desktop_and_mobile_pictures_with_facts(tmp_path: Pa
     blocks = _tools(tmp_path, renderer).render_page("/analysis")
     texts = [b["text"] for b in blocks if b.get("type") == "text"]
     images = [b for b in blocks if b.get("type") == "image"]
-    assert texts[0].startswith("1440 wide: page height 2000px, broken images: 1, horizontal overflow: no, console errors: 0.")
+    assert texts[0].startswith("1440 wide: page height 2000px, broken images: 1, horizontal overflow: no. Shown at")
+    assert "console" not in " ".join(texts)  # founder 2026-10-12: no fact that can never change
     assert texts[1].startswith("375 wide: page height 2000px, broken images: 1")
     assert "top to bottom" in texts[0] and len(images) >= 3  # tall pages arrive in parts
     widths = {base64.b64decode(b["data"])[16:20] for b in images}
@@ -5144,10 +5149,15 @@ def test_overflow_render_notes_and_a_failing_renderer_are_reported(tmp_path: Pat
 Run: RT `test_site_render_tool.py`
 Expected: FAIL — `AttributeError: 'SiteTools' object has no attribute 'render_page'`.
 
-- [ ] **Step 2: Confirm T6e, T8a and T8b were approved** (Task 0), and open question 1's answer.
-If the founder chose (b), drop ", console errors: 0" from the facts line below, drop "and console
-errors" from `TOOL_DESCRIPTIONS["render_page"]`, apply the founder's `page-review` wording, and
-adjust the first test's expected prefix.
+- [ ] **Step 2: Confirm T8a and T8b were approved** (Task 0). T6e, T16a and T16b were approved on
+2026-10-12 (open question 1, answer (b): the console clause is dropped). Apply T16b to the copied
+skill: in `subsystems/clue-design/apps/agent_runtime/lumen_agent/site/skills/page-review/SKILL.md`
+replace the first paragraph's
+`with facts about broken images, overflow and console errors.` with
+`with facts about broken images and overflow.`, and append to `lumen_agent/site/SKILLS-CHANGELOG.md`
+a dated entry: `2026-10-12 page-review: render_page no longer reports console errors (the production
+screenshot runs no script, so the count could never change); section crashes arrive as render notes
+or NOT RENDERED instead.`
 
 - [ ] **Step 3: Add `render_page` to `SiteTools`.** Add constants after `LOOP_GUARD_AT`:
 
@@ -5230,7 +5240,7 @@ with its `base64`, `io` imports) and add:
                 "type": "text",
                 "text": (
                     f"{width} wide: page height {height}px, broken images: {broken}, "
-                    f"horizontal overflow: {'yes' if shot_width > width + 1 else 'no'}, console errors: 0. "
+                    f"horizontal overflow: {'yes' if shot_width > width + 1 else 'no'}. "
                     f"Shown at {size} in {len(tiles)} part{'s' if len(tiles) != 1 else ''}, top to bottom.{notes}"
                 ),
             })
@@ -5240,8 +5250,8 @@ with its `base64`, `io` imports) and add:
 ```
 
 Run: RT `test_site_render_tool.py`
-Expected: PASS. (Console errors are always 0: Lane A's render is static and script-free — open
-question 1.)
+Expected: PASS. (No console fact: Lane A's screenshot runs no script, so a section crash arrives
+as "Render notes" or "NOT RENDERED" instead — open question 1, answer (b).)
 
 - [ ] **Step 4: Write the failing adapter test** `apps/api/tests/test_site_turn_ports.py`:
 
@@ -5410,7 +5420,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit.**
 
 ```bash
-git add subsystems/clue-design/apps/agent_runtime/lumen_agent/site/tools.py subsystems/clue-design/apps/agent_runtime/tests/test_site_render_tool.py subsystems/clue-design/apps/api/lumen_api/site_turn_ports.py subsystems/clue-design/apps/api/tests/test_site_turn_ports.py
+git add subsystems/clue-design/apps/agent_runtime/lumen_agent/site/tools.py subsystems/clue-design/apps/agent_runtime/lumen_agent/site/skills/page-review/SKILL.md subsystems/clue-design/apps/agent_runtime/lumen_agent/site/SKILLS-CHANGELOG.md subsystems/clue-design/apps/agent_runtime/tests/test_site_render_tool.py subsystems/clue-design/apps/api/lumen_api/site_turn_ports.py subsystems/clue-design/apps/api/tests/test_site_turn_ports.py
 git commit -m "render_page on Lane A's hardened renderer: screenshots at 1440 and 375, broken images from custody, overflow from width"
 ```
 
