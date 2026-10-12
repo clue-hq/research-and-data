@@ -11,7 +11,7 @@ import pytest
 from lumen_api.core import CoreClient
 from lumen_ingestion.brief_agent import build_brief_request
 from lumen_ingestion.capture.geometry import parse_geometry
-from lumen_ingestion.capture.motion import attach_keyframes
+from lumen_ingestion.capture.motion import attach_keyframes, clean_icon_svg
 from lumen_ingestion.capture.snapshot import Stylesheet
 from lumen_ingestion.evidence import BrandEvidence, EvidencePointer, MeasuredStyle, MotionEvidence, StyleLook
 from lumen_ingestion.normalizer import component_tokens
@@ -24,6 +24,10 @@ HARVEST = json.loads((TESTS / "fixtures" / "capture" / "style_states.harvest.jso
 CSS = (TESTS / "fixtures" / "capture" / "style_states.html").read_text().split("<style>", 1)[1].split("</style>", 1)[0]
 #: Garner's published kit (the puck spike's `garner/kit.json`) without its `brief` and `grammar_audit`.
 GARNER = TESTS / "fixtures" / "ingestion" / "garner_kit.json"
+#: The icon-markup vectors the engine (brand_style_tokens.rs) and site-kit (isSafeIconSvg) read too.
+ICON_SVG_CASES = json.loads(
+    (TESTS.parents[2] / "crates" / "lumen-core" / "fixtures" / "brand" / "icon_svg_cases.json").read_text()
+)
 ICON = (
     '<svg viewBox="0 0 12 12" fill="none"><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" '
     'stroke-width="1.5"></path></svg>'
@@ -248,6 +252,52 @@ def test_ingestion_and_the_engine_agree_on_every_style_value(value: dict, expect
     validation = CoreClient().validate_brand_kit(kit, product_ready=False, raise_on_error=False)
     engine_ok = not any(d["severity"] == "error" and d["code"].startswith("LUMB026") for d in validation["diagnostics"])
     assert engine_ok is expected
+
+
+def test_svg_ok_accepts_exactly_the_shared_icon_vectors() -> None:
+    wrong = [f"refused: {markup!r}" for markup in ICON_SVG_CASES["accept"] if not svg_ok(markup)]
+    wrong += [
+        f"accepted ({case['why']}): {case['markup']!r}" for case in ICON_SVG_CASES["refuse"] if svg_ok(case["markup"])
+    ]
+    assert wrong == []
+
+
+#: Icon markup as real pages write it; the cleaner must turn each into the canonical form or None.
+MESSY_ICONS = {
+    "a self-closing path": '<svg viewBox="0 0 12 12"><path d="M1 6h9" stroke="currentColor"/></svg>',
+    "single quotes": "<svg viewBox='0 0 12 12' fill='none'><path d='M1 6h9' stroke='currentColor'></path></svg>",
+    "an onload": '<svg onload="alert(1)" viewBox="0 0 12 12"><path d="M1 6h9"></path></svg>',
+    "a title": '<svg viewBox="0 0 12 12"><title>Arrow</title><path d="M1 6h9"></path></svg>',
+    "whitespace and newlines between elements": (
+        '<svg viewBox="0 0 12 12">\n  <g fill="none">\n    <path d="M1 6h9"></path>\n  </g>\n</svg>'
+    ),
+    "uppercase names and an xmlns": (
+        '<SVG xmlns="http://www.w3.org/2000/svg" VIEWBOX="0 0 12 12"><PATH D="M1 6h9"></PATH></SVG>'
+    ),
+    "a value ending in a newline": '<svg viewBox="0 0 12 12"><path d="M1 6h9\n" stroke="currentColor"></path></svg>',
+    "an img breakout": '<svg viewBox="0 0 12 12"><img src="https://example.com/x.png"><path d="M1 6h9"></path></svg>',
+    "nesting deeper than 32": '<svg viewBox="0 0 12 12">' + "<g>" * 40 + '<path d="M1 1"></path>' + "</g>" * 40 + "</svg>",
+}
+
+
+@pytest.mark.parametrize("raw", MESSY_ICONS.values(), ids=MESSY_ICONS.keys())
+def test_the_cleaner_only_ever_emits_markup_svg_ok_accepts(raw: str) -> None:
+    cleaned = clean_icon_svg(raw)
+    assert cleaned is None or svg_ok(cleaned), cleaned
+
+
+def test_the_cleaner_keeps_messy_icons_that_still_draw() -> None:
+    kept = {name: clean_icon_svg(raw) for name, raw in MESSY_ICONS.items()}
+    assert kept["a self-closing path"] == '<svg viewBox="0 0 12 12"><path d="M1 6h9" stroke="currentColor"></path></svg>'
+    assert kept["single quotes"] == (
+        '<svg viewBox="0 0 12 12" fill="none"><path d="M1 6h9" stroke="currentColor"></path></svg>'
+    )
+    assert kept["an onload"] == kept["a title"] == '<svg viewBox="0 0 12 12"><path d="M1 6h9"></path></svg>'
+    assert kept["whitespace and newlines between elements"] == (
+        '<svg viewBox="0 0 12 12"><g fill="none"><path d="M1 6h9"></path></g></svg>'
+    )
+    assert kept["a value ending in a newline"] == '<svg viewBox="0 0 12 12"><path stroke="currentColor"></path></svg>'
+    assert kept["nesting deeper than 32"] is None
 
 
 def test_component_tokens_are_known_by_their_root() -> None:

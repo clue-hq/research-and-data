@@ -27,6 +27,8 @@ KEYFRAME_PROPERTIES = frozenset({
 MAX_KEYFRAME_STEPS = 32
 MAX_KEYFRAME_DECLARATIONS = 12
 MAX_ICON_SVG_BYTES = 4096
+#: How many elements an icon may nest, its `<svg>` included (the engine's `MAX_ICON_SVG_DEPTH`).
+MAX_ICON_SVG_DEPTH = 32
 _SAFE_VALUE = re.compile(r"^[A-Za-z0-9 ,.()%#+\-/]{1,200}$")
 _UNSAFE = ("url(", "var(", "expression")
 #: The elements that put ink down; a `<g>` or `<svg>` alone draws nothing.
@@ -43,6 +45,7 @@ _SVG_ATTRIBUTES = {
         "stroke-opacity",
     )
 }
+#: An attribute value, checked with `fullmatch`: `$` alone also matches before a trailing newline.
 _ATTRIBUTE_VALUE = re.compile(r"^[A-Za-z0-9 ,.()%#+\-]{0,2000}$")
 
 
@@ -136,30 +139,35 @@ def attach_keyframes(motion: MotionEvidence, stylesheets: Iterable[Any]) -> Moti
 
 def clean_icon_svg(markup: object) -> str | None:
     """A button icon's SVG with drawing elements and drawing attributes only, or None — None too
-    when nothing is left to draw (an unresolved sprite `<use>` cleans to a bare `<svg>`)."""
+    when nothing is left to draw (an unresolved sprite `<use>` cleans to a bare `<svg>`), or when it
+    nests deeper than `MAX_ICON_SVG_DEPTH` or comes out longer than `MAX_ICON_SVG_BYTES`. What it
+    returns is the one form the engine accepts (`normalizer.component_tokens.svg_ok`)."""
     if not isinstance(markup, str) or "<svg" not in markup.lower():
         return None
     root = LexborHTMLParser(markup).css_first("svg")
     if root is None:
         return None
 
-    draws = False
+    draws = too_deep = False
 
-    def emit(node: Any) -> str:
-        nonlocal draws
+    def emit(node: Any, depth: int) -> str:
+        nonlocal draws, too_deep
         tag = (node.tag or "").lower()
         if tag not in _SVG_ELEMENTS:
+            return ""
+        if depth > MAX_ICON_SVG_DEPTH:
+            too_deep = True
             return ""
         draws = draws or tag in _SVG_DRAWING_ELEMENTS
         attributes = []
         for name, value in (node.attributes or {}).items():
             key = _SVG_ATTRIBUTES.get(str(name).lower())
             text = "" if value is None else str(value)
-            if key is None or not _ATTRIBUTE_VALUE.match(text) or "url(" in text.lower():
+            if key is None or not _ATTRIBUTE_VALUE.fullmatch(text) or "url(" in text.lower():
                 continue
             attributes.append(f'{key}="{html.escape(text, quote=True)}"')
-        inner = "".join(emit(child) for child in node.iter(include_text=False))
+        inner = "".join(emit(child, depth + 1) for child in node.iter(include_text=False))
         return f"<{' '.join([tag, *attributes])}>{inner}</{tag}>"
 
-    cleaned = emit(root)
-    return cleaned if draws and len(cleaned.encode()) <= MAX_ICON_SVG_BYTES else None
+    cleaned = emit(root, 1)
+    return cleaned if draws and not too_deep and len(cleaned.encode()) <= MAX_ICON_SVG_BYTES else None

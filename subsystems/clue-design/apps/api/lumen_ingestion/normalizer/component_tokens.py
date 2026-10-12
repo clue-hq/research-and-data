@@ -66,13 +66,9 @@ _MATRIX = re.compile(r"(?:matrix|matrix3d)\([0-9 ,.\-e]+\)")
 _PROPERTY = re.compile(r"^(?:all|[a-z-]{1,60})$")
 _DIRECTIONS = frozenset({"normal", "reverse", "alternate", "alternate-reverse"})
 _FILL_MODES = frozenset({"none", "forwards", "backwards", "both"})
-_SVG_BANNED = ("<script", "javascript:", "url(", "href", "<foreignobject", "<!", "<?", "<style", "<use", "<image", "<a ", "<a>")
-#: The engine's `has_event_attribute`: an `on<letters>` attribute counts after whitespace, a `/` or a
-#: quote, with only whitespace before its `=`. Whitespace is HTML's (and Rust's `is_ascii_whitespace`):
-#: never `\s`, which also matches \x0b and Unicode spaces.
-_EVENT_ATTRIBUTE = re.compile(r"[ \t\n\r\x0c/\"']on[a-z]+[ \t\n\r\x0c]*=")
-#: The engine lowercases ASCII only (`to_ascii_lowercase`); `str.lower` would also fold non-ASCII.
-_ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
+#: What an icon's element and attribute names are read as (the engine's `icon_svg_ok`).
+_SVG_NAME_CHARS = frozenset(string.ascii_lowercase)
+_SVG_ATTRIBUTE_NAME_CHARS = frozenset(string.ascii_letters + string.digits + "-")
 _SLUG = re.compile(r"[^a-z0-9]+")
 #: A side, corner or ordinal suffix: `padding-top`, `radius-tl`, `shadow-1` and `duration-2` are the
 #: slot kinds `padding`, `radius`, `shadow` and `duration`.
@@ -146,16 +142,65 @@ def glyph_ok(text: object) -> bool:
 
 
 def svg_ok(markup: object) -> bool:
-    from ..capture.motion import MAX_ICON_SVG_BYTES
-
-    if not isinstance(markup, str) or len(markup.encode()) > MAX_ICON_SVG_BYTES:
-        return False
-    lower = markup.translate(_ASCII_LOWER)
-    trimmed = lower.strip()
-    return (
-        trimmed.startswith("<svg") and trimmed.endswith("</svg>")
-        and not any(bad in lower for bad in _SVG_BANNED) and not _EVENT_ATTRIBUTE.search(lower)
+    """The engine's icon rule (lumen-core brand.rs `icon_svg_ok`), the same scanner: the markup is
+    exactly the canonical form `clean_icon_svg` emits — an `<svg>` of `<name attr="value">…</name>`
+    elements, using only the cleaner's elements, attribute spellings and value characters, with no
+    text, whitespace, comments or self-closing tags — within the byte and depth caps, and something
+    in it draws. Anything else is refused at the first deviation."""
+    from ..capture.motion import (
+        _ATTRIBUTE_VALUE, _SVG_ATTRIBUTES, _SVG_DRAWING_ELEMENTS, _SVG_ELEMENTS, MAX_ICON_SVG_BYTES,
+        MAX_ICON_SVG_DEPTH,
     )
+
+    # A canonical icon is ASCII throughout, so its length here is its length in bytes.
+    if not isinstance(markup, str) or not markup.isascii() or len(markup) > MAX_ICON_SVG_BYTES:
+        return False
+
+    def run(start: int, chars: frozenset[str]) -> str:
+        end = start
+        while end < len(markup) and markup[end] in chars:
+            end += 1
+        return markup[start:end]
+
+    at, open_names, draws = 0, [], False
+    while True:
+        if not markup.startswith("<", at):
+            return False
+        at += 1
+        if markup.startswith("/", at):
+            name = run(at + 1, _SVG_NAME_CHARS)
+            at += 1 + len(name)
+            if not open_names or open_names.pop() != name or not markup.startswith(">", at):
+                return False
+            at += 1
+            if not open_names:
+                return at == len(markup) and draws
+            continue
+        name = run(at, _SVG_NAME_CHARS)
+        at += len(name)
+        # The root is an `svg`; inside it, any of the cleaner's nine elements.
+        allowed = name in _SVG_ELEMENTS if open_names else name == "svg"
+        if not allowed:
+            return False
+        while not markup.startswith(">", at):
+            if not markup.startswith(" ", at):
+                return False
+            attribute = run(at + 1, _SVG_ATTRIBUTE_NAME_CHARS)
+            at += 1 + len(attribute)
+            if attribute not in _SVG_ATTRIBUTES.values() or not markup.startswith('="', at):
+                return False
+            close = markup.find('"', at + 2)
+            if close < 0:
+                return False
+            value = markup[at + 2:close]
+            if not _ATTRIBUTE_VALUE.fullmatch(value) or "url(" in value.lower():
+                return False
+            at = close + 1
+        at += 1
+        open_names.append(name)
+        if len(open_names) > MAX_ICON_SVG_DEPTH:
+            return False
+        draws = draws or name in _SVG_DRAWING_ELEMENTS
 
 
 def _px(value: float) -> dict:

@@ -3,6 +3,8 @@ use lumen_core::{validate_brand_kit, BrandKit, DiagnosticSeverity, StyleTokenVal
 use serde_json::{json, Value};
 
 const ACME_BRAND_KIT: &str = include_str!("../fixtures/brand_kits/acme_full.json");
+/// The icon-markup vectors ingestion's `svg_ok` and site-kit's `isSafeIconSvg` are tested against too.
+const ICON_SVG_CASES: &str = include_str!("../fixtures/brand/icon_svg_cases.json");
 
 fn token(value: Value) -> Value {
     json!({
@@ -149,4 +151,29 @@ fn each_unsafe_or_dangling_style_token_is_refused_by_its_code() {
     }
     let bad_key = kit_with(json!({"button solid": token(json!({"kind": "duration", "ms": 1.0}))}));
     assert!(errors(&bad_key).contains(&"LUMB0120".to_owned()));
+}
+
+#[test]
+fn an_icon_svg_is_accepted_exactly_when_it_is_the_cleaners_canonical_form() {
+    let cases: Value = serde_json::from_str(ICON_SVG_CASES).unwrap();
+    let refused = |markup: &str| {
+        let kit = kit_with(json!({"button.solid-047464.icon": token(
+            json!({"kind": "svg", "markup": markup, "width": 12.0, "height": 12.0})
+        )}));
+        errors(&kit).contains(&"LUMB0265".to_owned())
+    };
+    let mut wrong = Vec::new();
+    for markup in cases["accept"].as_array().unwrap() {
+        let markup = markup.as_str().unwrap();
+        if refused(markup) {
+            wrong.push(format!("refused: {markup:?}"));
+        }
+    }
+    for case in cases["refuse"].as_array().unwrap() {
+        let markup = case["markup"].as_str().unwrap();
+        if !refused(markup) {
+            wrong.push(format!("accepted ({}): {markup:?}", case["why"]));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

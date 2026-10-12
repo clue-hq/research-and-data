@@ -566,16 +566,6 @@ ENGINE_EXTRAS = {
 }
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A9 scenario (beyond the brief's four forms): the engine's icon check is a deny-list "
-        "(lumen-core brand.rs icon_svg_ok) and accepts <svg> markup carrying an HTML <img>/<embed> "
-        "breakout that loads a remote URL, or a <set attributeName=\"onclick\">; site-kit's own re-check "
-        "(brand-values.ts isSafeIconSvg) accepts them too and Button inlines the markup. Reachable only "
-        "through a hand-written kit (POST /brand-kits); ingestion's allow-list cleaner never emits them"
-    ),
-)
 def test_scenario_4e_the_engine_refuses_icon_markup_that_loads_or_animates_handlers(client: TestClient) -> None:
     verdicts = {form: _engine_verdict(client, markup) for form, markup in ENGINE_EXTRAS.items()}
     print("A4e engine verdicts:", {form: sorted(codes) for form, codes in verdicts.items()})

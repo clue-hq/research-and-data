@@ -324,15 +324,27 @@ for (const [name, load] of BRANDS) {
 
 // --- the icon re-check site-kit draws with -----------------------------------------------------
 
-test("KNOWN DEFECT: site-kit's icon re-check (isSafeIconSvg) refuses an event handler after a slash, a quote or a tab, as the engine does", {
-  skip: defect("A9 scenario: brand-values.ts isSafeIconSvg checks / on[a-z]+\\s*=/ (a space before `on` only); the engine (brand.rs has_event_attribute, broadened in X1) and the minting mirror (component_tokens.py svg_ok) also refuse `/`, a quote, a tab or a newline before it, so site-kit's 'the engine's own icon rule, checked again where the markup is drawn' is not the engine's rule"),
-}, () => {
+test("site-kit's icon re-check (isSafeIconSvg) refuses an event handler after a slash, a quote or a tab, as the engine does", () => {
   for (const markup of [
     '<svg/onload="alert(1)"></svg>',
     '<svg a="1"onload="alert(1)"></svg>',
     '<svg\tonload="alert(1)"></svg>',
     '<svg\nonload="alert(1)"></svg>',
   ]) assert.equal(isSafeIconSvg(markup), false, JSON.stringify(markup));
+});
+
+/** The icon-markup vectors the engine (brand_style_tokens.rs) and ingestion (svg_ok) are tested against. */
+const ICON_SVG_CASES = JSON.parse(fs.readFileSync(
+  new URL("../../../../../subsystems/clue-design/crates/lumen-core/fixtures/brand/icon_svg_cases.json", import.meta.url),
+  "utf-8",
+)) as { accept: string[]; refuse: { markup: string; why: string }[] };
+
+test("site-kit's icon re-check accepts exactly the engine's icon vectors", () => {
+  const wrong = [
+    ...ICON_SVG_CASES.accept.filter((markup) => !isSafeIconSvg(markup)).map((markup) => `refused: ${JSON.stringify(markup)}`),
+    ...ICON_SVG_CASES.refuse.filter(({ markup }) => isSafeIconSvg(markup)).map(({ markup, why }) => `accepted (${why}): ${JSON.stringify(markup)}`),
+  ];
+  assert.deepEqual(wrong, []);
 });
 
 test("site-kit's icon re-check refuses the brief's four hostile forms as drawn by a space-separated handler, a script, a use and an href", () => {

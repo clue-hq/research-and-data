@@ -149,13 +149,68 @@ export type StyleValue =
 const SAFE_CSS = /^[A-Za-z0-9 ,.()%#+\-/]{1,400}$/;
 /** A CSS value that only draws: plain characters, nothing that loads or substitutes. */
 export const safeCss = (value: string) => SAFE_CSS.test(value) && !/url\(|var\(|expression/i.test(value);
-const SVG_BANNED = ["<script", "javascript:", "url(", "href", "<foreignobject", "<!", "<?", "<style", "<use", "<image", "<a ", "<a>"];
+/** The elements that draw; with `svg` and `g`, every element an icon may use (the engine's lists). */
+const ICON_DRAWING_ELEMENTS = new Set(["path", "circle", "ellipse", "line", "polyline", "polygon", "rect"]);
+/** The attributes, spelled exactly as ingestion's cleaner writes them. */
+const ICON_ATTRIBUTES = new Set([
+  "viewBox", "d", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+  "fill-rule", "clip-rule", "cx", "cy", "r", "rx", "ry", "x", "y", "x1", "y1", "x2", "y2", "points", "width",
+  "height", "transform", "opacity", "fill-opacity", "stroke-opacity",
+]);
+const ICON_VALUE = /^[A-Za-z0-9 ,.()%#+\-]{0,2000}$/;
+const MAX_ICON_BYTES = 4096;
+const MAX_ICON_DEPTH = 32;
 
-/** The engine's own icon rule, checked again where the markup is drawn. */
+/** The engine's own icon rule, checked again where the markup is drawn.
+ *
+ *  The same scanner as lumen-core's `icon_svg_ok` and ingestion's `svg_ok`: the markup is exactly the
+ *  canonical form ingestion's cleaner emits — an `<svg>` of `<name attr="value">…</name>` elements,
+ *  using only the cleaner's elements, attribute spellings and value characters, with no text,
+ *  whitespace, comments or self-closing tags — within the byte and depth caps, and something in it
+ *  draws. Anything else is refused at the first deviation. */
 export function isSafeIconSvg(markup: string): boolean {
-  const lower = markup.toLowerCase().trim();
-  return markup.length <= 4096 && lower.startsWith("<svg") && lower.endsWith("</svg>")
-    && !SVG_BANNED.some((bad) => lower.includes(bad)) && !/ on[a-z]+\s*=/.test(lower);
+  // A canonical icon is ASCII throughout, so its length here is its length in bytes.
+  if (markup.length > MAX_ICON_BYTES || !/^[\x00-\x7f]*$/.test(markup)) return false;
+  const run = (start: number, chars: RegExp) => {
+    let end = start;
+    while (end < markup.length && chars.test(markup[end])) end += 1;
+    return markup.slice(start, end);
+  };
+  const open: string[] = [];
+  let at = 0;
+  let draws = false;
+  for (;;) {
+    if (markup[at] !== "<") return false;
+    at += 1;
+    if (markup[at] === "/") {
+      const name = run(at + 1, /[a-z]/);
+      at += 1 + name.length;
+      if (open.pop() !== name || markup[at] !== ">") return false;
+      at += 1;
+      if (open.length === 0) return at === markup.length && draws;
+      continue;
+    }
+    const name = run(at, /[a-z]/);
+    at += name.length;
+    // The root is an `svg`; inside it, any of the cleaner's nine elements.
+    const allowed = open.length === 0 ? name === "svg" : name === "svg" || name === "g" || ICON_DRAWING_ELEMENTS.has(name);
+    if (!allowed) return false;
+    while (markup[at] !== ">") {
+      if (markup[at] !== " ") return false;
+      const attribute = run(at + 1, /[A-Za-z0-9-]/);
+      at += 1 + attribute.length;
+      if (!ICON_ATTRIBUTES.has(attribute) || !markup.startsWith('="', at)) return false;
+      const close = markup.indexOf('"', at + 2);
+      if (close < 0) return false;
+      const value = markup.slice(at + 2, close);
+      if (!ICON_VALUE.test(value) || value.toLowerCase().includes("url(")) return false;
+      at = close + 1;
+    }
+    at += 1;
+    open.push(name);
+    if (open.length > MAX_ICON_DEPTH) return false;
+    draws ||= ICON_DRAWING_ELEMENTS.has(name);
+  }
 }
 
 /** A `styles` token, re-checked here too: these values go into generated CSS and markup. */

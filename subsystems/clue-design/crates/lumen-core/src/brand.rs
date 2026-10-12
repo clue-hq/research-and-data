@@ -1476,6 +1476,44 @@ const MAX_STYLE_TEXT: usize = 400;
 const MAX_KEYFRAME_STEPS: usize = 32;
 const MAX_KEYFRAME_DECLARATIONS: usize = 12;
 const MAX_ICON_SVG_BYTES: usize = 4096;
+const MAX_ICON_SVG_DEPTH: usize = 32;
+const MAX_ICON_SVG_VALUE: usize = 2000;
+/// The icon elements that put ink down (the cleaner's `_SVG_DRAWING_ELEMENTS`); with `svg` and `g`
+/// they are all the elements an icon may use (`_SVG_ELEMENTS`).
+const ICON_SVG_DRAWING_ELEMENTS: &[&str] = &[
+    "path", "circle", "ellipse", "line", "polyline", "polygon", "rect",
+];
+/// The icon attributes, spelled exactly as the cleaner writes them (`_SVG_ATTRIBUTES`).
+const ICON_SVG_ATTRIBUTES: &[&str] = &[
+    "viewBox",
+    "d",
+    "fill",
+    "stroke",
+    "stroke-width",
+    "stroke-linecap",
+    "stroke-linejoin",
+    "stroke-miterlimit",
+    "fill-rule",
+    "clip-rule",
+    "cx",
+    "cy",
+    "r",
+    "rx",
+    "ry",
+    "x",
+    "y",
+    "x1",
+    "y1",
+    "x2",
+    "y2",
+    "points",
+    "width",
+    "height",
+    "transform",
+    "opacity",
+    "fill-opacity",
+    "stroke-opacity",
+];
 
 fn style_text_ok(value: &str, max: usize) -> bool {
     let lower = value.to_ascii_lowercase();
@@ -1543,46 +1581,97 @@ fn glyph_ok(text: &str) -> bool {
     (1..=4).contains(&count) && !text.chars().any(|c| c.is_control() || "<>&\"'".contains(c))
 }
 
-/// An `on<letters>=` event attribute counts wherever HTML would start a new attribute: after
-/// whitespace, after a `/`, or straight after a quoted value — not only after a space.
-fn has_event_attribute(lower: &str) -> bool {
-    let bytes = lower.as_bytes();
-    (1..bytes.len()).any(|index| {
-        if !b" \t\n\r\x0c/\"'".contains(&bytes[index - 1]) || !bytes[index..].starts_with(b"on") {
+/// An icon's markup is exactly the canonical form the ingestion cleaner emits
+/// (`lumen_ingestion/capture/motion.py` `clean_icon_svg`), read by a scanner, never an HTML parser:
+///
+/// ```text
+/// icon    := element whose NAME is "svg"
+/// element := "<" NAME attrs ">" element* "</" NAME ">"
+/// attrs   := ( " " ATTR "=\"" VALUE "\"" )*
+/// ```
+///
+/// NAME is one of the cleaner's elements, ATTR one of its attribute spellings (case-sensitive), and
+/// VALUE its value characters, never holding `url(`. Nothing else anywhere: no text, whitespace,
+/// comments or self-closing tags. At most `MAX_ICON_SVG_BYTES` bytes and `MAX_ICON_SVG_DEPTH` open
+/// elements, and at least one element that draws. Ingestion's `svg_ok` and site-kit's
+/// `isSafeIconSvg` are this same scanner; `fixtures/brand/icon_svg_cases.json` holds them to it.
+fn icon_svg_ok(markup: &str) -> bool {
+    fn run(bytes: &[u8], from: usize, keep: impl Fn(u8) -> bool) -> &[u8] {
+        let len = bytes[from..].iter().take_while(|byte| keep(**byte)).count();
+        &bytes[from..from + len]
+    }
+    let named = |list: &[&str], name: &[u8]| list.iter().any(|item| item.as_bytes() == name);
+    if markup.len() > MAX_ICON_SVG_BYTES {
+        return false;
+    }
+    let bytes = markup.as_bytes();
+    let mut at = 0;
+    let mut open: Vec<&[u8]> = Vec::new();
+    let mut draws = false;
+    loop {
+        if bytes.get(at) != Some(&b'<') {
             return false;
         }
-        let rest = &bytes[index + 2..];
-        let name = rest
-            .iter()
-            .take_while(|byte| byte.is_ascii_alphabetic())
-            .count();
-        name > 0 && rest[name..].iter().find(|byte| !byte.is_ascii_whitespace()) == Some(&b'=')
-    })
-}
-
-fn icon_svg_ok(markup: &str) -> bool {
-    let lower = markup.to_ascii_lowercase();
-    let trimmed = lower.trim();
-    markup.len() <= MAX_ICON_SVG_BYTES
-        && trimmed.starts_with("<svg")
-        && trimmed.ends_with("</svg>")
-        && ![
-            "<script",
-            "javascript:",
-            "url(",
-            "href",
-            "<foreignobject",
-            "<!",
-            "<?",
-            "<style",
-            "<use",
-            "<image",
-            "<a ",
-            "<a>",
-        ]
-        .iter()
-        .any(|bad| lower.contains(bad))
-        && !has_event_attribute(&lower)
+        at += 1;
+        if bytes.get(at) == Some(&b'/') {
+            let name = run(bytes, at + 1, |byte| byte.is_ascii_lowercase());
+            at += 1 + name.len();
+            if open.pop() != Some(name) || bytes.get(at) != Some(&b'>') {
+                return false;
+            }
+            at += 1;
+            if open.is_empty() {
+                return at == bytes.len() && draws;
+            }
+            continue;
+        }
+        let name = run(bytes, at, |byte| byte.is_ascii_lowercase());
+        at += name.len();
+        let drawing = named(ICON_SVG_DRAWING_ELEMENTS, name);
+        // The root is an `svg`; inside it, any of the cleaner's nine elements.
+        let allowed = if open.is_empty() {
+            name == b"svg"
+        } else {
+            drawing || name == b"svg" || name == b"g"
+        };
+        if !allowed {
+            return false;
+        }
+        loop {
+            match bytes.get(at) {
+                Some(b'>') => break,
+                Some(b' ') => {
+                    let attribute = run(bytes, at + 1, |byte| {
+                        byte.is_ascii_alphanumeric() || byte == b'-'
+                    });
+                    at += 1 + attribute.len();
+                    if !named(ICON_SVG_ATTRIBUTES, attribute) || !bytes[at..].starts_with(b"=\"") {
+                        return false;
+                    }
+                    let value = run(bytes, at + 2, |byte| {
+                        byte.is_ascii_alphanumeric() || b" ,.()%#+-".contains(&byte)
+                    });
+                    at += 2 + value.len();
+                    if value.len() > MAX_ICON_SVG_VALUE
+                        || value
+                            .windows(4)
+                            .any(|four| four.eq_ignore_ascii_case(b"url("))
+                        || bytes.get(at) != Some(&b'"')
+                    {
+                        return false;
+                    }
+                    at += 1;
+                }
+                _ => return false,
+            }
+        }
+        at += 1;
+        open.push(name);
+        if open.len() > MAX_ICON_SVG_DEPTH {
+            return false;
+        }
+        draws |= drawing;
+    }
 }
 
 fn iterations_ok(value: &str) -> bool {
