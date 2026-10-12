@@ -6,7 +6,7 @@ description: Use after render_page, to judge the rendered page as the reader and
 # Reviewing the page
 
 `render_page` gives you two pictures: desktop (1440 wide) and mobile (375 wide), with facts
-about broken images, overflow and console errors. Look at them as the reader would, then go
+about broken images and overflow. Look at them as the reader would, then go
 through this list.
 
 1. **First screen.** It says what this is and who it is for, and the button is visible.

@@ -72,3 +72,6 @@ fails without it).
   `kit.Link`, `kit.Card`, `fit="contain"` on `kit.Image`, and the brand's motion classes; the Rules
   bullet adds the brand's spacing classes (`py-section`, `mt-stack-tight`). No failing case: the A9
   brand-fidelity rewrite gives the kit these pieces.
+- 2026-10-12 · page-review: render_page no longer reports console errors (the production
+  screenshot runs no script, so the count could never change); section crashes arrive as render
+  notes or NOT RENDERED instead.

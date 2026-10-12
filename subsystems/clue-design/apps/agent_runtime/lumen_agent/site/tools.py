@@ -16,8 +16,10 @@ tools. Each returns text (or text and image blocks) the agent can act on, never 
 
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
+import io
 import re
 import time
 from collections import Counter
@@ -35,6 +37,11 @@ VIEW_ASSET_MAX = 4
 VIEW_ASSET_PX = 1024
 RETRIES = 2
 LOOP_GUARD_AT = 3
+#: Screenshots keep their width: desktop at half size (720 px wide), mobile at full size (375 px),
+#: cut into pieces of at most TILE_PX tall so a model never shrinks a tall page into a sliver.
+SCALE_BY_WIDTH = {1440: 0.5, 375: 1.0}
+TILE_PX = 1600
+_SOURCES = re.compile(r'\bsrc="([^"]*)"|url\(\s*[\'"]?([^\'")\s]+)[\'"]?\s*\)')
 _ASSET_FILE = re.compile(r"^/asset-store/([0-9a-f]{64})$")
 
 #: Tool name -> the description the model reads, in the order the model sees them (the spike's
@@ -208,6 +215,104 @@ class SiteTools:
         self._record("invalid", errors=errors)
         lines.append("\nFix these in page.json / shell.json, then call validate_page again.")
         return "\n".join(lines)
+
+    # --- render --------------------------------------------------------------------------------
+
+    @staticmethod
+    def _tiles(png: bytes, scale: float) -> list[dict]:
+        from PIL import Image
+
+        blocks = []
+        with Image.open(io.BytesIO(png)) as image:
+            image = image.convert("RGB")
+            if scale != 1.0:
+                image = image.resize((round(image.width * scale), round(image.height * scale)))
+            for top in range(0, image.height, TILE_PX):
+                tile = image.crop((0, top, image.width, min(image.height, top + TILE_PX)))
+                buffer = io.BytesIO()
+                tile.save(buffer, format="PNG", optimize=True)
+                blocks.append({
+                    "type": "image",
+                    "source_type": "base64",
+                    "mime_type": "image/png",
+                    "data": base64.b64encode(buffer.getvalue()).decode("ascii"),
+                })
+        return blocks
+
+    @staticmethod
+    def _png_size(png: bytes) -> tuple[int, int]:
+        import io
+
+        from PIL import Image
+
+        with Image.open(io.BytesIO(png)) as image:
+            return image.width, image.height
+
+    def _broken_images(self, html: str) -> int:
+        """Images the rendered page names that this workspace cannot serve (the sanitizer strips any
+        source that is not /asset-store/<sha256> or data:, so those count as broken too)."""
+
+        broken = 0
+        for match in _SOURCES.finditer(html):
+            source = match.group(1) or match.group(2) or ""
+            if not source or source.startswith("data:"):
+                continue
+            digest = digest_of_file(source)
+            if digest is None or self.inputs.assets is None or not self.inputs.assets.exists(digest):
+                broken += 1
+        return broken
+
+    def render_page(self, route: str = "/") -> list[dict] | str:
+        """Screenshot one page at 1440 and 375 wide ("/" is page.json, "/analysis" is
+        pages/analysis.json). Refuses while the site is invalid."""
+
+        from .workspace import read_site_files, site_pages
+
+        check = self.validate_page()
+        if not check.startswith("VALID"):
+            return "NOT RENDERED: the site is invalid.\n" + check
+        route = "/" + route.strip("/") if route.strip("/") else "/"
+        pages = site_pages(self.workspace)
+        if route not in pages:
+            return f"NOT RENDERED: no page {route}. Pages: {', '.join(pages)}."
+        renderer = self.inputs.renderer
+        site = read_site_files(self.workspace, self.base_site, self.sections)
+        sections = [self.sections[name] for name in site["agent_sections"]]
+
+        def refused(error: Exception) -> str:
+            code = getattr(error, "code", None) or type(error).__name__
+            return (f"NOT RENDERED: the page could not be drawn ({code}). Validate it and try again; "
+                    "if this repeats, say so in your report.")
+
+        if renderer is None:
+            return refused(RuntimeError("render.unavailable"))
+        try:
+            html, css, warnings = renderer.render(site, self.brand, sections, route=route)
+        except Exception as error:  # noqa: BLE001 - a refused render is an answer, not a crash
+            return refused(error)
+        broken = self._broken_images(html)
+        blocks: list[dict] = []
+        for width in (1440, 375):
+            try:
+                png = renderer.screenshot(html, css, width=width)
+            except Exception as error:  # noqa: BLE001
+                return refused(error)
+            shot_width, height = self._png_size(png)
+            scale = SCALE_BY_WIDTH.get(width, 1.0)
+            tiles = self._tiles(png, scale)
+            size = "half size" if scale < 1 else "full size"
+            notes = f" Render notes: {'; '.join(warnings[:3])}." if warnings and width == 1440 else ""
+            blocks.append({
+                "type": "text",
+                "text": (
+                    f"{width} wide: page height {height}px, broken images: {broken}, "
+                    f"horizontal overflow: {'yes' if shot_width > width + 1 else 'no'}. "
+                    f"Shown at {size} in {len(tiles)} part{'s' if len(tiles) != 1 else ''}, top to bottom.{notes}"
+                ),
+            })
+            blocks.extend(tiles)
+        self._record("render", route=route)
+        return blocks
 
     def restore_version(self, version: int) -> str:
         """Bring back the site as it was at a saved version into page.json, shell.json and pages/."""
