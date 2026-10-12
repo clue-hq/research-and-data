@@ -293,3 +293,6 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   out navigation clones that do not help the reader; no wording change.
 - 2026-10-12 — **Q9:** (a) a request that hits its limit with a valid page saves it (one undo step)
   and says it stopped. (Lane B Task 7 as written; the stop wording is T12a/T12b in Part 2.)
+- 2026-10-12 — **Q10:** T3 approved: "Your skills are below this prompt: `account-page-copy`,
+  `building-with-puck`, `images-and-logos` and `page-review`, and for new sections
+  `writing-a-section` and `rebuilding-a-section`. Follow them."

@@ -60,7 +60,8 @@ changes if the answer differs.
    - (a) save it (one undo step), and the chat summary says it stopped;
    - (b) save nothing unless the agent finished on its own.
    **Recommendation: (a)** — the work is valid and undoable. Task 7 is written to (a).
-4. **The prompt's "Your four skills" line.** E5 is on by default (ruling), so six skills ride
+4. **ANSWERED 2026-10-12: T3 approved (the line names all six skills, the last two "for new
+   sections").** **The prompt's "Your four skills" line.** E5 is on by default (ruling), so six skills ride
    below the prompt. Text T3 in Task 0 proposes the change; if the founder keeps the line as is,
    skip T3 (the spike ran E5 with the old line).
 
@@ -362,7 +363,7 @@ task repeats its text and has a "confirm approved" step.
 | T2a | `system_prompt.md`, "Your tools" | ``- `validate_page`: checks `page.json` and `shell.json`. It saves a version when the page is valid.`` | ``- `validate_page`: checks `page.json` and `shell.json`.`` |
 | T2b | same | ``- `restore_version`: brings back a saved version.`` | ``- `restore_version`: brings back an earlier saved version of the site (`site.md` lists them).`` |
 | T2c | same, new line after the `view_asset` line | (none) | ``- `search_assets`: finds the seller's other images (uploads, and images made for earlier pages) by what they show.`` |
-| T3 | `system_prompt.md`, "How to work" step 1 | ``1. Your four skills are below this prompt: `account-page-copy`, `building-with-puck`,`` / `` `images-and-logos` and `page-review`. Follow them.`` | ``1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,`` / `` `images-and-logos` and `page-review`, and for new sections `writing-a-section` and`` / `` `rebuilding-a-section`. Follow them.`` (open question 4) |
+| T3 | `system_prompt.md`, "How to work" step 1 | ``1. Your four skills are below this prompt: `account-page-copy`, `building-with-puck`,`` / `` `images-and-logos` and `page-review`. Follow them.`` | ``1. Your skills are below this prompt: `account-page-copy`, `building-with-puck`,`` / `` `images-and-logos` and `page-review`, and for new sections `writing-a-section` and`` / `` `rebuilding-a-section`. Follow them.`` (open question 4) **Approved 2026-10-12.** |
 | T4 | `skills/building-with-puck/SKILL.md:112` | ``If a change made the page worse, `restore_version` brings back the last good version.`` | ``If a change made the page worse, fix it, or bring back an earlier saved version with `restore_version` (`site.md` lists them).`` |
 | T5 | `skills/images-and-logos/SKILL.md`, §1, new last bullet | (none) | ``- The seller's other images (uploads, and images made for earlier pages) are not in `brand/brand.md`. Find them with `search_assets`, and look at one with `view_asset` before you use it.`` |
 | T6a | tool description `validate_page` | "Check page.json and shell.json against the components, the catalog, the brand and the evidence. Returns VALID (and saves a version) or INVALID with each error and its fix." | "Check page.json and shell.json against the components, the catalog, the brand and the evidence. Returns VALID or INVALID with each error and its fix." |
