@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# THE dev stack runbook. Commands: up|down|restart-api|restart-workers|restart-ingestion|status
+# THE dev stack runbook. Commands: up|down|restart-api|restart-workers|restart-ingestion|restart-editor|status
 #
 # Written 2026-08-29 after a stack rebuild from memory burned an evening on
 # three separate port/origin mismatches. This file is the single source of
@@ -25,6 +25,11 @@
 #                                  pages by hostname at
 #                                  http://<label>.pages.localhost:8040/<slug>
 #                                  (browsers resolve *.localhost to loopback).
+#   3120  site editor (apps/frontend/packages/site-editor)
+#                                — the Puck site editor on its own domain,
+#                                  http://<label>.editor.localhost:3120, one
+#                                  label per workspace. The app frames it; it
+#                                  holds no login (Wave 2 D2 / Contract 9).
 #   ----  primary fleet workers — chat, design turns and research; no port.
 #   ----  ingestion controller  — starts one coordinator and 4 x 10 image slots
 #                                  on demand; execution children stop when idle.
@@ -66,6 +71,7 @@
 #   DEV_STACK_DESIGN_PORT            design API (lumen) port     (default 8010)
 #   DEV_STACK_PLATFORM_PORT          platform API port           (default 8020)
 #   DEV_STACK_PLATFORM2_PORT         platform API twin's port    (default 8030)
+#   DEV_STACK_EDITOR_PORT            site editor port             (default 3120)
 #
 # THE AGENT CODE SANDBOX (added 2026-09-20; spec docs/superpowers/specs/2026-09-19-agent-code-
 # execution-and-document-attachments-design.md). Head-of-ABM's `run_python@1` runs the agent's
@@ -92,6 +98,7 @@ FRONTEND_PORT="${DEV_STACK_FRONTEND_PORT:-3020}"
 DESIGN_PORT="${DEV_STACK_DESIGN_PORT:-8010}"
 PLATFORM_PORT="${DEV_STACK_PLATFORM_PORT:-8020}"
 PLATFORM2_PORT="${DEV_STACK_PLATFORM2_PORT:-8030}"
+EDITOR_PORT="${DEV_STACK_EDITOR_PORT:-3120}"
 PLATFORM_ENV=(
   CLUE_DATABASE_URL="$DB_URL"
   CLUE_DESIGN_RUNTIME_ENABLED=1
@@ -157,6 +164,35 @@ start_page_origin() {  # public page origin — serves http://<label>.pages.loca
   ( cd "$ROOT" && env "${PLATFORM_ENV[@]}" \
       "$ROOT/.venv/bin/python" -m uvicorn --factory clue_page_origin.main:build_application --port 8040 \
       > "${LOG}_page_origin.log" 2>&1 & )
+}
+
+# The site editor on its own domain (Wave 2 Contract 9): http://<label>.editor.localhost:$EDITOR_PORT.
+# Its settings are passed per process, like the page origin's: .env keeps the production suffix.
+# The command line names this checkout's absolute script path so pkill never touches a sibling lane.
+start_site_editor() {
+  ( cd "$ROOT/apps/frontend/packages/site-editor" && env \
+      PORT="$EDITOR_PORT" HOST=127.0.0.1 \
+      CLUE_APP_ORIGIN="http://localhost:${FRONTEND_PORT}" \
+      LUMEN_API_BASE_URL="http://127.0.0.1:${DESIGN_PORT}" \
+      CLUE_SITE_EDITOR_SUFFIX="editor.localhost:${EDITOR_PORT}" \
+      "$ROOT/apps/frontend/node_modules/.bin/tsx" "$ROOT/apps/frontend/packages/site-editor/scripts/dev.ts" \
+      > "${LOG}_site_editor.log" 2>&1 & )
+}
+
+stop_site_editor() {
+  pkill -f "$ROOT/apps/frontend/packages/site-editor/scripts/dev.ts" 2>/dev/null || true
+}
+
+# Restart ONLY the site editor (a change to its server code; client changes rebuild by themselves).
+restart_editor() {
+  load_env
+  stop_site_editor
+  for _ in $(seq 1 20); do
+    lsof -iTCP:"$EDITOR_PORT" -sTCP:LISTEN >/dev/null 2>&1 || break
+    sleep 0.5
+  done
+  start_site_editor
+  echo "restarting site editor…"; sleep 6; status
 }
 
 # Restart ONLY the two platform API processes — the way to pick up a changed
@@ -261,12 +297,15 @@ up() {
   rm -rf "$ROOT/apps/frontend/.next"
   # --hostname 127.0.0.1: bind IPv4 loopback explicitly so a browser (and the BFF's
   # loopback checks) reach the app on http://127.0.0.1:<port> as well as localhost.
-  ( cd "$ROOT/apps/frontend" && npm run dev -- --hostname 127.0.0.1 --port "$FRONTEND_PORT" \
+  ( cd "$ROOT/apps/frontend" && CLUE_SITE_EDITOR_SUFFIX="editor.localhost:${EDITOR_PORT}" \
+      npm run dev -- --hostname 127.0.0.1 --port "$FRONTEND_PORT" \
       > "${LOG}_frontend.log" 2>&1 & )
+  start_site_editor
 
   echo "starting…"; sleep 8; status
   echo
   echo "app:   http://localhost:${FRONTEND_PORT}"
+  echo "editor: http://<label>.editor.localhost:${EDITOR_PORT} (one label per workspace; open a site in the app)"
   echo "login: aryan+clerk_test_design@example.com / ClueDev2026!stripe / code 424242"
 }
 
@@ -277,11 +316,12 @@ down() {
   pkill -f "$ROOT/.venv/bin/python -m uvicorn --factory clue_page_origin.main:build_application" 2>/dev/null || true
   pkill -f "$ROOT/.venv/bin/python -m clue_api.fleet_main" 2>/dev/null || true
   pkill -f "next dev.*${FRONTEND_PORT}" 2>/dev/null || true
+  stop_site_editor
   echo "stack stopped"
 }
 
 status() {
-  for spec in "$FRONTEND_PORT frontend" "$DESIGN_PORT design-api" "$PLATFORM_PORT platform-api" "$PLATFORM2_PORT platform-api-2" "8040 page-origin"; do
+  for spec in "$FRONTEND_PORT frontend" "$DESIGN_PORT design-api" "$PLATFORM_PORT platform-api" "$PLATFORM2_PORT platform-api-2" "8040 page-origin" "$EDITOR_PORT site-editor"; do
     port="${spec%% *}"; name="${spec#* }"
     if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
       echo "  $name ($port): UP"
@@ -320,6 +360,7 @@ case "${1:-status}" in
   restart-api) restart_api ;;
   restart-workers) restart_workers ;;
   restart-ingestion) restart_ingestion_pool ;;
+  restart-editor) restart_editor ;;
   status) status ;;
-  *) echo "usage: $0 up|down|restart-api|restart-workers|restart-ingestion|status"; exit 2 ;;
+  *) echo "usage: $0 up|down|restart-api|restart-workers|restart-ingestion|restart-editor|status"; exit 2 ;;
 esac

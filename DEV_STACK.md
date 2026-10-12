@@ -11,6 +11,7 @@ and in `scripts/dev_stack.sh` — never only in a terminal.**
 ./scripts/dev_stack.sh status   # shows what's up
 ./scripts/dev_stack.sh restart-api   # restarts ONLY the two platform API processes (picks up a changed .env setting; workers keep theirs until down/up)
 ./scripts/dev_stack.sh restart-workers   # restarts ONLY the fleet workers, same count × concurrency as the wrapper sets; check nothing is mid-job first
+./scripts/dev_stack.sh restart-editor   # restarts ONLY the site editor (its server code changed; its client rebuilds by itself)
 ./scripts/dev_stack.sh down     # stops everything
 ```
 
@@ -48,6 +49,7 @@ ports against **its own** database without copying the script:
 | `DEV_STACK_DESIGN_PORT` | design API port | 8010 |
 | `DEV_STACK_PLATFORM_PORT` | platform API port | 8020 |
 | `DEV_STACK_PLATFORM2_PORT` | platform API twin's port | 8030 |
+| `DEV_STACK_EDITOR_PORT` | site editor port (added 2026-10-11) | 3120 |
 | `DEV_STACK_BUILD_SANDBOX_IMAGE` | `1` lets `up` build the agent code-sandbox image when missing (added 2026-09-20) | 0 (refuse, name `make sandbox-image`) |
 
 A lane sets them in a wrapper script next to the runbook, never in a shell export. The first one is
@@ -127,6 +129,7 @@ and the traceback is in `/tmp/<lane>_fleet_worker.log`. The failure is loud, not
 | 8020 | platform API (`clue_api.projections_main:app`) | `CLUE_API_BASE_URL` in `apps/frontend/.env.local` points here — auth/session + the whole `/api/v1` surface. **Without it: "Your workspace is temporarily unavailable."** |
 | 8030 | platform API (second instance, same app) | Historical twin; some flows were exercised against it. Cheap to run, keep it. |
 | 8040 | page origin (`clue_page_origin.main:build_application`, uvicorn factory) | Serves published pages at `http://<label>.pages.localhost:8040/<slug>`, and each further page of a multi-page site at `/<slug>/<route>`; browsers resolve `*.localhost` to loopback with no DNS setup. This is the **only** serving path: the design API serves no published pages (no `/w/` routes, no host-suffix mode — both removed 2026-09-28). |
+| 3120 | site editor (`apps/frontend/packages/site-editor`) | The Puck site editor on its own domain, `http://<label>.editor.localhost:3120` (one label per workspace; `*.localhost` resolves to loopback). The app frames it; it holds no login. A different host — not just a different port — is what keeps the app's cookies away from it. |
 | — | fleet workers (`clue_api.fleet_main`) | Drive design runs and agent turns. **No worker = messages accepted but nothing ever generates.** `up` starts `DEV_STACK_WORKERS` processes (a stack people test on runs **4**), and each process drains `CLUE_FLEET_WORKER_CONCURRENCY` tasks at once (`DEV_STACK_WORKER_CONCURRENCY`; set **4** for a stack people test on) — so a second chat never queues behind a first chat's design turn. |
 
 ## `.env` keys that break everything when missing (all already set — do not remove)
@@ -149,6 +152,12 @@ The page-origin keys are the one exception to "it all comes from `.env`": `.env`
 `scripts/dev_stack.sh` overrides them **per process** with `CLUE_PAGES_SYSTEM_SUFFIX=pages.localhost`
 and `CLUE_PAGES_TRUST_HOST_HEADER=true` — there is no Cloudflare Worker in front of the origin
 locally, so it reads the `Host` header directly instead of an edge secret.
+
+The site editor follows the same rule: `.env` keeps the production `CLUE_SITE_EDITOR_SUFFIX`
+(`edit.deeppresence.ai`, the founder's choice), and `scripts/dev_stack.sh` passes
+`CLUE_SITE_EDITOR_SUFFIX=editor.localhost:<DEV_STACK_EDITOR_PORT>` to the editor and to the frontend
+per process. Its log is `<prefix>_site_editor.log`. Its browser tests are opt-in:
+`cd apps/frontend && npm run build -w @clue/site-editor && cd ../.. && CLUE_SITE_EDITOR_BROWSER=1 .venv/bin/python -m pytest tests/site_editor -q`.
 
 ## One-time machine prerequisites
 

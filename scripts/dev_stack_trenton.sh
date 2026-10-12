@@ -10,12 +10,13 @@
 # has built the image on this host, because the fleet workers below run Head-of-ABM's
 # run_python@1 in that container (CLUE_SANDBOX_ENABLED is on by default; see DEV_STACK.md).
 #
-#   ./scripts/dev_stack_trenton.sh up|down|restart-api|restart-workers|status
+#   ./scripts/dev_stack_trenton.sh up|down|restart-api|restart-workers|restart-editor|status
 #
 #   3029  frontend        http://localhost:3029
 #   8029  platform API
 #   8019  design API
 #   8039  platform API twin
+#   3129  site editor     http://<label>.editor.localhost:3129
 #
 # The ports MUST also match what .env and apps/frontend/.env.local name for the BFF origin
 # guard, Clerk's authorized parties and the design API's CORS list (those read the files, not
@@ -41,6 +42,7 @@ expect() {  # $1 file, $2 key, $3 expected
 }
 
 for key in DEV_STACK_FRONTEND_PORT DEV_STACK_PLATFORM_PORT DEV_STACK_DESIGN_PORT DEV_STACK_PLATFORM2_PORT \
+           DEV_STACK_EDITOR_PORT \
            DEV_STACK_DB_URL DEV_STACK_WORKERS DEV_STACK_WORKER_CONCURRENCY \
            DEV_STACK_AGENT_WORKSPACE_ROOT DEV_STACK_LOG_PREFIX; do
   require "$key"

@@ -12,7 +12,10 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 PACKAGES = REPO / "apps/frontend/packages"
-DOCKERFILES = ["apps/frontend/Dockerfile.railway"]
+DOCKERFILES = [
+    "apps/frontend/Dockerfile.railway",
+    "apps/frontend/packages/site-editor/Dockerfile.railway",
+]
 
 
 @pytest.mark.parametrize("dockerfile", DOCKERFILES)
