@@ -896,6 +896,11 @@ def _assistant_summary(run: dict[str, Any]) -> str:
     """
 
     result = run.get("result") or {}
+    if str(result.get("doc_kind") or "") == "site":
+        # Contract 7: a site turn may stop to ask; it designed nothing, so it reads as the question.
+        sentence = clarification_sentence(result)
+        if sentence is not None:
+            return sentence
     if str(result.get("doc_kind") or "") in ("web", "site"):
         return _web_turn_summary(run, result)
     status = str(result.get("status") or run.get("status") or "unknown")
