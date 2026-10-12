@@ -13,8 +13,9 @@ instead clears "all but the newest N" on every call, which moves the boundary ea
 bills everything after it uncached.
 
 Sizes are the model's real tokens (:mod:`clue_agents.context_tokens`), calibrated by the
-provider's own count of the previous request, and include the system prompt and tool schemas,
-which every request carries.
+provider's count of the conversation's first counted request (a rate fixed for the conversation,
+so the cut never moves back), and include the system prompt and tool schemas, which every request
+carries.
 
 Only the model request is edited; the checkpointed history keeps every result, so a resumed or
 continued turn reproduces the same request.
@@ -90,7 +91,12 @@ def plan_clearing(
     """The ``tool_call_id``s whose results the model should see as a placeholder, oldest first."""
     if trigger <= target:
         raise ValueError("trigger must exceed target")
-    ratio = real_token_ratio(messages) or 1.0
+    # The oldest counted reply's rate, fixed for the conversation: the newest one drifts as tool
+    # output fills the context (run 6: 1.08 -> 0.93), and re-scaling every size by it moved the
+    # result at the cut back and forth. Each flip changed a message far behind GPT-5.6's cache
+    # lookup points and re-wrote the whole context (run 6: 11 misses, ~$3.70). With fixed sizes
+    # and an append-only history the cut only moves forward.
+    ratio = real_token_ratio(messages, newest=False) or 1.0
     sizes = [estimate_tokens([m]) * ratio for m in messages]
     fixed = (
         estimate_tokens([system_message] if system_message is not None else [], tools) * ratio

@@ -41,9 +41,13 @@ def estimate_tokens(messages: Sequence[BaseMessage], tools: Sequence[Any] | None
     return count_tokens_approximately(messages, tools=list(tools) if tools else None)
 
 
-def real_token_ratio(messages: Sequence[BaseMessage]) -> float | None:
-    """Real tokens per estimated token, from the newest reply that carries both counts."""
-    for message in reversed(messages):
+def real_token_ratio(messages: Sequence[BaseMessage], *, newest: bool = True) -> float | None:
+    """Real tokens per estimated token, from the newest (or oldest) reply that carries both counts.
+
+    The newest reply tracks the rate as the conversation's content changes. The oldest is fixed for
+    the life of a conversation, for decisions that must never move backwards (result clearing).
+    """
+    for message in reversed(messages) if newest else messages:
         if not isinstance(message, AIMessage):
             continue
         sent = message.response_metadata.get(PROMPT_ESTIMATE_KEY)

@@ -156,3 +156,41 @@ def test_the_system_prompt_and_tool_schemas_count_toward_the_trigger():
         isinstance(m, ToolMessage) and m.content.startswith("[Earlier result removed")
         for m in seen["messages"]
     )
+
+
+#: The real-token rate (provider input tokens / character estimate) one run-6 agent measured on
+#: its successive calls: it drifts from ~1.08 to ~0.93 as tool output fills the conversation.
+_RUN6_RATES = [
+    1.0823, 1.0844, 1.0812, 1.0815, 1.1404, 1.1193, 1.1012, 1.099, 1.098, 1.0947,
+    1.0874, 1.0605, 1.0606, 1.0506, 1.047, 1.0494, 1.0462, 1.0377, 1.037, 1.0355,
+    1.0318, 1.0296, 0.9821, 0.9751, 0.9679, 0.9635, 0.9611, 0.9586, 0.949, 0.9453,
+    0.9408, 0.9338, 0.9339, 0.9299, 0.93, 0.931, 0.9525, 0.9482, 0.9538, 0.9521,
+]  # fmt: skip
+
+
+def test_the_cut_never_moves_back_while_the_measured_rate_drifts():
+    """Run 6 (2026-10-13): clearing re-scaled every message by the newest reply's rate, so as
+    the rate drifted the result at the cut was cleared on one call and restored on the next.
+    Each flip changed a message ~90 places back, beyond GPT-5.6's cache lookup points, and Sol
+    re-wrote ~130k tokens for it (11 such misses, ~$3.70). The cleared set may only grow."""
+    import random
+
+    from clue_agents.context_tokens import PROMPT_ESTIMATE_KEY
+
+    for seed in range(40):
+        rng = random.Random(seed)
+        messages = [HumanMessage("go " + "s" * 40_000)]
+        previous: list[str] = []
+        for i, rate in enumerate(_RUN6_RATES):
+            reply = AIMessage("", tool_calls=[{"id": f"c{i}", "name": "read_file", "args": {}}])
+            reply.response_metadata[PROMPT_ESTIMATE_KEY] = 100_000
+            reply.usage_metadata = {
+                "input_tokens": int(100_000 * rate),
+                "output_tokens": 1,
+                "total_tokens": 1,
+            }
+            content = "x" * rng.randint(4_000, 40_000)
+            messages += [reply, ToolMessage(content, tool_call_id=f"c{i}", name="read_file")]
+            cleared = plan_clearing(messages, trigger=160_000, target=110_000)
+            assert cleared[: len(previous)] == previous, f"seed {seed}: call {i} restored a result"
+            previous = cleared
