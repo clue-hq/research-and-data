@@ -31,7 +31,7 @@ export interface DocumentMeta {
   /** Website mode: distinguishes a scene document (the canvas editor) from a
    * `web` document (the /web WebDoc editor). Absent = `"scene"` (every existing
    * document); only web-mode code reads it. */
-  doc_kind?: "scene" | "web";
+  doc_kind?: "scene" | "web" | "site";
 }
 
 export type Medium = "print" | "digital" | "email" | "direct_mail" | "ad" | "web";

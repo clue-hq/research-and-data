@@ -12,6 +12,7 @@ import { useDocumentAgentRun } from "@/features/design-editor/hooks/use-document
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
+import { chatShellKindForCard } from "../model/artifact-kind";
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ImageInspector } from "./image-inspector";
@@ -335,7 +336,10 @@ export function EditorSurface({
         onOpenGalleryArtifact={(artifact) =>
           controller.openArtifact({
             id: artifact.id,
-            kind: artifact.source?.type === "website" ? "web" : "ad",
+            kind: chatShellKindForCard({
+              documentKind: artifact.source?.documentKind,
+              type: artifact.source?.type,
+            }),
             title: artifact.title,
           })
         }
