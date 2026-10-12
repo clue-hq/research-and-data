@@ -1209,6 +1209,12 @@ pub struct TokenCatalog {
     pub assets: BTreeMap<String, AssetToken>,
     #[serde(default)]
     pub aliases: BTreeMap<String, TokenAlias>,
+    /// Measured style values the typed groups cannot hold (Wave 2 A9): keywords (case, cursor,
+    /// decoration, border style…), durations, easings, transforms, keyframes, animation and reveal
+    /// entries, and button icons. Minted by ingestion only; omitted when empty, so every kit without
+    /// them serializes exactly as before.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub styles: BTreeMap<String, StyleToken>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1367,6 +1373,320 @@ pub struct TokenAlias {
 pub struct TokenProvenance {
     pub source: String,
     pub confidence: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct StyleToken {
+    pub value: ModeValue<StyleTokenValue>,
+    pub description: Option<String>,
+    pub provenance: Option<TokenProvenance>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct KeyframeStep {
+    pub offset: f64,
+    #[serde(default)]
+    pub declarations: BTreeMap<String, String>,
+}
+
+/// One measured style value. Entries that combine others (`Animation`, `Reveal`) name them, the
+/// way an effect names its shadow token.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StyleTokenValue {
+    Keyword {
+        property: String,
+        value: String,
+    },
+    Duration {
+        ms: f64,
+    },
+    Easing {
+        function: String,
+    },
+    Transform {
+        value: String,
+    },
+    Keyframes {
+        frames: Vec<KeyframeStep>,
+    },
+    Animation {
+        keyframes: String,
+        duration: String,
+        easing: String,
+        #[serde(default)]
+        delay: Option<String>,
+        iterations: String,
+        direction: String,
+        fill_mode: String,
+    },
+    Reveal {
+        #[serde(default)]
+        from_opacity: Option<String>,
+        #[serde(default)]
+        from_transform: Option<String>,
+        duration: String,
+        easing: String,
+    },
+    Glyph {
+        text: String,
+    },
+    Svg {
+        markup: String,
+        width: f64,
+        height: f64,
+    },
+    Alias {
+        token: String,
+    },
+}
+
+/// The CSS properties a keyword token may carry. Each value is a plain keyword list
+/// (`uppercase`, `pointer`, `underline`), never free CSS; `box-shadow` only ever as `none`
+/// (a state that removes the rest shadow).
+const STYLE_KEYWORD_PROPERTIES: &[&str] = &[
+    "text-transform",
+    "text-decoration-line",
+    "text-decoration-thickness",
+    "text-underline-offset",
+    "cursor",
+    "border-style",
+    "outline-style",
+    "transition-property",
+    "filter",
+    "box-shadow",
+];
+/// What a measured keyframe may animate: compositing and paint properties only.
+const KEYFRAME_PROPERTIES: &[&str] = &[
+    "opacity",
+    "transform",
+    "translate",
+    "scale",
+    "rotate",
+    "filter",
+    "color",
+    "background-color",
+    "border-color",
+    "box-shadow",
+    "background-position",
+];
+const ANIMATION_DIRECTIONS: &[&str] = &["normal", "reverse", "alternate", "alternate-reverse"];
+const ANIMATION_FILL_MODES: &[&str] = &["none", "forwards", "backwards", "both"];
+const MAX_STYLE_TEXT: usize = 400;
+const MAX_KEYFRAME_STEPS: usize = 32;
+const MAX_KEYFRAME_DECLARATIONS: usize = 12;
+const MAX_ICON_SVG_BYTES: usize = 4096;
+
+fn style_text_ok(value: &str, max: usize) -> bool {
+    let lower = value.to_ascii_lowercase();
+    !value.trim().is_empty()
+        && value.len() <= max
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b" ,.()%#+-/".contains(&byte))
+        && !lower.contains("url(")
+        && !lower.contains("var(")
+        && !lower.contains("expression")
+}
+
+fn style_keyword_ok(property: &str, value: &str) -> bool {
+    STYLE_KEYWORD_PROPERTIES.contains(&property)
+        && style_text_ok(value, 200)
+        && (property != "box-shadow" || value == "none")
+}
+
+fn easing_ok(function: &str) -> bool {
+    matches!(
+        function,
+        "linear" | "ease" | "ease-in" | "ease-out" | "ease-in-out" | "step-start" | "step-end"
+    ) || ((function.starts_with("cubic-bezier(")
+        || function.starts_with("steps(")
+        || function.starts_with("linear("))
+        && function.ends_with(')')
+        && style_text_ok(function, MAX_STYLE_TEXT))
+}
+
+fn transform_ok(value: &str) -> bool {
+    if value == "none" {
+        return true;
+    }
+    let inner = value
+        .strip_prefix("matrix(")
+        .or_else(|| value.strip_prefix("matrix3d("))
+        .and_then(|rest| rest.strip_suffix(')'));
+    match inner {
+        Some(args) => {
+            !args.is_empty()
+                && args.len() <= MAX_STYLE_TEXT
+                && args
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || b" ,.-e".contains(&byte))
+        }
+        None => false,
+    }
+}
+
+fn keyframes_ok(frames: &[KeyframeStep]) -> bool {
+    (2..=MAX_KEYFRAME_STEPS).contains(&frames.len())
+        && frames.iter().all(|frame| {
+            finite_in_range(frame.offset, 0.0, 100.0)
+                && !frame.declarations.is_empty()
+                && frame.declarations.len() <= MAX_KEYFRAME_DECLARATIONS
+                && frame.declarations.iter().all(|(property, value)| {
+                    KEYFRAME_PROPERTIES.contains(&property.as_str()) && style_text_ok(value, 200)
+                })
+        })
+}
+
+fn glyph_ok(text: &str) -> bool {
+    let count = text.chars().count();
+    (1..=4).contains(&count) && !text.chars().any(|c| c.is_control() || "<>&\"'".contains(c))
+}
+
+fn has_event_attribute(lower: &str) -> bool {
+    lower.match_indices(" on").any(|(index, _)| {
+        let rest = &lower[index + 3..];
+        let name = rest
+            .bytes()
+            .take_while(|byte| byte.is_ascii_alphabetic())
+            .count();
+        name > 0 && rest[name..].trim_start().starts_with('=')
+    })
+}
+
+fn icon_svg_ok(markup: &str) -> bool {
+    let lower = markup.to_ascii_lowercase();
+    let trimmed = lower.trim();
+    markup.len() <= MAX_ICON_SVG_BYTES
+        && trimmed.starts_with("<svg")
+        && trimmed.ends_with("</svg>")
+        && ![
+            "<script",
+            "javascript:",
+            "url(",
+            "href",
+            "<foreignobject",
+            "<!",
+            "<?",
+            "<style",
+            "<use",
+            "<image",
+            "<a ",
+            "<a>",
+        ]
+        .iter()
+        .any(|bad| lower.contains(bad))
+        && !has_event_attribute(&lower)
+}
+
+fn iterations_ok(value: &str) -> bool {
+    value == "infinite"
+        || value
+            .parse::<f64>()
+            .map(|count| count.is_finite() && count > 0.0 && count <= 1000.0)
+            .unwrap_or(false)
+}
+
+fn validate_style_tokens(brand_kit: &BrandKit, diagnostics: &mut Vec<Diagnostic>) {
+    let styles = &brand_kit.tokens.styles;
+    let is_kind = |name: &str, want: fn(&StyleTokenValue) -> bool| {
+        styles
+            .get(name)
+            .map(|token| want(&token.value.default))
+            .unwrap_or(false)
+    };
+    let is_duration = |value: &StyleTokenValue| matches!(value, StyleTokenValue::Duration { .. });
+    let is_easing = |value: &StyleTokenValue| matches!(value, StyleTokenValue::Easing { .. });
+    for (path, token) in styles {
+        validate_mode_keys(path, &token.value.modes, &brand_kit.modes, diagnostics);
+        for value in std::iter::once(&token.value.default).chain(token.value.modes.values()) {
+            let problem: Option<(&str, &str)> = match value {
+                StyleTokenValue::Keyword { property, value }
+                    if !style_keyword_ok(property, value) =>
+                {
+                    Some(("LUMB0260", "an invalid keyword"))
+                }
+                StyleTokenValue::Duration { ms } if !finite_in_range(*ms, 0.0, 60_000.0) => {
+                    Some(("LUMB0261", "an invalid duration"))
+                }
+                StyleTokenValue::Easing { function } if !easing_ok(function) => {
+                    Some(("LUMB0262", "an invalid easing"))
+                }
+                StyleTokenValue::Transform { value } if !transform_ok(value) => {
+                    Some(("LUMB0263", "an invalid transform"))
+                }
+                StyleTokenValue::Keyframes { frames } if !keyframes_ok(frames) => {
+                    Some(("LUMB0264", "invalid keyframes"))
+                }
+                StyleTokenValue::Glyph { text } if !glyph_ok(text) => {
+                    Some(("LUMB0265", "an invalid icon glyph"))
+                }
+                StyleTokenValue::Svg {
+                    markup,
+                    width,
+                    height,
+                } if !icon_svg_ok(markup)
+                    || !finite_in_range(*width, 1.0, 256.0)
+                    || !finite_in_range(*height, 1.0, 256.0) =>
+                {
+                    Some(("LUMB0265", "an invalid icon svg"))
+                }
+                StyleTokenValue::Animation {
+                    keyframes,
+                    duration,
+                    easing,
+                    delay,
+                    iterations,
+                    direction,
+                    fill_mode,
+                } => {
+                    let refs = is_kind(keyframes, |v| {
+                        matches!(v, StyleTokenValue::Keyframes { .. })
+                    }) && is_kind(duration, is_duration)
+                        && is_kind(easing, is_easing)
+                        && delay
+                            .as_deref()
+                            .map_or(true, |name| is_kind(name, is_duration));
+                    if !refs {
+                        Some(("LUMB0266", "a reference to a missing or wrong-kind token"))
+                    } else if !iterations_ok(iterations)
+                        || !ANIMATION_DIRECTIONS.contains(&direction.as_str())
+                        || !ANIMATION_FILL_MODES.contains(&fill_mode.as_str())
+                    {
+                        Some(("LUMB0264", "an invalid animation"))
+                    } else {
+                        None
+                    }
+                }
+                StyleTokenValue::Reveal {
+                    from_opacity,
+                    from_transform,
+                    duration,
+                    easing,
+                } => {
+                    let refs = from_opacity
+                        .as_deref()
+                        .map_or(true, |name| brand_kit.tokens.opacity.contains_key(name))
+                        && from_transform.as_deref().map_or(true, |name| {
+                            is_kind(name, |v| matches!(v, StyleTokenValue::Transform { .. }))
+                        })
+                        && is_kind(duration, is_duration)
+                        && is_kind(easing, is_easing);
+                    (!refs).then_some(("LUMB0266", "a reference to a missing or wrong-kind token"))
+                }
+                StyleTokenValue::Alias { token } if !styles.contains_key(token) => {
+                    Some(("LUMB0266", "a reference to a missing or wrong-kind token"))
+                }
+                _ => None,
+            };
+            if let Some((code, what)) = problem {
+                diagnostics.push(brand_error(
+                    code,
+                    format!("style token {} has {}", path, what),
+                ));
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -1675,6 +1995,7 @@ pub fn validate_brand_kit(brand_kit: &BrandKit) -> Vec<Diagnostic> {
     validate_modes(&brand_kit.modes, &mut diagnostics);
     validate_token_keys(&brand_kit.tokens, &mut diagnostics);
     validate_token_values(brand_kit, &mut diagnostics);
+    validate_style_tokens(brand_kit, &mut diagnostics);
     validate_assets(&brand_kit.assets, &mut diagnostics);
     validate_contrast_pairs(brand_kit, &mut diagnostics);
 
@@ -4215,6 +4536,7 @@ fn validate_token_keys(tokens: &TokenCatalog, diagnostics: &mut Vec<Diagnostic>)
     validate_map_keys("effect", tokens.effects.keys(), diagnostics);
     validate_map_keys("asset", tokens.assets.keys(), diagnostics);
     validate_map_keys("alias", tokens.aliases.keys(), diagnostics);
+    validate_map_keys("style", tokens.styles.keys(), diagnostics);
 }
 
 fn validate_map_keys<'a>(
