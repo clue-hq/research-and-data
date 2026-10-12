@@ -1218,6 +1218,7 @@ def create_app(
             ),
             "design_document_not_scene": kind_conflict,
             "design_document_not_web": kind_conflict,
+            "design_document_not_site": kind_conflict,
             "design_document_finalized": lambda message: HTTPException(
                 status_code=409,
                 detail={"code": "document.finalized", "message": message},
@@ -2604,7 +2605,9 @@ def create_app(
         # document, so a scene GET does not pay for a registry scan whose answer it throws
         # away.
         is_web = document.get("doc_kind") == "web"
-        if not is_web:
+        # A Puck site (Wave 2) is like a web document here: it has no scene, so no scene render
+        # context and no platform-default brand-kit call.
+        if document.get("doc_kind") not in ("web", "site"):
             result["render_context"] = document_render_context(app.state.core, repo, document)
         rows = repo.list_web_fragments() if is_web else ()
         meta = fragment_meta_for_document(document, rows)
@@ -7909,6 +7912,25 @@ def require_web_document(document: JsonObject) -> None:
         )
 
 
+def require_site_document(document: JsonObject) -> None:
+    """Gate the Puck site endpoints (Wave 2 Contract 2) to site documents.
+
+    The mirror of require_web_document: a scene or WebDoc payload means nothing to the site routes,
+    and a site payload means nothing to theirs, so any other kind is a 409."""
+    kind = document.get("doc_kind", "scene")
+    if kind != "site":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "document.kind_unsupported",
+                "message": (
+                    f"document {document['id']} is a {kind!r} document; this "
+                    "endpoint operates only on site documents"
+                ),
+            },
+        )
+
+
 # Public publish-slug contract: a lowercase alnum/dash token, 3..64 chars,
 # starting with an alnum. Shared by the default-slug builder and the endpoint's
 # validation so both agree.
@@ -8158,7 +8180,7 @@ _PERSONALIZATION_COLUMNS = _WEB_PERSONALIZATION_PUBLIC + ("template_doc_version"
 
 
 def public_document(document: JsonObject) -> JsonObject:
-    is_web = document.get("doc_kind") == "web"
+    is_web = document.get("doc_kind") in ("web", "site")  # a site is a 1:1 page too (Wave 2 ruling)
     result: JsonObject = {}
     for key, value in document.items():
         if key == "brand_kit":

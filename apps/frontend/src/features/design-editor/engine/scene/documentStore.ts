@@ -144,6 +144,12 @@ export async function revertDocument(
   };
 }
 
+/** PLATFORM DELTA (Lane C, master plan Review focus 1): a site document is a Puck
+ * site, not a scene. Before Lane A's A1 mapper lands the wire can still call it
+ * `ad`; the scene editor must refuse it rather than draw it. */
+export const SITE_DOCUMENT_IN_SCENE_EDITOR =
+  "This website opens in the website editor, not the ad canvas.";
+
 export async function fetchDocument(
   // Workspace auth is the BFF's job — defaults to the receiver-safe wrapper; callers inject designBffConfig()'s transport.
   { apiBaseUrl, fetchImpl = defaultDesignFetch }: DocumentStoreOptions,
@@ -169,7 +175,11 @@ export async function fetchDocument(
     current_version?: unknown;
     undo_stack?: unknown;
     redo_stack?: unknown;
+    doc_kind?: unknown;
   };
+  if (payload.doc_kind === "site") {
+    throw new Error(SITE_DOCUMENT_IN_SCENE_EDITOR);
+  }
   if (!payload.scene || typeof payload.scene !== "object") {
     throw new Error("document fetch returned no scene");
   }

@@ -27,7 +27,7 @@ from clue_api.arv2.project_documents import (
     read_project_document,
 )
 from clue_api.client_context_binding import workspace_client_entity_id
-from clue_api.design_leg_wiring import project_design_documents
+from clue_api.design_leg_wiring import project_design_documents, wire_kind
 from clue_api.design_turn_targets import (
     DesignTurnTargetError,
     resolve_scene_targets,
@@ -781,6 +781,6 @@ async def context_ref_presentations(
         for design_id, row in rows.items():
             result[("design_document", design_id)] = {
                 "label": str(row["title"] or "Design"),
-                "kind": "web" if row["doc_kind"] == "web" else "ad",
+                "kind": wire_kind(str(row["doc_kind"])),
             }
     return result

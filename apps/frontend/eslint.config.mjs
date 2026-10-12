@@ -96,6 +96,8 @@ const eslintConfig = defineConfig([
     // Generated vendor assets (scripts/copy-design-vendor.mjs) — third-party
     // minified bundles, not lintable source.
     "public/vendor/**",
+    // Built workspace-package output (the site editor's dist/), not lintable source.
+    "packages/*/dist/**",
   ]),
 ]);
 

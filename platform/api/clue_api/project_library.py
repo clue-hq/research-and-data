@@ -61,7 +61,7 @@ from clue_api.brand_knowledge_context import (
     current_project_knowledge_refs,
     document_ref,
 )
-from clue_api.design_leg_wiring import project_design_documents
+from clue_api.design_leg_wiring import head_of_abm_doc_kind, project_design_documents
 from clue_api.project_context_files import (
     PROJECT_LIBRARY_PREFIX,
     CompiledProjectFile,
@@ -435,7 +435,7 @@ async def _artifact_index(
     for row in rows:
         entry: dict[str, Any] = {
             "id": str(row["id"]),
-            "doc_kind": str(row["doc_kind"]),
+            "doc_kind": head_of_abm_doc_kind(str(row["doc_kind"])),
             "title": str(row["title"]),
             "status": str(row["status"]),
             "current_version": int(row["current_version"]),

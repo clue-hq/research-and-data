@@ -23,7 +23,11 @@ export interface ChatDockState {
 }
 
 /** What `.chatBody` renders. `"conversation"` is the resting state. */
-export type ChatDockContent = "ad-inspector" | "conversation" | "web-inspector";
+export type ChatDockContent =
+  | "ad-inspector"
+  | "conversation"
+  | "site-inspector"
+  | "web-inspector";
 
 /** The dock is open only on the artifact surface, with the rail open, while
  * editing, and only once an artifact kind is actually known. */
@@ -38,7 +42,9 @@ export function chatDockOpen(state: ChatDockState): boolean {
 
 export function chatDockContent(state: ChatDockState): ChatDockContent {
   if (!chatDockOpen(state)) return "conversation";
-  return state.artifactKind === "web" ? "web-inspector" : "ad-inspector";
+  if (state.artifactKind === "web") return "web-inspector";
+  if (state.artifactKind === "site") return "site-inspector";
+  return "ad-inspector";
 }
 
 /** Dismiss-on-send: only a submission the agent ACCEPTED closes the dock. A
