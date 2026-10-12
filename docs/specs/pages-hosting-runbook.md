@@ -444,6 +444,39 @@ after custom-domain setup, and after removal).
 
 ---
 
+## 8. Moving published pages to their own domain (Wave 2, Contract 9) [FOUNDER]
+
+Every workspace's published pages move from `<label>.pages.cluehq.ai` to `<label>.<new domain>`;
+old URLs answer 301 at the edge; `cluehq.ai` stays reserved for custom domains (customers can never
+connect a `*.cluehq.ai` hostname). Do the steps in order; each is safe to stop after.
+
+1. Register the domain. Add it to Cloudflare as its own zone; add a proxied wildcard record
+   `*` → the page-origin service (as `*.pages` is today, §5). A first-level wildcard is covered by
+   Universal SSL. Apply to the Public Suffix List if the domain should be listed (§5 of the
+   isolation research, `docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
+2. Deploy the Worker with the new domain (`infra/cloudflare/pages-edge/wrangler.toml`):
+   `SYSTEM_SUFFIX = "<new domain>"`, `LEGACY_SYSTEM_SUFFIXES = "pages.cluehq.ai"`, and a second
+   route `{ pattern = "*/*", zone_name = "<new domain>" }`. Change SYSTEM_SUFFIX and
+   LEGACY_SYSTEM_SUFFIXES in the same edit and the same deploy — with the new suffix and an empty
+   legacy list, the Worker would forward every cluehq.ai host, app.cluehq.ai included, to the page
+   origin. Check:
+   `curl -sI https://<a label>.pages.cluehq.ai/<a slug>` → `301` with
+   `location: https://<a label>.<new domain>/<a slug>` — and the new URL serves the page once step 4 ran.
+   `curl -sI https://app.cluehq.ai/` must still answer from the app (not the page origin) right
+   after the deploy.
+3. Set the env on every service (Railway shared variables and the VM's `/srv/clue/env`):
+   `CLUE_PAGES_SYSTEM_SUFFIX=<new domain>`, `CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai`.
+   Leave `CLUE_PAGES_CNAME_TARGET=pages.cluehq.ai`: custom domains stay on the cluehq.ai zone.
+   `python3 deploy/check_prod_env.py <role> <env file>` must pass for each role.
+4. Move the rows: `uv run python scripts/move_system_hostnames.py --database-url <prod> --to-suffix <new domain>`
+   (dry run: check `rows` and `collisions: []`), then the same with `--apply`. Restart the page
+   origin and the platform API; their startup warning `pages.system_hostnames_off_suffix` must list
+   nothing.
+5. Republish isn't required: published HTML is root-relative. Only `og:image` and the manifest's
+   `canonical_url` name the old host, and the 301 covers them; a republish refreshes them.
+
+---
+
 ## Not done yet
 
 S0 is Option C **stage one**: the shared stores move to hosted services, the origin is hosted, and

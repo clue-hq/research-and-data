@@ -145,7 +145,8 @@ and the traceback is in `/tmp/<lane>_fleet_worker.log`. The failure is loud, not
 | Model pins: grok-4.6 everywhere | Env alone is NOT enough — catalog profile (head-of-abm v40), registry promotion, composer pins, and the gateway chat-completions flag all matter. GPT-5.6-terra in the picker → `missing_finalize` step failures. |
 
 The page-origin keys are the one exception to "it all comes from `.env`": `.env` keeps the
-**production** defaults (`CLUE_PAGES_SYSTEM_SUFFIX=pages.cluehq.ai`, edge-secret posture), and
+**production** defaults (`CLUE_PAGES_SYSTEM_SUFFIX=pages.cluehq.ai`,
+`CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES=pages.cluehq.ai`, edge-secret posture), and
 `scripts/dev_stack.sh` overrides them **per process** with `CLUE_PAGES_SYSTEM_SUFFIX=pages.localhost`
 and `CLUE_PAGES_TRUST_HOST_HEADER=true` — there is no Cloudflare Worker in front of the origin
 locally, so it reads the `Host` header directly instead of an edge secret.
