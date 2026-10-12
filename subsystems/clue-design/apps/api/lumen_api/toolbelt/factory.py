@@ -79,6 +79,7 @@ from .personalization import (
     UpsertBindingSetTool,
 )
 from .publishes import (
+    PublishSiteTool,
     PublishWebDocumentTool,
     RollbackWebPublishTool,
     UnpublishWebDocumentTool,
@@ -98,6 +99,7 @@ __all__ = ["DESIGN_TOOL_NAMES", "DESIGN_TOOL_TYPES", "build_design_tools"]
 DESIGN_TOOL_TYPES = (
     # Round A reference domain 1 — publishes.
     PublishWebDocumentTool,
+    PublishSiteTool,
     UnpublishWebDocumentTool,
     RollbackWebPublishTool,
     # Round A reference domain 2 — personalization accounts.

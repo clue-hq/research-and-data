@@ -133,7 +133,8 @@ from .database import (
 from . import run_stream
 from .spend import drain_safely as _drain_spend
 from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, load_section_modules, sections_not_stored
-from .site_render import SiteRenderError
+from .site_render import SECTION_MODULE_MISSING, SiteRenderError
+from .site_publish import SitePublishRefused
 from .site_doc_validate import SiteDocumentInvalid, SiteValidatorUnavailable
 from .toolbelt.site_documents import SiteHistoryEmpty, replace_site_payload
 from .design_store import (
@@ -4896,6 +4897,7 @@ def create_app(
                 status_code=409,
                 detail={"code": "document.kind_unsupported", "message": message},
             ),
+            "design_document_not_site": lambda message: HTTPException(status_code=409, detail={"code": "document.kind_unsupported", "message": message}),
         }
 
     def _publish_web(
@@ -4953,33 +4955,39 @@ def create_app(
                 detail={"code": "web_export.failed", "message": str(error)},
             ) from error
 
-    @app.post("/documents/{document_id}/web/publish")
-    def publish_web_document(
-        document_id: str,
-        payload: WebPublishRequest,
-        repo: HybridRepository = Depends(repository),
-        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    def _publish_site(
+        repo: HybridRepository,
+        document: JsonObject,
+        *,
+        slug: str,
+        idempotency_key: Optional[str] = None,
+        noindex: bool = False,
     ) -> JsonObject:
-        document = require_document(repo, document_id)
-        require_web_document(document)
-        slug = (payload.slug or "").strip() or web_default_slug(
-            document["title"], document_id
-        )
-        publish = _publish_web(
-            repo,
-            document,
-            slug=slug,
-            idempotency_key=idempotency_key,
-            noindex=payload.noindex,
-        )
-        log_event(
-            api_logger,
-            logging.INFO,
-            "web_publish_completed",
-            document_id=document_id,
-            slug=slug,
-            doc_version=publish["doc_version"],
-        )
+        """Publish a Puck site through the governed tool (Wave 2 Lane A); typed refusals."""
+        try:
+            return run_design_tool(
+                "design_publish_site",
+                {"document_id": document["id"], "slug": slug, "noindex": noindex},
+                workspace_id=store_workspace_id(repo),
+                idempotency_key=idempotency_key,
+                refusals=_publish_refusals(slug, document["id"]),
+            )
+        except SitePublishRefused as error:
+            raise HTTPException(status_code=409, detail={"code": error.code, "message": error.message}) from error
+        except SiteRenderError as error:
+            if error.code == SECTION_MODULE_MISSING:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "site_publish.section_module_missing", "message": error.message},
+                ) from error
+            raise HTTPException(status_code=502, detail={"code": error.code, "message": error.message}) from error
+        except (SiteDocumentInvalid, SiteInputsUnavailable, SiteValidatorUnavailable) as error:
+            raise _site_refusal(error) from error
+        except web_export.WebExportError as error:
+            raise HTTPException(status_code=502, detail={"code": "web_export.failed", "message": str(error)}) from error
+
+    def _publish_response(repo: HybridRepository, slug: str, publish: JsonObject) -> JsonObject:
+        """The publish route's 200 body — one builder for the web and site routes."""
         address = site_address(repo, slug)
         custom = custom_site_address(repo, slug)
         routes = list(publish.get("routes") or []) or ["/"]
@@ -5010,13 +5018,37 @@ def create_app(
             ),
         }
 
-    @app.get("/documents/{document_id}/web/publish")
-    def get_web_publish_state(
+    @app.post("/documents/{document_id}/web/publish")
+    def publish_web_document(
         document_id: str,
+        payload: WebPublishRequest,
         repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
+        slug = (payload.slug or "").strip() or web_default_slug(
+            document["title"], document_id
+        )
+        publish = _publish_web(
+            repo,
+            document,
+            slug=slug,
+            idempotency_key=idempotency_key,
+            noindex=payload.noindex,
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_publish_completed",
+            document_id=document_id,
+            slug=slug,
+            doc_version=publish["doc_version"],
+        )
+        return _publish_response(repo, slug, publish)
+
+    def _publish_state(repo: HybridRepository, document_id: str) -> JsonObject:
+        """The publish-state body — one builder for the web and site routes."""
         publish = repo.get_web_publish_for_document(document_id)
         if publish is None:
             # Even unpublished, the state names WHERE this document would publish — the
@@ -5060,6 +5092,35 @@ def create_app(
                 {} if custom is None else {route: custom.page_url(route) for route in routes}
             ),
         }
+
+    @app.get("/documents/{document_id}/web/publish")
+    def get_web_publish_state(
+        document_id: str,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        return _publish_state(repo, document_id)
+
+    @app.post("/documents/{document_id}/site/publish")
+    def publish_site_document_route(
+        document_id: str,
+        payload: WebPublishRequest,
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        slug = (payload.slug or "").strip() or web_default_slug(document["title"], document_id)
+        publish = _publish_site(repo, document, slug=slug, idempotency_key=idempotency_key, noindex=payload.noindex)
+        log_event(api_logger, logging.INFO, "site_publish_completed", document_id=document_id, slug=slug, doc_version=publish["doc_version"])
+        return _publish_response(repo, slug, publish)
+
+    @app.get("/documents/{document_id}/site/publish")
+    def get_site_publish_state(document_id: str, repo: HybridRepository = Depends(repository)) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        return _publish_state(repo, document_id)
 
     def _publish_not_found(slug: str) -> HTTPException:
         return HTTPException(
