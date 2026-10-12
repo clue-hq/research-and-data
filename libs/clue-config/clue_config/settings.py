@@ -482,11 +482,14 @@ class Settings(BaseSettings):
     # short "re-read <path>" placeholder, in steps of (trigger - target) so the prompt stays
     # cached between steps. COMPACT_* is the summarising backstop for research only (the shared
     # rule compacts at 90% of the model window, which research never reached).
+    # Counted in the model's real tokens, system prompt and tool schemas included; 160k → 110k
+    # clearing and a 240k backstop follow Codex's working range and stay under GPT-6.1-Sol's
+    # 272k long-context price step (founder ruling 2026-10-12).
     # Env: ``CLUE_ARV2_RESEARCH_CLEAR_TRIGGER_TOKENS`` / ``_CLEAR_TARGET_TOKENS`` /
     # ``_COMPACT_TRIGGER_TOKENS`` / ``_COMPACT_KEEP_MESSAGES``.
-    arv2_research_clear_trigger_tokens: int = Field(default=100_000, ge=1)
-    arv2_research_clear_target_tokens: int = Field(default=50_000, ge=1)
-    arv2_research_compact_trigger_tokens: int = Field(default=150_000, ge=1)
+    arv2_research_clear_trigger_tokens: int = Field(default=160_000, ge=1)
+    arv2_research_clear_target_tokens: int = Field(default=110_000, ge=1)
+    arv2_research_compact_trigger_tokens: int = Field(default=240_000, ge=1)
     arv2_research_compact_keep_messages: int = Field(default=40, ge=1)
     # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
     arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
