@@ -582,3 +582,5 @@ model's own recipe slots and notes use the exact tokens):
 - 2026-10-12 — **Q13:** (a) a site is treated exactly like a web page in the Share, Publish and Export
   menus from the start (one rule, `isWebsiteKind`); no workspace is in the site flag before Wave 4.
   (Lane C Task 2 Step 9 as written.)
+- 2026-10-12 — **Q15:** (a) a selected header or footer gets a 2px outline in Puck's own selection
+  blue; design point DR5 approved. (Lane C Task 6 as written.)

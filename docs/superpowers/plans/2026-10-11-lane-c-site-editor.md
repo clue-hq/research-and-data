@@ -33,7 +33,7 @@ Each question has a recommendation. The plan's code implements the recommendatio
 - **Q4. Version rows in the action menu.** The designed submenu shows "Current version / Version N".
   - (a) Keep exactly those labels, newest first (Task 13). **Recommended.**
   - (b) Also show who made each version (the agent or a person) and when — needs a design.
-- **Q5. Highlighting a selected header or footer on the canvas.** Puck draws its own outline for page sections, but the shell is not a Puck component.
+- **Q5 — ANSWERED 2026-10-12: (a), and DR5 approved** (Task 6 as written). **Highlighting a selected header or footer on the canvas.** Puck draws its own outline for page sections, but the shell is not a Puck component.
   - (a) A 2px outline in Puck's own selection blue (`--puck-color-azure-04`) on the selected header/footer. **Recommended** (Task 6 adds it; listed as design review point DR5).
   - (b) No highlight; the dock title alone says "Header".
 - **Q6. A route typed into the URL bar that is not a page.**
@@ -79,7 +79,7 @@ Built from existing chat-shell styles and primitives; where no existing style fi
 - **DR2** The page panel: 280px column left of the canvas; container, head and list classes are new (`.sitePagesPanel*`) but use only `--chat-shell-*` tokens; rows reuse `.layerRow*`; search reuses `InspectorInput`; the count reuses `.inspectorFieldLabel`.
 - **DR3** The URL toolbar: back/forward reuse `.deviceButton`; the route field is a new `.siteUrlField` built from `.artifactHeadingRenameInput`'s tokens; reload reuses `.deviceButton`; the existing device menu is moved inside the bar unchanged.
 - **DR4** The dock's section label "Content" for a selected site section (the web lane says "Component properties", which the marketer must not see).
-- **DR5** The header/footer selection outline on the canvas (Q5).
+- **DR5** The header/footer selection outline on the canvas (Q5). **Approved by the founder 2026-10-12.**
 - **DR6** Repeating fields grouped as "<label> <n>" (Q2).
 - **DR7** An image field: the existing "Replace image" pill (`InspectorImageUpload`) with the ad lane's generate rows (`AdImageAiRows`) stacked under it.
 
