@@ -237,3 +237,15 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   style" field listing this brand's styles, and nothing is invented for a brand that draws one style.
   Pending: the brand.md wording, what is drawn for a part with no kit colour, and whether CtaBand
   also gets the field. Lane A Tasks 4, 5 and 7 are rewritten once those are answered.
+- 2026-10-12 — **Q3 follow-ups:**
+  - Missing-colour rule = **(b)**: the extraction saves each button style's exact measured colours
+    ("thoroughly implement it and test it carefully"); kits not yet re-extracted fall back to token
+    values and brand.md says so. Re-extraction of existing kits needs the founder's go per kit.
+  - **No hard-coded style values** in site-kit: buttons and every other brand-styled element draw
+    the brand kit's own values (measured first, tokens second); a fallback only where the kit has
+    neither, and named.
+  - **Button states**: rest, hover, pressed, focus and disabled are to be captured per button style
+    and used in the CSS. Today the capture reads rest only (plus one generic focus-ring sample).
+  - The agent's `buttonLook` description: approved. CtaBand gets the field too (taken as yes).
+  - A plan section replacing Lane A's brand-fidelity block (Tasks 4–7) plus the extraction work is
+    being drafted; it comes back for review with the final brand.md wording.
