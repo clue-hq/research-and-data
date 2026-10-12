@@ -478,7 +478,7 @@ class AccountArtifact(V1Model):
 
     id: str
     title: str
-    type: Literal["presentation", "document", "web", "ad", "email"]
+    type: Literal["presentation", "document", "web", "ad", "email", "site"]
     account_id: str | None = _Absent
     project_name: str | None = _Absent
     updated_at: str | None = _Absent

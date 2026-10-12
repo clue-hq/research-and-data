@@ -310,6 +310,21 @@ def exit_summary(reason: str, reasoning: str | None = None) -> str:
     return f"{base} Exit judge: {words}"[:4_000]
 
 
+def design_kind_label(kind: str | None) -> str:
+    """How the exit judge and the summaries name a design document. A Puck site and a WebDoc are
+    both a "web page" (ruling 2026-10-11); a scene document — wire kind "ad" — is a "scene ad"."""
+    return "web page" if kind in ("web", "site") else "scene ad"
+
+
+def _card_account_id(row: Mapping[str, Any] | None) -> str | None:
+    """The target account a leg document carries for the G2 account card: web and site documents
+    are 1:1 pages for one account; a scene ad carries none here."""
+    if row is None or row.get("doc_kind") not in ("web", "site"):
+        return None
+    account_id = row.get("account_id")
+    return str(account_id) if account_id else None
+
+
 async def _exit_judge_artifact_lines(
     conn: AsyncConnection,
     *,
@@ -335,7 +350,7 @@ async def _exit_judge_artifact_lines(
         document_id = document.get("document_id")
         if not document_id:
             continue
-        kind = "web page" if document.get("doc_kind") == "web" else "scene ad"
+        kind = design_kind_label(document.get("doc_kind"))
         title = str(document.get("title") or "Untitled design")
         line = f'{int(document["position"]) + 1}. "{title}" ({kind})'
         account_id = document.get("account_id")
@@ -405,7 +420,7 @@ async def _exit_judge_tag_lines(
         if ref.object_type == "design_document":
             shown = presentations.get(key, {})
             label = shown.get("label") or "Design"
-            kind = "web page" if shown.get("kind") == "web" else "scene ad"
+            kind = design_kind_label(shown.get("kind"))
             position = positions.get(str(ref.object_id))
             suffix = "" if position is None else f" (artifact {position + 1})"
             lines.append(f'design "{label}" ({kind}){suffix}')
@@ -866,7 +881,7 @@ def _assistant_summary(run: dict[str, Any]) -> str:
     """
 
     result = run.get("result") or {}
-    if str(result.get("doc_kind") or "") == "web":
+    if str(result.get("doc_kind") or "") in ("web", "site"):
         return _web_turn_summary(run, result)
     status = str(result.get("status") or run.get("status") or "unknown")
     sentence = clarification_sentence(result)
@@ -969,7 +984,7 @@ def batch_summary(items: Sequence[tuple[Mapping[str, Any], dict[str, Any]]]) -> 
         if str(run.get("status") or "") == "succeeded":
             sentence = _assistant_summary(run)
             # The web sentence already names its document and version; the scene one does not.
-            if str(result.get("doc_kind") or "") != "web" and stands_at:
+            if str(result.get("doc_kind") or "") not in ("web", "site") and stands_at:
                 sentence = f"{sentence}{stands_at}"
             lines.append(f"{title}: {sentence}")
             continue
@@ -1514,11 +1529,7 @@ class DesignLegTurnRunner:
             for document in addressed:
                 key = str(document.get("document_id") or "")
                 row = document_rows.get(key)
-                account_id = (
-                    row.get("account_id")
-                    if row is not None and row.get("doc_kind") == "web"
-                    else None
-                )
+                account_id = _card_account_id(row)
                 if not account_id:
                     continue
                 async with self._conn_factory() as conn:
