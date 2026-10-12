@@ -121,3 +121,15 @@ def test_the_release_deploys_the_vm_last_with_a_pinned_host_and_only_the_sha() -
     assert "::warning::" in run and "exit 0" in run
     assert step["env"]["VM_SSH_KEY"] == "${{ secrets.VM_SSH_KEY }}"
     assert step["env"]["VM_SSH_KNOWN_HOSTS"] == "${{ secrets.VM_SSH_KNOWN_HOSTS }}"
+
+
+def test_the_image_builds_and_ships_the_site_kit_bundles() -> None:
+    """Puck sites render and validate with site-kit's built files (Wave 2 Lane A); the runtime has
+    no apps/frontend/node_modules, so the bundles are built in their own stage and copied in."""
+    assert "FROM node:24-bookworm-slim AS sitekit" in DOCKERFILE
+    assert "npm run build -w @clue/site-kit" in DOCKERFILE
+    assert (
+        "COPY --from=sitekit /src/apps/frontend/packages/site-kit/dist"
+        " /app/apps/frontend/packages/site-kit/dist" in DOCKERFILE
+    )
+    assert 'check "site-kit bundles"' in SMOKE
