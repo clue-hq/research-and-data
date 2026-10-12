@@ -4128,7 +4128,7 @@ git commit -m "lumen_agent.site.harness: the spike's agent with the platform's m
     `brief_text(bundle) -> str`, `read_research_pages(reads, account_entity_id) -> tuple[list, list, dict]`,
     `cited_claims(reads, account_entity_id, sections) -> tuple[list[dict], frozenset[str]]`,
     `project_files_from(reads) -> list[dict]`, `fetch_account_logos(blobs, account_card, *, fetcher=None, cache=None) -> list[AccountLogo]`,
-    `list_site_clones(blobs, cache_dir) -> list[dict]`, `read_section_bytes(blobs, row) -> tuple[str, str]`,
+    `list_site_clones(blobs, cache_dir) -> list[dict]`, `pinned_site_clones(site, blobs, *, listed: set[str]) -> list[dict]` (the page's own sections the catalog no longer offers, `in_catalog: False`; founder ruling Q5), `read_section_bytes(blobs, row) -> tuple[str, str]`,
     `site_sections_for_turn(store, blobs, site) -> dict[str, SiteSection]`,
     `site_brand_for(site, blobs, *, cache_dir, brand_kit, kit_assets, font_spec, library_assets) -> dict`,
     `site_brand_loader_for(cache_dir_for: Callable[[str], Any]) -> Callable[[repo, blobs, document], dict]` (Lane A's `site_brand_loader` seam; composed in Task 12),
@@ -4151,11 +4151,23 @@ test("a degraded clone says so in the index and on its card", () => {
   const healthy = files["catalog/index.md"].split("\n").find((l) => l.includes(`\`${first.id}\``)) ?? "";
   assert.ok(!healthy.includes("degraded"), healthy);
 });
+
+test("a section the page already uses but the catalog no longer offers is kept out of the catalog", () => {
+  // Founder ruling Q5 (2026-10-12): the brand data carries every section the page itself uses,
+  // whatever its status, so the page still draws, saves and publishes; the catalog (what the agent
+  // may newly place) stays current-only.
+  const pinnedBrand = garner();
+  const first = Object.values(pinnedBrand.clones)[0];
+  pinnedBrand.clones[first.id] = { ...first, in_catalog: false };
+  const pinnedFiles = buildCatalog(pinnedBrand, "Garner Health");
+  assert.ok(!pinnedFiles["catalog/index.md"].includes(`\`${first.id}\``));
+  assert.equal(pinnedFiles[`catalog/clones/${first.id}.md`], undefined);
+});
 ```
 
 Run: SITE-KIT `catalog.test.ts`
-Expected: FAIL — the index line does not end with " · degraded" (and `tsc` flags `degraded_note`
-as unknown when type-checked).
+Expected: FAIL — the index line does not end with " · degraded", the `in_catalog: false` clone is
+still listed (and `tsc` flags `degraded_note` and `in_catalog` as unknown when type-checked).
 
 - [ ] **Step 2: Confirm T11 was approved** (Task 0), then add the note. In `src/clone.ts`, add to
 the `Clone` type after `slots`:
@@ -4163,6 +4175,15 @@ the `Clone` type after `slots`:
 ```ts
   /** The registry's sentence when this captured section is marked broken (degraded); absent otherwise. */
   degraded_note?: string | null;
+  /** false: a section the page already uses that the catalog no longer offers (superseded by a
+   * repair, or retired). It still draws, validates and publishes; the agent is not offered it anew. */
+  in_catalog?: boolean;
+```
+
+In `src/catalog.ts` `buildCatalog`, change `const clones = Object.values(brand.clones);` to
+
+```ts
+  const clones = Object.values(brand.clones).filter((clone) => clone.in_catalog !== false);
 ```
 
 In `src/catalog.ts` `cloneFile`, change the returned array's first lines from
@@ -4559,6 +4580,33 @@ def test_the_catalog_lists_representative_released_clones_and_flags_degraded_one
     assert clones[1]["degraded_note"] == "this clone is marked broken, with no reason recorded."
 
 
+def test_the_brand_keeps_every_section_the_page_uses_outside_the_catalog(monkeypatch) -> None:
+    """Founder ruling Q5 (2026-10-12): a section the page already uses stays in the brand data whatever
+    its status (superseded by a repair, retired, not yet approved), so the page still draws, saves and
+    reaches publish; it is marked out of the catalog. A section that no longer exists at all is left
+    out, so the save check and publish refuse it honestly."""
+
+    loaded = {
+        "frag_old": SimpleNamespace(html="<p>old</p>", css="", slot_manifest={},
+                                    row={"fragment_id": "frag_old", "label": "Old hero", "section_role": "hero"}),
+    }
+
+    def read(storage, *, workspace_id, fragment_id):
+        if fragment_id not in loaded:
+            raise view.NotFoundError("web fragment", fragment_id)
+        return loaded[fragment_id]
+
+    monkeypatch.setattr(view, "read_web_fragment", read)
+    site = {"pages": {"/": {"content": [
+        {"type": "ClonedSection", "props": {"id": "a", "fragmentId": "frag_hero"}},
+        {"type": "ClonedSection", "props": {"id": "b", "fragmentId": "frag_old"}},
+        {"type": "ClonedSection", "props": {"id": "c", "fragmentId": "frag_gone"}},
+        {"type": "CtaBand", "props": {"id": "d"}},
+    ]}}}
+    pinned = view.pinned_site_clones(site, SimpleNamespace(storage=None, workspace_id="ws"), listed={"frag_hero"})
+    assert [(clone["id"], clone["label"], clone["in_catalog"]) for clone in pinned] == [("frag_old", "Old hero", False)]
+
+
 def test_sections_for_a_turn_keep_the_documents_pins_and_add_the_newest_of_each_name() -> None:
     rows = {
         "a" * 64: {"name": "StepsBand", "digest": "a" * 64, "module_sha256": "a" * 64, "css_sha256": "c" * 64, "props_schema": {"v": 1}},
@@ -4794,6 +4842,31 @@ def list_site_clones(blobs: Any, cache_dir: Any) -> list[dict]:
     return clones
 
 
+def pinned_site_clones(site: Mapping[str, Any], blobs: Any, *, listed: set[str]) -> list[dict]:
+    """The sections this site's pages already use that the catalog no longer offers (founder ruling
+    Q5, 2026-10-12): a section superseded by a repair, retired, or not yet approved. Each is loaded by
+    id whatever its status and marked ``in_catalog: False``, so the page still draws, saves and
+    reaches publish (which applies its own rule) while the agent is not offered it anew. A section
+    that no longer exists is left out, so the save check and publish refuse it honestly."""
+
+    pinned: list[dict] = []
+    seen: set[str] = set(listed)
+    for page in (site.get("pages") or {}).values():
+        for item in (page or {}).get("content") or []:
+            if item.get("type") != "ClonedSection":
+                continue
+            fragment_id = str((item.get("props") or {}).get("fragmentId") or "")
+            if not fragment_id or fragment_id in seen:
+                continue
+            seen.add(fragment_id)
+            try:
+                loaded = read_web_fragment(blobs.storage, workspace_id=blobs.workspace_id, fragment_id=fragment_id)
+            except (NotFoundError, FragmentRefused):
+                continue
+            pinned.append({**clone_from_fragment({**loaded.row, "fragment_id": fragment_id}, loaded), "in_catalog": False})
+    return pinned
+
+
 def site_sections_for_turn(store: Any, blobs: Any, site: Mapping[str, Any]) -> dict:
     """The sections a turn may place: each name the document pins at its pinned digest, plus the
     newest section of every other name in the workspace (sections are per workspace)."""
@@ -4832,15 +4905,18 @@ def site_brand_for(
     font_spec: Mapping[str, Any] | None,
     library_assets: Mapping[str, Any],
 ) -> dict:
-    """The site's BrandData: its pinned kit, the released clones, and the library images given."""
+    """The site's BrandData: its pinned kit, the released clones plus every section its pages already
+    use (marked out of the catalog), and the library images given."""
 
     kit_ref = (site.get("theme") or {}).get("brand_kit")
+    listed = list_site_clones(blobs, cache_dir)
+    pinned = pinned_site_clones(site, blobs, listed={str(clone["id"]) for clone in listed})
     return site_brand_data(
         slug=str((kit_ref or {}).get("id") or blobs.workspace_id),
         kit=dict(brand_kit or {}),
         kit_assets=dict(kit_assets or {}),
         font_faces=list((font_spec or {}).get("faces") or []),
-        clones=list_site_clones(blobs, cache_dir),
+        clones=listed + pinned,
         library_assets=dict(library_assets),
     )
 

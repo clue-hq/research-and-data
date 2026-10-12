@@ -61,7 +61,9 @@ recommendation, and each answer changes only the place named.
   classes) and brand.md (Tasks 4, 5, 7). Our own sections keep their six fixed choices, because
   their schema is the same for every brand. (a) As written. (b) Make our sections' surface choices
   brand-dependent. **Recommended: (a).**
-- **Q5. Clone pins at publish.** Publish refuses a cloned section that the workspace's registry
+- **Q5 — ANSWERED 2026-10-12: retirement is out of scope for sites; (a) a retired section still
+  publishes. The two publish refusals use founder-approved wording (Task 20).** Original question:
+  **Clone pins at publish.** Publish refuses a cloned section that the workspace's registry
   does not hold, or holds as `draft` (Task 20). A section that was `deprecated` after the page used
   it: (a) still publishes (WebDoc's posture: a retirement never breaks published work), or (b) is
   refused. **Recommended: (a).** Changing it touches only `_PUBLISHABLE_CLONE_STATUSES`.
@@ -6602,10 +6604,22 @@ def test_clone_pins_are_checked_at_publish(blobs: DesignBlobStore) -> None:
     with pytest.raises(SitePublishRefused) as unresolved:
         build("pub_clones", site, brand, [], blobs=blobs, fragment_status=lambda fragment_id: None)
     assert unresolved.value.code == "site_publish.clone_unresolved"
+    assert unresolved.value.message == (
+        "This page uses a section that isn't in your brand's library. Ask the agent to replace it, then publish again."
+    )
     document = HybridRepository().require_document("pub_clones")
     with pytest.raises(SitePublishRefused) as draft:
         build_site_publish_package(HybridRepository(), document, blobs=blobs, brand=brand, sections=[], slug="acme-site", site_address=ADDRESS, fragment_status=lambda fragment_id: "draft")
     assert draft.value.code == "site_publish.clone_not_approved"
+    pinned = next(
+        item["props"]["fragmentId"]
+        for page in site["pages"].values()
+        for item in page["content"]
+        if item["type"] == "ClonedSection"
+    )
+    label = brand["clones"][pinned]["label"]
+    assert draft.value.message == f'This page uses a section that isn\'t approved yet: "{label}". Approve your brand kit, then publish again.'
+    assert "frag_" not in draft.value.message and "clone" not in draft.value.message.lower()
     package = build_site_publish_package(HybridRepository(), document, blobs=blobs, brand=brand, sections=[], slug="acme-site", site_address=ADDRESS, fragment_status=lambda fragment_id: "deprecated")
     assert package.manifest["fragments"]["ids"]
 ```
@@ -6634,9 +6648,22 @@ from .site_sanitize import sanitize_site_html
 
 ```python
 SITE_DELIVERY = "site"
-#: Founder question Q5, recommendation (a): a section retired after the page used it still
-#: publishes (WebDoc's posture); a draft one never released, or one the registry lacks, does not.
+#: Founder ruling Q5 (2026-10-12): retiring sections is out of scope for sites, so a section retired
+#: after the page used it still publishes (WebDoc's posture); a draft one never released, or one the
+#: registry lacks, does not.
 _PUBLISHABLE_CLONE_STATUSES = frozenset({"approved", "deprecated"})
+#: The marketer reads these verbatim (the web editor shows a refusal's message as is,
+#: apps/frontend/src/features/design-editor/engine/webDocuments.ts:2073), so they never say "clone"
+#: or show an id. Founder-approved wording, 2026-10-12.
+_SECTION_NOT_IN_LIBRARY = (
+    "This page uses a section that isn't in your brand's library. "
+    "Ask the agent to replace it, then publish again."
+)
+
+
+def _section_not_approved(label: str | None) -> str:
+    named = f': "{label}"' if label else ""
+    return f"This page uses a section that isn't approved yet{named}. Approve your brand kit, then publish again."
 _ASSET_REF = re.compile(r"/asset-store/([0-9a-f]{64})")
 _CSP_FILE_DIRECTIVES = frozenset({"style-src", "img-src", "font-src", "media-src"})
 
@@ -6665,16 +6692,12 @@ def check_clone_pins(site: JsonObject, brand: JsonObject, fragment_status: Calla
     """Ruling 2026-10-11: clone pins are validated at publish, not on every save."""
     for fragment_id in _clone_ids(site):
         status = fragment_status(fragment_id)
-        if status is None or fragment_id not in (brand.get("clones") or {}):
-            raise SitePublishRefused(
-                "site_publish.clone_unresolved",
-                f"cloned section {fragment_id} is not one of this workspace's released sections",
-            )
+        clone = (brand.get("clones") or {}).get(fragment_id)
+        if status is None or clone is None:
+            raise SitePublishRefused("site_publish.clone_unresolved", _SECTION_NOT_IN_LIBRARY)
         if status not in _PUBLISHABLE_CLONE_STATUSES:
-            raise SitePublishRefused(
-                "site_publish.clone_not_approved",
-                f"cloned section {fragment_id} is {status}; approve the brand kit it was cloned from before publishing",
-            )
+            label = str(clone.get("label") or "").strip() or None
+            raise SitePublishRefused("site_publish.clone_not_approved", _section_not_approved(label))
 
 
 def gated_brand(brand: JsonObject, repo: Any, blobs: Any) -> tuple[JsonObject, Any]:
