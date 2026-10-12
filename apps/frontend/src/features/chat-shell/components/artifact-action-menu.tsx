@@ -9,7 +9,7 @@ import {
   Undo2Icon,
   type LucideIcon,
 } from "lucide-react";
-import type { ArtifactActionRequest } from "../model/artifact-actions";
+import type { ArtifactActionRequest, ArtifactVersionsBinding } from "../model/artifact-actions";
 import styles from "./chat-shell.module.css";
 
 const ARTIFACT_ACTION_ICONS = {
@@ -77,6 +77,7 @@ export function ArtifactActionMenu({
   redoDisabled = false,
   selectedVersionId,
   undoDisabled = false,
+  versions = null,
   versionsOpen,
 }: {
   onRename: () => void;
@@ -88,14 +89,24 @@ export function ArtifactActionMenu({
   selectedVersionId: string;
   /** W3.4: driven by the loaded document's undoDepth (empty stack → true). */
   undoDisabled?: boolean;
+  /** C9: a real version list (sites); absent keeps the existing list. */
+  versions?: ArtifactVersionsBinding | null;
   versionsOpen: boolean;
 }) {
-  const versionOptions = [
-    { id: "current", label: "Current version" },
-    { id: "version-3", label: "Version 3" },
-    { id: "version-2", label: "Version 2" },
-    { id: "version-1", label: "Version 1" },
-  ];
+  const versionOptions = versions
+    ? versions.options
+    : [
+        { id: "current", label: "Current version" },
+        { id: "version-3", label: "Version 3" },
+        { id: "version-2", label: "Version 2" },
+        { id: "version-1", label: "Version 1" },
+      ];
+  const shownVersionId = versions ? versions.selectedId : selectedVersionId;
+  const openVersions = () => {
+    if (versions && !versionsOpen) versions.open();
+    onVersionsOpenChange(true);
+  };
+  const chooseVersion = (versionId: string) => (versions ? versions.select(versionId) : onSelectVersion(versionId));
 
   return (
     <div aria-label="Artifact actions" className={styles.artifactActionMenu} role="menu">
@@ -111,15 +122,15 @@ export function ArtifactActionMenu({
       <MenuAction action="redo" disabled={redoDisabled} label="Redo" onSelect={onRequestAction} shortcut="⇧⌘Z" />
       <div
         className={styles.artifactVersionsRow}
-        onMouseEnter={() => onVersionsOpenChange(true)}
+        onMouseEnter={() => openVersions()}
       >
         <button
           aria-expanded={versionsOpen}
           aria-haspopup="menu"
           className={`${styles.artifactMenuItem} ${versionsOpen ? styles.artifactMenuItemActive : ""}`}
-          onClick={() => onVersionsOpenChange(true)}
+          onClick={() => openVersions()}
           onKeyDown={(event) => {
-            if (event.key === "ArrowRight") onVersionsOpenChange(true);
+            if (event.key === "ArrowRight") openVersions();
           }}
           role="menuitem"
           type="button"
@@ -139,15 +150,15 @@ export function ArtifactActionMenu({
             <div className={styles.artifactVersionsLabel}>Versions</div>
             {versionOptions.map((version) => (
               <button
-                aria-checked={selectedVersionId === version.id}
-                className={`${styles.artifactVersionItem} ${selectedVersionId === version.id ? styles.artifactVersionItemActive : ""}`}
+                aria-checked={shownVersionId === version.id}
+                className={`${styles.artifactVersionItem} ${shownVersionId === version.id ? styles.artifactVersionItemActive : ""}`}
                 key={version.id}
-                onClick={() => onSelectVersion(version.id)}
+                onClick={() => chooseVersion(version.id)}
                 role="menuitemradio"
                 type="button"
               >
                 <span>{version.label}</span>
-                {selectedVersionId === version.id ? (
+                {shownVersionId === version.id ? (
                   <span className={styles.artifactVersionMeta}>Open</span>
                 ) : null}
               </button>

@@ -1,4 +1,5 @@
 import type { RefObject } from "react";
+import type { ArtifactVersionsBinding } from "@/features/chat-shell/model/artifact-actions";
 import type { PendingAnnotation } from "@/features/design-editor/adapter/annotations";
 import type { VeilRenderKind } from "@/features/design-editor/adapter/generating-veil";
 
@@ -27,6 +28,7 @@ export interface SiteCanvasBinding {
 export interface SiteStageBinding {
   canvas: SiteCanvasBinding;
   mounted: boolean;
+  versions: ArtifactVersionsBinding | null;
 }
 
 export function siteStageMounted(input: { editorOrigin: string | null; enabled: boolean; warm: boolean }): boolean {

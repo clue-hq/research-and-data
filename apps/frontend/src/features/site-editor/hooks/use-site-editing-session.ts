@@ -32,6 +32,7 @@ import { useSiteEditorOrigin } from "./use-site-editor-origin";
 import { useSiteFrameHost, type SiteFrameHost } from "./use-site-frame-host";
 import { useSiteImages, type SiteImageFieldBinding, type SiteImages } from "./use-site-images";
 import { useSiteSaves, type SiteSaves } from "./use-site-saves";
+import { useSiteVersions } from "./use-site-versions";
 import { fieldsHaveImage, type SiteImageTarget } from "./site-images.logic";
 
 const DEFAULT_REPOSITORY = httpSiteRepository();
@@ -370,6 +371,13 @@ export function useSiteEditingSession({
     redoDisabled: siteHistoryDisabled({ depth: saves.redoDepth, locked }),
     undoDisabled: siteHistoryDisabled({ depth: saves.undoDepth, locked }),
   };
+  // C9: versions from the server; a restore is an undoable write that queues behind a pending save.
+  const versions = useSiteVersions({
+    documentId: activeDocumentId,
+    repository,
+    restore: saves.restore,
+    version: saves.baseVersion ?? currentSite?.version ?? null,
+  });
   const inspector: SiteInspectorBinding = {
     disabled: locked,
     error: saves.error,
@@ -422,6 +430,7 @@ export function useSiteEditingSession({
         src: frame.src,
       },
       mounted: siteStageMounted({ editorOrigin: origin.origin, enabled, warm }),
+      versions: activeDocumentId ? versions : null,
     },
     version: currentSite?.version ?? null,
   };

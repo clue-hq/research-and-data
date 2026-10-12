@@ -474,6 +474,7 @@ export function ArtifactStage({
             redoDisabled={redoDisabled}
             title={artifactTitle}
             undoDisabled={undoDisabled}
+            versions={artifactKind === "site" ? (site?.versions ?? null) : null}
             zoom={sceneZoomLabel}
           />
           {siteFrameShown ? null : (

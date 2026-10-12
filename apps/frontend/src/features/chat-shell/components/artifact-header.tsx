@@ -21,6 +21,7 @@ import type {
 import { useArtifactActionMenuController } from "../hooks/use-artifact-action-menu-controller";
 import { useArtifactSharingController } from "../hooks/use-artifact-sharing-controller";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
+import type { ArtifactVersionsBinding } from "../model/artifact-actions";
 import { isWebsiteKind } from "../model/artifact-kind";
 import {
   useArtifactToolbarController,
@@ -67,6 +68,7 @@ export function ArtifactHeader({
   redoDisabled,
   title,
   undoDisabled,
+  versions = null,
   zoom,
 }: {
   /**
@@ -132,6 +134,8 @@ export function ArtifactHeader({
   title: string;
   /** W3.4: empty-stack disable for the action menu's Undo. */
   undoDisabled?: boolean;
+  /** C9: the site's real version list. */
+  versions?: ArtifactVersionsBinding | null;
   /** AD2.8: the zoom to DISPLAY — the session's choice, or (until there is
    * one) the canvas's fit-on-open snapped to the nearest step this menu
    * offers. Absent leaves the toolbar controller's own local value. */
@@ -257,6 +261,7 @@ export function ArtifactHeader({
               redoDisabled={redoDisabled}
               selectedVersionId={selectedVersionId}
               undoDisabled={undoDisabled}
+              versions={versions}
               versionsOpen={versionsOpen}
             />
           ) : null}
