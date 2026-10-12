@@ -265,3 +265,71 @@ def test_the_prompt_carries_the_drift_note_and_the_assignment_never_the_brief(tm
     _run(app, store, document, runner, [], prompt="Add a pricing page.", bundle=bundle)
     assert "CURRENT DOCUMENT ASSIGNMENT" in seen["prompt"] and seen["prompt"].endswith("Add a pricing page.")
     assert "THE STANDING BRIEF" not in seen["prompt"]
+
+
+def test_a_save_the_validator_cannot_check_is_refused_and_still_remembered(
+    tmp_path, design_storage, _agent_workspace_in_tmp, monkeypatch
+) -> None:
+    """Fix round 1 (a): a typed "cannot check now" error is a refused save, like Lane A's routes
+    treat it — history and the session's memory are still written."""
+
+    import lumen_api.site_doc_validate as site_doc_validate
+    from lumen_api.site_kit_cli import SiteKitCliError
+
+    def bundle_missing(*args, **kwargs):
+        raise SiteKitCliError("site_kit.unavailable", "site-kit validator bundle missing")
+
+    # The narrowest real seam: the validator's node bundle call, which the write's check turns into
+    # SiteValidatorUnavailable.
+    monkeypatch.setattr(site_doc_validate, "run_site_kit_bundle", bundle_missing)
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    store = HybridRepository()
+    document = store.create_document(_site(f"doc_site_{uuid4().hex[:10]}"), doc_kind="site")
+
+    def runner(prompt, *, document, workspace, run_id, callbacks):
+        return SiteTurnResult("applied", "Warmed the hero.", _site(document["id"], "Warm hello"), None, [], [])
+
+    events: list = []
+    (status, response, _, _), _ = _run(app, store, document, runner, events)
+    assert status == "failed" and response["status"] == "failed"
+    assert response["summary"] == "The website could not be saved: site-kit validator bundle missing"
+    assert store.require_document(document["id"])["current_version"] == 0 and events == []
+    history = (_workspace(_agent_workspace_in_tmp, store, document["id"]) / "history.md").read_text()
+    assert "- Saved: no, the save was refused\n" in history
+    assert response["session_manifest_sha256"]
+
+
+def test_the_announced_version_is_the_writes_own_not_a_later_human_save(
+    tmp_path, design_storage, _agent_workspace_in_tmp, monkeypatch
+) -> None:
+    """Fix round 1 (b): a human save landing right after the agent's write must not be announced
+    as the agent's version."""
+
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    store = HybridRepository()
+    document = store.create_document(_site(f"doc_site_{uuid4().hex[:10]}"), doc_kind="site")
+    original = HybridRepository.update_site_document
+
+    def agent_write_then_a_human_save(self, document_id, site, **kwargs):
+        written = original(self, document_id, site, **kwargs)
+        if kwargs.get("actor_kind") == "agent":
+            human = _site(document_id, "Human edit")
+            original(self, document_id, human, intent="manual", checkpoint_label=None,
+                     operations=[{"kind": "replace_site", "site": human}],
+                     inverse_operations=[{"kind": "replace_site", "site": site}],
+                     actor_kind="human", source="editor",
+                     expected_base_version=int(written["current_version"]))
+        return written
+
+    monkeypatch.setattr(HybridRepository, "update_site_document", agent_write_then_a_human_save)
+
+    def runner(prompt, *, document, workspace, run_id, callbacks):
+        return SiteTurnResult("applied", "Warmed the hero.", _site(document["id"], "Warm hello"), None, [], [])
+
+    events: list = []
+    (status, response, _, _), _ = _run(app, store, document, runner, events)
+    assert status == "succeeded" and response["saved_version"] == 1 and response["current_version"] == 1
+    assert events == [("site_document_saved", {"document_id": document["id"], "version": 1})]
+    history = (_workspace(_agent_workspace_in_tmp, store, document["id"]) / "history.md").read_text()
+    assert "- Saved: as version 1\n" in history
+    assert store.require_document(document["id"])["current_version"] == 2

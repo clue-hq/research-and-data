@@ -11888,7 +11888,7 @@ def _execute_site_turn_job(
 
         def persist(site: JsonObject) -> Any:
             try:
-                invocations.invoke(
+                written = invocations.invoke(
                     "design_write_site",
                     {"document_id": document_id, "site": site, "expected_base_version": base_version,
                      "intent": payload.prompt[:120], "actor_kind": "agent", "source": "agent"},
@@ -11898,12 +11898,18 @@ def _execute_site_turn_job(
                 return SitePersistOutcome("conflicted", int(conflict.current), None)
             except SiteDocumentInvalid as refused:
                 return SitePersistOutcome("refused", None, "; ".join(refused.errors)[:500])
+            except (SiteValidatorUnavailable, SiteInputsUnavailable) as unavailable:
+                # The site could not be checked now, so it was not written: a refusal, as Lane A's
+                # routes treat it. Any other error leaves the write's state unknown and stays a crash.
+                return SitePersistOutcome("refused", None, str(unavailable)[:500])
             except PreconditionFailed as refused:
                 return SitePersistOutcome("refused", None, "; ".join(f.message for f in refused.failures)[:500])
             except TurnCancelled:
                 # Stop pressed between the agent's last step and the save: nothing is written.
                 return SitePersistOutcome("refused", None, "it was stopped")
-            return SitePersistOutcome("saved", int(store.require_document(document_id)["current_version"]), None)
+            # The version THIS write produced (its DocumentStateRef), never a re-read: a human save
+            # landing right after it must not be announced as the agent's.
+            return SitePersistOutcome("saved", int(written.references["current_version"]), None)
 
         runner = getattr(host, "site_turn_runner", None)
         inputs = None
