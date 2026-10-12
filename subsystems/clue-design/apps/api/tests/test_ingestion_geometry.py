@@ -23,6 +23,10 @@ from lumen_ingestion.capture import build_evidence
 from lumen_ingestion.capture import CaptureOutcome
 from lumen_ingestion.capture.geometry import GEOMETRY_JS, parse_geometry
 from lumen_ingestion.capture.snapshot import SiteSnapshot, load_snapshot
+from lumen_ingestion.evidence import EvidencePointer, SectionBackground
+from lumen_ingestion.normalizer import _band_ink
+from lumen_ingestion.normalizer.bands import BandSurface, build_band_surfaces
+from lumen_ingestion.normalizer.emit import KitBuilder
 from lumen_ingestion.normalizer.geometry import MEASURED_CONFIDENCE, cluster_numbers
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "ingestion"
@@ -415,6 +419,29 @@ def test_a_band_with_measured_text_gets_it_as_its_contrast_pair() -> None:
     assert {"foreground": "text.inverse", "background": "surface.band.014036", "min_ratio": 4.5} in pairs
     assert {"foreground": "text.band.28241e", "background": "surface.band.28241e", "min_ratio": 4.5} in pairs
     assert kit["tokens"]["colors"]["text.band.28241e"]["value"]["default"]["value"] == "#FAF5E6"
+
+
+def test_a_translucent_token_holds_no_opaque_band_or_ink_colour() -> None:
+    """Band matches are exact, alpha included: `#F5F5F580` is not the colour of a flat `#F5F5F5` band."""
+    pointer = EvidencePointer(source="website", locator="https://synthetic.example/ :: section 0 (section)")
+    band = SectionBackground(index=0, background="#F5F5F5", height_px=900, pointer=pointer)
+    minted, skipped = build_band_surfaces([band], {"surface.page": "#F5F5F580"})
+    assert [surface.path for surface in minted] == ["surface.band.f5f5f5"] and skipped == 0
+    assert build_band_surfaces([band], {"surface.page": "#F5F5F5"}) == ([], 0)
+    assert build_band_surfaces([band], {"surface.page": "#F5F5F5FF"}) == ([], 0)
+    # …and the text on a band: a translucent token never holds the opaque ink measured there.
+    surface = BandSurface(
+        path="surface.band.28241e", hex="#28241E", description="section background (1 band, 600px)",
+        provenance="website:https://synthetic.example/ :: section background (sections 0)", ink_hex="#FAF5E6",
+    )
+
+    def builder_holding(value: str) -> KitBuilder:
+        builder = KitBuilder(_evidence("evidence_website_insight"), brand_kit_id="b", version=1, name="B", created_at=_CREATED_AT)
+        builder.colors["text.cream"] = {"value": {"default": {"kind": "hex", "value": value}, "modes": {}}}
+        return builder
+
+    assert _band_ink(builder_holding("#FAF5E680"), surface) == "text.band.28241e"
+    assert _band_ink(builder_holding("#FAF5E6"), surface) == "text.cream"
 
 
 def test_band_minting_is_deterministic() -> None:

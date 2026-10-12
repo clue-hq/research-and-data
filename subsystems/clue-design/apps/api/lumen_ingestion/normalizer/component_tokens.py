@@ -8,7 +8,10 @@ reveals become named motion entries. Three rules, each enforced here:
 * Exact-match reuse. A token of this kit that already holds exactly that value (same group, same
   value, no tolerance) is named instead of minting a second; among several, the one whose family
   suits the slot wins (a fill prefers `surface.*`, a label `text.*`, a border `border.*`), then a
-  token that was not minted, then the name. Identical values used by several styles share one token.
+  token that was not minted, then the name. Identical values used by several styles share one token
+  when they fill the same kind of slot (hover fills across buttons, shadows, durations); a minted
+  token is never reused for another kind (a 2px outline offset is not a link's underline thickness),
+  since its name says what it is.
 * Stable names made by code from where the value was measured: `button.solid-047464.fill`,
   `button.solid-047464.hover.fill`, `motion.button.solid-047464.duration-1`, `motion.keyframes.pulse`,
   `motion.reveal.<digest>`. The same page yields the same names on every extraction; no model names
@@ -70,6 +73,9 @@ _EVENT_ATTRIBUTE = re.compile(r"[ \t\n\r\x0c/\"']on[a-z]+[ \t\n\r\x0c]*=")
 #: The engine lowercases ASCII only (`to_ascii_lowercase`); `str.lower` would also fold non-ASCII.
 _ASCII_LOWER = str.maketrans(string.ascii_uppercase, string.ascii_lowercase)
 _SLUG = re.compile(r"[^a-z0-9]+")
+#: A side, corner or ordinal suffix: `padding-top`, `radius-tl`, `shadow-1` and `duration-2` are the
+#: slot kinds `padding`, `radius`, `shadow` and `duration`.
+_SLOT_SUFFIX = re.compile(r"-(?:top|right|bottom|left|tl|tr|br|bl|\d+)$")
 #: Values a rest look carries that are no choice of the brand's; never minted at rest. A rest
 #: `text-decoration-line: none` IS a choice (the browser underlines links), so it is minted.
 _REST_DEFAULTS = {"text-transform": {"none"}, "cursor": {"auto", "default"}, "filter": {"none"}}
@@ -93,6 +99,11 @@ _SHADOW_POINTER = EvidencePointer(source="website", locator="component style box
 def is_component_token(name: str) -> bool:
     """A token this module mints (`button.*`, `link.*`, … `motion.*`)."""
     return str(name).split(".", 1)[0] in TOKEN_ROOTS
+
+
+def _slot_kind(name: str) -> str:
+    """The kind of slot a name is for: `button.solid-047464.hover.fill` → `fill`."""
+    return _SLOT_SUFFIX.sub("", name.rsplit(".", 1)[-1])
 
 
 def keyword_ok(prop: str, value: object) -> bool:
@@ -178,7 +189,7 @@ class _Minter:
 
     def name(self, path: str, group: str, value: dict, *, pointer: str, slot: str = "", description: str | None = None) -> str | None:
         """The token holding `value`: an existing exact match, a new token at `path`, or None (cap)."""
-        existing = self._exact(group, value, slot)
+        existing = self._exact(group, value, slot, path)
         if existing:
             return existing
         if len(self.minted) >= MAX_MINTED_TOKENS or (group == "colors" and self.colors >= MAX_MINTED_COLORS):
@@ -199,13 +210,16 @@ class _Minter:
             self.colors += 1
         return name
 
-    def _exact(self, group: str, value: dict, slot: str) -> str | None:
+    def _exact(self, group: str, value: dict, slot: str, path: str) -> str | None:
         prefs = _FAMILY_PREFERENCE.get(slot, ())
+        kind = _slot_kind(path)
         matches = [
             name for name, entry in self.entries(group).items()
             if isinstance(entry, dict) and _same(group, (entry.get("value") or {}).get("default"), value)
             # The type scale's size steps live in `numbers` too; a button's height is never one.
             and not (group == "numbers" and name.startswith("type."))
+            # A minted token names only its own kind of slot; the kit's own tokens serve any slot.
+            and not (is_component_token(name) and _slot_kind(name) != kind)
         ]
         if not matches:
             return None

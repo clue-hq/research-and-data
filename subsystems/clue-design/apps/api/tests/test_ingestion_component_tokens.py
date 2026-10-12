@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -101,6 +102,27 @@ def test_identical_values_share_one_token() -> None:
     }
     assert len(shadows) == 1, "every .btn hover casts the same shadow"
     assert len(result.minted) == len(set(result.minted))
+
+
+def _kind(name: str) -> str:
+    """The kind of slot a name is for: its last segment without a side, corner or ordinal suffix."""
+    return re.sub(r"-(?:top|right|bottom|left|tl|tr|br|bl|\d+)$", "", name.rsplit(".", 1)[-1])
+
+
+def test_a_minted_token_names_only_its_own_kind_of_slot() -> None:
+    """A 2px outline offset is not a link's underline thickness, and a label colour is not a border."""
+    kit, result = _mint()
+    for recipe in result.section["styles"]:
+        for slots in (recipe["rest"], *recipe["states"].values()):
+            for slot, token in slots.items():
+                if is_component_token(token):
+                    assert _kind(token) == _kind(slot), (recipe["component"], recipe["variant"], slot, token)
+        for step in recipe["motion"]:
+            assert (_kind(step["duration"]), _kind(step["easing"])) == ("duration", "easing"), step
+            assert step["delay"] is None or _kind(step["delay"]) == "delay", step
+        assert recipe["icon"] is None or _kind(recipe["icon"]["token"]) == "icon"
+    link = _recipe(kit, result, "link")
+    assert link["states"]["hover"]["decoration-thickness"].startswith("link.")
 
 
 def test_reuse_is_exact_with_no_tolerance() -> None:

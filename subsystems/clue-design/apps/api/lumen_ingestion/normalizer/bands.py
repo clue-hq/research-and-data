@@ -10,9 +10,10 @@ Rules, each a refusal or an exact match:
 * a band whose background is a gradient, an image, or translucent names nothing: its hex is not
   what the page shows (a band painted `rgba(20, 40, 120, 0.04)` reads as barely-tinted white but
   arrives as `#1428780A`);
-* a band colour an existing `surface.*` token holds EXACTLY is that token. Surface tokens only: a
-  band named after an ink role (`text.inverse`) would teach the wrong vocabulary (the grammar
-  audit's rule, `grammar_audit._surface_token`); near misses are minted, never merged (no tolerance);
+* a band colour an existing `surface.*` token holds EXACTLY is that token, alpha included (a
+  translucent `#F5F5F580` does not hold a flat `#F5F5F5`). Surface tokens only: a band named after
+  an ink role (`text.inverse`) would teach the wrong vocabulary (the grammar audit's rule,
+  `grammar_audit._surface_token`); near misses are minted, never merged (no tolerance);
 * the name is the colour (`surface.band.014036`), so a band order that shifts between extractions
   never renames a surface and the same site always yields the same names;
 * at most `MAX_BAND_SURFACES`, the most present first: each one adds a row to the agent's surfaces
@@ -47,6 +48,14 @@ def band_path(hex_value: str) -> str:
     return f"surface.band.{hex_value[1:7].lower()}"
 
 
+def opaque_hex(value: str) -> str | None:
+    """`#RRGGBB` of an opaque hex colour (`#RRGGBB`, or `#RRGGBBFF`); None for a translucent one."""
+    text = value.upper()
+    if len(text) == 7 or (len(text) == 9 and text.endswith("FF")):
+        return text[:7]
+    return None
+
+
 def build_band_surfaces(
     sequence: list[SectionBackground], surface_colors: dict[str, str]
 ) -> tuple[list[BandSurface], int]:
@@ -58,7 +67,7 @@ def build_band_surfaces(
         band for band in sequence
         if band.background and not band.gradient and not band.has_image and hex_alpha(band.background) >= 1.0
     ]
-    taken = {value[:7].upper() for value in surface_colors.values() if value}
+    taken = {opaque for value in surface_colors.values() if value and (opaque := opaque_hex(value))}
     by_hex: dict[str, list[SectionBackground]] = {}
     for band in usable:
         by_hex.setdefault((band.background or "")[:7].upper(), []).append(band)

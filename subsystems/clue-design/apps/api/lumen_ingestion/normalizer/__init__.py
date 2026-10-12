@@ -18,7 +18,7 @@ from ..colorspace import (
     with_lightness,
 )
 from ..evidence import BrandEvidence
-from .bands import build_band_surfaces
+from .bands import build_band_surfaces, opaque_hex
 from .cluster import cluster_colors
 from .component_tokens import mint_component_tokens
 from .emit import KitBuilder, build_constraints
@@ -358,13 +358,13 @@ def _brand_text(brand_hex: str, page_hex: str, primary_ramp: dict[str, str]) -> 
 
 
 def _band_ink(builder: KitBuilder, band) -> str:
-    """The colour token for the text measured on a band: an exact match (an ink first), else
-    `text.band.<hex of the band>`."""
+    """The colour token for the text measured on a band: an exact match, alpha included (an ink
+    first), else `text.band.<hex of the band>`."""
     matches = sorted(
         (
             path for path, entry in builder.colors.items()
             if entry["value"]["default"].get("kind") == "hex"
-            and str(entry["value"]["default"].get("value") or "")[:7].upper() == band.ink_hex
+            and opaque_hex(str(entry["value"]["default"].get("value") or "")) == band.ink_hex
         ),
         key=lambda path: (not path.startswith("text."), path),
     )
