@@ -62,6 +62,7 @@ from .asset_custody import (
     register_web_asset_backstop,
     write_cache_blob,
 )
+from .brand_kit_sections import carry_kit_sections
 from .core import CoreClient, CoreError, has_error_diagnostics
 from .custom_component_compiler import (
     DEFAULT_COMPILER_TIMEOUT_SECONDS,
@@ -2349,10 +2350,12 @@ def create_app(
             validation = app.state.core.validate_brand_kit(
                 brand_kit, product_ready=False
             )
-            brand_kit = validation["brand_kit"]
             summary_response = app.state.core.summarize_brand_kit(
-                brand_kit, raise_on_error=False
+                validation["brand_kit"], raise_on_error=False
             )
+            # The engine returns only what its BrandKit knows; the kit's brief, grammar audit and
+            # measured components ride on (Wave 2 A9 — every curated kit lost them before).
+            brand_kit = carry_kit_sections(brand_kit, validation["brand_kit"])
         except CoreError as error:
             raise core_http_error(error) from error
         diagnostics = summary_response.get("diagnostics") or validation.get(
@@ -2446,10 +2449,12 @@ def create_app(
             validation = app.state.core.validate_brand_kit(
                 brand_kit, product_ready=False
             )
-            brand_kit = validation["brand_kit"]
             summary_response = app.state.core.summarize_brand_kit(
-                brand_kit, raise_on_error=False
+                validation["brand_kit"], raise_on_error=False
             )
+            # The engine returns only what its BrandKit knows; the kit's brief, grammar audit and
+            # measured components ride on (Wave 2 A9 — every curated kit lost them before).
+            brand_kit = carry_kit_sections(brand_kit, validation["brand_kit"])
         except CoreError as error:
             raise core_http_error(error) from error
         diagnostics = (

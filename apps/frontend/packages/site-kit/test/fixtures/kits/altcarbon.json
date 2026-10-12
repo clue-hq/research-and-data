@@ -1,0 +1,3177 @@
+{
+ "approval_status": "approved",
+ "assets": {
+  "fonts": {
+   "body": {
+    "faces": [
+     {
+      "asset_id": "asset_ing_4c5e6f09cc4d0cdb",
+      "source_url": "https://altcarbon.com/_next/static/media/Graphik-Regular-Web.5d2d6038.ttf",
+      "style": "normal",
+      "weight": 400
+     },
+     {
+      "asset_id": "asset_ing_595c5c80d900f338",
+      "source_url": "https://altcarbon.com/_next/static/media/Graphik-Semibold-Web.f05f120f.ttf",
+      "style": "normal",
+      "weight": 600
+     }
+    ],
+    "fallback_stack": [
+     "Arial",
+     "sans-serif"
+    ],
+    "family": "Graphik",
+    "license": {
+     "basis": "platform-terms",
+     "embeddable": true,
+     "name": "unknown",
+     "restrictions": [
+      "Embed permission for this workspace's own brand font comes from the platform Terms of Use, not from a license verified at ingestion: off-platform or print reuse still requires license confirmation, and the license name above is what the source declared."
+     ],
+     "source_url": null,
+     "subsettable": false
+    },
+    "metrics": {
+     "ascender_ratio": 0.99,
+     "avg_char_width_ratio": 0.557,
+     "cap_height_ratio": 0.72,
+     "descender_ratio": -0.27,
+     "line_gap_ratio": 0.0,
+     "units_per_em": 1000.0,
+     "x_height_ratio": 0.53
+    },
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:https://altcarbon.com/_next/static/css/08666c9f040fec4a.css?dpl=dpl_nMUcksqtSWcXyLsU5ef1FrKH26mJ :: @font-face Graphik"
+    },
+    "scripts": [
+     "latin"
+    ],
+    "source": {
+     "kind": "url",
+     "url": "https://altcarbon.com/_next/static/media/Graphik-Regular-Web.5d2d6038.ttf"
+    }
+   },
+   "brand": {
+    "faces": [
+     {
+      "asset_id": "asset_ing_c96c0da71fcee736",
+      "source_url": "https://altcarbon.com/_next/static/media/FlechaM-Regular.c4bfb365.woff",
+      "style": "normal",
+      "weight": 400
+     }
+    ],
+    "fallback_stack": [
+     "Arial",
+     "sans-serif"
+    ],
+    "family": "Flecha",
+    "license": {
+     "basis": "platform-terms",
+     "embeddable": true,
+     "name": "unknown",
+     "restrictions": [
+      "Embed permission for this workspace's own brand font comes from the platform Terms of Use, not from a license verified at ingestion: off-platform or print reuse still requires license confirmation, and the license name above is what the source declared."
+     ],
+     "source_url": null,
+     "subsettable": false
+    },
+    "metrics": {
+     "ascender_ratio": 0.8838,
+     "avg_char_width_ratio": 0.5161,
+     "cap_height_ratio": 0.6802,
+     "descender_ratio": -0.2549,
+     "line_gap_ratio": 0.0,
+     "units_per_em": 2048.0,
+     "x_height_ratio": 0.458
+    },
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:https://altcarbon.com/_next/static/css/08666c9f040fec4a.css?dpl=dpl_nMUcksqtSWcXyLsU5ef1FrKH26mJ :: @font-face Flecha"
+    },
+    "scripts": [
+     "latin"
+    ],
+    "source": {
+     "kind": "url",
+     "url": "https://altcarbon.com/_next/static/media/FlechaM-Regular.c4bfb365.woff"
+    }
+   }
+  },
+  "images": {
+   "img.1": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_564984f690f6edd1",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: og:image"
+    },
+    "recolor_allowed": false,
+    "role": "og_image",
+    "style_tags": []
+   },
+   "img.10": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_2323f55aaed39de2",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 10"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.11": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_84acfaf8f7b8c2f8",
+    "crop_allowed": true,
+    "description": "Portrait-oriented outdoor photograph. A broad blue sky with thin, wispy horizontal white clouds fills the top. Across the upper middle, a distant snow-capped mountain range rises above lower cloud bands. Below, a large dark-green forested hill dominates the center, with a dense cluster of small buildings, many with light or reddish roofs, strung along its ridge and slopes. In the foreground, bright green grassy or terrace-like hillsides descend, and a narrow winding path or road cuts through them. No clear people, animals, text, logos, or products are visible at the supplied preview resolution.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 7"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "clouds",
+     "editorial",
+     "forest",
+     "hero image",
+     "hill town",
+     "landscape",
+     "mountains",
+     "negative space",
+     "outdoor",
+     "snow peaks",
+     "terraces",
+     "winding road"
+    ],
+    "title": "Snow-Capped Mountain Range Above a Forested Hill Town",
+    "usage_note": "Use for nature, travel, climate, environment, mountain, forest, or editorial content; as a hero or section background when text can sit over the sky; as a card image for outdoor or landscape themes; when a calm, expansive, elevated mood is wanted."
+   },
+   "img.12": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_0290bd0f2f8f07d2",
+    "crop_allowed": true,
+    "description": "A portrait-oriented color photograph showing two people working in a lush green field. The person in the foreground, left of center, wears a light green/white long-sleeved shirt, a pink/red patterned headscarf, dark pants, and a light-colored apron/skirt; a large brown woven basket is carried on their back with a strap across the chest. They are bent forward, hands reaching into dense tea bushes. Behind and to the right, a second person in a white long-sleeved shirt and a striped headscarf also bends over the bushes, picking. The foreground is filled with tea bushes and tall grass-like leaves. The background is a hillside covered in tea bushes, with tall trees and an overcast gray sky. No text, logos, or graphics are visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 9"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "agriculture",
+     "basket",
+     "fieldwork",
+     "green",
+     "harvest",
+     "livelihoods",
+     "outdoors",
+     "overcast",
+     "people",
+     "rural",
+     "sustainability",
+     "tea"
+    ],
+    "title": "Two people harvesting tea in a hillside field",
+    "usage_note": "Use as a card image, hero image, section background, or inline image in contexts related to agriculture, tea harvesting, rural livelihoods, or sustainability. Works well as a full-bleed background with a dark overlay for text legibility."
+   },
+   "img.13": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_74e008533d5636e7",
+    "crop_allowed": true,
+    "description": "A portrait-oriented landscape photograph looking down into a steep valley. A winding river or stream runs from the middle distance toward the lower right. Forested mountains rise on both sides, with terraced fields visible on the left hillside. A leafy tree branch enters from the upper left foreground. The sky is pale and hazy, and distant ridges fade into atmospheric mist. Dense green vegetation fills the lower foreground. No people, text, logos, or products are clearly visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 8"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "environmental",
+     "hazy",
+     "landscape",
+     "mountains",
+     "nature",
+     "river",
+     "terraced fields",
+     "valley"
+    ],
+    "title": "Hazy Mountain Valley with Winding River and Terraced Hillside",
+    "usage_note": "hero_image"
+   },
+   "img.14": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_d33d5620a2f12cad",
+    "crop_allowed": true,
+    "description": "Vertical photograph of a green, grass-covered hillside under an overcast sky. Dense dark-green trees and shrubs cover the lower slope and foreground. Several small buildings with grey metal roofs, a blue roof, and light-colored walls appear among the trees. White mist drifts across the middle of the slope. No people, text, logos, or products are clearly visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 11"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "fog",
+     "green",
+     "landscape",
+     "mist",
+     "mountain",
+     "nature",
+     "overcast",
+     "photograph",
+     "rural",
+     "village"
+    ],
+    "title": "Misty Green Hillside with Village Houses",
+    "usage_note": "Use as a moody landscape photograph for environmental, climate, nature, travel, or rural-community themes."
+   },
+   "img.15": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_42067f54a836f626",
+    "crop_allowed": true,
+    "description": "Portrait photograph of a hazy industrial-rural scene. A tall cylindrical chimney stands in the right foreground; its upper section is dark and weathered and capped with a black top. A second, thinner chimney rises in the midground left and emits a white smoke or steam plume that drifts to the right. In the background left, a green steel truss bridge or structure spans horizontally. The middle distance contains low buildings, boundary walls, scattered trees, palm trees, and flat fields or plots. The foreground shows a concrete retaining wall or platform, rubble, dirt piles, and small concrete blocks. The sky is pale, beige-gray, and hazy. The palette is muted with dusty browns, grays, ochres, sparse greens, a green bridge, and white smoke. No readable text, logo, or watermark is visible in the image.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 4"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "chimney",
+     "climate",
+     "documentary",
+     "emissions",
+     "environment",
+     "hazy",
+     "industrial",
+     "landscape",
+     "photography",
+     "rural",
+     "vertical"
+    ],
+    "title": "Two Industrial Chimneys in a Hazy Rural-Industrial Landscape",
+    "usage_note": "Use as a documentary or editorial image for climate, industrial emissions, air quality, carbon removal, industrial decarbonization, or rural-industrial landscape topics. It suits serious, grounded, report-style layouts, cards, and article support images where a muted, atmospheric tone is appropriate."
+   },
+   "img.16": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_5bbe559b755daa39",
+    "crop_allowed": true,
+    "description": "A photorealistic landscape image of a hazy industrial area with a tall stack and white smoke.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 6"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "documentary",
+     "emissions",
+     "environmental",
+     "forest",
+     "haze",
+     "industry",
+     "landscape",
+     "smoke",
+     "stack"
+    ],
+    "title": "Hazy Industrial Landscape with Tall Stack and Steam Plume",
+    "usage_note": "Appropriate for environmental/conservation contexts, industrial emissions stories, corporate ESG visuals, and atmospheric editorial features. Use as a environmental impact visual."
+   },
+   "img.17": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c02f348fc74a6a19",
+    "crop_allowed": true,
+    "description": "potentially low_confidence",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 5"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [],
+    "title": "Foggy Cityscape with Tall Slender Tower, Domes, and Palms",
+    "usage_note": "section_background"
+   },
+   "img.18": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_faa2b6686d560635",
+    "crop_allowed": true,
+    "description": "A blue-toned mountain ridge in mist with a mirrored reflection below, rendered with a horizontal glitch-like texture and dark vignette edges.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: css background-image"
+    },
+    "recolor_allowed": false,
+    "role": "illustration",
+    "style_tags": [
+     "abstract",
+     "blue",
+     "glitch",
+     "illustration",
+     "mist",
+     "mountain",
+     "nature",
+     "reflection"
+    ],
+    "title": "Misty Blue Mountain Ridge With Glitch Reflection",
+    "usage_note": "Use as a background or mood-setting illustration for atmospheric, technology, or nature-adjacent content."
+   },
+   "img.2": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_6732dac3c9b3a258",
+    "crop_allowed": true,
+    "description": "A stylized, painterly landscape built from layered hillsides and flowing line textures. A bright chartreuse-to-yellow-green band sweeps diagonally from the upper left across the middle of the frame, reading as a sunlit valley floor, river of light, or mist-filled gorge. To the upper right, a terraced slope is drawn as stacked contour rows in warm olive and pale tan, with rounded dark-green tree clusters sitting along the terrace edges. Upper-left and center hills are filled with dense, wavy linework in mid and deep greens. The lower left quadrant is a dark teal body of water rendered with concentric swirling lines, and directly below the bright band a striped vertical texture panel drops toward the bottom edge, giving a stepped or waterfall-like transition. The bottom right holds a dark, hedgerow-like mass of rounded green foliage. Small pale cream dots are scattered across the sky area and the bright band, resembling sparks, fireflies, or light particles.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 20"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "agriculture",
+     "atmospheric",
+     "decorative",
+     "environmental",
+     "flowing_lines",
+     "green_palette",
+     "greenery",
+     "hillside",
+     "illustration",
+     "landscape",
+     "tea_estate",
+     "terraced_farming"
+    ],
+    "title": "Illustrated Green Terraced Hillside with Luminous Valley and Striped Water Fall-Off",
+    "usage_note": "Use when a calm, optimistic, environmental or agricultural tone is needed and the layout can carry a text overlay.\nUse as a full-bleed band behind headline copy or as a wide section divider.\nUse cropped to the terraced slope or the bright valley band as a small card or thumbnail image.\nUse to signal landscape regeneration, tea/agriculture, climate or nature restoration subject matter where the surrounding copy supplies the specifics."
+   },
+   "img.3": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_aec7a52a7b61bc03",
+    "crop_allowed": true,
+    "description": "A hand-painted-looking illustration of a dark-haired man wearing round-framed glasses, head and shoulders visible above the surface of a swirling, teal-green and turquoise current. A large diffuse glow of yellow, gold and orange surrounds his head and shoulders, brightest behind and below him, and scatters into many round golden specks and dots that float across the water like particles or embers. In the upper-left corner a dark navy-to-black mass of curving striations intrudes, contrasting with the pale mint and cyan water elsewhere. Lighter, pale-blue swirls and two faint circular bright patches appear in the upper middle and upper right. The composition is horizontal, panoramic, with the figure placed right of centre and facing left into the current.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 12"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "carbon-removal",
+     "climate",
+     "editorial",
+     "glow",
+     "illustration",
+     "metaphor",
+     "swirl",
+     "water",
+     "wide-format"
+    ],
+    "title": "Swimmer in a Luminous Teal Current",
+    "usage_note": "Suitable as a conceptual hero or feature image for climate, carbon removal, environmental, ocean, science or climate-tech storytelling where a metaphorical human figure within a natural system is appropriate."
+   },
+   "img.4": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_01d01f6c173c2f1d",
+    "crop_allowed": true,
+    "description": "Top-down illustration of a single wooden rowboat with a tan hull and reddish-brown interior floating on deep teal water. The boat leaves a white wake. The water is filled with swirling concentric lines and ripples. Large organic landmasses or coral-like formations flank the left and right sides, textured with small leaf-like or coral-like marks in cream, pale yellow, olive, and pink. A pale, twisted funnel or spiral cloud descends from the top center toward the water. Small fish-like or debris shapes appear in the water. No text is visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 16"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "boat",
+     "climate",
+     "coral",
+     "environment",
+     "funnel",
+     "illustration",
+     "mission",
+     "nature",
+     "ocean",
+     "spiral",
+     "top-down",
+     "water"
+    ],
+    "title": "Top-down rowboat in swirling teal water with coral-like landmasses and a spiral funnel",
+    "usage_note": "Use when a climate, ocean, exploration, or environmental theme needs a calm, narrative, hand-painted visual. Suitable as a wide banner or hero with a central focal point. Pairs well with mission statements about carbon removal, ocean health, or journey metaphors."
+   },
+   "img.5": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_ceb2ca2e318285fe",
+    "crop_allowed": true,
+    "description": "A painterly illustration of a person standing in a field.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 18"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "agriculture",
+     "environment",
+     "field",
+     "painting",
+     "sustainability"
+    ],
+    "title": "Porterrait_of_a_Person_in_a_Field",
+    "usage_note": "Use as a background image for a website section about agriculture or environment."
+   },
+   "img.6": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_9716b73660321140",
+    "crop_allowed": true,
+    "description": "A large, roughly circular structure occupies the center-right of the frame against a solid black background. Its core is dark with dense purple, blue, and pink speckling. A thick, irregular ring surrounds the core, composed of blue, red, green, and purple shapes. To the left, a diffuse cloud of tiny pink, purple, blue, and white particles spreads outward. Several smaller spherical objects with spiky protrusions are scattered around the large structure, including at upper right, lower right, and left. The overall appearance resembles a microscopic or scientific visualization of viruses and cells.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 2"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black background",
+     "illustration",
+     "microscopic",
+     "public health",
+     "science",
+     "virus"
+    ],
+    "title": "Microscopic Virus-like Particles and Central Cell Structure on Black Background",
+    "usage_note": "Use as a generic scientific/medical illustration for articles about viruses, public health, disease eradication, vaccination, or microbiology. Suitable for dark-themed layouts where the black background can blend or serve as negative space."
+   },
+   "img.7": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_b49d22e1c75371d5",
+    "crop_allowed": true,
+    "description": "Square image on a black ground. Near the top, centered, white serif text reads 'The Alchemy of Ash'. Below, a diagonal band of orange and red flames, rendered with a visible halftone dot pattern, runs from the lower-left edge up toward the middle-left. To its right is a large dark mass of charred or burnt vegetation streaked with yellow-green, occupying the center and right of the frame. Two human figures appear on the right: one higher up in pale/white clothing, walking or standing amid the dark mass, and one lower right in a white shirt and shorts holding a long pole or tool whose tip carries a small red-orange object. The lower-left corner holds a grey-tan, wavy, ash- or water-like texture. The overall palette is black, white, orange-red, yellow-green and muted grey-tan.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 3"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "agriculture",
+     "climate",
+     "collage",
+     "dark",
+     "documentary",
+     "editorial",
+     "fire",
+     "halftone",
+     "serif-headline",
+     "soil",
+     "square",
+     "text-in-image"
+    ],
+    "title": "The Alchemy of Ash — halftone fire-and-field collage with two figures",
+    "usage_note": "Use as an editorial card or hero image for a long-form story about soil, land regeneration, fire, or climate recovery. The built-in headline makes it suitable as a self-contained article thumbnail; the dark field and high contrast let it sit on light or dark page backgrounds."
+   },
+   "img.8": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_d4f2bec22733e17c",
+    "crop_allowed": true,
+    "description": "A square graphic on a deep purple background. Centered at the top is the text 'Bengal Renaissance Project' in a light cream serif typeface, arranged on three lines. Two small cream plus-sign ornaments flank the text. Below, a cross-shaped (plus-shaped) window reveals a painted scene: a long, curved wooden boat with a high prow, carrying several dark figures, on water. The water and background are rendered in swirling, textured strokes of blue, green, and yellow. A staircase or stepped structure appears on the right side of the cross window. The cross shape is outlined by a thin, faint rounded rectangle and small cream plus-sign corner marks.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 1"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "Bengal",
+     "Renaissance",
+     "boat",
+     "cross",
+     "cultural",
+     "editorial",
+     "illustration",
+     "purple",
+     "serif",
+     "square"
+    ],
+    "title": "Bengal Renaissance Project — Cross-Cropped Boat Illustration",
+    "usage_note": "Suitable as a card image, editorial inline graphic, or section visual for cultural, historical, or educational content related to Bengal, the Renaissance, or maritime themes. The square format and clear typography make it adaptable for social media or web cards."
+   },
+   "img.9": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_964d121eeaba6951",
+    "crop_allowed": true,
+    "description": "Square graphic on a dark navy background. Centered near the top is cream serif text reading 'Darjeeling' on the first line and 'Revival Project' on the second line, flanked by small cream plus signs. Below, a thin rounded-rectangle outline frames a central illustration: a person with dark hair, wearing a purple dress, seated on a wooden stool at a wooden loom or table, facing left. The illustration background is a stylized landscape with teal/green wavy lines at the top, tan/beige middle, and orange/yellow textured lower area. The central illustration has a stepped/ziggurat top edge. No logo is visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 0"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "climate",
+     "community",
+     "craft",
+     "cream",
+     "graphic",
+     "illustration",
+     "loom",
+     "navy",
+     "orange",
+     "purple",
+     "serif",
+     "square",
+     "teal",
+     "text"
+    ],
+    "title": "Darjeeling Revival Project — square promotional graphic",
+    "usage_note": "Use when a square, text-led graphic is needed to introduce a named project or initiative, especially in a climate, community, or craft context. Suitable for hero/section placement, social cards, or editorial headers where the title and central illustration should remain prominent."
+   }
+  },
+  "logos": {
+   "mark": {
+    "allowed_backgrounds": [
+     "surface.page",
+     "surface.card"
+    ],
+    "clearspace": null,
+    "description": "A square, monochrome raster preview showing an abstract geometric arrangement of thick black rectangular bars on a white field. Four plus/cross-like signs sit near the four corners. A vertical bar is centered at the top edge and another at the bottom edge. A horizontal bar is centered at the left edge and another at the right edge. The center of the composition is empty. The bars have squared ends and uniform apparent thickness. No text, letters, numerals, or recognizable objects are visible. The background appears opaque white.",
+    "license": null,
+    "min_size": null,
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:logo-ladder :: mark <- INLINE_SVG [genuine] painted on a light inline_svg surface (#fff, L=1.00) via static"
+    },
+    "title": "Abstract Black Plus-and-Bar Geometric Mark on White",
+    "usage": "mark",
+    "usage_note": "Minimal monochrome brand marks, favicons, and small UI icons where simple geometry must remain legible. Decorative tiling or pattern backgrounds with a structural, technical, or grid-like feel. Loading indicators or status icons if animated or inverted variants are created and verified. Hypothetical: identity systems for technology, data, construction, or abstract concepts, scoped to this occurrence only.",
+    "variants": [
+     {
+      "asset_id": "asset_ing_51b8e1f92b98b132",
+      "color_mode": "full_color",
+      "height": 700.0,
+      "name": "full_color",
+      "width": 700.0
+     }
+    ]
+   },
+   "primary": {
+    "allowed_backgrounds": [
+     "surface.page",
+     "surface.card"
+    ],
+    "clearspace": null,
+    "description": "A wide, horizontal lowercase wordmark reading 'altcarbon' rendered in white/very light color on a white background; contrast is extremely low.",
+    "license": null,
+    "min_size": null,
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:logo-ladder :: light <- INLINE_SVG [genuine] painted on a light inline_svg surface (#fff, L=1.00) via static"
+    },
+    "title": "altcarbon lowercase wordmark, white-on-white inline SVG preview",
+    "usage": "primary",
+    "usage_note": "Use for reference in dark-background contexts where a white/light logo variant is needed. Use as a design-library example of a low-contrast light-surface logo asset. Use only intentionally for watermark or near-invisible treatments.",
+    "variants": [
+     {
+      "asset_id": "asset_ing_6841f1a7be41e58d",
+      "color_mode": "full_color",
+      "height": 30.0,
+      "name": "full_color",
+      "width": 156.0
+     }
+    ]
+   }
+  }
+ },
+ "brief": {
+  "background_rhythm": {
+   "bands": [
+    {
+     "index": 0,
+     "note": "Measured main section, tall and flat, no gradient. The photographic hero is an image inside this capture, not a separate background token in the sequence.",
+     "token": "surface.page"
+    },
+    {
+     "index": 1,
+     "note": "Shorter following div, same cream. No chromatic break into a tint or inverse close.",
+     "token": "surface.page"
+    }
+   ],
+   "confidence": "low",
+   "differentiation": "compositional",
+   "ratio_summary": "2 cream bands : 0 dark or tinted section fills. Violet is chrome, not a band."
+  },
+  "characterization": {
+   "confidence": "low",
+   "support": "One homepage: a continuous cream field (surface.page), black Graphik ink, and violet used only as chrome. A cinematic landscape hero carries a single serif line; below it, story unfolds as square painterly illustrations and hairline-ruled labels, not as tinted cards or saturated bands.",
+   "words": [
+    "restrained",
+    "painterly",
+    "editorial"
+   ]
+  },
+  "chromatic_moment": {
+   "confidence": "low",
+   "element": "No content peak. surface.brand is only the full-width announcement sliver and the nav pill reading Remove CO₂.",
+   "quiet": true,
+   "surrounding": "The pill sits on the photographic hero; everything below is cream canvas and black ink. Violet never fills a card, a section, or an illustration.",
+   "token": "surface.brand"
+  },
+  "component_recipes": [
+   {
+    "background": "surface.brand",
+    "border": null,
+    "component": "button",
+    "confidence": "low",
+    "padding": "space.0",
+    "radius": "radius.full",
+    "shadow": null,
+    "text": "text.inverse",
+    "unmapped": [
+     "Count 1. Shape record radius is 18px on a 36px line box; the website button token is radius.full (pill). Treat as a pill.",
+     "Recorded border color is white at width 0 — no visible border, no token."
+    ],
+    "variant": "solid.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "image",
+    "confidence": "medium",
+    "padding": "space.0",
+    "radius": "radius.none",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 4. No fill, no border, no shadow. These are the square editorial panels."
+    ],
+    "variant": "ghost.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "card",
+    "confidence": "medium",
+    "padding": "space.0",
+    "radius": "radius.card",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 4. Ghost fill, transparent text, 8px radius. radius.md is the same website measurement; prefer radius.card."
+    ],
+    "variant": "ghost.2"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "card",
+    "confidence": "low",
+    "padding": "space.0",
+    "radius": "radius.none",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 7. Text color matches surface.page cream, not a text.* token — type sitting on the hero, not a filled card."
+    ],
+    "variant": "ghost.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "card",
+    "confidence": "low",
+    "padding": "space.card.padding",
+    "radius": null,
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 2. Radius is 0 on the top corners and 8px on the bottom only — no token for a split radius. Text color is cream (surface.page), not a text token."
+    ],
+    "variant": "ghost.3"
+   },
+   {
+    "background": null,
+    "border": "stroke.width.divider",
+    "component": "divider",
+    "confidence": "medium",
+    "padding": "space.4",
+    "radius": "radius.none",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 4. Bottom edge only. Color is black, same as text.primary. Do not use border.default — that olive is derived and not this rule. Padding is bottom-only 16px."
+    ],
+    "variant": "outline.1"
+   },
+   {
+    "background": "surface.page",
+    "border": "stroke.width.divider",
+    "component": "divider",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 4. Bottom rule on cream. Vertical padding is 10px, which lands on no space token (space.2 is 8, space.3 is 12)."
+    ],
+    "variant": "solid.2"
+   },
+   {
+    "background": null,
+    "border": "stroke.width.default",
+    "component": "divider",
+    "confidence": "low",
+    "padding": null,
+    "radius": null,
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 1. Full 1px black border, horizontal padding 12px (space.3). Radius measured 16px with pill flag; only derived radius.xl / radius.button match, so no radius token is assigned. Likely the small 'Our Approach' chip, not the nav pill."
+    ],
+    "variant": "outline.4"
+   },
+   {
+    "background": null,
+    "border": "stroke.width.default",
+    "component": "nav",
+    "confidence": "low",
+    "padding": "space.5",
+    "radius": "radius.lg",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 1. 1px black border, 10px radius (website nav radius), 20px padding, no fill. Matches the outlined footer slab, not a filled nav bar."
+    ],
+    "variant": "outline.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "nav",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 2. Ghost, no border. Horizontal padding 32px has no space token (space.8 / space.page.margin are 30)."
+    ],
+    "variant": "ghost.1"
+   }
+  ],
+  "constraints": [
+   {
+    "confidence": "low",
+    "rule": "surface.brand is the only saturated UI color and stays punctuation-scale: the announcement sliver and one pill. Never a card fill, section band, link color, or illustration tint.",
+    "scope": "This homepage; one instance of each."
+   },
+   {
+    "confidence": "medium",
+    "rule": "Do not alternate section backgrounds. The measured page is two bands of surface.page. Do not introduce surface.muted, surface.inverse, surface.brand.subtle, or surface.canvas as bands — they are unused or derived.",
+    "scope": "Section rhythm on the captured page."
+   },
+   {
+    "confidence": "medium",
+    "rule": "Surfaces stay flat. No measured component has a shadow, and the kit has no shadow token.",
+    "scope": "All captured components."
+   },
+   {
+    "confidence": "medium",
+    "rule": "Story illustrations are square (radius.none). Do not round them to radius.card. radius.card is the 8px ghost-card radius, not the illustration panel.",
+    "scope": "Editorial image column."
+   },
+   {
+    "confidence": "low",
+    "rule": "The filled control is a pill: surface.brand fill, text.inverse label, radius.full. This page shows one, in the chrome. Do not repeat filled violet buttons down the editorial column.",
+    "scope": "Buttons."
+   },
+   {
+    "confidence": "medium",
+    "rule": "Rules and footer outline are black, 1px (stroke.width.divider / stroke.width.default), not violet and not the derived olive border tokens.",
+    "scope": "Dividers, section rules, footer slab."
+   },
+   {
+    "confidence": "low",
+    "rule": "The footer remains an outlined cream slab, not a dark close and not a surface.brand band.",
+    "scope": "Page close."
+   },
+   {
+    "confidence": "low",
+    "rule": "Do not set the hero line in text.primary. type.headline's color token is black, but the visible line is light type on the photograph.",
+    "scope": "Hero only."
+   }
+  ],
+  "diagnostics": [
+   {
+    "observation": "The hero line 'Create Abundance' is light type on the photograph. type.headline is Flecha at the measured h1 size, but its color token is text.primary (black).",
+    "reason": "Using the type token's color on that composition would invert the only hero treatment on the page."
+   },
+   {
+    "observation": "Focus rings in the shape records are #005FCC. The kit token focus.ring is derived violet (surface.brand), which does not match.",
+    "reason": "No kit token holds the measured focus color, so it cannot be written as a recipe without minting a name."
+   },
+   {
+    "observation": "A full-width violet announcement bar is visible above the hero and is absent from section_background_sequence, which only records two cream bands.",
+    "reason": "The bar is chrome, not a section surface; calling it a statement band would invent a rhythm the sequence does not contain."
+   },
+   {
+    "observation": "surface.accent was sampled as link color on 15 elements but is not a visible fill, rule, or button on this capture.",
+    "reason": "Promoting it to a palette scope would outrun what the screenshot shows."
+   },
+   {
+    "observation": "border.brand, border.default, border.strong, border.subtle, surface.canvas, surface.muted, surface.inverse, surface.brand.subtle, and the primary/neutral ramps are derived and do not appear as page colors.",
+    "reason": "surface.canvas is a near-cream (#F3F2E0), not the measured page (#F1F0DE). Substituting it would shift the canvas."
+   },
+   {
+    "observation": "Divider solid.2 uses 10px vertical padding; nav ghost.1 uses 32px horizontal padding.",
+    "reason": "Neither value lands on a kit space token. space.8 and space.page.margin are 30, space.2 is 8, space.3 is 12."
+   },
+   {
+    "observation": "Partner wordmarks (Frontier, Shopify, Google, NextGen, Mitsubishi) keep their own colors.",
+    "reason": "Those colors are not kit tokens and must not be recolored to surface.brand or text.primary."
+   }
+  ],
+  "imagery_posture": {
+   "absences": [
+    "No product UI, screenshots, or icon grids.",
+    "No photography in the trust row, mission copy, or footer.",
+    "Footer slab is type, rules, and a newsletter field only."
+   ],
+   "confidence": "low",
+   "diet": "photography-led",
+   "slots": [
+    "Hero: one full-bleed processed landscape with the serif line centered on it, nav overlaid.",
+    "Editorial column: four stacked square painterly illustrations (figures, field, boat); captions sit below the image, never on it.",
+    "Trust row: partner wordmarks only, under a small label."
+   ]
+  },
+  "palette_application": [
+   {
+    "confidence": "medium",
+    "evidence": "Both measured section backgrounds are this cream. The long main field and the shorter following div do not change color.",
+    "scope": "canvas",
+    "token": "surface.page"
+   },
+   {
+    "confidence": "medium",
+    "evidence": "Same cream as surface.page (the v3 background). Ghost cards have no fill, so this token is the page field, not a contrasting card.",
+    "scope": "canvas",
+    "token": "surface.card"
+   },
+   {
+    "confidence": "medium",
+    "evidence": "Announcement sliver across the top and the solid Remove CO₂ pill. Not used as type, rules, or section fill on this page.",
+    "scope": "accent-punctuation",
+    "token": "surface.brand"
+   },
+   {
+    "confidence": "medium",
+    "evidence": "Body copy, section labels, nav text on cream, and the black hairline rules (divider borders measured black).",
+    "scope": "ink",
+    "token": "text.primary"
+   },
+   {
+    "confidence": "low",
+    "evidence": "Label on the one solid pill (measured white on surface.brand). Not the page ink.",
+    "scope": "ink",
+    "token": "text.inverse"
+   }
+  ],
+  "schema_version": 1,
+  "signature_compositions": [
+   {
+    "confidence": "low",
+    "name": "Cinematic hero, centered serif",
+    "strength": "SINGLE",
+    "structure": "Full-bleed landscape, sentence-case type.headline centered, nav overlaid, one surface.brand pill at the top right. Seen once."
+   },
+   {
+    "confidence": "low",
+    "name": "Illustration stack with ruled labels",
+    "strength": "STRONG",
+    "structure": "Right column repeats square illustration, then a hairline-ruled sentence-case label and a short caption. One larger mission line sits between panels. Left of the stack: a 'Trusted by the best' label and a horizontal wordmark row. Pattern repeats four times on this page only."
+   },
+   {
+    "confidence": "low",
+    "name": "Outlined cream footer slab",
+    "strength": "SINGLE",
+    "structure": "One hairline-bordered container still on surface.page: mark and newsletter field on the left, two link columns and an address on the right. Not an inverse band."
+   }
+  ],
+  "typographic_posture": {
+   "case_posture": "Sentence case throughout: hero, nav, section labels, mission line. No tracked-uppercase eyebrows on this page.",
+   "confidence": "low",
+   "scale_temperament": "restrained",
+   "signature_moves": [
+    "One centered Flecha line on the hero (type.headline). Display scale does not repeat down the page.",
+    "Section labels are small Graphik sentence case on a 1px black rule.",
+    "One mid-column statement between illustrations — larger than the captions, not a second hero."
+   ],
+   "tokens": [
+    "type.headline",
+    "type.title",
+    "type.body",
+    "type.body.small"
+   ]
+  }
+ },
+ "compatibility_policy": {
+  "allow_critical_mode_fallbacks": false,
+  "allow_unapproved_asset_placeholders": true,
+  "require_product_ready_tokens": false
+ },
+ "constraints": {
+  "accessibility_notes": [],
+  "allow_gradients": true,
+  "contrast_pairs": [
+   {
+    "background": "surface.page",
+    "foreground": "text.primary",
+    "min_ratio": 4.5
+   },
+   {
+    "background": "surface.brand",
+    "foreground": "text.inverse",
+    "min_ratio": 4.5
+   },
+   {
+    "background": "surface.inverse",
+    "foreground": "text.inverse",
+    "min_ratio": 4.5
+   }
+  ],
+  "iconography": [],
+  "imagery": [],
+  "print_constraints": [
+   "Font licensing was not verified at ingestion; confirm embeddability before print export."
+  ],
+  "tone": [
+   "clear",
+   "professional"
+  ]
+ },
+ "description": null,
+ "grammar_audit": {
+  "anti_patterns": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "measured",
+     "evidence": "0 of 2 measured bands is a gradient",
+     "rule": "No gradient or mesh band backgrounds: not one measured band on this site uses one."
+    },
+    {
+     "basis": "measured",
+     "evidence": "17 measured surfaces, none carrying a box-shadow",
+     "rule": "No shadows, glows or glassmorphism: nothing measured on this site is elevated."
+    },
+    {
+     "basis": "measured",
+     "evidence": "measured control, card and badge radii",
+     "rule": "No giant pills and no 2xl rounding: the largest corner this brand measures is 8px."
+    },
+    {
+     "basis": "default",
+     "evidence": "house default from the lane's design guidance; not a measurement of this brand",
+     "rule": "No decorative geometry — blobs, orbs, gradient meshes, scattered shapes — unless this brand's real presence uses it. It is the clearest AI-slop tell there is."
+    },
+    {
+     "basis": "default",
+     "evidence": "house default from the lane's design guidance; not a measurement of this brand",
+     "rule": "No placeholder logo grids and no one-of-each parade of primitives: pick one composition system and apply it across the page."
+    }
+   ]
+  },
+  "cadence": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "measured",
+     "evidence": "measured band backgrounds, in the order the page paints them",
+     "rule": "The site's own band sequence, top to bottom: light, light (2 measured bands). Compose new sections into that rhythm."
+    },
+    {
+     "basis": "measured",
+     "evidence": "0 of 2 measured bands below the dark-luminance threshold",
+     "rule": "No dark band among the 2 measured bands on this site: all of them are light. A dark section would be new to this brand."
+    },
+    {
+     "basis": "measured",
+     "evidence": "website:https://altcarbon.com/ :: section vertical padding",
+     "rule": "Band rhythm is 30px — `space.section`. Write it as the utility, never as a raw vertical padding step."
+    }
+   ]
+  },
+  "color_frequency": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "measured",
+     "evidence": "counted over the measured band sequence",
+     "rule": "`#F1F0DE` (`surface.card`) carries 2 of 2 measured bands — this page's default canvas. A new section stands on it unless it has a reason not to."
+    },
+    {
+     "basis": "measured",
+     "evidence": "measured control fills, cross-checked against the band backgrounds",
+     "rule": "`#7C4CFF` (`surface.brand`) fills controls and nothing else — 1 measured button/chip variants, and not one band background. Keep it at control scale; a band painted in it is not this brand."
+    }
+   ]
+  },
+  "schema_version": 1,
+  "surface_language": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "measured",
+     "evidence": "read off the brand's own rendered page",
+     "rule": "Corners: `radius.card` 8px — the only corner shapes this brand measures."
+    },
+    {
+     "basis": "measured",
+     "evidence": "read off the brand's own rendered page",
+     "rule": "Hairlines: `stroke.width.divider` 1px — the only border weights it measures."
+    },
+    {
+     "basis": "measured",
+     "evidence": "read off the brand's own rendered page",
+     "rule": "Spacing: `space.card.padding` 8px — its measured steps."
+    },
+    {
+     "basis": "measured",
+     "evidence": "17 measured surfaces, none carrying a box-shadow",
+     "rule": "This brand paints no shadow anywhere: not one measured surface is elevated. Flat is the brand, not an omission to correct."
+    },
+    {
+     "basis": "measured",
+     "evidence": "a measured control variant is fully rounded",
+     "rule": "Controls are fully round (pills) on this site — a squared button is not this brand."
+    }
+   ]
+  },
+  "type_treatment": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "default",
+     "evidence": "house rule: measured component styles govern reuse; kit roles supply fallback values",
+     "rule": "For captured/adapted bands and equivalent new roles, preserve the measured source typography and responsive CSS. The theme's type ramp is a fallback where source measurements are unavailable; derived/substituted values are not observed facts. Inspect and bind source roles before raw composition, rather than adding generic size/weight utilities."
+    },
+    {
+     "basis": "measured",
+     "evidence": "measured on the site's own h1",
+     "rule": "This brand's headings are LIGHT (weight 400). A bold heading is not this brand."
+    },
+    {
+     "basis": "derived",
+     "evidence": "derived/substituted font_family, font_size, font_weight, letter_spacing, line_height; these are not observed brand facts",
+     "rule": "`type.display` (the display line) is Flecha / 112px / weight 400 / leading 1.05 / tracking -0.02em."
+    },
+    {
+     "basis": "measured",
+     "evidence": "measured font_family, font_size, font_weight, letter_spacing, line_height at rendered :: h1; all listed type properties match the selected sample",
+     "rule": "`type.headline` (the page's `<h1>`) is Flecha / 70px / weight 400 / leading 1.1 / tracking -0.03em."
+    },
+    {
+     "basis": "derived",
+     "evidence": "measured font_family, font_size, font_weight, line_height at rendered :: h2; derived/substituted letter_spacing; these are not observed brand facts",
+     "rule": "`type.title` (an `<h2>`) is Flecha / 25px / weight 400 / leading 1.3."
+    },
+    {
+     "basis": "derived",
+     "evidence": "derived/substituted font_family, font_size, font_weight, letter_spacing, line_height; these are not observed brand facts",
+     "rule": "`type.subtitle` (an `<h3>`) is Graphik / 20px / weight 400 / leading 1.3."
+    },
+    {
+     "basis": "derived",
+     "evidence": "measured font_family, font_size, font_weight, line_height at rendered :: body; derived/substituted letter_spacing; these are not observed brand facts",
+     "rule": "`type.body` (body copy) is Graphik / 16px / weight 400 / leading 1.5."
+    },
+    {
+     "basis": "derived",
+     "evidence": "derived/substituted font_family, font_size, font_weight, letter_spacing, line_height; these are not observed brand facts",
+     "rule": "`type.cta` (button labels) is Graphik / 16px / weight 600 / leading 1.2."
+    }
+   ]
+  }
+ },
+ "id": "brand_kit_ing_28663a7003024d9d82651d9b93427e5f",
+ "modes": {
+  "axes": {
+   "accessibility": [
+    "standard",
+    "high_contrast",
+    "large_text"
+   ],
+   "density": [
+    "comfortable",
+    "compact"
+   ],
+   "theme": [
+    "light",
+    "dark"
+   ]
+  },
+  "defaults": {
+   "accessibility": "standard",
+   "density": "comfortable",
+   "theme": "light"
+  }
+ },
+ "name": "Alt Carbon",
+ "provenance": {
+  "confidence": 0.6296,
+  "created_at": "2026-10-05",
+  "created_by": "lumen_ingestion",
+  "notes": [
+   "Ingested from website evidence.",
+   "Dark colorway synthesized from the light palette."
+  ],
+  "updated_at": null
+ },
+ "sources": [
+  {
+   "captured_at": "2026-10-05T10:31:05.363681+00:00",
+   "confidence": 0.7,
+   "kind": "website",
+   "url": "https://altcarbon.com"
+  }
+ ],
+ "tokens": {
+  "aliases": {
+   "accent.primary": {
+    "description": "ingestion alias",
+    "token": "surface.accent"
+   }
+  },
+  "assets": {
+   "logo.mark": {
+    "description": "Ingested logo.mark asset",
+    "provenance": {
+     "confidence": 0.7,
+     "source": "upload:asset"
+    },
+    "value": {
+     "default": {
+      "asset_id": "asset_ing_51b8e1f92b98b132",
+      "kind": "asset"
+     },
+     "modes": {}
+    }
+   },
+   "logo.primary": {
+    "description": "Ingested logo.primary asset",
+    "provenance": {
+     "confidence": 0.7,
+     "source": "upload:asset"
+    },
+    "value": {
+     "default": {
+      "asset_id": "asset_ing_6841f1a7be41e58d",
+      "kind": "asset"
+     },
+     "modes": {}
+    }
+   }
+  },
+  "colors": {
+   "border.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.brand"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#7C4CFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#7C4CFF"
+      }
+     }
+    }
+   },
+   "border.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.default"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#BDBCAD"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#413F57"
+      }
+     }
+    }
+   },
+   "border.strong": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.strong"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#828174"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#5C5A73"
+      }
+     }
+    }
+   },
+   "border.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.subtle"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#D6D5C7"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#2D2B41"
+      }
+     }
+    }
+   },
+   "focus.ring": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:focus.ring"
+    },
+    "role": "focus",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#7C4CFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#A292FF"
+      }
+     }
+    }
+   },
+   "palette.neutral.100": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.100)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F0F0F0"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.200": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.200)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#DEDEDE"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.300": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.300)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#C4C4C4"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.400": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.400)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#A4A4A4"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.50": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.50)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FAFAFA"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.500": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.500)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#868686"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.600": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.600)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#6C6C6C"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.700": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.700)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#555555"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.800": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.800)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#424242"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.900": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.900)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#2E2E2E"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.950": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.950)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#000000"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.100": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.100)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#EFEEFF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.200": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.200)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#DCD9FF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.300": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.300)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#C1BBFF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.400": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.400)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#A292FF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.50": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.50)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FAF9FF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.500": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.500)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#7C4CFF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.600": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.600)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#6F3AEE"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.700": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.700)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#5926C6"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.800": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.800)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#451D9C"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.900": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.900)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#301172"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.950": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.950)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#1C064A"
+     },
+     "modes": {}
+    }
+   },
+   "surface.accent": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "render:accent text color on 15 sampled elements; token --color-index-link-default"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#4D6F87"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#8FB3CD"
+      }
+     }
+    }
+   },
+   "surface.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "custom-prop:--color-primary"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#7C4CFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#A292FF"
+      }
+     }
+    }
+   },
+   "surface.brand.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.brand.subtle"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#EFEEFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#282344"
+      }
+     }
+    }
+   },
+   "surface.canvas": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.canvas"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F3F2E0"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#0B081B"
+      }
+     }
+    }
+   },
+   "surface.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "custom-prop:--color-v3-background"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F1F0DE"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#1A172C"
+      }
+     }
+    }
+   },
+   "surface.elevated": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.elevated"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#EFEFEF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#232136"
+      }
+     }
+    }
+   },
+   "surface.inverse": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.inverse"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#131208"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#F1F0DE"
+      }
+     }
+    }
+   },
+   "surface.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.muted"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#E0DFCE"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#1E1C31"
+      }
+     }
+    }
+   },
+   "surface.page": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "custom-prop:--color-v3-background"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F1F0DE"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#110E22"
+      }
+     }
+    }
+   },
+   "text.accent": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.accent"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#4D6F87"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#9FC3DE"
+      }
+     }
+    }
+   },
+   "text.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.brand"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#5926C6"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#C1BBFF"
+      }
+     }
+    }
+   },
+   "text.inverse": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.inverse"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFFFFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#000000"
+      }
+     }
+    }
+   },
+   "text.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.muted"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#2E2E2E"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#858492"
+      }
+     }
+    }
+   },
+   "text.primary": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "render:computed body text color"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#000000"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#EDEDFC"
+      }
+     }
+    }
+   },
+   "text.secondary": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.secondary"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#161616"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#B6B6C4"
+      }
+     }
+    }
+   }
+  },
+  "effects": {},
+  "numbers": {
+   "type.size.2xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 38.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.3xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 43.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.4xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 47.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.5xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 57.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.6xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 76.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.7xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 95.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.8xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 114.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.9xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 152.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.lg": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.md": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 19.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.sm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 28.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.xs": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.192 = reference 0.546 / brand 0.458)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 14.5
+     },
+     "modes": {}
+    }
+   }
+  },
+  "opacity": {
+   "opacity.disabled": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.4
+     },
+     "modes": {}
+    }
+   },
+   "opacity.emphasis": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.88
+     },
+     "modes": {}
+    }
+   },
+   "opacity.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.56
+     },
+     "modes": {}
+    }
+   },
+   "opacity.overlay": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.48
+     },
+     "modes": {}
+    }
+   },
+   "opacity.scrim": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.64
+     },
+     "modes": {}
+    }
+   },
+   "opacity.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.72
+     },
+     "modes": {}
+    }
+   }
+  },
+  "radii": {
+   "radius.badge": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 9999.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.button": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: card border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.full": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: button border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 9999.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.lg": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: nav border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 10.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.md": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: card border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.none": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.sm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 4.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.xs": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "shadows": {},
+  "spacing": {
+   "space.0": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.0
+     },
+     "modes": {}
+    }
+   },
+   "space.1": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 4.0
+     },
+     "modes": {}
+    }
+   },
+   "space.10": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 40.0
+     },
+     "modes": {}
+    }
+   },
+   "space.12": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: section rhythm"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 48.0
+     },
+     "modes": {}
+    }
+   },
+   "space.16": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: divider gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 56.0
+     },
+     "modes": {}
+    }
+   },
+   "space.2": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "space.3": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 12.0
+     },
+     "modes": {}
+    }
+   },
+   "space.4": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: card gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "space.5": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: nav gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 20.0
+     },
+     "modes": {}
+    }
+   },
+   "space.6": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.8": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: divider gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 30.0
+     },
+     "modes": {}
+    }
+   },
+   "space.card.padding": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: card padding"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "space.lg": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: card gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "space.md": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 12.0
+     },
+     "modes": {}
+    }
+   },
+   "space.page.margin": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: section horizontal padding"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 30.0
+     },
+     "modes": {}
+    }
+   },
+   "space.section": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: section vertical padding"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 30.0
+     },
+     "modes": {}
+    }
+   },
+   "space.sm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.loose": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.tight": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "space.xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.xs": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 4.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "stroke_widths": {
+   "stroke.width.bold": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 3.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: nav border-width"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.divider": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: divider border-width"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.firm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.focus": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: focus ring outline-width"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.hairline": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.5
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.thin": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://altcarbon.com/ :: nav border-width"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "typography": {
+   "type.body": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.body; measured=font_family,font_size,font_weight,line_height @ website:rendered :: body"
+    },
+    "role": "body",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "body",
+      "font_family": "Graphik",
+      "font_size": 16.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.5
+     },
+     "modes": {}
+    }
+   },
+   "type.body.small": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.body.small; measured=none"
+    },
+    "role": "body.small",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "body",
+      "font_family": "Graphik",
+      "font_size": 14.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.4
+     },
+     "modes": {}
+    }
+   },
+   "type.caption": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.caption; measured=none"
+    },
+    "role": "caption",
+    "value": {
+     "default": {
+      "color": "text.secondary",
+      "font_asset": "body",
+      "font_family": "Graphik",
+      "font_size": 12.0,
+      "font_weight": 600,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.35
+     },
+     "modes": {}
+    }
+   },
+   "type.cta": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.cta; measured=none"
+    },
+    "role": "cta",
+    "value": {
+     "default": {
+      "color": "text.inverse",
+      "font_asset": "body",
+      "font_family": "Graphik",
+      "font_size": 16.0,
+      "font_weight": 600,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.2
+     },
+     "modes": {}
+    }
+   },
+   "type.display": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.display; measured=none"
+    },
+    "role": "display",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "Flecha",
+      "font_size": 112.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": -0.02,
+      "line_height": 1.05
+     },
+     "modes": {}
+    }
+   },
+   "type.eyebrow": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.eyebrow; measured=none"
+    },
+    "role": "eyebrow",
+    "value": {
+     "default": {
+      "color": "text.brand",
+      "font_asset": "brand",
+      "font_family": "Flecha",
+      "font_size": 12.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.08,
+      "line_height": 1.2
+     },
+     "modes": {}
+    }
+   },
+   "type.headline": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:rendered :: h1"
+    },
+    "role": "headline",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "Flecha",
+      "font_size": 70.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": -0.03,
+      "line_height": 1.1
+     },
+     "modes": {}
+    }
+   },
+   "type.label": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.label; measured=none"
+    },
+    "role": "label",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "body",
+      "font_family": "Graphik",
+      "font_size": 13.0,
+      "font_weight": 600,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.2
+     },
+     "modes": {}
+    }
+   },
+   "type.legal": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.legal; measured=none"
+    },
+    "role": "legal",
+    "value": {
+     "default": {
+      "color": "text.muted",
+      "font_asset": "body",
+      "font_family": "Graphik",
+      "font_size": 11.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.3
+     },
+     "modes": {}
+    }
+   },
+   "type.stat": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.stat; measured=none"
+    },
+    "role": "stat",
+    "value": {
+     "default": {
+      "color": "text.brand",
+      "font_asset": "brand",
+      "font_family": "Flecha",
+      "font_size": 87.5,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "type.subtitle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.subtitle; measured=none"
+    },
+    "role": "subtitle",
+    "value": {
+     "default": {
+      "color": "text.secondary",
+      "font_asset": "body",
+      "font_family": "Graphik",
+      "font_size": 20.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.3
+     },
+     "modes": {}
+    }
+   },
+   "type.title": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.title; measured=font_family,font_size,font_weight,line_height @ website:rendered :: h2"
+    },
+    "role": "title",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "Flecha",
+      "font_size": 25.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.3
+     },
+     "modes": {}
+    }
+   }
+  }
+ },
+ "version": 1
+}
