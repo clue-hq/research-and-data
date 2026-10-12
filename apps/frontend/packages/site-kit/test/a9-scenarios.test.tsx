@@ -245,17 +245,13 @@ test("B2 probe.minted: an unknown look, an unknown card look, an unknown brand m
   refused({ className: "transition" }, /class "transition" is motion of your own/);
 });
 
-test("KNOWN DEFECT: B2 probe.minted: an unknown look written in braces (look={\"solid.123456\"}) is refused too", {
-  skip: defect("A9 scenario: check-section.ts reads a kit.Button/kit.Card look only from a quoted attribute (look=\"…\"); look={\"…\"} passes the lint, and the validator never sees a literal in the section's code, so the button silently draws the standard button"),
-}, () => {
+test("B2 probe.minted: an unknown look written in braces (look={\"solid.123456\"}) is refused too", () => {
   const brand = kitBrand("probe.minted");
   const errors = lint(section({ cardLook: cardLooks(brand)[0].name, buttonAttr: ' look={"solid.123456"}' }), lintOptionsFor(brand));
   assert.ok(errors.some((e) => /solid\.123456/.test(e)), errors.join(" | "));
 });
 
-test("KNOWN DEFECT: B2 probe.minted: prose that says \"style:\" is not refused as an inline style", {
-  skip: defect("A9 scenario: check-section.ts refuses any `style:` anywhere in the source (/\\bstyle\\s*:/), prose included, so a default like \"Leadership style: hands-on\" is refused as an inline style — the same false-refusal class the Task 6b ruling fixed for the motion rules"),
-}, () => {
+test("B2 probe.minted: prose that says \"style:\" is not refused as an inline style", () => {
   const brand = kitBrand("probe.minted");
   const source = section({ buttonLook: buttonLooks(brand)[0].name }).replace("Built for ease-of-use from the first week.", "Leadership style: hands-on.");
   assert.deepEqual(lint(source, lintOptionsFor(brand)), []);

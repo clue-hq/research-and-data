@@ -93,6 +93,45 @@ function classNameStrings(source: string): string[] {
   return strings;
 }
 
+/** An inline style in the code: a JSX `style` attribute (any value), or an object key named `style`
+ * (`{ style: … }`, `{ "style": … }`, `{ style }`), which is how React.createElement takes one. Read
+ * from the syntax tree, so prose that says "style:" in a string or a template never counts. */
+function hasInlineStyle(source: string): boolean {
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node: ts.Node): boolean =>
+    (ts.isJsxAttribute(node) && node.name.getText(file) === "style") ||
+    ((ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) &&
+      (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
+      node.name.text === "style") ||
+    (ts.forEachChild(node, visit) ?? false);
+  return visit(file);
+}
+
+/** Every literal look on a kit.Button or kit.Card: `look="x"`, `look={"x"}`, ``look={`x`}``. A look
+ * the section computes (`look={props.look}`, a template with `${}`) is props data; the validator
+ * checks that. */
+function kitLooks(source: string): { component: "Button" | "Card"; look: string }[] {
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const looks: { component: "Button" | "Card"; look: string }[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText(file);
+      if (tag === "kit.Button" || tag === "kit.Card") {
+        for (const attribute of node.attributes.properties) {
+          if (!ts.isJsxAttribute(attribute) || attribute.name.getText(file) !== "look") continue;
+          const value = attribute.initializer && ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : attribute.initializer;
+          if (value && (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value))) {
+            looks.push({ component: tag === "kit.Button" ? "Button" : "Card", look: value.text });
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return looks;
+}
+
 /** Class tokens with their variants (`group-hover:-translate-y-1` → variants ["group-hover"]). */
 function variantTokens(strings: string[]): { token: string; base: string; variants: string[] }[] {
   return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((token) => {
@@ -159,7 +198,7 @@ export function lint(source: string, options: LintOptions = {}): string[] {
   const withoutHrefs = source.replace(/href=\{?["'`][^"'`]*["'`]\}?/g, "");
   for (const m of withoutHrefs.matchAll(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g)) errors.push(`colour value ${m[0]}; use the brand's colour tokens`);
   for (const m of source.matchAll(/\b(rgba?|hsla?|oklch|oklab|lab|lch)\(/g)) errors.push(`colour function ${m[0]}…); use the brand's colour tokens`);
-  if (/\bstyle\s*=/.test(source) || /\bstyle\s*:/.test(source)) errors.push("inline style; style only with the brand's classes");
+  if (hasInlineStyle(source)) errors.push("inline style; style only with the brand's classes");
   const seen = new Set<string>();
   for (const token of classTokens(source)) {
     for (const rule of RULES) {
@@ -192,8 +231,7 @@ export function lint(source: string, options: LintOptions = {}): string[] {
       errors.push(`class "${token}" is not one of this brand's motion classes; its motion classes are ${options.motions.join(", ") || "none"} (brand/brand.md, Motion)`);
     }
   }
-  for (const m of source.matchAll(/<kit\.(Button|Card)\b[^>]*?\blook=["']([^"']+)["']/g)) {
-    const [, component, look] = m;
+  for (const { component, look } of kitLooks(source)) {
     const known = component === "Button" ? options.buttonLooks : options.cardLooks;
     if (known && !known.includes(look)) {
       errors.push(component === "Button"

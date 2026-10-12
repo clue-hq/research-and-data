@@ -42,6 +42,40 @@ test("inline style, raw colour values and other imports are refused", () => {
   assert.ok(lint(`import x from "lodash";\n${EXAMPLE}`).some((e) => e.includes('import "lodash"')));
 });
 
+const INLINE_STYLE = "inline style; style only with the brand's classes";
+
+test("a style attribute on a JSX element is refused, once", () => {
+  assert.deepEqual(lint(EXAMPLE.replace("<p className", '<p style={{ color: "red" }} className')), [INLINE_STYLE]);
+});
+
+test("a style key in an object is refused: React.createElement's props", () => {
+  assert.deepEqual(lint(`${EXAMPLE}\nexport const box = () => React.createElement("div", { style: { color: "red" } });\n`), [INLINE_STYLE]);
+});
+
+test("a shorthand style key is refused", () => {
+  assert.deepEqual(lint(`${EXAMPLE}\nconst s = { style };\n`), [INLINE_STYLE]);
+});
+
+test("prose that says \"style:\" is not an inline style, in a string or a template", () => {
+  assert.deepEqual(lint(EXAMPLE.replace("attribution: z.string(),", 'attribution: z.string().default("Leadership style: hands-on."),')), []);
+  assert.deepEqual(lint(EXAMPLE.replace("{props.attribution}", "{`style: ${props.attribution}`}")), []);
+});
+
+test("a literal look written in braces is checked like a quoted one", () => {
+  const options = { buttonLooks: ["solid.1"], cardLooks: ["solid.1"] };
+  const withButton = (look: string) => EXAMPLE.replace("</kit.Shell>", `<kit.Button label="Go" href="/" surface="page" look=${look} /></kit.Shell>`);
+  const unknown = 'look "solid.123456" on kit.Button is not one of this brand\'s button styles; the styles are solid.1 (brand/brand.md, Buttons)';
+  assert.deepEqual(lint(withButton('{"solid.123456"}'), options), [unknown]);
+  assert.deepEqual(lint(withButton("{`solid.123456`}"), options), [unknown]);
+  const withCard = EXAMPLE.replace("</kit.Shell>", "<kit.Card look={'solid.7'}>x</kit.Card></kit.Shell>");
+  assert.deepEqual(lint(withCard, options), ['look "solid.7" on kit.Card is not one of this brand\'s card styles; the styles are solid.1 (brand/brand.md, Cards)']);
+});
+
+test("a look the section computes is not checked; the validator checks props", () => {
+  const computed = EXAMPLE.replace("</kit.Shell>", '<kit.Button label="Go" href="/" surface="page" look={props.look} /></kit.Shell>');
+  assert.deepEqual(lint(computed, { buttonLooks: ["solid.1"] }), []);
+});
+
 test("the type check runs on a file written inside the package", () => {
   // A hidden directory, so neither this package's nor the frontend's tsconfig picks the files up.
   const dir = fileURLToPath(new URL("../.section-check/type-check-test", import.meta.url));
