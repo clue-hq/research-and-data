@@ -57,7 +57,6 @@ export type SiteDocument = z.infer<typeof SiteDocumentSchema>;
 export const BrandDataSchema = z
   .looseObject({
     slug: z.string(),
-    measured: z.unknown(),
     kit: z.record(z.string(), z.unknown()),
     fonts: z.array(
       z.looseObject({ family: z.string(), weight: z.number().nullable(), style: z.string(), file: z.string() }),

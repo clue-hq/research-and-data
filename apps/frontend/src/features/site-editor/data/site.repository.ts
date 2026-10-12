@@ -133,7 +133,6 @@ export const SITE_FIXTURE_DOCUMENT_ID = "doc_site_fixture";
 
 const FIXTURE_BRAND = {
   slug: "fixture",
-  measured: null,
   kit: { tokens: {} },
   fonts: [],
   assets: {},

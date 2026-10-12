@@ -66,3 +66,7 @@ test("the fixture brand parses and a section link needs a real token", () => {
   assert.equal(SectionLinkSchema.safeParse({ ...link, token: "short" }).success, false);
   assert.equal(SectionLinkSchema.safeParse({ ...link, token: "tok_0123456789abcdef" }).success, true);
 });
+
+test("a brand from an older server that still sends measured parses", () => {
+  assert.equal(BrandDataSchema.safeParse({ ...garner(), measured: null }).success, true);
+});
