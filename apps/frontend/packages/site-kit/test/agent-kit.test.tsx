@@ -43,7 +43,7 @@ test("a look draws the seller's own icon where the site has one", () => {
   const kit = makeKit(href, brand);
   const solid = buttonLooks(brand).find((look) => colorOf(brand, look.measured?.rest.fill) === "#047464")!;
   const markup = html(kit.Button({ label: "Go", href: "/", surface: "page", look: solid.name }));
-  assert.match(markup, /<span class="brand-btn-label">Go<\/span><span aria-hidden="true" class="brand-btn-icon"><svg [^>]*viewBox="0 0 12 12"/);
+  assert.match(markup, /<span>Go<\/span><span aria-hidden="true" class="brand-btn-icon"><svg [^>]*viewBox="0 0 12 12"/);
   const outline = buttonLooks(brand).find((look) => look.name === "outline.0d2b25")!;
   assert.ok(html(kit.Button({ label: "More", href: "/", surface: "page", look: outline.name })).includes('<span aria-hidden="true" class="brand-btn-icon">→</span>'));
 });

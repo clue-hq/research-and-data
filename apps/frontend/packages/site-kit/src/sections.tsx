@@ -72,7 +72,7 @@ export function Button({ brand, label, href, surface, look, disabled }: {
       data-surface={surface}
     >
       {icon?.position === "start" ? mark : null}
-      <span className="brand-btn-label">{label}</span>
+      <span>{label}</span>
       {icon?.position === "end" ? mark : null}
     </a>
   );

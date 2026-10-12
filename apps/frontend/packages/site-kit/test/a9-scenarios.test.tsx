@@ -161,9 +161,6 @@ function orphanClasses(brand: BrandData, markup: string): string[] {
   }).sort();
 }
 
-/** brand-btn-label: the label span every Button draws (sections.tsx) — no stylesheet defines it. */
-const KNOWN_ORPHANS = new Set(["brand-btn-label"]);
-
 for (const [name, load] of BRANDS) {
   const brand = load();
   const skip = brand ? false : NO_SCENARIO_KIT;
@@ -182,13 +179,9 @@ for (const [name, load] of BRANDS) {
     const markup = renderSite(brand!, site);
     for (const look of buttonLooks(brand!)) assert.ok(markup.includes(`class="brand-btn brand-look-${look.index}"`), look.name);
     for (const choice of surfaceChoices(brand!)) assert.ok(markup.includes(surfaceClass(choice.value)), choice.value);
-    const orphans = orphanClasses(brand!, markup).filter((cls) => !KNOWN_ORPHANS.has(cls));
-    assert.deepEqual(orphans, [], "a class no theme stylesheet defines (other than the known defect below)");
   });
 
-  test(`KNOWN DEFECT: B1 ${name}: every rendered class is defined by themeCss/tailwindThemeCss or is layout — "brand-btn-label" (sections.tsx Button) is defined by neither`, {
-    skip: defect("A9 scenario: sections.tsx Button draws <span class=\"brand-btn-label\">, a brand-namespaced class that neither themeCss nor tailwindThemeCss defines"),
-  }, () => {
+  test(`B1 ${name}: every rendered class is defined by themeCss/tailwindThemeCss or is layout`, { skip }, () => {
     assert.deepEqual(orphanClasses(brand!, renderSite(brand!, fullSite(brand!))), []);
   });
 }
