@@ -119,8 +119,8 @@ database cannot touch trenton's lane database.
   workers poll the database the tests use; only trenton runs a stack and it uses `clue_trenton`, so no
   stack ever polls a lane's test database and trenton's stack can stay up. If a queue-driven test
   still flakes, check `leased_by` on the job row before anything else.
-- **No dev stack outside trenton.** A step that needs the running stack is recorded as owed in the
-  lane's memory file and runs in trenton after the final merge.
+- **Dev stacks:** see section 8 (each lane may run its own, on its own ports, database copy and Redis
+  database number).
 - **Memory.** Each lane writes only its own note: `_memory/2026-10-12-wave2-lane-a.md`, `-a9.md`,
   `-lane-b.md`, `-lane-c.md` (they exist already). Nobody edits `_memory/README.md` or the old
   `2026-10-08-puck-spike-phase2.md` note during Wave 2.
@@ -180,3 +180,42 @@ needing the stack, and C Task 15's editor domain. After that comes the one whole
 > no reviewer subagents. Order: 0, 1, 2, 4, 5; merge `w2/a-task-11`, then 3, 6, 7, 8 (10 and 11 may
 > come before 9); merge `w2/a-task-17`, then 9, 12, 13, 13a, 14; merge `w2/a9-task-6b`, then 15, 16,
 > 17. Task 18's live check waits for trenton and the founder. Tag every completed task. Never push.
+
+## 8. Running a stack in a lane worktree (founder, 2026-10-12)
+
+The founder decided each lane may run its own dev stack. This replaces section 5's "No dev stack
+outside trenton" rule; live checks can now run in the lane that owns them, and section 6's owed
+list shrinks to the checks that need another lane's work merged in.
+
+**Databases.** Full copies of `clue_trenton` (2.7 GB each, made 2026-10-12 with trenton's stack
+stopped, `CREATE DATABASE … TEMPLATE clue_trenton STRATEGY FILE_COPY`) on `localhost:55160`:
+`clue_damascus` (Lane A), `clue_bangalore` (A9), `clue_chicago` (Lane B). Each worktree's
+`.artifacts/ws_*` storage already matches trenton's (same file counts), so blobs resolve. The stack
+runs on the copy; tests still run on the small test database (section 1). Never make another full
+copy while a stack is connected to `clue_trenton`, and never several at once (the 2026-10-12
+disk-full crash).
+
+**Ports and Redis.** Each lane gets its own series so four stacks run side by side:
+
+| Lane | Worktree | Frontend | Design API | Platform API | Platform twin | Page origin | Editor (Task 15) | Redis DB |
+|---|---|---|---|---|---|---|---|---|
+| C | trenton | 3029 | 8019 | 8029 | 8039 | 8049 | 3129 | 2 |
+| A | damascus | 3027 | 8017 | 8027 | 8037 | 8047 | 3127 | 6 |
+| A9 | bangalore | 3047 | 8147 | 8157 | 8167 | 8177 | 3147 | 7 |
+| B | chicago | 3048 | 8148 | 8158 | 8168 | 8178 | 3148 | 8 |
+
+Damascus keeps the series it already had (`scripts/dev_stack_damascus.sh`). Every worktree used Redis
+database 2; with four copies of one database the record ids repeat, so id-keyed locks and rate-limit
+keys would collide across lanes — hence one database number per lane.
+
+**What to change in a lane's files** (the values only; never print secrets):
+- `.env`: `DEV_STACK_FRONTEND_PORT`, `DEV_STACK_DESIGN_PORT`, `DEV_STACK_PLATFORM_PORT`,
+  `DEV_STACK_PLATFORM2_PORT`, `CLUE_PAGES_ORIGIN_PORT`; `CLUE_APP_ORIGIN`,
+  `CLUE_AUTH_CLERK_AUTHORIZED_PARTIES` and `LUMEN_API_CORS_ORIGINS` (each names the frontend
+  origin); `CLUE_DESIGN_API_BASE_URL` and `LUMEN_API_ORIGIN` (the design API port);
+  `CLUE_DATABASE_URL` and `DEV_STACK_DB_URL` (the lane's copy); `CLUE_REDIS_URL` (`…/6379/<Redis DB>`);
+  `DEV_STACK_EDITOR_PORT` once Task 15 has added it.
+- `apps/frontend/.env.local`: `CLUE_API_BASE_URL` (platform port), `LUMEN_API_BASE_URL` (design
+  port), `CLUE_APP_ORIGIN` (frontend origin).
+- Start and stop the stack only with `scripts/dev_stack.sh` and the `.env` above (or the lane's own
+  wrapper), detached (`nohup … & disown`), never by `pkill` on a shared pattern.
