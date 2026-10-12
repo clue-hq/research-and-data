@@ -1,0 +1,219 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
+import { canonicalJson } from "@clue/site-kit/editor-site";
+import type { SiteDocument } from "@clue/site-kit/site-document";
+import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
+import { httpSiteRepository, type SiteRepository } from "../data/site.repository";
+import { siteCanvasState } from "../model/site-canvas-state";
+import {
+  acceptsFrameEdits,
+  frameSyncFor,
+  initialRoute,
+  linksFresh,
+  siteFrameMode,
+  siteInitKey,
+} from "../model/site-frame-sync";
+import { siteStageMounted, type SiteStageBinding } from "../model/site-stage";
+import { useSiteDocument } from "./use-site-document";
+import { useSiteEditorOrigin } from "./use-site-editor-origin";
+import { useSiteFrameHost, type SiteFrameHost } from "./use-site-frame-host";
+import { useSiteSaves, type SiteSaves } from "./use-site-saves";
+
+const DEFAULT_REPOSITORY = httpSiteRepository();
+
+/** The app's copy of the site (ruling: the app holds the site JSON and is the only side that saves). */
+export interface AppSite {
+  documentId: string;
+  site: SiteDocument;
+  version: number;
+}
+
+export interface SiteEditingSession {
+  activeDocumentId: string | null;
+  post: SiteFrameHost["post"];
+  reload: () => void;
+  reloadNonce: number;
+  route: string;
+  saves: SiteSaves;
+  setSite: (site: SiteDocument) => void;
+  site: SiteDocument | null;
+  stage: SiteStageBinding;
+  version: number | null;
+}
+
+export function useSiteEditingSession({
+  activeArtifactId,
+  documentIds,
+  editing,
+  enabled,
+  locked,
+  repository = DEFAULT_REPOSITORY,
+  warm,
+}: {
+  activeArtifactId: string | null;
+  documentIds: Record<string, string> | undefined;
+  editing: boolean;
+  enabled: boolean;
+  locked: boolean;
+  repository?: SiteRepository;
+  warm: boolean;
+}): SiteEditingSession {
+  const activeDocumentId = enabled && activeArtifactId ? (documentIds?.[activeArtifactId] ?? null) : null;
+  const origin = useSiteEditorOrigin(enabled || warm);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const reload = useCallback(() => setReloadNonce((nonce) => nonce + 1), []);
+  const load = useSiteDocument({ documentId: activeDocumentId, reloadNonce, repository });
+  const saves = useSiteSaves({ documentId: activeDocumentId, lockNote: AGENT_RUN_LOCK_NOTE, onReload: reload, repository });
+
+  // Adopt each load as the app's copy: React's adjust-state-on-prop-change pattern, never a setState
+  // inside an effect (this repo's react-hooks rule).
+  const [appSite, setAppSite] = useState<AppSite | null>(null);
+  const [adopted, setAdopted] = useState(load.loaded);
+  if (load.loaded !== adopted) {
+    setAdopted(load.loaded);
+    if (load.loaded) {
+      setAppSite({ documentId: load.loaded.documentId, site: load.loaded.site, version: load.loaded.version });
+    }
+  }
+  const currentSite = appSite && appSite.documentId === activeDocumentId ? appSite : null;
+  const adopt = saves.adopt;
+  useEffect(() => {
+    if (load.loaded) adopt(load.loaded);
+  }, [adopt, load.loaded]);
+
+  const [routeState, setRouteState] = useState<{ documentId: string; route: string } | null>(null);
+  const route = routeState && routeState.documentId === activeDocumentId ? routeState.route : "/";
+  const [shownDocumentId, setShownDocumentId] = useState<string | null>(null);
+  const [frameError, setFrameError] = useState<{ documentId: string; message: string } | null>(null);
+  const mode = siteFrameMode({ editing, locked });
+
+  const latest = useRef({ currentSite, editing, locked, save: saves.save });
+  useEffect(() => {
+    latest.current = { currentSite, editing, locked, save: saves.save };
+  });
+
+  const handleFrameMessage = useCallback((message: FrameToAppMessage) => {
+    const now = latest.current;
+    switch (message.type) {
+      case "navigated":
+        setShownDocumentId(message.documentId);
+        setRouteState({ documentId: message.documentId, route: message.payload.route });
+        setFrameError(null);
+        return;
+      case "changed": {
+        const current = now.currentSite;
+        if (!current || message.documentId !== current.documentId) return;
+        // Review focus 5: an edit outside edit mode, or under the agent-run lock, is never saved.
+        if (!acceptsFrameEdits({ editing: now.editing, locked: now.locked })) return;
+        if (canonicalJson(message.payload.site) === canonicalJson(current.site)) return;
+        setAppSite({ ...current, site: message.payload.site });
+        now.save(message.payload.site);
+        return;
+      }
+      case "error":
+        setFrameError({ documentId: message.documentId, message: message.payload.message || message.payload.code });
+        return;
+      default:
+        // selected / deselected / annotate / request_asset / shortcut: Tasks 9-12 add their cases here.
+        return;
+    }
+  }, []);
+  const frame = useSiteFrameHost({ editorOrigin: origin.origin, onMessage: handleFrameMessage });
+  const { boot, post } = frame;
+
+  // Keep the frame in step: init for a new document, new agent sections or a rebooted frame;
+  // replace_site for a new version of the same document (an agent checkpoint, a history step).
+  const sent = useRef<{ initKey: string | null; version: number | null }>({ initKey: null, version: null });
+  useEffect(() => {
+    if (!activeDocumentId || !currentSite || load.status !== "ready" || !load.brand || boot === 0) return;
+    const initKey = siteInitKey(activeDocumentId, currentSite.site, boot);
+    const sync = frameSyncFor({
+      frameReady: true,
+      initKey,
+      sentInitKey: sent.current.initKey,
+      sentVersion: sent.current.version,
+      version: currentSite.version,
+    });
+    if (sync.kind === "init") {
+      // Review focus 4: never hand the frame links that may already have expired.
+      if (!linksFresh(load.loadedAt, Date.now(), load.links.length)) {
+        // A microtask later, not in the effect body: react-hooks/set-state-in-effect forbids the
+        // synchronous call (the idiom `use-project-workspace-controller.ts` uses). A re-run before
+        // it fires cancels it and decides again.
+        let cancelled = false;
+        queueMicrotask(() => {
+          if (!cancelled) reload();
+        });
+        return () => {
+          cancelled = true;
+        };
+      }
+      sent.current = { initKey, version: currentSite.version };
+      post(
+        "init",
+        {
+          brand: load.brand,
+          device: "Desktop",
+          mode,
+          route: initialRoute(currentSite.site, route),
+          sections: load.links,
+          site: currentSite.site,
+        },
+        activeDocumentId,
+      );
+      return;
+    }
+    if (sync.kind === "replace") {
+      sent.current = { ...sent.current, version: sync.version };
+      post("replace_site", { site: currentSite.site, version: sync.version }, activeDocumentId);
+    }
+  }, [activeDocumentId, boot, currentSite, load.brand, load.links, load.loadedAt, load.status, mode, post, reload, route]);
+
+  // Edit / preview, sent once per change after the frame shows this document.
+  const sentMode = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeDocumentId || shownDocumentId !== activeDocumentId) return;
+    const key = `${activeDocumentId}|${boot}|${mode}`;
+    if (sentMode.current === key) return;
+    sentMode.current = key;
+    post("set_mode", { mode }, activeDocumentId);
+  }, [activeDocumentId, boot, mode, post, shownDocumentId]);
+
+  const setSite = useCallback(
+    (site: SiteDocument) => {
+      setAppSite((previous) => (previous && previous.documentId === activeDocumentId ? { ...previous, site } : previous));
+    },
+    [activeDocumentId],
+  );
+
+  const canvas = siteCanvasState({
+    documentId: activeDocumentId,
+    editorOrigin: origin.origin,
+    editorOriginError: origin.error,
+    editorOriginLoaded: origin.loaded,
+    frameError: frameError && frameError.documentId === activeDocumentId ? frameError.message : null,
+    frameReady: boot > 0,
+    loadError: load.error,
+    loadStatus: load.status,
+    shownDocumentId,
+    site: currentSite?.site ?? null,
+  });
+
+  return {
+    activeDocumentId,
+    post,
+    reload,
+    reloadNonce,
+    route,
+    saves,
+    setSite,
+    site: currentSite?.site ?? null,
+    stage: {
+      canvas: { errorMessage: canvas.message, iframeRef: frame.iframeRef, renderKind: canvas.kind, src: frame.src },
+      mounted: siteStageMounted({ editorOrigin: origin.origin, enabled, warm }),
+    },
+    version: currentSite?.version ?? null,
+  };
+}

@@ -62,6 +62,8 @@ import type {
   ArtifactPreviewDevice,
 } from "../hooks/use-artifact-toolbar-controller";
 import { AdDesigningLock, sceneAgentMotionActive } from "@/features/design-editor/components/generating";
+import { SiteArtifactCanvas } from "@/features/design-editor/components/site-artifact-canvas";
+import type { SiteStageBinding } from "@/features/site-editor/model/site-stage";
 import { isWebsiteKind } from "../model/artifact-kind";
 import { ArtifactHeader } from "./artifact-header";
 import { ArtifactTabs } from "./artifact-tabs";
@@ -144,6 +146,7 @@ export function ArtifactStage({
   projectId,
   redoDisabled,
   selectedCanvasNodeId,
+  site,
   surface,
   targetAccountsBusy,
   targetAccountsRefreshToken,
@@ -337,6 +340,8 @@ export function ArtifactStage({
    * asset-library picker). Pass-through only — this component owns no part of
    * what it renders, exactly as `onSceneDropImageFiles` owns no part of a drop. */
   overlay?: ReactNode;
+  /** Lane C: the site editor's persistent stage (the warm frame); absent on routes without sites. */
+  site?: SiteStageBinding | null;
   projectTitle?: string;
   /** The project the Target accounts surface is scoped to. Absent (the
    * artifact route) → no tab and no surface. */
@@ -351,6 +356,9 @@ export function ArtifactStage({
   undoDisabled?: boolean;
 }) {
   const showingArtifact = surface === "artifact" && artifactKind !== null;
+  // A site shows the PERSISTENT site stage below instead of the ordinary output stage, so its
+  // editor frame is never remounted by a tab or surface switch.
+  const siteFrameShown = showingArtifact && artifactKind === "site" && Boolean(site?.mounted);
   // The header's device menu, made real (ported from the source dev shell's
   // width chips, WebEditorApp.tsx `WidthMode`): the choice pins the web
   // canvas to one of the engine's canonical viewport layers, so the page's
@@ -468,104 +476,121 @@ export function ArtifactStage({
             undoDisabled={undoDisabled}
             zoom={sceneZoomLabel}
           />
-          <div className={`${styles.outputStage} ${artifactKind === "ad" ? adStageClass : styles.webOutputStage}`}>
-            {artifactKind !== "ad" ? (
-              <div
-                aria-label={
-                  artifactKind === "web" && activeDocumentId ? "Web output canvas" : "Empty web output canvas"
-                }
-                className={webCanvasClass}
-              >
-                {artifactKind === "web" && activeDocumentId ? (
-                  <WebArtifactCanvas
-                    annotations={annotations}
-                    controlsRef={canvasControlsRef}
+          {siteFrameShown ? null : (
+            <div className={`${styles.outputStage} ${artifactKind === "ad" ? adStageClass : styles.webOutputStage}`}>
+              {artifactKind !== "ad" ? (
+                <div
+                  aria-label={
+                    artifactKind === "web" && activeDocumentId ? "Web output canvas" : "Empty web output canvas"
+                  }
+                  className={webCanvasClass}
+                >
+                  {artifactKind === "web" && activeDocumentId ? (
+                    <WebArtifactCanvas
+                      annotations={annotations}
+                      controlsRef={canvasControlsRef}
+                      documentId={activeDocumentId}
+                      editing={editing}
+                      onRenderKindChange={setRenderKind}
+                      /* F5 task 20: a site-internal link clicked inside the
+                       * canvas switches the page through the very same session
+                       * setter the header's switcher uses — one active page, one
+                       * writer, so the two surfaces can never disagree. */
+                      onCloneTextCommit={onCloneTextCommit}
+                      onNavigate={onPageChange}
+                      onRichTextCommit={onRichTextCommit}
+                      onRichTextSessionChange={onRichTextSessionChange}
+                      onSelect={onCanvasSelect}
+                      pageId={activePageId ?? undefined}
+                      reloadToken={canvasReloadToken}
+                      richTextBusy={richTextBusy}
+                      richTextEnabled={richTextEnabled}
+                      richTextTheme={richTextTheme}
+                      selectedNodeId={selectedCanvasNodeId}
+                    />
+                  ) : null}
+                  {/* Veil under glow (z-6 < z-7, per the delivered sheet), both
+                   * after the canvas so they sit over whatever it is showing —
+                   * the previous page, the loading frame, the error frame, or the
+                   * designed empty state on a first request.
+                   *
+                   * INTERACTION: an INACTIVE veil is `pointer-events: none` in
+                   * the sheet (`.clue-gen-veil` sets it; only
+                   * `[data-active="true"]` restores `pointer-events: auto`), so
+                   * between turns it cannot intercept a click, a hover, or a
+                   * double-click — Edit-mode annotations, the comment box, and the
+                   * in-frame text editors all reach the iframe untouched. While a
+                   * turn IS running the veil deliberately swallows input over the
+                   * pane. The glow is decorative and `pointer-events: none` in
+                   * both states. */}
+                  <WebsiteGeneratingVeil active={veilActive} />
+                  <GeneratingGlow active={veilActive} />
+                </div>
+              ) : activeDocumentId ? (
+                /* AD2.10 (founder ruling, 2026-08-20): the mounted scene canvas
+                 * IS the stage — an infinite workspace with the artboard floating
+                 * on it — so it is no longer wrapped in the dummy's fixed
+                 * `.imageCanvas` card, which could only ever show a 640px square
+                 * of it. The card keeps the empty state below, unchanged. */
+                <div
+                  aria-label="Ad output canvas"
+                  className={`${styles.sceneStage} clue-gen-host`}
+                >
+                  <SceneArtifactCanvas
+                    controlsRef={sceneCanvasControlsRef}
+                    displayScene={sceneDisplayScene}
                     documentId={activeDocumentId}
-                    editing={editing}
-                    onRenderKindChange={setRenderKind}
-                    /* F5 task 20: a site-internal link clicked inside the
-                     * canvas switches the page through the very same session
-                     * setter the header's switcher uses — one active page, one
-                     * writer, so the two surfaces can never disagree. */
-                    onCloneTextCommit={onCloneTextCommit}
-                    onNavigate={onPageChange}
-                    onRichTextCommit={onRichTextCommit}
-                    onRichTextSessionChange={onRichTextSessionChange}
-                    onSelect={onCanvasSelect}
-                    pageId={activePageId ?? undefined}
+                    gestureDisabled={sceneGestureDisabled}
+                    onLockedEdit={onSceneLockedEdit}
+                    onDropImageFiles={onSceneDropImageFiles}
+                    onEngineStatusChange={onSceneEngineStatusChange}
+                    onFitZoom={onSceneFitZoom}
+                    onGestureZoom={onSceneGestureZoom}
+                    onHistoryChange={onSceneHistoryChange}
+                    onAppliedOperations={onSceneAppliedOperations}
+                    onOperations={onSceneOperations}
+                    onSceneChange={onSceneChange}
+                    onSelect={onSceneSelect}
+                    palette={scenePalette}
                     reloadToken={canvasReloadToken}
-                    richTextBusy={richTextBusy}
-                    richTextEnabled={richTextEnabled}
-                    richTextTheme={richTextTheme}
-                    selectedNodeId={selectedCanvasNodeId}
+                    selectedNodeId={sceneSelectedNodeId}
+                    zoom={sceneZoomOverride}
                   />
-                ) : null}
-                {/* Veil under glow (z-6 < z-7, per the delivered sheet), both
-                 * after the canvas so they sit over whatever it is showing —
-                 * the previous page, the loading frame, the error frame, or the
-                 * designed empty state on a first request.
-                 *
-                 * INTERACTION: an INACTIVE veil is `pointer-events: none` in
-                 * the sheet (`.clue-gen-veil` sets it; only
-                 * `[data-active="true"]` restores `pointer-events: auto`), so
-                 * between turns it cannot intercept a click, a hover, or a
-                 * double-click — Edit-mode annotations, the comment box, and the
-                 * in-frame text editors all reach the iframe untouched. While a
-                 * turn IS running the veil deliberately swallows input over the
-                 * pane. The glow is decorative and `pointer-events: none` in
-                 * both states. */}
-                <WebsiteGeneratingVeil active={veilActive} />
-                <GeneratingGlow active={veilActive} />
-              </div>
-            ) : activeDocumentId ? (
-              /* AD2.10 (founder ruling, 2026-08-20): the mounted scene canvas
-               * IS the stage — an infinite workspace with the artboard floating
-               * on it — so it is no longer wrapped in the dummy's fixed
-               * `.imageCanvas` card, which could only ever show a 640px square
-               * of it. The card keeps the empty state below, unchanged. */
-              <div
-                aria-label="Ad output canvas"
-                className={`${styles.sceneStage} clue-gen-host`}
-              >
-                <SceneArtifactCanvas
-                  controlsRef={sceneCanvasControlsRef}
-                  displayScene={sceneDisplayScene}
-                  documentId={activeDocumentId}
-                  gestureDisabled={sceneGestureDisabled}
-                  onLockedEdit={onSceneLockedEdit}
-                  onDropImageFiles={onSceneDropImageFiles}
-                  onEngineStatusChange={onSceneEngineStatusChange}
-                  onFitZoom={onSceneFitZoom}
-                  onGestureZoom={onSceneGestureZoom}
-                  onHistoryChange={onSceneHistoryChange}
-                  onAppliedOperations={onSceneAppliedOperations}
-                  onOperations={onSceneOperations}
-                  onSceneChange={onSceneChange}
-                  onSelect={onSceneSelect}
-                  palette={scenePalette}
-                  reloadToken={canvasReloadToken}
-                  selectedNodeId={sceneSelectedNodeId}
-                  zoom={sceneZoomOverride}
+                  {/* The co-founder's agent-working motion (handoff 2026-09-04):
+                      the artwork stays visible and keeps updating live; a
+                      transparent shield swallows canvas input and a chip with the
+                      Clue-mark spinner says the agent is mid-edit; a thin light
+                      frame drifts round the stage's edges. Both fade on their own
+                      when `active` drops — they stay mounted so the exit
+                      transition can play. Stacking is theirs (42/43), above the
+                      canvas's banners and caret. */}
+                  <AdDesigningLock active={sceneMotion} />
+                  <GeneratingGlow active={sceneMotion} />
+                </div>
+              ) : (
+                <div
+                  aria-label="Empty ad output canvas"
+                  className={styles.imageCanvas}
                 />
-                {/* The co-founder's agent-working motion (handoff 2026-09-04):
-                    the artwork stays visible and keeps updating live; a
-                    transparent shield swallows canvas input and a chip with the
-                    Clue-mark spinner says the agent is mid-edit; a thin light
-                    frame drifts round the stage's edges. Both fade on their own
-                    when `active` drops — they stay mounted so the exit
-                    transition can play. Stacking is theirs (42/43), above the
-                    canvas's banners and caret. */}
-                <AdDesigningLock active={sceneMotion} />
-                <GeneratingGlow active={sceneMotion} />
-              </div>
-            ) : (
-              <div
-                aria-label="Empty ad output canvas"
-                className={styles.imageCanvas}
-              />
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </>
+      ) : null}
+      {site?.mounted ? (
+        <div
+          className={`${styles.outputStage} ${styles.webOutputStage} ${styles.siteStage}`}
+          hidden={!siteFrameShown}
+        >
+          <div aria-label="Web output canvas" className={webCanvasClass}>
+            <SiteArtifactCanvas
+              binding={site.canvas}
+              onRenderKindChange={siteFrameShown ? setRenderKind : undefined}
+            />
+            <WebsiteGeneratingVeil active={siteFrameShown && veilActive} />
+            <GeneratingGlow active={siteFrameShown && veilActive} />
+          </div>
+        </div>
       ) : null}
       <div
         className={styles.workspaceSurface}

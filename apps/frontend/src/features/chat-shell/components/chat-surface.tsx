@@ -28,6 +28,7 @@ import type {
 } from "@/features/projects/model/project-workspace";
 import type { WebAnnotation } from "@/features/design-editor/adapter/annotations";
 import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene-editing-session";
+import { useSiteEditingSession } from "@/features/site-editor/hooks/use-site-editing-session";
 import { useSceneLiveReveal } from "@/features/design-editor/hooks/use-scene-live-reveal";
 import type { Operation } from "@/features/design-editor/engine/scene/contracts";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
@@ -228,6 +229,8 @@ export function ChatSurface({
   // scene editor, so widening the lock to it is a separate decision with its own
   // surfaces — not something to acquire by accident here.
   const sceneLocked = agentRunLock.locked && shell.artifactKind === "ad";
+  // Ruling (Wave 2): the agent-run lock applies to sites too — the same derivation, the site lane.
+  const siteLocked = agentRunLock.locked && shell.artifactKind === "site";
 
   // Chat-flow slice 3: the SAME editing session the artifact route mounts
   // (documents/selection/writes/rich-text/theme), keyed only on this mount's
@@ -269,10 +272,20 @@ export function ChatSurface({
     documentIds,
     enabled: shell.artifactKind === "ad",
   });
+  // Lane C: the site lane's session. Warm (the editor frame mounted ahead of time) once the project
+  // has a site or this thread has an open design leg that may birth one.
+  const siteSession = useSiteEditingSession({
+    activeArtifactId: shell.activeArtifactId,
+    documentIds,
+    editing: shell.editing,
+    enabled: shell.artifactKind === "site",
+    locked: siteLocked,
+    warm: feedArtifacts.some((artifact) => artifact.documentKind === "site") || chat.designLegOpen,
+  });
   // Exactly one lane can be enabled, so this is the active document either
   // way — the stage's canvas branch picks the surface by kind.
   const activeDocumentId =
-    session.activeDocumentId ?? sceneSession.activeDocumentId;
+    session.activeDocumentId ?? sceneSession.activeDocumentId ?? siteSession.activeDocumentId;
   /**
    * Task 9 (scene live-streaming rung B): the live reveal.
    *
@@ -573,6 +586,7 @@ export function ChatSurface({
   }, [feedRevision, router]);
   const reloadWebCanvas = session.onWriteReload;
   const reloadSceneCanvas = sceneSession.onWriteReload;
+  const reloadSiteCanvas = siteSession.reload;
   useEffect(() => {
     if (canvasRevision === 0) return;
     // The SAME seam a committed inspector write uses — one reload mechanism,
@@ -581,7 +595,8 @@ export function ChatSurface({
     // frame that fired names a document, not a kind.
     reloadWebCanvas();
     reloadSceneCanvas();
-  }, [canvasRevision, reloadSceneCanvas, reloadWebCanvas]);
+    reloadSiteCanvas();
+  }, [canvasRevision, reloadSceneCanvas, reloadSiteCanvas, reloadWebCanvas]);
 
   // The header's rename is a document write, so it goes through the design API
   // and the tab takes the title the backend STORED. The rename advances the
@@ -593,9 +608,10 @@ export function ChatSurface({
       setArtifactTitleFor(artifactId, persisted);
       reloadWebCanvas();
       reloadSceneCanvas();
+      reloadSiteCanvas();
       router.refresh();
     },
-    [reloadSceneCanvas, reloadWebCanvas, router, setArtifactTitleFor],
+    [reloadSceneCanvas, reloadSiteCanvas, reloadWebCanvas, router, setArtifactTitleFor],
   );
   const renameArtifact = useArtifactRename({
     documentIds,
@@ -1165,7 +1181,7 @@ export function ChatSurface({
         artifactMaximized={shell.artifactMaximized}
         artifactTitle={shell.artifactTitle}
         canvasControlsRef={session.canvasControls}
-        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce}
+        canvasReloadToken={session.reloadNonce + sceneSession.reloadNonce + siteSession.reloadNonce}
         exportPreview={sceneSession.exportPreview}
         exportStatus={sceneSession.exportStatus}
         // The website pane's "agent is generating" motion (cofounder handoff
@@ -1272,7 +1288,7 @@ export function ChatSurface({
         // while the lock holds — an editor whose every control is inert is not
         // an editor — but LEAVING it never is, or a lock engaging mid-edit would
         // trap the user in a dock they cannot close.
-        editDisabled={sceneLocked && !shell.editing}
+        editDisabled={(sceneLocked || siteLocked) && !shell.editing}
         // 2026-09-04 port: the motion follows the CANVAS lock (`sceneLocked`),
         // not the Edit pill's `editDisabled`, so it also runs when the lock
         // engages mid-edit (leaving edit mode is never refused, so
@@ -1305,6 +1321,7 @@ export function ChatSurface({
             : session.redoDisabled
         }
         selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
+        site={siteSession.stage}
         surface={shell.surface}
         undoDisabled={
           shell.artifactKind === "ad"

@@ -1807,6 +1807,12 @@
   width: 375px;
 }
 
+/* Lane C (sites): the persistent site stage keeps its editor iframe mounted while hidden, so the
+   frame stays warm. `.outputStage`/`.webOutputStage` set `display`, which would beat `hidden`. */
+.siteStage[hidden] {
+  display: none;
+}
+
 /*
  * AD2.10 (founder ruling, 2026-08-20): a MOUNTED ad canvas is an infinite
  * workspace, so its stage is the viewport — no centring frame, no padding
