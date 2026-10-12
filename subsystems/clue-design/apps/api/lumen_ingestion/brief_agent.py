@@ -318,8 +318,9 @@ def build_brief_request(
         url=getattr(narrative, "url", None),
         tokens=tokens,
         shapes=[_dump(shape) for shape in getattr(geometry, "surfaces", []) or []],
+        # The band text colour (Wave 2 A9) is minted into the kit, not sent to the model.
         background_sequence=[
-            _dump(band) for band in getattr(geometry, "background_sequence", []) or []
+            _dump(band, exclude={"ink"}) for band in getattr(geometry, "background_sequence", []) or []
         ],
         spacing_ladder=[row for row in tokens if row["group"] == "spacing"],
         screenshots=list(screenshots)[:MAX_SCREENSHOTS],
@@ -328,8 +329,8 @@ def build_brief_request(
     )
 
 
-def _dump(model: Any) -> dict[str, Any]:
-    return model.model_dump() if hasattr(model, "model_dump") else dict(model)
+def _dump(model: Any, exclude: set[str] | None = None) -> dict[str, Any]:
+    return model.model_dump(exclude=exclude) if hasattr(model, "model_dump") else dict(model)
 
 
 def _token_rows(brand_kit: dict[str, Any]) -> list[dict[str, Any]]:
