@@ -6,7 +6,8 @@ Three tools over one store write (``HybridRepository.update_site_document``):
   ``actor_kind="editor"``) and an agent turn's persist (Lane B5, ``actor="agent"``,
   ``actor_kind="agent"``) both go through it, so one save and one turn are each ONE undo step.
   It checks the site's contracts first (shape, custody, the site-kit validator) and refuses with
-  ``SiteDocumentInvalid``; nothing is written then.
+  ``SiteDocumentInvalid``; nothing is written then. A restore passes ``restore_of``, and the tool
+  lets it reinstate exactly that snapshot's agent sections.
 * ``design_undo_site`` / ``design_redo_site`` — one stack move. History is whole-site snapshots:
   a batch's ``operations`` carry the site it installed and its ``inverse_operations`` the site it
   replaced, so an undo reinstalls the inverse and a redo the forward snapshot, with no replay.
@@ -94,6 +95,7 @@ def write_site_document(
     actor_kind: str,
     source: str,
     expected_base_version: int,
+    restore_of: str | None = None,
 ) -> DocumentStateRef:
     """THE site save: check the contracts, then write one whole-site snapshot."""
     from ..site_doc_inputs import load_section_modules
@@ -101,7 +103,13 @@ def write_site_document(
     from ..site_render import SECTION_MODULE_MISSING, SiteRenderError
 
     document = repository.require_document(document_id)
-    prepared, errors = prepare_site_for_write(document, site, allow_new_sections=actor_kind == "agent")
+    restoring = False
+    if restore_of is not None:
+        snapshot = replace_site_payload(repository.require_envelope(document_id, restore_of)["operations"])
+        if snapshot is None or snapshot != site:
+            raise SiteDocumentInvalid([f"restore_of: batch {restore_of} does not hold this site"])
+        restoring = True
+    prepared, errors = prepare_site_for_write(document, site, allow_new_sections=actor_kind == "agent" or restoring)
     if errors:
         raise SiteDocumentInvalid(errors)
     try:
@@ -175,6 +183,8 @@ class WriteSiteInput(ToolInput):
     #: ``editor`` for a manual save, ``agent`` for a site turn's persist (Lane B5).
     actor_kind: str = "editor"
     source: str = "editor"
+    #: Set by the restore route: the batch whose snapshot this write reinstalls. The tool re-reads that snapshot itself and allows its agent sections only when ``site`` is exactly it.
+    restore_of: str | None = None
     #: The version the save was made from. Required: a turn taking minutes must never clobber a save.
     expected_base_version: int
 
@@ -235,6 +245,7 @@ class WriteSiteTool(DesignTool):
             actor_kind=inputs.actor_kind,
             source=inputs.source,
             expected_base_version=inputs.expected_base_version,
+            restore_of=inputs.restore_of,
         )
 
 

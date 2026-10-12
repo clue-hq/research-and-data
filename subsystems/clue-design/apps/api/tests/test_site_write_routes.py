@@ -4,6 +4,7 @@ refusals a second writer meets."""
 from __future__ import annotations
 
 import copy
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -13,10 +14,30 @@ from py_lumen_config import settings
 from conftest import make_blob_store, make_client
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
+from lumen_api.site_render import SectionModule
 from site_kit_support import born_site, ensure_site_kit_dist, garner_brand, garner_site, hold_site_images, install_site_inputs, store_site
 from test_agent_run_write_lock import finish_run, start_leg_run
 
 DOC = "site_routes"
+
+QUOTE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string"},
+        "surface": {"type": "string", "enum": ["page", "card", "muted", "brandSubtle", "brand", "inverse"]},
+        "quote": {"type": "string", "minLength": 1},
+    },
+    "required": ["id", "surface", "quote"],
+    "additionalProperties": False,
+}
+
+
+def quote_module(module_js: str = "export const schema = null;\n") -> SectionModule:
+    # An agent section the way test_site_validation builds one; its bytes are only hashed here.
+    return SectionModule(
+        name="QuoteBand", digest=hashlib.sha256(module_js.encode()).hexdigest(),
+        module_js=module_js, css="", props_schema=QUOTE_SCHEMA,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -168,3 +189,32 @@ def test_versions_list_newest_first_and_a_restore_is_undoable(client: TestClient
     assert stored_site(client)["pages"] == site_b["pages"]
     missing = client.post(f"/documents/{DOC}/site/versions/batch_nope/restore", json={"base_version": 4})
     assert missing.status_code == 404 and missing.json()["detail"]["code"] == "version.not_found"
+
+
+def test_a_restore_reinstates_the_agent_sections_its_version_held(client: TestClient, workspace_id: str) -> None:
+    """A restore lands exactly the site that stood: the agent section a manual save removed comes
+    back with its pin, because the tool re-reads the snapshot (it is not client data)."""
+    module = quote_module()
+    site, brand = hold_site_images(garner_site(DOC), garner_brand(), make_blob_store(client.app))
+    store_site(born_site(DOC))
+    install_site_inputs(client.app, brand, sections=[module])
+    with_quote = copy.deepcopy(site)
+    with_quote["agent_sections"] = {"QuoteBand": module.digest}
+    with_quote["pages"]["/"]["content"].append(
+        {"type": "QuoteBand", "props": {"id": "quote", "surface": "page", "quote": "Fewer surprises."}}
+    )
+    client.app.state.design_tools.invoke(
+        "design_write_site",
+        {"document_id": DOC, "site": with_quote, "intent": "Site turn", "actor_kind": "agent", "source": "agent", "expected_base_version": 0},
+        workspace_id=workspace_id,
+        actor="agent",
+    )
+    assert save(client, site, 1).status_code == 200  # the quote and its pin removed by hand
+    assert stored_site(client)["agent_sections"] == {}
+    versions = client.get(f"/documents/{DOC}/site/versions").json()["versions"]
+    first = next(entry["batch_id"] for entry in versions if entry["version"] == 1)
+    restored = client.post(f"/documents/{DOC}/site/versions/{first}/restore", json={"base_version": 2})
+    assert restored.status_code == 200, restored.text
+    stored = stored_site(client)
+    assert stored["agent_sections"] == {"QuoteBand": module.digest}
+    assert stored["pages"]["/"]["content"][-1]["type"] == "QuoteBand"

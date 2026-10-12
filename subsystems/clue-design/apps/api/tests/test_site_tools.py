@@ -3,6 +3,7 @@ through design_write_site, the same tool a manual save uses (REQ-20 parity)."""
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
@@ -57,3 +58,30 @@ def test_an_invalid_site_is_refused_and_nothing_is_written(client: TestClient, w
         )
     assert any("surface" in error for error in refused.value.errors)
     assert HybridRepository().require_document("site_tool_bad")["current_version"] == 0
+
+
+def test_a_restore_must_carry_exactly_its_snapshot(client: TestClient, workspace_id: str) -> None:
+    """``restore_of`` is checked by the tool itself: a site that is not that batch's snapshot is
+    refused, so no caller can call a write a restore to slip agent sections past the manual-save rule."""
+    site, brand = hold_site_images(garner_site("site_tool_restore"), garner_brand(), make_blob_store(client.app))
+    store_site(born_site("site_tool_restore"))
+    install_site_inputs(client.app, brand)
+    client.app.state.design_tools.invoke(
+        "design_write_site",
+        {"document_id": "site_tool_restore", "site": site, "expected_base_version": 0},
+        workspace_id=workspace_id,
+        actor="human",
+    )
+    repo = HybridRepository()
+    (envelope,) = repo.list_envelopes("site_tool_restore")
+    changed = copy.deepcopy(envelope["operations"][0]["site"])
+    changed["pages"]["/analysis"]["content"][3]["props"]["heading"] = "Not the snapshot"
+    with pytest.raises(SiteDocumentInvalid) as refused:
+        client.app.state.design_tools.invoke(
+            "design_write_site",
+            {"document_id": "site_tool_restore", "site": changed, "restore_of": envelope["batch_id"], "expected_base_version": 1},
+            workspace_id=workspace_id,
+            actor="human",
+        )
+    assert any(error.startswith("restore_of") for error in refused.value.errors), refused.value.errors
+    assert repo.require_document("site_tool_restore")["current_version"] == 1

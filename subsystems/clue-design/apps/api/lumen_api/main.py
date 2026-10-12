@@ -4562,7 +4562,16 @@ def create_app(
         require_base_version(document, base_version)
         return document
 
-    def _write_site(repo: HybridRepository, document_id: str, *, site: Any, intent: str, checkpoint_label: str, base_version: int) -> None:
+    def _write_site(
+        repo: HybridRepository,
+        document_id: str,
+        *,
+        site: Any,
+        intent: str,
+        checkpoint_label: str,
+        base_version: int,
+        restore_of: str | None = None,
+    ) -> None:
         try:
             run_design_tool(
                 "design_write_site",
@@ -4574,6 +4583,7 @@ def create_app(
                     "actor_kind": "editor",
                     "source": "editor",
                     "expected_base_version": base_version,
+                    "restore_of": restore_of,
                 },
                 workspace_id=store_workspace_id(repo),
                 refusals=_document_refusals(document_id),
@@ -4696,6 +4706,7 @@ def create_app(
             intent=f"restore:{batch_id}",
             checkpoint_label="Restore",
             base_version=payload.base_version,
+            restore_of=batch_id,
         )
         return {"schema_version": 1, "document": _site_document_ref(repo, document_id)}
 
