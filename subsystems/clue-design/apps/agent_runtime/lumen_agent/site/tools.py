@@ -279,24 +279,23 @@ class SiteTools:
         site = read_site_files(self.workspace, self.base_site, self.sections)
         sections = [self.sections[name] for name in site["agent_sections"]]
 
-        def refused(error: Exception) -> str:
-            code = getattr(error, "code", None) or type(error).__name__
+        def refused(code: str) -> str:
             return (f"NOT RENDERED: the page could not be drawn ({code}). Validate it and try again; "
                     "if this repeats, say so in your report.")
 
         if renderer is None:
-            return refused(RuntimeError("render.unavailable"))
+            return refused("render.unavailable")
         try:
             html, css, warnings = renderer.render(site, self.brand, sections, route=route)
         except Exception as error:  # noqa: BLE001 - a refused render is an answer, not a crash
-            return refused(error)
+            return refused(getattr(error, "code", None) or type(error).__name__)
         broken = self._broken_images(html)
         blocks: list[dict] = []
         for width in (1440, 375):
             try:
                 png = renderer.screenshot(html, css, width=width)
             except Exception as error:  # noqa: BLE001
-                return refused(error)
+                return refused(getattr(error, "code", None) or type(error).__name__)
             shot_width, height = self._png_size(png)
             scale = SCALE_BY_WIDTH.get(width, 1.0)
             tiles = self._tiles(png, scale)

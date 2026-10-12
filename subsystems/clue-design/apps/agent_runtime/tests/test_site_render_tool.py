@@ -63,3 +63,13 @@ def test_overflow_render_notes_and_a_failing_renderer_are_reported(tmp_path: Pat
     failing = _tools(tmp_path / "b", FakeRenderer(fail_code="render.timeout")).render_page()
     assert failing == ("NOT RENDERED: the page could not be drawn (render.timeout). Validate it and try again; "
                        "if this repeats, say so in your report.")
+
+
+@needs_node
+def test_render_page_without_a_renderer_names_render_unavailable(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    inputs = inputs_for(renderer=None, assets=FakeAssets(blobs={HELD: ("image/png", png())}))
+    materialize_workspace(workspace, inputs, site=garner_site())
+    tools = SiteTools(workspace=workspace, inputs=inputs, base_site=garner_site(), retry_delay_s=0)
+    assert tools.render_page() == ("NOT RENDERED: the page could not be drawn (render.unavailable). Validate it and "
+                                   "try again; if this repeats, say so in your report.")
