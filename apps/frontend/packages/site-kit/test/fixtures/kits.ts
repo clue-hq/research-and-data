@@ -8,5 +8,5 @@ export type KitName = "garner" | "conduit" | "altcarbon" | "garner.minted" | "co
 
 export function kitBrand(name: KitName): BrandData {
   const kit = JSON.parse(fs.readFileSync(new URL(`./kits/${name}.json`, import.meta.url), "utf-8"));
-  return brandData({ slug: name, kit, fonts: [], kitAssets: {}, clones: [], measured: null });
+  return brandData({ slug: name, kit, fonts: [], kitAssets: {}, clones: [] });
 }

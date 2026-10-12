@@ -2,7 +2,7 @@
 // seller's cloned sections and the site's agent-written sections), the theme and the page contract.
 // The validator, the catalog and the section check have their own entry points
 // (@clue/site-kit/validate, /catalog, /check-section); the editor-only parts are @clue/site-kit/editor.
-export { brandData, type BrandAsset, type BrandData, type FontFace, type MeasuredButton } from "./brand";
+export { brandData, type BrandAsset, type BrandData, type FontFace } from "./brand";
 export {
   fillClone,
   slotDefaults,
