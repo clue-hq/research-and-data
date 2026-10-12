@@ -197,14 +197,21 @@ export function validateSite(
       }
       if (item.type === "ProofCard") addWritten(item.props.linkHref, `${at}.linkHref`);
       if (item.type in agentSections) {
-        // Any brand image path in an agent section's props must be one of the brand's images.
-        const walk = (value: unknown, where: string) => {
-          if (typeof value === "string" && IMAGE_PATH.test(value) && !imageAllowed(value)) {
-            errors.push(imageError(where, value));
-          } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`));
-          else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`);
+        // An agent section's images must be the brand's (or this site's). Its links — props named
+        // …Href — must reach real pages, and a link prop named for a cta or a button is a primary
+        // destination like any other button's (Wave 2 Lane A, Task 6).
+        const walk = (value: unknown, where: string, key: string) => {
+          if (typeof value === "string") {
+            if (IMAGE_PATH.test(value)) {
+              if (!imageAllowed(value)) errors.push(imageError(where, value));
+            } else if (/href$/i.test(key)) {
+              addWritten(value, where);
+              if (/cta|button/i.test(key)) addDestination(value, where);
+            }
+          } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`, key));
+          else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`, k);
         };
-        walk(item.props, at);
+        walk(item.props, at, "");
       }
     });
   }

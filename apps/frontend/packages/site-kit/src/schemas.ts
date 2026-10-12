@@ -119,6 +119,8 @@ export const COMPONENT_TYPES = Object.keys(COMPONENT_SCHEMAS) as ComponentType[]
 
 const item = z.object({ type: z.string(), props: z.record(z.string(), z.unknown()) }).strict();
 
+const SECTION_ID = /^[A-Za-z0-9_-]{1,200}$/;
+
 /** The page schema, optionally with extra section types (a site's agent-written sections, E5). */
 export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
   const schemas: Record<string, z.ZodType> = { ...COMPONENT_SCHEMAS, ...extra };
@@ -132,6 +134,16 @@ export function pageSchemaWith(extra: Record<string, z.ZodType> = {}) {
   .strict()
   .superRefine((page, ctx) => {
     page.content.forEach((entry, index) => {
+      // Controller ruling R10: the editor and the composer address a section as
+      // site:<route>#<id>.<field>, so an id may never carry "#", "." or anything else.
+      const sectionId = entry.props.id;
+      if (typeof sectionId === "string" && !SECTION_ID.test(sectionId)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["content", index, "props", "id"],
+          message: `a section id may use only letters, digits, "-" and "_" (up to 200 characters); "${sectionId}" does not`,
+        });
+      }
       const schema = schemas[entry.type];
       if (!schema) {
         ctx.addIssue({

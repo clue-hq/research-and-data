@@ -20,6 +20,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import { COLOR_ROLES, SURFACES as THEME_SURFACES, colorVar } from "./theme";
 
 const ALLOWED_IMPORTS = new Set(["zod", "react", "@/puck/agent-kit"]);
 const PALETTE =
@@ -32,6 +33,26 @@ const RULES: { pattern: RegExp; why: string }[] = [
   { pattern: /^font-(sans|serif|mono|thin|extralight|light|normal|medium|semibold|bold|extrabold|black)$/, why: "a Tailwind font or weight; use a brand type role (font-title, font-body…)" },
   { pattern: /^(text|bg|border|fill|stroke|ring|outline|decoration|font|leading|tracking|rounded|shadow|from|via|to)-\[/, why: "a custom colour, type or corner value; use the brand's tokens" },
 ];
+
+/** A colour class in the brand's own namespaces (text-ink-*, bg-surface-*, text-on-surface-*,
+ * border-line-*, ring-focus). Its name must be one the theme defines: issue 49's
+ * border-line-inverse and bg-surface-brandSubtle exist nowhere and render unstyled. */
+const BRAND_COLOUR_CLASS = new RegExp(`^(?:${COLOUR_UTILITY})-((?:ink|surface|on-surface|line)(?:-[A-Za-z0-9-]+)?|focus)$`);
+
+export const LINK_REFUSAL =
+  "<a> is not allowed in a section; write links with kit.Link (or kit.Button for a button) so they reach the right page wherever the site is published";
+
+/** extraSurfaces: the brand's extra surface roles (extraSurfaceRoles(brand)), whose classes exist. */
+export type LintOptions = { extraSurfaces?: string[] };
+
+function brandColourNames(extraSurfaces: string[]): Set<string> {
+  const names = new Set<string>(COLOR_ROLES.map(colorVar));
+  for (const surface of [...THEME_SURFACES, ...extraSurfaces]) {
+    names.add(colorVar(surface));
+    names.add(`on-${colorVar(surface)}`);
+  }
+  return names;
+}
 
 // D2 spike (Task 4): names a section may not use, wherever they appear in its code (a variable, a
 // property such as document.cookie, an object key). Read from the syntax tree, so the words in a
@@ -71,6 +92,7 @@ function bannedNames(source: string): string[] {
       const name = node.name.getText(file).replace(/^["'`]|["'`]$/g, "");
       if (/^on[A-Z]/.test(name)) add(`"${name}" is an event handler; a section is static`);
     }
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(file) === "a") add(LINK_REFUSAL);
     ts.forEachChild(node, visit);
   };
   visit(file);
@@ -82,7 +104,7 @@ function classTokens(source: string): string[] {
   return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((t) => t.split(":").pop() ?? t);
 }
 
-export function lint(source: string): string[] {
+export function lint(source: string, options: LintOptions = {}): string[] {
   const errors: string[] = [];
   for (const m of source.matchAll(/import\s+(?:type\s+)?[^"']*from\s+["']([^"']+)["']/g)) {
     if (!ALLOWED_IMPORTS.has(m[1])) errors.push(`import "${m[1]}" is not allowed; a section imports only zod, react types and @/puck/agent-kit`);
@@ -98,6 +120,15 @@ export function lint(source: string): string[] {
         seen.add(token);
         errors.push(`class "${token}" is ${rule.why}`);
       }
+    }
+  }
+  const known = brandColourNames(options.extraSurfaces ?? []);
+  for (const token of classTokens(source)) {
+    const bare = token.replace(/^!/, "").replace(/\/\d+$/, "");
+    const match = BRAND_COLOUR_CLASS.exec(bare);
+    if (match && !known.has(match[1]) && !seen.has(token)) {
+      seen.add(token);
+      errors.push(`class "${token}" is not one of the brand's classes; the brand's colour classes are text-ink-*, bg-surface-*, text-on-surface-* and border-line-* (see brand/brand.md)`);
     }
   }
   errors.push(...bannedNames(source));

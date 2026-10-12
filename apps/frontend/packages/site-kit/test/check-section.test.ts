@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { lint, typeCheck } from "../src/check-section";
+import { LINK_REFUSAL, lint, typeCheck } from "../src/check-section";
 
 // The example from the spike's writing-a-section skill (trials/puck-spike/agent/skills-e5/), verbatim.
 const EXAMPLE = fs.readFileSync(new URL("./fixtures/section-example.tsx", import.meta.url), "utf-8");
@@ -104,4 +104,26 @@ test("the CLI checks a section without importing it", () => {
   } finally {
     fs.rmSync(path.join(root, ".section-check"), { recursive: true, force: true });
   }
+});
+
+test("a raw <a> is refused; links go through kit.Link or kit.Button", () => {
+  const errors = lint(EXAMPLE.replace("</kit.Shell>", '<a href="/analysis">More</a></kit.Shell>'));
+  assert.ok(errors.includes(LINK_REFUSAL), errors.join("; "));
+});
+
+test("a colour class the theme does not define is refused by name", () => {
+  for (const cls of ["border-line-inverse", "bg-surface-brandSubtle", "text-ink-tertiary"]) {
+    const errors = lint(withClass(`mt-6 ${cls}`));
+    assert.ok(errors.some((e) => e.startsWith(`class "${cls}" is not one of the brand's classes`)), `${cls}: ${errors.join("; ")}`);
+  }
+});
+
+test("variants, opacity and every defined colour class pass", () => {
+  assert.deepEqual(lint(withClass("mt-6 md:bg-surface-muted hover:border-line-subtle/50 text-on-surface-brand ring-focus bg-surface-canvas")), []);
+});
+
+test("the kit's extra surfaces pass only when the brand has them", () => {
+  const band = withClass("mt-6 bg-surface-band-statement text-on-surface-band-statement");
+  assert.ok(lint(band).some((e) => e.startsWith('class "bg-surface-band-statement" is not one of the brand\'s classes')));
+  assert.deepEqual(lint(band, { extraSurfaces: ["surface.band.statement"] }), []);
 });

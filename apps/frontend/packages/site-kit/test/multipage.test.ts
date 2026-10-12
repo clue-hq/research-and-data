@@ -56,3 +56,15 @@ test("a clone's own links keep pointing at the seller; links the page sets are i
   assert.match(html, /href="\/stories"/);
   assert.match(html, /href="\/analysis"/);
 });
+
+test("an agent section's links are checked like the page's own: real pages, one destination", () => {
+  const sections = { QuoteBand: { schema: { safeParse: () => ({ success: true }) } } };
+  const home = structuredClone(site.pages["/"]);
+  home.content.push({ type: "QuoteBand", props: { id: "quote", surface: "page", ctaHref: "/pricing" } });
+  const pages = () => ({ "/": home, "/analysis": site.pages["/analysis"] });
+  const missing = validateSite({ pages: pages(), shell: site.shell }, brand, sections);
+  assert.ok(missing.errors.some((e) => e.startsWith("page.content.5(quote).ctaHref: links to /pricing, which is not a page of this site")), missing.errors.join("\n"));
+  home.content[5].props.ctaHref = "https://example.com/somewhere-else";
+  const two = validateSite({ pages: pages(), shell: site.shell }, brand, sections);
+  assert.ok(two.errors.some((e) => e.startsWith("site: a 1:1 page has one primary destination")), two.errors.join("\n"));
+});
