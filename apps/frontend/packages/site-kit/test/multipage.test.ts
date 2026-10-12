@@ -68,3 +68,16 @@ test("an agent section's links are checked like the page's own: real pages, one 
   const two = validateSite({ pages: pages(), shell: site.shell }, brand, sections);
   assert.ok(two.errors.some((e) => e.startsWith("site: a 1:1 page has one primary destination")), two.errors.join("\n"));
 });
+
+test("an agent section's surface and look props are held to the brand's", () => {
+  const sections = { QuoteBand: { schema: { safeParse: () => ({ success: true }) } } };
+  const home = structuredClone(site.pages["/"]);
+  home.content.push({ type: "QuoteBand", props: { id: "quote", surface: "canvas", ctaLook: "outline.1", cardLook: "" } });
+  const pages = () => ({ "/": home, "/analysis": site.pages["/analysis"] });
+  assert.deepEqual(validateSite({ pages: pages(), shell: site.shell }, brand, sections).errors, []);
+  home.content[home.content.length - 1].props = { id: "quote", surface: "green", ctaLook: "solid.9", cardLook: "solid.7" };
+  const errors = validateSite({ pages: pages(), shell: site.shell }, brand, sections).errors;
+  assert.ok(errors.some((e) => e.includes('(quote).surface: "green" is not one of this brand\'s surfaces')), errors.join("\n"));
+  assert.ok(errors.some((e) => e.includes('(quote).ctaLook: "solid.9" is not one of this brand\'s button styles')), errors.join("\n"));
+  assert.ok(errors.some((e) => e.includes('(quote).cardLook: "solid.7" is not one of this brand\'s card styles')), errors.join("\n"));
+});

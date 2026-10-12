@@ -13,7 +13,7 @@
 import { parse } from "node-html-parser";
 import type { BrandData } from "./brand";
 import type { Clone } from "./clone";
-import { buttonLooks } from "./looks";
+import { buttonLooks, cardLooks } from "./looks";
 import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
 import { surfaceChoices } from "./surfaces";
 
@@ -109,6 +109,7 @@ export function validateSite(
   // clone ids. The refusals name what this brand has.
   const surfaceNames = surfaceChoices(brand).map((choice) => choice.value);
   const lookNames = buttonLooks(brand).map((look) => look.name);
+  const cardNames = cardLooks(brand).map((look) => look.name);
   const surfaceError = (where: string, value: string) =>
     `${where}: "${value}" is not one of this brand's surfaces; its surfaces are ${surfaceNames.join(", ")} (brand/brand.md, Surfaces)`;
   const lookError = (where: string, value: string) =>
@@ -202,6 +203,20 @@ export function validateSite(
         // destination like any other button's (Wave 2 Lane A, Task 6).
         const walk = (value: unknown, where: string, key: string) => {
           if (typeof value === "string") {
+            if (/^surface$|Surface$/.test(key) && !surfaceNames.includes(value)) {
+              errors.push(surfaceError(where, value));
+              return;
+            }
+            if (/cardlook$/i.test(key)) {
+              if (value && !cardNames.includes(value)) {
+                errors.push(`${where}: "${value}" is not one of this brand's card styles; its styles are ${cardNames.join(", ")}, or leave it out for the standard card (brand/brand.md, Cards)`);
+              }
+              return;
+            }
+            if (/look$/i.test(key)) {
+              if (value && !lookNames.includes(value)) errors.push(lookError(where, value));
+              return;
+            }
             if (IMAGE_PATH.test(value)) {
               if (!imageAllowed(value)) errors.push(imageError(where, value));
             } else if (/href$/i.test(key)) {

@@ -20,7 +20,9 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { COLOR_ROLES, SURFACES as THEME_SURFACES, colorVar } from "./theme";
+import type { BrandData } from "./brand";
+import { buttonLooks, cardLooks, motionClassNames } from "./looks";
+import { COLOR_ROLES, SURFACES as THEME_SURFACES, colorVar, extraSurfaceRoles } from "./theme";
 
 const ALLOWED_IMPORTS = new Set(["zod", "react", "@/puck/agent-kit"]);
 const PALETTE =
@@ -42,8 +44,18 @@ const BRAND_COLOUR_CLASS = new RegExp(`^(?:${COLOUR_UTILITY})-((?:ink|surface|on
 export const LINK_REFUSAL =
   "<a> is not allowed in a section; write links with kit.Link (or kit.Button for a button) so they reach the right page wherever the site is published";
 
-/** extraSurfaces: the brand's extra surface roles (extraSurfaceRoles(brand)), whose classes exist. */
-export type LintOptions = { extraSurfaces?: string[] };
+/** What the brand has, so a section is checked against it (B6 passes lintOptionsFor(brand)).
+ * Without a brand only the brand-independent rules run. */
+export type LintOptions = { extraSurfaces?: string[]; buttonLooks?: string[]; cardLooks?: string[]; motions?: string[] };
+
+export function lintOptionsFor(brand: BrandData): LintOptions {
+  return {
+    extraSurfaces: extraSurfaceRoles(brand),
+    buttonLooks: buttonLooks(brand).map((look) => look.name),
+    cardLooks: cardLooks(brand).map((look) => look.name),
+    motions: motionClassNames(brand),
+  };
+}
 
 function brandColourNames(extraSurfaces: string[]): Set<string> {
   const names = new Set<string>(COLOR_ROLES.map(colorVar));
@@ -52,6 +64,19 @@ function brandColourNames(extraSurfaces: string[]): Set<string> {
     names.add(`on-${colorVar(surface)}`);
   }
   return names;
+}
+
+const STATE_VARIANT = /^(hover|focus|focus-visible|focus-within|active|group-hover|group-focus|peer-hover|peer-focus)$/;
+const MOTION_UTILITY = /^(transition(-[a-z]+)?|duration-.+|ease-.+|delay-.+|animate-.+)$/;
+const STATE_MOTION = /^-?(translate|scale|rotate|skew)(-[xy])?-|^(opacity|shadow|blur|brightness|contrast|saturate|drop-shadow)(-|$)/;
+
+/** Class tokens with their variants (`group-hover:-translate-y-1` → variants ["group-hover"]). */
+function variantTokens(source: string): { token: string; base: string; variants: string[] }[] {
+  const strings = [...source.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+  return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((token) => {
+    const parts = token.split(":");
+    return { token, base: parts[parts.length - 1], variants: parts.slice(0, -1) };
+  });
 }
 
 // D2 spike (Task 4): names a section may not use, wherever they appear in its code (a variable, a
@@ -134,6 +159,26 @@ export function lint(source: string, options: LintOptions = {}): string[] {
   errors.push(...bannedNames(source));
   if (!/export\s+const\s+schema\b/.test(source)) errors.push("the file must export `schema` (a zod object of the section's props)");
   if (!/export\s+function\s+render\b/.test(source)) errors.push("the file must export `function render(props, kit)`");
+  for (const { token, base, variants } of variantTokens(source)) {
+    if (seen.has(token)) continue;
+    const ownMotion = MOTION_UTILITY.test(base) || (variants.some((v) => STATE_VARIANT.test(v)) && STATE_MOTION.test(base));
+    if (ownMotion) {
+      seen.add(token);
+      errors.push(`class "${token}" is motion of your own; motion comes from the brand: kit.Button, kit.Link and kit.Card carry it, and a class from brand/brand.md (Motion) adds it to an element`);
+    } else if (options.motions && /^brand-motion-/.test(base) && !options.motions.includes(base)) {
+      seen.add(token);
+      errors.push(`class "${token}" is not one of this brand's motion classes; its motion classes are ${options.motions.join(", ") || "none"} (brand/brand.md, Motion)`);
+    }
+  }
+  for (const m of source.matchAll(/<kit\.(Button|Card)\b[^>]*?\blook=["']([^"']+)["']/g)) {
+    const [, component, look] = m;
+    const known = component === "Button" ? options.buttonLooks : options.cardLooks;
+    if (known && !known.includes(look)) {
+      errors.push(component === "Button"
+        ? `look "${look}" on kit.Button is not one of this brand's button styles; the styles are ${known.join(", ") || "none"} (brand/brand.md, Buttons)`
+        : `look "${look}" on kit.Card is not one of this brand's card styles; the styles are ${known.join(", ") || "none"} (brand/brand.md, Cards)`);
+    }
+  }
   return errors;
 }
 
