@@ -230,3 +230,10 @@ Built from existing chat-shell styles and primitives; where no existing style fi
 - 2026-10-12 — **Q1:** (b) the Head of ABM's reads say "web" for a site; the gallery and the editor
   still get "site". (Lane A Task 10 Step 5 as written.)
 - 2026-10-12 — **Q2:** (a) per-page head for the first release. (Lane A Task 20 as written.)
+- 2026-10-12 — **Q3:** the general version, superseding the "Button style: primary / secondary"
+  question. No single "secondary" picked in code: the site agent gets the kit's own button recipes
+  (as the web and ad agents already do), `kit.Button look="<recipe>"` draws a recipe from its
+  tokens, the validator only checks the recipe exists in the kit, FeatureSplit gets a "Button
+  style" field listing this brand's styles, and nothing is invented for a brand that draws one style.
+  Pending: the brand.md wording, what is drawn for a part with no kit colour, and whether CtaBand
+  also gets the field. Lane A Tasks 4, 5 and 7 are rewritten once those are answered.
