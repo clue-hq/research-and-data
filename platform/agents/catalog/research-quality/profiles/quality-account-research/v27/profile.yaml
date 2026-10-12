@@ -16,8 +16,8 @@ skills:
   version: v10
   sha256: c3edfbc900eb8eaa3c0f36c7b78773759a6c468ac0ab5875dd7ce012e418d99f
 - name: person-research-briefing
-  version: v4
-  sha256: 274e3180aba6a4ee36ea3e7b74885d4af3c7ab5a750835598e7f71d32463f9f8
+  version: v5
+  sha256: 2213771a66872824199b345b5a3b2ae7f9c4504dadffcdf9528577069b067dc7
 - name: claim-ready-account-dossier
   version: v3
   sha256: bfb005463a5a3ecea0785113a85a70c91e2b26033cfec67a63da6359f7db1bbf

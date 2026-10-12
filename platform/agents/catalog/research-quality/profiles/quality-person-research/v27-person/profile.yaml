@@ -13,8 +13,8 @@ skills:
   version: v5
   sha256: ac9b6e1fd47f96191f395f75f47a851aeda66ea107f7794e859406c76b6e2380
 - name: person-dossier
-  version: v5
-  sha256: 5c58a20c8670bf34b0cda6821afb5fe10580a35f956e413ff3f838a8ec11a433
+  version: v6
+  sha256: e4a33b30846972ce66dbeeaf8e50c1cb0471375a4f3730a732b4569ece9ba350
 - name: person-depth-charter
   version: v1
   sha256: 6d8c699dec4a0250be7bbc7ecb3f26ad1c09fa822ce3a2604bae175925d32981

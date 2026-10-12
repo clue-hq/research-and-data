@@ -60,12 +60,13 @@ def test_current_profiles_own_formation_without_claim_delegation(person):
         ):
             assert set(re.findall(r"/\.deepagent/(skills/[^\s`]+?/SKILL\.md)", body)) <= mounted
     selected = {skill.resource.name: skill.resource.version for skill in profile.skills}
-    assert selected["person-dossier" if person else "account-dossier"] == ("v5" if person else "v10")
+    expected_dossier_skill = "v6" if person else "v10"
+    assert selected["person-dossier" if person else "account-dossier"] == expected_dossier_skill
     assert (
         selected["claim-ready-person-dossier" if person else "claim-ready-account-dossier"] == "v3"
     )
     if not person:
-        assert selected["person-research-briefing"] == "v4"
+        assert selected["person-research-briefing"] == "v5"
     old_parent = (
         quality_profiles(registry, version=16, person=person)
         .resolve(AgentRole.ACCOUNT_RESEARCH)

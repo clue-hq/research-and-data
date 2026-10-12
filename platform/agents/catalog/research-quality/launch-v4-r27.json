@@ -17,12 +17,12 @@
     "profiles/quality-research-narrative/v19/profile.yaml": "33410a4f30dda0dd51894de7b972ad8499445cf6cd239b459a865de363d7b800",
     "prompts/quality-account-research/v27/SYSTEM.md": "09b77262bda4a5993874dc440ca9b40696f8fe25fabf19f1530854cf619b18ca",
     "prompts/quality-person-research/v27-person/SYSTEM.md": "e9830c37fbe882e6e85368e6381d8811cea9671bd9daf3a8d67cd44753838ff1",
-    "profiles/quality-account-research/v27/profile.yaml": "8761eed13fd038869eeed7710ae6e213c8bb0471bd1196c0e4edd7615bd13499",
-    "profiles/quality-person-research/v27-person/profile.yaml": "6846fd91f3f8552c5b5669c56c2b20b9bac238e91129ae419963eb1f52d682aa",
+    "profiles/quality-account-research/v27/profile.yaml": "75cad92c402cec41dee39ad0d0fb981789ba54fd4a8cb0998456aa732b58657c",
+    "profiles/quality-person-research/v27-person/profile.yaml": "d3336e84eeedd6dae825771eabfb8f65f6211b287651231ac897eba58be539ab",
     "recipe-v27.json": "15d150ea8dfbff14c1aed1a9652f19e1e2e96abb6d387aabb27e40349e12609b",
     "skills/account-dossier/v10/SKILL.md": "c3edfbc900eb8eaa3c0f36c7b78773759a6c468ac0ab5875dd7ce012e418d99f",
-    "skills/person-dossier/v5/SKILL.md": "5c58a20c8670bf34b0cda6821afb5fe10580a35f956e413ff3f838a8ec11a433",
-    "skills/person-research-briefing/v4/SKILL.md": "274e3180aba6a4ee36ea3e7b74885d4af3c7ab5a750835598e7f71d32463f9f8"
+    "skills/person-dossier/v6/SKILL.md": "e4a33b30846972ce66dbeeaf8e50c1cb0471375a4f3730a732b4569ece9ba350",
+    "skills/person-research-briefing/v5/SKILL.md": "2213771a66872824199b345b5a3b2ae7f9c4504dadffcdf9528577069b067dc7"
   },
   "review_policy": "advisory"
 }

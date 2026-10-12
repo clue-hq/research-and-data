@@ -95,3 +95,40 @@ def test_the_account_prompt_keeps_a_departed_person_off_the_committee():
     assert "Treat them as a former employee" in prompt
     assert "do not put them on the buying committee" in prompt
     assert "look for whoever holds that responsibility now" in prompt
+
+
+def test_recipe_27_pins_the_new_person_skills():
+    account = _profiles(27)["profiles/quality-account-research/v27/profile.yaml"]
+    assert {s["name"]: s["version"] for s in account["skills"]}["person-research-briefing"] == "v5"
+    person = _profiles(27)["profiles/quality-person-research/v27-person/profile.yaml"]
+    assert {s["name"]: s["version"] for s in person["skills"]}["person-dossier"] == "v6"
+
+
+def test_the_person_dossier_skill_reads_recent_activity_and_checks_deep_research_quotes():
+    skill = " ".join(_body(27, "skills/person-dossier/v6/SKILL.md").split())
+    assert "### Read what the person has done recently" in skill
+    assert "look back nine months" in skill
+    assert "write in /work/review.md that you looked and where" in skill
+    assert "Once their recent activity is covered, do not let plentiful current-role posts" in skill
+    assert "Treat the deep-research report as a set of leads." in skill
+    assert "open the source page yourself and check that the words are there" in skill
+    # The recency pass sits after broad discovery; the leads paragraph opens "After Exa".
+    recency = skill.index("### Read what the person has done recently")
+    assert skill.index("## Discover broadly") < recency
+    after_exa = skill.index("## After Exa")
+    assert skill.index("Treat the deep-research report as a set of leads.") > after_exa
+    assert skill.index("Treat the deep-research report as a set of leads.") < skill.index(
+        "### Assess coverage"
+    )
+
+
+def test_the_briefing_skill_hands_over_what_the_account_agent_already_read():
+    skill = " ".join(_body(27, "skills/person-research-briefing/v5/SKILL.md").split())
+    assert "Include everything you have already read that this person wrote, said or was" in skill
+    assert "with its URL, date and the exact passage" in skill
+    assert "anything you read but leave out of the brief can be lost" in skill
+
+
+def test_recipe_26_keeps_its_person_skills():
+    account = _profiles(26)["profiles/quality-account-research/v26/profile.yaml"]
+    assert {s["name"]: s["version"] for s in account["skills"]}["person-research-briefing"] == "v4"
