@@ -78,6 +78,15 @@ def garner_site(document_id: str, title: str = "Garner for Syracuse") -> dict[st
     }
 
 
+def garner_site_without_clones(document_id: str) -> dict[str, Any]:
+    """Garner's site with only our own sections (no registry needed), and a nav link to /analysis."""
+    site = garner_site(document_id)
+    for page in site["pages"].values():
+        page["content"] = [item for item in page["content"] if item["type"] != "ClonedSection"]
+    site["shell"] = {**site["shell"], "header": {**site["shell"]["header"], "nav": [{"label": "The analysis", "href": "/analysis"}]}}
+    return site
+
+
 def conduit_brand() -> dict[str, Any]:
     """Conduit's BrandData exactly as site-kit's `kitBrand("conduit")` builds it
     (`test/fixtures/kits.ts`): the real kit alone — no fonts, no kit assets, no clones."""
