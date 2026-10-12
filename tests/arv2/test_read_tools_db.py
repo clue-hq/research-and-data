@@ -31,6 +31,7 @@ from clue_api.arv2.read_tools import (
     Arv2ReadRefused,
     list_project_accounts,
     read_account_research,
+    read_cited_claims,
     read_claims,
     read_discovery_run,
     receipt_bytes,
@@ -2801,5 +2802,134 @@ def test_current_lane_contacts_carry_the_committee_card_title(
                 "Nick Fisher", "champion", "VP of Marketing"
             )
             assert [s.section_key for s in person.sections] == ["why-this-person"]
+
+    run_async(scenario())
+
+
+def test_cited_claims_say_why_each_id_was_held_or_missing() -> None:
+    """Review focus 2: the design agent drops a research statement only when the claim under it
+    is held back by a real rule, so the read must say which rule, per id."""
+
+    async def scenario() -> None:
+        async with rollback_conn(seed_pack=False) as conn:
+            project = await seed_project(conn, WORKSPACE, name="Read tools")
+            account = await _seed_account(conn, project, "Alpha Health")
+            contact = await _seed_contact(
+                conn, account, name="Nalisa Clark", linkedin="https://www.linkedin.com/in/nclark"
+            )
+            claims: dict[str, str] = {}
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="plain",
+                field_key="account.open_requisitions",
+                value=[{"title": "ABM Manager"}],
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="finding",
+                field_key="account.research_finding",
+                value={"topic": "Budget", "finding": "Healthcare up $4.2 million"},
+                outreach_safe=False,
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="risk",
+                field_key="account.reputation_risk",
+                value={"what": "An unresolved customer dispute"},
+                outreach_safe=False,
+            )
+            await _seed_claim(
+                conn,
+                claims,
+                project,
+                account,
+                label="sensitive",
+                field_key="account.resonance.buying_culture",
+                value="A fact about the founder's health",
+                use_class=UseClass.SENSITIVE,
+            )
+            await _seed_contact_claim(
+                conn,
+                claims,
+                project,
+                contact,
+                label="contact_finding",
+                field_key="contact.research_finding",
+                value={"topic": "Role", "finding": "Leads benefits"},
+                outreach_safe=False,
+            )
+            await _seed_contact_claim(
+                conn,
+                claims,
+                project,
+                contact,
+                label="contact_plain",
+                field_key="contact.current_title",
+                value="Chief Human Capital Officer",
+            )
+            missing = str(uuid4())
+            ids = [
+                claims[label]
+                for label in (
+                    "plain",
+                    "finding",
+                    "risk",
+                    "sensitive",
+                    "contact_finding",
+                    "contact_plain",
+                )
+            ] + [missing, "not-a-uuid"]
+
+            page = await read_cited_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                claim_ids=ids,
+                settings=PERMISSIVE,
+            )
+
+            assert page.dispositions == {
+                claims["plain"]: "served",
+                claims["finding"]: "served",  # verification off: findings pass the gate
+                claims["risk"]: "held:outreach_unsafe",
+                claims["sensitive"]: "held:sensitive",
+                claims["contact_finding"]: "held:unverified_finding",
+                claims["contact_plain"]: "held:other_entity",
+                missing: "not_found",
+                "not-a-uuid": "not_found",
+            }
+            assert [c.claim_id for c in page.claims] == [claims["plain"], claims["finding"]]
+
+            verifying = await read_cited_claims(
+                conn,
+                workspace_id=project.workspace_id,
+                entity_id=str(account),
+                claim_ids=[claims["finding"], claims["risk"]],
+                settings=VERIFYING,
+            )
+            # Under verification the finding is held, but only as an unverified finding.
+            assert verifying.dispositions == {
+                claims["finding"]: "held:unverified_finding",
+                claims["risk"]: "held:outreach_unsafe",
+            }
+
+            with pytest.raises(Arv2ReadRefused) as refused:
+                await read_cited_claims(
+                    conn,
+                    workspace_id=project.workspace_id,
+                    entity_id=str(uuid4()),
+                    claim_ids=ids,
+                    settings=PERMISSIVE,
+                )
+            assert refused.value.code == "entity_not_found"
 
     run_async(scenario())

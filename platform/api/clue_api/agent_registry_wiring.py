@@ -336,6 +336,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # authority and its profile's tool list disagree, so a grant is that bump and never a dict
     # edit. stage0-interview v33 §7c says which question it is the read for.
     "read_claims": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
+    # The design agent's cited-claims read (Contract 5, plan 2026-10-09 Wave 2): the claims an
+    # account's research pages cite, by id, each with its disposition. Registered UNGRANTED;
+    # the reviewed design profile bump (Lane B Task 14) grants it to the DESIGN role.
+    "read_cited_claims": (),
     # The same posture for the gallery read: one design artifact of this project — what it is,
     # what it is called, and (asked for) the words on the page. It reads the rail's own rows and
     # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an

@@ -246,6 +246,18 @@ class DesignPlatformReads:
                 body[key] = value
         return self._invoke("read_claims", body)
 
+    def read_cited_claims(self, *, entity_id: str, claim_ids: list[str]) -> dict[str, Any]:
+        """The claims an account's research cites, by id, each with its disposition.
+
+        ``read_cited_claims@1`` (Contract 5): ``served`` claims come back in ``claims``; every id
+        gets ``served``, ``held:<reason>`` or ``not_found`` in ``dispositions``. At most 200 ids
+        per call; the caller chunks.
+        """
+
+        return self._invoke(
+            "read_cited_claims", {"entity_id": entity_id, "claim_ids": list(claim_ids)}
+        )
+
     # --- original project instructions --------------------------------------------------------
 
     def project_design_context(self) -> dict[str, Any]:
