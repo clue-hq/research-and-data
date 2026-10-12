@@ -1,0 +1,35 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Hover clears fixture</title>
+<!-- A9 scenario A5: a filled button that turns transparent on hover (its text takes the old fill).
+     The kit must carry a hover fill token holding #00000000.
+     Scenario A5b: a filled call-to-action anchor whose class names no "btn"/"button" (the way a
+     Tailwind-built page writes one). Served from 127.0.0.1; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  main { padding: 0 40px; }
+  h1 { font: 700 40px/1.2 Arial; margin: 32px 0 16px; }
+  p { font: 400 16px/1.5 Arial; }
+  .wrap { padding: 24px 0 40px; display: flex; gap: 24px; align-items: center; }
+  .cta-btn { display: inline-flex; align-items: center; padding: 12px 24px; background: #7a1f5c; color: #fff;
+             border: 1px solid #7a1f5c; border-radius: 6px; font: 500 14px/1.4 Arial; text-decoration: none;
+             cursor: pointer; transition: background-color 150ms ease, color 150ms ease; }
+  .cta-btn:hover { background: transparent; color: #7a1f5c; }
+  .start { display: inline-flex; align-items: center; padding: 10px 20px; background: #3b2f8f; color: #fff;
+           border-radius: 6px; font: 600 14px/1.4 Arial; text-decoration: none; }
+  .start:hover { background: #2a2066; }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a href="#home">Home</a> <a href="#pricing">Pricing</a></nav></header>
+<main>
+  <h1>A hover that clears the fill</h1>
+  <p>The first button is filled at rest and outlined under the pointer.</p>
+  <div class="wrap">
+    <a href="#go" class="cta-btn" id="b-clear">Talk to us</a>
+    <a href="#start" class="start" id="b-start">Start free</a>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+</body></html>

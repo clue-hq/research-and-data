@@ -1,0 +1,33 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Twins fixture</title>
+<!-- A9 scenario A3: two filled buttons of ONE fill colour (#047464) and different corners, so the
+     look names need the `.<4 hex>` suffix (founder Q-A9-6). twin_dropped.html is this page without
+     the square one. Served from 127.0.0.1 by test_a9_scenarios.py; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  main { padding: 0 40px; }
+  h1 { font: 700 40px/1.2 Arial; margin: 32px 0 16px; }
+  p { font: 400 16px/1.5 Arial; }
+  .wrap { padding: 24px 0 40px; display: flex; gap: 24px; align-items: center; }
+  .btn { display: inline-flex; align-items: center; padding: 12px 24px; background: #047464; color: #fff;
+         border: 0; font: 500 14px/1.4 Arial; text-decoration: none; cursor: pointer;
+         transition: background-color 200ms ease-out; }
+  .btn:hover { background: #035a4e; }
+  .pill { border-radius: 999px; }
+  .square { border-radius: 4px; }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a href="#home">Home</a> <a href="#pricing">Pricing</a></nav></header>
+<main>
+  <h1>One colour, two corners</h1>
+  <p>Two buttons share a fill and differ only in their corners.</p>
+  <div class="wrap">
+    <a href="#go" class="btn pill" id="b-pill">Request the analysis</a>
+    <a href="#go" class="btn square" id="b-square">Book a demo</a>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+</body></html>
