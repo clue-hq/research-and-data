@@ -286,3 +286,8 @@ Built from existing chat-shell styles and primitives; where no existing style fi
 - 2026-10-12 — **Q7:** (b) `render_page` drops the console-errors fact (the production screenshot runs
   no script); section crashes arrive as render notes or NOT RENDERED. Approved wording: the facts
   line (T16a), the tool description (T6e) and the page-review skill's first paragraph (T16b).
+- 2026-10-12 — **Q8:** (a) the agent's catalog lists everything the registry releases, the seller's
+  nav and footer bands and the two campaign shells included; the agent judges which fit (founder:
+  given everything, it already chose the account-personalised "Prepared for" header and footer).
+  The building-with-puck skill already says the header and footer live in `shell.json` and to leave
+  out navigation clones that do not help the reader; no wording change.

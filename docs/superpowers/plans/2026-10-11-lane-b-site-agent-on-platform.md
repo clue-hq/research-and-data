@@ -45,7 +45,9 @@ changes if the answer differs.
    - (b) drop the clause from the tool output, its description and `page-review` (three
      wording changes).
    **Recommendation: (a)** — true, and it changes no skill. Task 9 is written to (a).
-2. **Nav, footer and campaign-shell clones in the agent's catalog.** The ruling took the
+2. **ANSWERED 2026-10-12: (a) — list everything the registry lists; the agent judges (the
+   building-with-puck skill already says the header and footer live in `shell.json` and to leave out
+   navigation clones that do not help the reader). No `CATALOG_SKIP_ROLES` filter.** **Nav, footer and campaign-shell clones in the agent's catalog.** The ruling took the
    registry's rules (approved, lineage-resolved, degraded listed with its note). The registry
    also lists the seller's own `nav`/`footer` sections and the two composed ABM campaign shells;
    the spike left `nav`/`footer` out because a site's header and footer come from `shell.json`.
@@ -4127,7 +4129,7 @@ git commit -m "lumen_agent.site.harness: the spike's agent with the platform's m
   - `site_brand.site_brand_data(*, slug: str, kit: dict, kit_assets: dict, font_faces: list[dict], clones: list[dict], library_assets: dict) -> dict` — the one BrandData builder
   - `site_brand.clone_from_fragment(section: dict, loaded) -> dict` (a site-kit `Clone` plus `degraded_note`)
   - `HybridRepository.get_site_sections(digests) -> list[dict]`, `HybridRepository.list_latest_site_sections() -> list[dict]`
-  - `site_workspace_view.CATALOG_SKIP_ROLES`, `research_account_id(bundle, document_id) -> str | None`,
+  - `site_workspace_view.research_account_id(bundle, document_id) -> str | None`,
     `brief_text(bundle) -> str`, `read_research_pages(reads, account_entity_id) -> tuple[list, list, dict]`,
     `cited_claims(reads, account_entity_id, sections) -> tuple[list[dict], frozenset[str]]`,
     `project_files_from(reads) -> list[dict]`, `fetch_account_logos(blobs, account_card, *, fetcher=None, cache=None) -> list[AccountLogo]`,
@@ -4558,7 +4560,9 @@ def test_account_logos_are_stored_as_blobs_and_listed_with_their_alternatives(tm
     assert view.fetch_account_logos(blobs, {"name": "Acme", "domain": "acme.example"}, fetcher=broken) == []
 
 
-def test_the_catalog_lists_representative_released_clones_and_flags_degraded_ones(monkeypatch) -> None:
+def test_the_catalog_lists_every_released_clone_and_flags_degraded_ones(monkeypatch) -> None:
+    """Open question 2 (a): nav, footer and campaign-shell clones are offered like any other; only a
+    superseded row gives way to its repair."""
     rows = [
         {"fragment_id": "frag_hero", "section_role": "hero", "label": "Hero", "superseded_by": None, "degraded_note": None},
         {"fragment_id": "frag_old", "section_role": "hero", "label": "Old hero", "superseded_by": "frag_hero"},
@@ -4579,8 +4583,8 @@ def test_the_catalog_lists_representative_released_clones_and_flags_degraded_one
     monkeypatch.setattr(view, "read_web_fragment", lambda storage, *, workspace_id, fragment_id: SimpleNamespace(
         html=f"<p>{fragment_id}</p>", css="", slot_manifest={}))
     clones = view.list_site_clones(SimpleNamespace(storage=None, workspace_id="ws"), "/tmp/cache")
-    assert [clone["id"] for clone in clones] == ["frag_hero", "frag_broken"]
-    assert clones[1]["degraded_note"] == "this clone is marked broken, with no reason recorded."
+    assert [clone["id"] for clone in clones] == ["frag_hero", "frag_nav", "frag_shell", "frag_broken"]
+    assert clones[3]["degraded_note"] == "this clone is marked broken, with no reason recorded."
 
 
 def test_the_brand_keeps_every_section_the_page_uses_outside_the_catalog(monkeypatch) -> None:
@@ -4719,9 +4723,6 @@ from .site_kit_cli import build_site_catalog
 
 logger = get_logger("lumen_api.site_workspace_view")
 
-#: Open question 2 (b): the site's own header and footer come from shell.json, so the seller's
-#: captured nav and footer bands and the composed ABM campaign shells are not offered as sections.
-CATALOG_SKIP_ROLES = frozenset({"nav", "footer"})
 #: read_cited_claims@1 takes at most 200 ids (Contract 5).
 CITED_CLAIMS_CHUNK = 200
 _ASSET_REF = re.compile(r"/asset-store/([0-9a-f]{64})")
@@ -4830,12 +4831,14 @@ def fetch_account_logos(blobs: Any, account_card: Mapping[str, Any] | None, *, f
 
 def list_site_clones(blobs: Any, cache_dir: Any) -> list[dict]:
     """The released clones the catalog offers: approved, lineage-resolved (a superseded row gives way
-    to its repair), degraded ones listed WITH their note, without nav/footer or composed shells."""
+    to its repair), degraded ones listed WITH their note. Every role is offered, the seller's nav and
+    footer bands and the composed ABM campaign shells included (founder answer, open question 2 (a),
+    2026-10-12): which ones fit a page is the agent's judgement, guided by its skill."""
 
     registry = DurableAgentClonedSectionRegistry(blobs=blobs, cache_dir=cache_dir)
     clones: list[dict] = []
     for section in registry.list_sections().get("sections") or []:
-        if section.get("superseded_by") or section.get("composed") or section.get("section_role") in CATALOG_SKIP_ROLES:
+        if section.get("superseded_by"):
             continue
         try:
             loaded = read_web_fragment(blobs.storage, workspace_id=blobs.workspace_id, fragment_id=str(section["fragment_id"]))
