@@ -738,6 +738,21 @@ def document_page_pixels(pages_json: str | None) -> tuple[int, int] | None:
     return None
 
 
+def wire_kind(doc_kind: str) -> Literal["web", "ad", "site"]:
+    """THE mapping from a document's ``doc_kind`` to the kind every artifact list and the composer
+    send to the frontend (Contract 8): ``site`` and ``web`` as themselves, a scene as ``ad``."""
+    if doc_kind == "site":
+        return "site"
+    return "web" if doc_kind == "web" else "ad"
+
+
+def head_of_abm_doc_kind(doc_kind: str) -> str:
+    """What the Head of ABM's own reads call a document's kind. It opens a website leg with
+    doc_kind="web" and is unchanged by the Puck lane (ruling 2026-10-09), so a site reads as "web"
+    to it (founder question Q1, recommendation (b))."""
+    return "web" if doc_kind == "site" else doc_kind
+
+
 def design_document_card_fields(document: Mapping[str, Any]) -> dict[str, Any]:
     """What a listed design document says about itself, for every artifact list.
 
@@ -749,7 +764,7 @@ def design_document_card_fields(document: Mapping[str, Any]) -> dict[str, Any]:
     pixels = document_page_pixels(document.get("pages_json"))
     artifact_type = document.get("artifact_type")
     return {
-        "kind": "web" if document["doc_kind"] == "web" else "ad",
+        "kind": wire_kind(str(document["doc_kind"])),
         "artifact_type": str(artifact_type) if artifact_type else None,
         "width_px": pixels[0] if pixels else None,
         "height_px": pixels[1] if pixels else None,

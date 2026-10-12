@@ -174,6 +174,7 @@ from clue_api.design_leg_wiring import (
     design_document_card_fields,
     design_legs_for_threads,
     project_design_documents,
+    wire_kind,
 )
 from clue_api.stage0_icp_gate import IcpGateSubjectError, exact_icp_gate_subject
 from clue_api.stage0_project_scope import resolve_stage0_project_scope_for_project
@@ -1412,7 +1413,7 @@ def build_chat_router(
                 id=artifact_id,
                 project_id=project_id,
                 document_id=artifact_id,
-                kind="web" if document["doc_kind"] == "web" else "ad",
+                kind=wire_kind(str(document["doc_kind"])),
                 title=str(document["title"]),
                 status=str(document["status"]),
                 current_version_id=str(document["current_version"]),
