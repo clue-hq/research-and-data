@@ -450,7 +450,10 @@ Every workspace's published pages move from `<label>.pages.cluehq.ai` to `<label
 old URLs answer 301 at the edge; `cluehq.ai` stays reserved for custom domains (customers can never
 connect a `*.cluehq.ai` hostname). Do the steps in order; each is safe to stop after.
 
-1. Register the domain. Add it to Cloudflare as its own zone; add a proxied wildcard record
+1. Register the domain. Choose a domain registered directly under a one-label public suffix (for
+   example `.com` or `.page`, never `.co.uk`): the edge Worker reads the zone as the domain's last
+   two labels, so under a two-label suffix every customer domain on that suffix would pass through
+   unserved. Add it to Cloudflare as its own zone; add a proxied wildcard record
    `*` → the page-origin service (as `*.pages` is today, §5). A first-level wildcard is covered by
    Universal SSL. Apply to the Public Suffix List if the domain should be listed (§5 of the
    isolation research, `docs/superpowers/specs/2026-10-09-code-first-builder-isolation-research.md`).
