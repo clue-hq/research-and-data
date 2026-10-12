@@ -6,7 +6,6 @@ from typing import Any
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.messages import AIMessage, ToolMessage
 
-from clue_agents.state import ClueDeepAgentState
 from clue_obs import get_logger
 
 MAX_TOOL_REPAIR_ROUNDS = 10
@@ -14,7 +13,10 @@ log = get_logger(__name__)
 
 
 class ToolRepairRoundsMiddleware(AgentMiddleware[Any, Any, Any]):
-    state_schema = ClueDeepAgentState
+    # No ``state_schema`` here: its fields live in ``ClueDeepAgentState``, which the runtime passes
+    # as the graph's base state. Declaring it on a middleware put that schema early in LangChain's
+    # merge (keyed by type, first position wins), where a later middleware's plain ``messages``
+    # reducer overrode deepagents' DeltaChannel and every checkpoint saved the whole conversation.
 
     async def abefore_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
         del runtime

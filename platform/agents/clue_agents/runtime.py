@@ -351,7 +351,8 @@ class TurnBudgetMiddleware(AgentMiddleware[Any, Any, Any]):
     thread's history, so a replay reads exactly what was committed.
     """
 
-    state_schema = ClueDeepAgentState
+    # No ``state_schema`` here, for the reason given on ``ToolRepairRoundsMiddleware``: its fields
+    # live in ``ClueDeepAgentState``, the graph's base state.
 
     def __init__(
         self,
