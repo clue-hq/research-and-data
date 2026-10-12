@@ -12,11 +12,21 @@ from __future__ import annotations
 
 import base64
 import copy
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
-__all__ = ["DurableSiteAssetPort", "PlatformSiteRenderer", "SiteAssetError", "SiteRenderPortError"]
+from .toolbelt.site_documents import replace_site_payload
+
+__all__ = [
+    "DurableSiteAssetPort",
+    "DurableSiteVersionPort",
+    "PlatformSiteRenderer",
+    "SiteAssetError",
+    "SitePersistOutcome",
+    "SiteRenderPortError",
+]
 
 
 class SiteRenderPortError(RuntimeError):
@@ -128,3 +138,38 @@ class DurableSiteAssetPort:
             workspace_id=self.blobs.workspace_id, actor="agent", actor_id=self.run_id,
         )
         return {"asset_id": str(record.get("id") or asset_id), "digest": digest, "file": f"/asset-store/{digest}"}
+
+
+@dataclass(frozen=True)
+class SitePersistOutcome:
+    """What the governed site write did with one request's site."""
+
+    status: Literal["saved", "conflicted", "refused"]
+    #: The new version when saved; the stored version when conflicted; None when refused.
+    version: int | None
+    detail: str | None = None
+
+
+class DurableSiteVersionPort:
+    """SiteVersionPort over the document's edit history (Contract 2: one envelope per save or
+    request, each a whole-site snapshot)."""
+
+    def __init__(self, store: Any, document_id: str) -> None:
+        self.store = store
+        self.document_id = document_id
+
+    def list_versions(self, limit: int) -> list[dict]:
+        rows = self.store.list_envelopes(self.document_id, limit=limit, newest_first=True)
+        return [
+            {"version": int(row["base_revision"]) + 1, "actor": (row.get("actor") or {}).get("kind"),
+             "intent": row.get("intent"), "created_at": row.get("created_at")}
+            for row in rows
+            if replace_site_payload(row.get("operations")) is not None
+        ]
+
+    def site_at(self, version: int) -> dict | None:
+        for row in self.store.list_envelopes(self.document_id, newest_first=True):
+            if int(row["base_revision"]) + 1 == int(version):
+                site = replace_site_payload(row.get("operations"))
+                return copy.deepcopy(site) if site is not None else None
+        return None

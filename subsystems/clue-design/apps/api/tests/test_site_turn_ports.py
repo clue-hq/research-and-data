@@ -7,6 +7,7 @@ import hashlib
 import sys
 from dataclasses import dataclass, field
 from types import ModuleType
+from uuid import uuid4
 
 import pytest
 
@@ -14,8 +15,15 @@ import lumen_api
 from conftest import make_blob_store
 from lumen_agent.site.inputs import SiteSection
 from lumen_api.asset_custody import write_cache_blob
+from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
-from lumen_api.site_turn_ports import DurableSiteAssetPort, PlatformSiteRenderer, SiteAssetError, SiteRenderPortError
+from lumen_api.site_turn_ports import (
+    DurableSiteAssetPort,
+    DurableSiteVersionPort,
+    PlatformSiteRenderer,
+    SiteAssetError,
+    SiteRenderPortError,
+)
 
 
 @dataclass
@@ -158,3 +166,28 @@ def test_reading_a_digest_the_workspace_lacks_is_not_found(tmp_path, design_stor
                                 invocations=RecordingInvocations(), run_id="run_site_1")
     with pytest.raises(NotFoundError):
         port.read("0" * 64)
+
+
+def _site(doc_id: str, heading: str) -> dict:
+    return {"id": doc_id, "title": "S", "theme": {}, "shell": None, "agent_sections": {},
+            "pages": {"/": {"root": {"props": {"title": "S"}}, "content": [{"type": "CtaBand", "props": {"id": "c", "heading": heading}}]}}}
+
+
+def test_saved_versions_are_read_from_the_documents_history() -> None:
+    store = HybridRepository()
+    doc_id = f"doc_site_{uuid4().hex[:10]}"
+    born = store.create_document(_site(doc_id, "v0"), doc_kind="site")
+    previous = born["scene"]
+    # design_op_source has no "human": a person's save is sourced from the editor.
+    for heading, actor, source in (("v1", "agent", "agent"), ("v2", "human", "editor")):
+        new = _site(doc_id, heading)
+        store.update_site_document(doc_id, new, intent=f"make {heading}", checkpoint_label=None,
+                                   operations=[{"kind": "replace_site", "site": new}],
+                                   inverse_operations=[{"kind": "replace_site", "site": previous}],
+                                   actor_kind=actor, source=source)
+        previous = new
+    port = DurableSiteVersionPort(store, doc_id)
+    assert [(v["version"], v["actor"], v["intent"]) for v in port.list_versions(10)] == [
+        (2, "human", "make v2"), (1, "agent", "make v1")]
+    assert port.site_at(1)["pages"]["/"]["content"][0]["props"]["heading"] == "v1"
+    assert port.site_at(9) is None

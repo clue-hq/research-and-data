@@ -1,7 +1,7 @@
 """The design fleet work handler (design-integration Part II, slice D5 Rounds B + C).
 
 The same handler implementation serves two disjoint execution roles. Primary and embedded
-workers claim only agent turns (scene or web); the dedicated ingestion coordinator is built
+workers claim only agent turns (scene, web or site); the dedicated ingestion coordinator is built
 with ``ingestion_only=True`` and claims only brand-kit ingestions. Required claim-time
 capabilities enforce this boundary in SQL. Per-image analysis has its own handler and pool.
 
@@ -133,6 +133,8 @@ class DesignTurnHost:
 
     agent_turn_runner: Any = None
     web_turn_runner: Any = None
+    #: Puck site turn test seam (Lane B): replaces the site runtime; see main.run_site_agent_turn.
+    site_turn_runner: Any = None
     core: Any = None
     compiler_node_bin: str = "node"
     compiler_worker: Any = None
@@ -210,7 +212,7 @@ class DesignJobWorkHandler:
                 field="kind",
                 required=True,
                 supported=frozenset(
-                    {"ingestion"} if self._ingestion_only else {"agent_turn", "web_turn"}
+                    {"ingestion"} if self._ingestion_only else {"agent_turn", "web_turn", "site_turn"}
                 ),
             ),
             TaskCapability(field=_INGESTION_KIND_FIELD, supported=runnable_ingestion_kinds()),
@@ -463,6 +465,15 @@ _TRACE_SHAPES: Dict[str, tuple[str, Any, tuple[str, ...], Optional[str], tuple[s
     )
     for kind in ("agent_turn", "web_turn")
 }
+#: A site turn opens a fresh thread per request (founder ruling 2026-10-11), so its Langfuse session
+#: is its DOCUMENT, which groups a site's requests the way one continued thread groups a web page's.
+_TRACE_SHAPES["site_turn"] = (
+    "design.turn",
+    "agent",
+    ("run_id", "document_id", "project_id"),
+    "document_id",
+    ("kind",),
+)
 _TRACE_SHAPES["ingestion"] = (
     "design.ingestion",
     "chain",
@@ -621,6 +632,23 @@ def _terminalize_failed(envelope: Any, generation: int, error: BaseException) ->
     return True
 
 
+def executor_for_kind(kind: str) -> Any:
+    """The executor for one design turn kind. An unknown kind is refused, never run as web: the old
+    ``else execute_web_turn_job`` sent every non-scene envelope to the web executor."""
+
+    from .main import execute_agent_turn_job, execute_site_turn_job, execute_web_turn_job
+
+    executors = {
+        DesignRunKind.AGENT_TURN.value: execute_agent_turn_job,
+        DesignRunKind.WEB_TURN.value: execute_web_turn_job,
+        DesignRunKind.SITE_TURN.value: execute_site_turn_job,
+    }
+    try:
+        return executors[kind]
+    except KeyError:
+        raise DesignTurnJobError(f"no executor for design turn kind {kind!r}") from None
+
+
 def _execute_turn(
     envelope: DesignTurnEnvelope,
     store: HybridRepository,
@@ -636,11 +664,12 @@ def _execute_turn(
     Returns the terminal run status (``succeeded`` / ``failed``), or ``fenced`` when the terminal
     write was refused because a takeover worker owns the run.
 
-    The lazy ``lumen_api.main`` import breaks a genuine cycle: ``main`` imports THIS module to
-    build the embedded worker, and the turn executors live in ``main`` because every by-value
-    resolver they need (brand kit, fonts, references, asset library, engine cache) lives there.
+    The lazy ``lumen_api.main`` import (in :func:`executor_for_kind`) breaks a genuine cycle:
+    ``main`` imports THIS module to build the embedded worker, and the turn executors live in
+    ``main`` because every by-value resolver they need (brand kit, fonts, references, asset
+    library, engine cache) lives there.
     """
-    from .main import execute_agent_turn_job, execute_web_turn_job
+    executor = executor_for_kind(envelope.kind)
 
     def sink(event_type: str, data: JsonObject) -> None:
         try:
@@ -675,11 +704,6 @@ def _execute_turn(
         # twice. Probed HERE, under the saver the turn will actually run on, and BEFORE the turn
         # touches it (the first invoke writes state of its own).
         session_continued = _thread_has_state(checkpointer, envelope.checkpoint_thread_id)
-        executor = (
-            execute_agent_turn_job
-            if envelope.kind == DesignRunKind.AGENT_TURN.value
-            else execute_web_turn_job
-        )
         # Lane 3 slice 5: ONE call per turn. The factory mints this turn's Langfuse handler and
         # the registry it fills; the executor adds the receipt collector to them.
         callbacks = turn_callbacks_factory() if turn_callbacks_factory is not None else None

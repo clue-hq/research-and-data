@@ -195,6 +195,17 @@ class WebTurnRequest(BaseModel):
     account_id: Optional[str] = None
 
 
+class SiteTurnRequest(BaseModel):
+    """A Puck site agent turn (Lane B, Contract 7) against one stored site document.
+
+    ``base_version`` records what the platform saw when it offered the turn; the executor re-reads
+    the document and persists under CAS on the version it actually read.
+    """
+
+    prompt: str
+    base_version: int = 0
+
+
 class WebOperationsRequest(BaseModel):
     """A manual website-mode edit: a batch of typed WebOperations applied to the
     stored WebDoc through the checked-apply helper. `base_version` gates on the

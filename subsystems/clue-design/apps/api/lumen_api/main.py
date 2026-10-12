@@ -9,6 +9,7 @@ import io
 import json
 import logging
 import re
+import shutil
 
 # D2.5B: SQLite is DELETED from this API. `sqlite3` survives here only as the API's
 # constraint-violation EXCEPTION TYPE — `design_store.DesignStoreBridge` translates Postgres
@@ -131,9 +132,10 @@ from .database import (
 )
 from . import run_stream
 from .spend import drain_safely as _drain_spend
-from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, sections_not_stored
+from .site_doc_inputs import SiteInputsUnavailable, sections_not_stored
 from .site_doc_validate import SiteDocumentInvalid, SiteValidatorUnavailable
 from .toolbelt.site_documents import SiteHistoryEmpty, replace_site_payload
+from .site_workspace_view import build_site_turn_inputs, site_brand_loader_for
 from .design_store import (
     DesignBlobStore,
     HybridRepository,
@@ -173,6 +175,7 @@ from .public_pages import (
 from .web_bridge import render_bridge_script
 from .models import (
     AgentTurnPreviewRequest,
+    SiteTurnRequest,
     WebTurnRequest,
     WebOperationsRequest,
     WebPublishRequest,
@@ -600,6 +603,7 @@ def _build_embedded_fleet_worker(app: FastAPI) -> Any:
         return DesignTurnHost(
             agent_turn_runner=app.state.agent_turn_runner,
             web_turn_runner=app.state.web_turn_runner,
+            site_turn_runner=app.state.site_turn_runner,
             core=app.state.core,
             compiler_node_bin=app.state.custom_component_compiler_node_bin,
             compiler_worker=app.state.custom_component_compiler_worker,
@@ -852,14 +856,18 @@ def create_app(
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
     # envelope that replaces the real run_web_agent_turn in tests. None = live.
     app.state.web_turn_runner = None
+    # Puck site turn test seam (Lane B): a callable (prompt, *, document, workspace, run_id,
+    # callbacks) -> SiteTurnResult that replaces the site runtime. None = live.
+    app.state.site_turn_runner = None
     # Website-mode static-export node binary; the export/publish paths shell out
     # to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
     # to exercise the honest compile-failure path.
     app.state.web_export_node_bin = "node"
     # Puck sites (Wave 2, Lane A gap 1): the site's BrandData builder and its agent-section store.
-    # Lane B2 and B6 replace these two assignments; until then a site check, render or publish that
-    # needs them refuses with a typed reason instead of guessing (lumen_api.site_doc_inputs).
-    app.state.site_brand_loader = brand_loader_not_composed
+    # Lane B6 replaces the section store; until then a site check, render or publish that places an
+    # agent section refuses with a typed reason instead of guessing (lumen_api.site_doc_inputs).
+    # Lane B2: the site's BrandData from its pinned kit (lumen_api.site_brand, the one builder).
+    app.state.site_brand_loader = site_brand_loader_for(lambda workspace_id: engine_cache_dir(workspace_id))
     app.state.site_section_loader = sections_not_stored
     # Part II D6: THE governed design write path. Every converted domain's mutation runs through
     # this invoker — the platform's own `ToolInvoker`, over the platform's own `tool_invocation`
@@ -10301,6 +10309,10 @@ def _turn_design_tools(
                 else DEFAULT_COMPILER_TIMEOUT_SECONDS
             ),
             compile_fn=lambda: compile_custom_component,
+            # Lane B (Wave 2): the site turn's persist validates through design_write_site, which
+            # needs the site's brand and its agent-section modules (Task 15 replaces the second).
+            site_brand_loader=lambda: site_brand_loader_for(lambda ws: _host_engine_cache_root(host, ws)),
+            site_section_loader=lambda: sections_not_stored,
         ),
         storage=storage,
         run_subject=subject,
@@ -11671,6 +11683,259 @@ def _execute_web_turn_job(
             str(error),
         )
         return "failed", {**failed, "doc_kind": "web"}, "error", {"message": str(error)}
+
+
+def _site_turn_response(result: Any, outcome: Any, *, base_version: int) -> JsonObject:
+    """The site turn's result_json (Contract 7), from the runtime's result and the write's outcome."""
+
+    common = {"schema_version": 1, "doc_kind": "site", "stop_reason": result.stop_reason,
+              "operations": [], "preview_paths": []}
+    if result.status != "applied":
+        code = f"site_turn.{result.stop_reason or 'failed'}"
+        failed = failed_agent_turn_response(code, result.summary, "; ".join(result.errors)[:500])
+        return {**failed, **common, "current_version": base_version, "saved_version": None,
+                "error": {"code": code, "message": result.summary}}
+    if outcome is None:
+        return {**common, "status": "applied", "outcome": "unchanged", "summary": result.summary,
+                "current_version": base_version, "saved_version": None}
+    if outcome.status == "saved":
+        return {**common, "status": "applied", "outcome": "saved", "summary": result.summary,
+                "current_version": outcome.version, "saved_version": outcome.version}
+    if outcome.status == "conflicted":
+        conflicted = conflicted_web_turn_response(base_version, int(outcome.version or base_version))
+        return {**conflicted, **common, "saved_version": None,
+                "error": {"code": "site_turn.version_conflict", "message": conflicted["summary"]}}
+    message = f"The website could not be saved: {outcome.detail or 'the write was refused'}"
+    failed = failed_agent_turn_response("site_turn.write_refused", message, outcome.detail or "")
+    return {**failed, **common, "current_version": base_version, "saved_version": None,
+            "error": {"code": "site_turn.write_refused", "message": message}}
+
+
+def run_site_agent_turn(
+    document: JsonObject,
+    prompt: str,
+    *,
+    user_message: str,
+    inputs: Any,
+    persist: Any,
+    workspace_id: str,
+    run_id: str,
+    session_id: str,
+    session_manifest: JsonObject | None,
+    blobs: DesignBlobStore,
+    checkpointer: Any = None,
+    cancel_requested: Any = None,
+    callbacks: Any = None,
+    event_sink: Any = None,
+    runner: Any = None,
+) -> JsonObject:
+    """One Puck site request: restore the session folder, run, persist under CAS, write history,
+    snapshot memory. Never raises — every failure folds into a failed response.
+
+    Fresh session per request (founder ruling 2026-10-11): the LangGraph thread is ``run_id``; the
+    agent's memory across requests is the session folder's plan.md, history.md and fetched/, which
+    are synced; everything the view rebuilds is left out of the snapshot.
+    """
+
+    try:
+        import functools
+
+        from lumen_agent.config import AgentRuntimeConfig
+        from lumen_agent.session_sync import restore_session, snapshot_session
+        from lumen_agent.site.harness import run_site_turn
+        from lumen_agent.site.workspace import (
+            SESSION_REGENERATED,
+            append_history,
+            history_count,
+            saved_line,
+            site_changes,
+            site_pages_of,
+        )
+    except Exception as error:
+        return failed_agent_turn_response(
+            "agent_runtime.unavailable", "Agent runtime dependencies are not available to the API process.", str(error)
+        )
+    config = replace(AgentRuntimeConfig.from_env(repo_root()), session_id=session_id, run_id=run_id)
+    session_dir = config.session_dir()
+    workspace = session_dir / "workspace"
+    try:
+        if not session_dir.exists() and session_manifest is not None:
+            restored = restore_session(session_dir, session_manifest, read_blob=blobs.read_blob, history_file=None)
+            api_logger.info("design_session.restored", session_id=session_id, files=restored)
+        if runner is not None:
+            result = runner(prompt, document=document, workspace=workspace, run_id=run_id, callbacks=callbacks)
+        else:
+            from lumen_agent.llm import assert_model_supports_image_input
+
+            assert_model_supports_image_input(config.orchestrator_model, base_url=config.agent_base_url,
+                                              api_key=config.agent_api_key)
+            result = run_site_turn(
+                prompt, config=config, inputs=inputs, workspace=workspace, site=document["scene"], run_id=run_id,
+                checkpointer=checkpointer, thread_id=run_id, cancel_requested=cancel_requested,
+                callbacks=callbacks, event_sink=event_sink,
+            )
+    except Exception as error:
+        return failed_agent_turn_response("agent_runtime.failed", "Site agent failed before returning a result.", str(error))
+
+    base_version = int(document["current_version"])
+    outcome = persist(result.site) if result.status == "applied" and result.site != document["scene"] else None
+    response = _site_turn_response(result, outcome, base_version=base_version)
+    saved = outcome is not None and outcome.status == "saved"
+    workspace.mkdir(parents=True, exist_ok=True)
+    append_history(
+        workspace,
+        number=history_count(workspace) + 1,
+        request=user_message,
+        changes=site_changes(site_pages_of(document["scene"]), site_pages_of(result.site)) if saved else [],
+        shell_changed=saved and document["scene"].get("shell") != result.site.get("shell"),
+        reply=result.summary,
+        saved=saved_line(status=result.status, stop_reason=result.stop_reason,
+                         outcome_status=outcome.status if outcome else None,
+                         version=outcome.version if outcome else None),
+    )
+    shutil.rmtree(workspace / "work", ignore_errors=True)
+    return _stamp_session_manifest(
+        response, session_dir=session_dir, history_file=None, session_id=session_id, blobs=blobs,
+        snapshot_session=functools.partial(snapshot_session, exclude=SESSION_REGENERATED),
+    )
+
+
+def execute_site_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
+    spend_drain: Any = None,
+    callbacks: Any = None,
+    session_continued: bool = False,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    """One Puck site turn under its own spend scope and model-call collector (Contract 7).
+
+    ``session_continued`` is accepted for the fleet's one call shape and ignored: a site request
+    always opens a fresh thread (its memory is the session folder)."""
+
+    from . import spend as _spend
+
+    del session_continued
+    collector, turn_callbacks = _turn_model_call_collector(callbacks)
+    with _spend.spend_scope(_turn_spend_stamp(envelope), drain_fn=spend_drain) as scope:
+        try:
+            status, response, event_type, event_data = _execute_site_turn_job(
+                envelope, store=store, host=host, event_sink=event_sink, checkpointer=checkpointer,
+                lease_generation=lease_generation, callbacks=turn_callbacks,
+            )
+            return status, _with_model_calls(response, collector), event_type, event_data
+        finally:
+            _drain_spend(scope)
+
+
+def _execute_site_turn_job(
+    envelope: Any,
+    *,
+    store: HybridRepository,
+    host: Any,
+    event_sink: Any,
+    checkpointer: Any = None,
+    lease_generation: Optional[int] = None,
+    callbacks: Any = None,
+) -> Tuple[str, JsonObject, str, JsonObject]:
+    from .site_turn_ports import (
+        DurableSiteAssetPort,
+        DurableSiteVersionPort,
+        PlatformSiteRenderer,
+        SitePersistOutcome,
+    )
+
+    run_subject = DesignRunSubject(run_id=envelope.run_id, lease_generation=lease_generation)
+    payload = SiteTurnRequest.model_validate(envelope.config.get("request") or {})
+    leg_block = envelope.config.get("leg") or {}
+    bundle = envelope.config.get("delegation_bundle")
+    bundle = bundle if isinstance(bundle, dict) else {}
+    workspace_id = envelope.workspace_id
+    document_id = str(envelope.document_id)
+    platform_reads = None
+    if leg_block:
+        reads_factory = getattr(host, "platform_reads_factory", None)
+        if callable(reads_factory):
+            try:
+                platform_reads = reads_factory(envelope)
+            except Exception:
+                api_logger.warning("design_turn.platform_reads_unavailable", run_id=envelope.run_id, exc_info=True)
+    try:
+        # Local: the agent runtime is an optional dependency of this process, and a missing one
+        # must fold into the failed result below rather than escape the executor.
+        from lumen_agent.cancellation import TurnCancelled
+
+        doc = store.require_document(document_id)
+        if doc.get("doc_kind") != "site":
+            failed = failed_agent_turn_response(
+                "site_turn.not_a_site", "This turn was addressed to a document that is not a website.",
+                f"document {document_id} is {doc.get('doc_kind')!r}",
+            )
+            return "failed", {**failed, "doc_kind": "site"}, "error", {"message": failed["summary"]}
+        base_version = int(doc["current_version"])
+        drift_note = _document_drift_note(store, document_id=document_id, current_version=base_version) if leg_block else None
+        artifact = bundle.get("artifact") if isinstance(bundle.get("artifact"), dict) else None
+        # The brief rides in brief.md (the spike's way); the prompt is the user's words, the drift
+        # note when a human moved the site, and the multi-document assignment line.
+        prompt = render_leg_turn_prompt(bundle=None, history=None, prompt=payload.prompt,
+                                        drift_note=drift_note, artifact=artifact)
+        blobs = _turn_blob_store(host, workspace_id)
+        invocations = _turn_design_tools(host, run_subject)
+
+        def persist(site: JsonObject) -> Any:
+            try:
+                invocations.invoke(
+                    "design_write_site",
+                    {"document_id": document_id, "site": site, "expected_base_version": base_version,
+                     "intent": payload.prompt[:120], "actor_kind": "agent", "source": "agent"},
+                    workspace_id=workspace_id, actor="agent", actor_id=envelope.run_id,
+                )
+            except WebDocumentVersionConflict as conflict:
+                return SitePersistOutcome("conflicted", int(conflict.current), None)
+            except SiteDocumentInvalid as refused:
+                return SitePersistOutcome("refused", None, "; ".join(refused.errors)[:500])
+            except PreconditionFailed as refused:
+                return SitePersistOutcome("refused", None, "; ".join(f.message for f in refused.failures)[:500])
+            except TurnCancelled:
+                # Stop pressed between the agent's last step and the save: nothing is written.
+                return SitePersistOutcome("refused", None, "it was stopped")
+            return SitePersistOutcome("saved", int(store.require_document(document_id)["current_version"]), None)
+
+        runner = getattr(host, "site_turn_runner", None)
+        inputs = None
+        if runner is None:
+            cache_dir = _host_engine_cache_root(host, workspace_id)
+            brand_kit, _source, kit_assets, font_spec = resolve_web_turn_brand_kit(doc["scene"], blobs)
+            inputs = build_site_turn_inputs(
+                document=doc, store=store, blobs=blobs, cache_dir=cache_dir, platform_reads=platform_reads,
+                account_card=envelope.config.get("account_card"), delegation_bundle=bundle,
+                brand_kit=brand_kit, kit_assets=kit_assets, font_spec=font_spec,
+                asset_library=pinned_asset_library(store, envelope.run_id),
+                assets=DurableSiteAssetPort(blobs=blobs, cache_dir=cache_dir, core=_turn_core(host),
+                                            invocations=invocations, run_id=envelope.run_id),
+                site_versions=DurableSiteVersionPort(store, document_id),
+                renderer=PlatformSiteRenderer(read_blob=blobs.read_blob),
+                logo_cache=DurableLogoFamilyCache(blobs=blobs),
+            )
+        response = run_site_agent_turn(
+            doc, prompt, user_message=payload.prompt, inputs=inputs, persist=persist, workspace_id=workspace_id,
+            run_id=envelope.run_id, session_id=design_session_id(workspace_id, document_id),
+            session_manifest=_session_manifest(store, blobs, document_id=document_id), blobs=blobs,
+            checkpointer=checkpointer, cancel_requested=_run_cancel_probe(store, envelope.run_id),
+            callbacks=callbacks, event_sink=event_sink, runner=runner,
+        )
+        if response.get("saved_version") is not None and event_sink is not None:
+            # Contract 7: the forwarder turns this into the chat's design.checkpoint frame.
+            event_sink("site_document_saved", {"document_id": document_id, "version": int(response["saved_version"])})
+        status = "succeeded" if response.get("status") == "applied" else "failed"
+        return status, {**response, "doc_kind": "site"}, "result", {"status": response.get("status")}
+    except Exception as error:  # pragma: no cover - defensive
+        failed = failed_agent_turn_response("agent_runtime.failed", "Website turn crashed before returning a result.", str(error))
+        return "failed", {**failed, "doc_kind": "site"}, "error", {"message": str(error)}
 
 
 def execute_ingestion_job(
