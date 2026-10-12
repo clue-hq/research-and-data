@@ -19,9 +19,11 @@ reveals become named motion entries. Three rules, each enforced here:
   that kind and the value: `button.shared-035a4e.fill` (a colour's hex), `button.shared-ded46d.shadow`
   and `motion.button.shared-b23804.duration` (any other value: six hex digits of the sha1 of its
   canonical JSON). A first pass over every style finds those values and mints nothing
-  (`_shared_values`). Named after one of its styles, a shared value took the name of the style the page
-  uses most, so it was renamed whenever usage counts moved (founder ruling 2026-10-13); a shared name
-  now depends only on its component, kind and value. The page's own motion is `motion.keyframes.pulse`,
+  (`_shared_values`); a shared token's provenance names every style that shares it, sorted
+  (`button shared fill (solid.047464, solid.28241e)`). Named after one of its styles, a shared value
+  took the name of the style the page uses most, so it was renamed whenever usage counts moved
+  (founder ruling 2026-10-13); a shared token now depends only on its component, kind, value and the
+  set of styles sharing it. The page's own motion is `motion.keyframes.pulse`,
   `motion.animation.pulse`, `motion.reveal.<digest>`. The same page yields the same names on every
   extraction; no model names anything.
 * A per-kit cap. The web author's prompt lists every colour token of the kit
@@ -239,8 +241,10 @@ def _same(group: str, a: Any, b: Any) -> bool:
     return json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
 
 
-#: Per `(component, group, kind of slot)`, the values two or more styles of that component ask for.
-_SharedValues = dict[tuple[str, str, str], list[dict]]
+#: Per `(component, group, kind of slot)`, each value two or more styles of that component ask for,
+#: with the pointer its token is minted with: `website:<page> :: button shared fill (solid.047464,
+#: solid.28241e)` — every sharing style's variant, sorted, so it is as order-free as the name.
+_SharedValues = dict[tuple[str, str, str], list[tuple[dict, str]]]
 
 
 def _shared_path(path: str, group: str, value: dict) -> str:
@@ -280,8 +284,9 @@ class _Minter:
             return None
         entries = self.entries(group)
         shared = self.shared.get((_component(path), group, _slot_kind(path)), ())
-        if any(_same(group, known, value) for known in shared):
-            path = _shared_path(path, group, value)
+        shared_pointer = next((where for known, where in shared if _same(group, known, value)), None)
+        if shared_pointer:
+            path, pointer = _shared_path(path, group, value), shared_pointer
         name, suffix = path, 2
         while name in entries:
             name, suffix = f"{path}-{suffix}", suffix + 1
@@ -586,7 +591,8 @@ class _Requests:
 
 
 def _shared_values(styles: list[MeasuredStyle], fonts: dict[str, str], page: str) -> _SharedValues:
-    """The values two or more distinct styles of one component ask for in slots of one kind."""
+    """The values two or more distinct styles of one component ask for in slots of one kind, each with
+    the pointer that names every one of those styles."""
     asked: dict[tuple[str, str, str], list[tuple[dict, set[int]]]] = {}
     for index, style in enumerate(styles):
         requests = _Requests()
@@ -598,7 +604,15 @@ def _shared_values(styles: list[MeasuredStyle], fonts: dict[str, str], page: str
                 bucket.append((value, {index}))
             else:
                 users.add(index)
-    return {key: [value for value, users in bucket if len(users) > 1] for key, bucket in asked.items()}
+
+    def pointer(kind: str, users: set[int]) -> str:
+        variants = ", ".join(sorted(styles[index].variant for index in users))
+        return f"website:{page} :: {styles[min(users)].surface} shared {kind} ({variants})"
+
+    return {
+        key: [(value, pointer(key[2], users)) for value, users in bucket if len(users) > 1]
+        for key, bucket in asked.items()
+    }
 
 
 @dataclass

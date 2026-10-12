@@ -4484,7 +4484,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button solid.28241e pressed fill"
+     "source": "website:https://fixture.test/ :: button shared fill (solid.047464, solid.28241e)"
     },
     "role": "component",
     "value": {
@@ -4499,7 +4499,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button solid.28241e hover fill"
+     "source": "website:https://fixture.test/ :: button shared fill (solid.047464, solid.28241e)"
     },
     "role": "component",
     "value": {
@@ -4514,7 +4514,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 focus outline"
+     "source": "website:https://fixture.test/ :: button shared outline (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "role": "component",
     "value": {
@@ -5362,7 +5362,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest height"
+     "source": "website:https://fixture.test/ :: button shared height (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "role": "dimension",
     "value": {
@@ -5378,7 +5378,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 focus outline-offset"
+     "source": "website:https://fixture.test/ :: button shared outline-offset (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "role": "dimension",
     "value": {
@@ -5716,7 +5716,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 disabled opacity"
+     "source": "website:https://fixture.test/ :: button shared opacity (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "role": "visibility",
     "value": {
@@ -6024,7 +6024,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 hover shadow-1"
+     "source": "website:https://fixture.test/ :: button shared shadow (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "value": {
      "default": {
@@ -6590,7 +6590,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 focus outline-style"
+     "source": "website:https://fixture.test/ :: button shared outline-style (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "value": {
      "default": {
@@ -6605,7 +6605,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest decoration"
+     "source": "website:https://fixture.test/ :: button shared decoration (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e, solid.7c4cff)"
     },
     "value": {
      "default": {
@@ -6620,7 +6620,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 pressed transform"
+     "source": "website:https://fixture.test/ :: button shared transform (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6634,7 +6634,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest cursor"
+     "source": "website:https://fixture.test/ :: button shared cursor (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "value": {
      "default": {
@@ -6649,7 +6649,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest border-style"
+     "source": "website:https://fixture.test/ :: button shared border-style (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6664,7 +6664,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 disabled cursor"
+     "source": "website:https://fixture.test/ :: button shared cursor (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "value": {
      "default": {
@@ -6679,7 +6679,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest case"
+     "source": "website:https://fixture.test/ :: button shared case (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "value": {
      "default": {
@@ -6846,7 +6846,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition box-shadow"
+     "source": "website:https://fixture.test/ :: button shared delay (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6860,7 +6860,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition transform"
+     "source": "website:https://fixture.test/ :: button shared duration (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6874,7 +6874,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition transform"
+     "source": "website:https://fixture.test/ :: button shared easing (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6888,7 +6888,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition background-color"
+     "source": "website:https://fixture.test/ :: button shared duration (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6902,7 +6902,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition background-color"
+     "source": "website:https://fixture.test/ :: button shared easing (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6916,7 +6916,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition box-shadow"
+     "source": "website:https://fixture.test/ :: button shared duration (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -7168,7 +7168,7 @@
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest font"
+     "source": "website:https://fixture.test/ :: button shared font (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "role": "component",
     "value": {

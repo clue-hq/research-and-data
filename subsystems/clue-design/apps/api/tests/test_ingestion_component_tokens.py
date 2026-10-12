@@ -67,13 +67,14 @@ def test_measured_values_become_tokens_named_for_where_they_were_measured() -> N
     assert solid["rest"]["label"] == "text.inverse"
     assert solid["rest"]["radius"] == "radius.full", "a pill is 9999px, radius.full exactly"
     # `.btn:hover` paints #035A4E on the `.lift` button too, so the one shared token is named by its
-    # value; its provenance is where it was measured first (buttons in capture order: `.lift`).
+    # value and its provenance names both buttons.
     lift = _recipe(kit, result, "button", "#28241E")
     hover_fill = "button.shared-035a4e.fill"
     assert solid["states"]["hover"]["fill"] == lift["states"]["hover"]["fill"] == hover_fill
     assert _value(kit, "colors", hover_fill) == {"kind": "hex", "value": "#035A4E"}
     entry = kit["tokens"]["colors"][hover_fill]
-    assert entry["provenance"] == {"source": f"website:https://fixture.test/ :: button {lift['variant']} hover fill", "confidence": 0.8}
+    sharing = ", ".join(sorted((solid["variant"], lift["variant"])))
+    assert entry["provenance"] == {"source": f"website:https://fixture.test/ :: button shared fill ({sharing})", "confidence": 0.8}
     assert entry["role"] == "component"
     assert _value(kit, "styles", solid["states"]["pressed"]["transform"]) == {"kind": "transform", "value": "matrix(0.98, 0, 0, 0.98, 0, 0)"}
     assert _value(kit, "styles", solid["rest"]["case"]) == {"kind": "keyword", "property": "text-transform", "value": "uppercase"}
@@ -110,6 +111,10 @@ def test_a_value_several_styles_share_is_named_by_its_value() -> None:
     lift = _recipe(kit, result, "button", "#28241E")
     assert solid["states"]["hover"]["fill"] == lift["states"]["hover"]["fill"] == "button.shared-035a4e.fill"
     assert _value(kit, "colors", "button.shared-035a4e.fill") == {"kind": "hex", "value": "#035A4E"}
+    # Its provenance names every style that shares it, sorted, not the one measured first.
+    assert kit["tokens"]["colors"]["button.shared-035a4e.fill"]["provenance"] == {
+        "source": "website:https://fixture.test/ :: button shared fill (solid.047464, solid.28241e)", "confidence": 0.8,
+    }
     shadows = {
         recipe["states"]["hover"]["shadow-1"]
         for recipe in result.section["styles"]
@@ -152,10 +157,8 @@ def test_shared_names_do_not_depend_on_style_order() -> None:
     assert by_style(first) == by_style(second)
 
     def minted(kit: dict, result) -> dict:
-        return {
-            name: entries[name]["value"]["default"]
-            for entries in kit["tokens"].values() for name in result.minted if name in entries
-        }
+        """Every minted entry in full: value, role, description and provenance."""
+        return {name: entries[name] for entries in kit["tokens"].values() for name in result.minted if name in entries}
 
     assert set(first.minted) == set(second.minted)
     assert minted(first_kit, first) == minted(second_kit, second)
