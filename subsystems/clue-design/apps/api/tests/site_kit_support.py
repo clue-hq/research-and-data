@@ -25,21 +25,42 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 SITE_KIT = REPO_ROOT / "apps" / "frontend" / "packages" / "site-kit"
 FIXTURES = SITE_KIT / "test" / "fixtures"
 _ASSET_REF = re.compile(r"/asset-store/([0-9a-f]{64})")
+_CLONE_IMG = re.compile(r'<img[^>]*?src="(/asset-store/[0-9a-f]{64})"[^>]*?(?:alt="([^"]*)")?')
 
 
 def _read(name: str) -> Any:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
+def _clone_images(clones: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The images captured with the seller's own sections, exactly as site-kit's `cloneImages`
+    (`src/brand.ts`) finds them."""
+    found: dict[str, dict[str, Any]] = {}
+    for clone in clones:
+        for match in _CLONE_IMG.finditer(clone["html"]):
+            file = match.group(1)
+            if file in found:
+                continue
+            found[file] = {
+                "kind": "captured_image",
+                "label": clone["label"],
+                "description": match.group(2) or f'From the seller\'s section "{clone["label"]}"',
+                "mime": None,
+                "file": file,
+                "logo": None,
+            }
+    return found
+
+
 def garner_brand() -> dict[str, Any]:
-    """Garner's BrandData as site-kit's `brandData()` builds it from the same fixtures, minus the
-    clone-captured images (no suite here needs them)."""
+    """Garner's BrandData exactly as site-kit's brandData() builds it from the same fixtures: the
+    kit's assets plus the images captured with the seller's own sections."""
     clones = _read("clones.json")
     return {
         "slug": "garner",
         "kit": _read("kit.json"),
         "fonts": _read("fonts.json"),
-        "assets": _read("assets.json"),
+        "assets": {**_read("assets.json"), **_clone_images(clones)},
         "clones": {clone["id"]: clone for clone in clones},
         "measured": _read("measured.json"),
     }
