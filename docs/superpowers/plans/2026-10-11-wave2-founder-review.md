@@ -565,3 +565,5 @@ model's own recipe slots and notes use the exact tokens):
   workspace's editor is `https://<label>.edit.deeppresence.ai`. Nothing runs on `deeppresence.ai`
   today, and nothing with a login may run there while the editor does. Founder's operational step:
   a wildcard DNS record and certificate for `*.edit.deeppresence.ai` pointing at the editor service.
+- 2026-10-12 — **Q-A9-4:** (a) existing kits are re-extracted only when the founder says so, per kit;
+  no backfill script. (The founder wrote "T-A9-4"; read as Q-A9-4, the existing-kits question.)
