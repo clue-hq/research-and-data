@@ -606,6 +606,21 @@ def test_scenario_5b_a_filled_cta_anchor_without_a_btn_class_is_measured_as_a_bu
     assert _variants(kit, "link") == {"ghost.1f4e79"}, _variants(kit, "link")
 
 
+def test_scenario_5c_cta_anchors_need_a_visible_box(client: TestClient, site) -> None:
+    # An anchor with no button class is a button only when it draws a visible box: a fill that
+    # stands out from what is behind it, or a border on all four sides.
+    _, detail = _published(client, site, "cta_anchors.html")
+    kit = detail["brand_kit_json"]
+    measured = sorted((s["component"], s["variant"]) for s in _styles(kit))
+    buttons, links = _variants(kit, "button"), _variants(kit, "link")
+    assert "solid.8e24aa" in buttons, measured  # (1) a filled CTA on the white page
+    assert "outline.00796b" in buttons, measured  # (2) an outline CTA: transparent, a full border
+    # (3) padded, but filled with the page's own white: no visible box, so a link and not a button.
+    assert not any("ffffff" in variant for variant in buttons), measured
+    assert "solid.ffffff" in links, measured
+    assert "ghost.c62828" in links, measured  # (4) a plain text link
+
+
 # --- 6. curation keeps the sections -------------------------------------------------------------
 
 SECTIONS = ("measured_components", "grammar_audit", "brief")

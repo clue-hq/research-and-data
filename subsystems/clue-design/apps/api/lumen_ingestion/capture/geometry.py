@@ -146,15 +146,22 @@ GEOMETRY_JS = r"""
     + ' a[class*="btn"], a[class*="Btn"], a[class*="button"], a[class*="Button"],'
     + ' .btn, .button';
   const CTA_CONTENT = 'img, picture, video, h1, h2, h3, h4, h5, h6, p, ul, ol, table, article';
-  // Tailwind-style CTAs carry no button class: a filled, padded, short anchor is a button too.
-  const filledCta = (el) => {
+  // Tailwind-style CTAs carry no button class; a short padded anchor with a visible box — a fill
+  // that stands out or a full border — is a button.
+  const ctaAnchor = (el) => {
     const cs = getComputedStyle(el);
-    const fill = opaque(cs.backgroundColor) || (cs.backgroundImage || '').indexOf('gradient(') >= 0;
-    if (!fill || num(cs.paddingLeft) + num(cs.paddingRight) < 12) return false;
+    if (num(cs.paddingLeft) + num(cs.paddingRight) < 12) return false;
     const text = (el.textContent || '').trim();
     const h = el.getBoundingClientRect().height;
-    return text.length >= 1 && text.length <= 40 && h >= 20 && h <= 80
-      && !el.querySelector(CTA_CONTENT);
+    if (text.length < 1 || text.length > 40 || h < 20 || h > 80) return false;
+    if (el.querySelector(CTA_CONTENT)) return false;
+    const fill = opaque(cs.backgroundColor);
+    const behind = effectiveBg(el.parentElement) || 'rgb(255, 255, 255)';  // the canvas default
+    if (fill && fill !== behind) return true;
+    if ((cs.backgroundImage || '').indexOf('gradient(') >= 0) return true;
+    return ['Top', 'Right', 'Bottom', 'Left'].every((side) => (
+      num(cs['border' + side + 'Width']) >= 1 && !!opaque(cs['border' + side + 'Color'])
+      && !['none', 'hidden'].includes(cs['border' + side + 'Style'])));
   };
 
   // Order is specificity order: the first class that claims an element keeps it,
@@ -176,7 +183,7 @@ GEOMETRY_JS = r"""
   // Text links and navigation items (Wave 2 A9): a link is an anchor with words outside the page
   // chrome; a nav item is one inside it. Both are measured for their states and motion only.
   const FILTERS = {
-    button: (el) => el.matches(BUTTON) || filledCta(el),
+    button: (el) => el.matches(BUTTON) || ctaAnchor(el),
     nav_link: (el) => !!(el.textContent || '').trim(),
     link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer'),
   };
