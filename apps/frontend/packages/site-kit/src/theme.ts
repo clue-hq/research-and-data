@@ -66,14 +66,16 @@ function declarations(parts: Parts, opts: { swaps?: Swaps; id?: string; outline?
   return { box, icon };
 }
 
-/** Where a button would not stand out on a dark surface (text 4.5:1, WCAG 1.4.3; a filled shape 3:1,
- * WCAG 1.4.11): outline and text-only styles take the surface's text colour; filled styles take the
- * light version (the kit's page colour with its text colour). */
-function buttonSwaps(brand: BrandData, drawn: Drawn, dark: string[]): Swaps {
+/** Where a button would not stand out on a surface (text 4.5:1, WCAG 1.4.3; a filled shape 3:1,
+ * WCAG 1.4.11). Outline and text-only styles take the surface's text colour on ANY surface, light or
+ * dark, where their own label would fail (a white ghost measured on a dark hero, used on a white
+ * page); their border too when it is the label's colour. Filled styles take the light version (the
+ * kit's page colour with its text colour) on dark surfaces only. */
+function buttonSwaps(brand: BrandData, drawn: Drawn, surfaces: string[], dark: string[]): Swaps {
   const swaps: Swaps = { parts: new Set(), bySurface: new Map() };
   const fill = drawn.parts.fill;
   const clear = !fill || fill === "transparent" || (fill.startsWith("#") && alphaOf(fill) === 0);
-  for (const surface of dark) {
+  for (const surface of surfaces) {
     const bg = hexOf(brand, surface);
     if (!bg) continue;
     const on = `var(--brand-on-${colorVar(surface)})`;
@@ -81,7 +83,7 @@ function buttonSwaps(brand: BrandData, drawn: Drawn, dark: string[]): Swaps {
     const label = drawn.parts.label;
     if (clear && label?.startsWith("#") && contrast(label.slice(0, 7), bg) < 4.5) {
       swap = { label: on, ...(drawn.parts.border === label ? { border: on } : {}) };
-    } else if (!clear && fill?.startsWith("#") && contrast(fill.slice(0, 7), bg) < 3) {
+    } else if (!clear && dark.includes(surface) && fill?.startsWith("#") && contrast(fill.slice(0, 7), bg) < 3) {
       swap = {
         fill: "var(--brand-button-light-fill)", label: "var(--brand-button-light-label)",
         ...(drawn.parts.border ? { border: "var(--brand-button-light-fill)" } : {}),
@@ -134,7 +136,7 @@ export function themeCss(brand: BrandData): string {
   root["--brand-button-light-fill"] = "var(--brand-surface-page)";
   root["--brand-button-light-label"] = "var(--brand-on-surface-page)";
 
-  // Per surface: type colours, the rule colour, and every swap a dark surface needs.
+  // Per surface: type colours, the rule colour, and every swap the surface needs.
   const dark = surfaces.filter((surface) => isDarkSurface(brand, surface));
   const local = new Map<string, Record<string, string>>(surfaces.map((surface) => [surface, {}]));
   const mutedShare = ratioOf(brand, "opacity.muted");
@@ -154,10 +156,11 @@ export function themeCss(brand: BrandData): string {
     { id: "std", selector: ".brand-btn", drawn: drawnButton(brand, null), look: null },
     ...buttonLooks(brand).map((look) => ({ id: String(look.index), selector: `.brand-btn.brand-look-${look.index}`, drawn: drawnButton(brand, look), look })),
   ];
-  const swaps = new Map(buttons.map((b) => [b.id, buttonSwaps(brand, b.drawn, dark)]));
+  const swaps = new Map(buttons.map((b) => [b.id, buttonSwaps(brand, b.drawn, surfaces, dark)]));
+  // A text link whose colour fails 4.5:1 on a surface, light or dark, takes that surface's text colour.
   const link = drawnLink(brand, "link");
   const linkSwap = new Map<string, string>();
-  for (const surface of dark) {
+  for (const surface of surfaces) {
     const bg = hexOf(brand, surface);
     const color = link.parts.label;
     if (bg && color?.startsWith("#") && contrast(color.slice(0, 7), bg) < 4.5) linkSwap.set(surface, `var(--brand-on-${colorVar(surface)})`);

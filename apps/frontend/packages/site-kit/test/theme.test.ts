@@ -2,14 +2,24 @@
 // fallbacks last; states, dark surfaces, links, cards and motion included.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { BrandData } from "../src/brand";
 import { colorOf } from "../src/brand-values";
-import { buttonLooks, lookNamed } from "../src/looks";
+import { buttonLooks, elementStyle, lookNamed } from "../src/looks";
 import { tailwindThemeCss, themeCss } from "../src/theme";
 import { kitBrand } from "./fixtures/kits";
 
 const ruleOf = (css: string, selector: string) => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return css.match(new RegExp(`(?:^|[}\\n])${escaped}\\{[^}]*\\}`))?.[0] ?? "";
+};
+
+/** A copy of a fixture brand with one colour token set to a hex value (the fixture file is never touched). */
+const withColor = (brand: BrandData, token: string, hex: string): BrandData => {
+  const copy = structuredClone(brand);
+  const colors = (copy.kit as { tokens: { colors: Record<string, { value: Record<string, unknown> }> } }).tokens.colors;
+  assert.ok(colors[token], `no colour token ${token}`);
+  colors[token] = { ...colors[token], value: { ...colors[token].value, default: { kind: "hex", value: hex } } };
+  return copy;
 };
 
 test("Conduit's demo button: the kit's own fill when measured, surface.brand only in the old kit", () => {
@@ -36,6 +46,25 @@ test("an outline look on a dark band takes the band's text colour", () => {
   const brand = kitBrand("garner.minted");
   const index = lookNamed(brand, "button", "outline.1")!.index;
   assert.match(ruleOf(themeCss(brand), ".bg-surface-band-014036"), new RegExp(`--bs-${index}-label:var\\(--brand-on-surface-band-014036\\)`));
+});
+
+test("a text-only look whose label would vanish on a light surface takes that surface's text colour", () => {
+  const brand = kitBrand("conduit");
+  const index = lookNamed(brand, "button", "ghost.1")!.index;
+  assert.match(ruleOf(themeCss(brand), ".bg-surface-page"), new RegExp(`--bs-${index}-label:var\\(--brand-on-surface-page\\)`));
+});
+
+test("a text link whose colour would vanish on a light surface takes that surface's text colour", () => {
+  const probe = kitBrand("probe.minted");
+  const brand = withColor(probe, elementStyle(probe, "link")!.rest.label, "#FFFFFF");
+  assert.match(ruleOf(themeCss(brand), ".bg-surface-page"), /--bs-link-color:var\(--brand-on-surface-page\)/);
+});
+
+test("a state that clears the fill draws a transparent fill", () => {
+  const probe = kitBrand("probe.minted");
+  const brand = withColor(probe, lookNamed(probe, "button", "solid.047464")!.measured!.states.hover!.fill, "#00000000");
+  const index = lookNamed(brand, "button", "solid.047464")!.index;
+  assert.match(ruleOf(themeCss(brand), `.brand-btn.brand-look-${index}:hover`), new RegExp(`background-color:(var\\(--bs-${index}-fill,)?#00000000`));
 });
 
 test("every measured state is drawn: hover, press, focus, disabled, transitions and the icon", () => {
