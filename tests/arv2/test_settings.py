@@ -48,6 +48,7 @@ ARV2_SETTING_DEFAULTS: dict[str, object] = {
     "arv2_research_clear_target_tokens": 110_000,
     "arv2_research_compact_trigger_tokens": 240_000,
     "arv2_research_compact_keep_messages": 40,
+    "arv2_research_step_retention_days": 90,
     "arv2_media_short_max_seconds": 600,
     "arv2_raw_root": ".artifacts/arv2",
     "arv2_account_max_model_rounds": 350,

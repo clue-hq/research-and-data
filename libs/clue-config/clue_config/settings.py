@@ -491,6 +491,11 @@ class Settings(BaseSettings):
     arv2_research_clear_target_tokens: int = Field(default=110_000, ge=1)
     arv2_research_compact_trigger_tokens: int = Field(default=240_000, ge=1)
     arv2_research_compact_keep_messages: int = Field(default=40, ge=1)
+    # Days a research step's audit files (model requests and replies, tool results, plans) are
+    # kept before the storage sweep purges them; 0 keeps them. Evidence, dossiers, claims and
+    # pages never expire (founder ruling 2026-10-12). Env:
+    # ``CLUE_ARV2_RESEARCH_STEP_RETENTION_DAYS``.
+    arv2_research_step_retention_days: int = Field(default=90, ge=0)
     # Account jobs one worker drives concurrently. Env: ``CLUE_ARV2_ACCOUNT_MAX_PARALLEL_JOBS``.
     arv2_account_max_parallel_jobs: int = Field(default=4, ge=1)
     # Concurrent calls per provider within one job (AI Ark is always 1 — its pacing is per

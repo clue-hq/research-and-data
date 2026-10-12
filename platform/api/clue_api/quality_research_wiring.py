@@ -585,6 +585,7 @@ class ResearchUnitRuntime:
         self.artifacts = ResearchArtifacts(storage=storage, conn_factory=connections)
         self.artifacts.scope = scope
         self.artifacts.context_id = context_id
+        self.artifacts.step_retention_days = settings.arv2_research_step_retention_days
         self.turns = DbAgentTurnJournal(conn_factory=connections)
         self.resource_version = int((scope.input_refs or {}).get("quality_recipe_version", 5))
         self.profiles = quality_profiles(

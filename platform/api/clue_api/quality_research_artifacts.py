@@ -61,9 +61,26 @@ def context_lock_name(workspace_id: str, context_id: object) -> str:
     return f"artifact-lineage-context:{workspace_id}:{context_id}"
 
 
+#: Per-step audit files: what the model was sent and returned, tool results and plans. Founder
+#: ruling 2026-10-12: they may expire (``step_retention_days``); evidence, dossiers, claims and
+#: pages never do.
+STEP_AUDIT_MEDIA_TYPES = frozenset(
+    {
+        "application/vnd.clue.agent-model-input+json",
+        "application/vnd.clue.agent-model-output+json",
+        "application/vnd.clue.agent-tool-result+json",
+        "application/vnd.clue.agent-plan-proposal+json",
+        "application/vnd.clue.validated-agent-plan+json",
+        "application/vnd.clue.agent-operation-parameters+json",
+    }
+)
+
+
 class ResearchArtifacts(DurableAgentArtifactStore):
     scope: JobScope
     context_id: UUID
+    #: Days a step audit file is kept; 0 keeps it forever. The storage sweep purges expired rows.
+    step_retention_days: int = 0
 
     async def persist_body(
         self,
@@ -155,6 +172,16 @@ class ResearchArtifacts(DurableAgentArtifactStore):
                         set(subject_bindings) | {(s, "derived") for s in subjects}
                     ),
                 )
+                # The row's media type, not the caller's: storage is content-addressed, so bytes
+                # first stored as evidence keep that row and never expire with a step.
+                if self.step_retention_days > 0 and record.media_type in STEP_AUDIT_MEDIA_TYPES:
+                    await conn.execute(
+                        text(
+                            "UPDATE artifact SET expires_at=now()+make_interval(days=>:days) "
+                            "WHERE workspace_id=:ws AND storage_key=:key AND expires_at IS NULL"
+                        ),
+                        {"ws": workspace_id, "key": key, "days": self.step_retention_days},
+                    )
                 await self._storage.put(key, data, media_type=record.media_type)
                 await self._bind_projects(
                     conn,

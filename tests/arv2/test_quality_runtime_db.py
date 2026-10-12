@@ -288,6 +288,8 @@ def test_real_parent_delegates_in_slot_and_replays_committed_results(
                 limits=Allowance(20, 30, 4),
                 checkpointer_factory=checkpoints,
             )
+            # Step audit files expire after the configured retention (founder ruling 2026-10-12).
+            assert runtime.artifacts.step_retention_days == 90
             result = await runtime.run(
                 objective="Read the complete saved report and delegate faithful claim processing."
             )

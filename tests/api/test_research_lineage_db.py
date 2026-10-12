@@ -485,3 +485,95 @@ def test_running_the_backfill_again_changes_nothing(tmp_path) -> None:
             assert rows == [sources[-1].revision]
 
     run_async(case())
+
+
+def _expires(conn: Any) -> Any:
+    async def read(key: str) -> Any:
+        return (
+            await conn.execute(
+                text("SELECT expires_at - now() FROM artifact WHERE storage_key=:key"),
+                {"key": key},
+            )
+        ).scalar_one()
+
+    return read
+
+
+def test_step_audit_files_expire_after_the_retention_period(tmp_path) -> None:
+    """Founder ruling 2026-10-12: requests, replies, tool results and plans may expire."""
+    from datetime import timedelta
+
+    async def case() -> None:
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            _op, job, cid = await setup(conn, fs)
+            sink = _sink(conn, fs, job, cid)
+            sink.step_retention_days = 90
+            expires = _expires(conn)
+            for media_type in (
+                "application/vnd.clue.agent-model-input+json",
+                "application/vnd.clue.agent-model-output+json",
+                "application/vnd.clue.agent-tool-result+json",
+                "application/vnd.clue.agent-plan-proposal+json",
+                "application/vnd.clue.validated-agent-plan+json",
+                "application/vnd.clue.agent-operation-parameters+json",
+            ):
+                ref = await sink.persist_body(
+                    workspace_id=job.workspace_id,
+                    data=media_type.encode(),
+                    media_type=media_type,
+                )
+                left = await expires(ref.artifact_key)
+                assert timedelta(days=89) < left <= timedelta(days=90), media_type
+            for media_type in (
+                "application/vnd.clue.research-json-dossier+json",
+                "application/json",
+                "text/markdown",
+            ):
+                ref = await sink.persist_body(
+                    workspace_id=job.workspace_id,
+                    data=media_type.encode(),
+                    media_type=media_type,
+                )
+                assert await expires(ref.artifact_key) is None, media_type
+
+    run_async(case())
+
+
+def test_retention_zero_keeps_step_audit_files(tmp_path) -> None:
+    async def case() -> None:
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            _op, job, cid = await setup(conn, fs)
+            sink = _sink(conn, fs, job, cid)
+            sink.step_retention_days = 0
+            ref = await sink.persist_body(
+                workspace_id=job.workspace_id,
+                data=b"kept",
+                media_type="application/vnd.clue.agent-model-input+json",
+            )
+            assert await _expires(conn)(ref.artifact_key) is None
+
+    run_async(case())
+
+
+def test_bytes_already_stored_as_evidence_never_get_an_expiry(tmp_path) -> None:
+    """Storage is content-addressed: a step whose bytes equal an evidence file shares its row."""
+
+    async def case() -> None:
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            op, job, cid = await setup(conn, fs)
+            source = await save(conn, fs, op, "Shared bytes.", url="https://e.test/shared")
+            body = await fs.get(source.artifact_key)
+            sink = _sink(conn, fs, job, cid)
+            sink.step_retention_days = 90
+            ref = await sink.persist_body(
+                workspace_id=job.workspace_id,
+                data=body,
+                media_type="application/vnd.clue.agent-tool-result+json",
+            )
+            assert ref.artifact_key == source.artifact_key
+            assert await _expires(conn)(source.artifact_key) is None
+
+    run_async(case())
