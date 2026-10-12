@@ -11883,6 +11883,12 @@ def _execute_site_turn_job(
         # note when a human moved the site, and the multi-document assignment line.
         prompt = render_leg_turn_prompt(bundle=None, history=None, prompt=payload.prompt,
                                         drift_note=drift_note, artifact=artifact)
+        if payload.targets:
+            from lumen_agent.site.workspace import targets_block
+
+            # Ruling R9: what the person pointed at follows their own words (text T15), read
+            # against the stored site so a section id with a dot in it is named whole.
+            prompt = f"{prompt}\n\n{targets_block([t.model_dump() for t in payload.targets], site=doc['scene'])}"
         blobs = _turn_blob_store(host, workspace_id)
         invocations = _turn_design_tools(host, run_subject)
 

@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from clue_agents import DomainObjectRef
 from clue_api.agent_registry_wiring import build_agent_profile_registry
 from clue_api.design_leg_tools import OpenDesignLegTool
 from clue_api.design_leg_wiring import _exit_judge_artifact_lines, design_leg_run_id
@@ -247,5 +248,55 @@ def test_the_exit_judge_calls_a_site_a_web_page(tmp_path: Path, migrated_db: boo
                 ],
             )
             assert lines[0].startswith('1. "Harbor & Sage" (web page)')
+
+    run_async(scenario())
+
+
+def test_site_annotations_ride_the_request_as_targets_in_order(
+    tmp_path: Path,
+    migrated_db: bool,  # noqa: F811
+) -> None:
+    """Ruling R9: the parts the person pointed at reach the site turn, in submission order, with
+    their notes. (A targetless site request staying exactly {prompt, base_version} is pinned by
+    Task 13's `test_a_site_document_leg_dispatches_a_site_turn_on_a_fresh_thread`.)"""
+
+    if not migrated_db:
+        pytest.skip("database not reachable")
+
+    async def scenario() -> None:
+        async with rollback_conn() as conn:
+            seeds, document = await _seed_site_leg(conn, storage_root=tmp_path, label="sitetargets")
+            registry = build_agent_profile_registry(build_toolbelt(storage=None, gateway=None))
+            lane = _FakeLane(conn_factory=seeds["conn_factory"], result=APPLIED_SITE_RESULT)
+
+            def ref(object_type: str, object_id: str, note: str | None = None) -> DomainObjectRef:
+                return DomainObjectRef(
+                    workspace_id=seeds["workspace_id"],
+                    object_type=object_type,
+                    object_id=object_id,
+                    note=note,
+                )
+
+            submission = await _submit_message(
+                conn, seeds, label="sitetargets", message="Two fixes, please."
+            )
+            await _run_turn(
+                conn,
+                seeds,
+                registry,
+                lane,
+                submission,
+                focus_refs=(
+                    ref("design_document", document["id"]),
+                    ref("design_node", "site:/#hero.title", "1. Make it warmer."),
+                    ref("design_node", "site:shell#header"),
+                ),
+            )
+            request = lane.envelopes[0].config["request"]
+            assert request["prompt"] == "Two fixes, please."
+            assert request["targets"] == [
+                {"object_id": "site:/#hero.title", "note": "1. Make it warmer."},
+                {"object_id": "site:shell#header", "note": None},
+            ]
 
     run_async(scenario())

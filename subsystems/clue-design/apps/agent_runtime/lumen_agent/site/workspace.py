@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import shutil
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timezone
@@ -470,6 +471,76 @@ def saved_line(
         return "no, it was stopped"
     return "no, the request did not finish"
 
+
+
+#: A selected part's object id (Lane A Task 14 / Lane C Task 11): site:<route>#<id>[.<field>], where
+#: <route> is "/", "/<name>" or "shell" (the header or the footer). Read the way the composer reads
+#: it (`clue_api.design_turn_targets._site_target`): the whole text after "#" is one section id first
+#: (ids may contain dots), and only when the site has no such section is it "<id>.<field>", split at
+#: the LAST dot.
+_TARGET_ROUTE = re.compile(r"/(?:[a-z0-9][a-z0-9-]*)?")
+_SHELL_PARTS = ("header", "footer")
+
+
+def _is_site_part(site: Mapping[str, Any] | None, route: str, part_id: str) -> bool:
+    """Whether the site has a section (or, for "shell", a header or footer) with this exact id."""
+    if site is None:
+        return False
+    if route == "shell":
+        shell = site.get("shell")
+        return part_id in _SHELL_PARTS and isinstance(shell, Mapping) and isinstance(shell.get(part_id), Mapping)
+    content = (site_pages_of(site).get(route) or {}).get("content")
+    return any(
+        isinstance(item, Mapping) and isinstance(item.get("props"), Mapping) and item["props"].get("id") == part_id
+        for item in (content if isinstance(content, list) else ())
+    )
+
+
+def _parse_target(object_id: str, site: Mapping[str, Any] | None) -> tuple[str, str, str | None] | None:
+    """(route, id, field) for a well-formed target, or None for one to name as written."""
+    if not object_id.startswith("site:") or "#" not in object_id:
+        return None
+    route, _, rest = object_id[len("site:"):].partition("#")
+    if not rest or (route != "shell" and not _TARGET_ROUTE.fullmatch(route)):
+        return None
+    part_id, field = rest, None
+    if not _is_site_part(site, route, rest):
+        head, _, tail = rest.rpartition(".")
+        if head and tail:
+            part_id, field = head, tail
+    if route == "shell" and part_id not in _SHELL_PARTS:
+        return None
+    return route, part_id, field
+
+
+def _target_line(object_id: str, note: str | None, site: Mapping[str, Any] | None) -> str:
+    parsed = _parse_target(object_id, site)
+    if parsed is None:
+        where = f'The part "{object_id}" of the site'
+    else:
+        route, part_id, field = parsed
+        where = f"The {part_id}" if route == "shell" else f'Page {route}, the section with id "{part_id}"'
+        if field:
+            where += f', its "{field}" field'
+    said = f' Their note: "{note.strip()}"' if note and note.strip() else " (No note.)"
+    return f"- {where}.{said}"
+
+
+def targets_block(targets: Sequence[Mapping[str, Any]], site: Mapping[str, Any] | None = None) -> str:
+    """What the person pointed at (ruling R9, text T15), or "" when they pointed at nothing.
+
+    ``site`` is the stored site the turn edits; with it, a section id that contains a dot is named
+    whole rather than split into an id and a field (the composer's rule)."""
+    if not targets:
+        return ""
+    lines = [_target_line(str(t.get("object_id") or ""), t.get("note"), site) for t in targets]
+    return (
+        "The person also pointed at parts of the site:\n"
+        + "\n".join(lines)
+        + "\nWork through these in the order listed. Change only these parts, unless their message asks "
+        "for more. If a part is no longer on the site, say so in your report and use your judgement. "
+        "In your report, say what you did for each part, or why you did not."
+    )
 
 def _component_entry(name: str, props_schema: Mapping[str, Any]) -> str:
     return f"Use it with `\"type\": \"{name}\"` and these props:\n\n```json\n{json.dumps(props_schema, indent=1)}\n```\n"

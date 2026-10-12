@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 from lumen_agent.site import workspace as ws
 from lumen_agent.site.inputs import AccountLogo, SiteSection
+from lumen_agent.site.workspace import targets_block
 from site_fixtures import FakeVersions, garner_brand, garner_site, inputs_for
 
 WHY_NOW = {
@@ -213,3 +214,36 @@ def test_seller_components_list_each_section_with_its_props(tmp_path: Path) -> N
     text = (tmp_path / "catalog" / "seller-components.md").read_text()
     assert text.startswith("# The seller's components on this site")
     assert "## QuoteBand" in text and '"attribution"' in text and "## StepsBand" in text
+
+
+def test_the_selection_block_names_each_part_in_order_with_its_note() -> None:
+    block = targets_block([
+        {"object_id": "site:/analysis#analysis-hero.title", "note": "1. Make it warmer."},
+        {"object_id": "site:shell#header", "note": None},
+        {"object_id": "site:shell#footer.ctaLabel", "note": "2. Say book a call"},
+        {"object_id": "site:/#proof", "note": ""},
+    ])
+    assert block == (
+        "The person also pointed at parts of the site:\n"
+        '- Page /analysis, the section with id "analysis-hero", its "title" field. Their note: "1. Make it warmer."\n'
+        "- The header. (No note.)\n"
+        '- The footer, its "ctaLabel" field. Their note: "2. Say book a call"\n'
+        '- Page /, the section with id "proof". (No note.)\n'
+        "Work through these in the order listed. Change only these parts, unless their message asks "
+        "for more. If a part is no longer on the site, say so in your report and use your judgement. "
+        "In your report, say what you did for each part, or why you did not."
+    )
+
+
+def test_no_selection_means_no_block_and_an_odd_id_is_named_as_written() -> None:
+    assert targets_block([]) == ""
+    assert '- The part "site:nowhere" of the site. (No note.)' in targets_block([{"object_id": "site:nowhere", "note": None}])
+
+
+def test_a_dotted_section_id_on_the_site_is_one_id_and_its_field_splits_at_the_last_dot() -> None:
+    site = {"pages": {"/": {"content": [{"type": "Hero", "props": {"id": "hero.v2", "title": "Hi"}}]}},
+            "shell": {"header": {"id": "header"}, "footer": {"id": "footer"}}}
+    block = targets_block([{"object_id": "site:/#hero.v2", "note": None},
+                           {"object_id": "site:/#hero.v2.title", "note": "Shorter"}], site=site)
+    assert '- Page /, the section with id "hero.v2". (No note.)' in block
+    assert '- Page /, the section with id "hero.v2", its "title" field. Their note: "Shorter"' in block

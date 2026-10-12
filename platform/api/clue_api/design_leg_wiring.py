@@ -2666,10 +2666,20 @@ class DesignLegTurnRunner:
                 previous_outcome = "clarification_requested"
         request: dict[str, JsonValue]
         if kind == "site_turn":
+            # Ruling R9: the parts the person pointed at, in their order, as submitted. Not
+            # re-checked against the stored site (the composer did, Lane A Task 14); a part deleted
+            # since then reaches the agent, which says so. Absent when nothing was pointed at, so a
+            # targetless request stays exactly {prompt, base_version}.
+            site_targets: list[JsonValue] = [
+                {"object_id": ref.object_id, "note": ref.note}
+                for ref in focus_refs
+                if ref.object_type == "design_node"
+            ]
             request = {
                 "prompt": message_text,
                 # The executor re-reads the document and persists under CAS on the version it read.
                 "base_version": int(document.get("current_version") or 0),
+                **({"targets": site_targets} if site_targets else {}),
             }
         elif kind == "web_turn":
             request = {

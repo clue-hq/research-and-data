@@ -51,13 +51,15 @@ def _host(app, runner):
                           engine_cache_root=app.state.engine_cache_root)
 
 
-def _envelope(document_id: str, workspace_id: str, *, prompt: str = "Make the hero warmer.", bundle: dict | None = None):
+def _envelope(document_id: str, workspace_id: str, *, prompt: str = "Make the hero warmer.",
+              bundle: dict | None = None, targets: list | None = None):
     from clue_design.envelopes import DesignTurnEnvelope
 
     run_id = f"run_{uuid4().hex[:12]}"
+    request = {"prompt": prompt, "base_version": 0, **({"targets": targets} if targets else {})}
     return DesignTurnEnvelope(kind="site_turn", work_id=uuid4(), workspace_id=workspace_id, run_id=run_id,
                               checkpoint_thread_id=run_id, document_id=document_id,
-                              config={"request": {"prompt": prompt, "base_version": 0},
+                              config={"request": request,
                                       "delegation_bundle": bundle or {"brief": "B"}, "leg": {"leg_id": "leg-1"}})
 
 
@@ -333,3 +335,23 @@ def test_the_announced_version_is_the_writes_own_not_a_later_human_save(
     history = (_workspace(_agent_workspace_in_tmp, store, document["id"]) / "history.md").read_text()
     assert "- Saved: as version 1\n" in history
     assert store.require_document(document["id"])["current_version"] == 2
+
+
+def test_the_selection_block_follows_the_persons_words(tmp_path, design_storage) -> None:
+    from lumen_agent.site.workspace import targets_block
+
+    app = create_app(tmp_path / "engine-cache", storage=design_storage)
+    store = HybridRepository()
+    document = store.create_document(_site(f"doc_site_{uuid4().hex[:10]}"), doc_kind="site")
+    seen: dict = {}
+
+    def runner(prompt, *, document, workspace, run_id, callbacks):
+        seen["prompt"] = prompt
+        return SiteTurnResult("applied", "ok", document["scene"], None, [], [])
+
+    targets = [{"object_id": "site:/#c.heading", "note": "1. Shorter"}]
+    _run(app, store, document, runner, [], prompt="Fix this.", targets=targets)
+    assert seen["prompt"].endswith("Fix this.\n\n" + targets_block(targets))
+
+    _run(app, store, document, runner, [], prompt="No selection.")
+    assert seen["prompt"].endswith("No selection.")

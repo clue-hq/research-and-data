@@ -195,6 +195,13 @@ class WebTurnRequest(BaseModel):
     account_id: Optional[str] = None
 
 
+class SiteTurnTarget(BaseModel):
+    """One part of the site the person pointed at (ruling R9): its composer object id, as submitted."""
+
+    object_id: str
+    note: Optional[str] = None
+
+
 class SiteTurnRequest(BaseModel):
     """A Puck site agent turn (Lane B, Contract 7) against one stored site document.
 
@@ -204,6 +211,8 @@ class SiteTurnRequest(BaseModel):
 
     prompt: str
     base_version: int = 0
+    #: The parts the person pointed at, in submission order (empty when they pointed at nothing).
+    targets: list[SiteTurnTarget] = Field(default_factory=list)
 
 
 class WebOperationsRequest(BaseModel):
