@@ -167,3 +167,14 @@ test("the asset store is proxied headerlessly with only content-type and cache-c
   assert.equal(await text(response), "png-bytes");
   assert.equal((await get("/asset-store/not-a-digest", { fetchImpl })).status, 404);
 });
+
+test("an asset-store network failure answers 502 and still carries the editor's policy", async () => {
+  const fetchImpl = (async () => {
+    throw new TypeError("fetch failed");
+  }) as typeof fetch;
+  const response = await get(`/asset-store/${DIGEST}`, { fetchImpl });
+  assert.equal(response.status, 502);
+  assert.equal(response.headers["cache-control"], "no-store");
+  assert.ok(response.headers["content-security-policy"].includes("default-src 'none'"));
+  assert.equal(response.headers["x-content-type-options"], "nosniff");
+});

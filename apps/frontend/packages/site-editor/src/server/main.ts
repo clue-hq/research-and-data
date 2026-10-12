@@ -2,27 +2,17 @@
 // next to the built page (dist/index.html), the bundle (dist/assets/) and the shims (dist/shims/).
 import http from "node:http";
 import path from "node:path";
-import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { handleEditorRequest } from "./app";
 import { readConfig } from "./config";
+import { writeEditorResponse } from "./send";
 
 const config = readConfig(process.env, path.dirname(fileURLToPath(import.meta.url)));
 
 const server = http.createServer((request, response) => {
-  handleEditorRequest({ host: request.headers.host, method: request.method ?? "GET", url: request.url ?? "/" }, { config })
-    .then((result) => {
-      response.writeHead(result.status, result.headers);
-      if (request.method === "HEAD" || result.body === null) {
-        response.end();
-        return;
-      }
-      if (result.body instanceof ReadableStream) {
-        Readable.fromWeb(result.body as Parameters<typeof Readable.fromWeb>[0]).pipe(response);
-        return;
-      }
-      response.end(result.body);
-    })
+  const method = request.method ?? "GET";
+  handleEditorRequest({ host: request.headers.host, method, url: request.url ?? "/" }, { config })
+    .then((result) => writeEditorResponse(result, method, response))
     .catch((error: unknown) => {
       console.error("site editor: request failed", error);
       if (!response.headersSent) response.writeHead(500, { "content-type": "text/plain; charset=utf-8" });

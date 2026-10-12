@@ -144,7 +144,12 @@ export async function handleEditorRequest(request: EditorRequest, deps: EditorSe
   if (asset) {
     // The same narrow passthrough as the app's /api/clue/design-public route: GET only, a content
     // address, zero request headers forwarded, two response headers kept.
-    const upstream = await fetchImpl(`${config.designApiBaseUrl}/asset-store/${asset[1]}`, { redirect: "manual" });
+    let upstream: Response;
+    try {
+      upstream = await fetchImpl(`${config.designApiBaseUrl}/asset-store/${asset[1]}`, { redirect: "manual" });
+    } catch {
+      return respond(config, 502, "Asset unavailable", { "cache-control": "no-store", "content-type": PLAIN });
+    }
     const headers: Record<string, string> = { "cross-origin-resource-policy": "same-origin" };
     for (const name of ASSET_STORE_HEADERS) {
       const value = upstream.headers.get(name);
