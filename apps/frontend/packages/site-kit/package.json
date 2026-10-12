@@ -10,7 +10,7 @@
     "./catalog": "./src/catalog.ts",
     "./check-section": "./src/check-section.ts"
   },
-  "scripts": { "test": "tsx --test test/*.test.ts", "typecheck": "tsc --noEmit" },
+  "scripts": { "test": "tsx --test test/*.test.ts", "typecheck": "tsc --noEmit", "build": "node bin/build-bundles.mjs" },
   "dependencies": { "@puckeditor/core": "0.23.0", "node-html-parser": "^7.1.0", "zod": "^4.4.3" },
   "peerDependencies": { "react": "19.2.4", "react-dom": "19.2.4" },
   "devDependencies": { "tsx": "^4.23.15", "typescript": "^5", "esbuild": "^0.28.2" }
