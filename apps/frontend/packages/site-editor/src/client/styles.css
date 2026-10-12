@@ -1,0 +1,116 @@
+/* The site editor stylesheet: Tailwind over site-kit's sources with the brand-token mapping the
+   D2 spike proved (trials/puck-spike/app/globals.css), plus Puck's own CSS. Agent sections bring
+   their own per-module CSS (/sections/<digest>.css). */
+@import "tailwindcss" source(none);
+@import "@puckeditor/core/puck.css";
+@source "../../../site-kit/src";
+
+@theme inline {
+  --color-on-surface-page: var(--brand-on-surface-page);
+  --color-on-surface-canvas: var(--brand-on-surface-canvas);
+  --color-on-surface-card: var(--brand-on-surface-card);
+  --color-on-surface-muted: var(--brand-on-surface-muted);
+  --color-on-surface-elevated: var(--brand-on-surface-elevated);
+  --color-on-surface-brand: var(--brand-on-surface-brand);
+  --color-on-surface-brand-subtle: var(--brand-on-surface-brand-subtle);
+  --color-on-surface-accent: var(--brand-on-surface-accent);
+  --color-on-surface-inverse: var(--brand-on-surface-inverse);
+  --color-ink-primary: var(--brand-ink-primary);
+  --color-ink-secondary: var(--brand-ink-secondary);
+  --color-ink-muted: var(--brand-ink-muted);
+  --color-ink-inverse: var(--brand-ink-inverse);
+  --color-ink-brand: var(--brand-ink-brand);
+  --color-ink-accent: var(--brand-ink-accent);
+  --color-surface-page: var(--brand-surface-page);
+  --color-surface-canvas: var(--brand-surface-canvas);
+  --color-surface-card: var(--brand-surface-card);
+  --color-surface-muted: var(--brand-surface-muted);
+  --color-surface-elevated: var(--brand-surface-elevated);
+  --color-surface-brand: var(--brand-surface-brand);
+  --color-surface-brand-subtle: var(--brand-surface-brand-subtle);
+  --color-surface-accent: var(--brand-surface-accent);
+  --color-surface-inverse: var(--brand-surface-inverse);
+  --color-line-subtle: var(--brand-line-subtle);
+  --color-line-default: var(--brand-line-default);
+  --color-line-strong: var(--brand-line-strong);
+  --color-line-brand: var(--brand-line-brand);
+  --color-focus: var(--brand-focus);
+  --font-display: var(--brand-font-display);
+  --text-display: var(--brand-text-display);
+  --text-display--line-height: var(--brand-text-display-lh);
+  --text-display--font-weight: var(--brand-text-display-weight);
+  --text-display--letter-spacing: var(--brand-text-display-tracking);
+  --font-headline: var(--brand-font-headline);
+  --text-headline: var(--brand-text-headline);
+  --text-headline--line-height: var(--brand-text-headline-lh);
+  --text-headline--font-weight: var(--brand-text-headline-weight);
+  --text-headline--letter-spacing: var(--brand-text-headline-tracking);
+  --font-title: var(--brand-font-title);
+  --text-title: var(--brand-text-title);
+  --text-title--line-height: var(--brand-text-title-lh);
+  --text-title--font-weight: var(--brand-text-title-weight);
+  --text-title--letter-spacing: var(--brand-text-title-tracking);
+  --font-subtitle: var(--brand-font-subtitle);
+  --text-subtitle: var(--brand-text-subtitle);
+  --text-subtitle--line-height: var(--brand-text-subtitle-lh);
+  --text-subtitle--font-weight: var(--brand-text-subtitle-weight);
+  --text-subtitle--letter-spacing: var(--brand-text-subtitle-tracking);
+  --font-body: var(--brand-font-body);
+  --text-body: var(--brand-text-body);
+  --text-body--line-height: var(--brand-text-body-lh);
+  --text-body--font-weight: var(--brand-text-body-weight);
+  --text-body--letter-spacing: var(--brand-text-body-tracking);
+  --font-body-small: var(--brand-font-body-small);
+  --text-body-small: var(--brand-text-body-small);
+  --text-body-small--line-height: var(--brand-text-body-small-lh);
+  --text-body-small--font-weight: var(--brand-text-body-small-weight);
+  --text-body-small--letter-spacing: var(--brand-text-body-small-tracking);
+  --font-eyebrow: var(--brand-font-eyebrow);
+  --text-eyebrow: var(--brand-text-eyebrow);
+  --text-eyebrow--line-height: var(--brand-text-eyebrow-lh);
+  --text-eyebrow--font-weight: var(--brand-text-eyebrow-weight);
+  --text-eyebrow--letter-spacing: var(--brand-text-eyebrow-tracking);
+  --font-cta: var(--brand-font-cta);
+  --text-cta: var(--brand-text-cta);
+  --text-cta--line-height: var(--brand-text-cta-lh);
+  --text-cta--font-weight: var(--brand-text-cta-weight);
+  --text-cta--letter-spacing: var(--brand-text-cta-tracking);
+  --font-stat: var(--brand-font-stat);
+  --text-stat: var(--brand-text-stat);
+  --text-stat--line-height: var(--brand-text-stat-lh);
+  --text-stat--font-weight: var(--brand-text-stat-weight);
+  --text-stat--letter-spacing: var(--brand-text-stat-tracking);
+  --font-label: var(--brand-font-label);
+  --text-label: var(--brand-text-label);
+  --text-label--line-height: var(--brand-text-label-lh);
+  --text-label--font-weight: var(--brand-text-label-weight);
+  --text-label--letter-spacing: var(--brand-text-label-tracking);
+  --font-caption: var(--brand-font-caption);
+  --text-caption: var(--brand-text-caption);
+  --text-caption--line-height: var(--brand-text-caption-lh);
+  --text-caption--font-weight: var(--brand-text-caption-weight);
+  --text-caption--letter-spacing: var(--brand-text-caption-tracking);
+  --font-legal: var(--brand-font-legal);
+  --text-legal: var(--brand-text-legal);
+  --text-legal--line-height: var(--brand-text-legal-lh);
+  --text-legal--font-weight: var(--brand-text-legal-weight);
+  --text-legal--letter-spacing: var(--brand-text-legal-tracking);
+  --radius-none: var(--brand-radius-none);
+  --radius-xs: var(--brand-radius-xs);
+  --radius-sm: var(--brand-radius-sm);
+  --radius-md: var(--brand-radius-md);
+  --radius-lg: var(--brand-radius-lg);
+  --radius-xl: var(--brand-radius-xl);
+  --radius-card: var(--brand-radius-card);
+  --radius-button: var(--brand-radius-button);
+  --radius-badge: var(--brand-radius-badge);
+  --radius-full: var(--brand-radius-full);
+}
+
+/* The frame fills its iframe; the page scrolls inside it. */
+html, body, #root { height: 100%; margin: 0; }
+#root { overflow: auto; }
+
+/* DESIGN REVIEW (DR5): the selected header or footer. The shell is drawn by the page root, not
+   by a Puck component, so Puck draws no outline for it. */
+[data-site-shell-selected] { outline: 2px solid var(--puck-color-azure-04); outline-offset: -2px; }

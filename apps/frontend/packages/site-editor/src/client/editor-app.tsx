@@ -1,0 +1,163 @@
+import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { Puck, createUsePuck, useGetPuck, type Config, type Data, type Permissions, type Viewports } from "@puckeditor/core";
+import type { BrandData } from "@clue/site-kit";
+import { acceptAppMessage, frameToApp } from "@clue/site-kit/editor-protocol";
+import { canonicalJson, pageFor, shortcutFor } from "@clue/site-kit/editor-site";
+import { SHELL_TARGET, type SitePage, type SiteShell } from "@clue/site-kit/site-document";
+import type { BootContext } from "./boot";
+import { buildPageConfig, shellFieldDescriptions } from "./config";
+import { clickIntent, rectOf } from "./dom";
+import { fieldsForComponent } from "./fields";
+import { FrameController } from "./frame-controller";
+import { browserSectionDeps, loadSections } from "./sections";
+
+const usePuck = createUsePuck();
+// Insert, delete, duplicate and drag wait for the founder's designs (C13); in-place editing stays on.
+const PERMISSIONS: Partial<Permissions> = { delete: false, drag: false, duplicate: false, edit: true, insert: false };
+const VIEWPORTS: Viewports = [{ height: "auto", label: "Page", width: "100%" }];
+const SHELL_SELECTED = "data-site-shell-selected";
+
+export function EditorApp({ boot }: { boot: BootContext }) {
+  const controller = useMemo(
+    () =>
+      new FrameController({
+        loadSections: (links) => loadSections(links, browserSectionDeps()),
+        post: (type, payload, documentId) => {
+          // Contract 6: always the app's exact origin, never "*".
+          window.parent.postMessage(frameToApp(type, payload, { documentId, nonce: boot.nonce }), boot.appOrigin);
+        },
+      }),
+    [boot],
+  );
+  const state = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const message = acceptAppMessage(
+        { data: event.data, origin: event.origin, source: event.source },
+        { appOrigin: boot.appOrigin, documentId: controller.getState().documentId, nonce: boot.nonce, parent: window.parent },
+      );
+      if (message) void controller.receive(message);
+    };
+    window.addEventListener("message", onMessage);
+    controller.announceReady();
+    return () => window.removeEventListener("message", onMessage);
+  }, [boot, controller]);
+
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      const { action, preventDefault } = clickIntent(event.target, controller.getState().mode);
+      if (preventDefault) event.preventDefault();
+      const scroll = { x: window.scrollX, y: window.scrollY };
+      if (action.kind === "navigate") controller.linkClicked(action.href);
+      if (action.kind === "shell") {
+        event.stopPropagation();
+        controller.shellSelected(action.part);
+        controller.annotate(SHELL_TARGET, action.part, rectOf(action.element, scroll));
+      }
+      if (action.kind === "component" && action.componentId) {
+        controller.annotate(controller.getState().route, action.componentId, rectOf(action.element, scroll));
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const decision = shortcutFor(event);
+      if (!decision) return;
+      // Puck's own history and preview toggle never run: undo is the server's stack (ruling).
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (decision !== "swallow") controller.shortcut(decision);
+    };
+    const onFocusOut = () => controller.flushChange();
+    document.addEventListener("click", onClick, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("focusout", onFocusOut, true);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("focusout", onFocusOut, true);
+    };
+  }, [controller]);
+
+  // The shell is drawn by the page root, not by a Puck component, so its outline is ours (DR5).
+  useEffect(() => {
+    for (const element of document.querySelectorAll(`[${SHELL_SELECTED}]`)) element.removeAttribute(SHELL_SELECTED);
+    const selection = state.selection;
+    if (selection?.target === SHELL_TARGET) {
+      document.querySelector(`.brand-root > ${selection.componentId}`)?.setAttribute(SHELL_SELECTED, "true");
+    }
+  }, [state.selection, state.mountKey]);
+
+  const shellJson = state.site?.shell ? canonicalJson(state.site.shell) : "";
+  const shell = useMemo<SiteShell | null>(() => (shellJson ? (JSON.parse(shellJson) as SiteShell) : null), [shellJson]);
+  const config = useMemo(
+    () => (state.brand ? buildPageConfig(state.brand, shell, state.sections) : null),
+    [state.brand, shell, state.sections],
+  );
+  useEffect(() => {
+    controller.setShellFields(state.brand ? shellFieldDescriptions(state.brand) : null);
+  }, [controller, state.brand]);
+
+  if (state.status !== "ready" || !state.site || !state.brand || !config) return null;
+  const page = pageFor(state.site, state.route);
+  if (!page) return null;
+  const route = state.route;
+  return (
+    <Puck
+      config={config}
+      data={page as unknown as Data}
+      iframe={{ enabled: false }}
+      key={state.mountKey}
+      onChange={(data) => controller.pageEdited(route, data as unknown as SitePage)}
+      permissions={PERMISSIONS}
+      ui={{
+        previewMode: state.mode === "edit" ? "edit" : "interactive",
+        viewports: { controlsVisible: false, current: { height: "auto", width: "100%" }, options: VIEWPORTS },
+      }}
+      viewports={VIEWPORTS}
+    >
+      <PuckBridge brand={state.brand} config={config} controller={controller} />
+      <Puck.Preview />
+    </Puck>
+  );
+}
+
+function PuckBridge({ brand, config, controller }: { brand: BrandData; config: Config; controller: FrameController }) {
+  const getPuck = useGetPuck();
+  const selectedId = usePuck((store) => (store.selectedItem ? String(store.selectedItem.props.id) : null));
+
+  useEffect(() => {
+    controller.attachPuck({
+      select(componentId) {
+        const puck = getPuck();
+        const itemSelector = componentId ? (puck.getSelectorForId(componentId) ?? null) : null;
+        puck.dispatch({ type: "setUi", ui: { itemSelector } });
+        if (componentId) {
+          document.querySelector(`[data-puck-component="${CSS.escape(componentId)}"]`)?.scrollIntoView({ block: "nearest" });
+        }
+      },
+      setMode(mode) {
+        getPuck().dispatch({
+          type: "setUi",
+          ui: mode === "edit" ? { previewMode: "edit" } : { itemSelector: null, previewMode: "interactive" },
+        });
+      },
+      showPage(page) {
+        getPuck().dispatch({ data: page as unknown as Data, recordHistory: false, type: "setData" });
+      },
+    });
+    return () => controller.attachPuck(null);
+  }, [controller, getPuck]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      controller.componentDeselected();
+      return;
+    }
+    const item = getPuck().getItemById(selectedId);
+    if (!item) return;
+    const props = item.props as Record<string, unknown>;
+    controller.componentSelected(selectedId, item.type, fieldsForComponent(config, brand, item.type, props), props);
+  }, [brand, config, controller, getPuck, selectedId]);
+
+  return null;
+}
