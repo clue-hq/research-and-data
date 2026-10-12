@@ -10,8 +10,11 @@ layers, any one of which is enough on its own:
    (``<-loopback>``), so an IP literal or localhost goes nowhere either;
 4. WebRTC forced through that proxy (``disable_non_proxied_udp``);
 5. Playwright: the context is offline, service workers are blocked, every routed request is
-   aborted, and every WebSocket is mocked (its route never calls ``connect_to_server``; closing it
-   from the handler hangs the page under the render CSP — Playwright 1.61, probe 2026-10-11).
+   refused, and every WebSocket is mocked (its route never calls ``connect_to_server``; closing it
+   from the handler hangs the page under the render CSP — Playwright 1.61, probe 2026-10-11). A
+   navigation request is refused by answering it LOCALLY with an empty 204, so the page stays where
+   it is: an aborted navigation makes Chromium commit its error page in place of the document
+   (``abort("aborted")`` too — probe 2026-10-13). Anything else is aborted.
 
 Plus a V8 heap cap, Chromium's own sandbox (``LUMEN_SITE_RENDER_CHROMIUM_SANDBOX``, default on)
 and the process-wide capture slots shared with the thumbnail and PDF captures. The browser is
@@ -76,7 +79,10 @@ def hardened_context(
 
     def refuse(route: Any) -> None:
         blocked.append(route.request.url)
-        route.abort("blockedbyclient")
+        if route.request.is_navigation_request():
+            route.fulfill(status=204)
+        else:
+            route.abort("blockedbyclient")
 
     try:
         with _CAPTURE_SLOTS, sync_playwright() as pw:

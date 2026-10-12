@@ -315,8 +315,10 @@ def test_a_section_reaching_for_the_parent_the_top_storage_and_remote_code_gets_
 
     - ``window.parent.postMessage`` — the render page IS the top window, so ``parent`` is itself:
       the message goes to the page's own window, where nothing listens. No editor ever receives it.
-    - ``top.location.assign(<listener>)`` — the navigation request reaches the context's route and
-      is refused there (and the proxy/resolver layers would refuse it again); the page must stay put.
+    - ``top.location.assign(<listener>)`` — the navigation request reaches the context's route,
+      which answers it LOCALLY with an empty 204 (nothing is fetched; the proxy/resolver layers
+      would refuse it again), so the page stays where it is and the URL surfaces as a warning.
+      (An aborted navigation would commit Chromium's error page in place of the render.)
     - ``document.cookie`` — the opaque-origin document has no cookie jar: setting it throws
       ``SecurityError``.
     - ``localStorage`` — likewise refused for an opaque origin: ``SecurityError``.
@@ -331,8 +333,25 @@ def test_a_section_reaching_for_the_parent_the_top_storage_and_remote_code_gets_
     expected = ["postMessage=to-itself", "cookie=threw-SecurityError", "storage=threw-SecurityError", "import=threw-TypeError"]
     if navigates:
         expected.insert(1, "navigate=called")
+        assert f"blocked a network request to http://127.0.0.1:{listener}/top" in result.warnings
     # The page did not navigate away: its HTML is the section's own output, every attempt reported.
     assert '<div data-agent-section="Reach"><div>reach ' + " ".join(expected) + "</div></div>" in result.pages[0].html
+
+
+def test_a_section_that_reloads_the_page_fails_fast_and_typed() -> None:
+    """A reload never reaches the network (the render page is an ``about:blank`` document), so no
+    local 204 can stop it: the page is replaced by a blank one. The render notices the main frame
+    navigating and refuses at once, naming it — never a stall until ``timeout_s``."""
+    # The wait keeps the render from answering before the reload lands (the reload ends the module).
+    body = 'location.reload();\nawait new Promise((resolve) => setTimeout(resolve, 400));\nexport function render(props, kit) { return jsx("div", { children: "reloaded" }); }\n'
+    site, module = hostile("Reload", body)
+    started = time.monotonic()
+    with pytest.raises(SiteRenderError) as refused:
+        render_site(site, garner_brand(), [module], base_path="", timeout_s=15)
+    elapsed = time.monotonic() - started
+    assert refused.value.code == RENDER_FAILED
+    assert "navigat" in refused.value.message and "about:blank" in refused.value.message
+    assert elapsed < 5, elapsed
 
 
 def test_a_timed_out_render_leaves_no_browser_behind() -> None:

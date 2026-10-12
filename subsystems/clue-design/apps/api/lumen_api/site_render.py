@@ -112,6 +112,10 @@ DEFAULT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 SCHEMA_MAX_OUTPUT_BYTES = 1024 * 1024
 CSS_TIMEOUT_SECONDS = 60
 _FONT_SETTLE_MS = 300
+#: How long the render wait runs before it looks up to check the page is still the render page: a
+#: section that navigates or reloads it is refused within about this long, never left to run out
+#: ``timeout_s``.
+_NAVIGATION_CHECK_MS = 250
 #: The render page's policy: the bundle runs inline, agent sections arrive as data: modules, and
 #: nothing else may load, connect, frame or submit.
 _RENDER_CSP = (
@@ -171,17 +175,49 @@ def _run_shell(payload: JsonObject, *, timeout_s: float, max_output_bytes: int) 
                 wait_until="domcontentloaded",
                 timeout=remaining_ms(),
             )
-            page.add_script_tag(content=bundle)
-            page.wait_for_function(_DONE, timeout=remaining_ms(), polling=50)
-            head = page.evaluate(_HEAD)
-            if not isinstance(head, dict) or head.get("nonce") != nonce:
-                raise SiteRenderError(RENDER_FAILED, "the render page answered without its nonce")
-            if head.get("code"):
-                raise SiteRenderError(str(head["code"]), str(head.get("error") or head["code"]))
-            size = head.get("size")
-            if not isinstance(size, int) or size > max_output_bytes:
-                raise SiteRenderError(OUTPUT_TOO_LARGE, f"the rendered site is larger than {max_output_bytes} characters")
-            result = page.evaluate(_RESULT)
+            # From here the page holds the render input. A navigation REQUEST is answered locally
+            # (hardened_browser: an empty 204, so the page stays put), but a reload of this
+            # about:blank document never reaches the network: if the main frame moves at all, the
+            # render is over, and it is refused at once and by name.
+            moved: list[str] = []
+
+            def on_navigated(frame: Any) -> None:
+                if frame.parent_frame is None:
+                    moved.append(frame.url)
+
+            def refuse_if_moved() -> None:
+                if moved:
+                    raise SiteRenderError(
+                        RENDER_FAILED,
+                        f"a section navigated the render page away (to {moved[0][:160]}); "
+                        "a section may not navigate or reload the page",
+                    )
+
+            page.on("framenavigated", on_navigated)
+            try:
+                page.add_script_tag(content=bundle)
+                while True:
+                    refuse_if_moved()
+                    try:
+                        page.wait_for_function(_DONE, timeout=min(_NAVIGATION_CHECK_MS, remaining_ms()), polling=50)
+                        break
+                    except PlaywrightTimeout:
+                        if time.monotonic() >= deadline:
+                            raise
+                refuse_if_moved()
+                head = page.evaluate(_HEAD)
+                if not isinstance(head, dict) or head.get("nonce") != nonce:
+                    raise SiteRenderError(RENDER_FAILED, "the render page answered without its nonce")
+                if head.get("code"):
+                    raise SiteRenderError(str(head["code"]), str(head.get("error") or head["code"]))
+                size = head.get("size")
+                if not isinstance(size, int) or size > max_output_bytes:
+                    raise SiteRenderError(OUTPUT_TOO_LARGE, f"the rendered site is larger than {max_output_bytes} characters")
+                result = page.evaluate(_RESULT)
+                refuse_if_moved()
+            except PlaywrightError:
+                refuse_if_moved()  # a call the page moved out from under: name the move, not the call
+                raise
             return (result if isinstance(result, dict) else {}), list(blocked)
     except PlaywrightTimeout as error:
         raise SiteRenderError(RENDER_TIMEOUT, f"the site did not render within {timeout_s:g}s") from error
@@ -231,7 +267,8 @@ def render_site(
 
     ``base_path`` is where the site is served ("/acme-site"); "" leaves /route links as written.
     Each page comes back as a whole document without CSS; ``css`` is the site's compiled Tailwind
-    plus each agent section's own stored CSS. Raises :class:`SiteRenderError`."""
+    plus each agent section's own stored CSS. ``timeout_s`` bounds the page's work, not the wait for
+    a capture slot or the browser launch. Raises :class:`SiteRenderError`."""
     modules = pinned_modules(dict(site), sections)
     known = site_routes(dict(site))
     wanted = list(routes) if routes is not None else known
