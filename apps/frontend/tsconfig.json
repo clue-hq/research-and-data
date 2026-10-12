@@ -35,7 +35,8 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  // The site kit's section-example fixture imports the agent kit by the alias agent-written
-  // sections use (@/puck/agent-kit), which only the site kit's own tsconfig maps.
-  "exclude": ["node_modules", "packages/site-kit/test/fixtures/section-example.tsx"]
+  // The site kit's tests and their fixture sections are the package's own: they import the agent
+  // kit by the alias agent-written sections use (@/puck/agent-kit), which only the site kit's own
+  // tsconfig maps. `npm run typecheck -w @clue/site-kit` type-checks them, so the app does not.
+  "exclude": ["node_modules", "packages/site-kit/test/**"]
 }
