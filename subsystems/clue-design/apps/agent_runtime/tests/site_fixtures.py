@@ -15,7 +15,7 @@ from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from lumen_agent.site.inputs import SiteSection, SiteTurnInputs
 
 FIXTURES = Path(__file__).resolve().parents[5] / "apps" / "frontend" / "packages" / "site-kit" / "test" / "fixtures"
-_CLONE_IMAGE = re.compile(r'<img[^>]*?src="([^"]+\.(?:png|jpe?g|webp|avif))"[^>]*?(?:alt="([^"]*)")?')
+_CLONE_IMAGE = re.compile(r'<img[^>]*?src="(/asset-store/[0-9a-f]{64})"[^>]*?(?:alt="([^"]*)")?')
 
 
 def read_fixture(name: str) -> Any:
@@ -30,7 +30,7 @@ def garner_brand() -> dict:
     for clone in clones:
         for match in _CLONE_IMAGE.finditer(clone["html"]):
             file = match.group(1)
-            if not file.startswith("/brands/") or file in captured:
+            if file in captured:
                 continue
             captured[file] = {
                 "kind": "captured_image", "label": clone["label"],
@@ -38,7 +38,7 @@ def garner_brand() -> dict:
                 "mime": None, "file": file, "logo": None,
             }
     return {
-        "slug": "garner", "kit": read_fixture("kit.json"),
+        "slug": "garner", "measured": read_fixture("measured.json"), "kit": read_fixture("kit.json"),
         "fonts": read_fixture("fonts.json"), "assets": {**read_fixture("assets.json"), **captured},
         "clones": {clone["id"]: clone for clone in clones},
     }
