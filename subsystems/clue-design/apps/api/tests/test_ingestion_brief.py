@@ -64,7 +64,7 @@ def _evidence() -> BrandEvidence:
 def _kit_with_bands() -> tuple[BrandEvidence, dict]:
     """The website fixture wearing the real Stripe harvest's background rhythm.
 
-    Its two navy sections mint `surface.band.statement`, which is the whole
+    Its two navy sections mint `surface.band.0d1738`, which is the whole
     point: a name for the color the page stands on.
     """
     harvest = json.loads(
@@ -267,21 +267,21 @@ def test_every_token_bearing_section_is_checked_against_the_kit() -> None:
 def test_a_band_the_kit_minted_is_a_name_the_brief_may_speak() -> None:
     """The token law cuts both ways.
 
-    A kit whose measured rhythm minted `surface.band.statement` must offer that
+    A kit whose measured rhythm minted `surface.band.0d1738` must offer that
     name to the agent (in the prompt payload AND in the validation dictionary),
     or the agent is back to approximating the one color the page stands on.
     """
     evidence, kit = _kit_with_bands()
-    assert "surface.band.statement" in kit["tokens"]["colors"]
+    assert "surface.band.0d1738" in kit["tokens"]["colors"]
 
     request = build_brief_request(evidence, kit)
-    assert "surface.band.statement" in request.token_names
-    assert any(token["name"] == "surface.band.statement" for token in request.tokens)
+    assert "surface.band.0d1738" in request.token_names
+    assert any(token["name"] == "surface.band.0d1738" for token in request.tokens)
 
     payload = _brief_payload()
-    payload["background_rhythm"]["bands"][0]["token"] = "surface.band.statement"
+    payload["background_rhythm"]["bands"][0]["token"] = "surface.band.0d1738"
     brief = validate_brief(payload, token_names=kit_token_names(kit))
-    assert brief.background_rhythm.bands[0].token == "surface.band.statement"
+    assert brief.background_rhythm.bands[0].token == "surface.band.0d1738"
 
 
 def test_a_palette_scope_outside_the_grammar_is_refused() -> None:

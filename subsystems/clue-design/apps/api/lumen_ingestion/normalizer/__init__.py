@@ -20,6 +20,7 @@ from ..colorspace import (
 from ..evidence import BrandEvidence
 from .bands import build_band_surfaces
 from .cluster import cluster_colors
+from .component_tokens import mint_component_tokens
 from .emit import KitBuilder, build_constraints
 from .font_metrics import build_type_size_ramp, glyph_gap_diagnostic
 from .geometry import MEASURED_CONFIDENCE, build_shadows
@@ -47,6 +48,7 @@ class NormalizeResult:
     brand_kit: dict
     ingestion_report: dict
     diagnostics: list[dict]
+    measured_components: dict | None = None
 
 
 def normalize_evidence(
@@ -130,16 +132,17 @@ def normalize_evidence(
         if cluster.name and _is_path_safe(cluster.name) and cluster.name != slug:
             builder.add_alias(cluster.name, extra_path, "ingestion alias")
 
-    # Measured band surfaces. The page's background rhythm is measured; a color
-    # the page RECURS on (or stands on for a fifth of its scroll) is a surface
-    # the brand owns, so it gets a name instead of reaching the brief agent as
-    # an unnamed hex. Runs after the extras so the dedupe sees every color the
-    # kit already carries. Geometry-gated: evidence without a measured band
-    # sequence mints nothing and its kit stays byte-identical.
-    for band in build_band_surfaces(
-        evidence.geometry.background_sequence,
-        [entry["value"]["default"]["value"] for entry in builder.colors.values()],
-    ):
+    # Measured section backgrounds (Wave 2 A9): every flat band colour no surface token holds
+    # exactly becomes `surface.band.<hex>`, with the text measured on it as its contrast pair.
+    # Geometry-gated: evidence without a measured band sequence mints nothing.
+    surface_colors = {
+        path: str(entry["value"]["default"].get("value") or "")
+        for path, entry in builder.colors.items()
+        if path.startswith("surface.") and entry["value"]["default"].get("kind") == "hex"
+    }
+    bands, skipped_bands = build_band_surfaces(evidence.geometry.background_sequence, surface_colors)
+    band_pairs: list[dict] = []
+    for band in bands:
         builder.add_color(
             band.path,
             RoleAssignment(band.hex, "measured", band.provenance),
@@ -147,6 +150,13 @@ def normalize_evidence(
             confidence=MEASURED_CONFIDENCE,
             description=band.description,
         )
+        if band.ink_hex:
+            band_pairs.append({"foreground": _band_ink(builder, band), "background": band.path, "min_ratio": 4.5})
+    if skipped_bands:
+        diagnostics.append({
+            "code": "LUMI0607", "severity": "warning",
+            "message": f"{skipped_bands} more section background colour(s) were not minted (the cap of 12 band surfaces)",
+        })
 
     # accent alias (spec §4).
     builder.add_alias("accent.primary", "surface.accent", "ingestion alias")
@@ -233,11 +243,17 @@ def normalize_evidence(
     diagnostics.extend(builder.diagnostics)
 
     constraints = build_constraints(evidence, tone_override, cta_color=cta_color)
+    constraints["contrast_pairs"].extend(band_pairs)
     notes = _provenance_notes(evidence, dark.basis, description)
 
     brand_kit = builder.build(notes, constraints)
     if description:
         brand_kit["description"] = description
+
+    # Measured component styles and motion (Wave 2 A9): minted after every other token exists, so
+    # exact-match reuse sees the whole kit, band surfaces included.
+    mint = mint_component_tokens(brand_kit, evidence.geometry.styles, evidence.geometry.motion)
+    diagnostics.extend(mint.diagnostics)
 
     ingestion_report = _build_report(
         evidence, clusters, builder, dark.basis, asset_gaps, description, tone_override
@@ -247,6 +263,7 @@ def normalize_evidence(
         brand_kit=brand_kit,
         ingestion_report=ingestion_report,
         diagnostics=diagnostics,
+        measured_components=mint.section,
     )
 
 
@@ -338,6 +355,30 @@ def _brand_text(brand_hex: str, page_hex: str, primary_ramp: dict[str, str]) -> 
         if contrast_ratio(candidate, page_hex) >= _CONTRAST_MIN:
             return candidate
     return primary_ramp["950"]
+
+
+def _band_ink(builder: KitBuilder, band) -> str:
+    """The colour token for the text measured on a band: an exact match (an ink first), else
+    `text.band.<hex of the band>`."""
+    matches = sorted(
+        (
+            path for path, entry in builder.colors.items()
+            if entry["value"]["default"].get("kind") == "hex"
+            and str(entry["value"]["default"].get("value") or "")[:7].upper() == band.ink_hex
+        ),
+        key=lambda path: (not path.startswith("text."), path),
+    )
+    if matches:
+        return matches[0]
+    path = "text.band." + band.path.rsplit(".", 1)[1]
+    builder.add_color(
+        path,
+        RoleAssignment(band.ink_hex, "measured", band.provenance.replace("section background", "text on section background")),
+        None,
+        confidence=MEASURED_CONFIDENCE,
+        description="text measured on that section background",
+    )
+    return path
 
 
 def _family_in_evidence(evidence: BrandEvidence, family: str) -> bool:
