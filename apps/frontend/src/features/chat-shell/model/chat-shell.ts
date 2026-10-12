@@ -1,4 +1,6 @@
-export type ChatShellArtifactKind = "ad" | "web";
+import type { DesignDocumentKind } from "@/features/design-editor/model/artifact";
+
+export type ChatShellArtifactKind = DesignDocumentKind;
 
 export interface ChatShellOpenArtifact {
   id: string;

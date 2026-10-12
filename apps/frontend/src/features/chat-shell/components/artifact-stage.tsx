@@ -62,6 +62,7 @@ import type {
   ArtifactPreviewDevice,
 } from "../hooks/use-artifact-toolbar-controller";
 import { AdDesigningLock, sceneAgentMotionActive } from "@/features/design-editor/components/generating";
+import { isWebsiteKind } from "../model/artifact-kind";
 import { ArtifactHeader } from "./artifact-header";
 import { ArtifactTabs } from "./artifact-tabs";
 import styles from "./chat-shell.module.css";
@@ -400,9 +401,9 @@ export function ArtifactStage({
     documentId: activeDocumentId ?? null,
   });
   if (nextVeil !== veil) setVeil(nextVeil);
-  // The motion is the WEBSITE half only: the ad lock is not integrated
-  // (founder ruling, 2026-09-07), so the ad branch below mounts nothing.
-  const veilActive = artifactKind === "web" && nextVeil.active;
+  // The motion is the WEBSITE half only (web or site): the ad lock is not
+  // integrated (founder ruling, 2026-09-07), so the ad branch mounts nothing.
+  const veilActive = isWebsiteKind(artifactKind) && nextVeil.active;
   // AD2.10: a mounted ad canvas owns the whole stage as its viewport; the
   // designed empty state keeps the centred card.
   const adStageClass = activeDocumentId
@@ -468,14 +469,14 @@ export function ArtifactStage({
             zoom={sceneZoomLabel}
           />
           <div className={`${styles.outputStage} ${artifactKind === "ad" ? adStageClass : styles.webOutputStage}`}>
-            {artifactKind === "web" ? (
+            {artifactKind !== "ad" ? (
               <div
                 aria-label={
-                  activeDocumentId ? "Web output canvas" : "Empty web output canvas"
+                  artifactKind === "web" && activeDocumentId ? "Web output canvas" : "Empty web output canvas"
                 }
                 className={webCanvasClass}
               >
-                {activeDocumentId ? (
+                {artifactKind === "web" && activeDocumentId ? (
                   <WebArtifactCanvas
                     annotations={annotations}
                     controlsRef={canvasControlsRef}

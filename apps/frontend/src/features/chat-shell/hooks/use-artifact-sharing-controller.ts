@@ -14,6 +14,7 @@ import {
   type ArtifactShareExportFormat,
   type ArtifactShareView,
 } from "../model/artifact-sharing";
+import { isWebsiteKind } from "../model/artifact-kind";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 
 /** What one publish attempt settled to.
@@ -204,7 +205,7 @@ export function useArtifactSharingController({
     return httpRepositoryRef.current;
   }, [repository]);
 
-  const publishable = kind === "web" && Boolean(documentId);
+  const publishable = isWebsiteKind(kind) && Boolean(documentId);
 
   const settings = useMemo<ArtifactPublishSettings>(
     () => ({
@@ -312,7 +313,7 @@ export function useArtifactSharingController({
   }, [slugDraft]);
 
   const publishAsset = useCallback(async () => {
-    if (kind !== "web") {
+    if (!isWebsiteKind(kind)) {
       // Scene publishing has no backend contract; the menu says so rather than
       // reporting a success that never happened.
       setStatusMessage("Publishing is available for websites");
@@ -363,7 +364,7 @@ export function useArtifactSharingController({
    * actually on the air, so an unpublished document is told to publish rather
    * than handed an empty tab. */
   const previewExternally = useCallback(() => {
-    if (kind === "web") {
+    if (isWebsiteKind(kind)) {
       if (!shareUrl) {
         setStatusMessage("Publish first to preview the live page");
         return;
@@ -405,7 +406,7 @@ export function useArtifactSharingController({
   const requestExport = useCallback(
     (format: ArtifactShareExportFormat) => {
       setLastExportFormat(format);
-      if (kind === "web" && documentId) {
+      if (isWebsiteKind(kind) && documentId) {
         // Both website formats are the same download against the same seam —
         // the server renders the bytes and names the file — so they differ only
         // in which repository call fetches them. The map is total over the

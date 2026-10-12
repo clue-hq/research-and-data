@@ -21,6 +21,7 @@ import type {
 import { useArtifactActionMenuController } from "../hooks/use-artifact-action-menu-controller";
 import { useArtifactSharingController } from "../hooks/use-artifact-sharing-controller";
 import { useArtifactTabController } from "../hooks/use-artifact-tab-controller";
+import { isWebsiteKind } from "../model/artifact-kind";
 import {
   useArtifactToolbarController,
   type ArtifactPageOption,
@@ -217,7 +218,7 @@ export function ArtifactHeader({
   return (
     <header className={styles.artifactHeader}>
       <div className={styles.artifactHeading}>
-        <ChatShellIcon name={kind === "web" ? "web-output" : "ad-canvas"} size={12} />
+        <ChatShellIcon name={isWebsiteKind(kind) ? "web-output" : "ad-canvas"} size={12} />
         {renaming ? (
           <input
             aria-label="Rename artifact title"

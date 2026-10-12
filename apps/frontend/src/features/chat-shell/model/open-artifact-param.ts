@@ -1,4 +1,5 @@
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
+import { chatShellKindForCard } from "./artifact-kind";
 import type { ChatShellOpenArtifact } from "./chat-shell";
 
 /**
@@ -8,10 +9,10 @@ import type { ChatShellOpenArtifact } from "./chat-shell";
  */
 export function openArtifactFromParam({ openId, artifacts }: {
   openId: string | null;
-  artifacts: readonly Pick<ProjectArtifact, "id" | "title" | "type">[];
+  artifacts: readonly Pick<ProjectArtifact, "id" | "title" | "type" | "documentKind">[];
 }): ChatShellOpenArtifact | null {
   if (!openId) return null;
   const match = artifacts.find((artifact) => artifact.id === openId);
   if (!match) return null;
-  return { id: match.id, kind: match.type === "website" ? "web" : "ad", title: match.title };
+  return { id: match.id, kind: chatShellKindForCard(match), title: match.title };
 }
