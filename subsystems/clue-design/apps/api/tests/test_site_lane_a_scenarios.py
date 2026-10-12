@@ -98,9 +98,9 @@ def read_document(client: TestClient, doc: str = DOC) -> dict:
 
 
 def depths(body: dict) -> tuple[int, int]:
-    # A never-written document reads its stacks as null, not [] (see scenario 9, which asserts the
-    # read Lane C parses); every other scenario counts a null stack as an empty one.
-    return len(body["undo_stack"] or []), len(body["redo_stack"] or [])
+    # Strict on purpose: a site reads its stacks as arrays even before its first write (K4), so a
+    # null stack here fails loudly rather than counting as empty.
+    return len(body["undo_stack"]), len(body["redo_stack"])
 
 
 def expect_state(client: TestClient, version: int, undo: int, redo: int, scene: dict, doc: str = DOC) -> dict:
@@ -162,7 +162,7 @@ def expect_refused(response, status: int, code: str) -> dict:
 
 def stack_tops(client: TestClient, doc: str = DOC) -> tuple[list[str], list[str]]:
     body = read_document(client, doc)
-    return list(body["undo_stack"] or []), list(body["redo_stack"] or [])
+    return list(body["undo_stack"]), list(body["redo_stack"])
 
 
 # --- 1 + 9. The whole editing session -------------------------------------------------------------
@@ -319,6 +319,14 @@ def test_the_document_read_the_editor_depends_on(client: TestClient, workspace_i
     assert (born["doc_kind"], born["current_version"], born["account_id"]) == ("site", 0, account_id)
     assert "render_context" not in born
     assert (born["undo_stack"], born["redo_stack"]) == ([], [])
+
+    # A web document's read is unchanged: never written, its stacks still read null (the web
+    # editor's reader tolerates that; only the site read is normalised).
+    web = client.post("/documents", json={"doc_kind": "web", "title": "A web page"})
+    assert web.status_code == 200, web.text
+    web_read = read_document(client, web.json()["document"]["id"])
+    assert web_read["doc_kind"] == "web" and web_read["current_version"] == 0
+    assert web_read["undo_stack"] is None and web_read["redo_stack"] is None
 
 
 # --- 2. The 50-step cap ---------------------------------------------------------------------------

@@ -2609,6 +2609,11 @@ def create_app(
     ) -> JsonObject:
         document = require_document(repo, document_id)
         result = public_document(document)
+        if document.get("doc_kind") == "site":
+            # Lane C's K4: the site editor reads the history stacks as arrays; a site that has never
+            # been written has none yet, which the DAL reports as null.
+            result["undo_stack"] = result.get("undo_stack") or []
+            result["redo_stack"] = result.get("redo_stack") or []
         # Only the READ route carries it. A create response and an operations response
         # both describe a document the caller is holding, and this map is a snapshot of a
         # registry that moves independently of it — served where it is read, not echoed
