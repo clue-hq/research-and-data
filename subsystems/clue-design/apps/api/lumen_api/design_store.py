@@ -122,6 +122,7 @@ from clue_design import personalization as design_personalization
 from clue_design import publishes as design_publishes
 from clue_design import runs as design_runs
 from clue_design import sessions as design_sessions
+from clue_design import site_sections as design_site_sections
 from clue_design import snapshots as design_snapshots
 from clue_design import storage as design_storage
 from clue_design import thumbnails as design_thumbnails
@@ -2267,6 +2268,22 @@ class HybridRepository:
                 workspace_id=self.workspace_id,
                 document_id=document_id,
                 batch_id=batch_id,
+            )
+        )
+
+    def get_site_sections(self, digests: List[str]) -> List[JsonObject]:
+        """This workspace's agent-written sections for ``digests`` (Contract 4), in order."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.get_site_sections(
+                conn, workspace_id=self.workspace_id, digests=digests
+            )
+        )
+
+    def list_latest_site_sections(self) -> List[JsonObject]:
+        """The newest agent-written section of each name in this workspace."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.list_latest_site_sections(
+                conn, workspace_id=self.workspace_id
             )
         )
 

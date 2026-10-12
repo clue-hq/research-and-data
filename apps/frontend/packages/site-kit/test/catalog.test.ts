@@ -61,3 +61,27 @@ test("brand.md describes the token choices and lists the assets with description
   const someAsset = Object.values(brand.assets).find((asset) => asset.description);
   assert.ok(someAsset && brandMd.includes(someAsset.file), "lists asset files");
 });
+
+test("a degraded clone says so in the index and on its card", () => {
+  const degradedBrand = garner();
+  const first = Object.values(degradedBrand.clones)[0];
+  degradedBrand.clones[first.id] = { ...first, degraded_note: "the band lost its images when it was captured." };
+  const degradedFiles = buildCatalog(degradedBrand, "Garner Health");
+  const line = degradedFiles["catalog/index.md"].split("\n").find((l) => l.includes(`\`${first.id}\``)) ?? "";
+  assert.ok(line.endsWith(" · degraded"), line);
+  assert.match(degradedFiles[`catalog/clones/${first.id}.md`], /\n\nDegraded: the band lost its images when it was captured\.\n/);
+  const healthy = files["catalog/index.md"].split("\n").find((l) => l.includes(`\`${first.id}\``)) ?? "";
+  assert.ok(!healthy.includes("degraded"), healthy);
+});
+
+test("a section the page already uses but the catalog no longer offers is kept out of the catalog", () => {
+  // Founder ruling Q5 (2026-10-12): the brand data carries every section the page itself uses,
+  // whatever its status, so the page still draws, saves and publishes; the catalog (what the agent
+  // may newly place) stays current-only.
+  const pinnedBrand = garner();
+  const first = Object.values(pinnedBrand.clones)[0];
+  pinnedBrand.clones[first.id] = { ...first, in_catalog: false };
+  const pinnedFiles = buildCatalog(pinnedBrand, "Garner Health");
+  assert.ok(!pinnedFiles["catalog/index.md"].includes(`\`${first.id}\``));
+  assert.equal(pinnedFiles[`catalog/clones/${first.id}.md`], undefined);
+});

@@ -97,6 +97,7 @@ function cloneFile(clone: Clone): string {
     `# Clone \`${clone.id}\`: ${clone.label}`,
     "",
     `Source page: ${clone.page_url} · role: ${clone.role} · position on the page: ${clone.section_index ?? "?"}`,
+    ...(clone.degraded_note ? ["", `Degraded: ${clone.degraded_note}`] : []),
     "",
     "Use it as:",
     "```json",
@@ -221,7 +222,7 @@ function brandFile(brand: BrandData, seller?: string): string {
 /** The catalog for one brand, as {relative path: markdown}. `seller` titles brand/brand.md. */
 export function buildCatalog(brand: BrandData, seller: string): Record<string, string> {
   const files: Record<string, string> = {};
-  const clones = Object.values(brand.clones);
+  const clones = Object.values(brand.clones).filter((clone) => clone.in_catalog !== false);
 
   const byPage = new Map<string, Clone[]>();
   for (const clone of clones) {
@@ -240,7 +241,8 @@ export function buildCatalog(brand: BrandData, seller: string): Record<string, s
     index.push("", `### ${page}`);
     for (const clone of list.sort((a, b) => (a.section_index ?? 0) - (b.section_index ?? 0))) {
       index.push(
-        `- \`${clone.id}\` · ${clone.role} · ${clone.label} · ${Object.keys(clone.slots).length} slots · catalog/clones/${clone.id}.md`,
+        `- \`${clone.id}\` · ${clone.role} · ${clone.label} · ${Object.keys(clone.slots).length} slots · catalog/clones/${clone.id}.md` +
+          (clone.degraded_note ? " · degraded" : ""),
       );
       files[`catalog/clones/${clone.id}.md`] = cloneFile(clone);
     }
