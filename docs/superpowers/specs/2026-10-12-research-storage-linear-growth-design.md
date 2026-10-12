@@ -115,10 +115,13 @@ middleware's `state_schema`), restore the delta reducer, and add a test that a 6
 which `DeltaChannel` reconstructs).
 
 ### 4.4 Cleanup and retention
-* Migration (reversible): backfill `artifact_lineage_scope` from today's links (revision = highest linked
-  source revision; subject and context from the job), then delete the manifest-wide links. Downgrade
-  regenerates them from the watermark. Lane space comes back after `VACUUM FULL artifact_derivation`
-  (an operator step, not part of the migration).
+* Migration `ecc5f641c0d9` (reversible) creates `artifact_evidence_watermark` and
+  `artifact_context_lineage`, the trigger branches and the lookup indexes; downgrade expands the rows
+  back into links. Converting existing steps is `scripts/backfill_artifact_lineage.py` (dry run by
+  default, `--apply` commits per batch, safe to rerun on a live database): one statement over run 4's
+  5.3M links was still deleting after 16 minutes, so it is not part of the migration. Old links keep
+  working through the same trigger until converted. Space comes back after
+  `VACUUM FULL artifact_derivation` (operator step).
 * Lane reset script: also remove a deleted run's artifacts, links and checkpoints.
 * Founder decision: should step audit artifacts (requests, replies, tool results, plans) expire, for
   example after 90 days, through the existing `expires_at` purge? Research evidence and claims would not.

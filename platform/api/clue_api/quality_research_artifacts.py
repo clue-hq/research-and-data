@@ -1,9 +1,10 @@
 """Governed research artifact binding on the existing durable agent artifact store.
 
 Model inputs/outputs, task briefs, context bundles and finalizations use this same sink. Originals
-stay in their source store; derivation links make source erasure invalidate copied research text.
-A save records the artifact row, uploads, then takes the shared project lock for the bindings, and
-writes all derivation edges in one statement (research slowness fix 2026-10-03).
+stay in their source store. Each save records one evidence watermark and one context row, so
+erasing a source or context item erases every step that could hold its text (spec 2026-10-12
+§4.1; it replaced one derivation link per source). A save records the artifact row, uploads, then
+takes the shared project lock for the bindings (research slowness fix 2026-10-03).
 """
 
 from __future__ import annotations
@@ -19,6 +20,45 @@ from clue_api.arv2.account_research_claims import JobScope
 from clue_api.execution_wiring import StorageParameterArtifactStore
 from clue_obs import critical_section
 from clue_storage import ArtifactIntegrityError, artifact_key, content_address, retain_artifact
+
+# True when any parent of a step in this scope is erased or expired: the evidence of (run,
+# account) up to the step's revision (an account job sees every subject, a person job the account
+# and itself) and the context's documents, pin and claim supports.
+_UNAVAILABLE_PARENT = """
+SELECT EXISTS (
+  SELECT 1 FROM (
+    SELECT artifact_key FROM arv2_evidence_source
+    WHERE workspace_id=:ws AND run_id=:run AND account_id=:account AND revision<=:revision
+      AND (CAST(:subject AS uuid) IS NULL OR subject_id IN (:account,CAST(:subject AS uuid)))
+    UNION ALL SELECT artifact_key FROM arv2_context_document
+    WHERE workspace_id=:ws AND context_id=:context
+    UNION ALL SELECT manifest_key FROM arv2_research_context_pin
+    WHERE workspace_id=:ws AND context_id=:context
+    UNION ALL SELECT s.artifact_key FROM claim_quality_support s
+    JOIN claim_quality_current q ON q.assessment_id=s.assessment_id
+    JOIN claim c ON c.id=q.claim_id
+    WHERE c.workspace_id=:ws AND q.context_id=:context
+      AND c.entity_id IN (SELECT COALESCE(subject_entity_id,account_entity_id)
+        FROM arv2_research_job WHERE workspace_id=:ws AND run_id=:run
+        AND account_entity_id=:account)
+  ) parent
+  JOIN artifact a ON a.workspace_id=:ws AND a.storage_key=parent.artifact_key
+  WHERE a.erased_at IS NOT NULL OR a.privacy_erased
+     OR (a.expires_at IS NOT NULL AND a.expires_at<=now())
+)
+"""
+
+
+def lineage_lock_name(workspace_id: str, run_id: object, account_id: object) -> str:
+    """The advisory lock (``hashtextextended(name, 0)``) a step save takes shared and evidence
+    erasure takes exclusively. The ``erase_derived_artifacts`` trigger (migration
+    ``ecc5f641c0d9``) builds the same name; the two must stay identical."""
+    return f"artifact-lineage:{workspace_id}:{run_id}:{account_id}"
+
+
+def context_lock_name(workspace_id: str, context_id: object) -> str:
+    """The same lock for a context: its documents, pin and claim supports."""
+    return f"artifact-lineage-context:{workspace_id}:{context_id}"
 
 
 class ResearchArtifacts(DurableAgentArtifactStore):
@@ -64,50 +104,40 @@ class ResearchArtifacts(DurableAgentArtifactStore):
                         )
                     ).scalars()
                 ) | {scope.account_id}
-                sources = (
-                    (
-                        await conn.execute(
-                            text("""SELECT artifact_key FROM arv2_evidence_source
-                    WHERE workspace_id=:ws AND run_id=:run AND account_id=:account
-                      AND (CAST(:subject AS uuid) IS NULL
-                        OR subject_id IN (:account,CAST(:subject AS uuid)))
-                    UNION SELECT artifact_key FROM arv2_context_document
-                    WHERE workspace_id=:ws AND context_id=:context
-                    UNION SELECT manifest_key FROM arv2_research_context_pin
-                    WHERE workspace_id=:ws AND context_id=:context
-                    UNION SELECT s.artifact_key FROM claim_quality_support s
-                    JOIN claim_quality_current q ON q.assessment_id=s.assessment_id
-                    JOIN claim c ON c.id=q.claim_id
-                    WHERE c.workspace_id=:ws AND q.context_id=:context
-                      AND c.entity_id IN (SELECT COALESCE(subject_entity_id,account_entity_id)
-                        FROM arv2_research_job WHERE workspace_id=:ws AND run_id=:run
-                        AND account_entity_id=:account)
-                    ORDER BY artifact_key"""),
-                            params,
-                        )
-                    )
-                    .scalars()
-                    .all()
+                # One watermark row replaces a link per source (spec 2026-10-12 §4.1). The shared
+                # lineage locks close the erase/save window: erasure takes them exclusively before
+                # erasing the steps a source or context item reached.
+                await conn.execute(
+                    text(
+                        "SELECT pg_advisory_xact_lock_shared(hashtextextended(:evidence,0)), "
+                        "pg_advisory_xact_lock_shared(hashtextextended(:context,0))"
+                    ),
+                    {
+                        "evidence": lineage_lock_name(workspace_id, scope.run_id, scope.account_id),
+                        "context": context_lock_name(workspace_id, self.context_id),
+                    },
                 )
-                parents = sorted(set(sources) - {key})
-                # Sources/context are already retained by their durable owners. Shared metadata
-                # locks close the erase/copy window without downloading every original per model
-                # hop.
-                live = (
-                    (
-                        await conn.execute(
-                            text("""SELECT storage_key FROM artifact
-                    WHERE workspace_id=:ws AND storage_key=ANY(:keys)
-                      AND erased_at IS NULL AND NOT privacy_erased
-                      AND (expires_at IS NULL OR expires_at>now())
-                    ORDER BY storage_key FOR SHARE"""),
-                            {"ws": workspace_id, "keys": parents},
-                        )
-                    )
-                    .scalars()
-                    .all()
+                await conn.execute(
+                    text(
+                        "INSERT INTO arv2_evidence_manifest(workspace_id,run_id,account_id) "
+                        "VALUES(:ws,:run,:account) ON CONFLICT DO NOTHING"
+                    ),
+                    params,
                 )
-                if len(live) != len(parents):
+                # Publication bumps the revision and inserts the source in one transaction under
+                # the manifest row lock, so every source up to the committed revision is visible.
+                revision = (
+                    await conn.execute(
+                        text(
+                            "SELECT revision FROM arv2_evidence_manifest WHERE workspace_id=:ws "
+                            "AND run_id=:run AND account_id=:account"
+                        ),
+                        params,
+                    )
+                ).scalar_one()
+                if (
+                    await conn.execute(text(_UNAVAILABLE_PARENT), {**params, "revision": revision})
+                ).scalar_one():
                     raise ArtifactIntegrityError(
                         "research context or evidence has been erased or expired"
                     )
@@ -134,15 +164,29 @@ class ResearchArtifacts(DurableAgentArtifactStore):
                         set(project_bindings) | {(scope.project_id, "research_execution")}
                     ),
                 )
-                if parents:
-                    await conn.execute(
-                        text(
-                            "INSERT INTO artifact_derivation(workspace_id,parent_key,child_key) "
-                            "SELECT :ws, parent, :key FROM unnest(CAST(:parents AS text[])) "
-                            "AS parent ON CONFLICT DO NOTHING"
-                        ),
-                        {"ws": workspace_id, "parents": parents, "key": key},
-                    )
+                await conn.execute(
+                    text(
+                        "INSERT INTO artifact_evidence_watermark(workspace_id,child_key,run_id,"
+                        "account_id,subject_key,evidence_revision) "
+                        "VALUES(:ws,:key,:run,:account,:subject_key,:revision) "
+                        "ON CONFLICT ON CONSTRAINT artifact_evidence_watermark_pk DO UPDATE "
+                        "SET evidence_revision=GREATEST(artifact_evidence_watermark"
+                        ".evidence_revision, EXCLUDED.evidence_revision)"
+                    ),
+                    {
+                        **params,
+                        "key": key,
+                        "subject_key": scope.person_subject_id or scope.account_id,
+                        "revision": revision,
+                    },
+                )
+                await conn.execute(
+                    text(
+                        "INSERT INTO artifact_context_lineage(workspace_id,child_key,context_id) "
+                        "VALUES(:ws,:key,:context) ON CONFLICT DO NOTHING"
+                    ),
+                    {**params, "key": key},
+                )
                 await retain_artifact(
                     conn,
                     workspace_id=workspace_id,
