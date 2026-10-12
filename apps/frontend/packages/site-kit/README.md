@@ -32,7 +32,9 @@ The trial stays in `trials/puck-spike/` as the frozen reference.
 - An agent-written section imports the kit as `@/puck/agent-kit` (the trial's alias); this
   package's `tsconfig.json` maps it to `src/agent-kit.tsx`, and `typeCheck` inherits that mapping.
   The file `typeCheck` checks must sit where `zod` and `react` resolve (inside `apps/frontend`).
-- Asset paths keep the trial's `/brands/<slug>/...` prefix for now.
+- Every image, logo and font a site names is `/asset-store/<sha256>`, a blob of the workspace
+  (Contract 1). `validateSite`'s fourth argument names this site's generated images and the
+  account's logos; anything else must be one of the brand's assets.
 
 ## Tests
 
