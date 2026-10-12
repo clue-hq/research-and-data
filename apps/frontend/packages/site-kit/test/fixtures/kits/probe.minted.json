@@ -3644,6 +3644,11 @@
     "min_ratio": 4.5
    },
    {
+    "background": "surface.band.ffffff",
+    "foreground": "text.band.ffffff",
+    "min_ratio": 4.5
+   },
+   {
     "background": "surface.band.014036",
     "foreground": "text.inverse",
     "min_ratio": 4.5
@@ -4237,7 +4242,7 @@
      "fill": "card.solid-f1f0de.fill",
      "font": "card.solid-f1f0de.font",
      "height": "card.solid-f1f0de.height",
-     "label": "card.solid-f1f0de.label",
+     "label": "text.band.ffffff",
      "padding-bottom": "space.stack.loose",
      "padding-left": "space.stack.loose",
      "padding-right": "space.stack.loose",
@@ -4621,21 +4626,6 @@
      "default": {
       "kind": "hex",
       "value": "#F1F0DE"
-     },
-     "modes": {}
-    }
-   },
-   "card.solid-f1f0de.label": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: card solid.f1f0de rest label"
-    },
-    "role": "component",
-    "value": {
-     "default": {
-      "kind": "hex",
-      "value": "#111111"
      },
      "modes": {}
     }
@@ -5218,6 +5208,21 @@
        "value": "#9BD1C4"
       }
      }
+    }
+   },
+   "text.band.ffffff": {
+    "description": "text measured on that section background",
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: text on section background (sections 0, 1, 3)"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#111111"
+     },
+     "modes": {}
     }
    },
    "text.brand": {

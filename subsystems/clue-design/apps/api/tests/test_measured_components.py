@@ -10,12 +10,16 @@ from pathlib import Path
 import pytest
 
 from lumen_api.brand_kit_sections import KIT_SECTIONS_OUTSIDE_ENGINE, carry_kit_sections
+from lumen_ingestion import BrandEvidence, normalize_evidence
 from lumen_ingestion.brief import kit_token_names
 from lumen_ingestion.capture.geometry import parse_geometry
 from lumen_ingestion.capture.motion import attach_keyframes
 from lumen_ingestion.capture.snapshot import Stylesheet
+from lumen_ingestion.evidence import MotionEvidence
 from lumen_ingestion.measured_components import MeasuredComponentsRefused, validate_measured_components
+from lumen_ingestion.normalizer.bands import BandSurface
 from lumen_ingestion.normalizer.component_tokens import mint_component_tokens
+from lumen_ingestion.normalizer.geometry import MEASURED_CONFIDENCE
 from lumen_ingestion.pipeline import _attach_measured_components
 
 TESTS = Path(__file__).resolve().parent
@@ -24,6 +28,19 @@ HARVEST = json.loads((TESTS / "fixtures" / "capture" / "style_states.harvest.jso
 CSS = (TESTS / "fixtures" / "capture" / "style_states.html").read_text().split("<style>", 1)[1].split("</style>", 1)[0]
 #: Garner's kit without `brief` and `grammar_audit` (tracked; Task X4).
 GARNER = TESTS / "fixtures" / "ingestion" / "garner_kit.json"
+#: A real evidence bundle (Insight Health's site) for running `normalize_evidence` itself.
+INSIGHT = TESTS / "fixtures" / "ingestion" / "evidence_website_insight.json"
+
+
+def _fixtures_script():
+    spec = importlib.util.spec_from_file_location("fixtures", ROOT / "scripts" / "build_site_kit_brand_fixtures.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _band_tokens(kit: dict) -> dict:
+    return {p: e for p, e in kit["tokens"]["colors"].items() if p.startswith(("surface.band.", "text.band."))}
 
 
 def _minted() -> tuple[dict, dict]:
@@ -96,12 +113,74 @@ def test_kit_sections_outside_the_engine_are_carried_onto_the_validated_kit() ->
 
 
 def test_site_kit_fixture_kits_are_current() -> None:
-    spec = importlib.util.spec_from_file_location("fixtures", ROOT / "scripts" / "build_site_kit_brand_fixtures.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _fixtures_script()
     if not module.BRANDS.exists():
         pytest.skip(f"the spike's brand export is not in this checkout ({module.BRANDS}, gitignored); "
                     "the fixture kits are regenerated from it")
     for name, text in module.build_all().items():
         committed = (module.KITS_DIR / name).read_text()
         assert committed == text, f"{name} is stale: run scripts/build_site_kit_brand_fixtures.py"
+
+
+def test_the_fixture_band_step_adds_exactly_what_ingestion_adds() -> None:
+    """probe.minted stands in for a kit ingestion made, so the script's band step adds what
+    `normalize_evidence`'s band block adds for the same bands: the REAL block, run over a real evidence
+    bundle with and without the probe's band sequence. Styles and motion are left out of both runs:
+    ingestion mints them after the bands, and the script's band step runs before its minting too."""
+    script = _fixtures_script()
+    evidence = BrandEvidence.model_validate(json.loads(INSIGHT.read_text()))
+    geometry = parse_geometry(HARVEST, page_url="https://fixture.test/").evidence()
+
+    def normalized(sequence: list) -> dict:
+        bare = geometry.model_copy(update={"background_sequence": sequence, "styles": [], "motion": MotionEvidence()})
+        return normalize_evidence(
+            evidence.model_copy(update={"geometry": bare}),
+            brand_kit_id="brand_kit_band_parity", version=1, name="Band parity", created_at="2026-10-13",
+        ).brand_kit
+
+    ingested, without_bands = normalized(list(geometry.background_sequence)), normalized([])
+    fixture = json.loads(json.dumps(without_bands))
+    script._add_bands(fixture, list(geometry.background_sequence))
+    assert fixture["tokens"]["colors"] == ingested["tokens"]["colors"]
+    assert fixture["constraints"]["contrast_pairs"] == ingested["constraints"]["contrast_pairs"]
+    # Both of `_band_ink`'s branches ran: a token holds #FFFFFF, and nothing holds #111111.
+    assert set(_band_tokens(ingested)) == {"surface.band.ffffff", "surface.band.014036", "text.band.ffffff"}
+    assert {"foreground": "text.inverse", "background": "surface.band.014036", "min_ratio": 4.5} in fixture["constraints"]["contrast_pairs"]
+
+
+def test_probe_minted_carries_the_ink_ingestion_mints_on_its_light_band() -> None:
+    """Over the Garner kit no colour token holds #111111, the text measured on the probe's white
+    bands, so that band's ink is `text.band.ffffff`, minted as `_band_ink` mints it; #FFFFFF on the
+    forest band is text.inverse."""
+    script = _fixtures_script()
+    kit = json.loads(GARNER.read_text())
+    script._add_bands(kit, parse_geometry(HARVEST, page_url="https://fixture.test/").background_sequence)
+    ink = kit["tokens"]["colors"]["text.band.ffffff"]
+    assert ink["value"] == {"default": {"kind": "hex", "value": "#111111"}, "modes": {}}
+    assert (ink["role"], ink["description"]) == ("text", "text measured on that section background")
+    assert "text on section background" in ink["provenance"]["source"]
+    assert ink["provenance"]["confidence"] == MEASURED_CONFIDENCE
+    assert kit["constraints"]["contrast_pairs"][-2:] == [
+        {"foreground": "text.band.ffffff", "background": "surface.band.ffffff", "min_ratio": 4.5},
+        {"foreground": "text.inverse", "background": "surface.band.014036", "min_ratio": 4.5},
+    ]
+    committed = json.loads((script.KITS_DIR / "probe.minted.json").read_text())
+    assert _band_tokens(committed) == _band_tokens(kit)
+    assert committed["constraints"]["contrast_pairs"][-2:] == kit["constraints"]["contrast_pairs"][-2:]
+
+
+def test_a_translucent_token_never_holds_a_band_ink_in_the_fixture_step() -> None:
+    """The ink match is exact, alpha included, as in `normalizer._band_ink`: `#FAF5E680` is not the
+    opaque `#FAF5E6` measured on a band, so the band gets its own `text.band.<hex>`."""
+    script = _fixtures_script()
+    band = BandSurface(
+        path="surface.band.28241e", hex="#28241E", description="section background (1 band, 600px)",
+        provenance="website:https://synthetic.example/ :: section background (sections 0)", ink_hex="#FAF5E6",
+    )
+
+    def holding(value: str) -> dict:
+        return {"text.cream": {"value": {"default": {"kind": "hex", "value": value}, "modes": {}}}}
+
+    assert script._band_ink(holding("#FAF5E680"), band) == "text.band.28241e"
+    assert script._band_ink(holding("#FAF5E6"), band) == "text.cream"
+    assert script._band_ink(holding("#FAF5E6FF"), band) == "text.cream"

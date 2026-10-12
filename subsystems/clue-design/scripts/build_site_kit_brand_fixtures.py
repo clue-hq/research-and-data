@@ -30,9 +30,9 @@ from lumen_ingestion.capture.motion import attach_keyframes
 from lumen_ingestion.capture.snapshot import Stylesheet
 from lumen_ingestion.evidence import EvidencePointer, MeasuredStyle, MotionEvidence, SectionBackground, StyleLook
 from lumen_ingestion.measured_components import validate_measured_components
-from lumen_ingestion.normalizer.bands import build_band_surfaces
+from lumen_ingestion.normalizer.bands import BandSurface, build_band_surfaces, opaque_hex
 from lumen_ingestion.normalizer.component_tokens import mint_component_tokens
-from lumen_ingestion.normalizer.emit import _color_value, _mode_value, _provenance
+from lumen_ingestion.normalizer.emit import _color_role, _color_value, _mode_value, _provenance
 from lumen_ingestion.normalizer.geometry import MEASURED_CONFIDENCE
 
 DESIGN = Path(__file__).resolve().parents[1]
@@ -75,20 +75,44 @@ def _kit(brand: str) -> dict:
     return json.loads((BRANDS / brand / "kit.json").read_text())
 
 
+def _measured_color(path: str, hex_value: str, description: str, provenance: str) -> dict:
+    """The entry `KitBuilder.add_color` writes for a measured colour (no dark mode, MEASURED_CONFIDENCE)."""
+    return {"value": _mode_value(_color_value(hex_value), {}), "role": _color_role(path),
+            "description": description, "provenance": _provenance(provenance, MEASURED_CONFIDENCE)}
+
+
+def _band_ink(colors: dict, band: BandSurface) -> str:
+    """`normalizer._band_ink` over a kit's colours: the token holding the band's ink exactly, alpha
+    included (an ink first), else `text.band.<hex of the band>`, minted here."""
+    matches = sorted(
+        (
+            path for path, entry in colors.items()
+            if entry["value"]["default"].get("kind") == "hex"
+            and opaque_hex(str(entry["value"]["default"].get("value") or "")) == band.ink_hex
+        ),
+        key=lambda path: (not path.startswith("text."), path),
+    )
+    if matches:
+        return matches[0]
+    path = "text.band." + band.path.rsplit(".", 1)[1]
+    colors[path] = _measured_color(path, band.ink_hex, "text measured on that section background",
+                                   band.provenance.replace("section background", "text on section background"))
+    return path
+
+
 def _add_bands(kit: dict, sequence: list[SectionBackground]) -> None:
-    """The band surfaces and pairs `normalize_evidence` would add, applied to an existing kit."""
+    """The band surfaces, band inks and pairs `normalize_evidence` adds, applied to an existing kit:
+    its band block and `_band_ink`, step for step (test_measured_components holds the two equal)."""
     colors = kit["tokens"]["colors"]
     surface_colors = {p: str(e["value"]["default"].get("value") or "") for p, e in colors.items()
                       if p.startswith("surface.") and e["value"]["default"].get("kind") == "hex"}
     bands, _ = build_band_surfaces(sequence, surface_colors)
     for band in bands:
-        colors[band.path] = {"value": _mode_value(_color_value(band.hex), {}), "role": "surface",
-                             "description": band.description, "provenance": _provenance(band.provenance, MEASURED_CONFIDENCE)}
+        colors[band.path] = _measured_color(band.path, band.hex, band.description, band.provenance)
         if band.ink_hex:
-            ink = next((p for p, e in sorted(colors.items(), key=lambda item: (not item[0].startswith("text."), item[0]))
-                        if str(e["value"]["default"].get("value") or "")[:7].upper() == band.ink_hex), None)
-            if ink:
-                kit["constraints"]["contrast_pairs"].append({"foreground": ink, "background": band.path, "min_ratio": 4.5})
+            kit["constraints"]["contrast_pairs"].append(
+                {"foreground": _band_ink(colors, band), "background": band.path, "min_ratio": 4.5}
+            )
 
 
 def _finish(kit: dict, section: dict | None) -> dict:
