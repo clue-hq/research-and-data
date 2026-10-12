@@ -567,3 +567,12 @@ model's own recipe slots and notes use the exact tokens):
   a wildcard DNS record and certificate for `*.edit.deeppresence.ai` pointing at the editor service.
 - 2026-10-12 — **Q-A9-4:** (a) existing kits are re-extracted only when the founder says so, per kit;
   no backfill script. (The founder wrote "T-A9-4"; read as Q-A9-4, the existing-kits question.)
+- 2026-10-12 — **Part 4 texts T-A9-1 to T-A9-7: approved.** Questions, taking "all things approved"
+  as the sheet's recommendations: **Q-A9-1** (a) the header button gets a `ctaLook`; **Q-A9-2** (a)
+  a kit whose brief never ran offers only the standard button; **Q-A9-5** (a) the web and ad agents
+  see minted colours once a kit is re-extracted; **Q-A9-6** (a) each measured style is named by its
+  look (value-keyed), so re-extraction keeps names.
+- 2026-10-12 — **Q-A9-3:** (c) extend the existing Brand page with new sections for what the
+  extraction now measures — the new colours, button and card styles with their hover, pressed, focus
+  and disabled looks, links, section backgrounds and motion — built only from the app's existing
+  frontend components and standards. Replaces the draft's Task X6 filter.
