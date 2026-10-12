@@ -39,6 +39,13 @@ def test_the_smoke_test_writes_to_the_arv2_raw_root_as_the_image_user() -> None:
     assert 'check "arv2 raw root writable"' in SMOKE
 
 
+def test_the_smoke_test_launches_chromium_with_its_own_sandbox_as_the_site_renderer_does() -> None:
+    """The site renderer asks for Chromium's sandbox (LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=1); the
+    image build is where a seccomp profile that cannot give it one must show up."""
+    assert 'check "chromium launches sandboxed"' in SMOKE
+    assert "p.chromium.launch(chromium_sandbox=True)" in SMOKE
+
+
 def test_release_prs_run_every_image_check_but_only_a_push_to_main_moves_the_tags() -> None:
     """A release PR into main proves its images build, handshake and boot before the merge; the
     `production` tags the VM pulls move only once the code is on main."""
