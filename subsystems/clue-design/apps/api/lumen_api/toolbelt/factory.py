@@ -84,6 +84,7 @@ from .publishes import (
     UnpublishWebDocumentTool,
 )
 from .site_documents import RedoSiteTool, UndoSiteTool, WriteSiteTool
+from .site_sections import RecordSiteSectionTool
 from .turns import StartAgentTurnTool, StartWebTurnTool
 from .web_documents import (
     ApplyWebOperationsTool,
@@ -135,6 +136,8 @@ DESIGN_TOOL_TYPES = (
     WriteSiteTool,
     UndoSiteTool,
     RedoSiteTool,
+    # Wave 2 Lane B — agent-written Puck sections (Contract 4).
+    RecordSiteSectionTool,
     # Round B domain 3 — turn enqueues.
     StartAgentTurnTool,
     StartWebTurnTool,

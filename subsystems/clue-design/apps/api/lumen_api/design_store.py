@@ -2328,6 +2328,31 @@ class HybridRepository:
             )
         )
 
+    def record_site_section(
+        self,
+        *,
+        digest: str,
+        name: str,
+        source_sha256: str,
+        css_sha256: str,
+        props_schema: JsonObject,
+        created_by_run_id: Optional[str],
+    ) -> JsonObject:
+        """Record one compiled agent section (Lane B, Contract 4). Governed: only
+        ``toolbelt/site_sections.py`` calls it (test_write_path_governance)."""
+        return self._bridge._run(
+            lambda conn: design_site_sections.record_site_section(
+                conn,
+                workspace_id=self.workspace_id,
+                digest=digest,
+                name=name,
+                source_sha256=source_sha256,
+                css_sha256=css_sha256,
+                props_schema=props_schema,
+                created_by_run_id=created_by_run_id,
+            )
+        )
+
     def list_operations(self, document_id: str) -> List[JsonObject]:
         return self._bridge._run(
             lambda conn: design_history.list_operations(

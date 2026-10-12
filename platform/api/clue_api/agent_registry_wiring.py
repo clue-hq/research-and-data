@@ -280,7 +280,8 @@ C6_ACTIVE_PROFILE_VERSIONS: dict[AgentRole, str] = {
     # v3 (2026-09-22): v2 plus web_search@1 (spec 2026-09-22). Nothing else moves.
     # v4 (2026-10-05): read_account_research @2 -> @3 (insights page + buying committee with each
     # person's contact page), so a 1:1 page is written from the whole of the research.
-    AgentRole.DESIGN: "v4",
+    # v5 (2026-10-11, Wave 2 Lane B): read_cited_claims@1 and design_record_site_section@1.
+    AgentRole.DESIGN: "v5",
     # ARV2 Track O, O4: the onboarding synthesis agent (ARV2-ONBOARDING-PLAN.md §5). v2 splits the
     # one turn into one ICP turn plus one persona turn per ICP: each fleet-run turn takes exactly
     # one task, the ICP skill reuses the keys of the ICPs already on file, and the persona skill
@@ -336,10 +337,10 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     # authority and its profile's tool list disagree, so a grant is that bump and never a dict
     # edit. stage0-interview v33 §7c says which question it is the read for.
     "read_claims": (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN),
-    # The design agent's cited-claims read (Contract 5, plan 2026-10-09 Wave 2): the claims an
-    # account's research pages cite, by id, each with its disposition. Registered UNGRANTED;
-    # the reviewed design profile bump (Lane B Task 14) grants it to the DESIGN role.
-    "read_cited_claims": (),
+    # Contract 5 (Lane B, 2026-10-11): the claims a research page cites, by id, behind the display
+    # gate, with a reason for each held one. The design API reads it to build a site turn's research
+    # files; the site agent itself never calls it. Granted at `design@v5` (reviewed bump).
+    "read_cited_claims": (AgentRole.DESIGN,),
     # The same posture for the gallery read: one design artifact of this project — what it is,
     # what it is called, and (asked for) the words on the page. It reads the rail's own rows and
     # changes nothing, and it is granted with the same `head-of-abm@v56` bump, so describing an
@@ -410,6 +411,9 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "design_write_site": (),
     "design_undo_site": (),
     "design_redo_site": (),
+    # Contract 4 (Lane B): records one compiled agent-written Puck section; the site turn's section
+    # port calls it. Granted to the design role like every design write, at `design@v5`.
+    "design_record_site_section": (AgentRole.DESIGN,),
     "design_replace_scene": (AgentRole.DESIGN,),
     "design_rollback_web_publish": (AgentRole.DESIGN,),
     "design_set_agent_instructions": (AgentRole.DESIGN,),

@@ -512,6 +512,8 @@ def test_real_folder_catalog_is_strict_versioned_and_provider_neutral() -> None:
         "profile:design@v3",
         # read_account_research @2 -> @3: the insights page and the committee. Nothing else moves.
         "profile:design@v4",
+        # Wave 2 Lane B: read_cited_claims@1 and design_record_site_section@1. Nothing else moves.
+        "profile:design@v5",
         "profile:head-of-abm@v1",
         # Lexical, not numeric: the folder catalog sorts by address, so v10 sits beside v1.
         "profile:head-of-abm@v10",

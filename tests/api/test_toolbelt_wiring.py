@@ -340,6 +340,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "design_write_site": ("precondition", ("design_runtime_not_configured",)),
     "design_undo_site": ("precondition", ("design_runtime_not_configured",)),
     "design_redo_site": ("precondition", ("design_runtime_not_configured",)),
+    "design_record_site_section": ("precondition", ("design_runtime_not_configured",)),
     "design_replace_scene": ("precondition", ("design_runtime_not_configured",)),
     "design_rollback_web_publish": ("precondition", ("design_runtime_not_configured",)),
     "design_set_agent_instructions": ("precondition", ("design_runtime_not_configured",)),
@@ -904,6 +905,12 @@ def _bodies() -> dict[str, dict[str, object]]:
         },
         "design_undo_site": {"document_id": "doc_matrix", "expected_base_version": 1},
         "design_redo_site": {"document_id": "doc_matrix", "expected_base_version": 1},
+        "design_record_site_section": {
+            "name": "StepsBand",
+            "source": "x",
+            "module_js": "x",
+            "css": "",
+        },
         # Round B — turn enqueues.
         "design_start_agent_turn": {
             "run_id": "run_matrix",
@@ -1485,7 +1492,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
-    assert len(registry.names()) == 148
+    # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
+    assert len(registry.names()) == 149
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1534,7 +1542,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
-    assert len(registry) == 173
+    # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
+    assert len(registry) == 174
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1582,7 +1591,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
-    assert len(registry.names()) == 148
+    # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
+    assert len(registry.names()) == 149
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1618,7 +1628,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
-    assert len(registry) == 173
+    # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
+    assert len(registry) == 174
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

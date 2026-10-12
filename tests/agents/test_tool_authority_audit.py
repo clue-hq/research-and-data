@@ -170,7 +170,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Wave 2 Lane A adds the three Puck site writes, ungranted (144 -> 147).
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address, ungranted
     # until the design profile bump (147 -> 148).
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 148
+    # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 149
     assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
@@ -193,6 +194,9 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # head-of-abm keeps the `@2` it pins.
     assert c6_roles_for_tool("read_account_research@2") == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_account_research@3") == (AgentRole.DESIGN,)
+    # Wave 2 Lane B (design@v5): the cited-claims read and the agent-section record.
+    assert C6_AGENT_TOOL_AUTHORITY["read_cited_claims"] == (AgentRole.DESIGN,)
+    assert C6_AGENT_TOOL_AUTHORITY["design_record_site_section"] == (AgentRole.DESIGN,)
     # Agent-authored discovery (2026-09-30): `read_discovery_run@3` adds the run's summary, end
     # reason and exclusions, and `head-of-abm@v70` pins it, so the grant moves to `@3`. The paged
     # `@2` stays registered for replay (recipe0-stage0@32 and earlier) and is held by nobody,
@@ -213,7 +217,6 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
         AgentRole.HEAD_OF_ABM,
         AgentRole.DESIGN,
     )
-    assert C6_AGENT_TOOL_AUTHORITY["read_cited_claims"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["read_artifact"] == (AgentRole.HEAD_OF_ABM,)
     assert c6_roles_for_tool("read_artifact@1") == (AgentRole.HEAD_OF_ABM,)
     assert C6_AGENT_TOOL_AUTHORITY["write_project_document"] == ()
@@ -280,7 +283,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
         name: roles for name, roles in C6_AGENT_TOOL_AUTHORITY.items() if name.startswith("design_")
     }
     # Wave 2 Lane A: + the three Puck site writes, ungranted (57 -> 60).
-    assert len(design_grants) == 60
+    # Wave 2 Lane B: + design_record_site_section, granted to DESIGN at design@v5 (60 -> 61).
+    assert len(design_grants) == 61
     # The Brand Ad Assets lane is MACHINE-INVOKED, on exactly the terms `synthesize_entity_prose`
     # and `synthesize_value_narrative` already established below: its onboarding job's worker
     # calls these through the design toolbelt (actor="agent"), and no model surface plans a

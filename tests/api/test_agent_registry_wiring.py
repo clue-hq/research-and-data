@@ -316,7 +316,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # does not pin it, so from this view it is role-unavailable.
     # + design_write_site@1, design_undo_site@1, design_redo_site@1, ungranted (Wave 2 Lane A)
     # + read_cited_claims@1 (2026-10-11, Lane B), ungranted until the design profile bump
-    assert len(by_address) == 173
+    # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
+    assert len(by_address) == 174
     assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["read_discovery_run@3"].status is AgentCapabilityStatus.AVAILABLE
@@ -359,6 +360,7 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
         "design_publish_brand_kit_version@1",
         "design_publish_web@1",
         "design_record_diagnostics@1",
+        "design_record_site_section@1",
         "design_redo_document@1",
         "design_redo_web_document@1",
         "design_register_asset_record@1",
@@ -440,7 +442,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # both granted at head-of-abm@v70.
     # + design_write_site@1, design_undo_site@1, design_redo_site@1, ungranted (Wave 2 Lane A)
     # + read_cited_claims@1 (2026-10-11, Lane B), ungranted until the design profile bump
-    assert len(by_address) == 173  # + read_account_research@3 (2026-10-05)
+    # Wave 2 Lane B: design_record_site_section (+1 name, +1 address)
+    assert len(by_address) == 174  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",
@@ -1047,9 +1050,9 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
     the account's research itself.
     """
     resolved = registry.resolve(AgentRole.DESIGN)
-    assert resolved.profile.version == "v4"
-    assert len(resolved.profile.tools) == 54
-    assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 49
+    assert resolved.profile.version == "v5"
+    assert len(resolved.profile.tools) == 56
+    assert sum(1 for pin in resolved.profile.tools if pin.name.startswith("design_")) == 50
     assert any(pin.address == "finish_design_leg@1" for pin in resolved.profile.tools)
     # 2026-09-19: the design agent reads the target account the way head-of-abm does.
     # `read_account_research` is pinned at `@2` — the PAGED contract head-of-abm holds since
@@ -1063,6 +1066,7 @@ def test_design_profile_resolves_with_the_full_granted_write_surface(
         "read_account_research@3",
         "read_claims@1",
         "web_search@1",
+        "read_cited_claims@1",
     ):
         assert any(pin.address == address for pin in resolved.profile.tools), address
 
