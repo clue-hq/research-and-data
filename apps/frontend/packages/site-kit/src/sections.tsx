@@ -1,12 +1,18 @@
-// Our own sections. Every style choice is a brand-token choice (surface, heading role, button
-// variant); there are no free colours or pixel values, so a page stays on brand however it is
-// edited. Text fields are `contentEditable`, so they edit in place on the canvas.
+// Our own sections (Wave 2 A9). Every style choice is a name from the brand kit — a surface, a
+// heading role, a button style — and every value is the kit's: the theme (theme.ts) draws buttons,
+// links, type colours, spacing and rules from its measured tokens. No style value lives in this file
+// (test/style-literals.test.ts). Text fields are `contentEditable`, so they edit in place on the canvas.
 import type { ComponentConfig } from "@puckeditor/core";
 import type { ReactNode } from "react";
 import type { BrandData } from "./brand";
-import { HEADING_ROLES, SURFACES, SURFACE_LABELS } from "./schemas";
+import { buttonLookOptions, lookIcon, lookNamed } from "./looks";
+import { HEADING_ROLES } from "./schemas";
+import { surfaceChoices } from "./surfaces";
 
 export type Surface = "page" | "card" | "muted" | "brandSubtle" | "brand" | "inverse";
+/** One of our six, or one of this brand's other surfaces by its choice name. A plain string: Puck's
+ * render props (WithDeepSlots) map the `string & {}` of `Surface | (string & {})` to an object type. */
+export type AnySurface = string;
 export type HeadingRole = "display" | "headline" | "title";
 type Text = string | ReactNode;
 
@@ -19,17 +25,16 @@ export const SURFACE_CLASS: Record<Surface, string> = {
   inverse: "bg-surface-inverse text-on-surface-inverse",
 };
 
+export function surfaceClass(surface: AnySurface): string {
+  return SURFACE_CLASS[surface as Surface] ?? `bg-surface-${surface} text-on-surface-${surface}`;
+}
+
 const HEADING_CLASS: Record<HeadingRole, string> = {
-  display: "font-display text-display",
-  headline: "font-headline text-headline",
-  title: "font-title text-title",
+  display: "font-display text-display brand-ink-display",
+  headline: "font-headline text-headline brand-ink-headline",
+  title: "font-title text-title brand-ink-title",
 };
 
-const surfaceField = {
-  type: "select" as const,
-  label: "Surface",
-  options: SURFACES.map((value) => ({ label: SURFACE_LABELS[value], value })),
-};
 const headingRoleField = {
   type: "select" as const,
   label: "Heading size",
@@ -38,21 +43,37 @@ const headingRoleField = {
 const text = (label: string) => ({ type: "text" as const, label, contentEditable: true });
 const area = (label: string) => ({ type: "textarea" as const, label, contentEditable: true });
 
-export const Shell = ({ surface, children }: { surface: Surface; children: ReactNode }) => (
-  <section className={SURFACE_CLASS[surface]}>
-    <div className="mx-auto max-w-[75rem] px-6 py-16 md:px-10 md:py-24">{children}</div>
+export const Shell = ({ surface, children }: { surface: AnySurface; children: ReactNode }) => (
+  <section className={surfaceClass(surface)}>
+    <div className="brand-content px-page-margin py-section">{children}</div>
   </section>
 );
 
 export const Eyebrow = ({ children }: { children: Text }) =>
-  children ? <p className="font-eyebrow text-eyebrow uppercase opacity-80">{children}</p> : null;
+  children ? <p className="font-eyebrow text-eyebrow brand-ink-eyebrow">{children}</p> : null;
 
-export function Button({ label, href, surface }: { label: Text; href: string; surface: Surface }) {
+/** The kit's standard button, or one of the brand's looks by name, with that look's own icon. */
+export function Button({ brand, label, href, surface, look, disabled }: {
+  brand: BrandData; label: Text; href: string; surface: AnySurface; look?: string; disabled?: boolean;
+}) {
   if (!label) return null;
+  const chosen = lookNamed(brand, "button", look);
+  const icon = lookIcon(brand, chosen);
+  const mark = icon
+    ? icon.svg
+      ? <span aria-hidden className="brand-btn-icon" dangerouslySetInnerHTML={{ __html: icon.svg }} />
+      : <span aria-hidden className="brand-btn-icon">{icon.glyph}</span>
+    : null;
   return (
-    <a href={href || "#"} className="brand-btn" data-surface={surface}>
-      {label}
-      <span aria-hidden>→</span>
+    <a
+      href={disabled ? undefined : href || "#"}
+      aria-disabled={disabled || undefined}
+      className={chosen ? `brand-btn brand-look-${chosen.index}` : "brand-btn"}
+      data-surface={surface}
+    >
+      {icon?.position === "start" ? mark : null}
+      <span className="brand-btn-label">{label}</span>
+      {icon?.position === "end" ? mark : null}
     </a>
   );
 }
@@ -70,9 +91,17 @@ export function makeSections(
     render: ({ value, onChange }: { value: string; onChange: (v: string) => void }) =>
       AssetPicker ? <AssetPicker assets={brand.assets} value={value} onChange={onChange} /> : <span />,
   };
+  const surfaceField = {
+    type: "select" as const,
+    label: "Surface",
+    options: surfaceChoices(brand).map((choice) => ({ label: choice.label, value: choice.value })),
+  };
+  const lookOptions = buttonLookOptions(brand);
+  /** Left out when the brand has no button styles: there would be nothing to choose. */
+  const buttonLookField = lookOptions.length > 1 ? { buttonLook: { type: "select" as const, label: "Button style", options: lookOptions } } : {};
 
   const StatsBand: ComponentConfig<{
-    surface: Surface; align: "left" | "center"; eyebrow: Text; heading: Text; intro: Text;
+    surface: AnySurface; align: "left" | "center"; eyebrow: Text; heading: Text; intro: Text;
     stats: { value: string; label: string }[]; source: Text;
   }> = {
     label: "Stats band",
@@ -98,51 +127,53 @@ export function makeSections(
         <Shell surface={surface}>
           <div className={centered ? "mx-auto text-center [&>*]:mx-auto" : ""}>
             <Eyebrow>{eyebrow}</Eyebrow>
-            <h2 className="brand-heading mt-3 max-w-[24ch] font-title text-title">{heading}</h2>
-            {intro ? <p className="mt-5 max-w-[60ch] font-body text-body opacity-85">{intro}</p> : null}
+            <h2 className="mt-stack-tight max-w-[24ch] font-title text-title brand-ink-title">{heading}</h2>
+            {intro ? <p className="mt-stack-default max-w-[60ch] font-body text-body brand-ink-body">{intro}</p> : null}
           </div>
-          <dl className={`mt-12 grid gap-8 ${columns} ${centered ? "text-center [&_dd]:mx-auto" : ""}`}>
+          <dl className={`mt-stack-loose grid gap-stack-loose ${columns} ${centered ? "text-center [&_dd]:mx-auto" : ""}`}>
             {stats.map((stat, index) => (
-              <div key={index} className="border-t border-current/20 pt-6">
-                <dt className="brand-heading font-headline text-headline">{stat.value}</dt>
-                <dd className="mt-3 max-w-[32ch] font-body text-body opacity-85">{stat.label}</dd>
+              <div key={index} className="brand-rule-t pt-stack-default">
+                <dt className="font-headline text-headline brand-ink-headline">{stat.value}</dt>
+                <dd className="mt-stack-tight max-w-[32ch] font-body text-body brand-ink-body">{stat.label}</dd>
               </div>
             ))}
           </dl>
-          {source ? <p className={`mt-10 font-caption text-caption opacity-70 ${centered ? "text-center" : ""}`}>{source}</p> : null}
+          {source ? <p className={`mt-stack-loose font-caption text-caption brand-ink-caption ${centered ? "text-center" : ""}`}>{source}</p> : null}
         </Shell>
       );
     },
   };
 
   const FeatureSplit: ComponentConfig<{
-    surface: Surface; eyebrow: Text; heading: Text; headingRole: HeadingRole; body: Text;
-    image: string; imageSide: "left" | "right"; buttonLabel: Text; buttonHref: string;
+    surface: AnySurface; eyebrow: Text; heading: Text; headingRole: HeadingRole; body: Text;
+    image: string; imageSide: "left" | "right"; buttonLabel: Text; buttonHref: string; buttonLook: string;
   }> = {
     label: "Feature split",
     fields: {
       surface: surfaceField, eyebrow: text("Eyebrow"), heading: text("Heading"),
       headingRole: headingRoleField, body: area("Body"), image: imageField,
       imageSide: { type: "radio", label: "Image side", options: [{ label: "Left", value: "left" }, { label: "Right", value: "right" }] },
-      buttonLabel: text("Button label"), buttonHref: { type: "text", label: "Button link" },
+      buttonLabel: text("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
     } as never,
     defaultProps: {
       surface: "page", eyebrow: "", heading: "What this does for them", headingRole: "title",
-      body: "One or two plain sentences.", image: "", imageSide: "left", buttonLabel: "", buttonHref: "",
+      body: "One or two plain sentences.", image: "", imageSide: "left", buttonLabel: "", buttonHref: "", buttonLook: "",
     },
-    render: ({ surface, eyebrow, heading, headingRole, body, image, imageSide, buttonLabel, buttonHref }) => (
+    render: ({ surface, eyebrow, heading, headingRole, body, image, imageSide, buttonLabel, buttonHref, buttonLook }) => (
       <Shell surface={surface}>
         {/* No image: one text column, not an empty frame beside the words. */}
-        <div className={image ? "grid items-center gap-10 md:grid-cols-2 md:gap-16" : "max-w-[60ch]"}>
+        <div className={image ? "grid items-center gap-stack-loose md:grid-cols-2" : "max-w-[60ch]"}>
           {image ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={image} alt="" className={`w-full rounded-card object-cover ${imageSide === "right" ? "md:order-2" : ""}`} />
           ) : null}
           <div>
             <Eyebrow>{eyebrow}</Eyebrow>
-            <h2 className={`brand-heading mt-3 ${HEADING_CLASS[headingRole]}`}>{heading}</h2>
-            <p className="mt-5 max-w-[52ch] font-body text-body opacity-85">{body}</p>
-            <div className="mt-8"><Button label={buttonLabel} href={href(buttonHref)} surface={surface} /></div>
+            <h2 className={`mt-stack-tight ${HEADING_CLASS[headingRole]}`}>{heading}</h2>
+            <p className="mt-stack-default max-w-[52ch] font-body text-body brand-ink-body">{body}</p>
+            <div className="mt-stack-loose">
+              <Button brand={brand} label={buttonLabel} href={href(buttonHref)} surface={surface} look={buttonLook} />
+            </div>
           </div>
         </div>
       </Shell>
@@ -150,7 +181,7 @@ export function makeSections(
   };
 
   const ProofCard: ComponentConfig<{
-    surface: Surface; kicker: Text; metric: Text; metricLabel: Text; heading: Text; body: Text;
+    surface: AnySurface; kicker: Text; metric: Text; metricLabel: Text; heading: Text; body: Text;
     source: Text; linkLabel: Text; linkHref: string;
   }> = {
     label: "Proof card",
@@ -165,18 +196,18 @@ export function makeSections(
     },
     render: ({ surface, kicker, metric, metricLabel, heading, body, source, linkLabel, linkHref }) => (
       <Shell surface="page">
-        <div className={`grid gap-10 rounded-card p-8 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:p-14 ${SURFACE_CLASS[surface]}`}>
+        <div className={`grid gap-stack-loose rounded-card p-card-padding md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] ${surfaceClass(surface)}`}>
           <div>
             <Eyebrow>{kicker}</Eyebrow>
-            <p className="brand-heading mt-4 font-display text-display">{metric}</p>
-            <p className="mt-2 font-body text-body opacity-85">{metricLabel}</p>
+            <p className="mt-stack-default font-display text-display brand-ink-display">{metric}</p>
+            <p className="mt-stack-tight font-body text-body brand-ink-body">{metricLabel}</p>
           </div>
           <div className="self-end">
-            <h3 className="brand-heading font-title text-title">{heading}</h3>
-            {body ? <p className="mt-5 font-body text-body opacity-85">{body}</p> : null}
-            {source ? <p className="mt-6 font-caption text-caption opacity-70">{source}</p> : null}
+            <h3 className="font-title text-title brand-ink-title">{heading}</h3>
+            {body ? <p className="mt-stack-default font-body text-body brand-ink-body">{body}</p> : null}
+            {source ? <p className="mt-stack-default font-caption text-caption brand-ink-caption">{source}</p> : null}
             {linkLabel ? (
-              <a href={href(linkHref) || "#"} className="mt-6 inline-block font-cta text-cta underline underline-offset-4">{linkLabel}</a>
+              <a href={href(linkHref) || "#"} className="brand-link mt-stack-default inline-block font-cta text-cta">{linkLabel}</a>
             ) : null}
           </div>
         </div>
@@ -185,20 +216,22 @@ export function makeSections(
   };
 
   const CtaBand: ComponentConfig<{
-    surface: Surface; heading: Text; body: Text; buttonLabel: Text; buttonHref: string;
+    surface: AnySurface; heading: Text; body: Text; buttonLabel: Text; buttonHref: string; buttonLook: string;
   }> = {
     label: "Call to action band",
     fields: {
       surface: surfaceField, heading: text("Heading"), body: area("Body"),
-      buttonLabel: text("Button label"), buttonHref: { type: "text", label: "Button link" },
+      buttonLabel: text("Button label"), buttonHref: { type: "text", label: "Button link" }, ...buttonLookField,
     } as never,
-    defaultProps: { surface: "brand", heading: "The one next step", body: "", buttonLabel: "Get started", buttonHref: "" },
-    render: ({ surface, heading, body, buttonLabel, buttonHref }) => (
+    defaultProps: { surface: "brand", heading: "The one next step", body: "", buttonLabel: "Get started", buttonHref: "", buttonLook: "" },
+    render: ({ surface, heading, body, buttonLabel, buttonHref, buttonLook }) => (
       <Shell surface={surface}>
-        <div className="mx-auto max-w-[44rem] text-center">
-          <h2 className="brand-heading font-headline text-headline">{heading}</h2>
-          {body ? <p className="mt-5 font-body text-body opacity-85">{body}</p> : null}
-          <div className="mt-8"><Button label={buttonLabel} href={href(buttonHref)} surface={surface} /></div>
+        <div className="mx-auto max-w-[60ch] text-center">
+          <h2 className="font-headline text-headline brand-ink-headline">{heading}</h2>
+          {body ? <p className="mt-stack-default font-body text-body brand-ink-body">{body}</p> : null}
+          <div className="mt-stack-loose">
+            <Button brand={brand} label={buttonLabel} href={href(buttonHref)} surface={surface} look={buttonLook} />
+          </div>
         </div>
       </Shell>
     ),

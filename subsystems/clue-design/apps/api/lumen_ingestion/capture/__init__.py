@@ -206,6 +206,7 @@ async def capture_website(
             force_render=force_render,
             render_available=render_available,
             fetched_at=fetched_at,
+            measure_states=True,
         )
         diagnostics.record(entry.diagnostics)
         snapshots = [entry.snapshot]
@@ -313,6 +314,7 @@ async def _capture_page(
     force_render: bool,
     render_available: bool,
     fetched_at: str,
+    measure_states: bool = False,
 ) -> _PageCapture:
     """One page through the tiered walk: static → quality gate → rendered.
 
@@ -330,7 +332,9 @@ async def _capture_page(
     if force_render:
         from .rendered import fetch_rendered
 
-        snapshot = await fetch_rendered(url, fetcher, reporter, fetched_at=fetched_at)
+        snapshot = await fetch_rendered(
+            url, fetcher, reporter, fetched_at=fetched_at, measure_states=measure_states
+        )
         diagnostics.record(fetcher.diagnostics[before:])
         diagnostics.record(snapshot.diagnostics)
         return _PageCapture(snapshot, "rendered", False, None, diagnostics.entries)
@@ -366,7 +370,9 @@ async def _capture_page(
     )
     from .rendered import fetch_rendered
 
-    rendered_snapshot = await fetch_rendered(url, fetcher, reporter, fetched_at=fetched_at)
+    rendered_snapshot = await fetch_rendered(
+        url, fetcher, reporter, fetched_at=fetched_at, measure_states=measure_states
+    )
     diagnostics.record(fetcher.diagnostics[after_static:])
     diagnostics.record(rendered_snapshot.diagnostics)
     return _PageCapture(rendered_snapshot, "rendered", True, reason, diagnostics.entries)

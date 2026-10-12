@@ -20,6 +20,9 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
+import type { BrandData } from "./brand";
+import { buttonLooks, cardLooks, motionClassNames } from "./looks";
+import { COLOR_ROLES, SURFACES as THEME_SURFACES, colorVar, extraSurfaceRoles } from "./theme";
 
 const ALLOWED_IMPORTS = new Set(["zod", "react", "@/puck/agent-kit"]);
 const PALETTE =
@@ -32,6 +35,71 @@ const RULES: { pattern: RegExp; why: string }[] = [
   { pattern: /^font-(sans|serif|mono|thin|extralight|light|normal|medium|semibold|bold|extrabold|black)$/, why: "a Tailwind font or weight; use a brand type role (font-title, font-body…)" },
   { pattern: /^(text|bg|border|fill|stroke|ring|outline|decoration|font|leading|tracking|rounded|shadow|from|via|to)-\[/, why: "a custom colour, type or corner value; use the brand's tokens" },
 ];
+
+/** A colour class in the brand's own namespaces (text-ink-*, bg-surface-*, text-on-surface-*,
+ * border-line-*, ring-focus). Its name must be one the theme defines: issue 49's
+ * border-line-inverse and bg-surface-brandSubtle exist nowhere and render unstyled. */
+const BRAND_COLOUR_CLASS = new RegExp(`^(?:${COLOUR_UTILITY})-((?:ink|surface|on-surface|line)(?:-[A-Za-z0-9-]+)?|focus)$`);
+
+export const LINK_REFUSAL =
+  "<a> is not allowed in a section; write links with kit.Link (or kit.Button for a button) so they reach the right page wherever the site is published";
+
+/** What the brand has, so a section is checked against it (B6 passes lintOptionsFor(brand)).
+ * Without a brand only the brand-independent rules run. */
+export type LintOptions = { extraSurfaces?: string[]; buttonLooks?: string[]; cardLooks?: string[]; motions?: string[] };
+
+export function lintOptionsFor(brand: BrandData): LintOptions {
+  return {
+    extraSurfaces: extraSurfaceRoles(brand),
+    buttonLooks: buttonLooks(brand).map((look) => look.name),
+    cardLooks: cardLooks(brand).map((look) => look.name),
+    motions: motionClassNames(brand),
+  };
+}
+
+function brandColourNames(extraSurfaces: string[]): Set<string> {
+  const names = new Set<string>(COLOR_ROLES.map(colorVar));
+  for (const surface of [...THEME_SURFACES, ...extraSurfaces]) {
+    names.add(colorVar(surface));
+    names.add(`on-${colorVar(surface)}`);
+  }
+  return names;
+}
+
+const STATE_VARIANT = /^(hover|focus|focus-visible|focus-within|active|group-hover|group-focus|peer-hover|peer-focus)$/;
+const MOTION_UTILITY = /^(transition(-[a-z]+)?|duration-.+|ease-.+|delay-.+|animate-.+)$/;
+const STATE_MOTION = /^-?(translate|scale|rotate|skew)(-[xy])?-|^(opacity|shadow|blur|brightness|contrast|saturate|drop-shadow)(-|$)/;
+
+/** The text of every string inside a className attribute: `className="…"`, ``className={`… ${x}`}``,
+ * `className={["a", cond && "b"].join(" ")}`. These strings are classes; a section's other
+ * strings (a schema's description, a default heading) are prose and never count as classes. */
+function classNameStrings(source: string): string[] {
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const strings: string[] = [];
+  const collect = (node: ts.Node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+      strings.push(node.text);
+    }
+    ts.forEachChild(node, collect);
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxAttribute(node) && node.name.getText(file) === "className") {
+      if (node.initializer) collect(node.initializer);
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return strings;
+}
+
+/** Class tokens with their variants (`group-hover:-translate-y-1` → variants ["group-hover"]). */
+function variantTokens(strings: string[]): { token: string; base: string; variants: string[] }[] {
+  return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((token) => {
+    const parts = token.split(":");
+    return { token, base: parts[parts.length - 1], variants: parts.slice(0, -1) };
+  });
+}
 
 // D2 spike (Task 4): names a section may not use, wherever they appear in its code (a variable, a
 // property such as document.cookie, an object key). Read from the syntax tree, so the words in a
@@ -71,6 +139,7 @@ function bannedNames(source: string): string[] {
       const name = node.name.getText(file).replace(/^["'`]|["'`]$/g, "");
       if (/^on[A-Z]/.test(name)) add(`"${name}" is an event handler; a section is static`);
     }
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(file) === "a") add(LINK_REFUSAL);
     ts.forEachChild(node, visit);
   };
   visit(file);
@@ -82,7 +151,7 @@ function classTokens(source: string): string[] {
   return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((t) => t.split(":").pop() ?? t);
 }
 
-export function lint(source: string): string[] {
+export function lint(source: string, options: LintOptions = {}): string[] {
   const errors: string[] = [];
   for (const m of source.matchAll(/import\s+(?:type\s+)?[^"']*from\s+["']([^"']+)["']/g)) {
     if (!ALLOWED_IMPORTS.has(m[1])) errors.push(`import "${m[1]}" is not allowed; a section imports only zod, react types and @/puck/agent-kit`);
@@ -100,9 +169,38 @@ export function lint(source: string): string[] {
       }
     }
   }
+  const known = brandColourNames(options.extraSurfaces ?? []);
+  for (const token of classTokens(source)) {
+    const bare = token.replace(/^!/, "").replace(/\/\d+$/, "");
+    const match = BRAND_COLOUR_CLASS.exec(bare);
+    if (match && !known.has(match[1]) && !seen.has(token)) {
+      seen.add(token);
+      errors.push(`class "${token}" is not one of the brand's classes; the brand's colour classes are text-ink-*, bg-surface-*, text-on-surface-* and border-line-* (see brand/brand.md)`);
+    }
+  }
   errors.push(...bannedNames(source));
   if (!/export\s+const\s+schema\b/.test(source)) errors.push("the file must export `schema` (a zod object of the section's props)");
   if (!/export\s+function\s+render\b/.test(source)) errors.push("the file must export `function render(props, kit)`");
+  for (const { token, base, variants } of variantTokens(classNameStrings(source))) {
+    if (seen.has(token)) continue;
+    const ownMotion = MOTION_UTILITY.test(base) || (variants.some((v) => STATE_VARIANT.test(v)) && STATE_MOTION.test(base));
+    if (ownMotion) {
+      seen.add(token);
+      errors.push(`class "${token}" is motion of your own; motion comes from the brand: kit.Button, kit.Link and kit.Card carry it, and a class from brand/brand.md (Motion) adds it to an element`);
+    } else if (options.motions && /^brand-motion-/.test(base) && !options.motions.includes(base)) {
+      seen.add(token);
+      errors.push(`class "${token}" is not one of this brand's motion classes; its motion classes are ${options.motions.join(", ") || "none"} (brand/brand.md, Motion)`);
+    }
+  }
+  for (const m of source.matchAll(/<kit\.(Button|Card)\b[^>]*?\blook=["']([^"']+)["']/g)) {
+    const [, component, look] = m;
+    const known = component === "Button" ? options.buttonLooks : options.cardLooks;
+    if (known && !known.includes(look)) {
+      errors.push(component === "Button"
+        ? `look "${look}" on kit.Button is not one of this brand's button styles; the styles are ${known.join(", ") || "none"} (brand/brand.md, Buttons)`
+        : `look "${look}" on kit.Card is not one of this brand's card styles; the styles are ${known.join(", ") || "none"} (brand/brand.md, Cards)`);
+    }
+  }
   return errors;
 }
 

@@ -21,18 +21,30 @@ normalizer then keeps today's derived scale, honestly labelled.
 
 from __future__ import annotations
 
+import hashlib
 import math
+import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from ..colorspace import hex_alpha
 from ..evidence import (
     EvidencePointer,
     GeometryEvidence,
+    MeasuredAnimation,
+    MeasuredReveal,
+    MeasuredStyle,
+    MotionEvidence,
     NumberSample,
+    ScriptedMotion,
     SectionBackground,
     ShadowSample,
+    StyleIcon,
+    StyleLook,
+    StyleTransition,
     SurfaceShape,
 )
+from .motion import clean_icon_svg
 from .parse import parse_color_value
 
 # Surfaces above this radius are read as "pill / fully round", never as a scale
@@ -43,6 +55,15 @@ _MAX_STROKE_PX = 12.0
 # Spacing values outside this band are page-layout accidents, not rhythm.
 _MIN_SPACING_PX = 2.0
 _MAX_SPACING_PX = 320.0
+#: Text links and navigation items (Wave 2 A9). Measured for their states and motion only: they add
+#: no number samples (the kit's scales stay what they were) and no shape records (the brief agent's
+#: evidence stays what it was).
+STYLE_ONLY_SURFACES = ("link", "nav_link")
+#: The classes whose styles the state pass measures, and how many styles of each it tries. Buttons
+#: carry the looks the agent chooses from, so they get the most; the rest are drawn by the kit.
+STATE_TARGET_CAPS = {"button": 10, "link": 2, "nav_link": 2, "card": 4, "chip": 2, "input": 2, "image": 2}
+#: Elements of one style tried before its states are given up (the first may be covered).
+_CANDIDATES_PER_STYLE = 3
 
 
 # The browser-side probe. One expression, evaluated in the page; every number it
@@ -117,6 +138,7 @@ GEOMETRY_JS = r"""
       bgImage: notNone(cs.backgroundImage),
       color: cs.color || null,
       font: cs.fontWeight + ' ' + cs.fontSize + '/' + cs.lineHeight + ' ' + cs.fontFamily,
+      disabled: el.matches(':disabled, [aria-disabled="true"]'),
     };
   };
 
@@ -135,7 +157,15 @@ GEOMETRY_JS = r"""
     ['nav', 'nav, header, footer'],
     ['divider', 'hr, [role="separator"], [class*="divider"], [class*="Divider"]'],
     ['image', 'img, picture, figure'],
+    ['nav_link', 'nav a[href], header a[href]'],
+    ['link', 'a[href]'],
   ];
+  // Text links and navigation items (Wave 2 A9): a link is an anchor with words outside the page
+  // chrome; a nav item is one inside it. Both are measured for their states and motion only.
+  const FILTERS = {
+    nav_link: (el) => !!(el.textContent || '').trim(),
+    link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer'),
+  };
 
   const seen = new Set();
   const surfaces = [];
@@ -146,10 +176,15 @@ GEOMETRY_JS = r"""
     for (const el of nodes) {
       if (taken >= MAX_PER_CLASS || surfaces.length >= MAX_SURFACES) break;
       if (seen.has(el)) continue;
+      if (FILTERS[cls] && !FILTERS[cls](el)) continue;
       seen.add(el);
       const entry = record(el, cls);
       if (!entry) continue;
+      entry.idx = surfaces.length;
       surfaces.push(entry);
+      // Marked for the state pass (capture/states.py). This probe runs after the screenshot and the
+      // captured HTML, so the mark is never part of what was captured.
+      try { el.setAttribute('data-lumen-probe', String(entry.idx)); } catch (e) { /* an element that refuses attributes */ }
       taken += 1;
     }
   }
@@ -179,6 +214,18 @@ GEOMETRY_JS = r"""
       if (bottom === null || t + r.height > bottom) bottom = t + r.height;
     }
     return (top === null) ? null : [top, bottom];
+  };
+
+  // The text colour a band carries (Wave 2 A9): its first visible heading or paragraph, so a minted
+  // band surface can say what text the seller put on it.
+  const inkOf = (el) => {
+    const nodes = Array.from(el.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, blockquote')).slice(0, 40);
+    for (const node of nodes) {
+      const r = node.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0 || !(node.textContent || '').trim()) continue;
+      return opaque(getComputedStyle(node).color);
+    }
+    return null;
   };
 
   const sections = [];
@@ -221,6 +268,7 @@ GEOMETRY_JS = r"""
       top: r2(top),
       bg: effectiveBg(el),
       bgImage: bgImage,
+      ink: inkOf(el),
       gradient: bgImage ? /gradient\(/i.test(bgImage) : false,
       height: r2(rect.height),
       padding: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft]
@@ -298,6 +346,30 @@ GEOMETRY_JS = r"""
     initialFontPx = num(getComputedStyle(fontProbe).fontSize) || null;
   } finally { fontProbe.remove(); }
 
+  // CSS animations running on the page (Wave 2 A9): one entry per distinct animation, bounded. The
+  // @keyframes bodies are read from the captured stylesheets in Python (capture/motion.py), which
+  // also holds the cross-origin sheets the CSSOM will not show.
+  const MAX_ANIMATIONS = 12;
+  const animations = new Map();
+  for (const el of Array.from(document.querySelectorAll('body *')).slice(0, 6000)) {
+    if (animations.size >= MAX_ANIMATIONS) break;
+    const cs = getComputedStyle(el);
+    if (!cs.animationName || cs.animationName === 'none') continue;
+    const key = [cs.animationName, cs.animationDuration, cs.animationTimingFunction,
+      cs.animationIterationCount, cs.animationDirection].join('|');
+    const found = animations.get(key);
+    if (found) { found.count += 1; continue; }
+    const cls = el.getAttribute('class');
+    animations.set(key, {
+      name: cs.animationName.slice(0, 120), duration: cs.animationDuration,
+      easing: cs.animationTimingFunction.slice(0, 120), delay: cs.animationDelay,
+      iterations: cs.animationIterationCount, direction: cs.animationDirection, fill: cs.animationFillMode,
+      where: (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')
+        + (cls ? '.' + String(cls).trim().split(/\s+/)[0] : '')).slice(0, 120),
+      count: 1,
+    });
+  }
+
   return {
     initial_font_px: initialFontPx,
     root_font_px: num(getComputedStyle(document.documentElement).fontSize),
@@ -310,6 +382,7 @@ GEOMETRY_JS = r"""
     gaps: gaps,
     rhythm: rhythm,
     focus: focus,
+    animations: Array.from(animations.values()),
   };
 }
 """
@@ -335,6 +408,8 @@ class GeometryHarvest:
     shadows: list[ShadowSample] = field(default_factory=list)
     surfaces: list[SurfaceShape] = field(default_factory=list)
     background_sequence: list[SectionBackground] = field(default_factory=list)
+    styles: list[MeasuredStyle] = field(default_factory=list)
+    motion: MotionEvidence = field(default_factory=MotionEvidence)
     diagnostics: list[dict] = field(default_factory=list)
 
     @property
@@ -345,6 +420,8 @@ class GeometryHarvest:
         return GeometryEvidence(
             surfaces=list(self.surfaces),
             background_sequence=list(self.background_sequence),
+            styles=list(self.styles),
+            motion=self.motion,
         )
 
 
@@ -375,6 +452,16 @@ def parse_geometry(raw: object, *, page_url: str) -> GeometryHarvest:
         harvest.diagnostics.append(_diag(f"geometry harvest could not be read: {error}"))
         return GeometryHarvest(diagnostics=harvest.diagnostics)
 
+    # Measured styles and motion (Wave 2 A9) in their own guard: a malformed state record costs
+    # these, never the shapes and scales above.
+    try:
+        states = raw.get("states") if isinstance(raw.get("states"), dict) else None
+        harvest.styles = measured_styles(surfaces, states, url)
+        harvest.motion = measured_motion(raw, url)
+    except Exception as error:  # noqa: BLE001 — measurement must never fail an ingest
+        harvest.styles, harvest.motion = [], MotionEvidence()
+        harvest.diagnostics.append(_diag(f"measured styles could not be read: {error}"))
+
     return harvest
 
 
@@ -383,6 +470,8 @@ def parse_geometry(raw: object, *, page_url: str) -> GeometryHarvest:
 
 def _read_surface(entry: dict, url: str, harvest: GeometryHarvest) -> None:
     cls = str(entry.get("cls") or "surface")
+    if cls in STYLE_ONLY_SURFACES:
+        return
     pointer_for = lambda what: _pointer(url, what)  # noqa: E731 — one-line locator helper
 
     # Radii: distinct corner values, so a uniformly-rounded card contributes one
@@ -509,6 +598,7 @@ def _read_sections(
                 background=_hex(entry.get("bg")),
                 gradient=bool(entry.get("gradient")),
                 has_image=bool(entry.get("bgImage")),
+                ink=_opaque_hex(entry.get("ink")),
                 height_px=_float(entry.get("height")),
                 pointer=_pointer(url, f"section {index} ({entry.get('tag') or 'div'})"),
             )
@@ -547,7 +637,8 @@ def _read_rhythm(rhythm: list, url: str, harvest: GeometryHarvest) -> None:
 
 
 def _read_focus(focus: list[dict], url: str, harvest: GeometryHarvest) -> None:
-    for index, entry in enumerate(focus):
+    rings: dict[tuple, tuple[float, str, str | None, str | None]] = {}
+    for entry in focus:
         width = _float(entry.get("outlineWidth"))
         style = str(entry.get("outlineStyle") or "none").lower()
         if style in ("none", "hidden") or not 0 < width <= _MAX_STROKE_PX:
@@ -560,15 +651,21 @@ def _read_focus(focus: list[dict], url: str, harvest: GeometryHarvest) -> None:
                 pointer=_pointer(url, "focus ring outline-width"),
             )
         )
+        colour, shadow = _hex(entry.get("outlineColor")), _text(entry.get("shadow"))
+        # One record per distinct ring (two focusable elements with the same ring were two records
+        # with two numbers before; one name now means one look — founder Q-A9-6).
+        rings.setdefault(("focus_ring", "outline", width, style, shadow, colour), (width, style, colour, shadow))
+    names = look_names(list(rings))
+    for key, (width, style, colour, shadow) in rings.items():
         harvest.surfaces.append(
             SurfaceShape(
                 surface="focus_ring",
-                variant=f"outline.{index + 1}",
+                variant=names[key],
                 fill="ghost",
                 border_width_px=[width],
                 border_style=style,
-                border_color=_hex(entry.get("outlineColor")),
-                shadow=_text(entry.get("shadow")),
+                border_color=colour,
+                shadow=shadow,
                 pointer=_pointer(url, "focus ring"),
             )
         )
@@ -579,6 +676,95 @@ def _read_focus(focus: list[dict], url: str, harvest: GeometryHarvest) -> None:
 _SHAPE_SURFACES = ("button", "card", "input", "chip", "nav", "divider", "image")
 
 
+def _identity_colour(entry: dict, fill: str) -> str | None:
+    """The colour a look is told by: a filled look's fill, an outline's border, a text-only look's text."""
+    if fill == "solid":
+        return _hex(entry.get("bg"))
+    if fill == "outline":
+        return _hex(entry.get("borderColor"))
+    return _hex(entry.get("color"))
+
+
+def shape_key(entry: dict) -> tuple:
+    """The one grouping key: fill kind, corners, border weight, shadow, background, and the colour the
+    look is told by (founder Q-A9-6: an outline's border colour and a text-only look's text colour
+    make it another look)."""
+    radius = _numbers(entry.get("radius"))
+    border = _numbers(entry.get("border"))
+    bg = _hex(entry.get("bg"))
+    style = str(entry.get("borderStyle") or "none").lower()
+    has_border = style not in ("none", "hidden") and any(v > 0 for v in border)
+    fill = "solid" if bg else ("outline" if has_border else "ghost")
+    return (
+        str(entry.get("cls") or ""), fill, tuple(radius), bool(entry.get("pill")), tuple(border),
+        _text(entry.get("shadow")), bg, _identity_colour(entry, fill),
+    )
+
+
+def variant_base(fill: str, colour: str | None) -> str:
+    """`<fill>.<hex>`: a look's name from the colour it is told by (`solid.047464`)."""
+    return f"{fill}.{colour.lstrip('#').lower() if colour else 'none'}"
+
+
+def _key_digest(key: tuple, width: int) -> str:
+    return hashlib.sha1(_order_key(key).encode()).hexdigest()[:width]
+
+
+def look_names(keys: list[tuple]) -> dict[tuple, str]:
+    """Each look's stable name, by its grouping key (`(cls, fill, …, colour)`; founder Q-A9-6).
+
+    `<fill>.<hex>`, plus `.<4 hex>` of the whole key when two looks of one class share it (12 hex in
+    the 1-in-65,536 case where two 4-hex suffixes collide). Never a rank, a count or a page order.
+    """
+    bases = {key: variant_base(key[1], key[-1]) for key in keys}
+    shared = Counter((key[0], base) for key, base in bases.items())
+    names = {
+        key: base if shared[(key[0], base)] == 1 else f"{base}.{_key_digest(key, 4)}"
+        for key, base in bases.items()
+    }
+    taken = Counter((key[0], name) for key, name in names.items())
+    return {
+        key: f"{bases[key]}.{_key_digest(key, 12)}" if taken[(key[0], name)] > 1 else name
+        for key, name in names.items()
+    }
+
+
+def shape_groups(surfaces: list[dict], classes: tuple[str, ...]) -> list[tuple[str, list[dict]]]:
+    """`(variant, members)` per look of `classes`, most used first (ties in key order).
+
+    The variant is the look's stable name (`look_names`) — the name the brief's recipes, the
+    measured styles and the minted tokens use. The order decides only which styles the state pass
+    tries first and the order of the brief's evidence, never a name. `members[0]` is the first element
+    measured with that look.
+    """
+    groups: dict[tuple, list[dict]] = {}
+    for entry in surfaces:
+        if str(entry.get("cls") or "") in classes:
+            groups.setdefault(shape_key(entry), []).append(entry)
+    names = look_names(list(groups))
+    ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), _order_key(item[0])))
+    return [(names[key], members) for key, members in ordered]
+
+
+def state_targets(surfaces: list[dict]) -> list[tuple[tuple[str, str], list[int]]]:
+    """The styles the state pass measures, buttons first, and the elements to try for each."""
+    taken: dict[str, int] = {}
+    targets: list[tuple[tuple[str, str], list[int]]] = []
+    for variant, members in shape_groups(surfaces, tuple(STATE_TARGET_CAPS)):
+        cls = str(members[0].get("cls") or "")
+        if taken.get(cls, 0) >= STATE_TARGET_CAPS[cls]:
+            continue
+        usable = [m for m in members if isinstance(m.get("idx"), int)]
+        usable.sort(key=lambda m: bool(m.get("disabled")))  # an enabled element first
+        candidates = [int(m["idx"]) for m in usable][:_CANDIDATES_PER_STYLE]
+        if candidates:
+            taken[cls] = taken.get(cls, 0) + 1
+            targets.append(((cls, variant), candidates))
+    order = list(STATE_TARGET_CAPS)
+    targets.sort(key=lambda item: order.index(item[0][0]))
+    return targets
+
+
 def _cluster_shapes(surfaces: list[dict], url: str) -> list[SurfaceShape]:
     """Group measured elements into visual variants.
 
@@ -586,47 +772,16 @@ def _cluster_shapes(surfaces: list[dict], url: str) -> list[SurfaceShape]:
     shadow, background — so "primary / secondary / ghost" falls out of what the
     page actually draws rather than from a guess about intent.
     """
-    groups: dict[tuple, dict] = {}
-    for entry in surfaces:
-        cls = str(entry.get("cls") or "")
-        if cls not in _SHAPE_SURFACES:
-            continue
-        radius = _numbers(entry.get("radius"))
-        border = _numbers(entry.get("border"))
-        bg = _hex(entry.get("bg"))
-        style = str(entry.get("borderStyle") or "none").lower()
-        has_border = style not in ("none", "hidden") and any(v > 0 for v in border)
-        fill = "solid" if bg else ("outline" if has_border else "ghost")
-        key = (
-            cls,
-            fill,
-            tuple(radius),
-            bool(entry.get("pill")),
-            tuple(border),
-            _text(entry.get("shadow")),
-            bg,
-        )
-        group = groups.get(key)
-        if group is None:
-            groups[key] = {"entry": entry, "fill": fill, "count": 1}
-        else:
-            group["count"] += 1
-
-    ordered = sorted(
-        groups.items(), key=lambda item: (-item[1]["count"], _order_key(item[0]))
-    )
-    seats: dict[tuple[str, str], int] = {}
     shapes: list[SurfaceShape] = []
-    for key, group in ordered:
-        cls, fill = key[0], key[1]
-        seat = seats.get((cls, fill), 0) + 1
-        seats[(cls, fill)] = seat
-        entry = group["entry"]
+    for variant, members in shape_groups(surfaces, _SHAPE_SURFACES):
+        entry = members[0]
+        cls = str(entry.get("cls") or "")
+        fill = variant.split(".", 1)[0]
         shapes.append(
             SurfaceShape(
                 surface=cls,  # type: ignore[arg-type]
-                variant=f"{fill}.{seat}",
-                count=int(group["count"]),
+                variant=variant,
+                count=len(members),
                 fill=fill,  # type: ignore[arg-type]
                 radius_px=_numbers(entry.get("radius")),
                 pill=bool(entry.get("pill")),
@@ -642,6 +797,237 @@ def _cluster_shapes(surfaces: list[dict], url: str) -> list[SurfaceShape]:
             )
         )
     return shapes
+
+
+#: Bounds the evidence: a real page has 15-25 style variants across these classes.
+_MAX_MEASURED_STYLES = 40
+_MAX_REVEALS = 6
+_LOOK_COLORS = ("background", "color", "label_color", "border_color", "outline_color", "icon_color")
+_LOOK_TEXTS = (
+    "border_style", "text_transform", "decoration_line", "decoration_thickness", "underline_offset",
+    "box_shadow", "transform", "filter", "cursor", "outline_style", "icon_transform",
+)
+_LOOK_NUMBERS = (
+    "height", "gap", "font_size", "font_weight", "line_height", "letter_spacing", "opacity",
+    "outline_width", "outline_offset", "icon_opacity",
+)
+_LOOK_LISTS = ("border_width", "radius", "padding")
+#: A colour a state clears (fully transparent), recorded as itself the way a removed shadow is "none".
+_CLEARED = "#00000000"
+_FONT = re.compile(r"^(\d+)\s+([\d.]+)px/(\S+)\s+(.+)$")
+
+
+def _opaque_hex(value: object) -> str | None:
+    """A measured colour, or None when it paints nothing (fully transparent)."""
+    hex_value = _hex(value)
+    return hex_value if hex_value and hex_alpha(hex_value) > 0 else None
+
+
+def _family(value: object) -> str | None:
+    text = _text(value)
+    return text.split(",", 1)[0].strip().strip("\"'") or None if text else None
+
+
+def _look_fields(look: dict, *, clears: bool = False) -> dict:
+    """A probe look (or state delta) as `StyleLook` fields; absent and empty values left out.
+
+    `clears` is for a state's delta: a colour the state makes fully transparent is `#00000000`
+    rather than left out, which would read as "unchanged from rest".
+    """
+    out: dict = {}
+    for key in _LOOK_COLORS:
+        if key in look:
+            out[key] = _opaque_hex(look.get(key))
+            if out[key] is None and clears and _hex(look.get(key)):
+                out[key] = _CLEARED
+    for key in _LOOK_TEXTS:
+        if key in look:
+            out[key] = _text(look.get(key))
+    for key in _LOOK_NUMBERS:
+        value = look.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            out[key] = round(float(value), 2)
+    for key in _LOOK_LISTS:
+        if key in look:
+            out[key] = _numbers(look.get(key))
+    if "font_family" in look:
+        out["font_family"] = _family(look.get("font_family"))
+    if look.get("browser_focus_ring"):
+        out["browser_focus_ring"] = True
+    return {key: value for key, value in out.items() if value is not None and value != []}
+
+
+def _rest_look(entry: dict, probe: dict | None) -> StyleLook:
+    font = _FONT.match(str(entry.get("font") or ""))
+    drawn = str(entry.get("borderStyle") or "none").lower() not in ("none", "hidden") and any(
+        v > 0 for v in _numbers(entry.get("border"))
+    )
+    gaps = _numbers(entry.get("gap"))
+    data: dict = {
+        "background": _opaque_hex(entry.get("bg")),
+        "color": _opaque_hex(entry.get("color")),
+        "border_color": _opaque_hex(entry.get("borderColor")) if drawn else None,
+        "border_width": _numbers(entry.get("border")),
+        "border_style": _text(entry.get("borderStyle")),
+        "radius": _numbers(entry.get("radius")),
+        "pill": bool(entry.get("pill")),
+        "padding": _numbers(entry.get("padding")),
+        "height": _float(entry.get("h")) or None,
+        "gap": gaps[-1] if gaps else None,
+    }
+    if font:
+        data.update({
+            "font_weight": float(font.group(1)),
+            "font_size": float(font.group(2)),
+            "line_height": float(font.group(3)[:-2]) if font.group(3).endswith("px") else None,
+            "font_family": _family(font.group(4)),
+        })
+    if probe:
+        extra = _look_fields(probe)
+        # Geometry comes from the rest harvest (it knows pills); the probe adds everything else.
+        for key in ("background", "border_color", "border_width", "border_style", "radius", "padding", "height", "gap"):
+            extra.pop(key, None)
+        data.update(extra)
+    return StyleLook(**{key: value for key, value in data.items() if value is not None})
+
+
+def _state_look(record: dict | None, state: str) -> StyleLook | None:
+    look = record.get(state) if record else None
+    fields = _look_fields(look, clears=True) if isinstance(look, dict) else {}
+    return StyleLook(**fields) if fields else None
+
+
+def _transitions(motion: dict | None) -> list[StyleTransition]:
+    out: list[StyleTransition] = []
+    for target, key in (("self", "transitions"), ("label", "label_transitions"), ("icon", "icon_transitions")):
+        for item in _list((motion or {}).get(key)):
+            if not isinstance(item, dict) or _float(item.get("duration_ms")) <= 0:
+                continue
+            out.append(StyleTransition(
+                target=target, property=str(item.get("property") or "all")[:60],
+                duration_ms=_float(item.get("duration_ms")), easing=str(item.get("easing") or "ease")[:120],
+                delay_ms=_float(item.get("delay_ms")),
+            ))
+    return out
+
+
+def _icon(motion: dict | None) -> StyleIcon | None:
+    info = (motion or {}).get("icon")
+    if not isinstance(info, dict):
+        return None
+    position = "start" if info.get("position") == "start" else "end"
+    if info.get("kind") == "glyph" and isinstance(info.get("glyph"), str):
+        return StyleIcon(kind="glyph", position=position, glyph=info["glyph"][:4])
+    if info.get("kind") == "svg":
+        svg = clean_icon_svg(info.get("svg"))
+        if svg:
+            return StyleIcon(kind="svg", position=position, svg=svg,
+                             width=_float(info.get("width")) or None, height=_float(info.get("height")) or None)
+    if info.get("kind") == "img":
+        return StyleIcon(kind="img", position=position)
+    return None
+
+
+def measured_styles(surfaces: list[dict], states: dict | None, url: str) -> list[MeasuredStyle]:
+    """One `MeasuredStyle` per variant of the state classes, buttons first, most frequent first."""
+    records = {
+        record["idx"]: record
+        for record in _list((states or {}).get("styles"))
+        if isinstance(record, dict) and isinstance(record.get("idx"), int)
+    }
+    order = list(STATE_TARGET_CAPS)
+    groups = sorted(shape_groups(surfaces, tuple(STATE_TARGET_CAPS)), key=lambda g: order.index(str(g[1][0].get("cls"))))
+    out: list[MeasuredStyle] = []
+    for variant, members in groups[:_MAX_MEASURED_STYLES]:
+        cls = str(members[0].get("cls") or "")
+        record = next((records[m["idx"]] for m in members if m.get("idx") in records), None)
+        entry = next((m for m in members if record is not None and m.get("idx") == record["idx"]), members[0])
+        motion = record.get("motion") if record else None
+        out.append(MeasuredStyle(
+            surface=cls,  # type: ignore[arg-type]
+            variant=variant,
+            count=len(members),
+            probed=str(record.get("how")) if record and record.get("how") in ("pointer", "forced") else "rest-only",  # type: ignore[arg-type]
+            rest=_rest_look(entry, record.get("rest") if record else None),
+            hover=_state_look(record, "hover"),
+            pressed=_state_look(record, "pressed"),
+            focus=_state_look(record, "focus"),
+            disabled=_state_look(record, "disabled"),
+            transitions=_transitions(motion),
+            icon=_icon(motion),
+            pointer=_pointer(url, f"{cls} {variant}"),
+        ))
+    return out
+
+
+def _first(value: object) -> str:
+    """The first entry of a computed comma list (`"pulse, spin"` → `"pulse"`), parentheses kept."""
+    text, depth = str(value or ""), 0
+    for index, ch in enumerate(text):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            return text[:index].strip()
+    return text.strip()
+
+
+def _ms(value: object) -> float:
+    text = _first(value)
+    try:
+        return round(float(text[:-2]) if text.endswith("ms") else float(text.rstrip("s")) * 1000, 2)
+    except ValueError:
+        return 0.0
+
+
+def measured_motion(raw: dict, url: str) -> MotionEvidence:
+    """The page's CSS animations, its CSS reveals (deduplicated) and its scripted-motion notes."""
+    animations: list[MeasuredAnimation] = []
+    for entry in _list(raw.get("animations")):
+        if not isinstance(entry, dict):
+            continue
+        name = _first(entry.get("name"))[:120]
+        if not name or name == "none":
+            continue
+        animations.append(MeasuredAnimation(
+            name=name, duration_ms=_ms(entry.get("duration")), easing=_first(entry.get("easing")) or "ease",
+            delay_ms=_ms(entry.get("delay")), iterations=_first(entry.get("iterations")) or "1",
+            direction=_first(entry.get("direction")) or "normal", fill_mode=_first(entry.get("fill")) or "none",
+            count=max(1, int(_float(entry.get("count")) or 1)), where=str(entry.get("where") or "")[:120],
+            pointer=_pointer(url, f"animation {name}"),
+        ))
+    states = raw.get("states") if isinstance(raw.get("states"), dict) else {}
+    reveals: dict[tuple, MeasuredReveal] = {}
+    scripted: list[ScriptedMotion] = []
+    for entry in _list(states.get("reveals")):
+        if not isinstance(entry, dict):
+            continue
+        where = str(entry.get("where") or "")[:120]
+        if entry.get("kind") != "css":
+            scripted.append(ScriptedMotion(kind="scripted", where=where, pointer=_pointer(url, f"reveal {where}")))
+            continue
+        main = max(
+            (t for t in _list(entry.get("transitions")) if isinstance(t, dict)),
+            key=lambda t: _float(t.get("duration_ms")), default={},
+        )
+        opacity = entry.get("from_opacity")
+        opacity = float(opacity) if isinstance(opacity, (int, float)) and not isinstance(opacity, bool) else None
+        key = (opacity, _text(entry.get("from_transform")), _float(main.get("duration_ms")), main.get("easing"))
+        if key in reveals:
+            reveals[key].count += 1
+            continue
+        reveals[key] = MeasuredReveal(
+            where=where, from_opacity=opacity, from_transform=_text(entry.get("from_transform")),
+            duration_ms=_float(main.get("duration_ms")), easing=str(main.get("easing") or "ease")[:120],
+            delay_ms=_float(main.get("delay_ms")), trigger=[str(t)[:40] for t in _list(entry.get("trigger"))][:3],
+            pointer=_pointer(url, f"reveal {where}"),
+        )
+    for entry in _list(states.get("scripted")):
+        if isinstance(entry, dict) and entry.get("kind") in ("scripted", "canvas", "video"):
+            where = str(entry.get("where") or "")[:120]
+            scripted.append(ScriptedMotion(kind=entry["kind"], where=where, pointer=_pointer(url, f"{entry['kind']} {where}")))
+    return MotionEvidence(animations=animations, reveals=list(reveals.values())[:_MAX_REVEALS], scripted=scripted[:12])
 
 
 def _order_key(key: tuple) -> str:

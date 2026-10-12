@@ -2181,6 +2181,7 @@ fn acme_brand_kit() -> BrandKit {
                     description: None,
                 },
             )]),
+            styles: BTreeMap::new(),
         },
         assets: BrandAssets {
             fonts,

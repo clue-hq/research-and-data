@@ -1237,6 +1237,41 @@ def test_describe_assets_backfill_republishes_kit_with_metadata(
     )
 
 
+def test_logo_curation_keeps_the_kit_sections_the_engine_does_not_know(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wave 2 A9 (Task X5): the logo route publishes the engine's validated kit, which dropped the
+    brief, the grammar audit and the measured components; they are carried across now."""
+    compiled = client.post(
+        "/brand-kits/compile-styles",
+        json={"source": valid_styles_source(), "brand_kit_id": "brand_kit_insight_health", "version": 4, "name": "Insight Health"},
+    )
+    assert compiled.status_code == 200, compiled.text
+    sections = {
+        "brief": {"schema_version": 1, "characterization": {"words": ["calm", "clinical"], "support": "s", "confidence": "low"}},
+        "grammar_audit": {"schema_version": 1},
+        "measured_components": {"schema_version": 1, "source": "website:https://example.test/", "styles": [],
+                                "motion": {"animations": [], "reveals": [], "scripted": []}},
+    }
+    original = HybridRepository.require_brand_kit
+
+    def stored_with_sections(self, brand_kit_id, version=None):
+        record = original(self, brand_kit_id, version)
+        return {**record, "brand_kit": {**record["brand_kit"], **sections}} if version is None else record
+
+    monkeypatch.setattr(HybridRepository, "require_brand_kit", stored_with_sections)
+    uploaded = upload_logo(client, label="The real lockup")
+    chosen = client.post(
+        "/brand-kits/brand_kit_insight_health/logo",
+        json={"asset_id": uploaded.json()["asset"]["id"], "slot": "primary"},
+    )
+    assert chosen.status_code == 200, chosen.text
+    monkeypatch.setattr(HybridRepository, "require_brand_kit", original)
+    kit_json = client.get("/brand-kits/brand_kit_insight_health").json()["brand_kit_json"]
+    for key, value in sections.items():
+        assert kit_json[key] == value, key
+
+
 def test_ops_attached_brand_kit_preflights_via_scene_ref_and_heals_the_row(
     client: TestClient,
 ) -> None:

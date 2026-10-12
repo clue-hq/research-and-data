@@ -1,0 +1,442 @@
+"""Per-style interaction states, motion and behaviour, measured on the live page (Wave 2 A9).
+
+The geometry probe (`geometry.py`) reads each measured element at REST. A brand's buttons, links and
+cards are also what they do: the colour a button takes under the pointer, the press, the keyboard
+focus ring, the disabled look, the transition that carries them, an arrow that slides. This pass
+measures those after the screenshot, the captured HTML and the rest harvest, so it can never change
+a captured pixel.
+
+How each state is reached (offline probe, 2026-10-12, Playwright 1.61 and patchright 1.61.2,
+recorded in docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md):
+
+* hover — a real pointer move (`locator.hover`), so CSS `:hover` and script-driven hovers (a
+  mouseenter handler toggling a class) both show; when the element is covered or cannot take the
+  pointer, CDP `CSS.forcePseudoState(['hover'])` reads the CSS hover, and the record says "forced";
+* pressed — `CSS.forcePseudoState(['hover', 'active'])`: the real `:active` cascade with no click,
+  so no link is followed and no handler runs;
+* focus — `CSS.forcePseudoState(['focus', 'focus-visible'])` with the pointer moved away; a browser
+  default ring (`outline-style: auto`) is recorded as that, never as a brand value;
+* disabled — the element's own `disabled` (form controls) or `aria-disabled="true"`, set and
+  restored, so the site's `:disabled` / `[aria-disabled]` rules show.
+
+Transitions on the element and its descendants are switched off inline through the CSSOM first (a
+page CSP cannot block a CSSOM write), so each read is the state's end look; a script-driven hover is
+read every 50 ms until two reads agree. Everything is restored afterwards.
+
+Bounded like the geometry probe, for the same reason (an ingestion is one job among many): at most
+`STATE_TARGET_CAPS` styles, an 8-second wall clock for the whole pass, a 1.2-second pointer attempt,
+a 0.6-second settle, 240 characters per value, 8 transitions per element. Fail-soft: a target that
+throws is skipped; without a CDP session the pointer hovers are still measured; nothing here can fail
+a capture.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from typing import Any
+
+from .geometry import state_targets
+
+#: The whole pass's wall clock. Ten buttons and a dozen other styles take about 2.5 s at the
+#: measured 100-140 ms each; the rest is headroom for covered elements (1.2 s each).
+STATE_PASS_DEADLINE_S = 8.0
+HOVER_TIMEOUT_MS = 1200
+SETTLE_LIMIT_S = 0.6
+SETTLE_STEP_S = 0.05
+
+_TRANSITIONS_FN = r"""
+  const transitionsOf = (node) => {
+    if (!node) return [];
+    const cs = getComputedStyle(node);
+    const split = (value) => {
+      const out = []; let depth = 0; let current = '';
+      for (const ch of String(value || '')) {
+        if (ch === '(') depth += 1;
+        if (ch === ')') depth -= 1;
+        if (ch === ',' && depth === 0) { out.push(current.trim()); current = ''; } else current += ch;
+      }
+      if (current.trim()) out.push(current.trim());
+      return out;
+    };
+    const ms = (v) => String(v).trim().endsWith('ms') ? parseFloat(v) : parseFloat(v) * 1000;
+    const props = split(cs.transitionProperty), durs = split(cs.transitionDuration);
+    const eases = split(cs.transitionTimingFunction), delays = split(cs.transitionDelay);
+    const out = [];
+    props.forEach((property, i) => {
+      const duration = ms(durs[i % durs.length] || '0s');
+      if (!(duration > 0)) return;
+      out.push({ property: property.slice(0, 60), duration_ms: Math.round(duration),
+        easing: (eases[i % eases.length] || 'ease').slice(0, 120), delay_ms: Math.round(ms(delays[i % delays.length] || '0s')) });
+    });
+    return out.slice(0, 8);
+  };
+"""
+
+#: One element's look: its box, the element that paints its words, and its icon.
+LOOK_JS = r"""
+(el) => {
+  const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? Math.round(n * 100) / 100 : null; };
+  const cut = (v) => (v === undefined || v === null || v === '') ? null : String(v).slice(0, 240);
+  const host = (() => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) { if (node.textContent.trim()) return node.parentElement; }
+    return el;
+  })();
+  const icon = el.querySelector('svg, img');
+  const cs = getComputedStyle(el);
+  const hs = getComputedStyle(host);
+  const look = {
+    background: cut(cs.backgroundColor),
+    color: cut(cs.color),
+    label_color: host === el ? null : cut(hs.color),
+    border_color: cut(cs.borderTopColor),
+    border_width: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].map(num),
+    border_style: cut(cs.borderTopStyle),
+    radius: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius].map(num),
+    padding: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map(num),
+    height: num(el.getBoundingClientRect().height),
+    gap: cs.columnGap === 'normal' ? null : num(cs.columnGap),
+    font_family: cut(hs.fontFamily), font_size: num(hs.fontSize), font_weight: num(hs.fontWeight),
+    line_height: hs.lineHeight === 'normal' ? null : num(hs.lineHeight),
+    letter_spacing: hs.letterSpacing === 'normal' ? 0 : num(hs.letterSpacing),
+    text_transform: cut(hs.textTransform),
+    decoration_line: cut(hs.textDecorationLine),
+    decoration_thickness: cut(hs.textDecorationThickness),
+    underline_offset: cut(hs.textUnderlineOffset),
+    box_shadow: cs.boxShadow === 'none' ? null : cut(cs.boxShadow),
+    opacity: num(cs.opacity),
+    transform: cs.transform === 'none' ? null : cut(cs.transform),
+    filter: cs.filter === 'none' ? null : cut(cs.filter),
+    cursor: cut(cs.cursor),
+    outline_style: cut(cs.outlineStyle),
+    outline_color: cut(cs.outlineColor),
+    outline_width: num(cs.outlineWidth),
+    outline_offset: num(cs.outlineOffset),
+  };
+  if (icon) {
+    const is = getComputedStyle(icon);
+    look.icon_transform = is.transform === 'none' ? null : cut(is.transform);
+    look.icon_color = cut(is.color);
+    look.icon_opacity = num(is.opacity);
+  }
+  return look;
+}
+"""
+
+#: The element's transitions (its own, its words' and its icon's) and its icon.
+MOTION_JS = r"""
+(el) => {
+""" + _TRANSITIONS_FN + r"""
+  const host = (() => {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) { if (node.textContent.trim()) return node.parentElement; }
+    return el;
+  })();
+  const icon = el.querySelector('svg, img');
+  const glyphs = /[→›»↗➔⟶←‹«↘]/;
+  const text = (el.textContent || '').trim();
+  let info = null;
+  if (icon) {
+    const r = icon.getBoundingClientRect(), b = el.getBoundingClientRect();
+    const svg = icon.tagName.toLowerCase() === 'svg';
+    info = { kind: svg ? 'svg' : 'img', position: (r.left - b.left) < (b.right - r.right) ? 'start' : 'end',
+      width: Math.round(r.width * 100) / 100, height: Math.round(r.height * 100) / 100,
+      svg: svg ? icon.outerHTML.slice(0, 8192) : null };
+  } else if (text && glyphs.test(text.slice(-1))) {
+    info = { kind: 'glyph', position: 'end', glyph: text.slice(-1) };
+  } else if (text && glyphs.test(text.slice(0, 1))) {
+    info = { kind: 'glyph', position: 'start', glyph: text.slice(0, 1) };
+  }
+  return { transitions: transitionsOf(el), label_transitions: host === el ? [] : transitionsOf(host),
+    icon_transitions: transitionsOf(icon), icon: info };
+}
+"""
+
+FREEZE_JS = r"""
+(el) => [el, ...el.querySelectorAll('*')].slice(0, 16).map((node) => {
+  const prior = [node.style.getPropertyValue('transition'), node.style.getPropertyPriority('transition')];
+  node.style.setProperty('transition', 'none', 'important');
+  return prior;
+})
+"""
+
+THAW_JS = r"""
+(el, priors) => [el, ...el.querySelectorAll('*')].slice(0, 16).forEach((node, i) => {
+  const [value, priority] = priors[i] || ['', ''];
+  if (value) node.style.setProperty('transition', value, priority); else node.style.removeProperty('transition');
+})
+"""
+
+DISABLE_JS = r"""
+(el) => {
+  const formish = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'FIELDSET'].includes(el.tagName);
+  if (formish) { const was = el.disabled; el.disabled = true; return { formish, was }; }
+  const was = el.getAttribute('aria-disabled');
+  el.setAttribute('aria-disabled', 'true');
+  return { formish, was };
+}
+"""
+
+ENABLE_JS = r"""
+(el, prior) => {
+  if (prior.formish) { el.disabled = prior.was; return; }
+  if (prior.was === null) el.removeAttribute('aria-disabled'); else el.setAttribute('aria-disabled', prior.was);
+}
+"""
+
+#: Read BEFORE the page is scrolled (rendered.py): elements that start hidden or shifted and carry
+#: motion — the candidates for an entrance reveal. Read-only; elements are re-found by child path.
+REVEAL_BEFORE_JS = r"""
+() => {
+  const out = [];
+  const body = document.body;
+  if (!body) return out;
+  const els = Array.from(body.querySelectorAll('*')).slice(0, 6000);
+  const pathOf = (el) => {
+    const parts = []; let node = el;
+    while (node && node !== body) { const p = node.parentElement; if (!p) return null; parts.unshift(Array.prototype.indexOf.call(p.children, node)); node = p; }
+    return parts;
+  };
+  const ms = (v) => String(v).trim().endsWith('ms') ? parseFloat(v) : parseFloat(v) * 1000;
+  for (const el of els) {
+    if (out.length >= 24) break;
+    const r = el.getBoundingClientRect();
+    if (r.width * r.height < 1000) continue;
+    if (!(el.textContent || '').trim() && !el.querySelector('img, svg, picture, video')) continue;
+    const cs = getComputedStyle(el);
+    const moving = String(cs.transitionDuration).split(',').some((d) => ms(d) > 0) || (cs.animationName && cs.animationName !== 'none');
+    const hidden = parseFloat(cs.opacity) < 0.05;
+    const shifted = cs.transform !== 'none' && moving;
+    if (!hidden && !shifted) continue;
+    if (out.some((o) => o.el.contains(el))) continue;
+    const path = pathOf(el);
+    if (!path) continue;
+    out.push({ el, path, tag: el.tagName.toLowerCase(), opacity: parseFloat(cs.opacity), transform: cs.transform,
+      classes: (el.getAttribute('class') || '').slice(0, 240) });
+  }
+  return out.map(({ el, ...rest }) => rest);
+}
+"""
+
+REVEAL_AFTER_JS = r"""
+(items) => {
+""" + _TRANSITIONS_FN + r"""
+  return items.map((item) => {
+    let node = document.body;
+    for (const i of item.path) { node = node && node.children[i]; }
+    if (!node) return null;
+    const cs = getComputedStyle(node);
+    const cls = node.getAttribute('class');
+    return { tag: node.tagName.toLowerCase(), opacity: parseFloat(cs.opacity), transform: cs.transform,
+      classes: (cls || '').slice(0, 240), transitions: transitionsOf(node),
+      where: (node.tagName.toLowerCase() + (node.id ? '#' + node.id : '') + (cls ? '.' + String(cls).trim().split(/\s+/)[0] : '')).slice(0, 120) };
+  });
+}
+"""
+
+#: Motion a published page cannot carry: canvases, playing videos, and inline styles a script keeps
+#: rewriting. Recorded as notes (what and where), never reproduced.
+SCRIPTED_JS = r"""
+async () => {
+  const describe = (el) => {
+    const cls = el.getAttribute('class');
+    return (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + (cls ? '.' + String(cls).trim().split(/\s+/)[0] : '')).slice(0, 120);
+  };
+  const notes = [];
+  for (const el of Array.from(document.querySelectorAll('canvas'))) {
+    const r = el.getBoundingClientRect();
+    if (r.width * r.height >= 10000 && notes.length < 4) notes.push({ kind: 'canvas', where: describe(el) });
+  }
+  for (const el of Array.from(document.querySelectorAll('video'))) {
+    if ((el.autoplay || !el.paused) && notes.length < 8) notes.push({ kind: 'video', where: describe(el) });
+  }
+  const els = Array.from(document.querySelectorAll('body *')).slice(0, 4000);
+  const before = els.map((el) => el.getAttribute('style') || '');
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  let moved = 0;
+  els.forEach((el, i) => {
+    if (moved >= 4) return;
+    const now = el.getAttribute('style') || '';
+    if (now !== before[i] && /transform|opacity|translate|scale|rotate/.test(now)) { notes.push({ kind: 'scripted', where: describe(el) }); moved += 1; }
+  });
+  return notes.slice(0, 12);
+}
+"""
+
+_STRING_REMOVALS = ("box_shadow", "transform", "filter")
+_OUTLINE = ("outline_style", "outline_color", "outline_width", "outline_offset")
+
+
+def look_delta(rest: dict, other: dict) -> dict:
+    """Only what changed from rest. Values that are not brand choices are dropped."""
+    out = {key: value for key, value in other.items() if rest.get(key) != value}
+    # A value the state removes is recorded as "none", so "no shadow on hover" survives storage.
+    for key in _STRING_REMOVALS:
+        if key in out and out[key] is None and rest.get(key) is not None:
+            out[key] = "none"
+    # A border colour with no drawn border is the text colour leaking through `currentColor`.
+    if not any((width or 0) > 0 for width in (other.get("border_width") or [])):
+        out.pop("border_color", None)
+    style = other.get("outline_style")
+    if style in (None, "none") or style == "auto":
+        for key in _OUTLINE:
+            out.pop(key, None)
+        if style == "auto" and rest.get("outline_style") != "auto":
+            out["browser_focus_ring"] = True
+    elif rest.get("outline_style") in (None, "none", "auto"):
+        # A ring this state draws is recorded whole: an undrawn outline still computes a width
+        # (Chromium reports `medium`, 3px) and a colour (`currentColor`), so a ring that matches
+        # either would otherwise lose it to the comparison above.
+        out.update({key: other.get(key) for key in _OUTLINE})
+    out.pop("height", None)  # layout, not a state
+    return out
+
+
+async def _settled(locator: Any) -> dict:
+    deadline = time.monotonic() + SETTLE_LIMIT_S
+    previous = await locator.evaluate(LOOK_JS)
+    while time.monotonic() < deadline:
+        await asyncio.sleep(SETTLE_STEP_S)
+        current = await locator.evaluate(LOOK_JS)
+        if current == previous:
+            return current
+        previous = current
+    return previous
+
+
+async def _force(cdp: Any, root: int, idx: int, classes: list[str]) -> None:
+    node = await cdp.send("DOM.querySelector", {"nodeId": root, "selector": f'[data-lumen-probe="{idx}"]'})
+    await cdp.send("CSS.forcePseudoState", {"nodeId": node["nodeId"], "forcedPseudoClasses": classes})
+
+
+async def _pointer_away(page: Any, locator: Any) -> None:
+    box = await locator.bounding_box()
+    viewport = page.viewport_size or {"width": 1440, "height": 900}
+    point = (0, 0)
+    if box and box["x"] <= 0 <= box["x"] + box["width"] and box["y"] <= 0 <= box["y"] + box["height"]:
+        point = (viewport["width"] - 1, viewport["height"] - 1)
+    await page.mouse.move(*point)
+
+
+async def _probe_one(page: Any, cdp: Any, root: int | None, idx: int) -> dict:
+    locator = page.locator(f'[data-lumen-probe="{idx}"]')
+    motion = await locator.evaluate(MOTION_JS)
+    rest = await locator.evaluate(LOOK_JS)
+    priors = await locator.evaluate(FREEZE_JS)
+    record: dict[str, Any] = {"idx": idx, "motion": motion, "rest": rest}
+    try:
+        try:
+            await locator.hover(timeout=HOVER_TIMEOUT_MS)
+            hover = await _settled(locator)
+            record["how"] = "pointer"
+        except Exception:  # noqa: BLE001 — covered or pointer-proof: read the CSS hover
+            if cdp is None:
+                raise
+            await _force(cdp, root, idx, ["hover"])
+            hover = await locator.evaluate(LOOK_JS)
+            await _force(cdp, root, idx, [])
+            record["how"] = "forced"
+        record["hover"] = look_delta(rest, hover)
+        if cdp is not None:
+            await _force(cdp, root, idx, ["hover", "active"])
+            record["pressed"] = look_delta(rest, await locator.evaluate(LOOK_JS))
+            await _force(cdp, root, idx, [])
+            await _pointer_away(page, locator)
+            await _force(cdp, root, idx, ["focus", "focus-visible"])
+            record["focus"] = look_delta(rest, await locator.evaluate(LOOK_JS))
+            await _force(cdp, root, idx, [])
+        await _pointer_away(page, locator)
+        prior = await locator.evaluate(DISABLE_JS)
+        try:
+            record["disabled"] = look_delta(rest, await locator.evaluate(LOOK_JS))
+        finally:
+            await locator.evaluate(ENABLE_JS, prior)
+    finally:
+        await locator.evaluate(THAW_JS, priors)
+    return record
+
+
+def _reveals(before: list, after: list) -> list[dict]:
+    out: list[dict] = []
+    for prior, now in zip(before, after):
+        if not isinstance(prior, dict) or not isinstance(now, dict) or now.get("tag") != prior.get("tag"):
+            continue
+        settled = (now.get("opacity") or 0) >= 0.95 and now.get("transform") in (None, "none", "matrix(1, 0, 0, 1, 0, 0)")
+        if not settled:
+            continue
+        transitions = [
+            t for t in now.get("transitions") or []
+            if t.get("property") in ("all", "opacity", "transform", "translate")
+        ]
+        added = sorted(set(str(now.get("classes") or "").split()) - set(str(prior.get("classes") or "").split()))
+        out.append({
+            "kind": "css" if transitions else "scripted",
+            "where": str(now.get("where") or "")[:120],
+            "from_opacity": prior.get("opacity"),
+            "from_transform": prior.get("transform") if prior.get("transform") not in (None, "none") else None,
+            "transitions": transitions,
+            "trigger": [name[:40] for name in added[:3]],
+        })
+    return out
+
+
+def _diag(code: str, severity: str, message: str) -> dict:
+    return {"code": code, "severity": severity, "message": message}
+
+
+async def probe_states(page: Any, geometry: dict, *, reveal_before: list | None, diagnostics: list[dict]) -> dict:
+    """Measure every targeted style's states, the page's reveals and its scripted motion. Never raises."""
+    result: dict[str, Any] = {"styles": [], "reveals": [], "scripted": [], "truncated": False}
+    surfaces = geometry.get("surfaces") if isinstance(geometry, dict) else None
+    targets = state_targets(surfaces if isinstance(surfaces, list) else [])
+    cdp = None
+    root: int | None = None
+    try:
+        cdp = await page.context.new_cdp_session(page)
+        await cdp.send("DOM.enable")
+        await cdp.send("CSS.enable")
+        root = (await cdp.send("DOM.getDocument", {"depth": 0}))["root"]["nodeId"]
+    except Exception as error:  # noqa: BLE001
+        cdp = None
+        diagnostics.append(_diag("LUMI0543", "warning", f"pressed and focus states not measured (no CDP session): {error}"))
+    deadline = time.monotonic() + STATE_PASS_DEADLINE_S
+    try:
+        for _key, candidates in targets:
+            if time.monotonic() >= deadline:
+                result["truncated"] = True
+                break
+            for idx in candidates:
+                try:
+                    result["styles"].append(await _probe_one(page, cdp, root, idx))
+                    break
+                except Exception:  # noqa: BLE001 — try the style's next element
+                    continue
+        if reveal_before:
+            try:
+                result["reveals"] = _reveals(reveal_before, await page.evaluate(REVEAL_AFTER_JS, reveal_before))
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            result["scripted"] = await page.evaluate(SCRIPTED_JS)
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        try:
+            await page.mouse.move(0, 0)
+        except Exception:  # noqa: BLE001
+            pass
+        if cdp is not None:
+            try:
+                await cdp.detach()
+            except Exception:  # noqa: BLE001
+                pass
+    if result["truncated"]:
+        diagnostics.append(_diag(
+            "LUMI0544", "info",
+            f"interaction states measured for {len(result['styles'])} of {len(targets)} styles before the "
+            f"{STATE_PASS_DEADLINE_S:.0f}s limit",
+        ))
+    return result

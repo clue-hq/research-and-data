@@ -35,11 +35,11 @@ def _noop(stage: str, progress: float) -> None:
 def calls(monkeypatch):
     seen: dict[str, int] = {"stealth": 0, "chromium": 0}
 
-    async def fake_stealth(url, fetcher, reporter, *, fetched_at):
+    async def fake_stealth(url, fetcher, reporter, *, fetched_at, measure_states=False):
         seen["stealth"] += 1
         return _snapshot()
 
-    async def fake_chromium(url, fetcher, reporter, *, fetched_at):
+    async def fake_chromium(url, fetcher, reporter, *, fetched_at, measure_states=False):
         seen["chromium"] += 1
         return _snapshot()
 
@@ -58,7 +58,7 @@ def test_stealth_is_the_default_and_stamps_its_provenance(calls, monkeypatch) ->
 def test_stealth_failure_falls_back_to_chromium_with_a_warning(calls, monkeypatch) -> None:
     monkeypatch.delenv("LUMEN_RENDER_STEALTH", raising=False)
 
-    async def broken_stealth(url, fetcher, reporter, *, fetched_at):
+    async def broken_stealth(url, fetcher, reporter, *, fetched_at, measure_states=False):
         calls["stealth"] += 1
         raise RuntimeError("no stealth browser on this host")
 

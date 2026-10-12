@@ -32,8 +32,10 @@ from lumen_api.database import NotFoundError
 from lumen_api.design_store import DesignBlobStore, HybridRepository
 from py_lumen_config import settings
 
+from .brief import kit_token_names
 from .grammar_audit import extract_grammar_audit
 from .jobs import IngestionJobStore, StageReporter, run_ingestion_job
+from .measured_components import MeasuredComponentsRefused, validate_measured_components
 from .normalizer import normalize_evidence
 
 JsonObject = dict[str, Any]
@@ -592,6 +594,27 @@ def _maybe_extract_grammar_audit(
         return None
 
 
+def _attach_measured_components(
+    validated_kit: JsonObject, measured: "JsonObject | None", diagnostics: list
+) -> JsonObject:
+    """The kit with its `MeasuredComponents@1`, or the kit as it was with a diagnostic.
+
+    It rides the validated kit for the brief's reason (the engine's BrandKit has no field for it);
+    the tokens it names were minted into `tokens` before the engine round trip, so they are there.
+    """
+    if measured is None:
+        return validated_kit
+    try:
+        section = validate_measured_components(measured, token_names=kit_token_names(validated_kit))
+    except MeasuredComponentsRefused as refusal:
+        diagnostics.append({
+            "code": "LUMI0608", "severity": "warning",
+            "message": f"measured component styles were not kept on the kit: {refusal.reason}",
+        })
+        return validated_kit
+    return {**validated_kit, "measured_components": section}
+
+
 def _font_metrics_map(evidence: Any, resolve_bytes) -> dict:
     """K4 rung 2: measured metrics per font family, from the stored face
     bytes. Best-effort — a face that cannot be read or parsed contributes
@@ -1099,6 +1122,11 @@ def _ingest(
     if audit is not None:
         validated_kit = {**validated_kit, "grammar_audit": audit}
 
+    measured_diagnostics: list = []
+    validated_kit = _attach_measured_components(
+        validated_kit, result.measured_components, measured_diagnostics
+    )
+
     diagnostics = (
         result.diagnostics
         + _capture_diagnostics(outcome)
@@ -1106,6 +1134,7 @@ def _ingest(
         + describe_diagnostics
         + brief_diagnostics
         + audit_diagnostics
+        + measured_diagnostics
         + snapshot_diagnostics
     )
 

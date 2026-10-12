@@ -13,7 +13,6 @@ export function garner(): BrandData {
     fonts: read("fonts.json"),
     kitAssets: read("assets.json"),
     clones: read("clones.json"),
-    measured: read("measured.json"),
   });
 }
 

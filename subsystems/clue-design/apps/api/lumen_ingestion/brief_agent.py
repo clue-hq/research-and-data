@@ -38,6 +38,7 @@ from typing import Any, ClassVar, Protocol, Sequence, runtime_checkable
 from py_lumen_config import settings
 
 from .brief import BriefRefused, kit_token_names, validate_brief
+from .normalizer.component_tokens import is_component_token
 
 logger = logging.getLogger(__name__)
 
@@ -318,18 +319,20 @@ def build_brief_request(
         url=getattr(narrative, "url", None),
         tokens=tokens,
         shapes=[_dump(shape) for shape in getattr(geometry, "surfaces", []) or []],
+        # The band text colour (Wave 2 A9) is minted into the kit, not sent to the model.
         background_sequence=[
-            _dump(band) for band in getattr(geometry, "background_sequence", []) or []
+            _dump(band, exclude={"ink"}) for band in getattr(geometry, "background_sequence", []) or []
         ],
-        spacing_ladder=[row for row in tokens if row["group"] == "spacing"],
+        # The ladder is the kit's scale; minted component paddings are not rungs of it.
+        spacing_ladder=[row for row in tokens if row["group"] == "spacing" and not is_component_token(row["name"])],
         screenshots=list(screenshots)[:MAX_SCREENSHOTS],
         token_names=kit_token_names(brand_kit),
         text_excerpt=excerpt[:_MAX_EXCERPT] if excerpt else None,
     )
 
 
-def _dump(model: Any) -> dict[str, Any]:
-    return model.model_dump() if hasattr(model, "model_dump") else dict(model)
+def _dump(model: Any, exclude: set[str] | None = None) -> dict[str, Any]:
+    return model.model_dump(exclude=exclude) if hasattr(model, "model_dump") else dict(model)
 
 
 def _token_rows(brand_kit: dict[str, Any]) -> list[dict[str, Any]]:
