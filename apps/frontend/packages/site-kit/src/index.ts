@@ -13,7 +13,10 @@ export {
   type SlotValues,
   type TextReplacement,
 } from "./clone";
-export { themeCss } from "./theme";
+export { FALLBACKS, isComponentToken } from "./brand-values";
+export { extraSurfaceRoles, surfaceChoices, surfaceLabels, surfaceRoles, type SurfaceChoice } from "./surfaces";
+export { buttonLookOptions, buttonLooks, cardLooks, motionClassNames, motionEntries, type Look } from "./looks";
+export { SPACING_ROLES, tailwindThemeCss, themeCss } from "./theme";
 export * from "./schemas";
 export { makeConfig, type ConfigOptions, type EditorParts } from "./config";
 export { makeKit, type AgentSectionModule, type Kit } from "./agent-kit";

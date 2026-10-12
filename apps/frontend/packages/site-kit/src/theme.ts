@@ -1,221 +1,258 @@
-// Brand kit -> one theme stylesheet (spike version of the A5 seller-theme generator).
+// Brand kit -> one theme stylesheet (Wave 2 A9).
 //
-// Per-brand values are emitted at runtime as `--brand-*` custom properties on `.brand-root`.
-// globals.css maps them once into Tailwind v4 theme variables (`@theme inline`), so every
-// section uses fixed class names (`text-headline`, `bg-surface-brand`, `rounded-card`) and the
-// brand decides the values. Clones are untouched: they carry their own captured CSS.
+// Per-brand values are emitted as `--brand-*` custom properties on `.brand-root`; tailwindThemeCss()
+// maps them into Tailwind v4 theme variables (`@theme inline`), so sections use fixed class names
+// (`text-headline`, `bg-surface-brand`, `py-section`) and the brand decides the values. Buttons,
+// cards, links and motion are drawn from the kit's measured recipes (looks.ts). Every value is the
+// kit's (brand-values.ts) or one of FALLBACKS; clones keep their own captured CSS.
 import type { BrandData } from "./brand";
+import {
+  FALLBACKS, alphaOf, colorOf, contrast, fluid, fontStack, hexOf, isComponentToken, isMeasured, numberOf,
+  pxOf, ratioOf, tokenEntry, tokenGroups, trim, typographyOf,
+} from "./brand-values";
+import {
+  STATES, buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, elementStyle, motionEntries,
+  partsFromSlots, transitionsOf, type Drawn, type Look, type Part, type Parts, type State,
+} from "./looks";
+import { COLOR_ROLES, SURFACES, colorVar, extraSurfaceRoles, inkRole, isDarkSurface, surfaceRoles } from "./surfaces";
 
-type Token = { value: { default: Record<string, unknown> } };
-
-export const COLOR_ROLES = [
-  "text.primary", "text.secondary", "text.muted", "text.inverse", "text.brand", "text.accent",
-  "surface.page", "surface.canvas", "surface.card", "surface.muted", "surface.elevated",
-  "surface.brand", "surface.brand.subtle", "surface.accent", "surface.inverse",
-  "border.subtle", "border.default", "border.strong", "border.brand", "focus.ring",
-] as const;
+export { COLOR_ROLES, SURFACES, colorVar, extraSurfaceRoles, surfaceRoles };
 
 export const TYPE_ROLES = [
   "display", "headline", "title", "subtitle", "body", "body.small",
   "eyebrow", "cta", "stat", "label", "caption", "legal",
 ] as const;
-
-export const SURFACES = [
-  "surface.page", "surface.canvas", "surface.card", "surface.muted", "surface.elevated",
-  "surface.brand", "surface.brand.subtle", "surface.accent", "surface.inverse",
-] as const;
-
 export const RADIUS_ROLES = ["none", "xs", "sm", "md", "lg", "xl", "card", "button", "badge", "full"] as const;
-
-/** `text.primary` -> `ink-primary`, `surface.brand.subtle` -> `surface-brand-subtle`. */
-export function colorVar(role: string): string {
-  return role
-    .replace(/^text\./, "ink.")
-    .replace(/^border\./, "line.")
-    .replace(/^focus\.ring$/, "focus")
-    .replace(/\./g, "-");
-}
-
+/** The kit's named spacing, as Tailwind utilities (`py-section`, `mt-stack-tight`, `p-card-padding`). */
+export const SPACING_ROLES = ["section", "page.margin", "stack.tight", "stack.default", "stack.loose", "card.padding"] as const;
 export const typeVar = (role: string) => role.replace(/\./g, "-");
+export const spacingVar = typeVar;
 
-function tokens(brand: BrandData, group: string): Record<string, Token> {
-  const all = (brand.kit as { tokens: Record<string, Record<string, Token>> }).tokens;
-  return all[group] ?? {};
+const STATE_SELECTOR: Record<State, string> = { hover: ":hover", pressed: ":active", focus: ":focus-visible", disabled: '[aria-disabled="true"]' };
+const CSS_OF: Record<Part, string> = {
+  fill: "background-color", label: "color", border: "border-color", borderWidth: "border-width", borderStyle: "border-style",
+  radius: "border-radius", padding: "padding", height: "min-height", gap: "gap", fontFamily: "font-family",
+  fontSize: "font-size", fontWeight: "font-weight", lineHeight: "line-height", tracking: "letter-spacing",
+  case: "text-transform", decoration: "text-decoration-line", decorationThickness: "text-decoration-thickness",
+  underlineOffset: "text-underline-offset", shadow: "box-shadow", opacity: "opacity", transform: "transform",
+  filter: "filter", cursor: "cursor", outlineColor: "outline-color", outlineWidth: "outline-width",
+  outlineStyle: "outline-style", outlineOffset: "outline-offset", iconColor: "color", iconTransform: "transform",
+  iconOpacity: "opacity",
+};
+const ICON_PARTS = new Set<Part>(["iconColor", "iconTransform", "iconOpacity"]);
+const OUTLINE_PARTS = new Set<Part>(["outlineColor", "outlineWidth", "outlineStyle", "outlineOffset"]);
+type Swap = Partial<Record<"fill" | "label" | "border", string>>;
+type Swaps = { parts: Set<Part>; bySurface: Map<string, Swap> };
+
+function body(props: Record<string, string | undefined>): string {
+  return Object.entries(props).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => `${k}:${v}`).join(";");
+}
+function rule(selector: string, props: Record<string, string | undefined>): string {
+  const text = body(props);
+  return text ? `${selector}{${text}}` : "";
 }
 
-function luminance(hex: string): number {
-  const h = hex.replace("#", "");
-  const [r, g, b] = [0, 2, 4].map((i) => {
-    const c = parseInt(h.slice(i, i + 2), 16) / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function contrast(a: string, b: string): number {
-  const [x, y] = [luminance(a), luminance(b)].sort((m, n) => n - m);
-  return (x + 0.05) / (y + 0.05);
-}
-
-function isLight(rgb: string): boolean {
-  const m = rgb.match(/\d+(\.\d+)?/g);
-  if (!m) return false;
-  const [r, g, b] = m.slice(0, 3).map(Number);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 200;
-}
-
-/** Text colour role for each surface: the kit's own contrast pair first, else the better of
- * text.primary and text.inverse by contrast ratio. */
-function onSurface(brand: BrandData): Record<string, string> {
-  const colors = tokens(brand, "colors");
-  const hex = (role: string) => colors[role]?.value.default.value as string | undefined;
-  const pairs = ((brand.kit as { constraints?: { contrast_pairs?: { background: string; foreground: string }[] } })
-    .constraints?.contrast_pairs ?? []);
-  const out: Record<string, string> = {};
-  for (const surface of SURFACES) {
-    const bg = hex(surface);
-    if (!bg) continue;
-    const pair = pairs.find((p) => p.background === surface);
-    if (pair && hex(pair.foreground)) {
-      out[surface] = pair.foreground;
-      continue;
-    }
-    const primary = hex("text.primary") ?? "#111111";
-    const inverse = hex("text.inverse") ?? "#ffffff";
-    out[surface] = contrast(bg, primary) >= contrast(bg, inverse) ? "text.primary" : "text.inverse";
+/** CSS declarations for a set of parts: the box's and its icon's. A colour that a dark surface swaps
+ * reads that surface's value first (`--bs-<id>-<part>`), so the NEAREST surface decides. Outlines are
+ * drawn on :focus-visible only, so a look with no focus style leaves the browser's ring alone. */
+function declarations(parts: Parts, opts: { swaps?: Swaps; id?: string; outline?: boolean } = {}) {
+  const box: Record<string, string> = {};
+  const icon: Record<string, string> = {};
+  for (const [part, value] of Object.entries(parts) as [Part, string][]) {
+    if (OUTLINE_PARTS.has(part) && !opts.outline) continue;
+    const css = opts.swaps?.parts.has(part) ? `var(--bs-${opts.id}-${part},${value})` : value;
+    (ICON_PARTS.has(part) ? icon : box)[CSS_OF[part]] = css;
   }
-  return out;
+  return { box, icon };
 }
 
-function fluid(px: number): string {
-  // Exact at 1440px wide (the size the kit measured); scales down on smaller screens.
-  if (px <= 24) return `${px}px`;
-  const min = Math.max(24, Math.round(px * 0.5));
-  return `clamp(${min}px, ${(px / 14.4).toFixed(3)}vw, ${px}px)`;
-}
-
-function family(name: string, asset: string): string {
-  const fallback = asset === "brand" ? "Georgia, serif" : "system-ui, sans-serif";
-  return `"${name}", ${fallback}`;
+/** Where a button would not stand out on a dark surface (text 4.5:1, WCAG 1.4.3; a filled shape 3:1,
+ * WCAG 1.4.11): outline and text-only styles take the surface's text colour; filled styles take the
+ * light version (the kit's page colour with its text colour). */
+function buttonSwaps(brand: BrandData, drawn: Drawn, dark: string[]): Swaps {
+  const swaps: Swaps = { parts: new Set(), bySurface: new Map() };
+  const fill = drawn.parts.fill;
+  const clear = !fill || fill === "transparent" || (fill.startsWith("#") && alphaOf(fill) === 0);
+  for (const surface of dark) {
+    const bg = hexOf(brand, surface);
+    if (!bg) continue;
+    const on = `var(--brand-on-${colorVar(surface)})`;
+    let swap: Swap | null = null;
+    const label = drawn.parts.label;
+    if (clear && label?.startsWith("#") && contrast(label.slice(0, 7), bg) < 4.5) {
+      swap = { label: on, ...(drawn.parts.border === label ? { border: on } : {}) };
+    } else if (!clear && fill?.startsWith("#") && contrast(fill.slice(0, 7), bg) < 3) {
+      swap = {
+        fill: "var(--brand-button-light-fill)", label: "var(--brand-button-light-label)",
+        ...(drawn.parts.border ? { border: "var(--brand-button-light-fill)" } : {}),
+      };
+    }
+    if (!swap) continue;
+    swaps.bySurface.set(surface, swap);
+    for (const part of Object.keys(swap) as Part[]) swaps.parts.add(part);
+  }
+  return swaps;
 }
 
 export function themeCss(brand: BrandData): string {
   const lines: string[] = [];
-
   for (const face of brand.fonts) {
-    lines.push(
-      `@font-face{font-family:"${face.family}";src:url("${face.file}");` +
-        `font-weight:${face.weight ?? 400};font-style:${face.style};font-display:swap}`,
-    );
+    lines.push(`@font-face{font-family:"${face.family}";src:url("${face.file}");font-weight:${face.weight ?? 400};font-style:${face.style};font-display:swap}`);
   }
 
-  const vars: string[] = [];
-  const colors = tokens(brand, "colors");
-  for (const role of COLOR_ROLES) {
-    const value = colors[role]?.value.default.value;
-    if (typeof value === "string") vars.push(`--brand-${colorVar(role)}:${value}`);
+  const root: Record<string, string> = {};
+  // Every colour of the kit, except the minted component colours (drawn inline below).
+  for (const role of Object.keys(tokenGroups(brand).colors ?? {})) {
+    const value = isComponentToken(role) ? undefined : colorOf(brand, role);
+    if (value) root[`--brand-${colorVar(role)}`] = value;
   }
-
-  const type = tokens(brand, "typography");
   for (const role of TYPE_ROLES) {
-    const style = type[`type.${role}`]?.value.default as
-      | { font_size: number; font_family: string; font_asset: string; font_weight: number;
-          line_height: number; letter_spacing: number }
-      | undefined;
+    const style = typographyOf(brand, `type.${role}`);
     if (!style) continue;
     const name = typeVar(role);
-    vars.push(
-      `--brand-font-${name}:${family(style.font_family, style.font_asset)}`,
-      `--brand-text-${name}:${fluid(style.font_size)}`,
-      `--brand-text-${name}-lh:${style.line_height}`,
-      `--brand-text-${name}-weight:${style.font_weight}`,
-      `--brand-text-${name}-tracking:${style.letter_spacing}em`,
-    );
+    root[`--brand-font-${name}`] = fontStack(brand, style);
+    root[`--brand-text-${name}`] = fluid(style.size);
+    if (style.lineHeight !== null) root[`--brand-text-${name}-lh`] = trim(style.lineHeight);
+    root[`--brand-text-${name}-weight`] = String(style.weight);
+    if (style.letterSpacing !== null) root[`--brand-text-${name}-tracking`] = `${trim(style.letterSpacing)}em`;
   }
-
-  const radii = tokens(brand, "radii");
   for (const role of RADIUS_ROLES) {
-    const value = radii[`radius.${role}`]?.value.default.value;
-    if (typeof value === "number") vars.push(`--brand-radius-${role}:${value}px`);
+    const value = pxOf(brand, `radius.${role}`);
+    if (value) root[`--brand-radius-${role}`] = value;
+  }
+  for (const role of SPACING_ROLES) {
+    const value = numberOf(brand, `space.${role}`);
+    if (value && value.unit === "px") root[`--brand-space-${spacingVar(role)}`] = fluid(value.value);
+  }
+  const surfaces = surfaceRoles(brand);
+  for (const surface of surfaces) {
+    const ink = inkRole(brand, surface);
+    if (ink && colorOf(brand, ink)) root[`--brand-on-${colorVar(surface)}`] = `var(--brand-${colorVar(ink)})`;
+  }
+  root["--brand-content-width"] = FALLBACKS.contentWidth;
+  root["--brand-rule-width"] = pxOf(brand, "stroke.width.divider") ?? FALLBACKS.ruleWidth;
+  root["--brand-button-light-fill"] = "var(--brand-surface-page)";
+  root["--brand-button-light-label"] = "var(--brand-on-surface-page)";
+
+  // Per surface: type colours, the rule colour, and every swap a dark surface needs.
+  const dark = surfaces.filter((surface) => isDarkSurface(brand, surface));
+  const local = new Map<string, Record<string, string>>(surfaces.map((surface) => [surface, {}]));
+  const mutedShare = ratioOf(brand, "opacity.muted");
+  for (const surface of surfaces) {
+    const vars = local.get(surface)!;
+    const isDark = dark.includes(surface);
+    for (const role of TYPE_ROLES) {
+      const colorRole = typographyOf(brand, `type.${role}`)?.color;
+      const usable = !isDark && !!colorRole && !!colorOf(brand, colorRole) && isMeasured(tokenEntry(brand, "colors", colorRole));
+      vars[`--brand-ink-role-${typeVar(role)}`] = usable ? `var(--brand-${colorVar(colorRole!)})` : "initial";
+    }
+    vars["--brand-rule-color"] = isDark
+      ? mutedShare ? `color-mix(in srgb, currentColor ${trim(Number(mutedShare) * 100)}%, transparent)` : "currentColor"
+      : colorOf(brand, "border.subtle") ? "var(--brand-line-subtle)" : "currentColor";
+  }
+  const buttons: { id: string; selector: string; drawn: Drawn; look: Look | null }[] = [
+    { id: "std", selector: ".brand-btn", drawn: drawnButton(brand, null), look: null },
+    ...buttonLooks(brand).map((look) => ({ id: String(look.index), selector: `.brand-btn.brand-look-${look.index}`, drawn: drawnButton(brand, look), look })),
+  ];
+  const swaps = new Map(buttons.map((b) => [b.id, buttonSwaps(brand, b.drawn, dark)]));
+  const link = drawnLink(brand, "link");
+  const linkSwap = new Map<string, string>();
+  for (const surface of dark) {
+    const bg = hexOf(brand, surface);
+    const color = link.parts.label;
+    if (bg && color?.startsWith("#") && contrast(color.slice(0, 7), bg) < 4.5) linkSwap.set(surface, `var(--brand-on-${colorVar(surface)})`);
+  }
+  for (const surface of surfaces) {
+    const vars = local.get(surface)!;
+    for (const [id, s] of swaps) for (const part of s.parts) vars[`--bs-${id}-${part}`] = s.bySurface.get(surface)?.[part as keyof Swap] ?? "initial";
+    if (linkSwap.size) vars["--bs-link-color"] = linkSwap.get(surface) ?? "initial";
   }
 
-  for (const [surface, ink] of Object.entries(onSurface(brand))) {
-    vars.push(`--brand-on-${colorVar(surface)}:var(--brand-${colorVar(ink)})`);
-  }
-
-  // The primary button, measured from the brand's own hero clone. A white measured button is
-  // the "on photo" variant, so the solid button falls back to the brand surface with its pair.
-  const button = brand.measured?.primary_button;
-  if (button) {
-    const light = isLight(button.background);
-    vars.push(
-      `--brand-button-bg:${light ? "var(--brand-surface-brand)" : button.background}`,
-      `--brand-button-fg:${light ? "var(--brand-on-surface-brand)" : button.color}`,
-      `--brand-button-light-bg:#ffffff`,
-      `--brand-button-light-fg:${light ? button.color : button.background}`,
-      `--brand-button-radius:${button.borderRadius}`,
-      `--brand-button-px:${button.paddingX}`,
-      `--brand-button-height:${button.height}`,
-      `--brand-button-font:${button.fontFamily}`,
-      `--brand-button-size:${button.fontSize}`,
-      `--brand-button-weight:${button.fontWeight}`,
-    );
-  } else {
-    // No solid button in the captured sections: the kit's own (brand colour fill with its pair,
-    // a pill, the cta type role).
-    const cta = typeVar("cta");
-    vars.push(
-      "--brand-button-bg:var(--brand-surface-brand)",
-      "--brand-button-fg:var(--brand-on-surface-brand,#ffffff)",
-      "--brand-button-light-bg:#ffffff",
-      "--brand-button-light-fg:var(--brand-surface-brand)",
-      "--brand-button-radius:var(--brand-radius-full,9999px)",
-      "--brand-button-px:1.25em",
-      "--brand-button-height:2.75rem",
-      `--brand-button-font:var(--brand-font-${cta},inherit)`,
-      `--brand-button-size:var(--brand-text-${cta},1rem)`,
-      `--brand-button-weight:var(--brand-text-${cta}-weight,600)`,
-    );
-  }
-
-  // Heading ink on light surfaces, measured from the clones (kits often record it as unmapped).
-  const headingInk = brand.measured?.heading_on_light?.color;
-  vars.push(`--brand-heading-ink:${headingInk ?? "var(--brand-ink-primary)"}`);
-
-  lines.push(`.brand-root{${vars.join(";")}}`);
-  // Light vs dark is decided per brand from the surface's own colour (Conduit's brand surface is a
-  // light cyan, Garner's a dark green): headings take the measured ink on light surfaces, and
-  // buttons switch to the light variant on dark ones.
-  const surfaceHex = tokens(brand, "colors");
-  const lightness = (role: string) => {
-    const hex = surfaceHex[role]?.value.default.value as string | undefined;
-    return hex ? luminance(hex) : 1;
-  };
-  const cls = (role: string) => `.bg-${colorVar(role)}`;
-  const light = SURFACES.filter((s) => lightness(s) > 0.35).map(cls);
-  const dark = SURFACES.filter((s) => lightness(s) <= 0.35).map(cls);
-  // The nearest surface decides: each surface sets the heading colour as an inherited variable, so
-  // a dark card inside a light section gets light headings (a descendant rule matched through the
-  // nesting and put the brand's dark heading ink on black).
-  if (light.length) lines.push(`:is(${light.join(",")}){--brand-heading-color:var(--brand-heading-ink)}`);
-  if (dark.length) lines.push(`:is(${dark.join(",")}){--brand-heading-color:currentColor}`);
-  lines.push(".brand-heading{color:var(--brand-heading-color,currentColor)}");
-  if (dark.length) {
-    lines.push(
-      `@layer components{:is(${dark.join(",")}) .brand-btn{background:var(--brand-button-light-bg);color:var(--brand-button-light-fg)}}`,
-    );
-  }
-  // Component rules live in the components layer so Tailwind utilities (hidden, sm:inline-flex…)
-  // can still override them, as they would any component class.
+  lines.push(rule(".brand-root", { ...root, ...(local.get("surface.page") ?? {}) }));
+  for (const surface of surfaces) lines.push(rule(`.bg-${colorVar(surface)}`, local.get(surface)!));
+  for (const role of TYPE_ROLES) lines.push(`.brand-ink-${typeVar(role)}{color:var(--brand-ink-role-${typeVar(role)},currentColor)}`);
   lines.push(
-    "@layer components{" +
-      ".brand-btn{display:inline-flex;align-items:center;gap:.5em;min-height:var(--brand-button-height);" +
-      "padding:0 var(--brand-button-px);border-radius:var(--brand-button-radius);" +
-      "font-family:var(--brand-button-font);font-size:var(--brand-button-size);" +
-      "font-weight:var(--brand-button-weight);background:var(--brand-button-bg);" +
-      "color:var(--brand-button-fg);text-decoration:none;white-space:nowrap}" +
-      ".brand-btn-light{background:var(--brand-button-light-bg);color:var(--brand-button-light-fg)}" +
-      "}",
+    ".brand-heading{color:var(--brand-ink-role-headline,currentColor)}",
+    ".brand-rule-t{border-top:var(--brand-rule-width) solid var(--brand-rule-color)}",
+    ".brand-rule-b{border-bottom:var(--brand-rule-width) solid var(--brand-rule-color)}",
+    ".brand-rule-v{align-self:stretch;width:var(--brand-rule-width);background-color:var(--brand-rule-color)}",
+    ".brand-content{max-width:var(--brand-content-width);margin-inline:auto}",
+    `.brand-logo-header{height:${FALLBACKS.headerLogoHeight}}`,
+    `.brand-logo-footer{height:${FALLBACKS.footerLogoHeight}}`,
   );
-  return lines.join("\n");
+
+  // Components live in the components layer so Tailwind utilities (hidden, sm:inline-flex…) can
+  // still override them, as they would any component class.
+  const components: string[] = [".brand-btn-icon{display:inline-flex}"];
+  for (const b of buttons) {
+    const s = swaps.get(b.id)!;
+    const rest = declarations(b.drawn.parts, { swaps: s, id: b.id });
+    const layout = b.look ? {} : { display: "inline-flex", "align-items": "center", "justify-content": "center", "white-space": "nowrap" };
+    components.push(rule(b.selector, { ...layout, ...rest.box, transition: transitionsOf(brand, b.look?.measured, "box") }));
+    components.push(rule(`${b.selector} .brand-btn-icon`, { ...rest.icon, transition: transitionsOf(brand, b.look?.measured, "icon") }));
+    if (!b.look) {
+      const disabled = ratioOf(brand, "opacity.disabled");
+      if (disabled) components.push(rule(`${b.selector}[aria-disabled="true"]`, { opacity: disabled }));
+      continue;
+    }
+    for (const state of STATES) {
+      const parts = partsFromSlots(brand, b.look.measured?.states?.[state]).parts;
+      const drawn = declarations(parts, { swaps: s, id: b.id, outline: state === "focus" });
+      components.push(rule(`${b.selector}${STATE_SELECTOR[state]}`, drawn.box), rule(`${b.selector}${STATE_SELECTOR[state]} .brand-btn-icon`, drawn.icon));
+    }
+  }
+  components.push(rule(".brand-card", { display: "block", ...declarations(drawnCard(brand, null).parts).box }));
+  for (const look of cardLooks(brand)) {
+    const selector = `.brand-card.brand-card-look-${look.index}`;
+    components.push(rule(selector, { ...declarations(drawnCard(brand, look).parts).box, transition: transitionsOf(brand, look.measured, "box") }));
+    for (const state of ["hover", "pressed", "focus"] as State[]) {
+      const parts = partsFromSlots(brand, look.measured?.states?.[state]).parts;
+      components.push(rule(`a${selector}${STATE_SELECTOR[state]}`, declarations(parts, { outline: state === "focus" }).box));
+    }
+  }
+  const linkParts: Parts = { ...link.parts };
+  const linkDecl = declarations(linkParts).box;
+  if (linkParts.label) linkDecl.color = linkSwap.size ? `var(--bs-link-color,${linkParts.label})` : linkParts.label;
+  components.push(rule(".brand-link", { ...linkDecl, transition: transitionsOf(brand, link.style, "box") }));
+  const nav = drawnLink(brand, "nav_link");
+  components.push(rule(".brand-navlink", { ...declarations(nav.parts).box, transition: transitionsOf(brand, nav.style, "box") }));
+  for (const [selector, style] of [[".brand-link", elementStyle(brand, "link")], [".brand-navlink", elementStyle(brand, "nav_link")]] as const) {
+    for (const state of ["hover", "pressed", "focus"] as State[]) {
+      const parts = partsFromSlots(brand, style?.states?.[state]).parts;
+      const decl = declarations(parts, { outline: state === "focus" }).box;
+      if (selector === ".brand-link" && parts.label && linkSwap.size) decl.color = `var(--bs-link-color,${parts.label})`;
+      components.push(rule(`${selector}${STATE_SELECTOR[state]}`, decl));
+    }
+  }
+  lines.push(`@layer components{${components.filter(Boolean).join("")}}`);
+
+  for (const entry of motionEntries(brand)) lines.push(entry.css);
+  lines.push(
+    '@media (prefers-reduced-motion:reduce),print{.brand-btn,.brand-btn-icon,.brand-link,.brand-navlink,.brand-card{transition:none!important}[class*="brand-motion-"]{animation:none!important}}',
+  );
+  return lines.filter(Boolean).join("\n");
+}
+
+/** The Tailwind v4 mapping of the `--brand-*` variables this theme emits, as one `@theme inline`
+ * block (per brand: the kit's extra surfaces and spacing add utilities). The design API's server CSS
+ * compile prepends `@import "tailwindcss";` and compiles it over a site's rendered HTML (Task 17). */
+export function tailwindThemeCss(brand: BrandData): string {
+  const lines: string[] = [];
+  for (const surface of surfaceRoles(brand)) lines.push(`--color-on-${colorVar(surface)}: var(--brand-on-${colorVar(surface)});`);
+  for (const role of [...COLOR_ROLES, ...extraSurfaceRoles(brand)]) lines.push(`--color-${colorVar(role)}: var(--brand-${colorVar(role)});`);
+  for (const role of TYPE_ROLES) {
+    const name = typeVar(role);
+    lines.push(
+      `--font-${name}: var(--brand-font-${name});`,
+      `--text-${name}: var(--brand-text-${name});`,
+      `--text-${name}--line-height: var(--brand-text-${name}-lh);`,
+      `--text-${name}--font-weight: var(--brand-text-${name}-weight);`,
+      `--text-${name}--letter-spacing: var(--brand-text-${name}-tracking);`,
+    );
+  }
+  for (const role of RADIUS_ROLES) lines.push(`--radius-${role}: var(--brand-radius-${role});`);
+  for (const role of SPACING_ROLES) {
+    if (numberOf(brand, `space.${role}`)) lines.push(`--spacing-${spacingVar(role)}: var(--brand-space-${spacingVar(role)});`);
+  }
+  return `@theme inline {\n${lines.map((line) => `  ${line}`).join("\n")}\n}\n`;
 }
