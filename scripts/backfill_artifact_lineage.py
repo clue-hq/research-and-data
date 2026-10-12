@@ -43,14 +43,20 @@ _STEPS = """
       WHERE reference_kind='research_execution_output'
 """
 
-#: Every artifact that is a context item of a context: documents, the pin, claim supports.
-_CONTEXT_ITEMS = """
-    SELECT workspace_id, context_id, artifact_key FROM arv2_context_document
-    UNION SELECT workspace_id, context_id, manifest_key FROM arv2_research_context_pin
-    UNION SELECT s.workspace_id, q.context_id, s.artifact_key FROM claim_quality_support s
-      JOIN claim_quality_current q ON q.assessment_id=s.assessment_id
-      WHERE q.context_id IS NOT NULL
-"""
+
+def _contexts_of(workspace: str, key: str) -> str:
+    """The contexts an artifact is a context item of (document, pin or claim support), looked up
+    by that one artifact through indexes, never by joining every context item."""
+    return f"""
+      SELECT context_id FROM arv2_context_document
+        WHERE workspace_id={workspace} AND artifact_key={key}
+      UNION SELECT context_id FROM arv2_research_context_pin
+        WHERE workspace_id={workspace} AND manifest_key={key}
+      UNION SELECT q.context_id FROM claim_quality_support sup
+        JOIN claim_quality_current q ON q.assessment_id=sup.assessment_id
+        WHERE sup.workspace_id={workspace} AND sup.artifact_key={key}
+          AND q.context_id IS NOT NULL"""
+
 
 #: The next children (any artifact with links) after the cursor, in key order.
 NEXT_CHILDREN = """
@@ -83,7 +89,7 @@ BACKFILL_CONTEXTS = f"""
     SELECT DISTINCT d.workspace_id, d.child_key, i.context_id
     FROM artifact_derivation d
     JOIN ({_STEPS}) step ON step.workspace_id=d.workspace_id AND step.child_key=d.child_key
-    JOIN ({_CONTEXT_ITEMS}) i ON i.workspace_id=d.workspace_id AND i.artifact_key=d.parent_key
+    JOIN LATERAL ({_contexts_of("d.workspace_id", "d.parent_key")}) i ON true
     WHERE d.child_key = ANY(:keys)
     ON CONFLICT DO NOTHING
 """
@@ -102,11 +108,10 @@ DELETE_COVERED_EVIDENCE_LINKS = """
 
 DELETE_COVERED_CONTEXT_LINKS = f"""
     DELETE FROM artifact_derivation d
-    USING artifact_context_lineage l, ({_CONTEXT_ITEMS}) i
+    USING artifact_context_lineage l
     WHERE d.child_key = ANY(:keys)
       AND l.workspace_id=d.workspace_id AND l.child_key=d.child_key
-      AND i.workspace_id=d.workspace_id AND i.artifact_key=d.parent_key
-      AND i.context_id=l.context_id
+      AND l.context_id IN ({_contexts_of("d.workspace_id", "d.parent_key")})
 """
 
 _PLAN = f"""

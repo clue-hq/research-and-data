@@ -62,6 +62,20 @@ _CONTEXT_ITEMS = """
 """
 
 
+def _contexts_of(workspace: str, key: str) -> str:
+    """The contexts an artifact is a context item of (document, pin or claim support), looked up
+    by that one artifact through indexes, never by joining every context item."""
+    return f"""
+      SELECT context_id FROM arv2_context_document
+        WHERE workspace_id={workspace} AND artifact_key={key}
+      UNION SELECT context_id FROM arv2_research_context_pin
+        WHERE workspace_id={workspace} AND manifest_key={key}
+      UNION SELECT q.context_id FROM claim_quality_support sup
+        JOIN claim_quality_current q ON q.assessment_id=sup.assessment_id
+        WHERE sup.workspace_id={workspace} AND sup.artifact_key={key}
+          AND q.context_id IS NOT NULL"""
+
+
 # Downgrade: expand the rows back into one link per covered parent.
 EXPAND_EVIDENCE_LINKS = """
       INSERT INTO artifact_derivation (workspace_id, parent_key, child_key)
@@ -158,8 +172,7 @@ def upgrade() -> None:
               AND a.storage_key=w.child_key AND NOT a.privacy_erased;
           END LOOP;
           -- Steps that saw this context item.
-          FOR c IN SELECT DISTINCT i.context_id FROM ({_CONTEXT_ITEMS}) i
-                   WHERE i.workspace_id=NEW.workspace_id AND i.artifact_key=NEW.storage_key LOOP
+          FOR c IN {_contexts_of("NEW.workspace_id", "NEW.storage_key")} LOOP
             PERFORM pg_advisory_xact_lock(hashtextextended(
               'artifact-lineage-context:'||NEW.workspace_id||':'||c, 0));
             UPDATE artifact a SET {_SET_ERASED}
