@@ -23,7 +23,7 @@ from clue_api.arv2.account_research_store import create_job
 from clue_api.arv2.research_operations import OperationScope
 from clue_api.quality_research_artifacts import ResearchArtifacts, lineage_lock_name
 from clue_research.identity import insert_contact_entity
-from clue_storage import ArtifactIntegrityError, artifact_key, content_address
+from clue_storage import ArtifactIntegrityError, artifact_key, content_address, retain_artifact
 from clue_storage.fs import FsStorage
 from tests.arv2.test_quality_claims_db import setup
 from tests.arv2.test_quality_evidence_db import save
@@ -326,12 +326,20 @@ async def _old_style_artifact(
     )
     await storage.put(key, body, media_type="application/json")
     if step:
+        # What persist_body always wrote: the project binding and the job's retention reference.
         await conn.execute(
             text(
                 "INSERT INTO agent_artifact_project(workspace_id,project_id,artifact_key,"
                 "binding_kind) VALUES(:ws,:project,:key,'research_execution')"
             ),
             {"ws": job.workspace_id, "project": job.project_id, "key": key},
+        )
+        await retain_artifact(
+            conn,
+            workspace_id=job.workspace_id,
+            storage_key=key,
+            reference_kind="research_execution_output",
+            reference_id=str(job.job_id),
         )
     for parent in parents:
         await conn.execute(
@@ -575,5 +583,46 @@ def test_bytes_already_stored_as_evidence_never_get_an_expiry(tmp_path) -> None:
             )
             assert ref.artifact_key == source.artifact_key
             assert await _expires(conn)(source.artifact_key) is None
+
+    run_async(case())
+
+
+def test_the_backfill_uses_only_the_saving_jobs_run_and_account(tmp_path) -> None:
+    """Storage is content-addressed: the same page saved by two accounts is one artifact. A step
+    of account one linked to it gets account one's watermark only."""
+
+    async def case() -> None:
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            op, account_job, _cid = await setup(conn, fs)
+            other = (
+                await conn.execute(
+                    text(
+                        "SELECT job_id, account_entity_id FROM arv2_research_job "
+                        "WHERE run_id=:run AND account_entity_id<>:account LIMIT 1"
+                    ),
+                    {"run": op.run_id, "account": op.account_id},
+                )
+            ).one()
+            op2 = OperationScope(op.workspace_id, op.run_id, other.job_id, other.account_entity_id)
+            await save(conn, fs, op2, "Other account first.", url="https://e.test/o1")
+            ours = await save(conn, fs, op, "Same page.", url="https://e.test/same")
+            theirs = await save(conn, fs, op2, "Same page.", url="https://e.test/same")
+            assert ours.artifact_key == theirs.artifact_key
+            step = await _old_style_artifact(
+                conn, fs, account_job, b'{"shared":1}', [ours.artifact_key], step=True
+            )
+            await convert(conn, [step])
+            rows = (
+                await conn.execute(
+                    text(
+                        "SELECT account_id, evidence_revision FROM artifact_evidence_watermark "
+                        "WHERE child_key=:key"
+                    ),
+                    {"key": step},
+                )
+            ).all()
+            assert [tuple(r) for r in rows] == [(op.account_id, ours.revision)]
+            assert await _links(conn, step) == set()
 
     run_async(case())

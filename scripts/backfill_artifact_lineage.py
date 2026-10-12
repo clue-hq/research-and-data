@@ -11,12 +11,13 @@ result, plan, dossier: everything ``ResearchArtifacts.persist_body`` writes) had
 ~460,000 rows per account run. New saves write one ``artifact_evidence_watermark`` row and one
 ``artifact_context_lineage`` row instead. This converts the old ones.
 
-For each step (marked by ``persist_body``'s project binding or retention reference) it derives the
-watermark from the step's own links (the highest linked revision per run and account; the person
-when exactly one person besides the account is linked, else the account), records the contexts
-it linked, and deletes **only** links those rows cover: erasing the parent still erases the step
-through the ``erase_derived_artifacts`` trigger. A link the rows do not cover stays. Old links keep
-working until converted, so this runs on a live database, in any order, any number of times.
+For each step (an artifact whose ``research_execution_output`` retention reference names the job
+that saved it) it derives the watermark from the step's own links to that job's run and account
+(the highest linked revision; the person when exactly one person besides the account is linked,
+else the account), records the contexts it linked, and deletes **only** links those rows cover:
+erasing the parent still erases the step through the ``erase_derived_artifacts`` trigger. A link
+the rows do not cover stays. Old links keep working until converted, so this runs on a live
+database, in any order, any number of times.
 
 **Dry run by default.** Without ``--apply`` it counts what is left to convert and writes nothing.
 Specification: docs/superpowers/specs/2026-10-12-research-storage-linear-growth-design.md §4.1.
@@ -34,13 +35,15 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from clue_db import db_lifespan, transaction
 
-#: Artifacts ``persist_body`` wrote. Only these become watermark rows; claims, pages and other
+#: Artifacts ``persist_body`` wrote, with the run and account of the job that saved them: its
+#: retention reference names the job. Only these become watermark rows; claims, pages and other
 #: precise writers keep their links (they cite exactly what they used).
 _STEPS = """
-    SELECT workspace_id, artifact_key AS child_key FROM agent_artifact_project
-      WHERE binding_kind='research_execution'
-    UNION SELECT workspace_id, storage_key FROM artifact_reference
-      WHERE reference_kind='research_execution_output'
+    SELECT r.workspace_id, r.storage_key AS child_key, j.run_id,
+           j.account_entity_id AS account_id
+    FROM artifact_reference r
+    JOIN arv2_research_job j ON j.workspace_id=r.workspace_id AND j.job_id::text=r.reference_id
+    WHERE r.reference_kind='research_execution_output'
 """
 
 
@@ -76,7 +79,10 @@ BACKFILL_WATERMARKS = f"""
       max(s.revision)
     FROM artifact_derivation d
     JOIN ({_STEPS}) step ON step.workspace_id=d.workspace_id AND step.child_key=d.child_key
+    -- Only the saving job's own run and account: storage is content-addressed, so the same page
+    -- saved for another account is the same artifact with another source row.
     JOIN arv2_evidence_source s ON s.workspace_id=d.workspace_id AND s.artifact_key=d.parent_key
+      AND s.run_id=step.run_id AND s.account_id=step.account_id
     WHERE d.child_key = ANY(:keys)
     GROUP BY d.workspace_id, d.child_key, s.run_id, s.account_id
     ON CONFLICT ON CONSTRAINT artifact_evidence_watermark_pk DO UPDATE
