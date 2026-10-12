@@ -263,3 +263,13 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   brand's own extra surfaces, including the measured section colours minted as brand-scoped tokens;
   the validator checks the choice exists in the brand's kit (like Button style). The dropdown's
   labels for extra surfaces follow a readable rule, brought back with the plan for approval.
+- 2026-10-12 — **Q5:** (b) publish refuses a page that uses a retired (deprecated) section; only
+  approved sections publish. Pages already live stay live. Found with it, to fix in the plans:
+  - The brand data the editor, the save check and the renderer use lists approved sections only
+    (`agent_cloned_sections.py:485-505`, Lane B Task 8), so a section retired after a page used it
+    would break that page's canvas and refuse every save, not just publish. Ruling: the brand data
+    carries every section the page itself uses, whatever its status; the agent's catalog (what it
+    may newly place) stays approved-only. Publish then applies Q5.
+  - Publish refusal messages reach the marketer verbatim (`webDocuments.ts:2073`), and Lane A's
+    current wording says "cloned section frag_…". New wording (no "clone", the section's own name)
+    awaits approval, with a site.md line so the agent knows which section to replace.
