@@ -27,7 +27,7 @@ Each question has a recommendation. The plan's code implements the recommendatio
   - (a) Show each existing item's fields in place, grouped under "<Field label> <n>", with no add/remove. **Recommended** (Task 9 implements this).
   - (b) Hide repeating fields until designed.
   - (c) Add/remove item controls — needs a design first.
-- **Q3. Share, Publish and Export for sites before Lane A's A7 (publish) and A8 (export) land.**
+- **Q3 — ANSWERED 2026-10-12: (a)** (Task 2 Step 9 as written). **Share, Publish and Export for sites before Lane A's A7 (publish) and A8 (export) land.**
   - (a) Treat `site` exactly like `web` in the Share menu and the library's export (one rule, `isWebsiteKind`). **Recommended**: no workspace is in the site flag until Wave 4, so nobody sees a backend refusal in between, and nothing has to be re-wired later. Task 2 Step 9 implements it.
   - (b) Hide Share/Export for sites until A7/A8 land. If chosen, drop Task 2 Step 9 and keep the `kind === "web"` checks.
 - **Q4. Version rows in the action menu.** The designed submenu shows "Current version / Version N".

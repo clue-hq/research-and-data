@@ -579,3 +579,6 @@ model's own recipe slots and notes use the exact tokens):
 - 2026-10-12 — **Q12:** (a) the dock shows each existing list item's fields ("Stat 1", "Stat 2"…),
   editable, with no add or remove buttons; adding or removing items is asked of the agent in chat.
   (Lane C Task 9 as written.)
+- 2026-10-12 — **Q13:** (a) a site is treated exactly like a web page in the Share, Publish and Export
+  menus from the start (one rule, `isWebsiteKind`); no workspace is in the site flag before Wave 4.
+  (Lane C Task 2 Step 9 as written.)
