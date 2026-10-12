@@ -291,3 +291,5 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   given everything, it already chose the account-personalised "Prepared for" header and footer).
   The building-with-puck skill already says the header and footer live in `shell.json` and to leave
   out navigation clones that do not help the reader; no wording change.
+- 2026-10-12 — **Q9:** (a) a request that hits its limit with a valid page saves it (one undo step)
+  and says it stopped. (Lane B Task 7 as written; the stop wording is T12a/T12b in Part 2.)

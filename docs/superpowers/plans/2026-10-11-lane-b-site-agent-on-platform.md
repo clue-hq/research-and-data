@@ -55,7 +55,8 @@ changes if the answer differs.
    - (b) leave out `section_role in {"nav", "footer"}` and `composed` shells.
    **Recommendation: (b).** Task 8 is written to (b) with one constant
    (`CATALOG_SKIP_ROLES`); (a) is deleting that filter and its test.
-3. **A request that stops at its limit (100 model calls or 30 minutes) with a valid page.**
+3. **ANSWERED 2026-10-12: (a) — save it as one undo step and say it stopped (Task 7 as written).**
+   **A request that stops at its limit (100 model calls or 30 minutes) with a valid page.**
    - (a) save it (one undo step), and the chat summary says it stopped;
    - (b) save nothing unless the agent finished on its own.
    **Recommendation: (a)** — the work is valid and undoable. Task 7 is written to (a).
