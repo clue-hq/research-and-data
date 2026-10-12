@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from lumen_ingestion.brief_agent import build_brief_request
-from lumen_ingestion.capture.geometry import parse_geometry
+from lumen_ingestion.capture.geometry import measured_styles, parse_geometry
 from lumen_ingestion.capture.motion import attach_keyframes, clean_icon_svg, keyframe_steps
 from lumen_ingestion.capture.snapshot import Stylesheet
 from lumen_ingestion.evidence import BrandEvidence, MotionEvidence
@@ -98,6 +98,51 @@ def test_keyframes_come_from_the_captured_stylesheets_in_cascade_order() -> None
         (100.0, {"opacity": "1", "transform": "scale(1)"}),
     ]
     assert keyframe_steps(sheets, "missing") == []
+
+
+def test_a_keyframe_step_outside_0_to_100_percent_is_dropped() -> None:
+    steps = keyframe_steps([_sheet("@keyframes k{0%{opacity:1}150%{opacity:.3}100%{opacity:0}}")], "k")
+    assert [(s.offset, s.declarations) for s in steps] == [(0.0, {"opacity": "1"}), (100.0, {"opacity": "0"})]
+
+
+def _surface(idx: int, **overrides) -> dict:
+    """A button entry in the probe's surface shape (style_states.harvest.json)."""
+    entry = {
+        "bg": "rgb(4, 116, 100)", "bgImage": None, "border": [1, 1, 1, 1], "borderColor": "rgb(4, 116, 100)",
+        "borderStyle": "solid", "cls": "button", "color": "rgb(255, 255, 255)", "disabled": False,
+        "font": "500 14px/19.6px Arial", "gap": [8, 8], "h": 45.59, "idx": idx, "padding": [12, 24, 12, 24],
+        "pill": True, "radius": [999, 999, 999, 999], "shadow": None, "tag": "a", "w": 245.22,
+    }
+    return {**entry, **overrides}
+
+
+def _record(idx: int, rest: dict, hover: dict) -> dict:
+    """A state-pass record in the probe's shape (style_states.harvest.json `states.styles`)."""
+    return {
+        "idx": idx, "how": "pointer",
+        "rest": {"color": "rgb(255, 255, 255)", "cursor": "pointer", **rest},
+        "hover": hover, "pressed": {}, "focus": {}, "disabled": {},
+        "motion": {"icon": None, "icon_transitions": [], "label_transitions": [], "transitions": []},
+    }
+
+
+def test_a_colour_a_state_clears_is_kept_as_transparent() -> None:
+    surfaces = [
+        _surface(0),
+        # Transparent at rest and in no state: the browser serializes the fill as rgba(0, 0, 0, 0).
+        _surface(1, bg=None, borderColor="rgb(13, 43, 37)", color="rgb(13, 43, 37)"),
+    ]
+    states = {"styles": [
+        _record(0, {"background": "rgb(4, 116, 100)"}, {"background": "rgba(0, 0, 0, 0)"}),
+        # The rest probe's own transparent colours stay unset (only a state's delta clears one).
+        _record(1, {"background": "rgba(0, 0, 0, 0)", "label_color": "rgba(0, 0, 0, 0)"}, {}),
+    ]}
+    styles = measured_styles(surfaces, states, URL)
+    solid = next(s for s in styles if s.variant == "solid.047464")
+    assert solid.rest.background == "#047464"
+    assert solid.hover.background == "#00000000", "a fill the hover clears is recorded, not read as unchanged"
+    outline = next(s for s in styles if s.variant == "outline.0d2b25")
+    assert outline.rest.background is None and outline.rest.label_color is None and outline.hover is None
 
 
 def test_an_animation_without_a_usable_definition_is_dropped() -> None:

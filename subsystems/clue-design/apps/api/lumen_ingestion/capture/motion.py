@@ -49,6 +49,8 @@ def safe_style_value(value: str) -> bool:
 
 
 def _offsets(prelude: list) -> list[float]:
+    """A keyframe selector's offsets, or `[]` when any part is not one: CSS ignores a rule whose
+    selector is unparseable or outside 0-100%, and the engine refuses such an offset (LUMB0264)."""
     out: list[float] = []
     for part in tinycss2.serialize(prelude).split(","):
         word = part.strip().lower()
@@ -58,9 +60,12 @@ def _offsets(prelude: list) -> list[float]:
             out.append(100.0)
         elif word.endswith("%"):
             try:
-                out.append(round(float(word[:-1]), 2))
+                offset = round(float(word[:-1]), 2)
             except ValueError:
                 return []
+            if not 0.0 <= offset <= 100.0:
+                return []
+            out.append(offset)
         else:
             return []
     return out

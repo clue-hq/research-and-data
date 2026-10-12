@@ -812,6 +812,8 @@ _LOOK_NUMBERS = (
     "outline_width", "outline_offset", "icon_opacity",
 )
 _LOOK_LISTS = ("border_width", "radius", "padding")
+#: A colour a state clears (fully transparent), recorded as itself the way a removed shadow is "none".
+_CLEARED = "#00000000"
 _FONT = re.compile(r"^(\d+)\s+([\d.]+)px/(\S+)\s+(.+)$")
 
 
@@ -826,12 +828,18 @@ def _family(value: object) -> str | None:
     return text.split(",", 1)[0].strip().strip("\"'") or None if text else None
 
 
-def _look_fields(look: dict) -> dict:
-    """A probe look (or state delta) as `StyleLook` fields; absent and empty values left out."""
+def _look_fields(look: dict, *, clears: bool = False) -> dict:
+    """A probe look (or state delta) as `StyleLook` fields; absent and empty values left out.
+
+    `clears` is for a state's delta: a colour the state makes fully transparent is `#00000000`
+    rather than left out, which would read as "unchanged from rest".
+    """
     out: dict = {}
     for key in _LOOK_COLORS:
         if key in look:
             out[key] = _opaque_hex(look.get(key))
+            if out[key] is None and clears and _hex(look.get(key)):
+                out[key] = _CLEARED
     for key in _LOOK_TEXTS:
         if key in look:
             out[key] = _text(look.get(key))
@@ -885,7 +893,7 @@ def _rest_look(entry: dict, probe: dict | None) -> StyleLook:
 
 def _state_look(record: dict | None, state: str) -> StyleLook | None:
     look = record.get(state) if record else None
-    fields = _look_fields(look) if isinstance(look, dict) else {}
+    fields = _look_fields(look, clears=True) if isinstance(look, dict) else {}
     return StyleLook(**fields) if fields else None
 
 

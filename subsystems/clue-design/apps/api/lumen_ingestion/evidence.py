@@ -298,7 +298,8 @@ class StyleLook(BaseModel):
     """One look of a measured element style (Wave 2 A9): what a browser computed for it.
 
     The rest look carries everything measured; a state's look carries only what changed from rest,
-    with `"none"` for a shadow, transform or filter the state removes. Colours are normalized hex.
+    with `"none"` for a shadow, transform or filter the state removes, and `#00000000` for a colour
+    the state clears. Colours are normalized hex.
     """
 
     model_config = ConfigDict(extra="forbid")
