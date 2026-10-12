@@ -66,7 +66,11 @@ def stripped_env(home: str) -> dict[str, str]:
 
 @contextmanager
 def hardened_context(
-    *, javascript: bool, viewport: dict[str, int] | None = None, device_scale_factor: float = 1.0
+    *,
+    javascript: bool,
+    viewport: dict[str, int] | None = None,
+    device_scale_factor: float = 1.0,
+    reduced_motion: str | None = None,
 ) -> Iterator[tuple[Any, list[str]]]:
     """A fresh hardened browser context. Yields ``(context, blocked)``; ``blocked`` collects the URL
     of every request and WebSocket the context refused."""
@@ -101,6 +105,7 @@ def hardened_context(
                     accept_downloads=False,
                     viewport=viewport or dict(DEFAULT_VIEWPORT),
                     device_scale_factor=device_scale_factor,
+                    reduced_motion=reduced_motion,
                 )
                 context.route("**/*", refuse)
                 context.route_web_socket("**/*", lambda socket: blocked.append(socket.url))
@@ -113,12 +118,18 @@ def hardened_context(
 
 @contextmanager
 def hardened_page(
-    *, javascript: bool, viewport: dict[str, int] | None = None, device_scale_factor: float = 1.0
+    *,
+    javascript: bool,
+    viewport: dict[str, int] | None = None,
+    device_scale_factor: float = 1.0,
+    reduced_motion: str | None = None,
 ) -> Iterator[tuple[Any, list[str]]]:
     """One page in a fresh hardened context. The page is closed, then the browser."""
     from playwright.sync_api import Error as PlaywrightError
 
-    with hardened_context(javascript=javascript, viewport=viewport, device_scale_factor=device_scale_factor) as (context, blocked):
+    with hardened_context(
+        javascript=javascript, viewport=viewport, device_scale_factor=device_scale_factor, reduced_motion=reduced_motion
+    ) as (context, blocked):
         page = context.new_page()
         try:
             yield page, blocked

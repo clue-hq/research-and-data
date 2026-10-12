@@ -339,7 +339,14 @@ def capture_site_screenshot(
     html = sanitize_site_html(site_page_html(page, css)).html
     timeout_ms = timeout_s * 1000
     try:
-        with hardened_page(javascript=False, viewport={"width": width, "height": height}, device_scale_factor=scale) as (shot, _blocked):
+        with hardened_page(
+            javascript=False,
+            viewport={"width": width, "height": height},
+            device_scale_factor=scale,
+            # A scroll-driven reveal leaves below-the-fold content at its starting look in a full-page
+            # capture (verified 2026-10-12); the theme's reduced-motion rule shows everything in place.
+            reduced_motion="reduce",
+        ) as (shot, _blocked):
             shot.set_content(html, wait_until="load", timeout=timeout_ms)
             shot.wait_for_timeout(_FONT_SETTLE_MS)
             return shot.screenshot(type="png", full_page=full_page, timeout=timeout_ms)
