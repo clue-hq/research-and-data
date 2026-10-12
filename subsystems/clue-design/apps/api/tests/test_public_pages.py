@@ -283,3 +283,20 @@ def test_republishing_under_a_new_slug_moves_the_site(client: TestClient) -> Non
     assert again.status_code == 200, again.text
     assert repo.get_web_publish("second-name")["status"] == "active"
     assert repo.get_web_publish("first-name")["status"] == "unpublished"
+
+
+def test_after_a_move_the_publish_state_names_the_address_the_page_now_lives_at(
+    client: TestClient,
+) -> None:
+    """The share menu reads this state to show where the page is. Retiring the old slug
+    re-stamps its row, so the state must prefer the live publish over the most recent row."""
+    document = seed_document(client)
+    for slug in ("moved-from", "moved-to"):
+        response = client.post(f"/documents/{document['id']}/web/publish", json={"slug": slug})
+        assert response.status_code == 200, response.text
+    assert HybridRepository().get_web_publish("moved-from")["status"] == "unpublished"
+
+    state = client.get(f"/documents/{document['id']}/web/publish").json()
+    assert (state["slug"], state["status"]) == ("moved-to", "active")
+    assert state["url"].endswith("/moved-to")
+    assert state["page_urls"] == {"/": state["url"]}

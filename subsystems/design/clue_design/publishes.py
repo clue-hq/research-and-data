@@ -353,13 +353,20 @@ async def require_web_publish(conn: AsyncConnection, *, workspace_id: str, slug:
 async def get_web_publish_for_document(
     conn: AsyncConnection, *, workspace_id: str, document_id: str
 ) -> JsonObject | None:
-    """The most recently updated publish of one document (ported ordering)."""
+    """The document's live publish, else its most recently updated one.
+
+    The live (``active``) row comes first because recency alone picks the wrong address after a
+    move: ``unpublish_other_slugs`` re-stamps ``updated_at`` on the slugs it retires, so the
+    address the document moved FROM is the most recently updated row. When nothing is live
+    (everything unpublished), the newest row is still returned, so an unpublished document's
+    state keeps reporting ``status: "unpublished"``.
+    """
     row = (
         await conn.execute(
             text(
                 "SELECT slug FROM design_web_publish"
                 " WHERE workspace_id = :w AND document_id = :d"
-                " ORDER BY updated_at DESC LIMIT 1"
+                " ORDER BY (status = 'active') DESC, updated_at DESC LIMIT 1"
             ),
             {"w": workspace_id, "d": document_id},
         )
