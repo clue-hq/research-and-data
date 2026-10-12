@@ -114,28 +114,38 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     controller.setShellFields(state.brand ? shellFieldDescriptions(state.brand) : null);
   }, [controller, state.brand]);
 
-  if (state.status !== "ready" || !state.site || !state.brand || !config) return null;
-  const page = pageFor(state.site, state.route);
-  if (!page) return null;
+  // Built once per change of the values it reads, never on a selection: re-rendering <Puck>
+  // re-renders every section, and React 19 re-sets a clone's dangerouslySetInnerHTML on every render
+  // of it, which rebuilds its DOM — the page above the selection reflows (stale annotate geometry)
+  // and the text slots CloneEditor made editable in place stop being editable.
+  const ready = state.status === "ready";
+  const brand = ready ? state.brand : null;
+  const page = ready && state.site ? pageFor(state.site, state.route) : null;
   const route = state.route;
-  return (
-    <Puck
-      config={config}
-      data={page as unknown as Data}
-      iframe={{ enabled: false }}
-      key={state.mountKey}
-      onChange={(data) => controller.pageEdited(route, data as unknown as SitePage)}
-      permissions={PERMISSIONS}
-      ui={{
-        previewMode: state.mode === "edit" ? "edit" : "interactive",
-        viewports: { controlsVisible: false, current: { height: "auto", width: "100%" }, options: VIEWPORTS },
-      }}
-      viewports={VIEWPORTS}
-    >
-      <PuckBridge brand={state.brand} config={config} controller={controller} />
-      <Puck.Preview />
-    </Puck>
-  );
+  const mode = state.mode;
+  const mountKey = state.mountKey;
+  const editor = useMemo(() => {
+    if (!brand || !config || !page) return null;
+    return (
+      <Puck
+        config={config}
+        data={page as unknown as Data}
+        iframe={{ enabled: false }}
+        key={mountKey}
+        onChange={(data) => controller.pageEdited(route, data as unknown as SitePage)}
+        permissions={PERMISSIONS}
+        ui={{
+          previewMode: mode === "edit" ? "edit" : "interactive",
+          viewports: { controlsVisible: false, current: { height: "auto", width: "100%" }, options: VIEWPORTS },
+        }}
+        viewports={VIEWPORTS}
+      >
+        <PuckBridge brand={brand} config={config} controller={controller} />
+        <Puck.Preview />
+      </Puck>
+    );
+  }, [brand, config, controller, mode, mountKey, page, route]);
+  return editor;
 }
 
 function PuckBridge({ brand, config, controller }: { brand: BrandData; config: Config; controller: FrameController }) {

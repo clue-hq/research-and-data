@@ -31,12 +31,13 @@ def test_the_editor_renders_a_site_and_reports_selections(
     ]
     assert own_code == [], f"the editor's own code must run under its policy: {own_code}"
 
-    # The canvas's own scroll at the moment of the click, which is when the frame measures the
-    # section. (Read later it can differ: selecting a section can reflow the page above it, and
-    # the browser's scroll anchoring then moves #root.)
+    # The canvas's own scroll, and the height of the cloned section above `proof`, at the moment of
+    # the click, which is when the frame measures the section.
     frame.evaluate(
         "document.addEventListener('click', () => {"
-        " window.__scrollAtClick = document.getElementById('root').scrollTop; }, true)"
+        " window.__scrollAtClick = document.getElementById('root').scrollTop;"
+        " window.__standsAtClick = document.querySelector('[data-puck-component=\"stands\"]')"
+        ".getBoundingClientRect().height; }, true)"
     )
     # force: with drag off (C13), dnd-kit marks every Puck item aria-disabled, and Playwright treats
     # everything inside an aria-disabled element as not clickable. A real click still selects.
@@ -61,6 +62,22 @@ def test_the_editor_renders_a_site_and_reports_selections(
     assert scroll_top > 0, "the proof section is below the fold, so clicking it scrolls the canvas"
     assert abs(geometry["document"]["top"] - (geometry["viewport"]["top"] + scroll_top)) < 1, (
         f"document coordinates must include the canvas's scroll ({scroll_top}): {geometry}"
+    )
+    # A selection must not rebuild the page around it: the cloned section above keeps its height
+    # and the canvas keeps its scroll, so the geometry reported at the click still places the
+    # comment box (C7) once the page has settled.
+    stands_at_click = frame.evaluate("window.__standsAtClick")
+    page.wait_for_timeout(500)
+    settled = frame.evaluate(
+        "({ scroll: document.getElementById('root').scrollTop,"
+        " stands: document.querySelector('[data-puck-component=\"stands\"]')"
+        ".getBoundingClientRect().height })"
+    )
+    assert abs(settled["stands"] - stands_at_click) < 1, (
+        f"selecting `proof` reflowed the section above it: {stands_at_click} -> {settled['stands']}"
+    )
+    assert abs(settled["scroll"] - scroll_top) < 1, (
+        f"selecting `proof` moved the canvas's scroll: {scroll_top} -> {settled['scroll']}"
     )
 
     frame.locator(".brand-root > header").click()
