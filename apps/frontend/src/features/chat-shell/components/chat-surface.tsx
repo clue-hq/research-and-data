@@ -65,6 +65,7 @@ import { ChatShellHeader } from "./chat-shell-header";
 import { ClarificationCard } from "./clarification-card";
 import { ImageInspector } from "./image-inspector";
 import styles from "./chat-shell.module.css";
+import { SiteInspector } from "./site-inspector";
 import { WebInspector } from "./web-inspector";
 
 // The chats route's view layer (Phase C, C-3): the co-founder's chat-shell
@@ -997,6 +998,16 @@ export function ChatSurface({
                 suppressAutoLayoutSection={
                   sceneSession.selection?.suppressAutoLayoutSection
                 }
+              />
+            </div>
+          ) : null}
+          {dockContent === "site-inspector" ? (
+            <div className={styles.inspectorDock}>
+              <SiteInspector
+                // Keyed on the selection only (the web dock's rule): a new selection starts with
+                // fresh drafts; a write never remounts the panel.
+                binding={siteSession.inspector}
+                key={siteSession.inspector.selectionKey}
               />
             </div>
           ) : null}

@@ -17,6 +17,7 @@ import { chatShellKindForCard } from "../model/artifact-kind";
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ImageInspector } from "./image-inspector";
+import { SiteInspector } from "./site-inspector";
 import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
 
@@ -181,7 +182,11 @@ export function EditorSurface({
     controller.editing &&
     controller.artifactKind === "ad" &&
     sceneSession.activeDocumentId !== null;
-  const inspectorVisible = webInspectorVisible || adInspectorVisible;
+  const siteInspectorVisible =
+    controller.editing &&
+    controller.artifactKind === "site" &&
+    siteSession.activeDocumentId !== null;
+  const inspectorVisible = webInspectorVisible || adInspectorVisible || siteInspectorVisible;
   const inspectorSelection =
     session.webSelection.selection?.schema.selection ??
     sceneSession.selection?.selection ??
@@ -293,6 +298,13 @@ export function EditorSurface({
                 sceneSession.selection?.suppressAutoLayoutSection
               }
             />
+          </div>
+        </div>
+      ) : null}
+      {siteInspectorVisible ? (
+        <div className={styles.chatBody}>
+          <div className={styles.inspectorDock}>
+            <SiteInspector binding={siteSession.inspector} key={siteSession.inspector.selectionKey} />
           </div>
         </div>
       ) : null}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
-import { canonicalJson } from "@clue/site-kit/editor-site";
+import { canonicalJson, componentProps } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
 import { httpSiteRepository, type SiteRepository } from "../data/site.repository";
@@ -15,6 +15,13 @@ import {
   siteFrameMode,
   siteInitKey,
 } from "../model/site-frame-sync";
+import { cloneLabelsOf, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
+import {
+  commitFieldEdit,
+  siteInspectorTitle,
+  type SiteInspectorBinding,
+  type SiteSelection,
+} from "../model/site-selection";
 import { siteStageMounted, type SiteStageBinding } from "../model/site-stage";
 import { useSiteDocument } from "./use-site-document";
 import { useSiteEditorOrigin } from "./use-site-editor-origin";
@@ -32,11 +39,14 @@ export interface AppSite {
 
 export interface SiteEditingSession {
   activeDocumentId: string | null;
+  inspector: SiteInspectorBinding;
   post: SiteFrameHost["post"];
   reload: () => void;
   reloadNonce: number;
   route: string;
   saves: SiteSaves;
+  /** The active selection (null outside edit mode or for another document). */
+  selection: SiteSelection | null;
   setSite: (site: SiteDocument) => void;
   site: SiteDocument | null;
   stage: SiteStageBinding;
@@ -88,6 +98,7 @@ export function useSiteEditingSession({
   const [shownDocumentId, setShownDocumentId] = useState<string | null>(null);
   const [frameError, setFrameError] = useState<{ documentId: string; message: string } | null>(null);
   const mode = siteFrameMode({ editing, locked });
+  const [selection, setSelection] = useState<SiteSelection | null>(null);
 
   const latest = useRef({ currentSite, editing, locked, save: saves.save });
   useEffect(() => {
@@ -120,8 +131,20 @@ export function useSiteEditingSession({
       case "error":
         setFrameError({ documentId: message.documentId, message: message.payload.message || message.payload.code });
         return;
+      case "selected":
+        setSelection({
+          componentId: message.payload.componentId,
+          componentType: message.payload.componentType,
+          documentId: message.documentId,
+          fields: message.payload.fields,
+          target: message.payload.route,
+        });
+        return;
+      case "deselected":
+        setSelection(null);
+        return;
       default:
-        // selected / deselected / annotate / request_asset / shortcut: Tasks 9-12 add their cases here.
+        // annotate / request_asset / shortcut: Tasks 10-12 add their cases here.
         return;
     }
   }, []);
@@ -193,6 +216,44 @@ export function useSiteEditingSession({
     [activeDocumentId],
   );
 
+  // The dock (C5): the selected section's fields over the app's own copy of the site, and Layers.
+  const activeSelection = editing && selection && selection.documentId === activeDocumentId ? selection : null;
+  const cloneLabels = useMemo(() => cloneLabelsOf(load.brand), [load.brand]);
+  const layers = siteLayerRows({ cloneLabels, route, selection: activeSelection, site: currentSite?.site ?? null });
+  const values =
+    activeSelection && currentSite ? componentProps(currentSite.site, activeSelection.target, activeSelection.componentId) : null;
+  const save = saves.save;
+  const commitField = useCallback(
+    (name: string, value: unknown) => {
+      if (!activeSelection || !currentSite || !activeDocumentId || !acceptsFrameEdits({ editing, locked })) return;
+      const edit = commitFieldEdit(currentSite.site, activeSelection, name, value);
+      if (!edit) return;
+      setAppSite({ ...currentSite, site: edit.site });
+      post("set_props", { componentId: activeSelection.componentId, props: edit.props, route: activeSelection.target }, activeDocumentId);
+      save(edit.site, `inspector: edit ${name}`);
+    },
+    [activeDocumentId, activeSelection, currentSite, editing, locked, post, save],
+  );
+  const selectLayer = useCallback(
+    (row: SiteLayerRow) => {
+      if (!activeDocumentId || !editing) return;
+      post("select", { componentId: row.componentId, route: row.target }, activeDocumentId);
+    },
+    [activeDocumentId, editing, post],
+  );
+  const inspector: SiteInspectorBinding = {
+    disabled: locked,
+    error: saves.error,
+    fields: activeSelection?.fields ?? null,
+    layers,
+    note: saves.note,
+    onCommit: commitField,
+    onSelectLayer: selectLayer,
+    selectionKey: activeSelection ? `${activeSelection.target}#${activeSelection.componentId}` : `page:${route}`,
+    title: siteInspectorTitle(currentSite?.site ?? null, route, layers.find((row) => row.active)),
+    values,
+  };
+
   const canvas = siteCanvasState({
     documentId: activeDocumentId,
     editorOrigin: origin.origin,
@@ -208,11 +269,13 @@ export function useSiteEditingSession({
 
   return {
     activeDocumentId,
+    inspector,
     post,
     reload,
     reloadNonce,
     route,
     saves,
+    selection: activeSelection,
     setSite,
     site: currentSite?.site ?? null,
     stage: {
