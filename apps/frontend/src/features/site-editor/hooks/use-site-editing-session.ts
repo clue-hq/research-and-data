@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
-import { canonicalJson, componentProps, getAtPath, pageFor, withAssetAt } from "@clue/site-kit/editor-site";
+import { canonicalJson, componentProps, getAtPath, pageFor, shortcutFor, withAssetAt } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
 import type { PendingAnnotation } from "@/features/design-editor/adapter/annotations";
@@ -18,6 +18,7 @@ import {
   siteFrameMode,
   siteInitKey,
 } from "../model/site-frame-sync";
+import { siteHistoryActionFromEvent, siteHistoryDisabled } from "../model/site-history";
 import { cloneLabelsOf, componentLabel, siteLayerRows, type SiteLayerRow } from "../model/site-layers";
 import {
   commitFieldEdit,
@@ -45,6 +46,7 @@ export interface AppSite {
 export interface SiteEditingSession {
   activeDocumentId: string | null;
   annotations: WebAnnotationsSession;
+  history: { redoDisabled: boolean; undoDisabled: boolean };
   imageField: (path: string, value: string) => SiteImageFieldBinding | null;
   images: SiteImages;
   inspector: SiteInspectorBinding;
@@ -111,6 +113,7 @@ export function useSiteEditingSession({
   const [selection, setSelection] = useState<SiteSelection | null>(null);
   const openLibraryRef = useRef<((target: SiteImageTarget) => void) | null>(null);
   const annotateRef = useRef<((payload: { componentId: string; geometry: PendingAnnotation["geometry"]; route: string }) => void) | null>(null);
+  const stepRef = useRef<(action: "undo" | "redo") => void>(() => undefined);
 
   const latest = useRef({ currentSite, editing, locked, save: saves.save });
   useEffect(() => {
@@ -162,8 +165,10 @@ export function useSiteEditingSession({
       case "annotate":
         annotateRef.current?.(message.payload);
         return;
+      case "shortcut":
+        stepRef.current(message.payload.action);
+        return;
       default:
-        // shortcut: Task 12 adds its case here.
         return;
     }
   }, []);
@@ -332,12 +337,46 @@ export function useSiteEditingSession({
     }),
     [annotations, onSendAnnotation],
   );
+  // C8: one history path — the server's stack — from the menu, the app's keyboard and the frame's.
+  const undo = saves.undo;
+  const redo = saves.redo;
+  useEffect(() => {
+    stepRef.current = (action) => {
+      if (!activeDocumentId || locked) return;
+      if (action === "undo") undo();
+      else redo();
+    };
+  });
+  useEffect(() => {
+    if (!activeDocumentId) return;
+    const onAction = (event: Event) => {
+      const action = siteHistoryActionFromEvent((event as CustomEvent).detail);
+      if (action) stepRef.current(action);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const decision = shortcutFor(event);
+      if (decision !== "undo" && decision !== "redo") return;
+      event.preventDefault();
+      stepRef.current(decision);
+    };
+    window.addEventListener("clue:artifact-action-request", onAction);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("clue:artifact-action-request", onAction);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [activeDocumentId]);
+  const history = {
+    redoDisabled: siteHistoryDisabled({ depth: saves.redoDepth, locked }),
+    undoDisabled: siteHistoryDisabled({ depth: saves.undoDepth, locked }),
+  };
   const inspector: SiteInspectorBinding = {
     disabled: locked,
     error: saves.error,
     fields: activeSelection?.fields ?? null,
     layers,
-    note: saves.note,
+    // The lock's own sentence while it holds (the Edit pill carries the same words).
+    note: saves.note ?? (locked ? AGENT_RUN_LOCK_NOTE : null),
     onCommit: commitField,
     onSelectLayer: selectLayer,
     selectionKey: activeSelection ? `${activeSelection.target}#${activeSelection.componentId}` : `page:${route}`,
@@ -361,6 +400,7 @@ export function useSiteEditingSession({
   return {
     activeDocumentId,
     annotations,
+    history,
     imageField,
     images,
     inspector,

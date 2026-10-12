@@ -431,7 +431,9 @@ export function EditorSurface({
         redoDisabled={
           controller.artifactKind === "ad"
             ? sceneSession.redoDisabled
-            : session.redoDisabled
+            : controller.artifactKind === "site"
+              ? siteSession.history.redoDisabled
+              : session.redoDisabled
         }
         selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
         site={siteSession.stage}
@@ -439,7 +441,9 @@ export function EditorSurface({
         undoDisabled={
           controller.artifactKind === "ad"
             ? sceneSession.undoDisabled
-            : session.undoDisabled
+            : controller.artifactKind === "site"
+              ? siteSession.history.undoDisabled
+              : session.undoDisabled
         }
       />
     </main>

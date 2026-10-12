@@ -1352,7 +1352,9 @@ export function ChatSurface({
         redoDisabled={
           shell.artifactKind === "ad"
             ? sceneSession.redoDisabled
-            : session.redoDisabled
+            : shell.artifactKind === "site"
+              ? siteSession.history.redoDisabled
+              : session.redoDisabled
         }
         selectedCanvasNodeId={session.webSelection.selection?.node.id ?? null}
         site={siteSession.stage}
@@ -1360,7 +1362,9 @@ export function ChatSurface({
         undoDisabled={
           shell.artifactKind === "ad"
             ? sceneSession.undoDisabled
-            : session.undoDisabled
+            : shell.artifactKind === "site"
+              ? siteSession.history.undoDisabled
+              : session.undoDisabled
         }
       />
     </main>
