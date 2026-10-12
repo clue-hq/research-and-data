@@ -4874,6 +4874,56 @@ def create_app(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    def _site_render_inputs(repo: HybridRepository, document: JsonObject) -> tuple[JsonObject, list]:
+        blobs = blob_store(repo)
+        brand = app.state.site_brand_loader(repo, blobs, document)
+        return brand, load_section_modules(app.state.site_section_loader, repo, blobs, document["scene"])
+
+    def _site_export_refusal(error: Exception) -> HTTPException:
+        if isinstance(error, SiteRenderError):
+            status = 409 if error.code == SECTION_MODULE_MISSING else 502
+            return HTTPException(status_code=status, detail={"code": error.code, "message": error.message})
+        if isinstance(error, SiteInputsUnavailable):
+            return HTTPException(status_code=503, detail={"code": error.code, "message": str(error)})
+        if isinstance(error, web_pdf.WebPdfUnavailable):
+            return HTTPException(status_code=502, detail={"code": error.code, "message": str(error)})
+        raise TypeError(f"not a site export refusal: {error!r}")
+
+    @app.get("/documents/{document_id}/site/export")
+    def export_site_document(document_id: str, repo: HybridRepository = Depends(repository)) -> Response:
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        try:
+            brand, sections = _site_render_inputs(repo, document)
+            bundle = site_publish.build_site_export_bundle(
+                repo, document, blobs=blob_store(repo), brand=brand, sections=sections,
+                generated_at=utc_now(), node_bin=app.state.web_export_node_bin,
+            )
+        except (SiteRenderError, SiteInputsUnavailable) as error:
+            raise _site_export_refusal(error) from error
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in sorted(bundle.files):
+                archive.writestr(path, bundle.files[path])
+        filename = f"{web_slugify(document['title'])}-{document_id[:8]}.zip"
+        log_event(api_logger, logging.INFO, "site_export_completed", document_id=document_id, file_count=len(bundle.files), warning_count=len(bundle.warnings))
+        return Response(content=buffer.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    @app.get("/documents/{document_id}/site/export.pdf")
+    def export_site_document_pdf(document_id: str, repo: HybridRepository = Depends(repository)) -> Response:
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        try:
+            brand, sections = _site_render_inputs(repo, document)
+            content = site_publish.build_site_pdf(
+                repo, document, blobs=blob_store(repo), brand=brand, sections=sections, node_bin=app.state.web_export_node_bin
+            )
+        except (SiteRenderError, SiteInputsUnavailable, web_pdf.WebPdfUnavailable) as error:
+            raise _site_export_refusal(error) from error
+        filename = f"{web_slugify(document['title'])}-{document_id[:8]}.pdf"
+        log_event(api_logger, logging.INFO, "site_pdf_export_completed", document_id=document_id, byte_count=len(content))
+        return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
     def _publish_refusals(slug: str, document_id: str) -> Dict[str, Any]:
         """The exact wire contract the editor has always seen for a refused publish.
 

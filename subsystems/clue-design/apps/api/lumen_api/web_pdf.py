@@ -247,7 +247,49 @@ def build_web_pdf(
     return render_pages_pdf(htmls, runtime=runtime)
 
 
-def render_pages_pdf(htmls: List[str], *, runtime: Optional[bytes] = None) -> bytes:
+def _with_print_sheet(html: str) -> str:
+    """The print sheet as the document's LAST style, for a page with JavaScript off
+    (Playwright's add_style_tag needs script). Last in the body is last in the cascade, which is
+    where add_style_tag puts it on the web path."""
+    sheet = f"<style>{_PRINT_SHEET}</style>"
+    index = html.rfind("</body>")
+    return html + sheet if index == -1 else html[:index] + sheet + html[index:]
+
+
+def _print_page(context: Any, html: str, *, runtime: Optional[bytes], sheet_inline: bool) -> bytes:
+    """One html printed at the tablet layout onto margin-less A4 (see the module docstring)."""
+    page = context.new_page()
+    try:
+        # `BrowserContext.new_page()` takes no per-page options, so the viewport is set on
+        # the page itself. It is already the context's, and it is re-stated here because
+        # THIS is the number the layout depends on: 768 is the `md:` breakpoint.
+        page.set_viewport_size(dict(_VIEWPORT))
+        content = inline_tailwind(html, runtime) if runtime is not None else html
+        if sheet_inline:
+            content = _with_print_sheet(content)
+        # BEFORE the content, so nothing ever lays out under print media: `page.pdf`
+        # emulates print by default, and that is exactly the reflow this export exists
+        # to stop.
+        page.emulate_media(media="screen")
+        page.set_content(content, wait_until="load")
+        page.wait_for_timeout(_SETTLE_MS)
+        if not sheet_inline:
+            # AFTER load, so it lands last in the cascade and pins the layout box + the
+            # break behaviour over the page's own sheet.
+            page.add_style_tag(content=_PRINT_SHEET)
+        return page.pdf(
+            format="A4",
+            print_background=True,
+            prefer_css_page_size=False,
+            margin=dict(_PDF_MARGIN),
+        )
+    finally:
+        page.close()
+
+
+def render_pages_pdf(
+    htmls: List[str], *, runtime: Optional[bytes] = None, hardened: bool = False
+) -> bytes:
     """Print each html to PDF in one browser, then merge the runs in order.
 
     Every html is laid out at :data:`_VIEWPORT` — 768px, Tailwind's ``md:`` — under
@@ -258,6 +300,10 @@ def render_pages_pdf(htmls: List[str], *, runtime: Optional[bytes] = None) -> by
 
     It prints whatever html it is handed: asset inlining belongs to
     :func:`build_web_pdf`, which has the blob store this function does not.
+
+    ``hardened`` (a Puck site, Wave 2): the htmls are already cleaned and carry their bytes as data:
+    URIs, so they print in a hardened context (lumen_api.hardened_browser) with JavaScript OFF and
+    the network blocked. The web path (``hardened=False``) is unchanged.
     """
 
     if not htmls:
@@ -275,46 +321,31 @@ def render_pages_pdf(htmls: List[str], *, runtime: Optional[bytes] = None) -> by
 
     parts: List[bytes] = []
     try:
-        # One slot for the whole document: the span owns a browser process, and the
-        # `with` gives it back on a refusal or a crash just as the thumbnail does.
-        with _CAPTURE_SLOTS, sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
+        if hardened:
+            from .hardened_browser import HardenedBrowserUnavailable, hardened_context
+
+            # The hardened context holds the shared capture slot itself, for the whole
+            # browser-owning span, and the print sheet rides inside each html because
+            # `add_style_tag` needs script.
             try:
-                context = browser.new_context(viewport=dict(_VIEWPORT))
-                for html in htmls:
-                    page = context.new_page()
-                    try:
-                        # `BrowserContext.new_page()` takes no per-page options, so
-                        # the viewport is set on the page itself. It is already the
-                        # context's, and it is re-stated here because THIS is the
-                        # number the layout depends on: 768 is the `md:` breakpoint.
-                        page.set_viewport_size(dict(_VIEWPORT))
-                        content = (
-                            inline_tailwind(html, runtime)
-                            if runtime is not None
-                            else html
-                        )
-                        # BEFORE the content, so nothing ever lays out under print
-                        # media: `page.pdf` emulates print by default, and that is
-                        # exactly the reflow this export exists to stop.
-                        page.emulate_media(media="screen")
-                        page.set_content(content, wait_until="load")
-                        page.wait_for_timeout(_SETTLE_MS)
-                        # AFTER load, so it lands last in the cascade and pins the
-                        # layout box + the break behaviour over the page's own sheet.
-                        page.add_style_tag(content=_PRINT_SHEET)
+                with hardened_context(javascript=False, viewport=dict(_VIEWPORT)) as (context, _blocked):
+                    for html in htmls:
+                        parts.append(_print_page(context, html, runtime=None, sheet_inline=True))
+            except HardenedBrowserUnavailable as error:
+                raise WebPdfUnavailable("web_pdf.render_failed", str(error)) from error
+        else:
+            # One slot for the whole document: the span owns a browser process, and the
+            # `with` gives it back on a refusal or a crash just as the thumbnail does.
+            with _CAPTURE_SLOTS, sync_playwright() as pw:
+                browser = pw.chromium.launch(headless=True)
+                try:
+                    context = browser.new_context(viewport=dict(_VIEWPORT))
+                    for html in htmls:
                         parts.append(
-                            page.pdf(
-                                format="A4",
-                                print_background=True,
-                                prefer_css_page_size=False,
-                                margin=dict(_PDF_MARGIN),
-                            )
+                            _print_page(context, html, runtime=runtime, sheet_inline=False)
                         )
-                    finally:
-                        page.close()
-            finally:
-                browser.close()
+                finally:
+                    browser.close()
     except PlaywrightError as error:
         raise WebPdfUnavailable("web_pdf.render_failed", str(error)) from error
 
