@@ -273,3 +273,11 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   - Publish refusal messages reach the marketer verbatim (`webDocuments.ts:2073`), and Lane A's
     current wording says "cloned section frag_…". New wording (no "clone", the section's own name)
     awaits approval, with a site.md line so the agent knows which section to replace.
+- 2026-10-12 — **Q5 revised:** retiring sections is **out of scope for the site lane**. A retired
+  section is treated like any other: it still draws, saves and publishes (option (a)); no special
+  handling, no retirement message, no site.md section. Live published pages are never affected.
+  Kept: the brand data carries every section the page itself uses, whatever its status (also needed
+  when a repair supersedes an original); the agent's catalog stays current-only.
+  **Approved publish messages** (replacing Lane A's "cloned section frag_…" wording):
+  - not approved yet: `This page uses a section that isn't approved yet: "<section name>". Approve your brand kit, then publish again.`
+  - not in the library: `This page uses a section that isn't in your brand's library. Ask the agent to replace it, then publish again.`
