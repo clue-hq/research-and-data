@@ -166,6 +166,14 @@ def test_an_icon_svg_keeps_only_drawing_elements_and_attributes() -> None:
     assert clean_icon_svg("<svg>" + '<path d="M0 0"></path>' * 400 + "</svg>") is None
 
 
+def test_an_icon_svg_with_nothing_left_to_draw_is_not_kept() -> None:
+    # A sprite reference the capture could not resolve cleans to a bare <svg>: an invisible box.
+    assert clean_icon_svg('<svg width="12" height="12"><use href="#x"/></svg>') is None
+    assert clean_icon_svg('<svg width="12" height="12"><g fill="none"></g></svg>') is None
+    kept = clean_icon_svg('<svg><g><path d="M1 1h2"/></g></svg>')
+    assert kept == '<svg><g><path d="M1 1h2"></path></g></svg>'
+
+
 def test_the_brief_agents_evidence_is_unchanged_by_the_new_measurements() -> None:
     evidence = BrandEvidence.model_validate(
         json.loads((TESTS / "fixtures" / "ingestion" / "evidence_website_insight.json").read_text())

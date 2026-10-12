@@ -29,7 +29,11 @@ MAX_KEYFRAME_DECLARATIONS = 12
 MAX_ICON_SVG_BYTES = 4096
 _SAFE_VALUE = re.compile(r"^[A-Za-z0-9 ,.()%#+\-/]{1,200}$")
 _UNSAFE = ("url(", "var(", "expression")
-_SVG_ELEMENTS = frozenset({"svg", "g", "path", "circle", "ellipse", "line", "polyline", "polygon", "rect"})
+#: The elements that put ink down; a `<g>` or `<svg>` alone draws nothing.
+_SVG_DRAWING_ELEMENTS = frozenset(
+    {"path", "circle", "ellipse", "line", "polyline", "polygon", "rect"}
+)
+_SVG_ELEMENTS = _SVG_DRAWING_ELEMENTS | {"svg", "g"}
 _SVG_ATTRIBUTES = {
     name.lower(): name
     for name in (
@@ -131,17 +135,22 @@ def attach_keyframes(motion: MotionEvidence, stylesheets: Iterable[Any]) -> Moti
 
 
 def clean_icon_svg(markup: object) -> str | None:
-    """A button icon's SVG with drawing elements and drawing attributes only, or None."""
+    """A button icon's SVG with drawing elements and drawing attributes only, or None — None too
+    when nothing is left to draw (an unresolved sprite `<use>` cleans to a bare `<svg>`)."""
     if not isinstance(markup, str) or "<svg" not in markup.lower():
         return None
     root = LexborHTMLParser(markup).css_first("svg")
     if root is None:
         return None
 
+    draws = False
+
     def emit(node: Any) -> str:
+        nonlocal draws
         tag = (node.tag or "").lower()
         if tag not in _SVG_ELEMENTS:
             return ""
+        draws = draws or tag in _SVG_DRAWING_ELEMENTS
         attributes = []
         for name, value in (node.attributes or {}).items():
             key = _SVG_ATTRIBUTES.get(str(name).lower())
@@ -153,4 +162,4 @@ def clean_icon_svg(markup: object) -> str | None:
         return f"<{' '.join([tag, *attributes])}>{inner}</{tag}>"
 
     cleaned = emit(root)
-    return cleaned if len(cleaned.encode()) <= MAX_ICON_SVG_BYTES else None
+    return cleaned if draws and len(cleaned.encode()) <= MAX_ICON_SVG_BYTES else None

@@ -491,21 +491,36 @@ def test_scenario_4b_no_part_of_the_published_kit_carries_the_hostile_markup(cli
     assert found == [], found
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A9 scenario: an icon drawn through <use href> (an SVG sprite) cleans to an EMPTY <svg> "
-        "(clean_icon_svg drops <use>, nothing is left to draw) and is still minted and attached as "
-        "the style's icon, so site-kit draws an invisible 12x12 icon box where the seller's arrow was"
-    ),
-)
-def test_scenario_4d_an_icon_that_cleans_to_nothing_is_not_kept(client: TestClient, site) -> None:
+def _icon_of(kit: dict, variant: str) -> dict | None:
+    style = _style(kit, "button", variant)
+    return _value(kit, style["icon"]["token"], "styles") if style["icon"] else None
+
+
+def test_scenario_4d_a_sprite_icon_is_resolved_and_an_icon_that_draws_nothing_is_not_kept(
+    client: TestClient, site
+) -> None:
+    # The capture reads a sprite icon with its in-page <use href="#arrow"> replaced by the symbol's
+    # drawing, so the seller's arrow is kept; an icon with nothing left to draw is never kept.
     _, detail = _published(client, site, "hostile_icons.html")
+    icon = _icon_of(detail["brand_kit_json"], "solid.4a148c")  # the <use href="#arrow"> button
+    assert icon is not None and icon["kind"] == "svg" and "<path" in icon["markup"], icon
+
+
+def test_scenario_4f_sprite_forms_xlink_resolves_and_an_external_sprite_is_not_kept(
+    client: TestClient, site
+) -> None:
+    _, detail = _published(client, site, "sprite_icons.html")
     kit = detail["brand_kit_json"]
-    style = _style(kit, "button", "solid.4a148c")  # the <use href="#arrow"> button
-    icon = _value(kit, style["icon"]["token"], "styles") if style["icon"] else None
-    draws = icon is not None and re.search(r"<(path|g|circle|ellipse|line|polyline|polygon|rect)\b", icon["markup"])
-    assert style["icon"] is None or draws, f"kept an icon that draws nothing: {icon}"
+    # (a) <use xlink:href="#arrow">: resolved; the symbol's viewBox is copied onto the bare svg.
+    xlink = _icon_of(kit, "solid.00695c")
+    assert xlink is not None and "<path" in xlink["markup"], xlink
+    assert 'viewBox="0 0 12 12"' in xlink["markup"], xlink
+    # (b) <use href="/sprite.svg#arrow">: an external sprite is not resolved; nothing to draw.
+    assert _icon_of(kit, "solid.ad1457") is None
+    # (c) the control: a plain inline path.
+    inline = _icon_of(kit, "solid.283593")
+    assert inline is not None and "<path" in inline["markup"], inline
+    _assert_sections_resolve(kit)
 
 
 def _engine_verdict(client: TestClient, markup: str) -> set[str]:

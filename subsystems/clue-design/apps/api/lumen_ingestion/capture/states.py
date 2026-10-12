@@ -136,6 +136,27 @@ MOTION_JS = r"""
     return el;
   })();
   const icon = el.querySelector('svg, img');
+  // A sprite icon (<use href="#id">) is read from a CLONE with each in-page reference replaced
+  // by what it points at; an external sprite file (/sprite.svg#id) is left for the cleaner to drop.
+  const iconMarkup = (svg) => {
+    const copy = svg.cloneNode(true);
+    for (const use of Array.from(copy.querySelectorAll('use'))) {
+      const ref = use.getAttribute('href') || use.getAttribute('xlink:href') || '';
+      const target = ref.startsWith('#') ? document.getElementById(ref.slice(1)) : null;
+      if (!target) continue;
+      const symbol = target.tagName.toLowerCase() === 'symbol';
+      const drawn = symbol
+        ? document.createElementNS('http://www.w3.org/2000/svg', 'g') : target.cloneNode(true);
+      if (symbol) {
+        for (const child of Array.from(target.childNodes)) drawn.appendChild(child.cloneNode(true));
+        if (!copy.hasAttribute('viewBox') && target.hasAttribute('viewBox')) {
+          copy.setAttribute('viewBox', target.getAttribute('viewBox'));
+        }
+      }
+      use.replaceWith(drawn);
+    }
+    return copy.outerHTML.slice(0, 8192);
+  };
   const glyphs = /[→›»↗➔⟶←‹«↘]/;
   const text = (el.textContent || '').trim();
   let info = null;
@@ -144,7 +165,7 @@ MOTION_JS = r"""
     const svg = icon.tagName.toLowerCase() === 'svg';
     info = { kind: svg ? 'svg' : 'img', position: (r.left - b.left) < (b.right - r.right) ? 'start' : 'end',
       width: Math.round(r.width * 100) / 100, height: Math.round(r.height * 100) / 100,
-      svg: svg ? icon.outerHTML.slice(0, 8192) : null };
+      svg: svg ? iconMarkup(icon) : null };
   } else if (text && glyphs.test(text.slice(-1))) {
     info = { kind: 'glyph', position: 'end', glyph: text.slice(-1) };
   } else if (text && glyphs.test(text.slice(0, 1))) {
