@@ -1,4 +1,5 @@
-"""Recipe 26 research compacts at a fixed 150k backstop; earlier recipes keep the shared rule.
+"""Recipe 26+ research compacts at a fixed backstop (400k since 2026-10-13); earlier recipes keep
+the shared rule.
 
 Production 2026-10-06: the shared rule (90% of Grok 4.6's 500k window = 450k) never fired on
 research conversations, which peaked around 205k tokens.
@@ -22,11 +23,11 @@ def test_recipe_26_research_compacts_at_the_research_backstop():
     settings = Settings(_env_file=None)
     chosen = research_compaction_for(_Scope(26), settings)("x-ai/grok-4.6")
     assert chosen.context_window is None
-    assert chosen.trigger_tokens == settings.arv2_research_compact_trigger_tokens == 240_000
+    assert chosen.trigger_tokens == settings.arv2_research_compact_trigger_tokens == 400_000
     summariser, _ = build_compaction_middleware(
         FakeMessagesListChatModel(responses=[AIMessage("s")]), None, chosen
     )
-    assert summariser._lc_helper.trigger == ("tokens", 240_000)
+    assert summariser._lc_helper.trigger == ("tokens", 400_000)
     assert summariser._lc_helper.keep == ("messages", 40)
 
 

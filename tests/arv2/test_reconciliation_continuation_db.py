@@ -310,7 +310,7 @@ def test_account_continues_native_history_repairs_submission_and_replays(
             assert captured
             copies = {identity_copies(batch) for batch in captured}
             assert copies == {1} if recipe >= 26 else max(copies) >= 2
-            # Recipe 26: batched clearing runs outside the summariser, which compacts at 150k.
+            # Recipe 26: batched clearing runs outside the summariser, which compacts at 400k.
             assert stacks
             for stack in stacks:
                 kinds = [type(m) for m in stack]
@@ -318,10 +318,10 @@ def test_account_continues_native_history_repairs_submission_and_replays(
                 if recipe >= 26:
                     clearing = kinds.index(BatchedToolResultClearing)
                     assert clearing < kinds.index(ClueSummarizationMiddleware)
-                    assert summariser._lc_helper.trigger == ("tokens", 240_000)
+                    assert summariser._lc_helper.trigger == ("tokens", 400_000)
                 else:
                     assert BatchedToolResultClearing not in kinds
-                    assert summariser._lc_helper.trigger != ("tokens", 240_000)
+                    assert summariser._lc_helper.trigger != ("tokens", 400_000)
             combined = "\n".join(str(m.content) for batch in captured for m in batch)
             assert "distinctive workflow" in combined
             assert "Retained account memory." in combined
