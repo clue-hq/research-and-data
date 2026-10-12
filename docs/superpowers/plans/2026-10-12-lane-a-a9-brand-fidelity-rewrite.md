@@ -65,6 +65,50 @@ border or text colour, with a short suffix only when two looks share it), the wa
 backgrounds are already keyed by colour. This changes `_cluster_shapes` naming and every task that
 builds a token name from a variant; old kits keep their names.
 
+## Founder answers (2026-10-12) — binding, and what each changed in this file
+
+- **Texts T-A9-1 to T-A9-7: approved as written.** Only their example style names changed, to the
+  look-keyed names below (and T-A9-7's one clause that described the old `solid.N` form). Every step
+  that writes one still starts "confirm approved"; that check is now a formality.
+- **Q-A9-1 (a), Q-A9-2 (a), Q-A9-5 (a)**: as recommended; the tasks were already written to them.
+- **Q-A9-4 (a)**: existing kits gain measured tokens only by a re-extraction on the founder's word,
+  kit by kit. No backfill script is written, and nothing in this plan runs an extraction.
+- **Q-A9-6 (a): a measured style is named by its look.** The name is `<fill>.<hex>`: a filled style
+  by its fill colour, an outline by its border colour, a text-only style by its text colour
+  (`solid.047464`, `outline.0d2b25`, `ghost.0d2b25`) — the same colour keying as `surface.band.<hex>`.
+  Only when two looks of one component share that colour does each get a 4-hex suffix computed from
+  its whole look (`solid.047464.d36e`, `solid.047464.dfdd`). Token names put `-` for `.`
+  (`button.solid-047464.hover.fill`). The full rule, its reasons and its one residual are in Task X2
+  ("Why this naming"). Old kits keep their `solid.N` names: site-kit reads both forms, and the dock
+  still labels styles "Filled 1", "Filled 2" by kind. Touched: X2 code (`shape_key`, `look_names`,
+  `shape_groups`, the focus rings) and a new no-browser names test; X5's `MeasuredRecipe.variant`
+  pattern (it accepted only `solid.N`) and its fixture script; X1, X3, X4 and X5 tests and examples;
+  Task 4 (`looks.ts` ordering, which read the number after the dot); Tasks 4, 5 and 7 tests on the
+  minted kits (tests on the kits made before measurement keep `solid.N`, as those kits do);
+  T-A9-1/2/6/7 examples; the X6 Brand page; the follow-up.
+- **Q-A9-3 (c): the Brand page shows the measured brand** (founder: "extend the existing screen to
+  include the new sections that you add … portray them using the existing frontend standards
+  only"). Task X6 is rewritten: the page's kit read keeps `measured_components` and every token group
+  (it stripped them), the minted colours join the Colors panel grouped by style, the section
+  backgrounds join it with their text colour, and three new Brand-kit sections — Components, Spacing
+  and Motion — draw each measured style in every state from its own measured values, using only the
+  screen's existing classes and components. Its marketer-facing words are T-A9-8 and its design
+  review points DR-A9-1 to DR-A9-10 (below). The founder asked that the words be plain and match the
+  screen's existing copy, and will not review them separately.
+
+**Second review (2026-10-12), after the founder's answers:**
+- Ruling: the look-keyed names (`solid.047464`, `.<4 hex>` only beside a same-coloured twin) are
+  accepted with their one residual — a twin appearing or disappearing on re-extraction adds or drops
+  the suffix. Why: names never depend on counts or page order (the founder's ask), the case is rare,
+  re-pinning a document is already a checked manual step, and the validator names the new choices on
+  the next save. Cost if wrong: a rare re-pinned document draws its standard button until a save
+  or a request picks the new name. The alternative (always suffixing) was weighed and rejected as a
+  9,000-line rework for that rare case.
+- Fixed: Task X6 needs Lane C Tasks 1 and **3** (`transpilePackages` is Lane C Task 3), not 5; the
+  master plan's execution order places X6 right after Lane C Task 3.
+- Verified: the Brand page's kit schema strips unknown keys (`apps/frontend/src/features/brand-context/model/brand-kit.ts:11`),
+  so Task X6's schema change is needed.
+
 ## What changed and why
 
 - **Buttons are drawn from measurement, not invented.** Lane A's `secondaryButton()` (first
@@ -93,6 +137,13 @@ builds a token name from a variant; old kits keep their names.
   `grammar_audit` (verified on Garner's kit), so a kit curated through either route is republished
   without them — and would be without `measured_components`. (Inferred from the code and the helper's
   behaviour; no stored kit version was inspected for it.)
+- **Style names are stable across re-extractions** (founder Q-A9-6): a measured style is named by its
+  colour (`solid.047464`), never by how often the site uses it, so a document saved with
+  `buttonLook: "solid.047464"` keeps its style when it moves to a re-extracted kit version.
+- **The Brand page shows what was measured** (founder Q-A9-3 (c), Task X6): it used to read only the
+  kit's colours and type (its schema stripped every other group and section); it now shows the minted
+  colours by style, the section backgrounds with their text colour, and each button, card and link
+  style drawn in rest, hover, pressed, focus and disabled, with the brand's spacing and motion.
 
 ### Facts in the brief that the code does not bear out
 
@@ -112,51 +163,95 @@ builds a token name from a variant; old kits keep their names.
 - "The lane DB has 3 kits with briefs": a read-only query on 2026-10-12 found four kit lineages with a
   brief — Alt Carbon, Conduit (versions 1–3), Doctor Quality Analytics and Stripe.
 
-## Open questions for the founder
+## Questions for the founder — all ANSWERED 2026-10-12
 
-The plan is written to each recommendation; an answer changes only the place named.
+Each answer is applied in the places named.
 
-- **Q-A9-1. The header's call-to-action button.** `shell.json`'s header button has no look today, so
-  it is always the standard button — which for Conduit is a `surface.brand` cyan fill its own brief
-  forbids ("Do not paint … primary demo button … with surface.brand"). (a) Give the shell header a
-  `ctaLook` field like `buttonLook` (same select control in the dock, same validator rule).
-  (b) Leave the header on the standard button. **Recommended: (a).** It touches Task 5 (schema,
-  `SiteHeader`, header fields) and Task 6b (validator) only.
-- **Q-A9-2. Kits whose brief stage did not run.** Looks are the brief's recipes (ruling), so a kit
-  published briefless (refusal, gateway failure, stage off) offers only the standard button even
-  though its styles were measured and minted. (a) As written. (b) Offer each measured button style as
-  a look named by its variant when the kit has no brief. **Recommended: (a)**; a briefless kit is
-  itself flagged on the kit.
-- **Q-A9-3. Minted tokens in the brand-context review panel.** The panel lists every colour token
-  (`brand-context-mapping.ts:178-209`) and every typography token (`:297-320`); minted component
-  tokens would land in the "Semantic roles" group and the text-style table under names like
-  `button.solid-2.fill`. (a) Hide component tokens there until a design for them exists (band
-  surfaces stay, as `surface.band.*` already do). (b) Show them in the existing lists. **Recommended:
-  (a)**; it is Task X6, a filter, no new UI.
-- **Q-A9-4. Existing kits.** They gain measured tokens only through a new extraction (your go per
-  kit). A rest-only backfill exists as an alternative: each kit's ingestion job row keeps its evidence
-  (`design_ingestion_job.evidence_json`, e.g. Conduit's `ingest_3e85c884…` carries 18 shape records
-  and 9 band backgrounds), so rest colours, borders, corners, padding and band surfaces could be
-  minted into a new kit version without a crawl — but no states, motion, letter-spacing, case or
-  icons (never captured). (a) Re-extract per kit when you say. (b) Add a dry-run-by-default backfill
-  script for the rest values first. **Recommended: (a)**; (b) would publish a second, half-measured
-  version of each kit. Nothing in this plan runs either.
-- **Q-A9-6 (controller review). Stable style names.** See "Controller review" above. (a) Name each
-  measured style by its look (value-keyed, like `surface.band.<hex>`), so re-extraction keeps names.
-  (b) Keep frequency numbering (`solid.1` = most common) and accept renumbering. **Recommended:
-  (a).** It touches Task X2 (`shape_groups` naming) and every place a token name is built from a
-  variant (X4, X5, Task 4); the brief agent copies variant names as given, so its prompt does not
-  change.
-- **Q-A9-5. The web and ad lanes.** Minted colour tokens become usable web theme classes and scene
-  tokens automatically (the web author's THEME TOKENS list is every kit colour,
-  `tools/web_substrate.py:652-682`). (a) Let them appear now. (b) Hide component tokens from those two
-  lists until the follow-up below lands. **Recommended: (a)**: the names are the brand's exact
-  colours and the engine resolves them; the list is code-generated vocabulary, not prose.
+- **Q-A9-1. The header's call-to-action button. ANSWERED (a).** `shell.json`'s header button had no
+  look, so it was always the standard button — which for Conduit is a `surface.brand` cyan fill its
+  own brief forbids ("Do not paint … primary demo button … with surface.brand"). Decision: the shell
+  header gets a `ctaLook` field like `buttonLook` (same select control in the dock, same validator
+  rule). Applied in Task 5 (schema, `SiteHeader`, header fields) and Task 6b (validator).
+- **Q-A9-2. Kits whose brief stage did not run. ANSWERED (a).** Looks are the brief's recipes
+  (ruling), so a kit published briefless (refusal, gateway failure, stage off) offers only the
+  standard button even though its styles were measured and minted; a briefless kit is itself flagged
+  on the kit. Applied as written in Tasks 4, 5 and 7. (The Brand page, Task X6, still shows those
+  measured styles: it reads `measured_components`, not the brief.)
+- **Q-A9-3. Minted tokens on the Brand page. ANSWERED (c)** — neither hide nor dump: extend the
+  existing screen. The founder: "extend the existing screen to include the new sections that you add
+  … extend the current screen with more new colors and all and portray them using the existing
+  frontend standards only." Applied as the rewritten Task X6: minted colours grouped by style in the
+  Colors panel (never in "Semantic roles"), section backgrounds with their text colour, new
+  Components, Spacing and Motion sections drawn with the screen's existing classes and components,
+  and the kit read fixed so it keeps what it stripped. New words: T-A9-8. Design review points:
+  DR-A9-1 to DR-A9-10 below.
+- **Q-A9-4. Existing kits. ANSWERED (a).** They gain measured tokens only through a new extraction,
+  on the founder's word, kit by kit. No backfill script is written, and nothing in this plan runs an
+  extraction. (For the record: each kit's ingestion job row keeps its evidence,
+  `design_ingestion_job.evidence_json` — e.g. Conduit's `ingest_3e85c884…` carries 18 shape records
+  and 9 band backgrounds — so a rest-only backfill stays possible if it is ever wanted.)
+- **Q-A9-5. The web and ad lanes. ANSWERED (a).** Minted colour tokens become usable web theme
+  classes and scene tokens automatically (the web author's THEME TOKENS list is every kit colour,
+  `tools/web_substrate.py:652-682`); they appear there now. The follow-up below stays a follow-up.
+- **Q-A9-6 (controller review). Stable style names. ANSWERED (a).** A measured style is named by its
+  look, value-keyed like `surface.band.<hex>`: `<fill>.<hex>` from the colour that identifies it (the
+  fill of a filled style, the border of an outline, the text of a text-only style), with a 4-hex
+  suffix of the whole look only when two looks of one component share that colour. Applied in
+  Task X2 (`shape_key`, `look_names`, `shape_groups`, the focus rings; the rule and its reasons are in
+  X2's "Why this naming"), and everywhere a variant or token name is built, read, tested or shown: X1,
+  X3, X4 and X5 tests, X5's fixture script, Task 4 (`looks.ts` ordering and tests), Tasks 5, 6b and 7
+  tests on the minted kits, T-A9-1/2/6/7 examples, the follow-up. The brief agent copies variant
+  names as given, so its prompt does not change; old kits keep their `solid.N` names and site-kit
+  reads both.
+
+## Design review points (Task X6, the Brand page)
+
+Where no existing pattern fits a new part of the Brand page, the closest existing one is used and the
+gap is recorded here (the same practice as Lane C's DR1–DR7). Nothing below invents a visual: each
+point names the existing class or component used instead. The founder will not review these
+separately; they are kept for a later design pass.
+
+- **DR-A9-1. Three new sidebar items.** "Components", "Spacing" and "Motion" are the existing
+  Brand-kit nav item (`brand-context-sidebar.tsx:31-40`, `.contextNavItem`). Icons from the existing
+  set: Components `grid` (`layout-grid.svg`), Spacing `list` (`list.svg`), Motion `sortActive`
+  (`move-down.svg`) — the set has no motion icon.
+- **DR-A9-2. A style's states are side by side as typeface cards.** Each state is one card of the
+  Typefaces grid (`.typefaceList`, `.typefaceRow`, `.typefaceName`; `typography-panel.tsx:25-32`),
+  so five states wrap three and two on a wide screen. A one-row strip of states would need a design.
+- **DR-A9-3. The stage of a sample.** Each sample sits in the asset grid's preview box
+  (`.assetCardPreview`, `assets-panel.tsx:210`), its background set inline to the kit's page colour
+  the way a colour swatch's preview is (`colors-panel.tsx:27`); a style that would not show on it (a
+  white button on a white page: contrast under 1.5:1) is staged on the kit's inverse surface instead.
+  The sample itself is an inline element styled only with its measured values, plus inline-flex
+  alignment so a label and its icon share a line.
+- **DR-A9-4. The values under a sample** reuse the swatch's name-and-value pair (`.swatchMeta`,
+  `.swatchLabel`, `code`; `colors-panel.tsx:28-31`). Long kit names wrap. A compact table of parts
+  by state would need a design.
+- **DR-A9-5. Section backgrounds** are swatches in the Colors panel (`.swatchGrid`, `.swatchCard`).
+  Their text colour is written in the swatch's name ("Dark band · text #FFFFFF"), not drawn as text
+  on the swatch.
+- **DR-A9-6. Motion has no live preview.** No existing pattern on the screen plays a brand's motion,
+  so each animation and scroll reveal is a typeface card giving its timing and its steps in words.
+- **DR-A9-7. Spacing** is a grid of typeface cards (name, size, kit name), not a drawn scale.
+- **DR-A9-8. The words in a sample** are "Button", "Link" and "Card": the seller's own button words
+  are not captured.
+- **DR-A9-9. Fonts in samples.** A sample loads its family with the Typography panel's loader
+  (`use-typeface-preview.ts`, the face nearest regular weight), so a measured 500 or 600 weight is
+  drawn by the browser from that face. Showing every weight needs the loader to load each one.
+- **DR-A9-10. Style numbers.** "Filled 1", "Filled 2" here count the measured styles; the editor's
+  Button style field counts the brief's recipes. They match when the brief names every measured
+  style (its prompt asks for one recipe per measured style); each style's look-keyed name, shown
+  beside its number, ties the two exactly.
 
 ## Agent-facing and marketer-facing text to approve (verbatim)
 
 Every step that writes one of these starts with "confirm approved". Angle brackets are filled from
 the kit; `[...]` appears only when the kit has it.
+
+**Status (2026-10-12):** T-A9-1 to T-A9-7 are APPROVED as written; only their example style names
+were changed to the look-keyed names of Q-A9-6 (plus T-A9-7's one clause describing the old
+`outline.N`/`ghost.N`/`solid.N` form). T-A9-8 (the Brand page's words, Task X6) is written in the
+screen's own plain copy; the founder will not review it separately.
 
 ### T-A9-1 — `brand/brand.md` (site agent; Task 7)
 
@@ -203,7 +298,7 @@ a FeatureSplit or a CtaBand. A button with no look is the standard button.
 | look | kind | fill | label | border | corners | confidence | notes from the brand kit |
 |---|---|---|---|---|---|---|---|
 | (none) | the kit's standard button | #047464 (surface.brand) | #FFFFFF (text.inverse) | none | 16px (radius.button) | — | Used when you name no look. |
-| outline.1 | outline | none | #0D2B25 (button.outline-1.label) | 1px (stroke.width.thin) #0D2B25 (button.outline-1.border) | 9999px (radius.full) | high | Stroke color is text.primary, … |
+| outline.0d2b25 | outline | none | #0D2B25 (button.outline-0d2b25.label) | 1px (stroke.width.thin) #0D2B25 (button.outline-0d2b25.border) | 9999px (radius.full) | high | Stroke color is text.primary, … |
 | … one row per button style … |
 [Each style's hover, pressed and focus looks, and the motion between them, come from the seller's
 site; `kit.Button` draws them.]
@@ -242,7 +337,7 @@ the whole card a link; it then takes the style's hover and focus looks from the 
 Write every link with `kit.Link` (a text link) or `kit.Button`, never a bare `<a>`. A link to another
 page of this site is written `/` or `/<page>`; the kit points it at the right address wherever the
 site is published.
-Text links look like the seller's own: <#0D2B25 (link.ghost-1.label)>, <underlined on hover>.
+Text links look like the seller's own: <#0D2B25 (link.ghost-0d2b25.label)>, <underlined on hover>.
 (or: The kit recorded no text-link style, so text links are underlined in the surrounding text's
 colour.)
 
@@ -274,7 +369,7 @@ Where a rule names a kit colour such as `surface.brand`, the matching choice is 
 ```
 
 Changes from the Buttons draft you saw: the example look is this brand's first look (a brand
-without `outline.1` would otherwise be shown a name it does not have); each cell shows its token
+without the draft's example style would otherwise be shown a name it does not have); each cell shows its token
 name; the two bracketed lines and the `disabled` bullet are new; the dark-surface sentence is
 rewritten for measured styles (the old one forced every button to a light version). The Surfaces
 section drops "Our sections take only the six choices above" (Q4 = (b)) and merges the two tables.
@@ -284,7 +379,7 @@ section drops "Our sections take only the six choices above" (Q4 = (b)) and merg
 - the `surface` row of each of our sections:
   `| \`surface\` | text | yes | one of this brand's surfaces (brand/brand.md, Surfaces): page (Page), card (Card), muted (Muted), brandSubtle (Brand, subtle), brand (Brand), inverse (Inverse), canvas (Canvas), band-014036 (Dark band) |`
 - the new `buttonLook` row (FeatureSplit, CtaBand):
-  `| \`buttonLook\` | text | no | default ""; empty is the standard button, or a button style from brand/brand.md (Buttons): outline.1, ghost.1, solid.1 |`
+  `| \`buttonLook\` | text | no | default ""; empty is the standard button, or a button style from brand/brand.md (Buttons): outline.0d2b25, solid.047464, solid.28241e |`
   (or, with no button recipes: `default ""; this brand's kit records no button styles, so leave it empty`)
 - the intro sentence "Style options are fixed choices; there are no colour, size, class or style
   fields." becomes "Style options are names from brand/brand.md; there are no colour, size, class or
@@ -346,14 +441,14 @@ Optional addition, after the `component_recipes[]` bullet (the plan works withou
 model's own recipe slots and notes use the exact tokens):
 
 > The kit also carries tokens minted from those shape records, named for where they were measured
-> (`button.solid-2.fill`, `card.solid-1.radius`); when a slot's measured value has one, name it.
+> (`button.solid-047464.fill`, `card.solid-f1f0de.radius`); when a slot's measured value has one, name it.
 
 ### T-A9-7 — the marketer's dock (Lane C draws them with the existing select control)
 
 - Field "Button style" on FeatureSplit and CtaBand, options: "Standard", then one per button style
   named by its kind — "Outline", "Text only", "Filled" — with a number only when a kind repeats
-  ("Filled 1", "Filled 2"); a style whose variant is not `outline.N`/`ghost.N`/`solid.N` reads as its
-  variant in words. The field is left out for a brand with no button styles.
+  ("Filled 1", "Filled 2"); a style whose variant does not begin `outline.`, `ghost.` or `solid.`
+  reads as its variant in words. The field is left out for a brand with no button styles.
 - Field "Surface" on our four sections, options: the six as today ("Page", "Card", "Muted", "Brand,
   subtle", "Brand", "Inverse"), then this brand's other surfaces. **Label rule:** a kit surface's name
   reads as words (`surface.canvas` → "Canvas", `surface.elevated` → "Elevated", `surface.accent` →
@@ -368,6 +463,55 @@ model's own recipe slots and notes use the exact tokens):
   Elevated, Accent, "Dark band" (`#28241E`, the procedures band; its white bands are `surface.page`
   exactly, so they mint nothing); Alt Carbon — Canvas, Elevated, Accent (both bands are `#F1F0DE`,
   `surface.page` exactly).
+
+### T-A9-8 — the Brand page's words (marketer; Task X6)
+
+Plain words in the style of the screen's existing copy ("Colors", "Typography", "Semantic roles",
+"Text styles", "Custom", "No colors yet."). Angle brackets are filled from the kit. The founder will
+not review these separately (2026-10-12).
+
+- Sidebar items and page titles: "Components", "Spacing", "Motion".
+- Empty states: "No measured styles yet.", "No measured spacing yet.", "No measured motion yet."
+- Colors panel, new groups (after the kit's own): "Section backgrounds"; one group per measured style
+  — a button style's name followed by "button" ("Outline button", "Text only button", "Filled 1
+  button"), any other style by its name ("Card", "Card 2", "Link", "Navigation link", "Chip", "Field",
+  "Image").
+  - A section background's swatch: `<its surface name> · text <hex>` ("Dark band · text #FFFFFF"),
+    the surface name being the editor's own (T-A9-7: "Dark band", "Tinted band", "Light band",
+    numbered when a kind repeats).
+  - A style's swatches: "Fill", "Text", "Border", "Focus ring", "Icon"; in another state, the state
+    and the part ("Hover fill", "Pressed text", "Disabled border", "Hover icon"); a focus state's ring
+    is "Focus ring".
+- Components panel:
+  - Sections: "Buttons", "Cards", "Links", "Chips", "Fields", "Images" (each only when measured).
+  - Style names: buttons by kind as the editor's Button style field names them — "Outline", "Text
+    only", "Filled", with a number when a kind repeats ("Filled 1", "Filled 2"); other styles "Card",
+    "Card 2", "Link", "Navigation link", "Chip", "Field", "Image". Beside each name, its kit name
+    (`solid.047464`).
+  - State cards: "Rest", "Hover", "Pressed", "Focus", "Disabled".
+  - The word drawn in a sample: "Button", "Card", "Link", "Chip", "Field", "Image".
+  - Value names: "Fill", "Text", "Border", "Border width", "Border style", "Corners", "Padding",
+    "Height", "Gap", "Font", "Letter case", "Underline", "Underline thickness", "Underline offset",
+    "Shadow", "Opacity", "Transform", "Filter", "Pointer", "Focus ring", "Focus ring width", "Focus ring
+    style", "Focus ring offset", "Icon color", "Icon transform", "Icon opacity", "Transition", "Icon
+    transition". Each value reads `<value> (<kit name>)` ("#035A4E (button.solid-047464.hover.fill)");
+    a font reads `<family> · <size>px · <weight>[ · <n>em letter spacing]`; a transition reads
+    `<property> <duration> <easing>[ after <delay>]` ("box-shadow 300ms ease after 50ms").
+  - Note on a focus state the site leaves to the browser: "The browser's own focus ring".
+- Spacing panel: title "Spacing"; each step's name in plain words ("Section", "Stack tight", "Page
+  margin", "Card padding", "Small", "Step 4"), the tag "Measured" when the seller's site showed it,
+  its size ("100px") and its kit name (`space.section`).
+- Motion panel:
+  - Sections: "Animations", "Scroll reveals", "Scripted motion".
+  - An animation: its own name in words ("Pulse"), its timing ("1.6s ease-in-out"), what it does
+    (site-kit's description, first letter capitalised: "Opacity 1 → .4, transform scale(1) →
+    scale(1.2); repeats forever, alternating") and where the site uses it ("1 element:
+    div#pulse.pulse").
+  - A scroll reveal: "Scroll reveal" ("Scroll reveal 2" when several), its timing ("600ms ease-out"),
+    what it does ("Fades in from opacity 0 and moves into place from 24px below as it scrolls into
+    view") and where.
+  - Scripted motion: "Scripted animation", "Canvas animation" or "Video", where it is
+    ("div#spin.spin"), and "Needs a script, so pages made here don't copy it."
 
 ## Cross-lane changes
 
@@ -394,8 +538,10 @@ model's own recipe slots and notes use the exact tokens):
   `brief.constraints` and `brief.component_recipes`" is superseded by the 2026-10-12 rulings; record
   "button and other component styles come from measured, kit-minted tokens named by
   `measured_components`, then the kit's tokens and recipes" there.
-- **Frontend brand-context** (Task X6, owned here): a filter in `brand-context-mapping.ts`; Lane C
-  does not touch that file.
+- **Frontend Brand page** (Task X6, owned here): `apps/frontend/src/features/brand-context/**`, its
+  route and its contract doc; Lane C does not touch them. It **needs Lane C Tasks 1 and 3** on the
+  branch first (the Railway image installs `@clue/site-kit`; `next.config.ts` transpiles it), and adds
+  one `exports` entry to site-kit's `package.json` (`./brand-view`) beside the entries Lane C adds.
 
 ## The state mechanism, and the offline probe that chose it
 
@@ -434,8 +580,9 @@ makes `py-section`, `mt-stack-tight`, `gap-stack-tight` and `p-card-padding` rea
 
 | block | tasks | lane | before / after |
 |---|---|---|---|
-| Extraction | X1 engine `styles` group → X2 probe → X3 evidence → X4 mint (+ bands) → X5 kit section, pipeline, republish fix, site-kit fixtures → X6 panel filter | A (design subsystem; X6 frontend) | independent of A0; X5 before Task 4 (its fixtures) |
+| Extraction | X1 engine `styles` group → X2 probe and look-keyed names → X3 evidence → X4 mint (+ bands) → X5 kit section, pipeline, republish fix, site-kit fixtures | A (design subsystem) | independent of A0; X5 before Task 4 (its fixtures) |
 | site-kit | Task 4 values, surfaces, looks, theme → Task 5 components and schema → Task 6 (as written in the Lane A plan) → Task 6b validator and lint → Task 7 brand.md | A | after Lane A Tasks 1–3; all before Task 15 |
+| Brand page | Task X6 | A (frontend) | after Task 7 and Lane C Tasks 1 and 3 |
 | Renderer check | Task 16b | A | after Lane A Tasks 16 and 17 |
 | Carried elsewhere | Lane B Tasks 8, 15, 4/0; Lane C Task 9 assertions | B, C | B Task 15 needs Task 6b |
 
@@ -465,7 +612,7 @@ subsystems/clue-design/crates/lumen-core/tests/brand_style_tokens.rs   CREATE
 subsystems/clue-design/crates/lumen-core/tests/brand_tokens.rs  MODIFY  struct literal gains styles
 subsystems/clue-design/apps/editor/public/wasm/lumen_wasm{.js,_bg.wasm}  REBUILD (tracked)
 subsystems/clue-design/apps/api/lumen_ingestion/
-  capture/geometry.py        MODIFY  link/nav_link classes, probe marks, section ink, animations, shape_groups, styles
+  capture/geometry.py        MODIFY  link/nav_link classes, probe marks, section ink, animations, look-keyed names (look_names, shape_groups, focus rings), styles
   capture/states.py          CREATE  per-style states, motion, reveals, scripted motion
   capture/motion.py          CREATE  keyframe definitions from stylesheets, icon svg cleaning
   capture/rendered.py        MODIFY  reveal snapshot before scroll, state pass after geometry
@@ -483,11 +630,20 @@ subsystems/clue-design/apps/api/lumen_ingestion/
 subsystems/clue-design/apps/api/lumen_api/brand_kit_sections.py  CREATE  carry kit sections across re-validation
 subsystems/clue-design/apps/api/lumen_api/main.py                MODIFY  logo + describe-assets routes
 subsystems/clue-design/scripts/build_site_kit_brand_fixtures.py  CREATE  site-kit fixture kits from real values
-subsystems/clue-design/apps/api/tests/  fixtures/capture/style_states.html, test_capture_style_states.py,
+subsystems/clue-design/apps/api/tests/  fixtures/capture/style_states.html, test_capture_style_states.py, test_capture_style_names.py,
   test_ingestion_measured_styles.py, test_ingestion_component_tokens.py, test_measured_components.py,
   test_kit_style_tokens_engine.py, test_brand_kit_sections_carry.py, test_site_state_css.py (16b);
   MODIFY test_ingestion_geometry.py, test_ingestion_brief.py, test_ingestion_grammar_audit.py, test_api.py
-apps/frontend/src/features/brand-context/model/brand-context-mapping{.ts,.test.ts}  MODIFY (X6)
+apps/frontend/src/features/brand-context/                                   (X6, the Brand page)
+  model/brand-kit.ts, model/brand-context.ts, model/brand-context-mapping.ts  MODIFY  read keeps measured data; sections; moved colours
+  model/measured-view.ts, model/measured-brand{.ts,.test.ts}  CREATE  the view (plain types, client-safe) and its mapping (server, through @clue/site-kit/brand-view)
+  data/brand-context.repository{.ts,.test.ts}  MODIFY  `measured` beside `workspace` and `kit`
+  data/__fixtures__/brand-kit.measured.json  CREATE (by Task X5's script); data/__fixtures__/harvest.ts  MODIFY
+  components/{colors-panel,brand-context-sidebar,brand-context-header,brand-context-screen}.tsx  MODIFY
+  components/{style-sample,measured-styles-panel,spacing-panel,motion-panel}.tsx  CREATE
+apps/frontend/src/app/(protected)/brand-context/page.tsx  MODIFY  passes `measured`
+apps/frontend/docs/api-contracts/brand-context.md  MODIFY  resolutions 2026-10-12
+apps/frontend/packages/site-kit/src/brand-view.ts, test/brand-view.test.ts  CREATE (X6); package.json  MODIFY (exports)
 apps/frontend/packages/site-kit/
   src/brand-values.ts  CREATE  token resolution, colour maths, FALLBACKS
   src/surfaces.ts      CREATE  surfaces, inks, choices, labels
@@ -547,7 +703,7 @@ fn token(value: Value) -> Value {
     json!({
         "value": {"default": value, "modes": {}},
         "description": null,
-        "provenance": {"source": "website:https://example.test/ :: button solid.1 rest", "confidence": 0.8}
+        "provenance": {"source": "website:https://example.test/ :: button solid.047464 rest", "confidence": 0.8}
     })
 }
 
@@ -569,13 +725,13 @@ const ICON: &str = "<svg viewBox=\"0 0 12 12\" fill=\"none\"><path d=\"M1 6h9M7 
 
 fn valid_styles() -> Value {
     json!({
-        "button.solid-1.case": token(json!({"kind": "keyword", "property": "text-transform", "value": "uppercase"})),
-        "button.solid-1.hover.shadow": token(json!({"kind": "keyword", "property": "box-shadow", "value": "none"})),
-        "motion.button.solid-1.duration-1": token(json!({"kind": "duration", "ms": 200.0})),
-        "motion.button.solid-1.easing-1": token(json!({"kind": "easing", "function": "cubic-bezier(0.2, 0.8, 0.2, 1)"})),
-        "button.solid-1.hover.transform": token(json!({"kind": "transform", "value": "matrix(1, 0, 0, 1, 0, -2)"})),
-        "button.solid-1.icon": token(json!({"kind": "glyph", "text": "→"})),
-        "button.outline-1.icon": token(json!({"kind": "svg", "markup": ICON, "width": 12.0, "height": 12.0})),
+        "button.solid-047464.case": token(json!({"kind": "keyword", "property": "text-transform", "value": "uppercase"})),
+        "button.solid-047464.hover.shadow": token(json!({"kind": "keyword", "property": "box-shadow", "value": "none"})),
+        "motion.button.solid-047464.duration-1": token(json!({"kind": "duration", "ms": 200.0})),
+        "motion.button.solid-047464.easing-1": token(json!({"kind": "easing", "function": "cubic-bezier(0.2, 0.8, 0.2, 1)"})),
+        "button.solid-047464.hover.transform": token(json!({"kind": "transform", "value": "matrix(1, 0, 0, 1, 0, -2)"})),
+        "button.solid-047464.icon": token(json!({"kind": "glyph", "text": "→"})),
+        "button.outline-0d2b25.icon": token(json!({"kind": "svg", "markup": ICON, "width": 12.0, "height": 12.0})),
         "motion.keyframes.pulse": token(json!({"kind": "keyframes", "frames": [
             {"offset": 0.0, "declarations": {"opacity": "1", "transform": "scale(1)"}},
             {"offset": 100.0, "declarations": {"opacity": "0.4", "transform": "scale(1.2)"}}
@@ -597,7 +753,7 @@ fn a_kit_with_measured_style_tokens_validates_and_round_trips() {
     let kit = kit_with(valid_styles());
     assert_eq!(errors(&kit), Vec::<String>::new());
     assert!(matches!(
-        kit.tokens.styles["button.solid-1.case"].value.default,
+        kit.tokens.styles["button.solid-047464.case"].value.default,
         StyleTokenValue::Keyword { .. }
     ));
     let json = serde_json::to_value(&kit).unwrap();
@@ -637,7 +793,7 @@ fn each_unsafe_or_dangling_style_token_is_refused_by_its_code() {
             "easing": "y", "delay": null, "iterations": "1", "direction": "normal", "fill_mode": "none"})),
     ];
     for (code, value) in cases {
-        let kit = kit_with(json!({"button.solid-1.case": token(value.clone())}));
+        let kit = kit_with(json!({"button.solid-047464.case": token(value.clone())}));
         assert!(errors(&kit).contains(&code.to_owned()), "{code} for {value}");
     }
     let bad_key = kit_with(json!({"button solid": token(json!({"kind": "duration", "ms": 1.0}))}));
@@ -967,15 +1123,15 @@ def _token(value: dict) -> dict:
     return {
         "value": {"default": value, "modes": {}},
         "description": None,
-        "provenance": {"source": "website:https://example.test/ :: button solid.1 rest case", "confidence": 0.8},
+        "provenance": {"source": "website:https://example.test/ :: button solid.047464 rest case", "confidence": 0.8},
     }
 
 
 def _kit() -> dict:
     kit = json.loads(GARNER.read_text())
     kit["tokens"]["styles"] = {
-        "button.solid-1.case": _token({"kind": "keyword", "property": "text-transform", "value": "uppercase"}),
-        "motion.button.solid-1.duration-1": _token({"kind": "duration", "ms": 200.0}),
+        "button.solid-047464.case": _token({"kind": "keyword", "property": "text-transform", "value": "uppercase"}),
+        "motion.button.solid-047464.duration-1": _token({"kind": "duration", "ms": 200.0}),
     }
     return kit
 
@@ -996,7 +1152,7 @@ def test_a_kit_without_style_tokens_comes_back_without_the_group() -> None:
 
 def test_the_engine_refuses_a_style_token_ingestion_would_never_mint() -> None:
     kit = _kit()
-    kit["tokens"]["styles"]["button.solid-1.case"]["value"]["default"] = {
+    kit["tokens"]["styles"]["button.solid-047464.case"]["value"]["default"] = {
         "kind": "keyword",
         "property": "background-image",
         "value": "url(x)",
@@ -1039,7 +1195,8 @@ git commit -m "lumen-core: a styles token group for measured keywords, durations
 
 **Files:**
 - Modify: `subsystems/clue-design/apps/api/lumen_ingestion/capture/geometry.py` (`GEOMETRY_JS`,
-  `shape_key`, `shape_groups`, `state_targets`, `_read_surface`, `_cluster_shapes`)
+  `shape_key`, `look_names`, `shape_groups`, `state_targets`, `_read_surface`, `_cluster_shapes`,
+  `_read_focus`)
 - Create: `subsystems/clue-design/apps/api/lumen_ingestion/capture/states.py`
 - Modify: `subsystems/clue-design/apps/api/lumen_ingestion/capture/rendered.py` (`_harvest_page`,
   `fetch_rendered`, both backends)
@@ -1049,9 +1206,19 @@ git commit -m "lumen-core: a styles token group for measured keywords, durations
 - Create: `subsystems/clue-design/apps/api/tests/fixtures/capture/make_style_states_harvest.py`
   and the JSON it writes, `style_states.harvest.json`
 - Create: `subsystems/clue-design/apps/api/tests/test_capture_style_states.py`
+- Create: `subsystems/clue-design/apps/api/tests/test_capture_style_names.py` (no browser)
+- Modify: `subsystems/clue-design/apps/api/tests/test_ingestion_geometry.py` (one tautological assertion)
 
 **Interfaces:**
-- Produces: `GEOMETRY_JS` records carry `idx` and `disabled`, mark each measured element
+- Consumers of a style's name, checked 2026-10-12, all kept working: the brief agent's evidence
+  (`brief_agent.build_brief_request` dumps each `SurfaceShape` whole; the prompt says to copy the
+  variant, so recipes carry the new names), `BrandBrief@1` (`ComponentRecipe.variant`, a string of at
+  most 60 characters — the longest new name, `outline.ffffff00.0123abcd4567`, is 29), the web/ad brief
+  card (`lumen_agent/brand_brief.py:696` `_recipe_line` prints the name as given), the frontend's
+  `brand-brief.ts` (a string), the grammar audit (reads `surface`, `fill`, `background`, `pill`,
+  `count`; never `variant`), the measured styles and minted tokens of Tasks X3–X5, and site-kit's
+  looks (Task 4, which also still reads old kits' `solid.N`). No golden fixture holds a name.
+- Produces: `look_names(keys) -> {key: name}`, `variant_base(fill, colour)`; `GEOMETRY_JS` records carry `idx` and `disabled`, mark each measured element
   `data-lumen-probe="<idx>"`, add classes `nav_link` and `link`, sections carry `ink`, and the harvest
   carries `animations`; `shape_key(entry)`, `shape_groups(surfaces, classes) -> [(variant, members)]`,
   `state_targets(surfaces) -> [((cls, variant), [idx…])]`, `STATE_TARGET_CAPS`,
@@ -1387,11 +1554,50 @@ _CANDIDATES_PER_STYLE = 3
 ```
   2. At the top of `_read_surface`, after `cls = …`, add
      `if cls in STYLE_ONLY_SURFACES:\n        return`.
-  3. Replace `_cluster_shapes` (whole function) with:
+  3. Add `import hashlib` and `from collections import Counter` to the imports, and replace
+     `_cluster_shapes` (whole function) with the functions below. **Why this naming** (founder
+     Q-A9-6, 2026-10-12): the old name was the style's rank by use within its fill kind (`solid.1` =
+     the most used), so a re-extraction whose counts shifted renumbered every style, and a document
+     saved with `buttonLook: "solid.2"` would silently point at another style once it moved to the
+     new kit version. A look's name is now a function of the look itself:
+     * `<fill>.<hex>` — the colour a person tells the look by: a filled style's fill, an outline's
+       border, a text-only style's text (`solid.047464`, `outline.0d2b25`, `ghost.0d2b25`). It is
+       the keying `surface.band.<hex>` already uses, it reads as the brand's own colour to the agent
+       and in `brand.md`, and the marketer never sees it (the dock says "Filled 1"). For that name to
+       mean one look, the colour joins the grouping key: an outline is grouped by its border colour
+       and a text-only style by its text colour as well as by shape (a filled style's fill was
+       already in it). Two outline buttons that differ only in colour were one group before; they
+       are two styles now, which is what they are.
+     * When two looks of one component share `<fill>.<hex>` (same colour, other corners, border or
+       shadow), each gets `.<4 hex>` of the SHA-1 of its whole grouping key (`solid.047464.d36e`).
+       The suffix is also a function of the look alone — not of counts, page order or the other
+       looks. A descriptive suffix (`r8`, `pill`) was rejected: it needs a rule for which difference
+       to name and can still collide.
+     * The one residual: the suffix appears only while a same-coloured look exists beside it, so if
+       a re-extraction gains or loses such a twin, the names of those two looks gain or lose their
+       suffix. A document naming the old name then draws the standard button and the validator
+       names the new choices on its next save; re-pinning a document is checked by hand anyway (see
+       "Controller review").
+     * `shape_groups` names the looks of each class from ALL its members, so the capture's shape
+       records (`_cluster_shapes`, the brief's evidence) and the state pass (`state_targets`) give
+       every look the same name: the brief's recipe and the measured style join on it.
+     * Existing kits are not renamed: their `solid.N` names stay in their stored briefs, and site-kit
+       reads both forms (Task 4).
 
 ```python
+def _identity_colour(entry: dict, fill: str) -> str | None:
+    """The colour a look is told by: a filled look's fill, an outline's border, a text-only look's text."""
+    if fill == "solid":
+        return _hex(entry.get("bg"))
+    if fill == "outline":
+        return _hex(entry.get("borderColor"))
+    return _hex(entry.get("color"))
+
+
 def shape_key(entry: dict) -> tuple:
-    """The one structural grouping key: fill kind, corners, border weight, shadow, background."""
+    """The one grouping key: fill kind, corners, border weight, shadow, background, and the colour the
+    look is told by (founder Q-A9-6: an outline's border colour and a text-only look's text colour
+    make it another look)."""
     radius = _numbers(entry.get("radius"))
     border = _numbers(entry.get("border"))
     bg = _hex(entry.get("bg"))
@@ -1400,28 +1606,53 @@ def shape_key(entry: dict) -> tuple:
     fill = "solid" if bg else ("outline" if has_border else "ghost")
     return (
         str(entry.get("cls") or ""), fill, tuple(radius), bool(entry.get("pill")), tuple(border),
-        _text(entry.get("shadow")), bg,
+        _text(entry.get("shadow")), bg, _identity_colour(entry, fill),
     )
 
 
-def shape_groups(surfaces: list[dict], classes: tuple[str, ...]) -> list[tuple[str, list[dict]]]:
-    """`(variant, members)` per visual variant of `classes`, most frequent first.
+def variant_base(fill: str, colour: str | None) -> str:
+    """`<fill>.<hex>`: a look's name from the colour it is told by (`solid.047464`)."""
+    return f"{fill}.{colour.lstrip('#').lower() if colour else 'none'}"
 
-    The variant is `<fill>.<seat>` within its class — the name the brief's recipes and the minted
-    tokens use — and `members[0]` is the first element measured with that shape.
+
+def _key_digest(key: tuple, width: int) -> str:
+    return hashlib.sha1(_order_key(key).encode()).hexdigest()[:width]
+
+
+def look_names(keys: list[tuple]) -> dict[tuple, str]:
+    """Each look's stable name, by its grouping key (`(cls, fill, …, colour)`; founder Q-A9-6).
+
+    `<fill>.<hex>`, plus `.<4 hex>` of the whole key when two looks of one class share it (12 hex in
+    the 1-in-65,536 case where two 4-hex suffixes collide). Never a rank, a count or a page order.
+    """
+    bases = {key: variant_base(key[1], key[-1]) for key in keys}
+    shared = Counter((key[0], base) for key, base in bases.items())
+    names = {
+        key: base if shared[(key[0], base)] == 1 else f"{base}.{_key_digest(key, 4)}"
+        for key, base in bases.items()
+    }
+    taken = Counter((key[0], name) for key, name in names.items())
+    return {
+        key: f"{bases[key]}.{_key_digest(key, 12)}" if taken[(key[0], name)] > 1 else name
+        for key, name in names.items()
+    }
+
+
+def shape_groups(surfaces: list[dict], classes: tuple[str, ...]) -> list[tuple[str, list[dict]]]:
+    """`(variant, members)` per look of `classes`, most used first (ties in key order).
+
+    The variant is the look's stable name (`look_names`) — the name the brief's recipes, the
+    measured styles and the minted tokens use. The order decides only which styles the state pass
+    tries first and the order of the brief's evidence, never a name. `members[0]` is the first element
+    measured with that look.
     """
     groups: dict[tuple, list[dict]] = {}
     for entry in surfaces:
         if str(entry.get("cls") or "") in classes:
             groups.setdefault(shape_key(entry), []).append(entry)
+    names = look_names(list(groups))
     ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), _order_key(item[0])))
-    seats: dict[tuple[str, str], int] = {}
-    out: list[tuple[str, list[dict]]] = []
-    for key, members in ordered:
-        seat = seats.get((key[0], key[1]), 0) + 1
-        seats[(key[0], key[1])] = seat
-        out.append((f"{key[1]}.{seat}", members))
-    return out
+    return [(names[key], members) for key, members in ordered]
 
 
 def state_targets(surfaces: list[dict]) -> list[tuple[tuple[str, str], list[int]]]:
@@ -1476,6 +1707,129 @@ def _cluster_shapes(surfaces: list[dict], url: str) -> list[SurfaceShape]:
         )
     return shapes
 ```
+  4. The focus rings are named the same way (they were `outline.<index>` by probe order). Replace
+     `_read_focus` (whole function) with:
+
+```python
+def _read_focus(focus: list[dict], url: str, harvest: GeometryHarvest) -> None:
+    rings: dict[tuple, tuple[float, str, str | None, str | None]] = {}
+    for entry in focus:
+        width = _float(entry.get("outlineWidth"))
+        style = str(entry.get("outlineStyle") or "none").lower()
+        if style in ("none", "hidden") or not 0 < width <= _MAX_STROKE_PX:
+            continue
+        harvest.numbers.append(
+            NumberSample(
+                kind="stroke_width",
+                value=width,
+                role_hints=["focus"],
+                pointer=_pointer(url, "focus ring outline-width"),
+            )
+        )
+        colour, shadow = _hex(entry.get("outlineColor")), _text(entry.get("shadow"))
+        # One record per distinct ring (two focusable elements with the same ring were two records
+        # with two numbers before; one name now means one look — founder Q-A9-6).
+        rings.setdefault(("focus_ring", "outline", width, style, shadow, colour), (width, style, colour, shadow))
+    names = look_names(list(rings))
+    for key, (width, style, colour, shadow) in rings.items():
+        harvest.surfaces.append(
+            SurfaceShape(
+                surface="focus_ring",
+                variant=names[key],
+                fill="ghost",
+                border_width_px=[width],
+                border_style=style,
+                border_color=colour,
+                shadow=shadow,
+                pointer=_pointer(url, "focus ring"),
+            )
+        )
+```
+
+- [ ] **Step 5b: Pin the names** in a test that needs no browser,
+  `apps/api/tests/test_capture_style_names.py`:
+
+```python
+"""Look-keyed style names (Wave 2 A9, founder Q-A9-6): a style is named by what it looks like, so a
+re-extraction whose counts or page order shift keeps every name. No browser, no network."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from lumen_ingestion.capture.geometry import look_names, parse_geometry, shape_groups, shape_key, variant_base
+
+#: The real Stripe harvest test_ingestion_geometry.py already uses (top-level `surfaces`, 176 elements).
+STRIPE = Path(__file__).resolve().parent / "fixtures" / "ingestion" / "geometry" / "stripe_home.json"
+
+
+def _el(cls: str = "button", *, bg=None, color="rgb(255, 255, 255)", border=(0, 0, 0, 0), border_color=None,
+        style="none", radius=(8, 8, 8, 8), pill=False, shadow=None) -> dict:
+    return {"cls": cls, "bg": bg, "color": color, "border": list(border), "borderColor": border_color,
+            "borderStyle": style, "radius": list(radius), "pill": pill, "shadow": shadow}
+
+
+#: The five buttons and the text link of tests/fixtures/capture/style_states.html, as the probe reads them.
+FIXTURE = [
+    _el(bg="rgb(4, 116, 100)", border=(1, 1, 1, 1), border_color="rgb(4, 116, 100)", style="solid",
+        radius=(999, 999, 999, 999), pill=True),
+    _el(color="rgb(13, 43, 37)", border=(1, 1, 1, 1), border_color="rgb(13, 43, 37)", style="solid",
+        radius=(999, 999, 999, 999), pill=True),
+    _el(bg="rgb(40, 36, 30)"),
+    _el(bg="rgb(124, 76, 255)", radius=(6, 6, 6, 6)),
+    _el(bg="rgb(10, 74, 138)", border=(1, 1, 1, 1), border_color="rgb(10, 74, 138)", style="solid",
+        radius=(999, 999, 999, 999), pill=True),
+    _el("link", color="rgb(13, 43, 37)"),
+]
+
+
+def _names(surfaces: list[dict], classes=("button", "link")) -> list[str]:
+    return [name for name, _ in shape_groups(surfaces, classes)]
+
+
+def test_a_style_is_named_by_the_colour_it_is_told_by() -> None:
+    assert sorted(_names(FIXTURE)) == [
+        "ghost.0d2b25", "outline.0d2b25", "solid.047464", "solid.0a4a8a", "solid.28241e", "solid.7c4cff",
+    ]
+    assert variant_base("solid", "#047464") == "solid.047464" and variant_base("ghost", None) == "ghost.none"
+
+
+def test_a_shift_in_use_or_page_order_renames_nothing() -> None:
+    before = set(_names(FIXTURE))
+    busier = FIXTURE + [FIXTURE[2]] * 4  # the dark button is now the most used
+    assert set(_names(busier)) == before
+    assert _names(busier)[0] == "solid.28241e", "order follows use; names do not"
+    assert set(_names(list(reversed(FIXTURE)))) == before
+
+
+def test_two_looks_sharing_a_colour_each_take_a_suffix_of_their_own_look() -> None:
+    square, pill = _el(bg="rgb(4, 116, 100)"), _el(bg="rgb(4, 116, 100)", radius=(999,) * 4, pill=True)
+    assert sorted(_names([square, pill], ("button",))) == ["solid.047464.d36e", "solid.047464.dfdd"]
+    assert set(_names([pill, square, pill], ("button",))) == set(_names([square, pill], ("button",)))
+
+
+def test_an_outline_of_another_colour_is_another_style() -> None:
+    dark = _el(color="rgb(13, 43, 37)", border=(1, 1, 1, 1), border_color="rgb(13, 43, 37)", style="solid")
+    white = _el(color="rgb(255, 255, 255)", border=(1, 1, 1, 1), border_color="rgb(255, 255, 255)", style="solid")
+    assert sorted(_names([dark, white], ("button",))) == ["outline.0d2b25", "outline.ffffff"]
+    assert shape_key(dark) != shape_key(white)
+
+
+def test_the_same_look_has_the_same_name_in_the_shape_records_and_the_state_pass() -> None:
+    harvest = json.loads(STRIPE.read_text())
+    parsed = parse_geometry(harvest, page_url="https://stripe.com/")
+    buttons = [s for s in parsed.surfaces if s.surface == "button"]
+    assert len({s.variant for s in buttons}) == len(buttons), "one name per look"
+    state_names = {name for name, members in shape_groups(harvest["surfaces"], ("button", "link", "nav_link", "card"))
+                   if members[0].get("cls") == "button"}
+    assert {s.variant for s in buttons} == state_names
+    assert look_names([]) == {}
+```
+  (Checked offline 2026-10-12 with this naming over that harvest: 14 button looks, 14 distinct names;
+  no name repeats within a class.) Also replace the tautological check in `test_ingestion_geometry.py::test_button_shape_evidence_survives_for_the_brief_agent`
+  (`{shape.variant for shape in buttons} == {shape.variant for shape in buttons}`) with
+  `assert len({shape.variant for shape in buttons}) == len(buttons), "variant keys are unique per surface"`.
 
 - [ ] **Step 6: Write `capture/states.py`.**
 
@@ -1958,9 +2312,13 @@ async def probe_states(page: Any, geometry: dict, *, reveal_before: list | None,
 
 - [ ] **Step 8: Run the tests.**
 
-Run: `CAPTURE_PYTEST test_capture_style_states.py test_ingestion_geometry.py`
+Run: `CAPTURE_PYTEST test_capture_style_names.py test_capture_style_states.py test_ingestion_geometry.py test_ingestion_grammar_audit.py test_ingestion_brief.py`
 Expected: PASS — the new tests on both engines (patchright skips only where its Chromium is not
-installed), and every existing geometry test unchanged (the shape records are byte-identical).
+installed), and every existing test unchanged. The shape records keep every measured value; only
+their `variant` names change (look-keyed), and outlines and text-only looks of different colours
+are now separate records. No golden holds a variant name (`grep -l '"variant"' tests/fixtures/ingestion`
+finds none, checked 2026-10-12), the grammar audit reads no variant, and the brief agent copies the
+names it is given.
 
 - [ ] **Step 9: Record the fixture harvest** for the next tasks. Create
   `apps/api/tests/fixtures/capture/make_style_states_harvest.py`:
@@ -2021,8 +2379,9 @@ Expected: the second run changes nothing.
 ```bash
 git add subsystems/clue-design/apps/api/lumen_ingestion/capture/geometry.py subsystems/clue-design/apps/api/lumen_ingestion/capture/states.py \
   subsystems/clue-design/apps/api/lumen_ingestion/capture/rendered.py subsystems/clue-design/apps/api/lumen_ingestion/capture/__init__.py \
-  subsystems/clue-design/apps/api/tests/fixtures/capture subsystems/clue-design/apps/api/tests/test_capture_style_states.py
-git commit -m "capture: measure each button, link, card and control style in hover, pressed, focus and disabled, with its transitions, icon, the page's reveals and scripted motion"
+  subsystems/clue-design/apps/api/tests/fixtures/capture subsystems/clue-design/apps/api/tests/test_capture_style_states.py \
+  subsystems/clue-design/apps/api/tests/test_capture_style_names.py subsystems/clue-design/apps/api/tests/test_ingestion_geometry.py
+git commit -m "capture: measure each button, link, card and control style in hover, pressed, focus and disabled, with its transitions, icon, the page's reveals and scripted motion; name each style by its look"
 ```
 
 ### Task X3: Measured styles, motion and band text as evidence
@@ -2086,7 +2445,7 @@ def _button(styles, background: str):
 def test_each_measured_style_carries_its_states_motion_and_icon() -> None:
     styles = _parsed().styles
     solid = _button(styles, "#047464")
-    assert solid.variant.startswith("solid.") and solid.probed == "pointer"
+    assert solid.variant == "solid.047464" and solid.probed == "pointer", "named by its fill (Q-A9-6)"
     assert solid.rest.text_transform == "uppercase" and solid.rest.letter_spacing == 0.28
     assert (solid.rest.font_family, solid.rest.font_size, solid.rest.font_weight) == ("Arial", 14, 500)
     assert solid.rest.pill is True and solid.rest.padding == [12, 24, 12, 24]
@@ -2102,7 +2461,7 @@ def test_each_measured_style_carries_its_states_motion_and_icon() -> None:
     assert solid.icon.svg.startswith('<svg width="12" height="12" viewBox="0 0 12 12"') and "<path" in solid.icon.svg
     assert solid.hover.icon_transform == "matrix(1, 0, 0, 1, 4, 0)"
 
-    outline = next(s for s in styles if s.surface == "button" and s.variant == "outline.1")
+    outline = next(s for s in styles if s.surface == "button" and s.variant == "outline.0d2b25")
     assert (outline.icon.kind, outline.icon.glyph) == ("glyph", "→")
     assert outline.hover.label_color == "#FFFFFF"
     js = _button(styles, "#7C4CFF")
@@ -2827,7 +3186,8 @@ git commit -m "ingestion evidence: measured styles in every state, keyframe defi
   `band_path(hex)`, `MAX_BAND_SURFACES` (12); `NormalizeResult.measured_components: dict | None`;
   diagnostic `LUMI0607` (a cap skipped values).
 - Token names: `<component>.<variant>[.<state>].<slot>` with component ∈ `button link navlink card
-  chip input image`, variant `solid-2` (the shape variant with `.`→`-`), state ∈ `hover pressed focus
+  chip input image`, variant `solid-047464` (the look-keyed variant of Task X2 with `.`→`-`; a
+  suffixed `solid.047464.d36e` is `solid-047464-d36e`), state ∈ `hover pressed focus
   disabled`, slot ∈ `fill label border border-width[-side] border-style radius[-corner]
   padding-<side> height gap font case decoration decoration-thickness underline-offset shadow[-n]
   opacity transform filter cursor outline outline-width outline-style outline-offset icon icon-color
@@ -2848,7 +3208,7 @@ git commit -m "ingestion evidence: measured styles in every state, keyframe defi
 ```
   (and, only if the optional sentence was approved, append to the `component_recipes[]` bullet:
   "The kit also carries tokens minted from those shape records, named for where they were measured
-  (`button.solid-2.fill`, `card.solid-1.radius`); when a slot's measured value has one, name it.").
+  (`button.solid-047464.fill`, `card.solid-f1f0de.radius`); when a slot's measured value has one, name it.").
 
 - [ ] **Step 2: Write the failing tests** `apps/api/tests/test_ingestion_component_tokens.py`:
 
@@ -2906,6 +3266,7 @@ def _recipe(kit: dict, result, component: str, fill: str | None = None):
 def test_measured_values_become_tokens_named_for_where_they_were_measured() -> None:
     kit, result = _mint()
     solid = _recipe(kit, result, "button", "#047464")
+    assert solid["variant"] == "solid.047464", "a style is named by its look (Q-A9-6)"
     assert solid["rest"]["fill"] == "surface.brand", "Garner's surface.brand holds exactly #047464"
     assert solid["rest"]["label"] == "text.inverse"
     assert solid["rest"]["radius"] == "radius.full", "a pill is 9999px, radius.full exactly"
@@ -3010,14 +3371,14 @@ def test_ingestion_and_the_engine_agree_on_every_style_value(value: dict, expect
     }[value["kind"]](value)
     assert python_ok is expected
     kit = _kit()
-    kit["tokens"]["styles"] = {"button.solid-1.x": {"value": {"default": value, "modes": {}}, "description": None, "provenance": None}}
+    kit["tokens"]["styles"] = {"button.solid-047464.x": {"value": {"default": value, "modes": {}}, "description": None, "provenance": None}}
     validation = CoreClient().validate_brand_kit(kit, product_ready=False, raise_on_error=False)
     engine_ok = not any(d["severity"] == "error" and d["code"].startswith("LUMB026") for d in validation["diagnostics"])
     assert engine_ok is expected
 
 
 def test_component_tokens_are_known_by_their_root() -> None:
-    assert is_component_token("button.solid-1.fill") and is_component_token("motion.reveal.ab12cd34")
+    assert is_component_token("button.solid-047464.fill") and is_component_token("motion.reveal.ab12cd34")
     assert not is_component_token("surface.band.014036") and not is_component_token("space.card.padding")
 
 
@@ -3048,8 +3409,8 @@ reveals become named motion entries. Three rules, each enforced here:
   value, no tolerance) is named instead of minting a second; among several, the one whose family
   suits the slot wins (a fill prefers `surface.*`, a label `text.*`, a border `border.*`), then a
   token that was not minted, then the name. Identical values used by several styles share one token.
-* Stable names made by code from where the value was measured: `button.solid-2.fill`,
-  `button.solid-2.hover.fill`, `motion.button.solid-2.duration-1`, `motion.keyframes.pulse`,
+* Stable names made by code from where the value was measured: `button.solid-047464.fill`,
+  `button.solid-047464.hover.fill`, `motion.button.solid-047464.duration-1`, `motion.keyframes.pulse`,
   `motion.reveal.<digest>`. The same page yields the same names on every extraction; no model names
   anything.
 * A per-kit cap. The web author's prompt lists every colour token of the kit
@@ -3893,8 +4254,9 @@ def _minted() -> tuple[dict, dict]:
 
 def test_the_minted_section_validates_and_every_name_resolves_in_the_kit() -> None:
     kit, section = _minted()
-    assert "button.solid-1.case" in kit_token_names(kit), "style tokens are names the token law knows"
     checked = validate_measured_components(section, token_names=kit_token_names(kit))
+    solid = next(s for s in checked["styles"] if s["component"] == "button" and s["variant"] == "solid.047464")
+    assert solid["rest"]["case"] in kit_token_names(kit), "style tokens are names the token law knows"
     assert checked["schema_version"] == 1 and checked["source"] == "website:https://fixture.test/"
     assert {s["component"] for s in checked["styles"]} >= {"button", "link", "nav_link", "card"}
     assert checked["motion"]["animations"] == ["motion.animation.pulse"]
@@ -3902,14 +4264,28 @@ def test_the_minted_section_validates_and_every_name_resolves_in_the_kit() -> No
 
 def test_a_name_the_kit_does_not_carry_refuses_the_whole_section() -> None:
     kit, section = _minted()
-    section["styles"][0]["rest"]["fill"] = "button.ghost-9.fill"
-    with pytest.raises(MeasuredComponentsRefused, match="button.ghost-9.fill"):
+    section["styles"][0]["rest"]["fill"] = "button.ghost-ffffff.fill"
+    with pytest.raises(MeasuredComponentsRefused, match="button.ghost-ffffff.fill"):
         validate_measured_components(section, token_names=kit_token_names(kit))
 
 
 def test_a_slot_outside_the_vocabulary_is_refused() -> None:
     kit, section = _minted()
     section["styles"][0]["rest"]["background"] = "surface.brand"
+    with pytest.raises(MeasuredComponentsRefused):
+        validate_measured_components(section, token_names=kit_token_names(kit))
+
+
+def test_a_style_is_named_by_its_look_never_by_its_rank() -> None:
+    """Founder Q-A9-6: `solid.047464` (and `solid.047464.d36e` beside a same-coloured twin) are
+    names; an old kit's `solid.2` never appears in a measured section."""
+    kit, section = _minted()
+    assert {s["variant"] for s in section["styles"] if s["component"] == "button"} == {
+        "outline.0d2b25", "solid.047464", "solid.0a4a8a", "solid.28241e", "solid.7c4cff",
+    }
+    section["styles"][0]["variant"] = "solid.047464.d36e"
+    validate_measured_components(section, token_names=kit_token_names(kit))
+    section["styles"][0]["variant"] = "solid.2"
     with pytest.raises(MeasuredComponentsRefused):
         validate_measured_components(section, token_names=kit_token_names(kit))
 
@@ -3992,6 +4368,10 @@ SLOT_PATTERN = (
 )
 Slot = Annotated[str, StringConstraints(pattern=SLOT_PATTERN)]
 State = Literal["hover", "pressed", "focus", "disabled"]
+#: A measured style's name (Task X2 `look_names`, founder Q-A9-6): `<fill>.<its colour>` — six or eight
+#: hex digits, or `none` — with a 4-hex suffix (12 in the rare collision) when two looks of one
+#: component share the colour. Never the old rank form `solid.2`.
+VARIANT_PATTERN = r"^(solid|outline|ghost)\.([0-9a-f]{6}|[0-9a-f]{8}|none)(\.([0-9a-f]{4}|[0-9a-f]{12}))?$"
 
 
 class MeasuredComponentsRefused(Exception):
@@ -4019,7 +4399,7 @@ class MeasuredIcon(_Section):
 
 class MeasuredRecipe(_Section):
     component: Literal["button", "link", "nav_link", "card", "chip", "input", "image"]
-    variant: Annotated[str, StringConstraints(pattern=r"^(solid|outline|ghost)\.\d+$")]
+    variant: Annotated[str, StringConstraints(pattern=VARIANT_PATTERN)]
     count: int = Field(ge=1)
     probed: Literal["pointer", "forced", "rest-only"]
     source: Text
@@ -4245,7 +4625,7 @@ import json
 from pathlib import Path
 
 from lumen_ingestion.brief import kit_token_names
-from lumen_ingestion.capture.geometry import parse_geometry
+from lumen_ingestion.capture.geometry import parse_geometry, variant_base
 from lumen_ingestion.capture.motion import attach_keyframes
 from lumen_ingestion.capture.snapshot import Stylesheet
 from lumen_ingestion.evidence import EvidencePointer, MeasuredStyle, MotionEvidence, SectionBackground, StyleLook
@@ -4273,8 +4653,10 @@ BANDS = {
     ]),
 }
 
-#: Each hero button as measured.json records it, against the brief recipe it is (Garner solid.1:
-#: "light pills on photo and forest grounds"; Conduit solid.2: "Primary demo CTA").
+#: Each hero button as measured.json records it, against the stored brief recipe it is (Garner's
+#: brief calls it solid.1: "light pills on photo and forest grounds"; Conduit's solid.2: "Primary demo
+#: CTA"). Those are the old frequency names; the minted twin renames that recipe to the look-keyed
+#: name a re-extraction would give it (founder Q-A9-6), so the two join as they will in production.
 HERO_BUTTONS = {
     "garner": ("solid.1", 2, StyleLook(
         background="#FFFFFF", color="#0D2B25", border_color="#FFFFFF", border_width=[1, 1, 1, 1], border_style="solid",
@@ -4323,7 +4705,14 @@ def _measured_real(brand: str) -> dict:
                           pointer=EvidencePointer(source="website", locator=f"{url} :: section {i} (section)"))
         for i, hex_value, height in rows
     ])
-    variant, count, look = HERO_BUTTONS[brand]
+    old_name, count, look = HERO_BUTTONS[brand]
+    # A re-extraction names this style by its fill (`solid.ffffff`, `solid.28241e`) and its brief
+    # agent copies the name; the stored brief still says `solid.1`/`solid.2`, so that one recipe is
+    # renamed here. The kit's other recipes keep their old names, like any kit made before measurement.
+    variant = variant_base("solid", look.background)
+    for recipe in kit["brief"]["component_recipes"]:
+        if recipe["component"] == "button" and recipe["variant"] == old_name:
+            recipe["variant"] = variant
     style = MeasuredStyle(surface="button", variant=variant, count=count, probed="rest-only", rest=look,
                           pointer=EvidencePointer(source="website", locator=f"{url} :: button {variant}"))
     return _finish(kit, mint_component_tokens(kit, [style], MotionEvidence()).section)
@@ -4383,75 +4772,10 @@ git add subsystems/clue-design/apps/api/lumen_ingestion/measured_components.py s
 git commit -m "kits: a measured_components section naming every measured style's tokens; brief, grammar audit and measured components survive logo and description curation"
 ```
 
-### Task X6: The brand-context panel keeps its designed groups (founder Q-A9-3, recommendation (a))
+### Task X6 — moved after Task 7
 
-**Files:**
-- Modify: `apps/frontend/src/features/brand-context/model/brand-context-mapping.ts` (`toColorGroups`, `toTextStyles`)
-- Modify: `apps/frontend/src/features/brand-context/model/brand-context-mapping.test.ts`
-
-- [ ] **Step 1: Write the failing test** (append to `brand-context-mapping.test.ts`):
-
-```ts
-test("tokens minted from measured component styles stay out of the designed panels", () => {
-  const raw = structuredClone(HARVESTED_BRAND_KIT) as {
-    brand_kit_json: { tokens: { colors: Record<string, unknown>; typography: Record<string, unknown> } };
-  };
-  raw.brand_kit_json.tokens.colors["button.solid-2.fill"] = {
-    value: { default: { kind: "hex", value: "#28241E" }, modes: {} },
-    role: "component",
-    description: null,
-    provenance: { source: "website:https://example.test/ :: button solid.2 rest fill", confidence: 0.8 },
-  };
-  raw.brand_kit_json.tokens.typography["button.solid-2.font"] = {
-    value: {
-      default: { kind: "style", font_family: "Inter", font_size: 16, font_weight: 500, line_height: 1.2, letter_spacing: 0, color: null, font_asset: null },
-      modes: {},
-    },
-    role: "component",
-    description: null,
-    provenance: null,
-  };
-  const minted = toBrandContextWorkspace(BrandKitDetailSchema.parse(raw));
-  const swatches = minted.colorGroups.flatMap((group) => group.swatches.map((swatch) => swatch.id));
-  assert.ok(!swatches.includes("button.solid-2.fill"));
-  assert.ok(!minted.textStyles.some((style) => style.id === "button.solid-2.font"));
-  assert.deepEqual(
-    minted.colorGroups.map((group) => group.swatches.length),
-    workspace.colorGroups.map((group) => group.swatches.length),
-  );
-});
-```
-
-- [ ] **Step 2: Run it to see it fail.**
-
-Run: `cd apps/frontend && npx tsx --test src/features/brand-context/model/brand-context-mapping.test.ts`
-Expected: FAIL — `button.solid-2.fill` is listed under "Semantic roles".
-
-- [ ] **Step 3: Filter them.** In `brand-context-mapping.ts`, above `toColorGroups` add:
-
-```ts
-/** Tokens ingestion mints from measured component styles (`button.solid-2.fill`, `motion.*`, Wave 2
- * A9). The panel's designed groups have no place for them, so they are left out until a design
- * gives them one; band surfaces (`surface.band.*`) are surfaces and stay. */
-const COMPONENT_TOKEN_ROOTS = new Set(["button", "link", "navlink", "card", "chip", "input", "image", "motion"]);
-const isComponentToken = (path: string) => COMPONENT_TOKEN_ROOTS.has(path.split(".", 1)[0]);
-```
-  In `toColorGroups`, `if (!colors[path]) continue;` becomes
-  `if (!colors[path] || isComponentToken(path)) continue;`; in `toTextStyles`,
-  `Object.keys(typography).flatMap(` becomes
-  `Object.keys(typography).filter((path) => !isComponentToken(path)).flatMap(`.
-
-- [ ] **Step 4: Run the brand-context tests, lint and build.**
-
-Run: `cd apps/frontend && npx tsx --test src/features/brand-context/model/*.test.ts && npm run lint -- src/features/brand-context`
-Expected: PASS; no lint errors.
-
-- [ ] **Step 5: Commit.**
-
-```bash
-git add apps/frontend/src/features/brand-context/model/brand-context-mapping.ts apps/frontend/src/features/brand-context/model/brand-context-mapping.test.ts
-git commit -m "brand context: leave minted component tokens out of the designed colour and type panels"
-```
+The Brand page task (founder Q-A9-3 (c)) reads the kit through site-kit's own functions, so it runs
+after Task 7; it is written out there.
 
 ---
 
@@ -4535,6 +4859,19 @@ test("a brand's looks are its button recipes, named for the dock by kind", () =>
   assert.deepEqual(buttonLookOptions(kitBrand("altcarbon")).map((o) => o.label), ["Standard", "Filled"]);
 });
 
+test("a measured kit's looks are named by their colour; the labels follow use, the names never do", () => {
+  // probe.minted: every button style the real probe measured, all used once — so by name.
+  assert.deepEqual(buttonLookOptions(kitBrand("probe.minted")).map((o) => [o.label, o.value]), [
+    ["Standard", ""], ["Outline", "outline.0d2b25"],
+    ["Filled 1", "solid.047464"], ["Filled 2", "solid.0a4a8a"], ["Filled 3", "solid.28241e"], ["Filled 4", "solid.7c4cff"],
+  ]);
+  // conduit.minted: the measured demo button (used 4 times) leads its kind; the recipes measured
+  // before keep their old names and their old order after it.
+  const filled = buttonLookOptions(kitBrand("conduit.minted")).filter((o) => o.label.startsWith("Filled"));
+  assert.deepEqual(filled.map((o) => o.value), ["solid.28241e", "solid.1", "solid.3", "solid.4", "solid.5"]);
+  assert.equal(filled[0].label, "Filled 1");
+});
+
 test("an old kit draws a look from its recipe's tokens, and the standard button where the recipe has none", () => {
   const conduit = kitBrand("conduit");
   const look = lookNamed(conduit, "button", "solid.2")!;
@@ -4549,7 +4886,7 @@ test("an old kit draws a look from its recipe's tokens, and the standard button 
 
 test("a measured kit draws Conduit's demo button warm dark, never surface.brand", () => {
   const conduit = kitBrand("conduit.minted");
-  const look = lookNamed(conduit, "button", "solid.2")!;
+  const look = lookNamed(conduit, "button", "solid.28241e")!;
   const drawn = drawnButton(conduit, look);
   assert.equal(drawn.parts.fill, "#28241E");
   assert.equal(drawn.tokens.fill, "surface.band.28241e");
@@ -4620,9 +4957,9 @@ const ruleOf = (css: string, selector: string) => {
 };
 
 test("Conduit's demo button: the kit's own fill when measured, surface.brand only in the old kit", () => {
-  for (const [name, fill] of [["conduit.minted", "#28241E"], ["conduit", "#7CE4FC"]] as const) {
+  for (const [name, fill, look] of [["conduit.minted", "#28241E", "solid.28241e"], ["conduit", "#7CE4FC", "solid.2"]] as const) {
     const brand = kitBrand(name);
-    const index = lookNamed(brand, "button", "solid.2")!.index;
+    const index = lookNamed(brand, "button", look)!.index;
     const css = themeCss(brand);
     const look = ruleOf(css, `.brand-btn.brand-look-${index}`);
     assert.match(look, new RegExp(`background-color:(var\\(--bs-${index}-fill,)?${fill}`), look);
@@ -4632,7 +4969,7 @@ test("Conduit's demo button: the kit's own fill when measured, surface.brand onl
 
 test("a filled look that would vanish on a dark surface takes the light version there, and only there", () => {
   const brand = kitBrand("conduit.minted");
-  const index = lookNamed(brand, "button", "solid.2")!.index;
+  const index = lookNamed(brand, "button", "solid.28241e")!.index;
   const css = themeCss(brand);
   assert.match(ruleOf(css, ".bg-surface-band-28241e"), new RegExp(`--bs-${index}-fill:var\\(--brand-button-light-fill\\)`));
   assert.match(ruleOf(css, ".bg-surface-page"), new RegExp(`--bs-${index}-fill:initial`));
@@ -5128,19 +5465,31 @@ export const kindOf = (variant: string): Look["kind"] => {
   const head = variant.split(".")[0];
   return head === "outline" || head === "ghost" || head === "solid" ? head : "other";
 };
-const ordinal = (variant: string) => Number(variant.split(".")[1]) || 0;
+/** An old kit's frequency rank (`solid.2` → 2). A look-keyed name (`solid.047464`, founder Q-A9-6)
+ * has none: its hex part is six or eight characters, never a one-to-three-digit rank. */
+const legacyRank = (variant: string) => {
+  const part = variant.split(".")[1] ?? "";
+  return /^\d{1,3}$/.test(part) ? Number(part) : Number.POSITIVE_INFINITY;
+};
 const words = (variant: string) => {
   const text = variant.replace(/[._-]+/g, " ").trim();
   return text ? text[0].toUpperCase() + text.slice(1) : variant;
 };
 
-/** The brand's looks for a component, in dock order (outline, text only, filled; by number). */
+/** The brand's looks for a component, in dock order: outline, text only, filled; within a kind the
+ * style the site uses most first (its measured count), then an old kit's rank (`solid.1` before
+ * `solid.2`, so a kit made before measurement keeps today's order), then the name. Names never
+ * change with the order; only the "Filled 1" / "Filled 2" labels follow it. */
 export function looks(brand: BrandData, component: "button" | "card"): Look[] {
   const measured = measuredComponents(brand)?.styles ?? [];
   const seen = new Set<string>();
   const list = recipes(brand).filter((r) => r.component === component && !seen.has(r.variant) && !!seen.add(r.variant));
+  const used = (variant: string) => measured.find((s) => s.component === component && s.variant === variant)?.count ?? 0;
   list.sort((a, b) =>
-    KIND_ORDER.indexOf(kindOf(a.variant)) - KIND_ORDER.indexOf(kindOf(b.variant)) || ordinal(a.variant) - ordinal(b.variant) || a.variant.localeCompare(b.variant));
+    KIND_ORDER.indexOf(kindOf(a.variant)) - KIND_ORDER.indexOf(kindOf(b.variant))
+    || used(b.variant) - used(a.variant)
+    || legacyRank(a.variant) - legacyRank(b.variant)
+    || a.variant.localeCompare(b.variant));
   const totals = new Map<string, number>();
   for (const r of list) totals.set(kindOf(r.variant), (totals.get(kindOf(r.variant)) ?? 0) + 1);
   const counters = new Map<string, number>();
@@ -5865,7 +6214,7 @@ test("a look draws the seller's own icon where the site has one", () => {
   const solid = buttonLooks(brand).find((look) => colorOf(brand, look.measured?.rest.fill) === "#047464")!;
   const markup = html(kit.Button({ label: "Go", href: "/", surface: "page", look: solid.name }));
   assert.match(markup, /<span class="brand-btn-label">Go<\/span><span aria-hidden="true" class="brand-btn-icon"><svg [^>]*viewBox="0 0 12 12"/);
-  const outline = buttonLooks(brand).find((look) => look.name === "outline.1")!;
+  const outline = buttonLooks(brand).find((look) => look.name === "outline.0d2b25")!;
   assert.ok(html(kit.Button({ label: "More", href: "/", surface: "page", look: outline.name })).includes('<span aria-hidden="true" class="brand-btn-icon">→</span>'));
 });
 
@@ -5919,10 +6268,10 @@ test("the Surface field lists the six and then this brand's other surfaces", () 
 
 test("a FeatureSplit draws the look it names", () => {
   const brand = kitBrand("conduit.minted");
-  const index = lookNamed(brand, "button", "solid.2")!.index;
+  const index = lookNamed(brand, "button", "solid.28241e")!.index;
   const split = makeSections(brand, href).FeatureSplit;
   const markup = renderToStaticMarkup(
-    <>{split.render({ id: "f", surface: "page", eyebrow: "", heading: "H", headingRole: "title", body: "B", image: "", imageSide: "left", buttonLabel: "Book a demo", buttonHref: "/", buttonLook: "solid.2" } as never)}</>,
+    <>{split.render({ id: "f", surface: "page", eyebrow: "", heading: "H", headingRole: "title", body: "B", image: "", imageSide: "left", buttonLabel: "Book a demo", buttonHref: "/", buttonLook: "solid.28241e" } as never)}</>,
   );
   assert.ok(markup.includes(`class="brand-btn brand-look-${index}"`), markup);
 });
@@ -6038,8 +6387,9 @@ in `sections.tsx`.
 /** A surface by its choice name: one of our six, or one of this brand's other surfaces ("canvas",
  * "band-014036"). The validator checks it against the brand (founder Q4 = (b)). */
 export const Surface = z.string().min(1);
-/** A button style by its recipe's name ("outline.1"); empty is the kit's standard button. The
- * validator checks it against the brand (founder ruling 4). */
+/** A button style by its recipe's name ("solid.047464"; a kit made before measurement says
+ * "outline.1"); empty is the kit's standard button. The validator checks it against the brand
+ * (founder ruling 4). */
 const buttonLook = z.string().default("");
 ```
   add `buttonLook,` after `buttonHref: optionalLink,` in `FeatureSplitSchema` and after
@@ -6792,8 +7142,8 @@ test("Buttons: the standard button and each style with its values and token name
 
 test("Conduit's demo button reads warm dark once measured, and says what is drawn before", () => {
   assert.ok(row(md("conduit"), "solid.2").includes("| not in the kit; drawn: #7CE4FC (surface.brand), the standard button's fill |"));
-  const minted = row(md("conduit.minted"), "solid.2");
-  assert.ok(minted.startsWith("| solid.2 | filled | #28241E (surface.band.28241e) | #FFFFFF (text.inverse) |"), minted);
+  const minted = row(md("conduit.minted"), "solid.28241e");
+  assert.ok(minted.startsWith("| solid.28241e | filled | #28241E (surface.band.28241e) | #FFFFFF (text.inverse) |"), minted);
   assert.ok(!minted.includes("#7CE4FC"));
   assert.ok(!md("conduit.minted").includes("This kit was made before button styles were measured"));
   assert.ok(md("altcarbon").includes('kit.Button look="solid.1"'));
@@ -7156,6 +7506,1701 @@ git rm apps/frontend/packages/site-kit/test/fixtures/measured.json
 git commit -m "site-kit brand.md: every surface, type role, spacing step, button, card, link and motion with its token names; BrandData drops the spike-only measurement"
 ```
 
+### Task X6: The Brand page shows the measured brand (founder Q-A9-3 (c))
+
+Runs **after Task 7** (it reads the kit through site-kit's own functions, final after Task 7) and
+**after Lane C Tasks 1 and 3** (Task 1: the Railway image installs `@clue/site-kit`; Task 3:
+`next.config.ts` transpiles it — controller check 2026-10-12, the draft named Task 5). It replaces the earlier filter-only Task X6.
+
+The founder: "extend the existing screen to include the new sections that you add … extend the
+current screen with more new colors and all and portray them using the existing frontend standards
+only." So the Brand page (`/brand-context`) gains, for a kit made after measurement:
+- in **Colors**, after the kit's own groups: "Section backgrounds" (each minted band with its text
+  colour) and one group per measured style ("Filled 1 button", "Card", "Link"), its swatches named by
+  state and part ("Hover fill"); minted colours leave "Semantic roles", reused kit colours stay;
+- three new **Brand kit** sections: **Components** (each button, card and link style drawn in rest,
+  hover, pressed, focus and disabled, side by side, each sample drawn with its own measured values,
+  its values and token names under it, and its transitions), **Spacing** (the kit's spacing steps,
+  saying which were measured) and **Motion** (each animation and scroll reveal with its timing and
+  steps in words, and the scripted motion pages made here do not copy).
+
+A kit made before measurement shows exactly today's page: no new items, no moved colours.
+
+**What the screen's own rules require, and how this task meets them** (read for this task:
+`apps/frontend/AGENTS.md` ("This is NOT the Next.js you know"), `apps/frontend/docs/architecture/frontend.md`,
+`apps/frontend/docs/api-contracts/brand-context.md`, and the bundled Next 16.2.12 docs
+`node_modules/next/dist/docs/01-app/01-getting-started/05-server-and-client-components.md`,
+`…/15-route-handlers.md` and `…/03-api-reference/01-directives/use-client.md`):
+- No route handler is written: the page is a Server Component that already reads the kit through the
+  server-side `fetchAuthenticatedDesignBackend` seam (the contract's "Transport" resolution). The new
+  `measured` prop crosses into the client screen as plain data, which the `use client` docs require
+  ("the props of the Client Components must be serializable").
+- Dependency direction holds: the route reads the repository; the repository maps through the model
+  (`measured-brand.ts`, pure, no transport); components receive typed props and import no repository
+  or fixture (the `no-restricted-imports` rule in `eslint.config.mjs` enforces it).
+- Every backend payload has a Zod schema: `MeasuredComponents@1` and the token groups get one
+  (`brand-kit.ts`), entry-tolerant like the existing token maps.
+- No new visual language: every new part reuses a class or component already on this screen, named
+  below with file:line; where none fits, the closest one is used and the gap is a design review point
+  (DR-A9-1 to DR-A9-10, at the top of this file). No CSS is added, and no `var(--clue-…)` is
+  introduced (`src/design-system-tokens.test.ts` stays green).
+- The contract doc records the change (`docs/api-contracts/brand-context.md`, "Resolutions
+  (2026-10-12)").
+
+**The kit read stripped what it needed.** The design API serves the stored kit whole
+(`lumen_api/dto.py:133-140`, `brand_kit_detail_dto` returns `record["brand_kit"]` as
+`brand_kit_json`), so `measured_components` and `tokens.styles` arrive. The page's own schema dropped
+them: `BrandKitJsonSchema` (`model/brand-kit.ts:114-141`) is a `z.object`, which strips unknown keys,
+and named only `tokens.colors` and `tokens.typography`. Step 5 fixes that; Step 3 pins the DTO.
+
+**One reading, shared with sites.** Every measured value is read with the functions site-kit uses
+to draw a published site (`partsFromSlots`, `surfaceLabels`, `inkRole`, `motionEntries`, …), through
+a new pure entry point `@clue/site-kit/brand-view`, so the Brand page and a site can never describe
+a style differently, and no reading is written twice. The reading runs on the server (in the
+repository); the components import only `measured-view.ts` — the view's plain types and two small
+helpers, with no site-kit import — so the page's client bundle carries none of the reading code.
+
+**Existing parts reused** (file:line on this branch, 2026-10-12):
+- Sidebar item: `brand-context-sidebar.tsx:31-40` (`.contextNavItem`, `brand-context.module.css:104-126`)
+  with existing icons `grid`, `list`, `sortActive` (`brand-context-icon.tsx:15,17,20`).
+- Page header title: `brand-context-header.tsx:114-116` (`labels`, `.pageHeader`).
+- Panel, section and title row: `typography-panel.tsx:16-22` (`.typographyPanel` `:1058`,
+  `.typographySection` `:1067`, `.sectionTitleRow` `:1071`).
+- Cards in a grid: `typography-panel.tsx:25-32` (`.typefaceList` `:1088`, `.typefaceRow` `:1097`,
+  `.typefaceName` with its `small` tag `:1127`, `:1215`; `.typefaceRow p` `:1111` for a card's big line).
+- A subtle line: `typeface-sample.tsx:9` (`.typefacePreviewStatus` `:1122`).
+- The sample's stage: the asset grid's preview box, `assets-panel.tsx:210` (`.assetCardPreview` `:819`).
+- A name and its value: `colors-panel.tsx:28-31` (`.swatchMeta` `:591`, `.swatchLabel` `:597`, `code` `:606`).
+- Colour groups and swatches: `colors-panel.tsx:19-37` (`.colorSection`, `.swatchGrid`, `.swatchCard`,
+  `.swatchPreview`), unchanged markup.
+- Empty states: `colors-panel.tsx:17` (`.emptyState` `:1326`), with copy in the style of
+  `brand-kit-actions.ts:144` ("No colors yet.").
+- Font loading for samples: `hooks/use-typeface-preview.ts` (the Typography panel's loader).
+- An image of a kit icon: the `<img>` pattern of `brand-context-icon.tsx:50-55` (with its eslint note).
+
+**Files:**
+- Create: `apps/frontend/packages/site-kit/src/brand-view.ts`, `apps/frontend/packages/site-kit/test/brand-view.test.ts`
+- Modify: `apps/frontend/packages/site-kit/package.json` (`exports`)
+- Modify: `subsystems/clue-design/scripts/build_site_kit_brand_fixtures.py` (writes the Brand page's fixture)
+- Modify: `subsystems/clue-design/apps/api/tests/test_measured_components.py` (the DTO, the fixture's freshness)
+- Create: `apps/frontend/src/features/brand-context/data/__fixtures__/brand-kit.measured.json` (written by the script)
+- Modify: `apps/frontend/src/features/brand-context/data/__fixtures__/harvest.ts`
+- Modify: `apps/frontend/src/features/brand-context/model/brand-kit.ts`, `model/brand-context.ts`,
+  `model/brand-context-mapping.ts`
+- Create: `apps/frontend/src/features/brand-context/model/measured-view.ts` (the view's types and two
+  small helpers; no site-kit import), `model/measured-brand.ts` (the mapping, server-side),
+  `model/measured-brand.test.ts`
+- Modify: `apps/frontend/src/features/brand-context/data/brand-context.repository.ts`,
+  `data/brand-context.repository.test.ts`
+- Modify: `apps/frontend/src/app/(protected)/brand-context/page.tsx`
+- Modify: `apps/frontend/src/features/brand-context/components/brand-context-screen.tsx`,
+  `components/brand-context-sidebar.tsx`, `components/brand-context-header.tsx`, `components/colors-panel.tsx`
+- Create: `apps/frontend/src/features/brand-context/components/style-sample.tsx`,
+  `components/measured-styles-panel.tsx`, `components/spacing-panel.tsx`, `components/motion-panel.tsx`
+- Modify: `apps/frontend/docs/api-contracts/brand-context.md`
+
+**Interfaces:**
+- Consumes: `MeasuredComponents@1` (Task X5), the minted tokens and `styles` group (X1, X4), and
+  site-kit's Task 4–7 functions.
+- Produces: `@clue/site-kit/brand-view`; `BrandKitJsonSchema` keeping `numbers`, `spacing`, `radii`,
+  `stroke_widths`, `opacity`, `shadows`, `styles`, token `provenance`, `constraints.contrast_pairs`
+  and `measured_components`; `measured-brand.ts`: `toMeasuredBrand(kit) -> MeasuredBrandView | null`,
+  `isMeasuredColor(path)`; `measured-view.ts`: the `MeasuredBrandView` types, `measuredSections(view)`,
+  `typefaceFor(typefaces, family)`;
+  `BrandContextMappingOptions.movedColors`; `BrandContextView.measured`;
+  `BrandContextSectionSchema` gains `components`, `spacing`, `motion`; the panels `MeasuredStylesPanel`,
+  `SpacingPanel`, `MotionPanel`; `StyleSample`.
+
+- [ ] **Step 1: Check what this task needs is on the branch.**
+
+Run (from the repo root):
+```bash
+grep -n "export function partsFromSlots\|export function surfaceLabels\|export function motionEntries" apps/frontend/packages/site-kit/src/looks.ts apps/frontend/packages/site-kit/src/surfaces.ts
+grep -n "measured" apps/frontend/packages/site-kit/src/brand.ts
+grep -n "transpilePackages" apps/frontend/next.config.ts
+grep -n "packages/site-kit/package.json" apps/frontend/Dockerfile.railway
+```
+Expected: the three site-kit functions are found (Task 4); `brand.ts` no longer mentions `measured`
+(Task 5/7); `transpilePackages: ["@clue/site-kit"]` (Lane C Task 5); the site-kit manifest is copied
+before `npm ci` (Lane C Task 1). If any is missing, this task waits for it — those lines are other
+tasks' to write.
+
+- [ ] **Step 2: Give site-kit a pure entry point for the Brand page.** Create
+  `apps/frontend/packages/site-kit/src/brand-view.ts`:
+
+```ts
+// The brand reading the app's Brand page shares with published sites (Wave 2 A9, Task X6): the
+// functions that draw a site's buttons, surfaces and motion also describe them on the Brand page, so
+// the two never disagree. Pure TypeScript — no React, no Puck — so a Server Component may import it.
+export { brandData, type BrandData } from "./brand";
+export {
+  colorOf, contrast, durationOf, easingOf, hexOf, isComponentToken, isMeasured, pxOf, styleOf, tokenEntry,
+  tokenGroups, trim, typographyOf,
+} from "./brand-values";
+export {
+  STATES, kindOf, measuredComponents, motionEntries, motionNotes, partsFromSlots,
+  type MeasuredRecipe, type MotionEntry, type Part, type Parts, type State,
+} from "./looks";
+export { inkRole, otherSurfaceRoles, surfaceLabels } from "./surfaces";
+```
+  In `apps/frontend/packages/site-kit/package.json`, add to `"exports"` (beside the entries other
+  lanes add): `"./brand-view": "./src/brand-view.ts",`. Then create
+  `apps/frontend/packages/site-kit/test/brand-view.test.ts`:
+
+```ts
+// The Brand page's entry point (Wave 2 A9, Task X6): the same reading as a site, and server-safe.
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { test } from "node:test";
+import * as view from "../src/brand-view";
+import { kitBrand } from "./fixtures/kits";
+
+test("the Brand page's entry point reads a measured kit the way a site does", () => {
+  const brand = kitBrand("probe.minted");
+  const solid = view.measuredComponents(brand)!.styles!.find((style) => style.variant === "solid.047464")!;
+  assert.equal(view.partsFromSlots(brand, solid.rest).parts.fill, "#047464");
+  assert.ok(view.surfaceLabels(brand).get("surface.band.014036")?.startsWith("Dark band"));
+  assert.ok(view.motionEntries(brand).some((entry) => entry.className === "brand-motion-pulse"));
+});
+
+test("the entry point and every module it reads stay free of React and Puck", () => {
+  for (const file of ["brand-view.ts", "brand.ts", "brand-values.ts", "looks.ts", "surfaces.ts", "schemas.ts"]) {
+    const source = fs.readFileSync(new URL(`../src/${file}`, import.meta.url), "utf-8");
+    assert.doesNotMatch(source, /from "(react|react-dom|@puckeditor\/core)[^"]*"|from "\.\/[^"]+\.tsx"/, file);
+  }
+});
+```
+Run: `cd apps/frontend && npm test -w @clue/site-kit 2>&1 | tail -6`
+Expected: PASS, the two new tests included.
+
+- [ ] **Step 3: Pin the kit read on the design API, and write the Brand page's fixture.**
+  1. Append to `subsystems/clue-design/apps/api/tests/test_measured_components.py`:
+
+```python
+def test_the_kit_read_serves_measured_components_and_style_tokens_whole() -> None:
+    """The Brand page reads `GET /brand-kits/{id}` (Task X6); its DTO passes the stored kit through."""
+    from lumen_api.dto import brand_kit_detail_dto
+
+    kit, section = _minted()
+    kit["measured_components"] = section
+    record = {
+        "brand_kit_id": kit["id"], "version": 1, "name": kit["name"], "approval_status": "draft",
+        "brand_kit": kit, "brand_summary": {}, "diagnostics": [], "created_at": None, "updated_at": None,
+    }
+    served = brand_kit_detail_dto(record)["brand_kit_json"]
+    assert served["measured_components"] == section
+    assert served["tokens"]["styles"] and served["tokens"]["styles"] == kit["tokens"]["styles"]
+```
+  2. In `scripts/build_site_kit_brand_fixtures.py`, after the `KITS_DIR = …` line add:
+
+```python
+#: The probe kit as `GET /brand-kits/{id}` serves it, for the Brand page's tests (Task X6).
+BRAND_PAGE_FIXTURE = (
+    REPO / "apps" / "frontend" / "src" / "features" / "brand-context" / "data" / "__fixtures__" / "brand-kit.measured.json"
+)
+```
+     after `build_all()` add:
+
+```python
+def build_brand_page(kits: dict[str, str]) -> str:
+    """The probe kit through the design API's own detail DTO — the exact body the Brand page reads."""
+    from lumen_api.dto import brand_kit_detail_dto
+
+    kit = json.loads(kits["probe.minted.json"])
+    record = {
+        "brand_kit_id": kit["id"], "version": kit["version"], "name": kit["name"], "approval_status": "draft",
+        "product_ready": False, "source": "website", "brand_kit": kit, "brand_summary": {}, "diagnostics": [],
+        "created_at": None, "updated_at": None,
+    }
+    return json.dumps(brand_kit_detail_dto(record), indent=1, sort_keys=True, ensure_ascii=False) + "\n"
+```
+     and replace the `if __name__ == "__main__":` block with:
+
+```python
+if __name__ == "__main__":
+    KITS_DIR.mkdir(parents=True, exist_ok=True)
+    texts = build_all()
+    for name, text in texts.items():
+        (KITS_DIR / name).write_text(text)
+        print(f"wrote {KITS_DIR / name}")
+    BRAND_PAGE_FIXTURE.write_text(build_brand_page(texts))
+    print(f"wrote {BRAND_PAGE_FIXTURE}")
+```
+  3. In `test_measured_components.py`, replace `test_site_kit_fixture_kits_are_current` with:
+
+```python
+def test_site_kit_fixture_kits_are_current() -> None:
+    spec = importlib.util.spec_from_file_location("fixtures", ROOT / "scripts" / "build_site_kit_brand_fixtures.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    kits = module.build_all()
+    for name, text in kits.items():
+        committed = (module.KITS_DIR / name).read_text()
+        assert committed == text, f"{name} is stale: run scripts/build_site_kit_brand_fixtures.py"
+    assert module.BRAND_PAGE_FIXTURE.read_text() == module.build_brand_page(kits), (
+        "brand-kit.measured.json is stale: run scripts/build_site_kit_brand_fixtures.py"
+    )
+```
+  4. Run the script (command in its docstring), then
+     `jq -r '.brand_kit_json.measured_components.styles | map(.variant) | join(" ")' apps/frontend/src/features/brand-context/data/__fixtures__/brand-kit.measured.json`.
+     Expected: the five button variants, `ghost.0d2b25` twice (link, navigation link) and `solid.f1f0de`.
+  5. In `apps/frontend/src/features/brand-context/data/__fixtures__/harvest.ts`, add after the two
+     existing imports `import measuredKitDetail from "./brand-kit.measured.json";`, and at the end:
+
+```ts
+/**
+ * Wave 2 A9 (Task X6): a kit carrying everything the extraction measures — `measured_components`,
+ * the minted style and colour tokens, a minted section background — as `GET /brand-kits/{id}` serves
+ * it. Written by `subsystems/clue-design/scripts/build_site_kit_brand_fixtures.py` from the probe's
+ * committed harvest of `apps/api/tests/fixtures/capture/style_states.html` over Garner's kit, through
+ * the real minting code and the real detail DTO; never edited by hand.
+ */
+export const MEASURED_BRAND_KIT: unknown = measuredKitDetail;
+```
+Run: `CAPTURE_PYTEST test_measured_components.py`
+Expected: PASS.
+
+- [ ] **Step 4: Write the failing frontend tests.** Create
+  `apps/frontend/src/features/brand-context/model/measured-brand.test.ts`:
+
+```ts
+import assert from "node:assert/strict";
+import test from "node:test";
+import { HARVESTED_BRAND_KIT, MEASURED_BRAND_KIT } from "../data/__fixtures__/harvest";
+import { toBrandContextWorkspace } from "./brand-context-mapping";
+import { BrandKitDetailSchema } from "./brand-kit";
+import { isMeasuredColor, toMeasuredBrand } from "./measured-brand";
+import { measuredSections, typefaceFor, type MeasuredBrandView, type MeasuredSample } from "./measured-view";
+
+// MEASURED_BRAND_KIT: Garner's kit with everything the real probe measured on
+// apps/api/tests/fixtures/capture/style_states.html, minted by the real code (Task X5's script).
+const kit = BrandKitDetailSchema.parse(MEASURED_BRAND_KIT);
+const view = toMeasuredBrand(kit) as MeasuredBrandView;
+
+const group = (id: string) => view.groups.find((g) => g.id === id)!;
+const style = (groupId: string, variant: string) => group(groupId).styles.find((s) => s.variant === variant)!;
+const sample = (groupId: string, variant: string, state: MeasuredSample["state"]) =>
+  style(groupId, variant).samples.find((s) => s.state === state)!;
+
+test("the kit read keeps what the extraction measured: measured_components and every token group", () => {
+  assert.equal(kit.brand_kit_json.measured_components?.schema_version, 1);
+  assert.ok(Object.keys(kit.brand_kit_json.tokens?.styles ?? {}).length > 0, "style tokens survive the read");
+  assert.ok(Object.keys(kit.brand_kit_json.tokens?.spacing ?? {}).length > 0);
+  assert.ok((kit.brand_kit_json.constraints?.contrast_pairs ?? []).length > 0);
+  const broken = structuredClone(MEASURED_BRAND_KIT) as { brand_kit_json: Record<string, unknown> };
+  broken.brand_kit_json.measured_components = { schema_version: 1, source: "x", styles: "not a list" };
+  const parsed = BrandKitDetailSchema.parse(broken);
+  assert.equal(parsed.brand_kit_json.measured_components, null, "an unreadable section is no section");
+  assert.ok(parsed.brand_kit_json.tokens?.colors, "and the rest of the kit still reads");
+});
+
+test("a kit made before measurement has no measured view, so the page is unchanged", () => {
+  assert.equal(toMeasuredBrand(BrandKitDetailSchema.parse(HARVESTED_BRAND_KIT)), null);
+  assert.deepEqual(measuredSections(null), []);
+  assert.deepEqual(measuredSections(view), ["components", "spacing", "motion"]);
+});
+
+test("buttons are named as the dock names them, by kind, and by their look-keyed variant", () => {
+  assert.deepEqual(group("buttons").styles.map((s) => [s.name, s.variant]), [
+    ["Outline", "outline.0d2b25"],
+    ["Filled 1", "solid.047464"],
+    ["Filled 2", "solid.0a4a8a"],
+    ["Filled 3", "solid.28241e"],
+    ["Filled 4", "solid.7c4cff"],
+  ]);
+  assert.deepEqual(view.groups.map((g) => g.title), ["Buttons", "Cards", "Links"]);
+  assert.deepEqual(group("links").styles.map((s) => s.name), ["Link", "Navigation link"]);
+  assert.deepEqual(group("cards").styles.map((s) => s.name), ["Card"]);
+});
+
+test("each measured state is drawn from its own measured values", () => {
+  const filled = style("buttons", "solid.047464");
+  assert.deepEqual(filled.samples.map((s) => s.name), ["Rest", "Hover", "Pressed", "Focus", "Disabled"]);
+  const rest = sample("buttons", "solid.047464", "rest");
+  assert.equal(rest.style.backgroundColor, "#047464");
+  assert.equal(rest.style.color, "#FFFFFF");
+  assert.equal(rest.style.textTransform, "uppercase");
+  assert.equal(rest.style.letterSpacing, "0.02em");
+  assert.equal(rest.backdrop, "#F9FAF8", "Garner's page colour behind a teal button");
+  assert.ok(rest.values.some((v) => v.label === "Font" && v.value === "Arial · 14px · 500 · 0.02em letter spacing"));
+  const hover = sample("buttons", "solid.047464", "hover");
+  assert.equal(hover.style.backgroundColor, "#035A4E");
+  assert.equal(hover.style.boxShadow, "0px 4px 12px 0px #00000033");
+  assert.equal(hover.icon?.style.transform, "matrix(1, 0, 0, 1, 4, 0)", "the arrow slides on hover");
+  assert.ok(hover.values.every((v) => v.label !== "Text"), "a state lists only what it changes");
+  assert.equal(sample("buttons", "solid.047464", "pressed").style.transform, "matrix(0.98, 0, 0, 0.98, 0, 0)");
+  const focus = sample("buttons", "solid.047464", "focus").style;
+  assert.deepEqual([focus.outlineColor, focus.outlineWidth, focus.outlineStyle, focus.outlineOffset], ["#F5A623", "3px", "solid", "2px"]);
+  assert.equal(sample("buttons", "solid.047464", "disabled").style.opacity, "0.45");
+  assert.deepEqual(filled.transitions.map((t) => [t.label, t.value]), [
+    ["Transition", "background-color 200ms ease-out"],
+    ["Transition", "transform 150ms ease"],
+    ["Transition", "box-shadow 300ms ease after 50ms"],
+    ["Icon transition", "transform 200ms ease"],
+  ]);
+});
+
+test("the seller's icon is drawn as an image in the measured colour, never as markup", () => {
+  const icon = sample("buttons", "solid.047464", "rest").icon!;
+  assert.equal(icon.position, "end");
+  assert.ok(icon.src?.startsWith("data:image/svg+xml;charset=utf-8,"));
+  const markup = decodeURIComponent(icon.src!.slice("data:image/svg+xml;charset=utf-8,".length));
+  assert.ok(markup.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'), markup);
+  assert.ok(markup.includes("#FFFFFF") && !markup.includes("currentColor"), markup);
+  assert.equal(sample("buttons", "outline.0d2b25", "rest").icon?.glyph, "→");
+});
+
+test("a focus ring the site leaves to the browser is said, not drawn", () => {
+  assert.equal(sample("buttons", "solid.7c4cff", "focus").note, "The browser's own focus ring");
+  assert.equal(sample("buttons", "solid.047464", "focus").note, null);
+});
+
+test("a style that would not show on the page colour is drawn on the kit's inverse surface", () => {
+  const raw = structuredClone(MEASURED_BRAND_KIT) as { brand_kit_json: { tokens: { colors: Record<string, { value: { default: unknown } }> } } };
+  raw.brand_kit_json.tokens.colors["surface.page"].value.default = { kind: "hex", value: "#047464" };
+  const onTeal = toMeasuredBrand(BrandKitDetailSchema.parse(raw))!;
+  const rest = onTeal.groups[0].styles.find((s) => s.variant === "solid.047464")!.samples[0];
+  assert.equal(rest.backdrop, "#111210", "Garner's surface.inverse");
+});
+
+test("links and cards show their hover looks", () => {
+  const link = sample("links", "ghost.0d2b25", "hover").style;
+  assert.deepEqual([link.textDecorationLine, link.textDecorationThickness, link.color], ["underline", "2px", "#047464"]);
+  assert.equal(sample("links", "ghost.0d2b25", "rest").style.display, undefined, "a text link is not boxed");
+  assert.ok(sample("cards", "solid.f1f0de", "hover").style.boxShadow?.startsWith("0px 8px 24px 0px"));
+});
+
+test("minted colours are grouped by style and section background, never in Semantic roles", () => {
+  assert.deepEqual(view.colorGroups.map((g) => g.label), [
+    "Section backgrounds", "Outline button", "Filled 1 button", "Filled 2 button", "Filled 3 button",
+    "Filled 4 button", "Card", "Link", "Navigation link",
+  ]);
+  const filled = view.colorGroups.find((g) => g.label === "Filled 1 button")!;
+  assert.deepEqual(filled.swatches.map((s) => [s.label, s.lightValue]), [
+    ["Fill", "#047464"], ["Text", "#FFFFFF"], ["Border", "#047464"],
+    ["Hover fill", "#035A4E"], ["Pressed fill", "#023F37"], ["Focus ring", "#F5A623"],
+  ]);
+  const band = view.colorGroups[0].swatches.find((s) => s.lightValue === "#014036")!;
+  assert.equal(band.label, "Dark band · text #FFFFFF");
+  assert.ok(view.movedColors.includes("surface.band.014036"));
+  assert.ok(view.movedColors.every(isMeasuredColor));
+  assert.ok(!view.movedColors.includes("surface.brand") && !view.movedColors.includes("text.inverse"), "reused kit colours stay where they are");
+  const semantic = toBrandContextWorkspace(kit, { movedColors: new Set(view.movedColors) }).colorGroups[0];
+  const ids = semantic.swatches.map((s) => s.id);
+  assert.ok(!ids.includes("surface.band.014036") && ids.includes("surface.brand"));
+  assert.ok(toBrandContextWorkspace(kit).colorGroups[0].swatches.some((s) => s.id === "surface.band.014036"), "without the measured view nothing moves");
+});
+
+test("spacing lists the kit's steps, smallest first, saying which were measured", () => {
+  assert.equal(view.spacing[0].value, "0px");
+  const section = view.spacing.find((s) => s.token === "space.section")!;
+  assert.deepEqual([section.name, section.value, section.measured], ["Section", "100px", true]);
+  const tight = view.spacing.find((s) => s.token === "space.stack.tight")!;
+  assert.deepEqual([tight.name, tight.measured], ["Stack tight", false]);
+  assert.equal(view.spacing.find((s) => s.token === "space.sm")?.name, "Small");
+  assert.equal(view.spacing.find((s) => s.token === "space.4")?.name, "Step 4");
+  assert.ok(view.spacing.every((s) => s.token.startsWith("space.")), "component tokens are shown with their styles");
+});
+
+test("motion is the measured animations, reveals and the motion pages do not copy, in words", () => {
+  assert.deepEqual(view.animations.map((c) => [c.name, c.headline, c.lines]), [[
+    "Pulse", "1.6s ease-in-out",
+    ["Opacity 1 → .4, transform scale(1) → scale(1.2); repeats forever, alternating", "1 element: div#pulse.pulse"],
+  ]]);
+  assert.equal(view.reveals.length, 1);
+  assert.equal(view.reveals[0].name, "Scroll reveal");
+  assert.equal(view.reveals[0].headline, "600ms ease-out");
+  assert.equal(view.reveals[0].lines[0], "Fades in from opacity 0 and moves into place from 24px below as it scrolls into view");
+  assert.deepEqual(view.scripted, [{
+    id: "scripted-0", name: "Scripted animation", headline: "div#spin.spin",
+    lines: ["Needs a script, so pages made here don't copy it."],
+  }]);
+});
+
+test("a sample loads the kit's own typeface when the kit carries the measured family", () => {
+  const typefaces = [{ family: "Open Sans", id: "body", source: "custom" as const }];
+  assert.equal(typefaceFor(typefaces, "open sans")?.id, "body");
+  assert.equal(typefaceFor(typefaces, "Arial"), null);
+  assert.equal(typefaceFor(typefaces, null), null);
+});
+```
+
+  and append to `apps/frontend/src/features/brand-context/data/brand-context.repository.test.ts`
+  (add `MEASURED_BRAND_KIT` to its `./__fixtures__/harvest` import):
+
+```ts
+test("a measured kit brings its measured view, and its minted colours leave Semantic roles", async () => {
+  const detail = MEASURED_BRAND_KIT as { brand_kit: { id: string; version: number; name: string } };
+  const { id, version, name } = detail.brand_kit;
+  const { fetchImpl } = stubDesignApi({
+    "/brand-kits": { body: [{ id, version, name, approval_status: "draft", created_at: null, updated_at: null }] },
+    [`/brand-kits/${id}`]: { body: MEASURED_BRAND_KIT },
+  });
+  const view = await httpBrandContextRepository({
+    clueFetch: () => noPlatformRead,
+    designFetch: async () => fetchImpl,
+  }).getWorkspace();
+  assert.ok(view.measured);
+  assert.equal(view.measured.colorGroups[0].label, "Section backgrounds");
+  const semantic = view.workspace.colorGroups.find((group) => group.id === "semantic")!;
+  assert.ok(!semantic.swatches.some((swatch) => swatch.id === "surface.band.014036"));
+  assert.ok(semantic.swatches.some((swatch) => swatch.id === "surface.brand"));
+});
+
+test("a kit made before measurement, and a failed read, bring no measured view", async () => {
+  const { fetchImpl } = stubDesignApi({
+    "/brand-kits": { body: [{ id: KIT_ID, version: 1, name: "Stripe", approval_status: "draft" }] },
+    [`/brand-kits/${KIT_ID}`]: { body: HARVESTED_BRAND_KIT },
+  });
+  const old = await httpBrandContextRepository({ clueFetch: () => noPlatformRead, designFetch: async () => fetchImpl }).getWorkspace();
+  assert.equal(old.measured, null);
+  const refused = await httpBrandContextRepository({
+    clueFetch: () => noPlatformRead,
+    designFetch: async () => stubDesignApi({ "/brand-kits": { status: 500 } }).fetchImpl,
+  }).getWorkspace();
+  assert.equal(refused.measured, null);
+});
+```
+
+- [ ] **Step 5: Run them to see them fail.**
+
+Run: `cd apps/frontend && npx tsx --test src/features/brand-context/model/measured-brand.test.ts src/features/brand-context/data/brand-context.repository.test.ts`
+Expected: FAIL — `Cannot find module './measured-brand'` (and the repository tests on `view.measured`).
+
+- [ ] **Step 6: The kit read keeps what the page now shows.** In
+  `apps/frontend/src/features/brand-context/model/brand-kit.ts`:
+  1. Replace
+
+```ts
+export const BrandColorTokenSchema = z.object({
+  value: BrandModeValueSchema(BrandColorTokenValueSchema),
+  role: z.string().nullish(),
+  description: z.string().nullish(),
+});
+```
+     with
+
+```ts
+/**
+ * Where a token's value came from (`TokenProvenance`): `website:<page> :: <what was measured>`,
+ * `derived:…` or `default:…`. The Brand page says "Measured" from it (Task X6). A provenance in a
+ * shape this build cannot read is no provenance, never a dropped token.
+ */
+const BrandTokenProvenanceSchema = z
+  .object({ source: z.string(), confidence: z.number().nullish() })
+  .nullish()
+  .catch(null);
+
+export const BrandColorTokenSchema = z.object({
+  value: BrandModeValueSchema(BrandColorTokenValueSchema),
+  role: z.string().nullish(),
+  description: z.string().nullish(),
+  provenance: BrandTokenProvenanceSchema,
+});
+```
+  2. In `BrandTypographyTokenValueSchema`'s `style` object, after `letter_spacing: z.number().nullish(),`
+     add
+
+```ts
+    color: z.string().nullish(),
+    /** The kit font this style uses (`assets.fonts` key): how a sample finds its fallback stack. */
+    font_asset: z.string().nullish(),
+```
+     and in `BrandTypographyTokenSchema` add `provenance: BrandTokenProvenanceSchema,` after
+     `description: z.string().nullish(),`. Then, right after `BrandTypographyTokenSchema`, add:
+
+```ts
+/** `NumberToken` (brand.rs): spacing, radii, stroke widths, opacity and other numbers. */
+export const BrandNumberTokenValueSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("number"),
+    value: z.number(),
+    unit: z.enum(["unitless", "px", "mm", "percent", "ratio"]),
+  }),
+  z.object({ kind: z.literal("alias"), token: z.string().min(1) }),
+]);
+
+export const BrandNumberTokenSchema = z.object({
+  value: BrandModeValueSchema(BrandNumberTokenValueSchema),
+  role: z.string().nullish(),
+  description: z.string().nullish(),
+  provenance: BrandTokenProvenanceSchema,
+});
+
+/** `ShadowToken` (brand.rs): one shadow layer; a measured multi-layer shadow is several tokens. */
+export const BrandShadowTokenSchema = z.object({
+  value: BrandModeValueSchema(
+    z.object({ x: z.number(), y: z.number(), blur: z.number(), spread: z.number(), color: z.string().min(1) }),
+  ),
+  description: z.string().nullish(),
+  provenance: BrandTokenProvenanceSchema,
+});
+
+/**
+ * `StyleToken` (brand.rs, Wave 2 A9 Task X1): the measured values the other groups cannot hold —
+ * keywords, durations, easings, transforms, keyframes, animations, reveals and icons.
+ */
+export const BrandStyleTokenValueSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("keyword"), property: z.string(), value: z.string() }),
+  z.object({ kind: z.literal("duration"), ms: z.number() }),
+  z.object({ kind: z.literal("easing"), function: z.string() }),
+  z.object({ kind: z.literal("transform"), value: z.string() }),
+  z.object({
+    kind: z.literal("keyframes"),
+    frames: z.array(z.object({ offset: z.number(), declarations: z.record(z.string(), z.string()) })),
+  }),
+  z.object({
+    kind: z.literal("animation"),
+    keyframes: z.string(),
+    duration: z.string(),
+    easing: z.string(),
+    delay: z.string().nullish(),
+    iterations: z.string(),
+    direction: z.string(),
+    fill_mode: z.string(),
+  }),
+  z.object({
+    kind: z.literal("reveal"),
+    from_opacity: z.string().nullish(),
+    from_transform: z.string().nullish(),
+    duration: z.string(),
+    easing: z.string(),
+  }),
+  z.object({ kind: z.literal("glyph"), text: z.string() }),
+  z.object({ kind: z.literal("svg"), markup: z.string(), width: z.number(), height: z.number() }),
+  z.object({ kind: z.literal("alias"), token: z.string().min(1) }),
+]);
+
+export const BrandStyleTokenSchema = z.object({
+  value: BrandModeValueSchema(BrandStyleTokenValueSchema),
+  description: z.string().nullish(),
+  provenance: BrandTokenProvenanceSchema,
+});
+
+const TokenNameSchema = z.string().min(1).max(160);
+const SlotsSchema = z.record(z.string(), TokenNameSchema);
+
+/** One measured style of `MeasuredComponents@1` (Task X5): its slots name kit tokens. */
+export const BrandMeasuredStyleSchema = z.object({
+  component: z.string().min(1),
+  variant: z.string().min(1),
+  count: z.number().int().min(1),
+  probed: z.string(),
+  source: z.string(),
+  rest: SlotsSchema.default({}),
+  states: z
+    .object({
+      hover: SlotsSchema.optional(),
+      pressed: SlotsSchema.optional(),
+      focus: SlotsSchema.optional(),
+      disabled: SlotsSchema.optional(),
+    })
+    .default({}),
+  motion: z
+    .array(
+      z.object({
+        target: z.enum(["self", "label", "icon"]),
+        property: z.string(),
+        duration: TokenNameSchema,
+        easing: TokenNameSchema,
+        delay: TokenNameSchema.nullish(),
+      }),
+    )
+    .default([]),
+  icon: z.object({ token: TokenNameSchema, position: z.enum(["start", "end"]) }).nullish(),
+  browser_focus_ring: z.boolean().default(false),
+});
+
+/**
+ * `MeasuredComponents@1` (Wave 2 A9, Task X5): what the extraction measured, by style, as kit token
+ * names. Entry-tolerant like the token maps: one unreadable style drops itself, not the section.
+ */
+export const BrandMeasuredComponentsSchema = z.object({
+  schema_version: z.literal(1),
+  source: z.string(),
+  styles: z
+    .array(BrandMeasuredStyleSchema.nullable().catch(null))
+    .transform((styles) => styles.filter((style) => style !== null)),
+  motion: z
+    .object({
+      animations: z.array(TokenNameSchema).default([]),
+      reveals: z.array(TokenNameSchema).default([]),
+      scripted: z.array(z.object({ kind: z.enum(["scripted", "canvas", "video"]), where: z.string() })).default([]),
+    })
+    .default({ animations: [], reveals: [], scripted: [] }),
+});
+
+/** `constraints.contrast_pairs`: which text colour each surface carries (a band's measured ink). */
+const BrandContrastPairSchema = z.object({
+  foreground: z.string().min(1),
+  background: z.string().min(1),
+  min_ratio: z.number().nullish(),
+});
+```
+
+  3. In `BrandFontAssetSchema`, after `family: z.string().min(1),` add
+
+```ts
+  /** The kit's own fallback families for this font: a sample draws with them (site-kit `fontStack`). */
+  fallback_stack: z.array(z.string()).nullish().catch(null),
+```
+  4. In `BrandKitJsonSchema`, replace
+
+```ts
+  tokens: z
+    .object({
+      colors: tolerant(BrandColorTokenSchema),
+      typography: tolerant(BrandTypographyTokenSchema),
+    })
+    .nullish(),
+```
+     with
+
+```ts
+  tokens: z
+    .object({
+      colors: tolerant(BrandColorTokenSchema),
+      typography: tolerant(BrandTypographyTokenSchema),
+      // Wave 2 A9 (Task X6): the Brand page draws each measured style from its own tokens, so the
+      // read keeps every group that names one. They were stripped here before.
+      numbers: tolerant(BrandNumberTokenSchema),
+      spacing: tolerant(BrandNumberTokenSchema),
+      radii: tolerant(BrandNumberTokenSchema),
+      stroke_widths: tolerant(BrandNumberTokenSchema),
+      opacity: tolerant(BrandNumberTokenSchema),
+      shadows: tolerant(BrandShadowTokenSchema),
+      styles: tolerant(BrandStyleTokenSchema),
+    })
+    .nullish(),
+  constraints: z
+    .object({
+      contrast_pairs: z
+        .array(BrandContrastPairSchema.nullable().catch(null))
+        .transform((pairs) => pairs.filter((pair) => pair !== null))
+        .nullish()
+        .catch(null),
+    })
+    .nullish()
+    .catch(null),
+```
+
+     and replace `  brief: BrandBriefSchema.nullish().catch(null),
+});` (the end of `BrandKitJsonSchema`) with
+
+```ts
+  brief: BrandBriefSchema.nullish().catch(null),
+  /**
+   * What the extraction measured on the seller's site, by style (Wave 2 A9, Tasks X5/X6). Absent on
+   * every kit made before measurement — an honest state, so `nullish`; `.catch(null)`: a section in
+   * a shape this build cannot read is no section, never a broken page.
+   */
+  measured_components: BrandMeasuredComponentsSchema.nullish().catch(null),
+});
+```
+
+  5. After `export type BrandColorToken = z.infer<typeof BrandColorTokenSchema>;` add
+     `export type BrandMeasuredComponents = z.infer<typeof BrandMeasuredComponentsSchema>;`.
+
+- [ ] **Step 7: The new sections, and the measured view.** In `model/brand-context.ts`, replace
+
+```ts
+export const BrandContextSectionSchema = z.enum([
+  "colors",
+  "typography",
+  "assets",
+  "knowledge",
+]);
+```
+  with
+
+```ts
+export const BrandContextSectionSchema = z.enum([
+  "colors",
+  "typography",
+  // Wave 2 A9 (Task X6): listed only for a kit made after measurement.
+  "components",
+  "spacing",
+  "motion",
+  "assets",
+  "knowledge",
+]);
+```
+  Create `apps/frontend/src/features/brand-context/model/measured-view.ts` (what the components import):
+
+```ts
+import type { z } from "zod";
+import type { BrandColorGroupSchema, BrandTypeface } from "./brand-context";
+
+/**
+ * The measured view the Brand page draws (Wave 2 A9, Task X6): plain, serializable data built on the
+ * server by `measured-brand.ts`, plus the two small helpers the components need. It imports nothing
+ * from site-kit, so the page's client bundle carries none of the reading code.
+ */
+
+type BrandColorGroup = z.infer<typeof BrandColorGroupSchema>;
+
+export type SampleState = "rest" | "hover" | "pressed" | "focus" | "disabled";
+
+/** One measured value: what it is, its CSS value, and the kit token that holds it. */
+export interface MeasuredValue {
+  part: string;
+  label: string;
+  value: string;
+  token: string;
+}
+
+export interface MeasuredIcon {
+  position: "start" | "end";
+  glyph: string | null;
+  /** The kit's own SVG as a data URL: drawn as an image, so its markup never runs on this page. */
+  src: string | null;
+  width: number | null;
+  height: number | null;
+  style: Record<string, string>;
+}
+
+/** A style in one state, drawn with its own measured values. */
+export interface MeasuredSample {
+  state: SampleState;
+  name: string;
+  /** React style for the drawn element: measured values only, plus inline-flex alignment. */
+  style: Record<string, string>;
+  /** The preview's background: the kit's page colour, or its inverse when the style would not show. */
+  backdrop: string | null;
+  icon: MeasuredIcon | null;
+  /** Rest lists every measured value; another state lists only what it changes. */
+  values: MeasuredValue[];
+  note: string | null;
+}
+
+export interface MeasuredStyleView {
+  id: string;
+  component: string;
+  variant: string;
+  name: string;
+  /** The word drawn in the sample ("Button"): the seller's own words are not captured. */
+  word: string;
+  /** The measured font family, to load the kit's typeface for the sample. */
+  family: string | null;
+  samples: MeasuredSample[];
+  transitions: MeasuredValue[];
+}
+
+export interface MeasuredGroup {
+  id: string;
+  title: string;
+  styles: MeasuredStyleView[];
+}
+
+export interface SpacingStep {
+  id: string;
+  name: string;
+  value: string;
+  token: string;
+  measured: boolean;
+}
+
+export interface MotionCard {
+  id: string;
+  name: string;
+  headline: string;
+  lines: string[];
+}
+
+export interface MeasuredBrandView {
+  /** "Section backgrounds", then one group per measured style: added to the Colors panel. */
+  colorGroups: BrandColorGroup[];
+  /** Minted colour tokens shown in `colorGroups`, so "Semantic roles" leaves them out. */
+  movedColors: string[];
+  groups: MeasuredGroup[];
+  spacing: SpacingStep[];
+  animations: MotionCard[];
+  reveals: MotionCard[];
+  scripted: MotionCard[];
+}
+
+export type MeasuredSection = "components" | "spacing" | "motion";
+
+/** The Brand-kit sections this kit has something to show in, in sidebar order. */
+export function measuredSections(view: MeasuredBrandView | null): MeasuredSection[] {
+  if (!view) return [];
+  const sections: MeasuredSection[] = [];
+  if (view.groups.length) sections.push("components");
+  if (view.spacing.length) sections.push("spacing");
+  if (view.animations.length || view.reveals.length || view.scripted.length) sections.push("motion");
+  return sections;
+}
+
+/** The kit's typeface for a measured family, so the sample can load it (case-insensitive). */
+export function typefaceFor(typefaces: readonly BrandTypeface[], family: string | null): BrandTypeface | null {
+  if (!family) return null;
+  const wanted = family.toLocaleLowerCase();
+  return typefaces.find((typeface) => typeface.family.toLocaleLowerCase() === wanted) ?? null;
+}
+```
+  and `apps/frontend/src/features/brand-context/model/measured-brand.ts` (the mapping; only the
+  repository and the tests import it):
+
+```ts
+import type { z } from "zod";
+import {
+  STATES,
+  brandData,
+  colorOf,
+  contrast,
+  durationOf,
+  easingOf,
+  hexOf,
+  inkRole,
+  isComponentToken,
+  isMeasured,
+  kindOf,
+  measuredComponents,
+  motionEntries,
+  motionNotes,
+  otherSurfaceRoles,
+  partsFromSlots,
+  pxOf,
+  styleOf,
+  surfaceLabels,
+  tokenEntry,
+  tokenGroups,
+  trim,
+  typographyOf,
+  type BrandData,
+  type MeasuredRecipe,
+  type Part,
+  type Parts,
+} from "@clue/site-kit/brand-view";
+import type { BrandColorGroupSchema } from "./brand-context";
+import type { BrandKitDetail } from "./brand-kit";
+import type {
+  MeasuredBrandView,
+  MeasuredGroup,
+  MeasuredIcon,
+  MeasuredSample,
+  MeasuredStyleView,
+  MeasuredValue,
+  SampleState,
+  SpacingStep,
+} from "./measured-view";
+
+/**
+ * Wave 2 A9, Task X6 (founder Q-A9-3 (c), 2026-10-12): what the brand-kit extraction measured on
+ * the seller's site, as the Brand page shows it — each measured button, card and link style in
+ * every state it was measured in, the colours minted from them, the section backgrounds with their
+ * text colour, the brand's spacing and its motion.
+ *
+ * Every value is read through site-kit's own functions (`@clue/site-kit/brand-view`), the ones
+ * that draw a published site, so this page and a site can never describe a style differently.
+ * Pure: no transport, no React. The mapping's two rules hold (`brand-context-mapping.ts`):
+ *  1. Honest empties — a kit made before measurement has no view (`null`), and the page is
+ *     exactly as before.
+ *  2. One bad row never blanks the page — a token that does not resolve drops its own value.
+ * Nothing here is a fallback: a part the kit did not measure is not shown.
+ */
+
+type BrandColorGroup = z.infer<typeof BrandColorGroupSchema>;
+type Drawn = ReturnType<typeof partsFromSlots>;
+
+// --- the page's words (T-A9-8) ----------------------------------------------------------
+
+const STATE_NAMES: Record<SampleState, string> = {
+  rest: "Rest", hover: "Hover", pressed: "Pressed", focus: "Focus", disabled: "Disabled",
+};
+const GROUPS: readonly { id: string; title: string; components: readonly string[] }[] = [
+  { id: "buttons", title: "Buttons", components: ["button"] },
+  { id: "cards", title: "Cards", components: ["card"] },
+  { id: "links", title: "Links", components: ["link", "nav_link"] },
+  { id: "chips", title: "Chips", components: ["chip"] },
+  { id: "fields", title: "Fields", components: ["input"] },
+  { id: "images", title: "Images", components: ["image"] },
+];
+const COMPONENT_NAMES: Record<string, string> = {
+  button: "Button", card: "Card", link: "Link", nav_link: "Navigation link", chip: "Chip", input: "Field", image: "Image",
+};
+const SAMPLE_WORDS: Record<string, string> = {
+  button: "Button", card: "Card", link: "Link", nav_link: "Link", chip: "Chip", input: "Field", image: "Image",
+};
+const KIND_NAMES = { outline: "Outline", ghost: "Text only", solid: "Filled" } as const;
+const VALUE_NAMES: Partial<Record<Part | "font", string>> = {
+  fill: "Fill", label: "Text", border: "Border", borderWidth: "Border width", borderStyle: "Border style",
+  radius: "Corners", padding: "Padding", height: "Height", gap: "Gap", font: "Font", case: "Letter case",
+  decoration: "Underline", decorationThickness: "Underline thickness", underlineOffset: "Underline offset",
+  shadow: "Shadow", opacity: "Opacity", transform: "Transform", filter: "Filter", cursor: "Pointer",
+  outlineColor: "Focus ring", outlineWidth: "Focus ring width", outlineStyle: "Focus ring style",
+  outlineOffset: "Focus ring offset", iconColor: "Icon color", iconTransform: "Icon transform", iconOpacity: "Icon opacity",
+};
+const COLOR_NAMES: readonly [Part, string][] = [
+  ["fill", "Fill"], ["label", "Text"], ["border", "Border"], ["outlineColor", "Focus ring"], ["iconColor", "Icon"],
+];
+const SCRIPTED_NAMES: Record<string, string> = {
+  scripted: "Scripted animation", canvas: "Canvas animation", video: "Video",
+};
+const SIZE_NAMES: Record<string, string> = {
+  xs: "Extra small", sm: "Small", md: "Medium", lg: "Large", xl: "Extra large",
+};
+const BROWSER_RING = "The browser's own focus ring";
+const NEEDS_A_SCRIPT = "Needs a script, so pages made here don't copy it.";
+
+// --- reading ----------------------------------------------------------------------------
+
+/** A section background minted from the seller's site, and a text colour minted with one. */
+const BAND_SURFACE = /^surface\.band\.[0-9a-f]{6}$/;
+const BAND_INK = /^text\.band\.[0-9a-f]{6}$/;
+/** Below this contrast with the page colour a style would not show on it (a white button). */
+const MIN_SHOWING_CONTRAST = 1.5;
+const KIND_ORDER = ["outline", "ghost", "solid", "other"] as const;
+const VALUE_ORDER: readonly (Part | "font")[] = [
+  "fill", "label", "border", "borderWidth", "borderStyle", "radius", "padding", "height", "gap", "font", "case",
+  "decoration", "decorationThickness", "underlineOffset", "shadow", "opacity", "transform", "filter", "cursor",
+  "outlineColor", "outlineWidth", "outlineStyle", "outlineOffset", "iconColor", "iconTransform", "iconOpacity",
+];
+/** What the sample draws; `cursor` is listed, never drawn (a static sample has no pointer). */
+const CSS_PROPERTY: Partial<Record<Part, string>> = {
+  fill: "backgroundColor", label: "color", border: "borderColor", borderWidth: "borderWidth",
+  borderStyle: "borderStyle", radius: "borderRadius", padding: "padding", height: "minHeight", gap: "gap",
+  fontFamily: "fontFamily", fontSize: "fontSize", fontWeight: "fontWeight", lineHeight: "lineHeight",
+  tracking: "letterSpacing", case: "textTransform", decoration: "textDecorationLine",
+  decorationThickness: "textDecorationThickness", underlineOffset: "textUnderlineOffset", shadow: "boxShadow",
+  opacity: "opacity", transform: "transform", filter: "filter", outlineColor: "outlineColor",
+  outlineWidth: "outlineWidth", outlineStyle: "outlineStyle", outlineOffset: "outlineOffset",
+};
+/** Layout only, so a label and its icon sit in one line; every visual value is measured. */
+const BOX: Record<string, string> = { display: "inline-flex", alignItems: "center", boxSizing: "border-box" };
+const TEXT_ONLY = new Set(["link", "nav_link"]);
+const SVG_NAMESPACE = 'xmlns="http://www.w3.org/2000/svg"';
+
+const capital = (text: string) => (text ? text[0].toUpperCase() + text.slice(1) : text);
+const humanize = (text: string) => capital(text.replace(/[._-]+/g, " ").trim());
+
+/** A measured colour token, moved out of "Semantic roles" when this page shows it elsewhere. */
+export function isMeasuredColor(path: string): boolean {
+  return isComponentToken(path) || BAND_SURFACE.test(path) || BAND_INK.test(path);
+}
+
+export function toMeasuredBrand(kit: BrandKitDetail): MeasuredBrandView | null {
+  const brand = brandData({
+    slug: kit.brand_kit.id,
+    kit: kit.brand_kit_json as unknown as Record<string, unknown>,
+    fonts: [],
+    kitAssets: {},
+    clones: [],
+  });
+  const section = measuredComponents(brand);
+  const bands = otherSurfaceRoles(brand).filter((role) => BAND_SURFACE.test(role));
+  if (!section && !bands.length) return null;
+
+  const shown = new Set<string>();
+  const groups = section ? styleGroups(brand, section.styles ?? []) : [];
+  const colorGroups = [
+    ...bandGroup(brand, bands, shown),
+    ...groups.flatMap((group) => group.styles).flatMap((style) => styleColorGroup(style, shown)),
+  ];
+  return {
+    colorGroups,
+    movedColors: [...shown].filter(isMeasuredColor).sort(),
+    groups,
+    spacing: section ? spacingSteps(brand) : [],
+    ...motionCards(brand),
+  };
+}
+
+function styleGroups(brand: BrandData, styles: readonly MeasuredRecipe[]): MeasuredGroup[] {
+  return GROUPS.flatMap(({ id, title, components }) => {
+    const views = components.flatMap((component) =>
+      named(styles.filter((style) => style.component === component), component).map(([style, name]) =>
+        styleView(brand, style, name),
+      ),
+    );
+    return views.length ? [{ id, title, styles: views }] : [];
+  });
+}
+
+/** Dock order and dock names (T-A9-7): outline, text only, filled; the most used first; a number
+ * only when a kind repeats. Other components are named by what they are ("Card", "Card 2"). */
+function named(styles: readonly MeasuredRecipe[], component: string): [MeasuredRecipe, string][] {
+  const sorted = [...styles].sort((a, b) =>
+    KIND_ORDER.indexOf(kindOf(a.variant)) - KIND_ORDER.indexOf(kindOf(b.variant))
+    || b.count - a.count
+    || a.variant.localeCompare(b.variant));
+  if (component !== "button") {
+    const noun = COMPONENT_NAMES[component] ?? humanize(component);
+    return sorted.map((style, index) => [style, sorted.length > 1 ? `${noun} ${index + 1}` : noun]);
+  }
+  const totals = new Map<string, number>();
+  for (const style of sorted) totals.set(kindOf(style.variant), (totals.get(kindOf(style.variant)) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return sorted.map((style) => {
+    const kind = kindOf(style.variant);
+    const n = (seen.get(kind) ?? 0) + 1;
+    seen.set(kind, n);
+    if (kind === "other") return [style, humanize(style.variant)];
+    return [style, (totals.get(kind) ?? 0) > 1 ? `${KIND_NAMES[kind]} ${n}` : KIND_NAMES[kind]];
+  });
+}
+
+function styleView(brand: BrandData, style: MeasuredRecipe, name: string): MeasuredStyleView {
+  const rest = partsFromSlots(brand, style.rest);
+  const backdrop = backdropFor(brand, style, rest);
+  const samples = [drawSample(brand, style, "rest", rest, rest, backdrop)];
+  for (const state of STATES) {
+    const slots = style.states?.[state];
+    const browserRing = state === "focus" && !!style.browser_focus_ring;
+    if (!slots && !browserRing) continue;
+    samples.push(drawSample(brand, style, state, rest, partsFromSlots(brand, slots), backdrop));
+  }
+  return {
+    id: `${style.component}:${style.variant}`,
+    component: style.component,
+    variant: style.variant,
+    name,
+    word: SAMPLE_WORDS[style.component] ?? humanize(style.component),
+    family: typographyOf(brand, style.rest.font)?.family ?? null,
+    samples,
+    transitions: transitions(brand, style),
+  };
+}
+
+function drawSample(
+  brand: BrandData,
+  style: MeasuredRecipe,
+  state: SampleState,
+  rest: Drawn,
+  own: Drawn,
+  backdrop: string | null,
+): MeasuredSample {
+  const parts: Parts = state === "rest" ? rest.parts : { ...rest.parts, ...own.parts };
+  const css: Record<string, string> = TEXT_ONLY.has(style.component) ? {} : { ...BOX };
+  for (const [part, property] of Object.entries(CSS_PROPERTY) as [Part, string][]) {
+    const value = parts[part];
+    if (value !== undefined) css[property] = value;
+  }
+  const ringIsTheBrowsers = state === "focus" && !!style.browser_focus_ring && own.parts.outlineColor === undefined;
+  return {
+    state,
+    name: STATE_NAMES[state],
+    style: css,
+    backdrop,
+    icon: iconOf(brand, style, parts),
+    values: valuesOf(brand, own),
+    note: ringIsTheBrowsers ? BROWSER_RING : null,
+  };
+}
+
+function valuesOf(brand: BrandData, drawn: Drawn): MeasuredValue[] {
+  const values: MeasuredValue[] = [];
+  for (const part of VALUE_ORDER) {
+    if (part === "font") {
+      const token = drawn.tokens.fontFamily;
+      const font = typographyOf(brand, token);
+      if (!font || !token) continue;
+      const spacing = font.letterSpacing ? `${trim(font.letterSpacing)}em letter spacing` : "";
+      const value = [font.family, `${trim(font.size)}px`, String(font.weight), spacing].filter(Boolean).join(" · ");
+      values.push({ part, label: VALUE_NAMES.font ?? "Font", value, token });
+      continue;
+    }
+    const value = drawn.parts[part];
+    const token = drawn.tokens[part];
+    if (value !== undefined && token) values.push({ part, label: VALUE_NAMES[part] ?? humanize(part), value, token });
+  }
+  return values;
+}
+
+function backdropFor(brand: BrandData, style: MeasuredRecipe, rest: Drawn): string | null {
+  const page = hexOf(brand, "surface.page");
+  if (!page) return null;
+  const kind = kindOf(style.variant);
+  const token = kind === "solid" ? rest.tokens.fill : kind === "outline" ? rest.tokens.border ?? rest.tokens.label : rest.tokens.label;
+  const showing = hexOf(brand, token);
+  const inverse = hexOf(brand, "surface.inverse");
+  return showing && inverse && contrast(showing, page) < MIN_SHOWING_CONTRAST ? inverse : page;
+}
+
+function iconOf(brand: BrandData, style: MeasuredRecipe, parts: Parts): MeasuredIcon | null {
+  const icon = style.icon;
+  const value = icon ? styleOf(brand, icon.token) : undefined;
+  if (!icon || !value || (value.kind !== "glyph" && value.kind !== "svg")) return null;
+  const color = parts.iconColor ?? parts.label;
+  const css: Record<string, string> = {};
+  if (color) css.color = color;
+  if (parts.iconTransform) css.transform = parts.iconTransform;
+  if (parts.iconOpacity) css.opacity = parts.iconOpacity;
+  if (value.kind === "glyph") {
+    return { position: icon.position, glyph: value.text, src: null, width: null, height: null, style: css };
+  }
+  // An image has no surrounding text colour, so `currentColor` becomes the measured icon colour,
+  // and a standalone SVG needs its namespace (inline SVG in HTML does not).
+  let markup = color ? value.markup.replaceAll("currentColor", color) : value.markup;
+  if (!markup.includes("xmlns=")) markup = markup.replace(/^<svg\b/, `<svg ${SVG_NAMESPACE}`);
+  return {
+    position: icon.position,
+    glyph: null,
+    src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`,
+    width: value.width,
+    height: value.height,
+    style: css,
+  };
+}
+
+function transitions(brand: BrandData, style: MeasuredRecipe): MeasuredValue[] {
+  return (style.motion ?? []).flatMap((step) => {
+    const duration = durationOf(brand, step.duration);
+    const easing = easingOf(brand, step.easing);
+    const delay = step.delay ? durationOf(brand, step.delay) : undefined;
+    if (!duration || !easing) return [];
+    return [{
+      part: "transition",
+      label: step.target === "icon" ? "Icon transition" : "Transition",
+      value: `${step.property} ${duration} ${easing}${delay ? ` after ${delay}` : ""}`,
+      token: step.duration,
+    }];
+  });
+}
+
+function bandGroup(brand: BrandData, roles: readonly string[], shown: Set<string>): BrandColorGroup[] {
+  if (!roles.length) return [];
+  const labels = surfaceLabels(brand);
+  const swatches = roles.flatMap((role) => {
+    const value = colorOf(brand, role);
+    if (!value) return [];
+    shown.add(role);
+    const ink = inkRole(brand, role);
+    const inkValue = colorOf(brand, ink);
+    if (ink && inkValue) shown.add(ink);
+    const name = labels.get(role) ?? role;
+    // Minted surfaces carry no dark colourway (the emitter writes none), so dark shows the same value.
+    return [{ id: role, label: inkValue ? `${name} · text ${inkValue}` : name, lightValue: value, darkValue: value }];
+  });
+  return swatches.length ? [{ id: "measured-section-backgrounds", label: "Section backgrounds", swatches }] : [];
+}
+
+function styleColorGroup(style: MeasuredStyleView, shown: Set<string>): BrandColorGroup[] {
+  const swatches = style.samples.flatMap((sample) =>
+    sample.values.flatMap((value) => {
+      const name = COLOR_NAMES.find(([part]) => part === value.part)?.[1];
+      if (!name) return [];
+      shown.add(value.token);
+      const label = sample.state === "rest" || (sample.state === "focus" && value.part === "outlineColor")
+        ? name
+        : `${sample.name} ${name.toLocaleLowerCase()}`;
+      return [{ id: `${style.id}:${sample.state}:${value.part}`, label, lightValue: value.value, darkValue: value.value }];
+    }),
+  );
+  if (!swatches.length) return [];
+  return [{ id: `measured-${style.id}`, label: style.component === "button" ? `${style.name} button` : style.name, swatches }];
+}
+
+function spacingSteps(brand: BrandData): SpacingStep[] {
+  const spacing = tokenGroups(brand).spacing ?? {};
+  return Object.keys(spacing)
+    .filter((name) => !isComponentToken(name))
+    .flatMap((name) => {
+      const value = pxOf(brand, name);
+      if (!value) return [];
+      return [{
+        id: name,
+        name: spacingName(name),
+        value,
+        token: name,
+        measured: isMeasured(tokenEntry(brand, "spacing", name)),
+      }];
+    })
+    .sort((a, b) => Number.parseFloat(a.value) - Number.parseFloat(b.value) || a.token.localeCompare(b.token));
+}
+
+/** A spacing step in plain words: `space.stack.tight` → "Stack tight", `space.sm` → "Small",
+ * `space.4` → "Step 4". */
+function spacingName(name: string): string {
+  const key = name.replace(/^space\./, "");
+  if (/^\d+$/.test(key)) return `Step ${key}`;
+  return SIZE_NAMES[key] ?? humanize(key);
+}
+
+function motionCards(brand: BrandData): Pick<MeasuredBrandView, "animations" | "reveals" | "scripted"> {
+  const entries = motionEntries(brand);
+  const animations = entries
+    .filter((entry) => entry.kind === "animation")
+    .map((entry) => ({
+      id: entry.token,
+      name: humanize(entry.className.replace(/^brand-motion-/, "")),
+      headline: entry.timing,
+      lines: [capital(entry.describe), entry.where].filter(Boolean),
+    }));
+  const revealEntries = entries.filter((entry) => entry.kind === "reveal");
+  const reveals = revealEntries.map((entry, index) => {
+    const value = styleOf(brand, entry.token);
+    const duration = value?.kind === "reveal" ? durationOf(brand, value.duration) : undefined;
+    return {
+      id: entry.token,
+      name: revealEntries.length > 1 ? `Scroll reveal ${index + 1}` : "Scroll reveal",
+      headline: [duration, entry.timing].filter(Boolean).join(" "),
+      lines: [capital(entry.describe), entry.where].filter(Boolean),
+    };
+  });
+  const scripted = motionNotes(brand).map((note, index) => ({
+    id: `scripted-${index}`,
+    name: SCRIPTED_NAMES[note.kind] ?? humanize(note.kind),
+    headline: note.where,
+    lines: [NEEDS_A_SCRIPT],
+  }));
+  return { animations, reveals, scripted };
+}
+```
+
+- [ ] **Step 8: Move the minted colours, carry the view to the page.**
+  1. In `model/brand-context-mapping.ts`: add to `BrandContextMappingOptions`, after `registryRecords`:
+
+```ts
+  /**
+   * Minted colour tokens the measured view shows in its own groups (`MeasuredBrandView.movedColors`,
+   * Task X6), so "Semantic roles" leaves them out. Absent for a kit made before measurement: the
+   * groups are then exactly as before.
+   */
+  readonly movedColors?: ReadonlySet<string>;
+```
+     in `toBrandContextWorkspace` replace `colorGroups: toColorGroups(json.tokens?.colors),` with
+     `colorGroups: toColorGroups(json.tokens?.colors, options.movedColors),`; and in `toColorGroups`
+     replace
+
+```ts
+function toColorGroups(colors: ColorTokens | undefined): BrandColorGroup[] {
+  if (!colors) return [];
+  const groups = new Map<string, BrandColorGroup>();
+
+  for (const path of Object.keys(colors).sort(comparePaths)) {
+    if (!colors[path]) continue;
+```
+     with
+
+```ts
+function toColorGroups(
+  colors: ColorTokens | undefined,
+  moved: ReadonlySet<string> = new Set(),
+): BrandColorGroup[] {
+  if (!colors) return [];
+  const groups = new Map<string, BrandColorGroup>();
+
+  for (const path of Object.keys(colors).sort(comparePaths)) {
+    if (!colors[path] || moved.has(path)) continue;
+```
+  2. In `data/brand-context.repository.ts`: import
+     `import { toMeasuredBrand } from "../model/measured-brand";` and
+     `import type { MeasuredBrandView } from "../model/measured-view";`, and add
+     `type BrandKitDetail,` to the `../model/brand-kit` import. Add to `BrandContextView`, after `kit`:
+
+```ts
+  /**
+   * What the brand-kit extraction measured on the seller's site (Wave 2 A9, Task X6): the page's
+   * Components, Spacing and Motion sections and its extra colour groups. `null` for a kit made before
+   * measurement, no kit, or any failure — the page is then exactly as before.
+   */
+  measured: MeasuredBrandView | null;
+```
+     In `getWorkspace`'s catch, the returned object gains `measured: null,` after `kit: null,`. In
+     `readWorkspace`, replace
+
+```ts
+  const workspace = kit ? toBrandContextWorkspace(kit, {assetRecords, registryRecords})
+```
+     with
+
+```ts
+  const measured = kit ? measuredOrNull(kit) : null;
+  const workspace = kit ? toBrandContextWorkspace(kit, {assetRecords, registryRecords, movedColors: new Set(measured?.movedColors ?? [])})
+```
+     and its last line with
+     `return {kit: kit ? toBrandKitMeta(kit) : null, measured, workspace: withPlatformFolders(workspace, await platformFolders)};`.
+     The fixture repository returns `{ kit: null, measured: null, workspace: … }`. Add after
+     `readWorkspace`:
+
+```ts
+/** The measured view, or none: an unreadable measured section never costs the page its kit. */
+function measuredOrNull(kit: BrandKitDetail): MeasuredBrandView | null {
+  try {
+    return toMeasuredBrand(kit);
+  } catch (error) {
+    console.warn("[brand-context] serving the kit without its measured styles:", error);
+    return null;
+  }
+}
+```
+  3. In `src/app/(protected)/brand-context/page.tsx`, add `measured={view.measured}` after
+     `kit={view.kit}`.
+
+- [ ] **Step 9: Draw it with the screen's own parts.**
+  1. `components/colors-panel.tsx` becomes (the measured groups follow the kit's own, in the same
+     markup):
+
+```tsx
+import type { BrandContextController } from "../hooks/use-brand-context-controller";
+import type { BrandContextWorkspace } from "../model/brand-context";
+import styles from "./brand-context.module.css";
+
+export function ColorsPanel({
+  controller,
+  emptyMessage,
+  measuredGroups = [],
+  workspace,
+}: {
+  controller: BrandContextController;
+  emptyMessage: string;
+  /** Section backgrounds and each measured style's colours (Task X6), after the kit's own groups. */
+  measuredGroups?: BrandContextWorkspace["colorGroups"];
+  workspace: BrandContextWorkspace;
+}) {
+  const groups = [...workspace.colorGroups, ...measuredGroups];
+  return (
+    <div className={styles.colorsPanel}>
+      {!groups.length ? (
+        <div className={styles.emptyState}>{emptyMessage}</div>
+      ) : null}
+      {groups.map((group) => (
+        <section className={styles.colorSection} key={group.id}>
+          <h2>{group.label}</h2>
+          <div className={styles.swatchGrid}>
+            {group.swatches.map((swatch) => {
+              const value = controller.colorMode === "light" ? swatch.lightValue : swatch.darkValue;
+              return (
+                <article className={styles.swatchCard} key={swatch.id}>
+                  <div className={styles.swatchPreview} style={{ background: value }} />
+                  <div className={styles.swatchMeta}>
+                    <span className={styles.swatchLabel}>{swatch.label}</span>
+                    <code>{value}</code>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+```
+
+  2. `components/brand-context-sidebar.tsx`: add
+     `import { measuredSections, type MeasuredBrandView, type MeasuredSection } from "../model/measured-view";`
+     after the `../model/brand-context` import; after `brandKitItems` add
+
+```tsx
+/** What the extraction measured (Task X6): listed after Typography, only when the kit has it.
+ * Icons from the existing set (DR-A9-1). */
+const measuredItems: Record<MeasuredSection, { icon: BrandContextIconName; label: string }> = {
+  components: { icon: "grid", label: "Components" },
+  spacing: { icon: "list", label: "Spacing" },
+  motion: { icon: "sortActive", label: "Motion" },
+};
+```
+     give `BrandContextSidebar` a `measured: MeasuredBrandView | null` prop (after `controller`), start
+     its body with
+
+```tsx
+  const items = [
+    ...brandKitItems.slice(0, 2),
+    ...measuredSections(measured).map((id) => ({ id, ...measuredItems[id] })),
+    ...brandKitItems.slice(2),
+  ];
+```
+     and map `items` instead of `brandKitItems` in the Brand kit `<nav>`.
+  3. `components/brand-context-header.tsx`: the `labels` object gains
+     `components: "Components",`, `motion: "Motion",` and `spacing: "Spacing",` (keys in alphabetical
+     order with the others).
+  4. Create `components/style-sample.tsx`:
+
+```tsx
+import type { BrandTypeface } from "../model/brand-context";
+import type { MeasuredIcon, MeasuredSample } from "../model/measured-view";
+import { useTypefacePreview } from "../hooks/use-typeface-preview";
+
+/**
+ * One measured style in one state, drawn with its own measured values only (Wave 2 A9, Task X6).
+ * When the kit carries the style's typeface, the Typography panel's loader loads it first (DR-A9-9).
+ */
+export function StyleSample({
+  sample,
+  typeface,
+  word,
+}: {
+  sample: MeasuredSample;
+  typeface: BrandTypeface | null;
+  word: string;
+}) {
+  return typeface
+    ? <LoadedSample sample={sample} typeface={typeface} word={word} />
+    : <DrawnSample fontFamily={null} sample={sample} word={word} />;
+}
+
+function LoadedSample({ sample, typeface, word }: { sample: MeasuredSample; typeface: BrandTypeface; word: string }) {
+  const font = useTypefacePreview(typeface);
+  return <DrawnSample fontFamily={font.status === "ready" ? font.fontFamily : null} sample={sample} word={word} />;
+}
+
+function DrawnSample({ fontFamily, sample, word }: { fontFamily: string | null; sample: MeasuredSample; word: string }) {
+  const measured = sample.style.fontFamily;
+  const style = fontFamily ? { ...sample.style, fontFamily: measured ? `${fontFamily}, ${measured}` : fontFamily } : sample.style;
+  const icon = sample.icon ? <SampleIcon icon={sample.icon} /> : null;
+  return (
+    <span aria-hidden="true" style={style}>
+      {sample.icon?.position === "start" ? icon : null}
+      <span>{word}</span>
+      {sample.icon?.position === "end" ? icon : null}
+    </span>
+  );
+}
+
+function SampleIcon({ icon }: { icon: MeasuredIcon }) {
+  if (icon.glyph !== null) return <span style={icon.style}>{icon.glyph}</span>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- the kit's own icon, drawn as an image so its markup never runs (as brand-context-icon.tsx draws icons)
+    <img alt="" height={icon.height ?? undefined} src={icon.src ?? undefined} style={icon.style} width={icon.width ?? undefined} />
+  );
+}
+```
+
+  5. Create `components/measured-styles-panel.tsx`:
+
+```tsx
+import { Fragment } from "react";
+import type { BrandTypeface } from "../model/brand-context";
+import {
+  typefaceFor,
+  type MeasuredBrandView,
+  type MeasuredStyleView,
+  type MeasuredValue,
+} from "../model/measured-view";
+import { StyleSample } from "./style-sample";
+import styles from "./brand-context.module.css";
+
+/**
+ * Components (Wave 2 A9, Task X6): each measured button, card and link style of the seller's site,
+ * one card per state, side by side. Built from the Typography panel's section and typeface-card
+ * classes, the asset grid's preview box and the colour swatch's name-and-value pair (DR-A9-2…4).
+ */
+export function MeasuredStylesPanel({
+  measured,
+  typefaces,
+}: {
+  measured: MeasuredBrandView | null;
+  typefaces: readonly BrandTypeface[];
+}) {
+  const groups = measured?.groups ?? [];
+  return (
+    <div className={styles.typographyPanel}>
+      {!groups.length ? <div className={styles.emptyState}>No measured styles yet.</div> : null}
+      {groups.map((group) => (
+        <section className={styles.typographySection} key={group.id}>
+          <div className={styles.sectionTitleRow}>
+            <h2>{group.title}</h2>
+          </div>
+          {group.styles.map((style) => (
+            <MeasuredStyle key={style.id} style={style} typeface={typefaceFor(typefaces, style.family)} />
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function MeasuredStyle({ style, typeface }: { style: MeasuredStyleView; typeface: BrandTypeface | null }) {
+  return (
+    <div className={styles.typographySection}>
+      <div className={styles.typefaceName}>
+        <span>{style.name}</span>
+        <small>{style.variant}</small>
+      </div>
+      <div className={styles.typefaceList}>
+        {style.samples.map((sample) => (
+          <article className={styles.typefaceRow} key={sample.state}>
+            <div className={styles.typefaceName}>
+              <span>{sample.name}</span>
+            </div>
+            <div className={styles.assetCardPreview} style={sample.backdrop ? { background: sample.backdrop } : undefined}>
+              <StyleSample sample={sample} typeface={typeface} word={style.word} />
+            </div>
+            {sample.note ? <span className={styles.typefacePreviewStatus}>{sample.note}</span> : null}
+            <MeasuredValues values={sample.values} />
+          </article>
+        ))}
+      </div>
+      <MeasuredValues values={style.transitions} />
+    </div>
+  );
+}
+
+export function MeasuredValues({ values }: { values: readonly MeasuredValue[] }) {
+  if (!values.length) return null;
+  return (
+    <div className={styles.swatchMeta}>
+      {values.map((value, index) => (
+        <Fragment key={`${value.part}-${index}`}>
+          <span className={styles.swatchLabel}>{value.label}</span>
+          <code>{`${value.value} (${value.token})`}</code>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+```
+
+  6. Create `components/spacing-panel.tsx`:
+
+```tsx
+import type { MeasuredBrandView } from "../model/measured-view";
+import styles from "./brand-context.module.css";
+
+/** Spacing (Wave 2 A9, Task X6): the brand's spacing steps as typeface cards (DR-A9-7). */
+export function SpacingPanel({ measured }: { measured: MeasuredBrandView | null }) {
+  const steps = measured?.spacing ?? [];
+  return (
+    <div className={styles.typographyPanel}>
+      {!steps.length ? <div className={styles.emptyState}>No measured spacing yet.</div> : (
+        <section className={styles.typographySection}>
+          <div className={styles.sectionTitleRow}>
+            <h2>Spacing</h2>
+          </div>
+          <div className={styles.typefaceList}>
+            {steps.map((step) => (
+              <article className={styles.typefaceRow} key={step.id}>
+                <div className={styles.typefaceName}>
+                  <span>{step.name}</span>
+                  {step.measured ? <small>Measured</small> : null}
+                </div>
+                <p>{step.value}</p>
+                <span className={styles.typefacePreviewStatus}>{step.token}</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+```
+
+  7. Create `components/motion-panel.tsx`:
+
+```tsx
+import type { MeasuredBrandView, MotionCard } from "../model/measured-view";
+import styles from "./brand-context.module.css";
+
+/** Motion (Wave 2 A9, Task X6): the brand's animations, scroll reveals and the motion pages made
+ * here do not copy, each as a typeface card with its timing in words (no live preview: DR-A9-6). */
+export function MotionPanel({ measured }: { measured: MeasuredBrandView | null }) {
+  const sections: { id: string; title: string; cards: readonly MotionCard[] }[] = [
+    { id: "animations", title: "Animations", cards: measured?.animations ?? [] },
+    { id: "reveals", title: "Scroll reveals", cards: measured?.reveals ?? [] },
+    { id: "scripted", title: "Scripted motion", cards: measured?.scripted ?? [] },
+  ].filter((section) => section.cards.length > 0);
+  return (
+    <div className={styles.typographyPanel}>
+      {!sections.length ? <div className={styles.emptyState}>No measured motion yet.</div> : null}
+      {sections.map((section) => (
+        <section className={styles.typographySection} key={section.id}>
+          <div className={styles.sectionTitleRow}>
+            <h2>{section.title}</h2>
+          </div>
+          <div className={styles.typefaceList}>
+            {section.cards.map((card) => (
+              <article className={styles.typefaceRow} key={card.id}>
+                <div className={styles.typefaceName}>
+                  <span>{card.name}</span>
+                </div>
+                <p>{card.headline}</p>
+                {card.lines.map((line) => (
+                  <span className={styles.typefacePreviewStatus} key={line}>{line}</span>
+                ))}
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+```
+
+  8. `components/brand-context-screen.tsx`: import
+     `import type { MeasuredBrandView } from "../model/measured-view";`,
+     `import { MeasuredStylesPanel } from "./measured-styles-panel";`,
+     `import { MotionPanel } from "./motion-panel";` and `import { SpacingPanel } from "./spacing-panel";`;
+     add the prop `measured` (typed `measured: MeasuredBrandView | null;` with the comment
+     `/** What the extraction measured (Task X6); null for a kit made before measurement. */`); pass
+     `measured={measured}` to `<BrandContextSidebar …/>`; replace the Colors line with
+
+```tsx
+            {controller.section === "colors" ? <ColorsPanel controller={controller} emptyMessage={brandKitActions.colorsEmptyMessage} measuredGroups={measured?.colorGroups} workspace={workspace} /> : null}
+```
+     and add after the Typography line:
+
+```tsx
+            {controller.section === "components" ? <MeasuredStylesPanel measured={measured} typefaces={controller.typefaces} /> : null}
+            {controller.section === "spacing" ? <SpacingPanel measured={measured} /> : null}
+            {controller.section === "motion" ? <MotionPanel measured={measured} /> : null}
+```
+  (A `?section=components` link opened on a kit made before measurement shows that panel's empty
+  state, like Colors on a kit with no colours; the sidebar does not list it.)
+
+- [ ] **Step 10: Run the tests.**
+
+Run: `cd apps/frontend && npx tsx --test src/features/brand-context/model/*.test.ts src/features/brand-context/data/*.test.ts && npm test -w @clue/site-kit 2>&1 | tail -4`
+Expected: PASS — the new tests and every existing brand-context test (the harvested Stripe kit maps
+exactly as before: no `measured_components`, no minted colours).
+
+- [ ] **Step 11: Record the contract.** In `apps/frontend/docs/api-contracts/brand-context.md`, the
+  "Frontend URL state" table's `section` row becomes
+
+```markdown
+| `section` | `colors`, `typography`, `components`, `spacing`, `motion`, `assets`, `knowledge` | Frontend view |
+```
+  and append:
+
+```markdown
+## Resolutions (2026-10-12, Wave 2 A9 Task X6) — the measured brand
+
+The founder ruled (Q-A9-3 (c)) that the page shows what the brand-kit extraction measured on the
+seller's site, drawn with the screen's existing components only.
+
+- **The read keeps more.** `BrandKitJsonSchema` now keeps every token group the kit carries
+  (`numbers`, `spacing`, `radii`, `stroke_widths`, `opacity`, `shadows` and `styles`, beside `colors`
+  and `typography`), each token's `provenance`, `constraints.contrast_pairs` and `measured_components`
+  (`MeasuredComponents@1`). It used to strip them. The design API already served them:
+  `GET /brand-kits/{id}` returns the stored kit whole (`brand_kit_detail_dto`).
+- **One reading, shared with sites.** Measured values are read through `@clue/site-kit/brand-view`,
+  the functions that draw a published site, so a style is never described two ways.
+- **`measured` beside `workspace` and `kit`.** `BrandContextView.measured` is `null` for a kit made
+  before measurement, and the page is then exactly as it was. The designed `BrandContextWorkspace`
+  shape is unchanged.
+- **colorGroups** gain, after the kit's own groups, "Section backgrounds" (each `surface.band.<hex>`,
+  named as the editor's Surface field names it, with its text colour) and one group per measured
+  style ("Filled 1 button", "Card", "Link"), its swatches named by state and part ("Hover fill").
+  Minted colours shown there leave "Semantic roles"; kit colours a style reuses (`surface.brand`) stay.
+- **New sections** `components`, `spacing` and `motion`, listed in the sidebar only when the kit has
+  something for them. Their words and their open design points are recorded in the Wave 2 plan
+  (`docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`, T-A9-8 and DR-A9-1…10).
+```
+
+- [ ] **Step 12: The frontend's check gate, and a look in the browser.**
+
+Run (from `apps/frontend`, with the lane's frontend dev server stopped — it shares `.next`):
+`npm run design-system:build && npm run lint && npm run build`
+Expected: all three succeed.
+Then, with the lane stack up (`DEV_STACK.md`), open `/brand-context` in the Claude desktop in-app
+browser for a workspace whose kit was made before measurement (every kit in the lane DB today):
+the sidebar lists Colors, Typography and Assets only, and Colors shows the same groups as before.
+**Owed (founder-triggered):** the measured sections on a live kit, after the founder's first
+re-extraction (Q-A9-4) — nothing in this plan runs one. Record it in `_memory/`.
+
+- [ ] **Step 13: Commit.**
+
+```bash
+git add apps/frontend/packages/site-kit/src/brand-view.ts apps/frontend/packages/site-kit/test/brand-view.test.ts \
+  apps/frontend/packages/site-kit/package.json subsystems/clue-design/scripts/build_site_kit_brand_fixtures.py \
+  subsystems/clue-design/apps/api/tests/test_measured_components.py apps/frontend/src/features/brand-context \
+  "apps/frontend/src/app/(protected)/brand-context/page.tsx" apps/frontend/docs/api-contracts/brand-context.md
+git commit -m "brand context: show the measured brand — styles in every state, minted colours by style, section backgrounds, spacing and motion — read through site-kit's own functions"
+```
+
 ### Task 16b: The state and motion CSS survives the cleaner and the published policy; screenshots show revealed content
 
 Runs after Lane A Tasks 16 (`sanitize_site_html`) and 17 (`capture_site_screenshot`).
@@ -7311,15 +9356,15 @@ git commit -m "site render: measured state and motion CSS survives the cleaner a
 
 Recorded so it is planned on purpose, not discovered. None of it blocks the site lane.
 
-1. **Colours already work.** A minted colour (`button.solid-2.fill`, `surface.band.014036`) is a kit
-   colour token: the web theme compiles it into a class (`bg-button-solid-2-fill`) and lists it in the
+1. **Colours already work.** A minted colour (`button.solid-047464.hover.fill`, `surface.band.014036`) is a kit
+   colour token: the web theme compiles it into a class (`bg-button-solid-047464-hover-fill`) and lists it in the
    author's THEME TOKENS (`tools/web_substrate.py:652-682`, `crates/lumen-web/src/theme.rs`); the scene
-   DSL resolves `fill($surface.band.014036)`. That is founder question Q-A9-5.
+   DSL resolves `fill($surface.band.014036)`. Founder question Q-A9-5, answered (a): they appear there now.
 2. **Geometry needs an engine change.** Web geometry classes come from a fixed table
    (`crates/lumen-web/src/theme.rs` `GEOMETRY_UTILITIES`, mirrored by
    `lumen_agent/brand_brief.py` `GEOMETRY_TOKEN_UTILITIES`), so a minted radius, padding or stroke
-   (`button.solid-2.radius`) has no web class. Either generate per-component utilities from
-   `measured_components` (`btn-solid-2` drawing every rest part and state, like site-kit's
+   (a `button.<style>.radius`, `.padding-<side>` or `.border-width` token) has no web class. Either generate per-component utilities from
+   `measured_components` (`btn-solid-047464` drawing every rest part and state, like site-kit's
    `.brand-look-<n>`) or open the table to every token of those groups. A Rust change in
    `lumen-web` with its own goldens.
 3. **States and motion need the `styles` group in the web theme compile and lint**: keyword, duration,
@@ -7336,7 +9381,13 @@ Recorded so it is planned on purpose, not discovered. None of it blocks the site
   picks "the secondary" (`secondaryButton()` is not written; looks are the brief's recipes, `look`
   names one, the validator checks membership only); judgement stays in prompts (every agent-facing
   line is listed in T-A9-1…7 and every step that writes one starts with "confirm approved"); no new
-  UI (the dock's existing select, options from the brand; the brand-context panel unchanged).
+  UI in the editor (the dock's existing select, options from the brand). The Brand page grows three
+  sections and new colour groups (founder Q-A9-3 (c)) built only from its existing classes and
+  components (Task X6; words T-A9-8, gaps DR-A9-1…10).
+- **Founder answers 2026-10-12 covered:** every question is marked ANSWERED; Q-A9-6's look-keyed
+  names reach every place a name is built (X2 `look_names`, X4 slugs, X5 script), read (Task 4
+  `looks`, Task 6b membership, X6 Brand page), tested (X1–X5, Tasks 4, 5, 7, X6) or shown (T-A9-1/2/6/7
+  examples, the follow-up); old kits keep `solid.N` and site-kit reads both.
 - **Scope additions covered:** motion and behaviour (transitions, transforms, cursor, decoration
   changes, icons, keyframes, CSS reveals, scripted notes) captured, minted, drawn script-free with
   reduced motion respected; minted tokens with exact reuse, stable names, a cap (X4); section
@@ -7349,7 +9400,9 @@ Recorded so it is planned on purpose, not discovered. None of it blocks the site
   keeps the evidence names (`nav_link`) while token roots use `navlink` (`COMPONENT_ROOTS`).
 - **Known limits, said plainly:** a state that only a script drives on press (pointer-down handlers)
   is not captured (pressed is forced through CSS); a reveal is reproduced as a scroll-driven
-  animation, so its timing follows scrolling, not the measured duration; variants renumber if a
-  re-extracted site changes which style is most common (as shape variants and recipes already do);
+  animation, so its timing follows scrolling, not the measured duration; a style's name gains or
+  loses its 4-hex suffix if a re-extraction gains or loses a same-coloured twin (Task X2, "Why this
+  naming"); the dock's "Filled 1/2" labels follow how often the site uses each style, so they can
+  reorder after a re-extraction while the stored names do not;
   inputs, chips and images are measured and minted but site-kit draws no form fields, chips or image
   hovers yet (stored for agent-made sections and clones); a briefless kit offers no looks (Q-A9-2).

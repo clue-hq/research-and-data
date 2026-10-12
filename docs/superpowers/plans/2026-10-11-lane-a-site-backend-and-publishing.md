@@ -1064,9 +1064,10 @@ the kit and `tailwindThemeCss`.
 
 Do not implement the earlier text of this task. Brand fidelity is now planned in `docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`, which
 replaces Tasks 4, 5 and 7 of this plan. In this lane's order, run here: that plan's **Tasks X1, X2,
-X3, X4, X5 and X6** (the extraction measures states and motion and mints them as kit tokens; the
-Brand page shows them), then its **Task 4** (site-kit values, surfaces, looks and theme from measured
-tokens first). Its ledger, briefs and commits follow its own file.
+X3, X4 and X5** (the extraction measures states and motion and mints them as kit tokens), then its
+**Task 4** (site-kit values, surfaces, looks and theme from measured tokens first). Its **Task X6**
+(the Brand page shows the measured brand) runs later, after its Task 7 and Lane C Tasks 1 and 3 (the
+master plan's execution order, step 8). Its ledger, briefs and commits follow its own file.
 
 ### Task 5: SUPERSEDED by the A9 rewrite (founder rulings 2026-10-12)
 

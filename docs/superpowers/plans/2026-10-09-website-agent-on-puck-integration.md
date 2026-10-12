@@ -431,10 +431,11 @@ Four plan files, executed one task at a time in one branch (each file keeps its 
 block, tasks run in their file's order.
 
 1. **C Tasks 1–2** (the frontend build fix; `site` accepted on the wire) — Contract 8: before A's mapper.
-2. **A Tasks 1–3** (site-kit catch-up), then **A9 Tasks X1–X6** (extraction: engine `styles` group,
-   state and motion probe, evidence, minting, `measured_components`, the Brand page), then **A9 Task 4,
-   A9 Task 5, A Task 6, A9 Task 6b, A9 Task 7** (site-kit drawn from measured tokens; validator;
-   `brand.md`). A's Tasks 4, 5 and 7 are stubs pointing here.
+2. **A Tasks 1–3** (site-kit catch-up), then **A9 Tasks X1–X5** (extraction: engine `styles` group,
+   state and motion probe, evidence, minting, `measured_components`), then **A9 Task 4, A9 Task 5,
+   A Task 6, A9 Task 6b, A9 Task 7** (site-kit drawn from measured tokens; validator; `brand.md`).
+   A's Tasks 4, 5 and 7 are stubs pointing here. **A9 Task X6** (the Brand page) runs in step 8,
+   right after C Task 3.
 3. **B Tasks 0–2** (text review record, cited-claims read, section table) — independent of A; can run
    any time after step 1.
 4. **A Tasks 8–14** (kind branches — Task 10's mapper only after C Task 2 —, site inputs, governed
@@ -445,8 +446,9 @@ block, tasks run in their file's order.
 7. **B Tasks 9–13a** (render tool, images, search, executor, platform side incl. the selection
    targets), then **B Tasks 14–17** (profile `design@v5`, sections, section links, cost proofs).
 8. **C Tasks 3–14** (repository, protocol, editor app and frame host, dock, images, annotations, lock,
-   versions, pages UI) — C Tasks 3–8 can start after step 4; live use needs B Task 8 (brand) and
-   B Task 16 (section links); C Task 9 Step 7b needs A9 Task 5.
+   versions, pages UI), with **A9 Task X6** (the Brand page) right after C Task 3 — C Tasks 3–8 can
+   start after step 4; live use needs B Task 8 (brand) and B Task 16 (section links); C Task 9 Step
+   7b needs A9 Task 5.
 9. **A Tasks 18–22** (thumbnails, publishing, export), then **A Tasks 23–25** (pages-domain move).
 10. **B Task 18** (rebuild a seller's section; its live check spends money and needs the founder's
     go), **C Tasks 15–16** (editor domain in the dev stack and on Railway; the R5 rich-text spike),
