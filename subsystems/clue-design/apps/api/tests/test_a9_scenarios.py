@@ -595,20 +595,13 @@ def test_scenario_5_a_hover_that_clears_the_fill_mints_a_transparent_hover_fill(
     _assert_sections_resolve(kit)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "A9 scenario: a filled call-to-action <a> whose class names no 'btn'/'button' (Tailwind-style "
-        "markup) is classified as a text LINK by the geometry probe's selector (capture/geometry.py "
-        "CLASSES 'button' list), so its look is measured as `link solid.<hex>` and never becomes a "
-        "button style site-kit can offer"
-    ),
-)
 def test_scenario_5b_a_filled_cta_anchor_without_a_btn_class_is_measured_as_a_button(client: TestClient, site) -> None:
     _, detail = _published(client, site, "hover_clears.html")
     kit = detail["brand_kit_json"]
     print("A5b styles:", sorted((s["component"], s["variant"]) for s in _styles(kit)))
     assert "solid.3b2f8f" in _variants(kit, "button"), sorted((s["component"], s["variant"]) for s in _styles(kit))
+    # The ordinary text link in the paragraph (unfilled) is still a link, and the CTA is not one.
+    assert _variants(kit, "link") == {"ghost.1f4e79"}, _variants(kit, "link")
 
 
 # --- 6. curation keeps the sections -------------------------------------------------------------

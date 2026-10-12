@@ -142,12 +142,25 @@ GEOMETRY_JS = r"""
     };
   };
 
+  const BUTTON = 'button, [role="button"], input[type="submit"], input[type="button"],'
+    + ' a[class*="btn"], a[class*="Btn"], a[class*="button"], a[class*="Button"],'
+    + ' .btn, .button';
+  const CTA_CONTENT = 'img, picture, video, h1, h2, h3, h4, h5, h6, p, ul, ol, table, article';
+  // Tailwind-style CTAs carry no button class: a filled, padded, short anchor is a button too.
+  const filledCta = (el) => {
+    const cs = getComputedStyle(el);
+    const fill = opaque(cs.backgroundColor) || (cs.backgroundImage || '').indexOf('gradient(') >= 0;
+    if (!fill || num(cs.paddingLeft) + num(cs.paddingRight) < 12) return false;
+    const text = (el.textContent || '').trim();
+    const h = el.getBoundingClientRect().height;
+    return text.length >= 1 && text.length <= 40 && h >= 20 && h <= 80
+      && !el.querySelector(CTA_CONTENT);
+  };
+
   // Order is specificity order: the first class that claims an element keeps it,
   // so a <button class="card-cta"> is a button, not a card.
   const CLASSES = [
-    ['button', 'button, [role="button"], input[type="submit"], input[type="button"],'
-      + ' a[class*="btn"], a[class*="Btn"], a[class*="button"], a[class*="Button"],'
-      + ' .btn, .button'],
+    ['button', BUTTON + ', a[href]'],
     ['input', 'input:not([type="submit"]):not([type="button"]):not([type="hidden"])'
       + ':not([type="checkbox"]):not([type="radio"]), textarea, select'],
     ['chip', '[class*="badge"], [class*="Badge"], [class*="chip"], [class*="Chip"],'
@@ -163,6 +176,7 @@ GEOMETRY_JS = r"""
   // Text links and navigation items (Wave 2 A9): a link is an anchor with words outside the page
   // chrome; a nav item is one inside it. Both are measured for their states and motion only.
   const FILTERS = {
+    button: (el) => el.matches(BUTTON) || filledCta(el),
     nav_link: (el) => !!(el.textContent || '').trim(),
     link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer'),
   };

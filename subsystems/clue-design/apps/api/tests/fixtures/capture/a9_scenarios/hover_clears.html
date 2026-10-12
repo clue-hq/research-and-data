@@ -3,7 +3,8 @@
 <!-- A9 scenario A5: a filled button that turns transparent on hover (its text takes the old fill).
      The kit must carry a hover fill token holding #00000000.
      Scenario A5b: a filled call-to-action anchor whose class names no "btn"/"button" (the way a
-     Tailwind-built page writes one). Served from 127.0.0.1; never a real site. -->
+     Tailwind-built page writes one), beside an ordinary unfilled text link that stays a link.
+     Served from 127.0.0.1; never a real site. -->
 <style>
   body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
   header { display: flex; gap: 24px; padding: 16px 40px; }
@@ -19,13 +20,14 @@
   .start { display: inline-flex; align-items: center; padding: 10px 20px; background: #3b2f8f; color: #fff;
            border-radius: 6px; font: 600 14px/1.4 Arial; text-decoration: none; }
   .start:hover { background: #2a2066; }
+  p a { color: #1f4e79; }
   section.band { padding: 60px 40px; background: #014036; color: #fff; }
 </style></head>
 <body>
 <header><nav><a href="#home">Home</a> <a href="#pricing">Pricing</a></nav></header>
 <main>
   <h1>A hover that clears the fill</h1>
-  <p>The first button is filled at rest and outlined under the pointer.</p>
+  <p>The first button is filled at rest and outlined under the pointer. Read <a href="#more">more</a> about it.</p>
   <div class="wrap">
     <a href="#go" class="cta-btn" id="b-clear">Talk to us</a>
     <a href="#start" class="start" id="b-start">Start free</a>
