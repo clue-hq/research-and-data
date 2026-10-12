@@ -19,6 +19,13 @@ which every request carries.
 
 Only the model request is edited; the checkpointed history keeps every result, so a resumed or
 continued turn reproduces the same request.
+
+Whether clearing pays depends on the model's prices. Every cut change re-writes the whole
+request into the provider's cache at the cache-write price, to save the cached-read price on the
+cleared tokens for the rest of the conversation. On GPT-6.1-Sol (write $2.50/M, cached read
+$0.10/M) one 160k → 110k step costs ~$0.28 and saves ~$0.005 per later call: run 6 (2026-10-12)
+spent $9.49 of $17.73 on such re-writes. So ``trigger_tokens=0`` turns clearing off and keeps
+the gutter strip; the research compaction backstop then bounds the conversation on its own.
 """
 
 from __future__ import annotations
@@ -114,10 +121,10 @@ def plan_clearing(
     # steps when the protected rounds slide forward over uneven history.
     ai_positions = [i for i, m in enumerate(messages) if isinstance(m, AIMessage)]
     protected_from = ai_positions[-PROTECTED_ROUNDS] if len(ai_positions) >= PROTECTED_ROUNDS else 0
-    cut = min(total - target, sum(sizes[:protected_from])) // step * step
+    cut = float(min(total - target, sum(sizes[:protected_from]))) // step * step
     calls = _calls(messages)
     cleared: list[str] = []
-    end = 0
+    end = 0.0
     for message, size in zip(messages, sizes, strict=True):
         end += size
         if end > cut:
@@ -132,16 +139,28 @@ def plan_clearing(
 
 
 class BatchedToolResultClearing(AgentMiddleware[Any, Any, Any]):
-    """Recipe-26 research middleware: batched result clearing plus the read-gutter strip."""
+    """Recipe-26 research middleware: batched result clearing plus the read-gutter strip.
+
+    ``trigger_tokens=0`` turns clearing off (every result stays in the request); the gutter strip
+    still applies.
+    """
 
     def __init__(self, *, trigger_tokens: int, target_tokens: int) -> None:
         super().__init__()
-        if trigger_tokens <= target_tokens:
+        if trigger_tokens < 0:
+            raise ValueError("trigger_tokens must be 0 (off) or positive")
+        if trigger_tokens and trigger_tokens <= target_tokens:
             raise ValueError("trigger_tokens must exceed target_tokens")
         self.trigger_tokens = trigger_tokens
         self.target_tokens = target_tokens
 
+    @property
+    def clearing_enabled(self) -> bool:
+        return self.trigger_tokens > 0
+
     async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        if not self.clearing_enabled:
+            return await handler(request)
         messages = list(request.messages)
         cleared = set(
             plan_clearing(

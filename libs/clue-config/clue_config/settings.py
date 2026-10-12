@@ -482,14 +482,19 @@ class Settings(BaseSettings):
     # short "re-read <path>" placeholder, in steps of (trigger - target) so the prompt stays
     # cached between steps. COMPACT_* is the summarising backstop for research only (the shared
     # rule compacts at 90% of the model window, which research never reached).
-    # Counted in the model's real tokens, system prompt and tool schemas included; 160k → 110k
-    # clearing and a 240k backstop follow Codex's working range and stay under GPT-6.1-Sol's
-    # 272k long-context price step (founder ruling 2026-10-12).
+    # Counted in the model's real tokens, system prompt and tool schemas included.
+    # Every cut change re-writes the whole request into the provider's cache at the cache-write
+    # price (GPT-6.1-Sol: $2.50/M against $0.10/M to re-read what was cleared), so clearing is
+    # rare and large: one 260k → 130k step, just under Sol's 272k long-context tier (2x input and
+    # cache rates, 1.5x output, for the whole request). Run 6 (2026-10-12) cleared 160k → 110k,
+    # spent $9.49 of $17.73 on cut re-writes, and would have needed no step at all under this
+    # rule (longest uncleared conversation 259k). CLEAR_TRIGGER 0 turns clearing off. The 400k
+    # compaction backstop fits the 500k Grok and 1.05M Sol windows.
     # Env: ``CLUE_ARV2_RESEARCH_CLEAR_TRIGGER_TOKENS`` / ``_CLEAR_TARGET_TOKENS`` /
     # ``_COMPACT_TRIGGER_TOKENS`` / ``_COMPACT_KEEP_MESSAGES``.
-    arv2_research_clear_trigger_tokens: int = Field(default=160_000, ge=1)
-    arv2_research_clear_target_tokens: int = Field(default=110_000, ge=1)
-    arv2_research_compact_trigger_tokens: int = Field(default=240_000, ge=1)
+    arv2_research_clear_trigger_tokens: int = Field(default=260_000, ge=0)
+    arv2_research_clear_target_tokens: int = Field(default=130_000, ge=1)
+    arv2_research_compact_trigger_tokens: int = Field(default=400_000, ge=1)
     arv2_research_compact_keep_messages: int = Field(default=40, ge=1)
     # Days a research step's audit files (model requests and replies, tool results, plans) are
     # kept before the storage sweep purges them; 0 keeps them. Evidence, dossiers, claims and

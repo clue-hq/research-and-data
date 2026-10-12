@@ -7,7 +7,9 @@ in steps, so the prompt prefix is byte-identical between steps.
 """
 
 import asyncio
+from types import SimpleNamespace
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from clue_agents.tool_result_clearing import (
@@ -218,3 +220,31 @@ def test_clearing_starts_within_ten_percent_of_the_real_trigger():
                 break
         else:
             raise AssertionError(f"seed {seed}: clearing never started")
+
+
+def test_trigger_zero_turns_clearing_off_and_keeps_the_gutter_strip():
+    """Clearing off (Sol pricing: a cut re-write costs more than re-reading ever saves): the
+    model sees every result, and read results still lose their line-number gutter."""
+    messages = _conversation(12)  # far past any trigger
+    seen = {}
+
+    async def handler(request):
+        seen["messages"] = request.messages
+        return "ok"
+
+    middleware = BatchedToolResultClearing(trigger_tokens=0, target_tokens=TARGET)
+    assert not middleware.clearing_enabled
+    asyncio.run(middleware.awrap_model_call(_Request(messages), handler))
+    assert seen["messages"] is messages
+
+    async def read(request):
+        return ToolMessage(content="     1\tline one\n     2\tline two", tool_call_id="r")
+
+    request = SimpleNamespace(
+        tool_call={"name": "read_file", "id": "r", "args": {"file_path": "/research/a.json"}}
+    )
+    assert asyncio.run(middleware.awrap_tool_call(request, read)).content == "line one\nline two"
+    with pytest.raises(ValueError, match="0 \\(off\\) or positive"):
+        BatchedToolResultClearing(trigger_tokens=-1, target_tokens=TARGET)
+    with pytest.raises(ValueError, match="must exceed"):
+        BatchedToolResultClearing(trigger_tokens=TARGET, target_tokens=TARGET)
