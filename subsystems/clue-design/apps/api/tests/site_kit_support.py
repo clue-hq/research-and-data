@@ -62,7 +62,6 @@ def garner_brand() -> dict[str, Any]:
         "fonts": _read("fonts.json"),
         "assets": {**_read("assets.json"), **_clone_images(clones)},
         "clones": {clone["id"]: clone for clone in clones},
-        "measured": _read("measured.json"),
     }
 
 
