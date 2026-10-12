@@ -92,3 +92,16 @@ test("an agent section's props schema becomes inline-editable Puck fields and do
     ["text", "textarea", "link", "image", "select", "boolean", "number", "list"],
   );
 });
+
+test("the button style and surface choices come from this brand", () => {
+  const fields = byName(fieldsForComponent(config, brand, "FeatureSplit", { id: "what" }));
+  assert.equal(fields.buttonLook.kind, "select");
+  assert.deepEqual(fields.buttonLook.options?.[0], { label: "Standard", value: "" });
+  const looks = fields.buttonLook.options!.slice(1);
+  assert.ok(looks.length > 0, "Garner's kit records button styles");
+  // The marketer sees words ("Outline", "Text only", "Filled 2"), never a variant or token name.
+  assert.ok(looks.every((option) => option.label.length > 0 && !option.label.includes(".")), JSON.stringify(looks));
+  const surfaces = fields.surface.options!.map((option) => option.value);
+  assert.deepEqual(surfaces.slice(0, 6), ["page", "card", "muted", "brandSubtle", "brand", "inverse"]);
+  assert.ok(surfaces.length > 6 && surfaces.includes("canvas"), "the brand's own surfaces follow the six");
+});
