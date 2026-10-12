@@ -224,3 +224,9 @@ Built from existing chat-shell styles and primitives; where no existing style fi
 - **DR5** The header/footer selection outline on the canvas (question 15).
 - **DR6** Repeating fields grouped as "<label> <n>" (question 12).
 - **DR7** An image field: the existing "Replace image" pill (`InspectorImageUpload`) with the ad lane's generate rows (`AdImageAiRows`) stacked under it.
+
+## Founder answers (recorded as given)
+
+- 2026-10-12 — **Q1:** (b) the Head of ABM's reads say "web" for a site; the gallery and the editor
+  still get "site". (Lane A Task 10 Step 5 as written.)
+- 2026-10-12 — **Q2:** (a) per-page head for the first release. (Lane A Task 20 as written.)
