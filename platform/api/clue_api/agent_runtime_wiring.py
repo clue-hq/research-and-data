@@ -88,6 +88,8 @@ from clue_toolbelt import ToolEffectClass, ToolRegistry
 PROJECT_DOCUMENT_OBJECT_TYPE = "project_document"
 
 __all__ = [
+    "MESSAGE_MEDIA_TYPE",
+    "MODEL_INPUT_MEDIA_TYPE",
     "PROJECT_DOCUMENT_OBJECT_TYPE",
     "AgentFinalizationAuthority",
     "DurableAgentModelCallHandler",
@@ -96,9 +98,53 @@ __all__ = [
     "GovernedAgentToolFactory",
     "GovernedToolFailure",
     "ModelFinalizeRequest",
+    "rebuild_model_input",
 ]
 
 log = get_logger("clue_api.agent_runtime_wiring")
+
+#: A model call's saved input. Since 2026-10-13 it is a manifest (``MODEL_INPUT_FORMAT``) naming
+#: the request's messages, each saved once as ``MESSAGE_MEDIA_TYPE``; before, it was the whole
+#: request, which made every call re-save the conversation so far (spec 2026-10-12 §4.2).
+MODEL_INPUT_MEDIA_TYPE = "application/vnd.clue.agent-model-input+json"
+MESSAGE_MEDIA_TYPE = "application/vnd.clue.agent-message+json"
+MODEL_INPUT_FORMAT = "clue.agent-model-input.v2"
+
+
+def _message_bytes(message: BaseMessage) -> bytes:
+    return json.dumps(
+        message.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode()
+
+
+def _request_bytes(batches: Sequence[Sequence[bytes]]) -> bytes:
+    """The whole request as one JSON array of message batches, exactly as it was saved before
+    the manifest format (JSON arrays with these separators are their elements joined by ``,``)."""
+    return b"[" + b",".join(b"[" + b",".join(batch) + b"]" for batch in batches) + b"]"
+
+
+async def rebuild_model_input(saved: bytes, read: Callable[[str], Awaitable[bytes]]) -> bytes:
+    """The request bytes a saved model input stands for.
+
+    A manifest is resolved through ``read`` (artifact key to bytes) and checked against the
+    request digest it recorded; an input saved before the manifest format is returned as it is.
+    """
+    try:
+        document = json.loads(saved)
+    except ValueError:
+        return saved
+    if not isinstance(document, dict) or document.get("format") != MODEL_INPUT_FORMAT:
+        return saved
+    batches = [[await read(key) for key in batch] for batch in document["messages"]]
+    request = _request_bytes(batches)
+    if hashlib.sha256(request).hexdigest() != document["request_sha256"]:
+        raise ValueError("saved messages do not match the request digest in the manifest")
+    return request
+
 
 _DIRECT_PLAN_NAMESPACE = UUID("2d1e7d31-46cd-52cc-968b-eb7cfcd48720")
 _FINALIZATION_NAMESPACE = UUID("085e19d4-e1f5-56a0-9d64-7779a7d1cf6f")
@@ -159,6 +205,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         self._incidents_conn_factory = incidents_conn_factory
         self._lock = asyncio.Lock()
         self._pending: dict[UUID, tuple[int, datetime, float, ArtifactRef]] = {}
+        # Messages this handler saved, by content digest: a conversation is append-only, so each
+        # message is saved once per turn and every later call only names it.
+        self._saved_messages: dict[str, str] = {}
 
     async def on_chat_model_start(
         self,
@@ -173,17 +222,33 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         if owner is not None and owner != str(self._request.constitution.execution_id):
             return
         workspace_id = self._request.constitution.workspace_id
-        body = json.dumps(
-            [[message.model_dump(mode="json") for message in batch] for batch in messages],
+        batches = [[_message_bytes(message) for message in batch] for batch in messages]
+        keys: list[list[str]] = []
+        for batch in batches:
+            row = []
+            for body in batch:
+                digest = hashlib.sha256(body).hexdigest()
+                key = self._saved_messages.get(digest)
+                if key is None:
+                    ref = await self._artifacts.persist_body(
+                        workspace_id=workspace_id, data=body, media_type=MESSAGE_MEDIA_TYPE
+                    )
+                    key = self._saved_messages[digest] = ref.artifact_key
+                row.append(key)
+            keys.append(row)
+        request = _request_bytes(batches)
+        manifest = json.dumps(
+            {
+                "format": MODEL_INPUT_FORMAT,
+                "messages": keys,
+                "request_bytes": len(request),
+                "request_sha256": hashlib.sha256(request).hexdigest(),
+            },
             sort_keys=True,
             separators=(",", ":"),
-            ensure_ascii=False,
-            default=str,
         ).encode()
         input_ref = await self._artifacts.persist_body(
-            workspace_id=workspace_id,
-            data=body,
-            media_type="application/vnd.clue.agent-model-input+json",
+            workspace_id=workspace_id, data=manifest, media_type=MODEL_INPUT_MEDIA_TYPE
         )
         async with self._lock:
             sequence = self._next_sequence

@@ -525,6 +525,7 @@ def test_step_audit_files_expire_after_the_retention_period(tmp_path) -> None:
                 "application/vnd.clue.agent-plan-proposal+json",
                 "application/vnd.clue.validated-agent-plan+json",
                 "application/vnd.clue.agent-operation-parameters+json",
+                "application/vnd.clue.agent-message+json",
             ):
                 ref = await sink.persist_body(
                     workspace_id=job.workspace_id,
@@ -624,5 +625,30 @@ def test_the_backfill_uses_only_the_saving_jobs_run_and_account(tmp_path) -> Non
             ).all()
             assert [tuple(r) for r in rows] == [(op.account_id, ours.revision)]
             assert await _links(conn, step) == set()
+
+    run_async(case())
+
+
+def test_saving_a_step_file_again_extends_its_expiry(tmp_path) -> None:
+    """A message is saved once and named by every later call; its expiry follows the last save."""
+    from datetime import timedelta
+
+    async def case() -> None:
+        async with rollback_conn() as conn:
+            fs = FsStorage(tmp_path)
+            _op, job, cid = await setup(conn, fs)
+            sink = _sink(conn, fs, job, cid)
+            sink.step_retention_days = 90
+            body, media_type = b'{"message":1}', "application/vnd.clue.agent-message+json"
+            ref = await sink.persist_body(
+                workspace_id=job.workspace_id, data=body, media_type=media_type
+            )
+            await conn.execute(
+                text("UPDATE artifact SET expires_at=now()+interval '5 days' WHERE storage_key=:k"),
+                {"k": ref.artifact_key},
+            )
+            await sink.persist_body(workspace_id=job.workspace_id, data=body, media_type=media_type)
+            left = await _expires(conn)(ref.artifact_key)
+            assert timedelta(days=89) < left <= timedelta(days=90)
 
     run_async(case())

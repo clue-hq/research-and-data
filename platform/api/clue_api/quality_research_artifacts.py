@@ -72,6 +72,8 @@ STEP_AUDIT_MEDIA_TYPES = frozenset(
         "application/vnd.clue.agent-plan-proposal+json",
         "application/vnd.clue.validated-agent-plan+json",
         "application/vnd.clue.agent-operation-parameters+json",
+        # One message of a model request, saved once and named by every later call's manifest.
+        "application/vnd.clue.agent-message+json",
     }
 )
 
@@ -173,12 +175,13 @@ class ResearchArtifacts(DurableAgentArtifactStore):
                     ),
                 )
                 # The row's media type, not the caller's: storage is content-addressed, so bytes
-                # first stored as evidence keep that row and never expire with a step.
+                # first stored as evidence keep that row and never expire with a step. Saving it
+                # again (a message every later call still names) moves the expiry out again.
                 if self.step_retention_days > 0 and record.media_type in STEP_AUDIT_MEDIA_TYPES:
                     await conn.execute(
                         text(
                             "UPDATE artifact SET expires_at=now()+make_interval(days=>:days) "
-                            "WHERE workspace_id=:ws AND storage_key=:key AND expires_at IS NULL"
+                            "WHERE workspace_id=:ws AND storage_key=:key"
                         ),
                         {"ws": workspace_id, "key": key, "days": self.step_retention_days},
                     )
