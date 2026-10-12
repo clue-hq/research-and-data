@@ -606,7 +606,15 @@ def test_what_the_validator_and_the_inputs_refuse(
     broken = copy.deepcopy(s1)
     broken["pages"]["/"]["content"][5]["props"]["surface"] = "green"
     refused = expect_refused(put_site(client, broken, 1), 422, "site.invalid")
-    assert len(refused["errors"]) == 1 and refused["errors"][0].startswith("page.content.5(quote).surface: "), refused["errors"]
+    # Two true refusals on the one path: the section's stored schema, and the brand's surfaces.
+    surface_at = "page.content.5(quote).surface: "
+    stored_schema = surface_at + 'Invalid option: expected one of "page"|"card"|"muted"|"brandSubtle"|"brand"|"inverse"'
+    brand_surface = surface_at + (
+        '"green" is not one of this brand\'s surfaces; its surfaces are '
+        "page, card, muted, brandSubtle, brand, inverse, canvas, elevated, accent (brand/brand.md, Surfaces)"
+    )
+    assert len(refused["errors"]) == 2 and all(e.startswith(surface_at) for e in refused["errors"]), refused["errors"]
+    assert sorted(refused["errors"]) == sorted([stored_schema, brand_surface]), refused["errors"]
     expect_state(client, 1, 1, 0, s1)
 
     # A link to a page this site does not have.
