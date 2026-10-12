@@ -205,9 +205,7 @@ def test_button_shape_evidence_survives_for_the_brief_agent() -> None:
     harvest = parse_geometry(_harvest("stripe_home"), page_url="https://stripe.com/")
     buttons = [shape for shape in harvest.surfaces if shape.surface == "button"]
     assert len(buttons) >= 2, "several visual button variants exist on the page"
-    assert {shape.variant for shape in buttons} == {
-        shape.variant for shape in buttons
-    }, "variant keys are unique per surface"
+    assert len({shape.variant for shape in buttons}) == len(buttons), "variant keys are unique per surface"
     for shape in buttons:
         assert shape.fill in ("solid", "outline", "ghost")
         assert len(shape.radius_px) == 4

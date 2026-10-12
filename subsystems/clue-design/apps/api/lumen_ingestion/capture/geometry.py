@@ -21,7 +21,9 @@ normalizer then keeps today's derived scale, honestly labelled.
 
 from __future__ import annotations
 
+import hashlib
 import math
+from collections import Counter
 from dataclasses import dataclass, field
 
 from ..colorspace import hex_alpha
@@ -43,6 +45,15 @@ _MAX_STROKE_PX = 12.0
 # Spacing values outside this band are page-layout accidents, not rhythm.
 _MIN_SPACING_PX = 2.0
 _MAX_SPACING_PX = 320.0
+#: Text links and navigation items (Wave 2 A9). Measured for their states and motion only: they add
+#: no number samples (the kit's scales stay what they were) and no shape records (the brief agent's
+#: evidence stays what it was).
+STYLE_ONLY_SURFACES = ("link", "nav_link")
+#: The classes whose styles the state pass measures, and how many styles of each it tries. Buttons
+#: carry the looks the agent chooses from, so they get the most; the rest are drawn by the kit.
+STATE_TARGET_CAPS = {"button": 10, "link": 2, "nav_link": 2, "card": 4, "chip": 2, "input": 2, "image": 2}
+#: Elements of one style tried before its states are given up (the first may be covered).
+_CANDIDATES_PER_STYLE = 3
 
 
 # The browser-side probe. One expression, evaluated in the page; every number it
@@ -117,6 +128,7 @@ GEOMETRY_JS = r"""
       bgImage: notNone(cs.backgroundImage),
       color: cs.color || null,
       font: cs.fontWeight + ' ' + cs.fontSize + '/' + cs.lineHeight + ' ' + cs.fontFamily,
+      disabled: el.matches(':disabled, [aria-disabled="true"]'),
     };
   };
 
@@ -135,7 +147,15 @@ GEOMETRY_JS = r"""
     ['nav', 'nav, header, footer'],
     ['divider', 'hr, [role="separator"], [class*="divider"], [class*="Divider"]'],
     ['image', 'img, picture, figure'],
+    ['nav_link', 'nav a[href], header a[href]'],
+    ['link', 'a[href]'],
   ];
+  // Text links and navigation items (Wave 2 A9): a link is an anchor with words outside the page
+  // chrome; a nav item is one inside it. Both are measured for their states and motion only.
+  const FILTERS = {
+    nav_link: (el) => !!(el.textContent || '').trim(),
+    link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer'),
+  };
 
   const seen = new Set();
   const surfaces = [];
@@ -146,10 +166,15 @@ GEOMETRY_JS = r"""
     for (const el of nodes) {
       if (taken >= MAX_PER_CLASS || surfaces.length >= MAX_SURFACES) break;
       if (seen.has(el)) continue;
+      if (FILTERS[cls] && !FILTERS[cls](el)) continue;
       seen.add(el);
       const entry = record(el, cls);
       if (!entry) continue;
+      entry.idx = surfaces.length;
       surfaces.push(entry);
+      // Marked for the state pass (capture/states.py). This probe runs after the screenshot and the
+      // captured HTML, so the mark is never part of what was captured.
+      try { el.setAttribute('data-lumen-probe', String(entry.idx)); } catch (e) { /* an element that refuses attributes */ }
       taken += 1;
     }
   }
@@ -179,6 +204,18 @@ GEOMETRY_JS = r"""
       if (bottom === null || t + r.height > bottom) bottom = t + r.height;
     }
     return (top === null) ? null : [top, bottom];
+  };
+
+  // The text colour a band carries (Wave 2 A9): its first visible heading or paragraph, so a minted
+  // band surface can say what text the seller put on it.
+  const inkOf = (el) => {
+    const nodes = Array.from(el.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, blockquote')).slice(0, 40);
+    for (const node of nodes) {
+      const r = node.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0 || !(node.textContent || '').trim()) continue;
+      return opaque(getComputedStyle(node).color);
+    }
+    return null;
   };
 
   const sections = [];
@@ -221,6 +258,7 @@ GEOMETRY_JS = r"""
       top: r2(top),
       bg: effectiveBg(el),
       bgImage: bgImage,
+      ink: inkOf(el),
       gradient: bgImage ? /gradient\(/i.test(bgImage) : false,
       height: r2(rect.height),
       padding: [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft]
@@ -298,6 +336,30 @@ GEOMETRY_JS = r"""
     initialFontPx = num(getComputedStyle(fontProbe).fontSize) || null;
   } finally { fontProbe.remove(); }
 
+  // CSS animations running on the page (Wave 2 A9): one entry per distinct animation, bounded. The
+  // @keyframes bodies are read from the captured stylesheets in Python (capture/motion.py), which
+  // also holds the cross-origin sheets the CSSOM will not show.
+  const MAX_ANIMATIONS = 12;
+  const animations = new Map();
+  for (const el of Array.from(document.querySelectorAll('body *')).slice(0, 6000)) {
+    if (animations.size >= MAX_ANIMATIONS) break;
+    const cs = getComputedStyle(el);
+    if (!cs.animationName || cs.animationName === 'none') continue;
+    const key = [cs.animationName, cs.animationDuration, cs.animationTimingFunction,
+      cs.animationIterationCount, cs.animationDirection].join('|');
+    const found = animations.get(key);
+    if (found) { found.count += 1; continue; }
+    const cls = el.getAttribute('class');
+    animations.set(key, {
+      name: cs.animationName.slice(0, 120), duration: cs.animationDuration,
+      easing: cs.animationTimingFunction.slice(0, 120), delay: cs.animationDelay,
+      iterations: cs.animationIterationCount, direction: cs.animationDirection, fill: cs.animationFillMode,
+      where: (el.tagName.toLowerCase() + (el.id ? '#' + el.id : '')
+        + (cls ? '.' + String(cls).trim().split(/\s+/)[0] : '')).slice(0, 120),
+      count: 1,
+    });
+  }
+
   return {
     initial_font_px: initialFontPx,
     root_font_px: num(getComputedStyle(document.documentElement).fontSize),
@@ -310,6 +372,7 @@ GEOMETRY_JS = r"""
     gaps: gaps,
     rhythm: rhythm,
     focus: focus,
+    animations: Array.from(animations.values()),
   };
 }
 """
@@ -383,6 +446,8 @@ def parse_geometry(raw: object, *, page_url: str) -> GeometryHarvest:
 
 def _read_surface(entry: dict, url: str, harvest: GeometryHarvest) -> None:
     cls = str(entry.get("cls") or "surface")
+    if cls in STYLE_ONLY_SURFACES:
+        return
     pointer_for = lambda what: _pointer(url, what)  # noqa: E731 — one-line locator helper
 
     # Radii: distinct corner values, so a uniformly-rounded card contributes one
@@ -547,7 +612,8 @@ def _read_rhythm(rhythm: list, url: str, harvest: GeometryHarvest) -> None:
 
 
 def _read_focus(focus: list[dict], url: str, harvest: GeometryHarvest) -> None:
-    for index, entry in enumerate(focus):
+    rings: dict[tuple, tuple[float, str, str | None, str | None]] = {}
+    for entry in focus:
         width = _float(entry.get("outlineWidth"))
         style = str(entry.get("outlineStyle") or "none").lower()
         if style in ("none", "hidden") or not 0 < width <= _MAX_STROKE_PX:
@@ -560,15 +626,21 @@ def _read_focus(focus: list[dict], url: str, harvest: GeometryHarvest) -> None:
                 pointer=_pointer(url, "focus ring outline-width"),
             )
         )
+        colour, shadow = _hex(entry.get("outlineColor")), _text(entry.get("shadow"))
+        # One record per distinct ring (two focusable elements with the same ring were two records
+        # with two numbers before; one name now means one look — founder Q-A9-6).
+        rings.setdefault(("focus_ring", "outline", width, style, shadow, colour), (width, style, colour, shadow))
+    names = look_names(list(rings))
+    for key, (width, style, colour, shadow) in rings.items():
         harvest.surfaces.append(
             SurfaceShape(
                 surface="focus_ring",
-                variant=f"outline.{index + 1}",
+                variant=names[key],
                 fill="ghost",
                 border_width_px=[width],
                 border_style=style,
-                border_color=_hex(entry.get("outlineColor")),
-                shadow=_text(entry.get("shadow")),
+                border_color=colour,
+                shadow=shadow,
                 pointer=_pointer(url, "focus ring"),
             )
         )
@@ -579,6 +651,95 @@ def _read_focus(focus: list[dict], url: str, harvest: GeometryHarvest) -> None:
 _SHAPE_SURFACES = ("button", "card", "input", "chip", "nav", "divider", "image")
 
 
+def _identity_colour(entry: dict, fill: str) -> str | None:
+    """The colour a look is told by: a filled look's fill, an outline's border, a text-only look's text."""
+    if fill == "solid":
+        return _hex(entry.get("bg"))
+    if fill == "outline":
+        return _hex(entry.get("borderColor"))
+    return _hex(entry.get("color"))
+
+
+def shape_key(entry: dict) -> tuple:
+    """The one grouping key: fill kind, corners, border weight, shadow, background, and the colour the
+    look is told by (founder Q-A9-6: an outline's border colour and a text-only look's text colour
+    make it another look)."""
+    radius = _numbers(entry.get("radius"))
+    border = _numbers(entry.get("border"))
+    bg = _hex(entry.get("bg"))
+    style = str(entry.get("borderStyle") or "none").lower()
+    has_border = style not in ("none", "hidden") and any(v > 0 for v in border)
+    fill = "solid" if bg else ("outline" if has_border else "ghost")
+    return (
+        str(entry.get("cls") or ""), fill, tuple(radius), bool(entry.get("pill")), tuple(border),
+        _text(entry.get("shadow")), bg, _identity_colour(entry, fill),
+    )
+
+
+def variant_base(fill: str, colour: str | None) -> str:
+    """`<fill>.<hex>`: a look's name from the colour it is told by (`solid.047464`)."""
+    return f"{fill}.{colour.lstrip('#').lower() if colour else 'none'}"
+
+
+def _key_digest(key: tuple, width: int) -> str:
+    return hashlib.sha1(_order_key(key).encode()).hexdigest()[:width]
+
+
+def look_names(keys: list[tuple]) -> dict[tuple, str]:
+    """Each look's stable name, by its grouping key (`(cls, fill, …, colour)`; founder Q-A9-6).
+
+    `<fill>.<hex>`, plus `.<4 hex>` of the whole key when two looks of one class share it (12 hex in
+    the 1-in-65,536 case where two 4-hex suffixes collide). Never a rank, a count or a page order.
+    """
+    bases = {key: variant_base(key[1], key[-1]) for key in keys}
+    shared = Counter((key[0], base) for key, base in bases.items())
+    names = {
+        key: base if shared[(key[0], base)] == 1 else f"{base}.{_key_digest(key, 4)}"
+        for key, base in bases.items()
+    }
+    taken = Counter((key[0], name) for key, name in names.items())
+    return {
+        key: f"{bases[key]}.{_key_digest(key, 12)}" if taken[(key[0], name)] > 1 else name
+        for key, name in names.items()
+    }
+
+
+def shape_groups(surfaces: list[dict], classes: tuple[str, ...]) -> list[tuple[str, list[dict]]]:
+    """`(variant, members)` per look of `classes`, most used first (ties in key order).
+
+    The variant is the look's stable name (`look_names`) — the name the brief's recipes, the
+    measured styles and the minted tokens use. The order decides only which styles the state pass
+    tries first and the order of the brief's evidence, never a name. `members[0]` is the first element
+    measured with that look.
+    """
+    groups: dict[tuple, list[dict]] = {}
+    for entry in surfaces:
+        if str(entry.get("cls") or "") in classes:
+            groups.setdefault(shape_key(entry), []).append(entry)
+    names = look_names(list(groups))
+    ordered = sorted(groups.items(), key=lambda item: (-len(item[1]), _order_key(item[0])))
+    return [(names[key], members) for key, members in ordered]
+
+
+def state_targets(surfaces: list[dict]) -> list[tuple[tuple[str, str], list[int]]]:
+    """The styles the state pass measures, buttons first, and the elements to try for each."""
+    taken: dict[str, int] = {}
+    targets: list[tuple[tuple[str, str], list[int]]] = []
+    for variant, members in shape_groups(surfaces, tuple(STATE_TARGET_CAPS)):
+        cls = str(members[0].get("cls") or "")
+        if taken.get(cls, 0) >= STATE_TARGET_CAPS[cls]:
+            continue
+        usable = [m for m in members if isinstance(m.get("idx"), int)]
+        usable.sort(key=lambda m: bool(m.get("disabled")))  # an enabled element first
+        candidates = [int(m["idx"]) for m in usable][:_CANDIDATES_PER_STYLE]
+        if candidates:
+            taken[cls] = taken.get(cls, 0) + 1
+            targets.append(((cls, variant), candidates))
+    order = list(STATE_TARGET_CAPS)
+    targets.sort(key=lambda item: order.index(item[0][0]))
+    return targets
+
+
 def _cluster_shapes(surfaces: list[dict], url: str) -> list[SurfaceShape]:
     """Group measured elements into visual variants.
 
@@ -586,47 +747,16 @@ def _cluster_shapes(surfaces: list[dict], url: str) -> list[SurfaceShape]:
     shadow, background — so "primary / secondary / ghost" falls out of what the
     page actually draws rather than from a guess about intent.
     """
-    groups: dict[tuple, dict] = {}
-    for entry in surfaces:
-        cls = str(entry.get("cls") or "")
-        if cls not in _SHAPE_SURFACES:
-            continue
-        radius = _numbers(entry.get("radius"))
-        border = _numbers(entry.get("border"))
-        bg = _hex(entry.get("bg"))
-        style = str(entry.get("borderStyle") or "none").lower()
-        has_border = style not in ("none", "hidden") and any(v > 0 for v in border)
-        fill = "solid" if bg else ("outline" if has_border else "ghost")
-        key = (
-            cls,
-            fill,
-            tuple(radius),
-            bool(entry.get("pill")),
-            tuple(border),
-            _text(entry.get("shadow")),
-            bg,
-        )
-        group = groups.get(key)
-        if group is None:
-            groups[key] = {"entry": entry, "fill": fill, "count": 1}
-        else:
-            group["count"] += 1
-
-    ordered = sorted(
-        groups.items(), key=lambda item: (-item[1]["count"], _order_key(item[0]))
-    )
-    seats: dict[tuple[str, str], int] = {}
     shapes: list[SurfaceShape] = []
-    for key, group in ordered:
-        cls, fill = key[0], key[1]
-        seat = seats.get((cls, fill), 0) + 1
-        seats[(cls, fill)] = seat
-        entry = group["entry"]
+    for variant, members in shape_groups(surfaces, _SHAPE_SURFACES):
+        entry = members[0]
+        cls = str(entry.get("cls") or "")
+        fill = variant.split(".", 1)[0]
         shapes.append(
             SurfaceShape(
                 surface=cls,  # type: ignore[arg-type]
-                variant=f"{fill}.{seat}",
-                count=int(group["count"]),
+                variant=variant,
+                count=len(members),
                 fill=fill,  # type: ignore[arg-type]
                 radius_px=_numbers(entry.get("radius")),
                 pill=bool(entry.get("pill")),
