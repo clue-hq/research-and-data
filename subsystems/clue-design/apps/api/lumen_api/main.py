@@ -49,6 +49,7 @@ from . import (
     document_thumbnails,
     image_cache,
     image_provider,
+    site_publish,
     web_export,
     web_pdf,
 )
@@ -131,7 +132,8 @@ from .database import (
 )
 from . import run_stream
 from .spend import drain_safely as _drain_spend
-from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, sections_not_stored
+from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, load_section_modules, sections_not_stored
+from .site_render import SiteRenderError
 from .site_doc_validate import SiteDocumentInvalid, SiteValidatorUnavailable
 from .toolbelt.site_documents import SiteHistoryEmpty, replace_site_payload
 from .design_store import (
@@ -3977,7 +3979,17 @@ def create_app(
             # `require_*_document` gates.
             kind = document.get("doc_kind", "scene")
             try:
-                if kind == "web":
+                if kind == "site":
+                    # Wave 2: a Puck site renders in the hardened page, is cleaned, and is captured
+                    # with JavaScript off and the network blocked (site_publish).
+                    data = site_publish.site_thumbnail_png(
+                        document,
+                        blobs=blobs,
+                        brand=app.state.site_brand_loader(repo, blobs, document),
+                        sections=load_section_modules(app.state.site_section_loader, repo, blobs, document["scene"]),
+                        node_bin=app.state.web_export_node_bin,
+                    )
+                elif kind == "web":
                     # Called in-process so the composed HTML carries THIS request's
                     # origin for its asset URLs — the capture page fetches them.
                     rendered = render_web_document(
@@ -4057,6 +4069,11 @@ def create_app(
                     status_code=502,
                     detail={"code": error.code, "message": str(error)},
                 ) from error
+            except (SiteRenderError, SiteInputsUnavailable) as error:
+                raise HTTPException(
+                    status_code=502,
+                    detail={"code": "thumbnail.render_failed", "message": str(error)},
+                ) from error
             except (CoreError, NotFoundError) as error:
                 # The helper can fail BEFORE `raise_on_error` is consulted (a dead
                 # subprocess, an unparseable response), so `raise_on_error=False`
@@ -4076,7 +4093,7 @@ def create_app(
                         # `export_failed` would name a step that never ran.
                         "code": (
                             "thumbnail.render_failed"
-                            if kind == "web"
+                            if kind in ("web", "site")
                             else "thumbnail.export_failed"
                         ),
                         "message": str(error),
