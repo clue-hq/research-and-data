@@ -412,6 +412,9 @@ class ToolRuntime:
         #: provider → why it stopped selling. Job-level: once a provider halts, every later call to
         #: it is refused without a wire (master plan §2 item 3 — money truth blocks).
         self.halted: dict[str, str] = {}
+        #: One lock per identical saved request (:meth:`operate`): a second caller waits for the
+        #: first instead of reading its operation while it is still running.
+        self._request_locks: dict[tuple[str, str], asyncio.Lock] = {}
         #: What ``finalize_research`` accepted. Set once; every other tool is closed afterwards.
         self.finalization: dict[str, Any] | None = None
         #: Tool calls this job has made, for the stop policy the driver enforces.
@@ -847,8 +850,31 @@ class ToolRuntime:
         request: Mapping[str, Any],
         fn: Callable[[ProviderCaller], Any],
     ) -> tuple[operations.Operation, dict[str, Any]]:
+        """Make a saved provider request once per job, and return its saved result.
+
+        Identical requests share one saved operation, and two tools can make the same one: run 7
+        (2026-10-12) called ``lookup_company`` and ``discover_people`` in one round, both asked AI
+        Ark for the company, and the people search read the shared operation 45 ms in, while it
+        was still running, and was refused. So a caller waits here for any call of this runtime
+        already making the same request, then reads its saved result; the provider is paid once.
+        An operation left running by another process (a crashed earlier attempt) is still an
+        unknown outcome and is refused, never re-bought.
+        """
         if self.storage is None:
             raise RuntimeError("v2 research requires verified artifact storage")
+        key = (kind, operations.fingerprint(request))
+        lock = self._request_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            return await self._operate(provider, kind, request, fn)
+
+    async def _operate(
+        self,
+        provider: str,
+        kind: str,
+        request: Mapping[str, Any],
+        fn: Callable[[ProviderCaller], Any],
+    ) -> tuple[operations.Operation, dict[str, Any]]:
+        assert self.storage is not None
         async with self._conn_factory() as conn:
             operation, won = await operations.begin(conn, self.operation_scope, kind, request)
         if won:
