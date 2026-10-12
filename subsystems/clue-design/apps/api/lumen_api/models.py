@@ -206,6 +206,21 @@ class WebOperationsRequest(BaseModel):
     intent: Optional[str] = None
 
 
+class SiteWriteRequest(BaseModel):
+    """A save of a whole Puck site document (Wave 2 Contract 2): the site JSON, the version it was
+    edited from (required — a stale tab must never overwrite a newer save), and a history label."""
+
+    site: JsonObject
+    base_version: int
+    intent: Optional[str] = None
+
+
+class SiteHistoryRequest(BaseModel):
+    """An undo, a redo or a restore of a Puck site, from the version the caller is looking at."""
+
+    base_version: int
+
+
 class CreateWebAccountRequest(BaseModel):
     """A personalization account (P5 D3). `account_id` is minted (`acc_…`) when
     absent; an explicit duplicate id is a 409. `data` is the string→string custom

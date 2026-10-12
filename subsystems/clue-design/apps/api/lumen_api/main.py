@@ -131,6 +131,8 @@ from .database import (
 from . import run_stream
 from .spend import drain_safely as _drain_spend
 from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, sections_not_stored
+from .site_doc_validate import SiteDocumentInvalid, SiteValidatorUnavailable
+from .toolbelt.site_documents import SiteHistoryEmpty, replace_site_payload
 from .design_store import (
     DesignBlobStore,
     HybridRepository,
@@ -173,6 +175,8 @@ from .models import (
     WebTurnRequest,
     WebOperationsRequest,
     WebPublishRequest,
+    SiteHistoryRequest,
+    SiteWriteRequest,
     RenameDocumentRequest,
     SetAgentInstructionsRequest,
     SetDocumentArchivedRequest,
@@ -4524,6 +4528,176 @@ def create_app(
             },
             "reapplied_batch_id": target["batch_id"],
         }
+
+    # --- Puck site documents (Wave 2 Lane A, Contract 2) --------------------------------------- #
+
+    def _site_refusal(error: Exception) -> HTTPException:
+        """The typed body for each way a site write can be refused before it lands."""
+        if isinstance(error, SiteDocumentInvalid):
+            return HTTPException(
+                status_code=422,
+                detail={"code": "site.invalid", "message": "the site does not pass its contract checks", "errors": error.errors},
+            )
+        if isinstance(error, (SiteInputsUnavailable, SiteValidatorUnavailable)):
+            return HTTPException(status_code=503, detail={"code": error.code, "message": str(error)})
+        raise TypeError(f"not a site refusal: {error!r}")
+
+    def _site_history_refusals(document_id: str) -> Dict[str, Any]:
+        return {
+            **_document_refusals(document_id),
+            "site_undo_empty": lambda message: HTTPException(status_code=409, detail={"code": "undo.empty", "message": message}),
+            "site_redo_empty": lambda message: HTTPException(status_code=409, detail={"code": "redo.empty", "message": message}),
+        }
+
+    def _site_document_ref(repo: HybridRepository, document_id: str) -> JsonObject:
+        updated = repo.require_document(document_id)
+        return {"id": updated["id"], "current_version": updated["current_version"], "doc_kind": "site"}
+
+    def _guard_site_write(repo: HybridRepository, document_id: str, base_version: int, action: str) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        require_draft_document(document, action)
+        # Ruling 2026-10-11: no manual site write while a design run drives this document.
+        _refuse_if_agent_running(document_id, repo)
+        require_base_version(document, base_version)
+        return document
+
+    def _write_site(repo: HybridRepository, document_id: str, *, site: Any, intent: str, checkpoint_label: str, base_version: int) -> None:
+        try:
+            run_design_tool(
+                "design_write_site",
+                {
+                    "document_id": document_id,
+                    "site": site,
+                    "intent": intent,
+                    "checkpoint_label": checkpoint_label,
+                    "actor_kind": "editor",
+                    "source": "editor",
+                    "expected_base_version": base_version,
+                },
+                workspace_id=store_workspace_id(repo),
+                refusals=_document_refusals(document_id),
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise _base_version_conflict(conflict) from conflict
+        except (SiteDocumentInvalid, SiteInputsUnavailable, SiteValidatorUnavailable) as error:
+            raise _site_refusal(error) from error
+
+    @app.put("/documents/{document_id}/site")
+    def put_site_document(
+        document_id: str, payload: SiteWriteRequest, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """One save of the whole site: one undoable step (Contract 2)."""
+        _guard_site_write(repo, document_id, payload.base_version, "save the site")
+        _write_site(
+            repo,
+            document_id,
+            site=payload.site,
+            intent=payload.intent or "Manual edit",
+            checkpoint_label="Manual edit",
+            base_version=payload.base_version,
+        )
+        return {"schema_version": 1, "document": _site_document_ref(repo, document_id)}
+
+    def _step_site(repo: HybridRepository, document_id: str, base_version: int, direction: str) -> JsonObject:
+        document = _guard_site_write(repo, document_id, base_version, direction)
+        if not (document.get("undo_stack" if direction == "undo" else "redo_stack") or []):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": f"{direction}.empty", "message": str(SiteHistoryEmpty(direction))},
+            )
+        try:
+            refs = run_design_tool(
+                f"design_{direction}_site",
+                {"document_id": document_id, "expected_base_version": base_version},
+                workspace_id=store_workspace_id(repo),
+                refusals=_site_history_refusals(document_id),
+            )
+        except WebDocumentVersionConflict as conflict:
+            raise _base_version_conflict(conflict) from conflict
+        except SiteHistoryEmpty as error:
+            raise HTTPException(status_code=409, detail={"code": f"{direction}.empty", "message": str(error)}) from error
+        moved = "undone_batch_id" if direction == "undo" else "redone_batch_id"
+        return {"schema_version": 1, "document": _site_document_ref(repo, document_id), moved: refs["batch_id"]}
+
+    @app.post("/documents/{document_id}/site/undo")
+    def undo_site_document(
+        document_id: str, payload: SiteHistoryRequest, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        return _step_site(repo, document_id, payload.base_version, "undo")
+
+    @app.post("/documents/{document_id}/site/redo")
+    def redo_site_document(
+        document_id: str, payload: SiteHistoryRequest, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        return _step_site(repo, document_id, payload.base_version, "redo")
+
+    @app.get("/documents/{document_id}/site/brand")
+    def get_site_brand(document_id: str, repo: HybridRepository = Depends(repository)) -> JsonObject:
+        """The site's BrandData for the editor frame's ``init`` (Contract 6; controller ruling R3).
+
+        Built by the one builder Lane B2 composes into ``app.state.site_brand_loader``; every asset
+        and font ``file`` is ``/asset-store/<sha256>``. Until B2 lands the seam refuses typed."""
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        try:
+            brand = app.state.site_brand_loader(repo, blob_store(repo), document)
+        except SiteInputsUnavailable as error:
+            raise HTTPException(status_code=503, detail={"code": error.code, "message": str(error)}) from error
+        return {"schema_version": 1, "brand": brand}
+
+    @app.get("/documents/{document_id}/site/versions")
+    def list_site_versions(
+        document_id: str,
+        limit: int = Query(default=50, ge=1, le=200),
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """The site's history, newest first: one entry per save, agent turn, undo, redo or restore."""
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        envelopes = repo.list_envelopes(document_id, limit=limit, newest_first=True)
+        return {
+            "schema_version": 1,
+            "versions": [
+                {
+                    "batch_id": envelope["batch_id"],
+                    "version": int(envelope["base_revision"]) + 1,
+                    "actor_kind": envelope["actor"]["kind"],
+                    "intent": envelope["intent"],
+                    "created_at": envelope["created_at"],
+                }
+                for envelope in envelopes
+            ],
+        }
+
+    @app.post("/documents/{document_id}/site/versions/{batch_id}/restore")
+    def restore_site_version(
+        document_id: str,
+        batch_id: str,
+        payload: SiteHistoryRequest,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        """Put back the site as it stood after ``batch_id``. The restore is itself one undoable save."""
+        _guard_site_write(repo, document_id, payload.base_version, "restore a version")
+        try:
+            envelope = repo.require_envelope(document_id, batch_id)
+        except NotFoundError:
+            envelope = None
+        site = replace_site_payload(envelope["operations"]) if envelope is not None else None
+        if site is None:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "version.not_found", "message": f"no restorable version {batch_id!r} on document {document_id}"},
+            )
+        _write_site(
+            repo,
+            document_id,
+            site=site,
+            intent=f"restore:{batch_id}",
+            checkpoint_label="Restore",
+            base_version=payload.base_version,
+        )
+        return {"schema_version": 1, "document": _site_document_ref(repo, document_id)}
 
     @app.get("/documents/{document_id}/web/theme")
     def get_web_theme(
