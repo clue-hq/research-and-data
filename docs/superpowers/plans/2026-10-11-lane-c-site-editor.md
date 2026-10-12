@@ -23,7 +23,7 @@ Each question has a recommendation. The plan's code implements the recommendatio
   - (a) A new registrable domain used only for editing (for example `<name>-edit.com`), wildcard DNS + wildcard certificate on it. **Recommended** — it is what D2 decided (separate registrable domain, one subdomain per workspace).
   - (b) A subdomain of the new published-pages domain. Not recommended: D2 keeps the published-pages domain distinct from the editor domain.
   - Until answered, `.env.example` ships `CLUE_SITE_EDITOR_SUFFIX=` (empty) and a site in production shows the canvas's existing error state with "The website editor is not configured for this environment." Dev uses `editor.localhost:<port>` (Task 15).
-- **Q2. Repeating fields (stats, nav links, list items) in the dock.** No designed control exists.
+- **Q2 — ANSWERED 2026-10-12: (a)** (Task 9 as written). **Repeating fields (stats, nav links, list items) in the dock.** No designed control exists.
   - (a) Show each existing item's fields in place, grouped under "<Field label> <n>", with no add/remove. **Recommended** (Task 9 implements this).
   - (b) Hide repeating fields until designed.
   - (c) Add/remove item controls — needs a design first.

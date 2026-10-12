@@ -576,3 +576,6 @@ model's own recipe slots and notes use the exact tokens):
   extraction now measures — the new colours, button and card styles with their hover, pressed, focus
   and disabled looks, links, section backgrounds and motion — built only from the app's existing
   frontend components and standards. Replaces the draft's Task X6 filter.
+- 2026-10-12 — **Q12:** (a) the dock shows each existing list item's fields ("Stat 1", "Stat 2"…),
+  editable, with no add or remove buttons; adding or removing items is asked of the agent in chat.
+  (Lane C Task 9 as written.)
