@@ -120,7 +120,7 @@ def test_materialize_rebuilds_inputs_but_keeps_memory(tmp_path: Path) -> None:
     assert (workspace / "plan.md").read_text() == "my plan"
     assert (workspace / "history.md").read_text() == "# history"
     assert (workspace / "fetched" / "story.md").exists()
-    assert {"research", "catalog", "brand", "page.json", "pages", "shell.json", "work"} <= ws.SESSION_REGENERATED
+    assert {"research", "catalog", "brand", "page.json", "pages", "shell.json", "work", "large_tool_results"} <= ws.SESSION_REGENERATED
     assert "plan.md" not in ws.SESSION_REGENERATED and "fetched" not in ws.SESSION_REGENERATED
 
 

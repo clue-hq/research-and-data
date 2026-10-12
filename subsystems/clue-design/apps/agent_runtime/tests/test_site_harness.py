@@ -13,6 +13,7 @@ from lumen_agent.site import harness
 from lumen_agent.site.harness import (
     CANCELLED_SUMMARY,
     CLEAR_FROM_TOKENS,
+    CRASHED_SUMMARY,
     ROUND_LIMIT_NOTE,
     SupersededResults,
     TurnLimitsConfig,
@@ -176,6 +177,26 @@ def test_a_cancelled_request_never_calls_the_model(tmp_path: Path) -> None:
     result = _run(tmp_path, [], cancel_requested=lambda: True)
     assert result.status == "failed" and result.stop_reason == "cancelled_by_request"
     assert result.summary == CANCELLED_SUMMARY and result.model_calls == []
+
+
+def test_a_workspace_that_cannot_be_written_returns_the_crash_result(tmp_path: Path, monkeypatch) -> None:
+    def disk_full(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(harness, "materialize_workspace", disk_full)
+    result = _run(tmp_path, [])
+    assert result.status == "failed" and result.stop_reason == "crashed"
+    assert result.summary == CRASHED_SUMMARY and result.model_calls == []
+
+
+def test_an_agent_that_cannot_be_built_returns_the_crash_result(tmp_path: Path, monkeypatch) -> None:
+    def broken(*args, **kwargs):
+        raise RuntimeError("no agent")
+
+    monkeypatch.setattr(harness, "build_site_agent", broken)
+    result = _run(tmp_path, [])
+    assert result.status == "failed" and result.stop_reason == "crashed"
+    assert result.summary == CRASHED_SUMMARY and result.model_calls == []
 
 
 def test_the_requests_model_calls_ride_back_and_an_untouched_site_is_returned_as_stored(tmp_path: Path) -> None:

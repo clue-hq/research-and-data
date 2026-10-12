@@ -455,15 +455,22 @@ def run_site_turn(
     from ..harness import _instrument
     from ..usage_collector import turn_collector
 
-    materialize_workspace(workspace, inputs, site=site)
-    tools = SiteTools(workspace=workspace, inputs=inputs, base_site=site, event_sink=event_sink)
-    if model is None:
-        cancel_kwargs = {} if cancel_requested is None else {"cancel_probe": cancel_requested}
-        model = _instrument(config, tools, config.orchestrator_model, "site", **cancel_kwargs)
-    agent, guard, turn_limits = build_site_agent(
-        tools, model=model, model_id=config.orchestrator_model, checkpointer=checkpointer, limits=limits
-    )
-    collector, handlers = turn_collector(callbacks)
+    tools: SiteTools | None = None
+    try:
+        materialize_workspace(workspace, inputs, site=site)
+        tools = SiteTools(workspace=workspace, inputs=inputs, base_site=site, event_sink=event_sink)
+        if model is None:
+            cancel_kwargs = {} if cancel_requested is None else {"cancel_probe": cancel_requested}
+            model = _instrument(config, tools, config.orchestrator_model, "site", **cancel_kwargs)
+        agent, guard, turn_limits = build_site_agent(
+            tools, model=model, model_id=config.orchestrator_model, checkpointer=checkpointer, limits=limits
+        )
+        collector, handlers = turn_collector(callbacks)
+    except Exception as error:  # noqa: BLE001 - a setup failure is the same honest crash, before any model call
+        detail = f"{type(error).__name__}: {error}"[:500]
+        if tools is not None:
+            tools._record("crashed", error=detail)
+        return SiteTurnResult("failed", CRASHED_SUMMARY, dict(site), "crashed", [detail], [])
     invoke_config = {
         "recursion_limit": limits.recursion_limit,
         "configurable": {"thread_id": thread_id or run_id},

@@ -34,8 +34,9 @@ REGENERATED = (
     "skills-e5", "page.json", "pages", "shell.json",
 )
 #: Left out of the session snapshot: everything rebuilt per request, plus `seller/` (rewritten per
-#: pin by `write_seller_knowledge`) and `work/` (one request's compaction offloads).
-SESSION_REGENERATED = frozenset({*REGENERATED, "seller", "work"})
+#: pin by `write_seller_knowledge`), `work/` (one request's compaction offloads) and
+#: `large_tool_results/` (deepagents' one-request offloads of large tool results).
+SESSION_REGENERATED = frozenset({*REGENERATED, "seller", "work", "large_tool_results"})
 #: The display gate's real rules (read_cited_claims@1). A research statement citing a claim held
 #: for one of these leaves the research files; one citing an unverified finding or another
 #: entity's claim stays (the spike's rule, `run_agent.py:93-94`).
