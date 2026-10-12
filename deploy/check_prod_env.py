@@ -17,10 +17,12 @@ APP_ROLES = ("platform-api", "design-api", "worker")
 #: name -> the only acceptable production value, for every role.
 EXACT = {
     "CLUE_STORAGE_BACKEND": "s3",
-    "CLUE_PAGES_SYSTEM_SUFFIX": "pages.cluehq.ai",
     "CLUE_PAGES_PUBLIC_SCHEME": "https",
     "CLUE_PAGES_TRUST_HOST_HEADER": "false",
 }
+#: Where published pages lived before they moved to their own registrable domain (Wave 2
+#: Contract 9). A production suffix is this one, or a hostname off cluehq.ai.
+LEGACY_PAGES_SUFFIX = "pages.cluehq.ai"
 #: ... and for the application roles. CLUE_AUTH_ENVIRONMENT=production is also what makes a process
 #: refuse the two development lenses at startup, which is why the VM workers need it too.
 APP_EXACT = {
@@ -40,6 +42,7 @@ REQUIRED = (
     "CLUE_STORAGE_S3_REGION",
     "CLUE_STORAGE_S3_ACCESS_KEY_ID",
     "CLUE_STORAGE_S3_SECRET_ACCESS_KEY",
+    "CLUE_PAGES_SYSTEM_SUFFIX",
 )
 APP_REQUIRED = ("CLUE_REDIS_URL", "CLUE_OPENROUTER_API_KEY", "CLUE_METRICS_OTLP_ENDPOINT")
 #: Sumble switches that make a service refuse to start without CLUE_SUMBLE_API_KEY, and whether
@@ -67,6 +70,7 @@ NOT_LOCAL = (
     "CLUE_APP_ORIGIN",
     "CLUE_DESIGN_API_BASE_URL",
     "LUMEN_API_ORIGIN",
+    "CLUE_PAGES_SYSTEM_SUFFIX",
 )
 
 
@@ -102,6 +106,21 @@ def problems(env: dict[str, str], role: str) -> list[str]:
     for name in NOT_LOCAL:
         if _local(env.get(name, "")):
             found.append(f"{name} points at localhost")
+    suffix = env.get("CLUE_PAGES_SYSTEM_SUFFIX", "").strip().lower()
+    if suffix and suffix != LEGACY_PAGES_SUFFIX:
+        if suffix == "cluehq.ai" or suffix.endswith(".cluehq.ai"):
+            found.append(
+                "CLUE_PAGES_SYSTEM_SUFFIX must be pages.cluehq.ai or a hostname on the published "
+                f"pages' own domain, never another cluehq.ai name (is {suffix!r})"
+            )
+        legacy = env.get("CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES")
+        if legacy is not None and LEGACY_PAGES_SUFFIX not in [
+            part.strip().lower() for part in legacy.split(",")
+        ]:
+            found.append(
+                "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES must keep pages.cluehq.ai once published pages "
+                "move to their own domain (the custom-domain reservation depends on it)"
+            )
     for name, value in env.items():
         # ${{…}} is a Railway reference and is resolved; a bare ${…} is a shell expansion that
         # neither Railway nor docker's env_file performs — the process would get the literal text.

@@ -11,6 +11,7 @@ WORKDIR /workspace/apps/frontend
 COPY apps/frontend/package.json apps/frontend/package-lock.json ./
 COPY apps/frontend/packages/design-system/package.json ./packages/design-system/package.json
 COPY apps/frontend/packages/site-kit/package.json ./packages/site-kit/package.json
+COPY apps/frontend/packages/site-editor/package.json ./packages/site-editor/package.json
 RUN npm ci
 
 

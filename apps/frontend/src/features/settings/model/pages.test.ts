@@ -57,3 +57,7 @@ test("a label change refused after the first publish has its own copy", () => {
   assert.equal(typeof REFUSAL_MESSAGES.label_locked, "string");
   assert.ok(REFUSAL_MESSAGES.label_locked.length > 0);
 });
+
+test("a reserved hostname names Clue's own domains, since both are reserved after the move", () => {
+  assert.equal(REFUSAL_MESSAGES.hostname_reserved, "Hostnames under Clue's own domains cannot be connected.");
+});

@@ -399,6 +399,13 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "design_record_diagnostics": (AgentRole.DESIGN,),
     "design_redo_document": (AgentRole.DESIGN,),
     "design_redo_web_document": (AgentRole.DESIGN,),
+    # Wave 2 Lane A (Contract 2): the Puck site writes. Registered UNGRANTED, on the ad-assets
+    # lane's footing: no model names them. The editor's site routes invoke them as the person, and
+    # the site turn's executor persists the agent's finished request through design_write_site
+    # from code. Granting any of them to a role later is a reviewed design profile bump.
+    "design_write_site": (),
+    "design_undo_site": (),
+    "design_redo_site": (),
     "design_replace_scene": (AgentRole.DESIGN,),
     "design_rollback_web_publish": (AgentRole.DESIGN,),
     "design_set_agent_instructions": (AgentRole.DESIGN,),

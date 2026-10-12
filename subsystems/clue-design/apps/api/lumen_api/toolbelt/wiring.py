@@ -263,6 +263,8 @@ def design_tool_host(
     compiler_worker_path: Callable[[], Path],
     compiler_timeout_seconds: Callable[[], float],
     compile_fn: Callable[[], Callable[..., dict[str, Any]]],
+    site_brand_loader: Callable[[], Callable[..., Any]] | None = None,
+    site_section_loader: Callable[[], Callable[..., Any]] | None = None,
     ensure_workspace: bool = True,
 ) -> DesignToolHost:
     """Build the design app's tool host from its already-resolved collaborators."""
@@ -280,6 +282,8 @@ def design_tool_host(
         compiler_worker_path=compiler_worker_path,
         compiler_timeout_seconds=compiler_timeout_seconds,
         compile_fn=compile_fn,
+        site_brand_loader=site_brand_loader,
+        site_section_loader=site_section_loader,
     )
 
 

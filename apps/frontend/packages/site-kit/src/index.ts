@@ -22,3 +22,4 @@ export { makeConfig, type ConfigOptions, type EditorParts } from "./config";
 export { makeKit, type AgentSectionModule, type Kit } from "./agent-kit";
 export { SiteFooter, SiteHeader, logoFiles, sellerLogo, type FooterProps, type HeaderProps, type ShellData } from "./shell";
 export { surfaceClass, type AnySurface } from "./sections";
+export { RenderRefusal, renderSitePages, sectionPropsSchema, siteRoutes, type RenderedSitePage, type StoredSite } from "./render-core";

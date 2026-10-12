@@ -12,6 +12,7 @@ The trial stays in `trials/puck-spike/` as the frozen reference.
 | Import | What it gives |
 |---|---|
 | `@clue/site-kit` | `brandData` and the brand types; `makeConfig` (the Puck config: our sections, the shell, the seller's cloned sections and the site's agent-written sections); `themeCss`; `fillClone`; the page contract (`PageSchema`, `pageSchemaWith`, `ShellSchema`, `COMPONENT_SCHEMAS`, `formatIssues`); `makeKit` and `AgentSectionModule` |
+| `@clue/site-kit` (render-core) | `renderSitePages`, `sectionPropsSchema`, `siteRoutes`: the server render's React half, which `dist/render-browser.js` runs inside the design API's hardened Chromium page |
 | `@clue/site-kit/editor` | `CloneEditor` and `AssetPicker`, passed to `makeConfig` as `editor` so published pages never bundle them |
 | `@clue/site-kit/validate` | `validateSite(files, brand, agentSections, images?)`: the agent's validator (contracts only) |
 | `@clue/site-kit/catalog` | `buildCatalog(brand, seller)`: the agent's catalog as `{relative path: markdown}` (`catalog/index.md`, `catalog/clones/<id>.md`, `catalog/sections.md`, `brand/brand.md`) |

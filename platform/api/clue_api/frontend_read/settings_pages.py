@@ -34,6 +34,7 @@ from clue_spine.hostnames import (
     get_custom_hostname,
     hostname_exists,
     insert_custom_hostname,
+    parse_suffixes,
     public_origin,
     record_custom_hostname_check,
     replace_system_label,
@@ -298,7 +299,9 @@ class PagesSettingsService:
     async def connect(self, workspace_id: str, raw_hostname: str) -> PagesSettingsReadWire:
         try:
             hostname = validate_custom_hostname(
-                raw_hostname, system_suffix=self._settings.pages_system_suffix
+                raw_hostname,
+                system_suffix=self._settings.pages_system_suffix,
+                legacy_suffixes=parse_suffixes(self._settings.pages_legacy_system_suffixes),
             )
         except HostnameRefused as refused:
             raise _refusal(422, refused.code, refused.message) from refused

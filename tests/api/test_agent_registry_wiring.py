@@ -314,7 +314,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # addresses they replace drop to role-unavailable.
     # 2026-10-05 installs `read_account_research@3` for the design role (168 -> 169); head-of-abm
     # does not pin it, so from this view it is role-unavailable.
-    assert len(by_address) == 169
+    # + design_write_site@1, design_undo_site@1, design_redo_site@1, ungranted (Wave 2 Lane A)
+    assert len(by_address) == 172
     assert by_address["launch_arv2_discovery@2"].status is AgentCapabilityStatus.AVAILABLE
     assert by_address["launch_arv2_discovery@1"].status is AgentCapabilityStatus.ROLE_UNAVAILABLE
     assert by_address["read_discovery_run@3"].status is AgentCapabilityStatus.AVAILABLE
@@ -436,7 +437,8 @@ def test_head_resource_map_is_exhaustive_generated_and_structurally_minimal(
     # web_search@1 (2026-09-22): granted at head-of-abm@v62 (165 -> 166).
     # launch_arv2_discovery@2 (2026-09-30) (166 -> 167) and read_discovery_run@3 (167 -> 168),
     # both granted at head-of-abm@v70.
-    assert len(by_address) == 169  # + read_account_research@3 (2026-10-05)
+    # + design_write_site@1, design_undo_site@1, design_redo_site@1, ungranted (Wave 2 Lane A)
+    assert len(by_address) == 172  # + read_account_research@3 (2026-10-05)
     assert by_address["web_search@1"].status is AgentCapabilityStatus.AVAILABLE
     for address in (
         "create_thread@1",

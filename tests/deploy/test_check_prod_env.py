@@ -393,3 +393,41 @@ def test_the_integration_pilot_path_turns_sumble_on_by_default(role: str) -> Non
         "CLUE_SUMBLE_COMMITTEE_ACQUISITION_ENABLED": "false",
     }
     assert check.problems(off, role) == []
+
+
+def test_the_pages_suffix_may_move_to_its_own_domain() -> None:
+    env = {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": "clue-pages.example"}
+    assert check.problems(env, "platform-api") == []
+
+
+def test_the_pages_suffix_never_moves_to_another_cluehq_name_or_localhost() -> None:
+    for value in ("pages2.cluehq.ai", "cluehq.ai"):
+        env = {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": value}
+        assert any(
+            "CLUE_PAGES_SYSTEM_SUFFIX must be pages.cluehq.ai or a hostname on the published "
+            "pages' own domain" in p
+            for p in check.problems(env, "platform-api")
+        ), value
+    env = {**GOOD_PLATFORM, "CLUE_PAGES_SYSTEM_SUFFIX": "pages.localhost"}
+    assert any(
+        "CLUE_PAGES_SYSTEM_SUFFIX points at localhost" in p
+        for p in check.problems(env, "platform-api")
+    )
+    missing = {k: v for k, v in GOOD_PLATFORM.items() if k != "CLUE_PAGES_SYSTEM_SUFFIX"}
+    assert any(
+        "CLUE_PAGES_SYSTEM_SUFFIX must be set" in p for p in check.problems(missing, "platform-api")
+    )
+
+
+def test_after_the_move_the_old_suffix_stays_a_legacy_suffix() -> None:
+    env = {
+        **GOOD_PLATFORM,
+        "CLUE_PAGES_SYSTEM_SUFFIX": "clue-pages.example",
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "old.example",
+    }
+    assert any(
+        "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES must keep pages.cluehq.ai" in p
+        for p in check.problems(env, "platform-api")
+    )
+    kept = {**env, "CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES": "old.example,pages.cluehq.ai"}
+    assert check.problems(kept, "platform-api") == []
