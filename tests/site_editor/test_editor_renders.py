@@ -31,6 +31,13 @@ def test_the_editor_renders_a_site_and_reports_selections(
     ]
     assert own_code == [], f"the editor's own code must run under its policy: {own_code}"
 
+    # The canvas's own scroll at the moment of the click, which is when the frame measures the
+    # section. (Read later it can differ: selecting a section can reflow the page above it, and
+    # the browser's scroll anchoring then moves #root.)
+    frame.evaluate(
+        "document.addEventListener('click', () => {"
+        " window.__scrollAtClick = document.getElementById('root').scrollTop; }, true)"
+    )
     # force: with drag off (C13), dnd-kit marks every Puck item aria-disabled, and Playwright treats
     # everything inside an aria-disabled element as not clickable. A real click still selects.
     frame.get_by_text(PROOF).first.click(force=True)
@@ -43,6 +50,17 @@ def test_the_editor_renders_a_site_and_reports_selections(
     )
     assert any(
         m["type"] == "annotate" and m["payload"]["componentId"] == "proof" for m in received(page)
+    )
+    # The canvas scrolls inside #root, never the window: document coordinates must add its scroll.
+    geometry = [
+        m
+        for m in received(page)
+        if m["type"] == "annotate" and m["payload"]["componentId"] == "proof"
+    ][-1]["payload"]["geometry"]
+    scroll_top = frame.evaluate("window.__scrollAtClick")
+    assert scroll_top > 0, "the proof section is below the fold, so clicking it scrolls the canvas"
+    assert abs(geometry["document"]["top"] - (geometry["viewport"]["top"] + scroll_top)) < 1, (
+        f"document coordinates must include the canvas's scroll ({scroll_top}): {geometry}"
     )
 
     frame.locator(".brand-root > header").click()

@@ -48,7 +48,9 @@ export function EditorApp({ boot }: { boot: BootContext }) {
     const onClick = (event: MouseEvent) => {
       const { action, preventDefault } = clickIntent(event.target, controller.getState().mode);
       if (preventDefault) event.preventDefault();
-      const scroll = { x: window.scrollX, y: window.scrollY };
+      // The canvas scrolls inside #root (styles.css), never the window.
+      const scroller = document.getElementById("root");
+      const scroll = { x: scroller?.scrollLeft ?? 0, y: scroller?.scrollTop ?? 0 };
       if (action.kind === "navigate") controller.linkClicked(action.href);
       if (action.kind === "shell") {
         event.stopPropagation();
