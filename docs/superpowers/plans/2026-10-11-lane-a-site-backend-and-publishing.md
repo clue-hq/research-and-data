@@ -67,7 +67,7 @@ recommendation, and each answer changes only the place named.
   does not hold, or holds as `draft` (Task 20). A section that was `deprecated` after the page used
   it: (a) still publishes (WebDoc's posture: a retirement never breaks published work), or (b) is
   refused. **Recommended: (a).** Changing it touches only `_PUBLISHABLE_CLONE_STATUSES`.
-- **Q6. The custom-domain refusal copy in Settings → Pages.** The app shows "Hostnames under
+- **Q6 — ANSWERED 2026-10-12: the recommended copy is approved (Task 23 Step 9).** **The custom-domain refusal copy in Settings → Pages.** The app shows "Hostnames under
   cluehq.ai cannot be connected." (`apps/frontend/src/features/settings/model/pages.ts:80`). After
   the move the new pages domain is refused as well. **Recommended copy:** "Hostnames under Clue's
   own domains cannot be connected." It is user-facing, so Task 23 Step 9 changes it only after your
@@ -7930,11 +7930,20 @@ git add libs/clue-config/clue_config/settings.py .env.example libs/clue-spine/cl
 git commit -m "pages: keep cluehq.ai reserved after the domain move; a dry-run-by-default script moves system hostnames (label kept)"
 ```
 
-- [ ] **Step 9: Only after the founder approves Q6's copy:** in
-  `apps/frontend/src/features/settings/model/pages.ts:80`, set
-  `hostname_reserved: "Hostnames under Clue's own domains cannot be connected.",`, run
-  `cd apps/frontend && npx tsx --test src/features/settings/model/pages.test.ts` (expected: pass),
-  and commit it on its own:
+- [ ] **Step 9: The Settings → Pages refusal copy (founder approved Q6's copy, 2026-10-12).** Append
+  to `apps/frontend/src/features/settings/model/pages.test.ts` (import `REFUSAL_MESSAGES` from
+  `./pages` if the file does not already):
+
+```ts
+test("a reserved hostname names Clue's own domains, since both are reserved after the move", () => {
+  assert.equal(REFUSAL_MESSAGES.hostname_reserved, "Hostnames under Clue's own domains cannot be connected.");
+});
+```
+  Run `cd apps/frontend && npx tsx --test src/features/settings/model/pages.test.ts` (expected: the new
+  test FAILS with the old copy). Then in `apps/frontend/src/features/settings/model/pages.ts:80` set
+  `hostname_reserved: "Hostnames under Clue's own domains cannot be connected.",`, re-run (expected:
+  pass), run the frontend gate (`npm run design-system:build && npm run lint && npm run build`, from
+  `apps/frontend`), and commit it on its own:
   `git commit -am "settings: the custom-domain refusal names Clue's own domains (both are reserved)"`.
 
 ### Task 24: The edge Worker answers an old `*.pages.cluehq.ai` host with a 301 to the new domain

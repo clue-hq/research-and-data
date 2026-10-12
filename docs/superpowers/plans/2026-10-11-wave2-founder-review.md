@@ -281,3 +281,5 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   **Approved publish messages** (replacing Lane A's "cloned section frag_…" wording):
   - not approved yet: `This page uses a section that isn't approved yet: "<section name>". Approve your brand kit, then publish again.`
   - not in the library: `This page uses a section that isn't in your brand's library. Ask the agent to replace it, then publish again.`
+- 2026-10-12 — **Q6:** approved: "Hostnames under Clue's own domains cannot be connected." (Lane A
+  Task 23 Step 9, now unconditional.)
