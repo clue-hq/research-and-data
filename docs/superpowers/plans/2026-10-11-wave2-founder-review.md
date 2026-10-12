@@ -254,3 +254,8 @@ Built from existing chat-shell styles and primitives; where no existing style fi
     for each measured style letter-spacing, case, underline, transforms, cursor, icons. Clones carry
     these already; the measured values serve agent-written sections. Only CSS motion is usable on a
     script-free published page; JavaScript-driven effects are recorded as notes, not reproduced.
+- 2026-10-12 — **Brand-scoped tokens** (founder's design, replaces "store raw values beside each
+  recipe"): code walks every measured style and property in every state; an exact match to an
+  existing token in this kit is reused, otherwise a new token is added to THIS brand's kit only,
+  with a stable code-made name from where it was measured (e.g. `button.solid-2.fill`) and its
+  provenance. Recipes then name those tokens, so documents and agents keep naming tokens only.
