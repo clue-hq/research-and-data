@@ -15,9 +15,10 @@ module loads verbatim and must never rewrite).
 
 **Nothing here may fail an ingestion** (plan constraint 6). A refusal, an invalid
 brief, a hung gateway and an agent that throws all land as a diagnostic on the
-kit and a briefless publish. With no agent configured the stage is *silent* — no
-call, no diagnostic, no `brief` key — so an un-keyed deployment publishes exactly
-the kit it publishes today.
+kit and a briefless publish. With no agent configured the stage makes no call and
+writes no `brief` key; the pipeline flags the kit briefless (LUMI0904), because a
+briefless kit offers only the standard button though its styles were measured
+(plan Q-A9-2).
 
 Diagnostic codes:
 
@@ -25,6 +26,7 @@ Diagnostic codes:
 * ``LUMI0902`` — the agent answered, but the answer failed `BrandBrief@1`
   validation or the token law. Never trusted, never partially kept.
 * ``LUMI0903`` — the stage errored entirely (gateway, import, anything else).
+* ``LUMI0904`` — the stage did not run (off, or no model). The kit is briefless.
 """
 
 from __future__ import annotations

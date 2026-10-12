@@ -10,7 +10,8 @@ The ONLY thing replaced is the SSRF guard's refusal of loopback: `guard_url` (ca
 name rendered.py imported, which the route's `_resolve_guard_url` also resolves) lets exactly
 `http://127.0.0.1:<this server's port>` through and hands every other URL to the real guard.
 
-Run keyless (no provider key, so no model call): the brief stage is unconfigured and stays silent.
+Run keyless (no provider key, so no model call): the brief stage is unconfigured and the published
+kit is flagged briefless (LUMI0904).
 A scenario that exposes a real defect stays failing as `xfail(strict=True, reason="A9 scenario: …")`.
 
 Set `A9_SCENARIO_KIT_OUT=<path>` to have scenario 1 write the kit detail it read (the body of
@@ -288,10 +289,11 @@ def test_scenario_1_the_extraction_publishes_every_measured_style_state_and_moti
     assert detail["brand_kit"]["id"] == job["brand_kit_id"] and detail["brand_kit"]["source"] == "website"
 
     # The brief stage ran with no key: it was skipped (NullBriefAgent), the kit carries no brief and
-    # says nothing about one — no LUMI0901/0902/0903 anywhere on the published version.
+    # is flagged briefless with LUMI0904 — and none of LUMI0901/0902/0903 (the stage-ran codes).
     assert "brief" not in kit
     codes = {d.get("code") for view in detail["diagnostics"].values() for d in view}
     assert not (codes & BRIEF_CODES), codes
+    assert "LUMI0904" in codes, codes
 
     # The two code-owned sections ride the published kit, the measured one exactly as validated.
     assert kit["grammar_audit"]["schema_version"] == 1

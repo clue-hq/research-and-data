@@ -547,6 +547,16 @@ def _maybe_write_brief(
         # `generate_brief` re-checks this; asking here too keeps an unconfigured
         # stage from reading (and base64-ing) every stored screenshot first.
         if not getattr(agent, "active", False):
+            diagnostics.append(
+                {
+                    "code": "LUMI0904",
+                    "severity": "warning",
+                    "message": (
+                        "no brief: the brief stage is off or has no model, so this kit offers "
+                        "only the standard button; its measured styles are still on the Brand page"
+                    ),
+                }
+            )
             return None
         request = build_brief_request(
             evidence, brand_kit, screenshots=_brief_screenshots(evidence, resolve_bytes)

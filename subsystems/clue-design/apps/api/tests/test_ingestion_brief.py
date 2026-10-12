@@ -11,8 +11,9 @@ Three laws are tested here rather than trusted:
   not carry is refused against the kit's own token set.
 * **fail-soft** — refusal, invalid output, or an agent that throws all land as a
   diagnostic and a briefless kit. None of them may fail an ingestion.
-* **silence when unconfigured** — with no brief agent there is no diagnostic and
-  no `brief` key: byte-identical to the pre-slice-3 pipeline.
+* **briefless when unconfigured** — with no brief agent there is no call and no
+  `brief` key, and the kit is flagged briefless with one warning, LUMI0904
+  (plan Q-A9-2).
 """
 
 from __future__ import annotations
@@ -384,6 +385,29 @@ def test_an_unconfigured_brief_stage_is_silent() -> None:
     assert diagnostics == []
 
 
+def test_a_kit_published_without_the_brief_stage_is_flagged_briefless() -> None:
+    """Plan Q-A9-2: a briefless kit offers only the standard button though its styles were
+    measured, so the kit says it is briefless (LUMI0904) rather than leaving only a missing key."""
+    from lumen_ingestion.pipeline import _maybe_write_brief
+
+    class Inactive:
+        active = False
+
+        def write_brief(self, request):
+            raise AssertionError("an inactive agent is never asked")
+
+    diagnostics: list[dict] = []
+    brief = _maybe_write_brief(
+        _evidence(),
+        _kit(),
+        resolve_bytes=lambda _: None,
+        brief_agent=Inactive(),
+        diagnostics=diagnostics,
+    )
+    assert brief is None
+    assert [(d["code"], d["severity"]) for d in diagnostics] == [("LUMI0904", "warning")]
+
+
 def test_a_refusing_agent_leaves_the_kit_briefless_with_a_diagnostic() -> None:
     class Refuser:
         active = True
@@ -637,8 +661,8 @@ def test_the_published_approved_kit_carries_the_brief(
 def test_an_unconfigured_stage_publishes_a_kit_with_no_brief_key(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Byte-stability: no agent → the kit is exactly the kit today's pipeline
-    publishes, with no `brief` key and no diagnostic about one."""
+    """No agent → no `brief` key, and the kit is flagged briefless (LUMI0904,
+    plan Q-A9-2) — never with a code that says the stage ran."""
     job = _run_website_ingestion_through_the_route(
         client,
         monkeypatch,
@@ -648,7 +672,7 @@ def test_an_unconfigured_stage_publishes_a_kit_with_no_brief_key(
     detail = client.get(f"/brand-kits/{job['brand_kit_id']}").json()
     assert "brief" not in detail["brand_kit_json"]
     codes = {d.get("code") for d in detail["diagnostics"]["audit"]}
-    assert not {code for code in codes if str(code).startswith("LUMI09")}
+    assert {code for code in codes if str(code).startswith("LUMI090")} == {"LUMI0904"}
 
 
 def test_a_refused_brief_still_publishes_the_kit(
