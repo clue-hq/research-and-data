@@ -586,3 +586,7 @@ model's own recipe slots and notes use the exact tokens):
   blue; design point DR5 approved. (Lane C Task 6 as written.)
 - 2026-10-12 — **Q16:** (a) a route typed into the URL bar that is not a page puts the current route
   back and says nothing. (Lane C Task 14 as written.)
+- 2026-10-12 — **Q14:** (a) version rows read "Current version / Version N", newest first, as
+  designed. (Lane C Task 13 as written.)
+- 2026-10-12 — **Q17:** (a) subagent-driven execution: a fresh Opus implementer per task, the
+  controller reviews each task personally, then one whole-branch review.

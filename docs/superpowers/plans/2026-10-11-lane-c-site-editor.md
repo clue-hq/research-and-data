@@ -30,7 +30,7 @@ Each question has a recommendation. The plan's code implements the recommendatio
 - **Q3 — ANSWERED 2026-10-12: (a)** (Task 2 Step 9 as written). **Share, Publish and Export for sites before Lane A's A7 (publish) and A8 (export) land.**
   - (a) Treat `site` exactly like `web` in the Share menu and the library's export (one rule, `isWebsiteKind`). **Recommended**: no workspace is in the site flag until Wave 4, so nobody sees a backend refusal in between, and nothing has to be re-wired later. Task 2 Step 9 implements it.
   - (b) Hide Share/Export for sites until A7/A8 land. If chosen, drop Task 2 Step 9 and keep the `kind === "web"` checks.
-- **Q4. Version rows in the action menu.** The designed submenu shows "Current version / Version N".
+- **Q4 — ANSWERED 2026-10-12: (a)** (Task 13 as written). **Version rows in the action menu.** The designed submenu shows "Current version / Version N".
   - (a) Keep exactly those labels, newest first (Task 13). **Recommended.**
   - (b) Also show who made each version (the agent or a person) and when — needs a design.
 - **Q5 — ANSWERED 2026-10-12: (a), and DR5 approved** (Task 6 as written). **Highlighting a selected header or footer on the canvas.** Puck draws its own outline for page sections, but the shell is not a Puck component.
