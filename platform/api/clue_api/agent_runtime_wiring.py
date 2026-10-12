@@ -14,6 +14,7 @@ from pathlib import PurePosixPath
 from typing import Any, Literal, cast
 from uuid import UUID, uuid5
 
+import structlog
 from langchain.tools import ToolRuntime
 from langchain_core.callbacks import AsyncCallbackHandler, BaseCallbackHandler
 from langchain_core.messages import BaseMessage
@@ -180,8 +181,44 @@ def resolve_model_call_role(
     return constitution_role
 
 
+log = structlog.get_logger(__name__)
+
+#: Above this many input tokens the model bills the whole request at 2x input and cache rates
+#: and 1.5x output (OpenAI model page for GPT-6.1 Sol, read 2026-10-13).
+LONG_CONTEXT_INPUT_TOKENS: Mapping[str, int] = {"openai/gpt-6.1-sol": 272_000}
+#: An appended request that reads less than this share of the previous request from the
+#: provider's cache is reported: the prefix was re-written at the cache-write price.
+CACHE_HIT_FLOOR = 0.5
+#: Below this previous request size a miss costs too little to report.
+CACHE_AUDIT_MIN_TOKENS = 20_000
+
+
+def request_shape(previous: Sequence[str], current: Sequence[str]) -> tuple[str, int, int]:
+    """How a model request relates to the previous one of its turn.
+
+    ``("append", n, n)`` when the previous request's ``n`` messages are a prefix of this one
+    (the provider can serve them from its cache); ``("changed", i, n)`` when message ``i`` of the
+    previous ``n`` differs (every message from ``i`` on is re-written); ``("first", 0, 0)`` for
+    the turn's first request.
+    """
+    if not previous:
+        return ("first", 0, 0)
+    common = 0
+    while common < min(len(previous), len(current)) and previous[common] == current[common]:
+        common += 1
+    if common == len(previous):
+        return ("append", common, len(previous))
+    return ("changed", common, len(previous))
+
+
 class DurableAgentModelCallHandler(AsyncCallbackHandler):
-    """Persist model bodies as artifacts and append a body-free call receipt."""
+    """Persist model bodies as artifacts and append a body-free call receipt.
+
+    It also audits the provider's prompt cache on every call (2026-10-13): whether the request
+    appended to the previous one, how much of it the provider read from its cache, and whether
+    it crossed the model's long-context price tier. Run 6 (2026-10-12) paid $9.49 of $17.73 in
+    cache re-writes that nothing reported until the bill; each would have been one warning here.
+    """
 
     def __init__(
         self,
@@ -208,6 +245,11 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         # Messages this handler saved, by content digest: a conversation is append-only, so each
         # message is saved once per turn and every later call only names it.
         self._saved_messages: dict[str, str] = {}
+        # The cache audit: the previous call's message keys and real input size, and each
+        # pending call's shape against them.
+        self._previous_keys: list[str] = []
+        self._previous_input_tokens = 0
+        self._shapes: dict[UUID, tuple[str, int, int]] = {}
 
     async def on_chat_model_start(
         self,
@@ -259,6 +301,9 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
                 time.monotonic(),
                 input_ref,
             )
+            flat = [key for row in keys for key in row]
+            self._shapes[run_id] = request_shape(self._previous_keys, flat)
+            self._previous_keys = flat
 
     async def on_llm_end(
         self,
@@ -302,6 +347,12 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
         # Decimal; USD is the unit every cost read reports in, at the column's six places.
         cents, cost_source = cost_cents_from_metadata(response_metadata)
         cost_usd = None if cents is None else (cents / Decimal(100)).quantize(Decimal("0.000001"))
+        self._audit_cache(
+            sequence=pending[0],
+            run_id=run_id,
+            input_tokens=int(usage.get("input_tokens", 0)),
+            cache_read_tokens=cache_read_tokens,
+        )
         output_ref = await self._artifacts.persist_body(
             workspace_id=self._request.constitution.workspace_id,
             data=response.model_dump_json().encode(),
@@ -336,6 +387,7 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
     ) -> None:
         del kwargs
         pending = self._pending.pop(run_id, None)
+        self._shapes.pop(run_id, None)
         if pending is None:
             return
         # What the provider did, when it is the provider that did something: a refusal or a
@@ -366,6 +418,42 @@ class DurableAgentModelCallHandler(AsyncCallbackHandler):
                 ),
                 what="open",
             )
+
+    def _audit_cache(
+        self, *, sequence: int, run_id: UUID, input_tokens: int, cache_read_tokens: int
+    ) -> None:
+        """Report a request the provider could not serve from its cache, or one past the
+        long-context price tier (class docstring)."""
+        shape, position, previous_messages = self._shapes.pop(run_id, ("first", 0, 0))
+        previous_input = self._previous_input_tokens
+        self._previous_input_tokens = input_tokens
+        fields: dict[str, Any] = {
+            "execution_id": str(self._request.constitution.execution_id),
+            "sequence": sequence,
+            "model": self._requested_model,
+            "shape": shape,
+            "input_tokens": input_tokens,
+            "cache_read_input_tokens": cache_read_tokens,
+            "previous_input_tokens": previous_input,
+        }
+        if shape == "changed":
+            log.warning(
+                "model_call.request_not_append",
+                changed_at=position,
+                previous_messages=previous_messages,
+                **fields,
+            )
+        elif (
+            shape == "append"
+            and previous_input >= CACHE_AUDIT_MIN_TOKENS
+            and cache_read_tokens < previous_input * CACHE_HIT_FLOOR
+        ):
+            log.warning("model_call.cache_miss_on_append", **fields)
+        else:
+            log.info("model_call.cache", **fields)
+        limit = LONG_CONTEXT_INPUT_TOKENS.get(self._requested_model)
+        if limit is not None and input_tokens > limit:
+            log.warning("model_call.long_context_tier", limit=limit, **fields)
 
     async def _with_incidents(
         self, action: Callable[[AsyncConnection], Awaitable[object]], *, what: str
