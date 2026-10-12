@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import io
 import json
@@ -10,6 +11,7 @@ import threading
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -94,7 +96,8 @@ def test_a_web_document_is_not_exported_as_a_site(client: TestClient, site: dict
 # Whole exports over the real pieces: the composed app over the Postgres test database, this test's
 # blob store, the real site-kit render bundles, the real cleaner and real (hardened) Chromium. Each
 # one downloads the ZIP or the PDF over HTTP and reads it the way the person holding the file does:
-# unzipped and opened from disk, or opened in a PDF reader.
+# unzipped and opened from disk (its assets), unzipped and served by a static host (its pages and their
+# links: the export's contract, as for the web ZIP), or opened in a PDF reader.
 
 _ASSET_REF = re.compile(r"/asset-store/([0-9a-f]{64})")
 _FONT_FACE = re.compile(r"@font-face\s*\{([^}]*)\}")
@@ -148,19 +151,25 @@ def colour_of(data: bytes) -> tuple[int, int, int]:
     return Image.open(io.BytesIO(data)).convert("RGB").getpixel((0, 0))
 
 
-# a. The ZIP works offline --------------------------------------------------------------------------
+# a. The ZIP: its assets load from disk, its pages navigate on a static host -----------------------
 
 
 @contextmanager
-def offline_browser() -> Iterator[tuple[Any, list[str]]]:
-    """A plain Chromium page for reading the unzipped folder from disk, with every http(s) request
-    refused AND counted (the routed ones and any the page attempts outside the route)."""
+def offline_browser(allowed_origin: str | None = None) -> Iterator[tuple[Any, list[str]]]:
+    """A plain Chromium page for reading the unzipped folder, with every http(s) request refused AND
+    counted (the routed ones and any the page attempts outside the route), except those to
+    ``allowed_origin`` (the local static host serving the folder, when there is one)."""
     from playwright.sync_api import sync_playwright
 
     attempted: list[str] = []
 
+    def foreign(url: str) -> bool:
+        if not url.startswith(("http://", "https://")):
+            return False
+        return allowed_origin is None or not (url == allowed_origin or url.startswith(allowed_origin + "/"))
+
     def refuse_the_network(route: Any) -> None:
-        if route.request.url.startswith(("http://", "https://")):
+        if foreign(route.request.url):
             attempted.append(route.request.url)
             route.abort()
         else:
@@ -173,7 +182,7 @@ def offline_browser() -> Iterator[tuple[Any, list[str]]]:
             context = browser.new_context(viewport={"width": 1280, "height": 6000})
             context.route("**/*", refuse_the_network)
             page = context.new_page()
-            page.on("request", lambda request: attempted.append(request.url) if request.url.startswith(("http://", "https://")) else None)
+            page.on("request", lambda request: attempted.append(request.url) if foreign(request.url) else None)
             yield page, attempted
         finally:
             browser.close()
@@ -203,22 +212,47 @@ def test_the_zip_opened_from_disk_shows_every_image_and_reaches_nothing(client: 
     assert attempted == [], attempted
 
 
-def test_the_home_pages_nav_link_reaches_the_analysis_page_from_disk(client: TestClient, tmp_path: Path) -> None:
-    stored_every_image(client, "site_offline_nav")
-    root = unzipped(client, "site_offline_nav", tmp_path / "unzipped")
-    with offline_browser() as (page, attempted):
-        page.goto((root / "index.html").as_uri(), wait_until="load")
-        # Following the header's nav link, as a reader of the unzipped folder does.
-        nav = 'header a:has-text("The analysis")'
-        href = page.get_attribute(nav, "href")
-        page.click(nav)
-        page.wait_for_load_state("load")
-        assert page.url == (root / "analysis" / "index.html").as_uri(), (
-            f"the nav link href={href!r} took the reader to {page.url}, not to the unzipped analysis page"
-        )
-        assert ANALYSIS_TEXT in " ".join(page.inner_text("body").split())
-        assert all(image["complete"] and image["width"] > 0 for image in images_of(page))
-    assert attempted == [], attempted
+class _QuietFolderHandler(SimpleHTTPRequestHandler):
+    def log_message(self, *args: object) -> None:
+        return None
+
+
+def test_the_home_pages_nav_link_reaches_the_analysis_page_on_a_static_host(client: TestClient, tmp_path: Path) -> None:
+    # The ZIP's links are folder-form (`/analysis/`, `/`): the export's contract is a static host
+    # serving the folder at its root (web_export.rewrite_zip_links, as for the web ZIP). A Home link
+    # beside "The analysis" in the site's own nav gives the analysis page a way back.
+    site = garner_site_without_clones("site_static_host")
+    site["shell"]["header"]["nav"] = [{"label": "Home", "href": "/"}, {"label": "The analysis", "href": "/analysis"}]
+    stored_every_image(client, "site_static_host", site)
+    root = unzipped(client, "site_static_host", tmp_path / "unzipped")
+    server = ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_QuietFolderHandler, directory=str(root)))
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        origin = f"http://127.0.0.1:{server.server_address[1]}"
+        with offline_browser(allowed_origin=origin) as (page, attempted):
+            page.goto(f"{origin}/", wait_until="load")
+            assert HOME_TEXT in " ".join(page.inner_text("body").split())
+            assert all(image["complete"] and image["width"] > 0 for image in images_of(page))
+
+            page.click('header a:has-text("The analysis")')
+            page.wait_for_load_state("load")
+            assert page.url == f"{origin}/analysis/", page.url
+            assert ANALYSIS_TEXT in " ".join(page.inner_text("body").split())
+            images = images_of(page)
+            assert images and all(image["complete"] and image["width"] > 0 for image in images), images
+            assert all(image["src"].startswith(f"{origin}/assets/") for image in images), images
+
+            page.click('header a:has-text("Home")')
+            page.wait_for_load_state("load")
+            assert page.url == f"{origin}/", page.url
+            assert HOME_TEXT in " ".join(page.inner_text("body").split())
+        assert attempted == [], attempted
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
 
 
 # b. Every page, its policy and its assets ---------------------------------------------------------
