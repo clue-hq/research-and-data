@@ -249,3 +249,8 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   - The agent's `buttonLook` description: approved. CtaBand gets the field too (taken as yes).
   - A plan section replacing Lane A's brand-fidelity block (Tasks 4–7) plus the extraction work is
     being drafted; it comes back for review with the final brand.md wording.
+  - **Motion and behaviour** (2026-10-12): capture every behaviour and animation the site shows —
+    transitions, state changes (hover/pressed/focus), keyframe animations, CSS reveal-on-scroll; and
+    for each measured style letter-spacing, case, underline, transforms, cursor, icons. Clones carry
+    these already; the measured values serve agent-written sections. Only CSS motion is usable on a
+    script-free published page; JavaScript-driven effects are recorded as notes, not reproduced.
