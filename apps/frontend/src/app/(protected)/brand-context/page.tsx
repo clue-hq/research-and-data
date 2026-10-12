@@ -107,6 +107,7 @@ export default async function BrandContextPage({ searchParams }: BrandContextPag
         section: section.success ? section.data : "colors",
       }}
       kit={view.kit}
+      measured={view.measured}
       onboarding={onboarding}
       workspace={view.workspace}
     />

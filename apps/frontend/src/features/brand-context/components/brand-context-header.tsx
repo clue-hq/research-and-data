@@ -40,7 +40,10 @@ export function BrandContextHeader({
   const labels = {
     assets: "Assets",
     colors: "Colors",
+    components: "Components",
     knowledge: controller.selectedDocument?.name ?? "Knowledge",
+    motion: "Motion",
+    spacing: "Spacing",
     typography: "Typography",
   };
 

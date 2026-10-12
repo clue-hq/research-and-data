@@ -9,7 +9,8 @@
     "./validate": "./src/validate.ts",
     "./catalog": "./src/catalog.ts",
     "./check-section": "./src/check-section.ts",
-    "./site-document": "./src/site-document.ts"
+    "./site-document": "./src/site-document.ts",
+    "./brand-view": "./src/brand-view.ts"
   },
   "scripts": { "test": "tsx --test test/*.test.ts test/*.test.tsx", "typecheck": "tsc --noEmit", "build": "node bin/build-bundles.mjs" },
   "dependencies": { "@puckeditor/core": "0.23.0", "node-html-parser": "^7.1.0", "zod": "^4.4.3" },

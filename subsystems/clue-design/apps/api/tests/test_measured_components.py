@@ -117,9 +117,13 @@ def test_site_kit_fixture_kits_are_current() -> None:
     if not module.BRANDS.exists():
         pytest.skip(f"the spike's brand export is not in this checkout ({module.BRANDS}, gitignored); "
                     "the fixture kits are regenerated from it")
-    for name, text in module.build_all().items():
+    kits = module.build_all()
+    for name, text in kits.items():
         committed = (module.KITS_DIR / name).read_text()
         assert committed == text, f"{name} is stale: run scripts/build_site_kit_brand_fixtures.py"
+    assert module.BRAND_PAGE_FIXTURE.read_text() == module.build_brand_page(kits), (
+        "brand-kit.measured.json is stale: run scripts/build_site_kit_brand_fixtures.py"
+    )
 
 
 def test_the_fixture_band_step_adds_exactly_what_ingestion_adds() -> None:
@@ -184,3 +188,18 @@ def test_a_translucent_token_never_holds_a_band_ink_in_the_fixture_step() -> Non
     assert script._band_ink(holding("#FAF5E680"), band) == "text.band.28241e"
     assert script._band_ink(holding("#FAF5E6"), band) == "text.cream"
     assert script._band_ink(holding("#FAF5E6FF"), band) == "text.cream"
+
+
+def test_the_kit_read_serves_measured_components_and_style_tokens_whole() -> None:
+    """The Brand page reads `GET /brand-kits/{id}` (Task X6); its DTO passes the stored kit through."""
+    from lumen_api.dto import brand_kit_detail_dto
+
+    kit, section = _minted()
+    kit["measured_components"] = section
+    record = {
+        "brand_kit_id": kit["id"], "version": 1, "name": kit["name"], "approval_status": "draft",
+        "brand_kit": kit, "brand_summary": {}, "diagnostics": [], "created_at": None, "updated_at": None,
+    }
+    served = brand_kit_detail_dto(record)["brand_kit_json"]
+    assert served["measured_components"] == section
+    assert served["tokens"]["styles"] and served["tokens"]["styles"] == kit["tokens"]["styles"]

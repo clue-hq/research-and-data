@@ -7,7 +7,7 @@ import {
 } from "./brand-context.repository";
 import { brandKitAssetIds } from "../model/brand-context-mapping";
 import { BrandKitDetailSchema } from "../model/brand-kit";
-import { HARVESTED_ASSET_RECORDS, HARVESTED_BRAND_KIT } from "./__fixtures__/harvest";
+import { HARVESTED_ASSET_RECORDS, HARVESTED_BRAND_KIT, MEASURED_BRAND_KIT } from "./__fixtures__/harvest";
 
 const KIT_ID = "brand_kit_ing_813df4f30f2d429a853dbccae2277a5a";
 
@@ -549,4 +549,36 @@ test("the three registry asset kinds are listed concurrently", async () => {
     designFetch: async () => fetchImpl,
   }).getWorkspace();
   assert.equal(peak, 3);
+});
+
+test("a measured kit brings its measured view, and its minted colours leave Semantic roles", async () => {
+  const detail = MEASURED_BRAND_KIT as { brand_kit: { id: string; version: number; name: string } };
+  const { id, version, name } = detail.brand_kit;
+  const { fetchImpl } = stubDesignApi({
+    "/brand-kits": { body: [{ id, version, name, approval_status: "draft", created_at: null, updated_at: null }] },
+    [`/brand-kits/${id}`]: { body: MEASURED_BRAND_KIT },
+  });
+  const view = await httpBrandContextRepository({
+    clueFetch: () => noPlatformRead,
+    designFetch: async () => fetchImpl,
+  }).getWorkspace();
+  assert.ok(view.measured);
+  assert.equal(view.measured.colorGroups[0].label, "Section backgrounds");
+  const semantic = view.workspace.colorGroups.find((group) => group.id === "semantic")!;
+  assert.ok(!semantic.swatches.some((swatch) => swatch.id === "surface.band.014036"));
+  assert.ok(semantic.swatches.some((swatch) => swatch.id === "surface.brand"));
+});
+
+test("a kit made before measurement, and a failed read, bring no measured view", async () => {
+  const { fetchImpl } = stubDesignApi({
+    "/brand-kits": { body: [{ id: KIT_ID, version: 1, name: "Stripe", approval_status: "draft" }] },
+    [`/brand-kits/${KIT_ID}`]: { body: HARVESTED_BRAND_KIT },
+  });
+  const old = await httpBrandContextRepository({ clueFetch: () => noPlatformRead, designFetch: async () => fetchImpl }).getWorkspace();
+  assert.equal(old.measured, null);
+  const refused = await httpBrandContextRepository({
+    clueFetch: () => noPlatformRead,
+    designFetch: async () => stubDesignApi({ "/brand-kits": { status: 500 } }).fetchImpl,
+  }).getWorkspace();
+  assert.equal(refused.measured, null);
 });

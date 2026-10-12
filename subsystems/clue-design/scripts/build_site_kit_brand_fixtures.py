@@ -2,7 +2,8 @@
 
 Run from subsystems/clue-design (offline: no browser, no model, no database):
   PYTHONPATH=.:apps/api:apps/agent_runtime ../../.venv/bin/python scripts/build_site_kit_brand_fixtures.py
-It writes apps/frontend/packages/site-kit/test/fixtures/kits/<name>.json, and
+It writes apps/frontend/packages/site-kit/test/fixtures/kits/<name>.json and the Brand page's
+apps/frontend/src/features/brand-context/data/__fixtures__/brand-kit.measured.json (Task X6), and
 test_measured_components.test_site_kit_fixture_kits_are_current fails when a committed file differs.
 
 * garner / conduit / altcarbon — the spike's copies of the three real kits, unchanged: kits made
@@ -39,6 +40,10 @@ DESIGN = Path(__file__).resolve().parents[1]
 REPO = DESIGN.parents[1]
 BRANDS = REPO / "trials" / "puck-spike" / "data" / "brands"
 KITS_DIR = REPO / "apps" / "frontend" / "packages" / "site-kit" / "test" / "fixtures" / "kits"
+#: The probe kit as `GET /brand-kits/{id}` serves it, for the Brand page's tests (Task X6).
+BRAND_PAGE_FIXTURE = (
+    REPO / "apps" / "frontend" / "src" / "features" / "brand-context" / "data" / "__fixtures__" / "brand-kit.measured.json"
+)
 CAPTURE = DESIGN / "apps" / "api" / "tests" / "fixtures" / "capture"
 
 #: (index, background, height px) per band, from each kit's stored ingestion evidence.
@@ -168,8 +173,24 @@ def build_all() -> dict[str, str]:
     return {name: json.dumps(kit, indent=1, sort_keys=True, ensure_ascii=False) + "\n" for name, kit in kits.items()}
 
 
+def build_brand_page(kits: dict[str, str]) -> str:
+    """The probe kit through the design API's own detail DTO — the exact body the Brand page reads."""
+    from lumen_api.dto import brand_kit_detail_dto
+
+    kit = json.loads(kits["probe.minted.json"])
+    record = {
+        "brand_kit_id": kit["id"], "version": kit["version"], "name": kit["name"], "approval_status": "draft",
+        "product_ready": False, "source": "website", "brand_kit": kit, "brand_summary": {}, "diagnostics": [],
+        "created_at": None, "updated_at": None,
+    }
+    return json.dumps(brand_kit_detail_dto(record), indent=1, sort_keys=True, ensure_ascii=False) + "\n"
+
+
 if __name__ == "__main__":
     KITS_DIR.mkdir(parents=True, exist_ok=True)
-    for name, text in build_all().items():
+    texts = build_all()
+    for name, text in texts.items():
         (KITS_DIR / name).write_text(text)
         print(f"wrote {KITS_DIR / name}")
+    BRAND_PAGE_FIXTURE.write_text(build_brand_page(texts))
+    print(f"wrote {BRAND_PAGE_FIXTURE}")

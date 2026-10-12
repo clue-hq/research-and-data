@@ -161,7 +161,7 @@ The shell uses shareable query parameters:
 
 | Parameter | Values | Ownership |
 | --- | --- | --- |
-| `section` | `colors`, `typography`, `assets`, `knowledge` | Frontend view |
+| `section` | `colors`, `typography`, `components`, `spacing`, `motion`, `assets`, `knowledge` | Frontend view |
 | `theme` | `light`, `dark` | Brand-palette dataset; never an application theme |
 | `view` | `grid`, `list` | Asset-list view |
 | `asset` | asset ID | Open asset detail |
@@ -734,3 +734,26 @@ a failed save keeps the inspector open. Successful responses refresh effective
 metadata, and older polling responses cannot overwrite a newer revision. This
 does not add an API endpoint or change the write payload. Drafts are in-memory;
 browser/process termination is not an offline persistence mechanism.
+
+## Resolutions (2026-10-12, Wave 2 A9 Task X6) — the measured brand
+
+The founder ruled (Q-A9-3 (c)) that the page shows what the brand-kit extraction measured on the
+seller's site, drawn with the screen's existing components only.
+
+- **The read keeps more.** `BrandKitJsonSchema` now keeps every token group the kit carries
+  (`numbers`, `spacing`, `radii`, `stroke_widths`, `opacity`, `shadows` and `styles`, beside `colors`
+  and `typography`), each token's `provenance`, `constraints.contrast_pairs` and `measured_components`
+  (`MeasuredComponents@1`). It used to strip them. The design API already served them:
+  `GET /brand-kits/{id}` returns the stored kit whole (`brand_kit_detail_dto`).
+- **One reading, shared with sites.** Measured values are read through `@clue/site-kit/brand-view`,
+  the functions that draw a published site, so a style is never described two ways.
+- **`measured` beside `workspace` and `kit`.** `BrandContextView.measured` is `null` for a kit made
+  before measurement, and the page is then exactly as it was. The designed `BrandContextWorkspace`
+  shape is unchanged.
+- **colorGroups** gain, after the kit's own groups, "Section backgrounds" (each `surface.band.<hex>`,
+  named as the editor's Surface field names it, with its text colour) and one group per measured
+  style ("Filled 1 button", "Card", "Link"), its swatches named by state and part ("Hover fill").
+  Minted colours shown there leave "Semantic roles"; kit colours a style reuses (`surface.brand`) stay.
+- **New sections** `components`, `spacing` and `motion`, listed in the sidebar only when the kit has
+  something for them. Their words and their open design points are recorded in the Wave 2 plan
+  (`docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md`, T-A9-8 and DR-A9-1…10).
