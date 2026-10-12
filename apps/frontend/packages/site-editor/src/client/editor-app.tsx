@@ -70,13 +70,28 @@ export function EditorApp({ boot }: { boot: BootContext }) {
       if (decision !== "swallow") controller.shortcut(decision);
     };
     const onFocusOut = () => controller.flushChange();
+    const onDoubleClick = (event: MouseEvent) => {
+      const state = controller.getState();
+      if (state.mode !== "edit" || !state.site) return;
+      const image = (event.target as Element | null)?.closest?.("img");
+      const component = image?.closest("[data-puck-component]");
+      const componentId = component?.getAttribute("data-puck-component");
+      if (!image || !componentId) return;
+      const props = state.site.pages[state.route]?.content.find((entry) => entry.props.id === componentId)?.props;
+      const src = image.getAttribute("src") ?? "";
+      // The field whose value IS this picture; a picture no field holds (a clone's own art) asks nothing.
+      const prop = props ? Object.keys(props).find((key) => props[key] === src && src.startsWith("/asset-store/")) : undefined;
+      if (prop) controller.requestAsset(state.route, componentId, prop);
+    };
     document.addEventListener("click", onClick, true);
     window.addEventListener("keydown", onKeyDown, true);
     document.addEventListener("focusout", onFocusOut, true);
+    document.addEventListener("dblclick", onDoubleClick, true);
     return () => {
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("keydown", onKeyDown, true);
       document.removeEventListener("focusout", onFocusOut, true);
+      document.removeEventListener("dblclick", onDoubleClick, true);
     };
   }, [controller]);
 

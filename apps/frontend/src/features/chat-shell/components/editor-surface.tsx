@@ -17,6 +17,7 @@ import { chatShellKindForCard } from "../model/artifact-kind";
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ImageInspector } from "./image-inspector";
+import { SiteImageField } from "./site-image-field";
 import { SiteInspector } from "./site-inspector";
 import { WebInspector } from "./web-inspector";
 import styles from "./chat-shell.module.css";
@@ -304,7 +305,16 @@ export function EditorSurface({
       {siteInspectorVisible ? (
         <div className={styles.chatBody}>
           <div className={styles.inspectorDock}>
-            <SiteInspector binding={siteSession.inspector} key={siteSession.inspector.selectionKey} />
+            <SiteInspector
+              binding={siteSession.inspector}
+              key={siteSession.inspector.selectionKey}
+              renderImageField={(field, path, value) => {
+                const binding = siteSession.imageField(path, value);
+                return binding ? (
+                  <SiteImageField binding={binding} disabled={siteLocked} key={path} label={field.label} />
+                ) : null;
+              }}
+            />
           </div>
         </div>
       ) : null}
@@ -407,6 +417,11 @@ export function EditorSurface({
             <AssetLibraryPanel
               library={sceneSession.assetLibrary}
               onUploadFile={sceneSession.onReplaceImage}
+            />
+          ) : siteSession.images.library?.isOpen ? (
+            <AssetLibraryPanel
+              library={siteSession.images.library}
+              onUploadFile={siteSession.images.uploadToLibraryTarget}
             />
           ) : null
         }

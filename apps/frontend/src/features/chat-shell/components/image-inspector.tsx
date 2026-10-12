@@ -660,7 +660,7 @@ function AdCanvasInspector({
  * this component (in the session hook) because the panel remounts on every
  * reload, and a paid model result must not be thrown away by one.
  */
-function AdImageAiRows({
+export function AdImageAiRows({
   disabled,
   imageAi,
 }: {

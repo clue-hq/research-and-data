@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FrameToAppMessage } from "@clue/site-kit/editor-protocol";
-import { canonicalJson, componentProps } from "@clue/site-kit/editor-site";
+import { canonicalJson, componentProps, getAtPath, withAssetAt } from "@clue/site-kit/editor-site";
 import type { SiteDocument } from "@clue/site-kit/site-document";
 import { AGENT_RUN_LOCK_NOTE } from "@/features/chat-shell/model/agent-run-lock";
 import { httpSiteRepository, type SiteRepository } from "../data/site.repository";
@@ -26,7 +26,9 @@ import { siteStageMounted, type SiteStageBinding } from "../model/site-stage";
 import { useSiteDocument } from "./use-site-document";
 import { useSiteEditorOrigin } from "./use-site-editor-origin";
 import { useSiteFrameHost, type SiteFrameHost } from "./use-site-frame-host";
+import { useSiteImages, type SiteImageFieldBinding, type SiteImages } from "./use-site-images";
 import { useSiteSaves, type SiteSaves } from "./use-site-saves";
+import type { SiteImageTarget } from "./site-images.logic";
 
 const DEFAULT_REPOSITORY = httpSiteRepository();
 
@@ -39,6 +41,8 @@ export interface AppSite {
 
 export interface SiteEditingSession {
   activeDocumentId: string | null;
+  imageField: (path: string, value: string) => SiteImageFieldBinding | null;
+  images: SiteImages;
   inspector: SiteInspectorBinding;
   post: SiteFrameHost["post"];
   reload: () => void;
@@ -99,6 +103,7 @@ export function useSiteEditingSession({
   const [frameError, setFrameError] = useState<{ documentId: string; message: string } | null>(null);
   const mode = siteFrameMode({ editing, locked });
   const [selection, setSelection] = useState<SiteSelection | null>(null);
+  const openLibraryRef = useRef<((target: SiteImageTarget) => void) | null>(null);
 
   const latest = useRef({ currentSite, editing, locked, save: saves.save });
   useEffect(() => {
@@ -112,6 +117,7 @@ export function useSiteEditingSession({
         // A rebooted frame shows no document until its next init lands: the canvas reads
         // "Loading preview…" until the new `navigated`.
         setShownDocumentId(null);
+        setSelection(null);
         return;
       case "navigated":
         setShownDocumentId(message.documentId);
@@ -143,8 +149,11 @@ export function useSiteEditingSession({
       case "deselected":
         setSelection(null);
         return;
+      case "request_asset":
+        openLibraryRef.current?.({ componentId: message.payload.componentId, prop: message.payload.prop, target: message.payload.route });
+        return;
       default:
-        // annotate / request_asset / shortcut: Tasks 10-12 add their cases here.
+        // annotate / shortcut: Tasks 11-12 add their cases here.
         return;
     }
   }, []);
@@ -241,6 +250,51 @@ export function useSiteEditingSession({
     },
     [activeDocumentId, editing, post],
   );
+  // C6: every image path (library pick, upload, generate, accepted edit) ends here.
+  const writableRef = useRef<() => boolean>(() => false);
+  useEffect(() => {
+    writableRef.current = () => acceptsFrameEdits({ editing, locked });
+  });
+  const currentUrl = useCallback(
+    (target: SiteImageTarget) => {
+      const props = currentSite ? componentProps(currentSite.site, target.target, target.componentId) : null;
+      const value = getAtPath(props, target.prop);
+      return typeof value === "string" ? value : "";
+    },
+    [currentSite],
+  );
+  const insertAsset = useCallback(
+    (target: SiteImageTarget, url: string): boolean => {
+      if (!currentSite || !activeDocumentId || !acceptsFrameEdits({ editing, locked })) return false;
+      const props = componentProps(currentSite.site, target.target, target.componentId);
+      if (!props) return false;
+      if (getAtPath(props, target.prop) === url) return true;
+      const edited = withAssetAt(currentSite.site, target.target, target.componentId, target.prop, url);
+      setAppSite({ ...currentSite, site: edited });
+      post("insert_asset", { componentId: target.componentId, prop: target.prop, route: target.target, url }, activeDocumentId);
+      save(edited, `inspector: set image ${target.prop}`);
+      return true;
+    },
+    [activeDocumentId, currentSite, editing, locked, post, save],
+  );
+  const images = useSiteImages({
+    clearMessages: saves.clearMessages,
+    currentUrl,
+    documentId: activeDocumentId,
+    imagesVisible: Boolean(activeSelection?.fields.some((field) => field.kind === "image")),
+    kit: load.brand?.kit ?? null,
+    onError: saves.reportError,
+    place: insertAsset,
+    writable: () => writableRef.current(),
+  });
+  useEffect(() => {
+    openLibraryRef.current = images.openLibraryFor;
+  });
+  const imageField = useCallback(
+    (path: string, value: string): SiteImageFieldBinding | null =>
+      activeSelection ? images.field({ componentId: activeSelection.componentId, prop: path, target: activeSelection.target }, value) : null,
+    [activeSelection, images],
+  );
   const inspector: SiteInspectorBinding = {
     disabled: locked,
     error: saves.error,
@@ -269,6 +323,8 @@ export function useSiteEditingSession({
 
   return {
     activeDocumentId,
+    imageField,
+    images,
     inspector,
     post,
     reload,

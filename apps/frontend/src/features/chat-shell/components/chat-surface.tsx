@@ -65,6 +65,7 @@ import { ChatShellHeader } from "./chat-shell-header";
 import { ClarificationCard } from "./clarification-card";
 import { ImageInspector } from "./image-inspector";
 import styles from "./chat-shell.module.css";
+import { SiteImageField } from "./site-image-field";
 import { SiteInspector } from "./site-inspector";
 import { WebInspector } from "./web-inspector";
 
@@ -1008,6 +1009,12 @@ export function ChatSurface({
                 // fresh drafts; a write never remounts the panel.
                 binding={siteSession.inspector}
                 key={siteSession.inspector.selectionKey}
+                renderImageField={(field, path, value) => {
+                  const binding = siteSession.imageField(path, value);
+                  return binding ? (
+                    <SiteImageField binding={binding} disabled={siteLocked} key={path} label={field.label} />
+                  ) : null;
+                }}
               />
             </div>
           ) : null}
@@ -1316,6 +1323,11 @@ export function ChatSurface({
             <AssetLibraryPanel
               library={sceneSession.assetLibrary}
               onUploadFile={sceneSession.onReplaceImage}
+            />
+          ) : siteSession.images.library?.isOpen ? (
+            <AssetLibraryPanel
+              library={siteSession.images.library}
+              onUploadFile={siteSession.images.uploadToLibraryTarget}
             />
           ) : null
         }
