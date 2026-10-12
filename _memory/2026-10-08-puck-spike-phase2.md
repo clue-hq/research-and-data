@@ -239,3 +239,19 @@ Plan: docs/superpowers/plans/2026-10-07-puck-spike-phase2-agent.md. Code: trials
   - Open for founder: docs/superpowers/plans/2026-10-11-wave2-founder-review.md — 16 product
     questions + R6 confirm + execution method; agent-facing texts (A Task 1/6/7, B T1-T15, design@v5);
     Lane C design points DR1-DR7. Nothing executes before the answers.
+- 2026-10-12: founder Q&A on the review sheet (answers recorded at its bottom): Q1 web, Q2 per-page
+  head, Q3 general button looks from the kit's recipes (CtaBand too), Q4 per-brand surfaces on our
+  sections, Q5 retirement OUT of scope (retired sections publish; brand data keeps a page's own
+  sections, in_catalog:false) + 2 approved publish messages, Q6 copy approved, Q7 drop console fact
+  (3 wordings approved), Q8 catalog lists everything (agent judges), Q9 save at limit, Q10 T3,
+  Q11 editor domain edit.deeppresence.ai. Founder rulings: measured values as brand-scoped tokens
+  minted by code (exact reuse, stable names), states + motion captured and used, NO hard-coded
+  styles in site-kit. Applied to Lanes A/B/C (commits b033858e3..7718edc00).
+- 2026-10-12: A9 brand-fidelity rewrite drafted by an Opus writer -> 
+  docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md (X1 engine `styles` group,
+  X2 state/motion probe, X3 evidence, X4 mint tokens + surface.band.<hex>, X5 measured_components +
+  curation-route fix, X6 panel filter, Tasks 4/5/6b/7/16b). Controller-verified: engine BrandKit drops
+  unknown fields (brand.rs:193); logo/describe routes republish kits WITHOUT brief/grammar_audit
+  (main.py:2349,2446) — live defect; 0 documents name band tokens in lane DB. New question Q-A9-6:
+  style variant names renumber across re-extractions (frequency order) -> recommend value-keyed.
+  Questions Q-A9-1..6 + texts T-A9-1..7 copied into the review sheet Part 4. Commit 31e530cd8.
