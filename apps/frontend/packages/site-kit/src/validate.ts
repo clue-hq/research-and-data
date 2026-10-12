@@ -11,7 +11,6 @@
 // page writes to "/<name>" must go to a page that exists.
 // Returns {valid, errors: ["where: message", ...]}.
 import { parse } from "node-html-parser";
-import type { AgentSectionModule } from "./agent-kit";
 import type { BrandData } from "./brand";
 import type { Clone } from "./clone";
 import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
@@ -22,6 +21,16 @@ type Shell = { header?: Record<string, unknown>; footer?: Record<string, unknown
 
 /** The site's files: route -> page JSON ("/" is page.json, "/<name>" is pages/<name>.json), and shell.json. */
 export type SiteFiles = { pages: Record<string, unknown>; shell: unknown | null };
+/** A site's agent-written sections, as the validator needs them: only the schema (E5). The design
+ * API builds each one from the section's STORED props JSON Schema (bin/validate-site.ts). */
+export type AgentSectionSchemas = Record<string, { schema: { safeParse: (value: unknown) => { success: boolean } } }>;
+/** Images a site may use besides the brand's assets: the ones generated for it, and the account's
+ * own logos (the header's accountLogo only). Every one is /asset-store/<sha256> (Contract 1). */
+export type SiteImages = { siteImages: string[]; accountLogos: string[] };
+const NO_IMAGES: SiteImages = { siteImages: [], accountLogos: [] };
+/** A string that names stored bytes: production's /asset-store/<sha256>, or one of the spike's
+ * old prefixes, which are never in the allowed set and so are refused. */
+const IMAGE_PATH = /^\/(asset-store|brands|generated|accounts)\//;
 
 const LINK = /^(https?:\/\/|\/|#|mailto:)/;
 const PAGE_NAME = /^[a-z0-9][a-z0-9-]*$/;
@@ -33,7 +42,8 @@ const fromFile = (value: unknown): unknown => (typeof value === "string" ? JSON.
 export function validateSite(
   files: SiteFiles,
   brand: BrandData,
-  agentSections: Record<string, AgentSectionModule>,
+  agentSections: AgentSectionSchemas,
+  images: SiteImages = NO_IMAGES,
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
   // This site's agent-written sections (E5) are valid section types here, and only here.
@@ -86,9 +96,13 @@ export function validateSite(
   const shellResult = ShellSchema.safeParse(shell);
   if (!shellResult.success) errors.push(...formatIssues(shellResult.error).split("\n").map((e) => `shell.${e}`));
 
-  const assetFiles = new Set(Object.values(brand.assets).map((asset) => asset.file));
+  const allowedImages = new Set([...Object.values(brand.assets).map((asset) => asset.file), ...images.siteImages]);
+  const accountLogos = new Set(images.accountLogos);
   const imageAllowed = (value: unknown) =>
-    value === "" || value === undefined || (typeof value === "string" && assetFiles.has(value));
+    value === "" || value === undefined || (typeof value === "string" && allowedImages.has(value));
+  // One wording for every refused image (the spike's R3 text, founder-approved 2026-10-09).
+  const imageError = (where: string, value: unknown) =>
+    `${where}: image "${String(value)}" is not in the brand's assets; pick a file from brand/brand.md`;
 
   // Links the page writes (not the clones' own captured links, which keep pointing at the seller).
   const written: { where: string; href: string }[] = [];
@@ -136,7 +150,7 @@ export function validateSite(
           if (slot.kind === "href" && value !== String(slot.fallback ?? "")) addWritten(value, `${at}.slots.${key}`);
           if (slot.kind === "href" && key.startsWith("cta")) addDestination(value, `${at}.slots.${key}`);
           if (slot.kind === "image" && !imageAllowed(value)) {
-            errors.push(`${at}.slots.${key}: image "${String(value)}" is not in the brand's assets; pick a file from brand/brand.md`);
+            errors.push(imageError(`${at}.slots.${key}`, value));
           }
           if (slot.kind === "visibility" && typeof value !== "boolean") errors.push(`${at}.slots.${key}: a visibility slot takes true or false`);
         }
@@ -156,7 +170,7 @@ export function validateSite(
         });
       }
       if (item.type === "FeatureSplit" && !imageAllowed(item.props.image)) {
-        errors.push(`${at}.image: "${String(item.props.image)}" is not in the brand's assets; pick a file from brand/brand.md`);
+        errors.push(imageError(`${at}.image`, item.props.image));
       }
       if ((item.type === "FeatureSplit" && item.props.buttonLabel) || item.type === "CtaBand") {
         addDestination(item.props.buttonHref, `${at}.buttonHref`);
@@ -166,8 +180,8 @@ export function validateSite(
       if (item.type in agentSections) {
         // Any brand image path in an agent section's props must be one of the brand's images.
         const walk = (value: unknown, where: string) => {
-          if (typeof value === "string" && value.startsWith("/brands/") && !imageAllowed(value)) {
-            errors.push(`${where}: image "${value}" is not in the brand's assets; pick a file from brand/brand.md`);
+          if (typeof value === "string" && IMAGE_PATH.test(value) && !imageAllowed(value)) {
+            errors.push(imageError(where, value));
           } else if (Array.isArray(value)) value.forEach((v, i) => walk(v, `${where}.${i}`));
           else if (value && typeof value === "object") for (const [k, v] of Object.entries(value)) walk(v, `${where}.${k}`);
         };
@@ -177,8 +191,8 @@ export function validateSite(
   }
 
   const accountLogo = shell.header?.accountLogo;
-  if (accountLogo && !imageAllowed(accountLogo) && !String(accountLogo).startsWith("/accounts/")) {
-    errors.push(`shell.header.accountLogo: "${String(accountLogo)}" is neither a brand asset nor an account asset`);
+  if (accountLogo && !imageAllowed(accountLogo) && !accountLogos.has(String(accountLogo))) {
+    errors.push(`shell.header.accountLogo: "${String(accountLogo)}" is not this account's logo; use a file from "The account's logo" in brand/brand.md, or leave it empty`);
   }
   addDestination(shell.header?.ctaHref, "shell.header.ctaHref");
   addWritten(shell.header?.ctaHref, "shell.header.ctaHref");

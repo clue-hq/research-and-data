@@ -1,19 +1,25 @@
 // The check a section written by the agent must pass before it joins its site (E5).
 //
 // Usage: npx tsx src/check-section.ts <file.tsx>
-// Prints {"ok": bool, "errors": [...], "props": <JSON Schema of the section's props>} as JSON.
+// Prints {"ok": bool, "errors": [...]} as JSON.
 //
 // Structure is free; style is the brand's. Refused: colour values, Tailwind's own palette colours,
 // Tailwind's default type sizes, families and weights, bracketed custom values for colour, type
-// or corners (layout measures such as max-w-[30ch] are fine), inline styles, className or style
-// in the section's props, imports other than zod, react types and the kit. The file must export
-// `schema` (a zod object) and `render`, and must type-check.
+// or corners (layout measures such as max-w-[30ch] are fine), inline styles, imports other than
+// zod, react types and the kit, and the banned names below (page globals, network, eval, raw
+// HTML, storage, timers, event handlers). The file must export `schema` (a zod object) and
+// `render`, and must type-check.
+//
+// D2 (founder, 2026-10-09 and 2026-10-11): this check NEVER imports the section. The props schema,
+// and the rules about it (an id and a surface, no className or style), are read inside the design
+// API's hardened render page (lumen_api.site_render.read_section_schema), never in a platform
+// process.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { z } from "zod";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const ALLOWED_IMPORTS = new Set(["zod", "react", "@/puck/agent-kit"]);
 const PALETTE =
@@ -26,6 +32,50 @@ const RULES: { pattern: RegExp; why: string }[] = [
   { pattern: /^font-(sans|serif|mono|thin|extralight|light|normal|medium|semibold|bold|extrabold|black)$/, why: "a Tailwind font or weight; use a brand type role (font-title, font-body…)" },
   { pattern: /^(text|bg|border|fill|stroke|ring|outline|decoration|font|leading|tracking|rounded|shadow|from|via|to)-\[/, why: "a custom colour, type or corner value; use the brand's tokens" },
 ];
+
+// D2 spike (Task 4): names a section may not use, wherever they appear in its code (a variable, a
+// property such as document.cookie, an object key). Read from the syntax tree, so the words in a
+// section's text or strings never count. A guardrail against the obvious, not a sandbox: the
+// hardened render page is the boundary (trials/puck-spike/RUNTIME-SECTIONS.md).
+const BANNED: Record<string, string> = {
+  window: "reaches the page outside the section",
+  document: "reaches the page outside the section",
+  globalThis: "reaches the page outside the section",
+  fetch: "is a network call",
+  XMLHttpRequest: "is a network call",
+  WebSocket: "is a network call",
+  eval: "runs code the check never saw",
+  Function: "runs code the check never saw",
+  dangerouslySetInnerHTML: "writes raw HTML",
+  localStorage: "reads the visitor's storage",
+  cookie: "reads the visitor's cookies",
+  setTimeout: "is a timer; a section renders once from its props",
+  setInterval: "is a timer; a section renders once from its props",
+};
+
+function bannedNames(source: string): string[] {
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  const add = (message: string) => {
+    if (!seen.has(message)) {
+      seen.add(message);
+      errors.push(message);
+    }
+  };
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && Object.hasOwn(BANNED, node.text)) add(`"${node.text}" ${BANNED[node.text]}; a section renders its props and nothing else`);
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) add(`"import(" loads code the check never saw; a section renders its props and nothing else`);
+    // An event handler, as a JSX prop or as a key of an object that might be spread into one.
+    if (ts.isJsxAttribute(node) || ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node) || ts.isMethodDeclaration(node)) {
+      const name = node.name.getText(file).replace(/^["'`]|["'`]$/g, "");
+      if (/^on[A-Z]/.test(name)) add(`"${name}" is an event handler; a section is static`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return errors;
+}
 
 function classTokens(source: string): string[] {
   const strings = [...source.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
@@ -50,6 +100,7 @@ export function lint(source: string): string[] {
       }
     }
   }
+  errors.push(...bannedNames(source));
   if (!/export\s+const\s+schema\b/.test(source)) errors.push("the file must export `schema` (a zod object of the section's props)");
   if (!/export\s+function\s+render\b/.test(source)) errors.push("the file must export `function render(props, kit)`");
   return errors;
@@ -80,24 +131,12 @@ export function typeCheck(file: string): string[] {
   }
 }
 
-async function main() {
+function main() {
   const file = path.resolve(process.argv[2] ?? "");
   const source = fs.readFileSync(file, "utf-8");
   const errors = lint(source);
   if (!errors.length) errors.push(...typeCheck(file));
-  let props: unknown = null;
-  if (!errors.length) {
-    const mod = (await import(pathToFileURL(file).href)) as { schema?: unknown; render?: unknown };
-    if (!(mod.schema instanceof z.ZodObject)) errors.push("`schema` must be a zod object (z.object({...}).strict())");
-    else {
-      const keys = Object.keys(mod.schema.shape);
-      for (const key of ["className", "style"]) if (keys.includes(key)) errors.push(`the props may not include "${key}"`);
-      for (const key of ["id", "surface"]) if (!keys.includes(key)) errors.push(`the props need "${key}" (every section has an id and a surface)`);
-      props = z.toJSONSchema(mod.schema);
-    }
-    if (typeof mod.render !== "function") errors.push("`render` must be a function (props, kit) => JSX");
-  }
-  console.log(JSON.stringify({ ok: errors.length === 0, errors, props }));
+  console.log(JSON.stringify({ ok: errors.length === 0, errors }));
 }
 
 if (process.argv[1]?.endsWith("check-section.ts")) main();

@@ -5,8 +5,10 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 import { validateSite } from "../src/validate";
 import { garner, site as readSite } from "./fixtures/garner";
+import { schema as quoteSchema } from "./fixtures/section-example";
 
 const site = readSite("garner-syracuse");
 const brand = garner();
@@ -29,7 +31,7 @@ test("a file given as its text is parsed; text that is not JSON names the file",
   assert.ok(broken.errors.some((e) => e.startsWith("pages/analysis.json: not valid JSON")), broken.errors.join("\n"));
 });
 
-test("the CLI validates a site with an agent section imported from its module path", () => {
+test("the CLI checks an agent section against its stored props JSON Schema, never importing it", () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const run = (page: unknown) =>
     JSON.parse(
@@ -38,7 +40,7 @@ test("the CLI validates a site with an agent section imported from its module pa
         input: JSON.stringify({
           files: { pages: { ...pages, "/": page }, shell: site.shell },
           brand,
-          agentSectionModules: { QuoteBand: fileURLToPath(new URL("./fixtures/section-example.tsx", import.meta.url)) },
+          agentSectionSchemas: { QuoteBand: z.toJSONSchema(quoteSchema) },
         }),
       }).toString(),
     );
@@ -51,4 +53,16 @@ test("the CLI validates a site with an agent section imported from its module pa
   const refused = run(withQuote("green"));
   assert.equal(refused.valid, false);
   assert.ok(refused.errors.some((e: string) => /^page\.content\.\d+\(quote\)\.surface/.test(e)), refused.errors.join("\n"));
+});
+
+test("a stored schema that cannot be read is named, not ignored", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const out = JSON.parse(
+    execFileSync(process.execPath, ["--import", "tsx", "bin/validate-site.ts"], {
+      cwd: root,
+      input: JSON.stringify({ files: { pages, shell: site.shell }, brand, agentSectionSchemas: { Broken: { type: "no-such-type" } } }),
+    }).toString(),
+  );
+  assert.equal(out.valid, false);
+  assert.ok(out.errors.some((e: string) => e.startsWith("agent_sections.Broken: its stored props schema could not be read")), out.errors.join("\n"));
 });
