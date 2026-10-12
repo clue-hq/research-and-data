@@ -24,6 +24,8 @@ specifications from becoming competing sources of truth.
 
 - [`architecture/frontend.md`](architecture/frontend.md) — repository and
   dependency rules.
+- [`architecture/site-editor.md`](architecture/site-editor.md) — the Puck site
+  editor: the app/editor-domain split, the frame protocol and where the code lives.
 - [`architecture/ai-elements-and-reasoning.md`](architecture/ai-elements-and-reasoning.md)
   — AI Elements installation, attachment composition, and reasoning-trace
   architecture.
