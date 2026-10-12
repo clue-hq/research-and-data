@@ -17,7 +17,13 @@ export const SURFACE_LABELS: Record<(typeof SURFACES)[number], string> = {
 };
 export const HEADING_ROLES = ["display", "headline", "title"] as const;
 
-export const Surface = z.enum(SURFACES);
+/** A surface by its choice name: one of our six, or one of this brand's other surfaces ("canvas",
+ * "band-014036"). The validator checks it against the brand (founder Q4 = (b)). */
+export const Surface = z.string().min(1);
+/** A button style by its recipe's name ("solid.047464"; a kit made before measurement says
+ * "outline.1"); empty is the kit's standard button. The validator checks it against the brand
+ * (founder ruling 4). */
+const buttonLook = z.string().default("");
 export const HeadingRole = z.enum(HEADING_ROLES);
 
 const id = z.string().min(1);
@@ -57,6 +63,7 @@ export const FeatureSplitSchema = z
     imageSide: z.enum(["left", "right"]).default("left"),
     buttonLabel: optionalText,
     buttonHref: optionalLink,
+    buttonLook,
   })
   .strict();
 
@@ -83,6 +90,7 @@ export const CtaBandSchema = z
     body: optionalText,
     buttonLabel: text.min(1),
     buttonHref: link,
+    buttonLook,
   })
   .strict();
 
@@ -159,6 +167,7 @@ export const ShellSchema = z
         accountLogo: optionalText,
         ctaLabel: text.min(1),
         ctaHref: link,
+        ctaLook: buttonLook,
         nav: z.array(z.object({ label: text.min(1), href: link }).strict()).max(6).default([]),
       })
       .strict(),

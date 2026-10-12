@@ -20,4 +20,5 @@ export { SPACING_ROLES, tailwindThemeCss, themeCss } from "./theme";
 export * from "./schemas";
 export { makeConfig, type ConfigOptions, type EditorParts } from "./config";
 export { makeKit, type AgentSectionModule, type Kit } from "./agent-kit";
-export { SiteFooter, SiteHeader, sellerLogo, type FooterProps, type HeaderProps, type ShellData } from "./shell";
+export { SiteFooter, SiteHeader, logoFiles, sellerLogo, type FooterProps, type HeaderProps, type ShellData } from "./shell";
+export { surfaceClass, type AnySurface } from "./sections";

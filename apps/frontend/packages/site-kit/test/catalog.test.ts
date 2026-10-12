@@ -51,6 +51,8 @@ test("sections.md gives each section's fields and the allowed token choices", ()
     assert.ok(sections.includes(choice), `missing surface choice ${choice}`);
   }
   assert.match(sections, /headingRole/);
+  assert.match(sections, /buttonLook/);
+  assert.ok(sections.includes("a button style from brand/brand.md (Buttons): outline.1"));
 });
 
 test("brand.md describes the token choices and lists the assets with descriptions", () => {

@@ -13,7 +13,9 @@
 import { parse } from "node-html-parser";
 import type { BrandData } from "./brand";
 import type { Clone } from "./clone";
+import { buttonLooks } from "./looks";
 import { ShellSchema, formatIssues, pageSchemaWith } from "./schemas";
+import { surfaceChoices } from "./surfaces";
 
 type Item = { type: string; props: Record<string, unknown> };
 type Page = { content?: Item[] };
@@ -103,6 +105,17 @@ export function validateSite(
   // One wording for every refused image (the spike's R3 text, founder-approved 2026-10-09).
   const imageError = (where: string, value: unknown) =>
     `${where}: image "${String(value)}" is not in the brand's assets; pick a file from brand/brand.md`;
+  // Surfaces and button styles are the brand's (founder rulings 4 and Q4 = (b)): a contract, like
+  // clone ids. The refusals name what this brand has.
+  const surfaceNames = surfaceChoices(brand).map((choice) => choice.value);
+  const lookNames = buttonLooks(brand).map((look) => look.name);
+  const surfaceError = (where: string, value: string) =>
+    `${where}: "${value}" is not one of this brand's surfaces; its surfaces are ${surfaceNames.join(", ")} (brand/brand.md, Surfaces)`;
+  const lookError = (where: string, value: string) =>
+    lookNames.length
+      ? `${where}: "${value}" is not one of this brand's button styles; its styles are ${lookNames.join(", ")}, or leave it empty for the standard button (brand/brand.md, Buttons)`
+      : `${where}: this brand's kit records no button styles; leave it empty for the standard button (brand/brand.md, Buttons)`;
+  const OURS = new Set(["StatsBand", "FeatureSplit", "ProofCard", "CtaBand"]);
 
   // Links the page writes (not the clones' own captured links, which keep pointing at the seller).
   const written: { where: string; href: string }[] = [];
@@ -129,6 +142,12 @@ export function validateSite(
     // Clones: real ids, real slots, matching replacements and links.
     (page.content ?? []).forEach((item, index) => {
       const at = `${file}.content.${index}(${String(item.props?.id ?? "?")})`;
+      if (OURS.has(item.type)) {
+        const surface = item.props.surface;
+        if (typeof surface === "string" && !surfaceNames.includes(surface)) errors.push(surfaceError(`${at}.surface`, surface));
+        const look = item.props.buttonLook;
+        if (typeof look === "string" && look && !lookNames.includes(look)) errors.push(lookError(`${at}.buttonLook`, look));
+      }
       if (item.type === "ClonedSection") {
         const id = String(item.props.fragmentId ?? "");
         const clone = brand.clones[id];
@@ -194,6 +213,8 @@ export function validateSite(
   if (accountLogo && !imageAllowed(accountLogo) && !accountLogos.has(String(accountLogo))) {
     errors.push(`shell.header.accountLogo: "${String(accountLogo)}" is not this account's logo; use a file from "The account's logo" in brand/brand.md, or leave it empty`);
   }
+  const ctaLook = shell.header?.ctaLook;
+  if (typeof ctaLook === "string" && ctaLook && !lookNames.includes(ctaLook)) errors.push(lookError("shell.header.ctaLook", ctaLook));
   addDestination(shell.header?.ctaHref, "shell.header.ctaHref");
   addWritten(shell.header?.ctaHref, "shell.header.ctaHref");
   ((shell.header?.nav as { href?: string }[] | undefined) ?? []).forEach((item, i) => addWritten(item?.href, `shell.header.nav.${i}.href`));

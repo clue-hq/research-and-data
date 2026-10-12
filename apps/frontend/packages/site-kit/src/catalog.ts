@@ -12,7 +12,9 @@ import { parse, TextNode, type HTMLElement } from "node-html-parser";
 import { z } from "zod";
 import type { BrandData } from "./brand";
 import type { Clone } from "./clone";
+import { buttonLooks } from "./looks";
 import { COMPONENT_SCHEMAS, SURFACES, SURFACE_LABELS } from "./schemas";
+import { surfaceChoices } from "./surfaces";
 
 /** What each surface choice maps to in the brand kit. */
 const SURFACE_ROLE: Record<(typeof SURFACES)[number], string> = {
@@ -130,12 +132,12 @@ function cloneFile(clone: Clone): string {
   ].join("\n");
 }
 
-function sectionsFile(): string {
+function sectionsFile(brand: BrandData): string {
   const parts = [
     "# Brand sections (ours)",
     "",
     "These are built from the brand's tokens, so every choice below stays on brand. Style options",
-    "are fixed choices; there are no colour, size, class or style fields.",
+    "are names from brand/brand.md; there are no colour, size, class or style fields.",
     "",
   ];
   for (const [type, schema] of Object.entries(COMPONENT_SCHEMAS)) {
@@ -147,11 +149,20 @@ function sectionsFile(): string {
     parts.push(`## ${type}`, "", PURPOSE[type], "", "| field | type | required | choices / default |", "|---|---|---|---|");
     for (const [field, spec] of Object.entries(json.properties)) {
       const required = json.required?.includes(field) ? "yes" : "no";
-      const choices = spec.enum
-        ? spec.enum.map((value) => (field === "surface" ? `${value} (${SURFACE_LABELS[value as keyof typeof SURFACE_LABELS]})` : value)).join(", ")
-        : spec.default !== undefined
-          ? `default ${JSON.stringify(spec.default)}`
-          : "";
+      const surfaces = surfaceChoices(brand).map((choice) => `${choice.value} (${choice.label})`).join(", ");
+      const looks = buttonLooks(brand).map((look) => look.name);
+      const choices =
+        field === "surface"
+          ? `one of this brand's surfaces (brand/brand.md, Surfaces): ${surfaces}`
+          : field === "buttonLook"
+            ? looks.length
+              ? `default ""; empty is the standard button, or a button style from brand/brand.md (Buttons): ${looks.join(", ")}`
+              : `default ""; this brand's kit records no button styles, so leave it empty`
+            : spec.enum
+              ? spec.enum.join(", ")
+              : spec.default !== undefined
+                ? `default ${JSON.stringify(spec.default)}`
+                : "";
       const kind = spec.type === "array" ? "list" : spec.type ?? "text";
       parts.push(`| \`${field}\` | ${kind} | ${required} | ${choices} |`);
     }
@@ -250,7 +261,7 @@ export function buildCatalog(brand: BrandData, seller: string): Record<string, s
     index.push(`- \`${type}\`: ${PURPOSE[type]}`);
   }
   files["catalog/index.md"] = index.join("\n") + "\n";
-  files["catalog/sections.md"] = sectionsFile();
+  files["catalog/sections.md"] = sectionsFile(brand);
   files["brand/brand.md"] = brandFile(brand, seller);
   return files;
 }
