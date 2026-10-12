@@ -259,3 +259,7 @@ Built from existing chat-shell styles and primitives; where no existing style fi
   existing token in this kit is reused, otherwise a new token is added to THIS brand's kit only,
   with a stable code-made name from where it was measured (e.g. `button.solid-2.fill`) and its
   provenance. Recipes then name those tokens, so documents and agents keep naming tokens only.
+- 2026-10-12 — **Q4:** (b) our four sections' Surface field lists the six standard surfaces plus this
+  brand's own extra surfaces, including the measured section colours minted as brand-scoped tokens;
+  the validator checks the choice exists in the brand's kit (like Button style). The dropdown's
+  labels for extra surfaces follow a readable rule, brought back with the plan for approval.
