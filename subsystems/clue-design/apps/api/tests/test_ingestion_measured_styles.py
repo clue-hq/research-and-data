@@ -14,6 +14,7 @@ from lumen_ingestion.capture.geometry import measured_styles, parse_geometry
 from lumen_ingestion.capture.motion import attach_keyframes, clean_icon_svg, keyframe_steps
 from lumen_ingestion.capture.snapshot import Stylesheet
 from lumen_ingestion.evidence import BrandEvidence, MotionEvidence
+from lumen_ingestion.normalizer.component_tokens import svg_ok
 
 TESTS = Path(__file__).resolve().parent
 HARVEST = json.loads((TESTS / "fixtures" / "capture" / "style_states.harvest.json").read_text())
@@ -172,6 +173,44 @@ def test_an_icon_svg_with_nothing_left_to_draw_is_not_kept() -> None:
     assert clean_icon_svg('<svg width="12" height="12"><g fill="none"></g></svg>') is None
     kept = clean_icon_svg('<svg><g><path d="M1 1h2"/></g></svg>')
     assert kept == '<svg><g><path d="M1 1h2"></path></g></svg>'
+
+
+def test_an_icon_svg_keeps_a_d_written_over_two_lines_as_one_line() -> None:
+    cleaned = clean_icon_svg(
+        '<svg viewBox="0 0 12 12" fill="none"><path d="M1 6h9\n M7 2l4 4-4 4" stroke="currentColor"/></svg>'
+    )
+    assert cleaned == (
+        '<svg viewBox="0 0 12 12" fill="none"><path d="M1 6h9 M7 2l4 4-4 4" stroke="currentColor"></path></svg>'
+    )
+    assert svg_ok(cleaned)
+
+
+def test_an_icon_svg_keeps_points_written_with_tabs_and_newlines_single_spaced() -> None:
+    cleaned = clean_icon_svg(
+        '<svg viewBox="0 0 12 12"><polygon points="\t1,1\t\t11,1\n\n  6,11\n" fill="currentColor"></polygon></svg>'
+    )
+    assert cleaned == '<svg viewBox="0 0 12 12"><polygon points="1,1 11,1 6,11" fill="currentColor"></polygon></svg>'
+    assert svg_ok(cleaned)
+
+
+def test_an_icon_that_lost_part_of_its_geometry_is_not_kept() -> None:
+    # A `d` past the 2000-character value cap cannot be kept; the icon without it is a wrong icon.
+    long_d = "M0 0" + " l1 1" * 500
+    assert len(long_d) > 2000
+    assert clean_icon_svg(f'<svg viewBox="0 0 24 24"><path d="{long_d}" stroke="currentColor"/></svg>') is None
+    # A second, short path still draws, but the icon has lost a piece: still not kept.
+    assert clean_icon_svg(f'<svg viewBox="0 0 24 24"><path d="{long_d}"/><path d="M1 6h9"/></svg>') is None
+
+
+def test_a_drawing_element_without_its_geometry_draws_nothing() -> None:
+    assert clean_icon_svg("<svg><rect></rect></svg>") is None
+    assert clean_icon_svg('<svg><path stroke="currentColor"></path></svg>') is None
+    assert clean_icon_svg('<svg><circle cx="6" cy="6"></circle></svg>') is None
+    assert clean_icon_svg('<svg><ellipse rx="3"></ellipse></svg>') is None
+    assert clean_icon_svg('<svg><rect width="3"></rect></svg>') is None
+    assert clean_icon_svg("<svg><polyline></polyline></svg>") is None
+    # A line needs only one of its four coordinates (the others default to 0).
+    assert clean_icon_svg('<svg><line x2="10"></line></svg>') == '<svg><line x2="10"></line></svg>'
 
 
 def test_the_brief_agents_evidence_is_unchanged_by_the_new_measurements() -> None:

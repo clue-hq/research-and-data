@@ -342,6 +342,9 @@ MESSY_ICONS = {
         '<SVG xmlns="http://www.w3.org/2000/svg" VIEWBOX="0 0 12 12"><PATH D="M1 6h9"></PATH></SVG>'
     ),
     "a value ending in a newline": '<svg viewBox="0 0 12 12"><path d="M1 6h9\n" stroke="currentColor"></path></svg>',
+    "a d over two lines": (
+        '<svg viewBox="0 0 12 12" fill="none"><path d="M1 6h9\n  M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg>'
+    ),
     "an img breakout": '<svg viewBox="0 0 12 12"><img src="https://example.com/x.png"><path d="M1 6h9"></path></svg>',
     "nesting deeper than 32": '<svg viewBox="0 0 12 12">' + "<g>" * 40 + '<path d="M1 1"></path>' + "</g>" * 40 + "</svg>",
 }
@@ -363,8 +366,19 @@ def test_the_cleaner_keeps_messy_icons_that_still_draw() -> None:
     assert kept["whitespace and newlines between elements"] == (
         '<svg viewBox="0 0 12 12"><g fill="none"><path d="M1 6h9"></path></g></svg>'
     )
-    assert kept["a value ending in a newline"] == '<svg viewBox="0 0 12 12"><path stroke="currentColor"></path></svg>'
+    # Whitespace inside a value is one space and stripped, so the geometry is kept, never a blank path.
+    assert kept["a value ending in a newline"] == (
+        '<svg viewBox="0 0 12 12"><path d="M1 6h9" stroke="currentColor"></path></svg>'
+    )
+    assert kept["a d over two lines"] == (
+        '<svg viewBox="0 0 12 12" fill="none">'
+        '<path d="M1 6h9 M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"></path></svg>'
+    )
     assert kept["nesting deeper than 32"] is None
+    for name, cleaned in kept.items():
+        assert cleaned is None or svg_ok(cleaned), (name, cleaned)
+        blank = [tag for tag in re.findall(r"<path\b[^>]*>", cleaned or "") if ' d="' not in tag]
+        assert blank == [], (name, cleaned)
 
 
 def test_component_tokens_are_known_by_their_root() -> None:
