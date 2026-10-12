@@ -225,6 +225,271 @@ Built from existing chat-shell styles and primitives; where no existing style fi
 - **DR6** Repeating fields grouped as "<label> <n>" (question 12).
 - **DR7** An image field: the existing "Replace image" pill (`InspectorImageUpload`) with the ad lane's generate rows (`AdImageAiRows`) stacked under it.
 
+## Part 4 — Brand fidelity rewrite (2026-10-12): questions and text to approve
+
+The plan section is `docs/superpowers/plans/2026-10-12-lane-a-a9-brand-fidelity-rewrite.md` (it replaces
+Lane A's Tasks 4, 5 and 7). Its "Controller review" section lists what was verified against the code.
+
+### Questions
+
+The plan is written to each recommendation; an answer changes only the place named.
+
+- **Q-A9-1. The header's call-to-action button.** `shell.json`'s header button has no look today, so
+  it is always the standard button — which for Conduit is a `surface.brand` cyan fill its own brief
+  forbids ("Do not paint … primary demo button … with surface.brand"). (a) Give the shell header a
+  `ctaLook` field like `buttonLook` (same select control in the dock, same validator rule).
+  (b) Leave the header on the standard button. **Recommended: (a).** It touches Task 5 (schema,
+  `SiteHeader`, header fields) and Task 6b (validator) only.
+- **Q-A9-2. Kits whose brief stage did not run.** Looks are the brief's recipes (ruling), so a kit
+  published briefless (refusal, gateway failure, stage off) offers only the standard button even
+  though its styles were measured and minted. (a) As written. (b) Offer each measured button style as
+  a look named by its variant when the kit has no brief. **Recommended: (a)**; a briefless kit is
+  itself flagged on the kit.
+- **Q-A9-3. Minted tokens in the brand-context review panel.** The panel lists every colour token
+  (`brand-context-mapping.ts:178-209`) and every typography token (`:297-320`); minted component
+  tokens would land in the "Semantic roles" group and the text-style table under names like
+  `button.solid-2.fill`. (a) Hide component tokens there until a design for them exists (band
+  surfaces stay, as `surface.band.*` already do). (b) Show them in the existing lists. **Recommended:
+  (a)**; it is Task X6, a filter, no new UI.
+- **Q-A9-4. Existing kits.** They gain measured tokens only through a new extraction (your go per
+  kit). A rest-only backfill exists as an alternative: each kit's ingestion job row keeps its evidence
+  (`design_ingestion_job.evidence_json`, e.g. Conduit's `ingest_3e85c884…` carries 18 shape records
+  and 9 band backgrounds), so rest colours, borders, corners, padding and band surfaces could be
+  minted into a new kit version without a crawl — but no states, motion, letter-spacing, case or
+  icons (never captured). (a) Re-extract per kit when you say. (b) Add a dry-run-by-default backfill
+  script for the rest values first. **Recommended: (a)**; (b) would publish a second, half-measured
+  version of each kit. Nothing in this plan runs either.
+- **Q-A9-6 (controller review). Stable style names.** See "Controller review" above. (a) Name each
+  measured style by its look (value-keyed, like `surface.band.<hex>`), so re-extraction keeps names.
+  (b) Keep frequency numbering (`solid.1` = most common) and accept renumbering. **Recommended:
+  (a).** It touches Task X2 (`shape_groups` naming) and every place a token name is built from a
+  variant (X4, X5, Task 4); the brief agent copies variant names as given, so its prompt does not
+  change.
+- **Q-A9-5. The web and ad lanes.** Minted colour tokens become usable web theme classes and scene
+  tokens automatically (the web author's THEME TOKENS list is every kit colour,
+  `tools/web_substrate.py:652-682`). (a) Let them appear now. (b) Hide component tokens from those two
+  lists until the follow-up below lands. **Recommended: (a)**: the names are the brand's exact
+  colours and the engine resolves them; the list is code-generated vocabulary, not prose.
+
+
+### Text to approve (verbatim)
+
+Every step that writes one of these starts with "confirm approved". Angle brackets are filled from
+the kit; `[...]` appears only when the kit has it.
+
+#### T-A9-1 — `brand/brand.md` (site agent; Task 7)
+
+```markdown
+# Brand: <seller>
+
+Every brand section takes its colours, type, spacing, buttons and motion from these values. You
+choose by name (for example `surface: "brand"`); you never write a colour or a size.
+
+## Surfaces
+Every section stands on one of these surfaces. Choose one by its name: `"surface": "brand"` on one
+of our sections, or `kit.Shell surface="<choice>"` (or the classes
+`bg-surface-<choice> text-on-surface-<choice>`) in a section you write. Text on a surface takes the
+colour under "text on it".
+| choice | name | kit name | colour | text on it | from |
+|---|---|---|---|---|---|
+| page | Page | surface.page | #F9FAF8 | #0E1110 (text.primary) | measured |
+| … one row for each of card, muted, brandSubtle, brand, inverse, then every other surface the kit has … |
+| band-014036 | Dark band | surface.band.014036 | #014036 | #FFFFFF (text.inverse), measured on the band | measured: a section background on the seller's site (1 band, 733px tall) |
+
+## Type roles
+Each role is a pair of classes, `font-<role> text-<role>` (for example `font-title text-title`).
+"measured" means the seller's own site showed it, for the fields listed; "derived" means the kit
+worked it out from the measured roles. On a light surface a role takes the colour shown when the kit
+measured that colour; otherwise, and on every dark surface, it takes the surface's text colour.
+| role | classes | font | size at 1440 | weight | line height | colour | from |
+|---|---|---|---|---|---|---|---|
+| headline | `font-headline text-headline` | Stix Two Text | 87px | 500 | 1 | #0E1110 (text.primary) | measured: family, size, weight, line height |
+| … one row for each of the twelve roles … |
+
+Our sections' headings choose from display, headline and title (`headingRole`).
+
+## Spacing
+The seller's spacing, as classes you can use: `py-section` (space.section, <96px> at 1440),
+`px-page-margin` (space.page.margin, <30px>), `mt-stack-tight` or `gap-stack-tight`
+(space.stack.tight, <8px>), `mt-stack-default` (<16px>), `mt-stack-loose` (<32px>) and
+`p-card-padding` (space.card.padding, <32px>). Values above 24px shrink on smaller screens.
+
+## Buttons
+`kit.Button` draws a button. Below are the button styles the seller's own site uses, as its brand kit
+recorded them, and the kit's standard button. You choose the style of each button by its name, with
+`look`: `kit.Button look="<first look>"` in a section you write, or `"buttonLook": "<first look>"` on
+a FeatureSplit or a CtaBand. A button with no look is the standard button.
+| look | kind | fill | label | border | corners | confidence | notes from the brand kit |
+|---|---|---|---|---|---|---|---|
+| (none) | the kit's standard button | #047464 (surface.brand) | #FFFFFF (text.inverse) | none | 16px (radius.button) | — | Used when you name no look. |
+| outline.1 | outline | none | #0D2B25 (button.outline-1.label) | 1px (stroke.width.thin) #0D2B25 (button.outline-1.border) | 9999px (radius.full) | high | Stroke color is text.primary, … |
+| … one row per button style … |
+[Each style's hover, pressed and focus looks, and the motion between them, come from the seller's
+site; `kit.Button` draws them.]
+[This kit was made before button styles were measured: their values come from the kit's tokens, and
+a part the kit has no value for is drawn as the standard button's part.]
+
+How to choose:
+- For the page's main ask, use the style the seller's site uses for its own main call to action (the
+  notes and the brand's rules below say which); if none is clear, use the standard button.
+- For quieter actions, use an outline or text-only style the site uses.
+- Leave out styles the notes say are not page buttons (for example "inside product screenshots"), and
+  be careful with low-confidence styles.
+- Where the kit has no value for a part, the table says what is drawn instead.
+- Add `disabled` for a button that cannot be used yet; it takes the style's disabled look.
+
+On a dark surface, a button whose text or fill would not stand out from the surface changes: outline
+and text-only styles take the surface's text colour, and filled styles and the standard button take
+their light version (the kit's page colour, with its text colour). Every other button is drawn as the
+seller's site draws it.
+(or, when the kit has no button recipes: This brand's kit records no button styles, so every button
+is the kit's standard button: <fill>, <label>, <corners>.)
+
+## Cards
+`kit.Card` draws a card on a section's surface. Below are the card styles the seller's site uses, as
+its brand kit recorded them, and the kit's standard card. Choose one with `look`
+(`kit.Card look="<first card look>"`), or leave it out for the standard card. Give it `href` to make
+the whole card a link; it then takes the style's hover and focus looks from the seller's site.
+| look | kind | fill | border | corners | padding | confidence | notes from the brand kit |
+|---|---|---|---|---|---|---|---|
+| (none) | the kit's standard card | #F9FAF8 (surface.card) | none | 8px (radius.card) | 32px (space.card.padding) | — | Used when you name no look. |
+| … one row per card style … |
+(or: This brand's kit records no card styles; `kit.Card` draws the kit's standard card: <fill>,
+<corners>, <padding>.)
+
+## Links
+Write every link with `kit.Link` (a text link) or `kit.Button`, never a bare `<a>`. A link to another
+page of this site is written `/` or `/<page>`; the kit points it at the right address wherever the
+site is published.
+Text links look like the seller's own: <#0D2B25 (link.ghost-1.label)>, <underlined on hover>.
+(or: The kit recorded no text-link style, so text links are underlined in the surrounding text's
+colour.)
+
+## Motion
+`kit.Button`, `kit.Link` and `kit.Card` already move the way the seller's site does on hover and
+press. Nothing else moves unless you add one of these classes to an element; write no transition or
+animation of your own.
+| class | what it does | timing | where the seller's site uses it |
+|---|---|---|---|
+| `brand-motion-reveal-3f2a91c0` | fades in from opacity 0 and moves into place from 24px below as it scrolls into view | ease-out | 6 elements: section.reveal |
+| `brand-motion-pulse` | opacity 1 → .4, transform scale(1) → scale(1.2); repeats forever, alternating | 1.6s ease-in-out | 1 element: div#pulse.pulse |
+Visitors who ask their device for less motion see every element still, in its final place.
+[The seller's site also moves in ways a published page cannot, because they need a script: <a canvas
+animation (canvas.hero); a scripted animation (div#spin); a video (video.bg)>. Do not imitate them.]
+(or: The seller's site shows no motion a page can reuse; nothing moves except the kit's buttons,
+links and cards.)
+
+[## The brand's own rules (from its brand kit)
+Where a rule names a kit colour such as `surface.brand`, the matching choice is in the surfaces table.
+- <rule> (<scope>)]
+
+## Logos (always shown whole)
+`kit.Image` shows a logo whole: never cropped, never rounded.
+- `/asset-store/<sha256>`: <logo title>, <variant name>; on <allowed backgrounds>
+(or: This kit has no logo files.)
+
+## Assets (the only images and logos a page may use)
+- `/asset-store/<sha256>` (<kind>, <asset id>): <description>
+```
+
+Changes from the Buttons draft you saw: the example look is this brand's first look (a brand
+without `outline.1` would otherwise be shown a name it does not have); each cell shows its token
+name; the two bracketed lines and the `disabled` bullet are new; the dark-surface sentence is
+rewritten for measured styles (the old one forced every button to a light version). The Surfaces
+section drops "Our sections take only the six choices above" (Q4 = (b)) and merges the two tables.
+
+#### T-A9-2 — `catalog/sections.md` rows (site agent; Task 7)
+
+- the `surface` row of each of our sections:
+  `| \`surface\` | text | yes | one of this brand's surfaces (brand/brand.md, Surfaces): page (Page), card (Card), muted (Muted), brandSubtle (Brand, subtle), brand (Brand), inverse (Inverse), canvas (Canvas), band-014036 (Dark band) |`
+- the new `buttonLook` row (FeatureSplit, CtaBand):
+  `| \`buttonLook\` | text | no | default ""; empty is the standard button, or a button style from brand/brand.md (Buttons): outline.1, ghost.1, solid.1 |`
+  (or, with no button recipes: `default ""; this brand's kit records no button styles, so leave it empty`)
+- the intro sentence "Style options are fixed choices; there are no colour, size, class or style
+  fields." becomes "Style options are names from brand/brand.md; there are no colour, size, class or
+  style fields."
+
+#### T-A9-3 — validator refusals (site agent; Task 6b)
+
+- `<where>: "<value>" is not one of this brand's surfaces; its surfaces are <list> (brand/brand.md, Surfaces)`
+- `<where>: "<value>" is not one of this brand's button styles; its styles are <list>, or leave it empty for the standard button (brand/brand.md, Buttons)`
+- `<where>: this brand's kit records no button styles; leave it empty for the standard button (brand/brand.md, Buttons)`
+- `<where>: "<value>" is not one of this brand's card styles; its styles are <list>, or leave it out for the standard card (brand/brand.md, Cards)`
+
+#### T-A9-4 — section-check refusals (site agent, `write_section`; Task 6b)
+
+- `look "<value>" on kit.Button is not one of this brand's button styles; the styles are <list> (brand/brand.md, Buttons)`
+- `look "<value>" on kit.Card is not one of this brand's card styles; the styles are <list> (brand/brand.md, Cards)`
+- `class "<class>" is motion of your own; motion comes from the brand: kit.Button, kit.Link and kit.Card carry it, and a class from brand/brand.md (Motion) adds it to an element`
+- `class "<class>" is not one of this brand's motion classes; its motion classes are <list> (brand/brand.md, Motion)`
+
+#### T-A9-5 — `writing-a-section` skill (site agent; carried by Lane B Task 4, reviewed in Lane B Task 0)
+
+In `skills-e5/writing-a-section/SKILL.md`: the example's
+`surface: z.enum(["page", "card", "muted", "brandSubtle", "brand", "inverse"]),` becomes
+`surface: z.string(),`, and the kit list becomes:
+
+```markdown
+The kit gives you these pieces, with exactly these props:
+- `<kit.Shell surface={...}>…</kit.Shell>`: the section and its surface (it sets the right text
+  colour). `surface` is any surface in brand/brand.md.
+- `<kit.Button label="…" href="…" surface={...} look="…" />`: a button. `look` is a button style
+  from brand/brand.md (Buttons); leave it out for the kit's standard button. Its words go in `label`.
+- `<kit.Link href="…">…</kit.Link>`: a text link, drawn like the seller's own links.
+- `<kit.Card look="…" href="…">…</kit.Card>`: a card, drawn like the seller's own cards
+  (brand/brand.md, Cards). With `href` the whole card is a link.
+- `<kit.Eyebrow>…</kit.Eyebrow>`: the small label above a heading.
+- `<kit.Image src="…" alt="…" />`: an image from brand/brand.md, by its file path. Add
+  `fit="fill"` to make it cover a box you position, for a background photo, or `fit="contain"` to
+  show the whole image. A logo is always shown whole.
+- Motion: add a class from brand/brand.md (Motion) to an element, for example
+  `className="brand-motion-pulse"`. Write no transition or animation of your own.
+```
+
+and the Rules bullet's "spacing through Tailwind's scale (`mt-6`, `gap-8`)" becomes "spacing
+through the brand's spacing classes (`py-section`, `mt-stack-tight`, brand/brand.md) or Tailwind's
+scale (`mt-6`, `gap-8`)".
+
+#### T-A9-6 — the brief agent's prompt (ingestion; Task X4)
+
+`lumen_ingestion/brief_agent_prompt.md:72-75` today: "A background color the page recurs on is
+minted as a `surface.band.*` token (`surface.band.statement` for a dark band, `surface.band.tint`
+for a light one) — when the kit carries those, name the bands by them rather than by the nearest
+approximation." Required replacement (the naming it describes changes):
+
+> Every flat section background the page shows is a surface token: an existing `surface.*` token
+> when one holds exactly that colour, otherwise a `surface.band.<hex>` token minted from it (for
+> example `surface.band.014036`) — name the bands by them rather than by the nearest approximation.
+
+Optional addition, after the `component_recipes[]` bullet (the plan works without it; it lets the
+model's own recipe slots and notes use the exact tokens):
+
+> The kit also carries tokens minted from those shape records, named for where they were measured
+> (`button.solid-2.fill`, `card.solid-1.radius`); when a slot's measured value has one, name it.
+
+#### T-A9-7 — the marketer's dock (Lane C draws them with the existing select control)
+
+- Field "Button style" on FeatureSplit and CtaBand, options: "Standard", then one per button style
+  named by its kind — "Outline", "Text only", "Filled" — with a number only when a kind repeats
+  ("Filled 1", "Filled 2"); a style whose variant is not `outline.N`/`ghost.N`/`solid.N` reads as its
+  variant in words. The field is left out for a brand with no button styles.
+- Field "Surface" on our four sections, options: the six as today ("Page", "Card", "Muted", "Brand,
+  subtle", "Brand", "Inverse"), then this brand's other surfaces. **Label rule:** a kit surface's name
+  reads as words (`surface.canvas` → "Canvas", `surface.elevated` → "Elevated", `surface.accent` →
+  "Accent"); a minted section background `surface.band.<hex>` reads by what it measured — "Dark band"
+  when its text is lighter than it, "Tinted band" when it is light and coloured (OKLCH chroma ≥ 0.04),
+  "Light band" otherwise — numbered only when a kind repeats; an older kit's `surface.band.statement`
+  / `surface.band.tint-2` reads "Statement band" / "Tint band 2". Labels come from the band data, not
+  from the brief's prose notes (reading meaning out of model prose in code would be judgement in
+  code). **Examples from the three real kits** (bands from their stored evidence; minted only after
+  a re-extraction): Garner — Canvas, Elevated, Accent, "Dark band" (`#014036`, the forest statement
+  band), "Light band" (`#FFFFFF`, the white shells; `surface.page` is `#F9FAF8`); Conduit — Canvas,
+  Elevated, Accent, "Dark band" (`#28241E`, the procedures band; its white bands are `surface.page`
+  exactly, so they mint nothing); Alt Carbon — Canvas, Elevated, Accent (both bands are `#F1F0DE`,
+  `surface.page` exactly).
+
+
+
 ## Founder answers (recorded as given)
 
 - 2026-10-12 — **Q1:** (b) the Head of ABM's reads say "web" for a site; the gallery and the editor
