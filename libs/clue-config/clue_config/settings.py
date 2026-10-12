@@ -933,6 +933,11 @@ class Settings(BaseSettings):
     # origin and the backfill warn loudly when they do not. Dev stack: `pages.localhost`.
     # Env: ``CLUE_PAGES_SYSTEM_SUFFIX``.
     pages_system_suffix: str = "pages.cluehq.ai"
+    # Wave 2 Contract 9: suffixes system hostnames USED to end in (comma-separated). Their
+    # registrable domains stay reserved, so no customer can connect `x.cluehq.ai` as a custom
+    # domain once published pages live on their own domain; the edge Worker 301s the old hosts
+    # (infra/cloudflare/pages-edge). Env: ``CLUE_PAGES_LEGACY_SYSTEM_SUFFIXES``.
+    pages_legacy_system_suffixes: str = "pages.cluehq.ai"
     # Scheme and optional port for public page URLs the design API mints (og:image, publish `url`).
     # Production: https and no port; dev stack: http + 8040. Env: ``CLUE_PAGES_PUBLIC_SCHEME`` /
     # ``CLUE_PAGES_PUBLIC_PORT`` (empty string = unset).

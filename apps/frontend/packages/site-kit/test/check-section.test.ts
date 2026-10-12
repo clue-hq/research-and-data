@@ -5,7 +5,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { lint, typeCheck } from "../src/check-section";
+import { LINK_REFUSAL, lint, lintOptionsFor, typeCheck } from "../src/check-section";
+import { kitBrand } from "./fixtures/kits";
 
 // The example from the spike's writing-a-section skill (trials/puck-spike/agent/skills-e5/), verbatim.
 const EXAMPLE = fs.readFileSync(new URL("./fixtures/section-example.tsx", import.meta.url), "utf-8");
@@ -103,5 +104,67 @@ test("the CLI checks a section without importing it", () => {
     assert.deepEqual(JSON.parse(out.toString()), { ok: true, errors: [] });
   } finally {
     fs.rmSync(path.join(root, ".section-check"), { recursive: true, force: true });
+  }
+});
+
+test("a raw <a> is refused; links go through kit.Link or kit.Button", () => {
+  const errors = lint(EXAMPLE.replace("</kit.Shell>", '<a href="/analysis">More</a></kit.Shell>'));
+  assert.ok(errors.includes(LINK_REFUSAL), errors.join("; "));
+});
+
+test("a colour class the theme does not define is refused by name", () => {
+  for (const cls of ["border-line-inverse", "bg-surface-brandSubtle", "text-ink-tertiary"]) {
+    const errors = lint(withClass(`mt-6 ${cls}`));
+    assert.ok(errors.some((e) => e.startsWith(`class "${cls}" is not one of the brand's classes`)), `${cls}: ${errors.join("; ")}`);
+  }
+});
+
+test("variants, opacity and every defined colour class pass", () => {
+  assert.deepEqual(lint(withClass("mt-6 md:bg-surface-muted hover:border-line-subtle/50 text-on-surface-brand ring-focus bg-surface-canvas")), []);
+});
+
+test("the kit's extra surfaces pass only when the brand has them", () => {
+  const band = withClass("mt-6 bg-surface-band-statement text-on-surface-band-statement");
+  assert.ok(lint(band).some((e) => e.startsWith('class "bg-surface-band-statement" is not one of the brand\'s classes')));
+  assert.deepEqual(lint(band, { extraSurfaces: ["surface.band.statement"] }), []);
+});
+
+test("a look named in the source must be one of the brand's", () => {
+  const options = lintOptionsFor(kitBrand("garner"));
+  const withButton = (look: string) => EXAMPLE.replace("</kit.Shell>", `<kit.Button label="Go" href="/" surface="page" look="${look}" /></kit.Shell>`);
+  assert.deepEqual(lint(withButton("outline.1"), options), []);
+  assert.ok(lint(withButton("solid.9"), options).includes('look "solid.9" on kit.Button is not one of this brand\'s button styles; the styles are outline.1, ghost.1, solid.1, solid.2, solid.3, solid.4 (brand/brand.md, Buttons)'));
+  const withCard = EXAMPLE.replace("</kit.Shell>", '<kit.Card look="solid.7">x</kit.Card></kit.Shell>');
+  assert.ok(lint(withCard, options).some((e) => e.startsWith('look "solid.7" on kit.Card is not one of this brand\'s card styles')));
+});
+
+test("motion of the section's own is refused; the brand's motion classes pass", () => {
+  const options = lintOptionsFor(kitBrand("probe.minted"));
+  for (const cls of ["transition", "duration-300", "ease-in-out", "animate-spin", "hover:scale-105", "group-hover:-translate-y-1", "focus:opacity-80"]) {
+    assert.ok(lint(withClass(`mt-6 ${cls}`), options).some((e) => e.startsWith(`class "${cls}" is motion of your own`)), cls);
+  }
+  assert.deepEqual(lint(withClass("mt-6 brand-motion-pulse hover:bg-surface-muted -translate-x-1/2"), options), []);
+  assert.ok(lint(withClass("mt-6 brand-motion-wobble"), options).some((e) => e.startsWith('class "brand-motion-wobble" is not one of this brand\'s motion classes')));
+});
+
+test("prose that mentions motion is never a class", () => {
+  const options = lintOptionsFor(kitBrand("probe.minted"));
+  const prose = EXAMPLE.replace(
+    "attribution: z.string(),",
+    'attribution: z.string().describe("A smooth transition built for ease-of-use"),\n  heading: z.string().default("Make the transition to value-based care"),',
+  );
+  assert.deepEqual(lint(prose, options), []);
+});
+
+test("motion classes are still refused wherever className holds them", () => {
+  const options = lintOptionsFor(kitBrand("probe.minted"));
+  const at = 'className="mt-6 font-body text-body text-ink-secondary"';
+  const forms: [string, string[]][] = [
+    ['className={`mt-6 font-body ${props.quote ? "transition duration-300" : ""} ease-in-out`}', ["transition", "duration-300", "ease-in-out"]],
+    ['className={["mt-6", props.quote && "animate-spin"].filter(Boolean).join(" ")}', ["animate-spin"]],
+  ];
+  for (const [className, refused] of forms) {
+    const errors = lint(EXAMPLE.replace(at, className), options);
+    for (const cls of refused) assert.ok(errors.some((e) => e.startsWith(`class "${cls}" is motion of your own`)), `${cls}: ${errors.join("; ")}`);
   }
 });

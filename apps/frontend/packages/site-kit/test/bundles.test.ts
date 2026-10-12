@@ -18,6 +18,11 @@ test("the build writes the validator and the catalog as single files that run wi
   const validator = path.join(root, "dist", "validate-site.mjs");
   const catalog = path.join(root, "dist", "build-catalog.mjs");
   assert.ok(fs.existsSync(validator) && fs.existsSync(catalog));
+  const browser = path.join(root, "dist", "render-browser.js");
+  assert.ok(fs.existsSync(browser), "the render bundle is built");
+  const text = fs.readFileSync(browser, "utf-8");
+  assert.ok(text.length > 100_000 && !/^\s*import\s/m.test(text.slice(0, 2000)), "one classic script, nothing to resolve");
+  assert.ok(text.includes("__clueRender") && text.includes("clue-render-input"));
   const away = fs.mkdtempSync(path.join(os.tmpdir(), "site-kit-bundle-"));
   try {
     const checked = JSON.parse(

@@ -32,6 +32,17 @@ COPY subsystems/clue-design/scripts/vendor_tailwind_runtime.sh ./scripts/
 RUN bash scripts/vendor_tailwind_runtime.sh \
     && test -f apps/editor/public/vendor/tailwind-browser.js
 
+# --- Site kit bundles (Puck sites: the hardened-browser render bundle and the validator CLI) -----
+FROM node:24-bookworm-slim AS sitekit
+WORKDIR /src/apps/frontend
+COPY apps/frontend/package.json apps/frontend/package-lock.json ./
+COPY apps/frontend/packages/design-system/package.json ./packages/design-system/package.json
+COPY apps/frontend/packages/site-kit ./packages/site-kit
+RUN npm ci --ignore-scripts && npm run build -w @clue/site-kit \
+    && test -f packages/site-kit/dist/render-browser.js \
+    && test -f packages/site-kit/dist/validate-site.mjs \
+    && test -f packages/site-kit/dist/build-catalog.mjs
+
 # --- Runtime ------------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS runtime
 COPY --from=ghcr.io/astral-sh/uv:0.10 /uv /usr/local/bin/uv
@@ -52,6 +63,7 @@ RUN python -m playwright install --with-deps chromium && chmod -R a+rX /ms-playw
 COPY --from=helper /usr/local/bin/lumen-api-helper /app/subsystems/clue-design/target/release/lumen-api-helper
 COPY --from=editor /src/subsystems/clue-design/apps/editor/node_modules /app/subsystems/clue-design/apps/editor/node_modules
 COPY --from=editor /src/subsystems/clue-design/apps/editor/public/vendor /app/subsystems/clue-design/apps/editor/public/vendor
+COPY --from=sitekit /src/apps/frontend/packages/site-kit/dist /app/apps/frontend/packages/site-kit/dist
 # CLUE_ARV2_RAW_ROOT: research's podcast downloads (deleted after transcription). The settings
 # default, .artifacts/arv2, is relative and would land under the root-owned /app.
 ENV LUMEN_CORE_HELPER=/app/subsystems/clue-design/target/release/lumen-api-helper \

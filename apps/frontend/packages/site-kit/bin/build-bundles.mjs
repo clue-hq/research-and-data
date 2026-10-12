@@ -3,6 +3,7 @@
 // apps/frontend/node_modules):
 //   dist/validate-site.mjs   the validator CLI (bin/validate-site.ts)
 //   dist/build-catalog.mjs   the catalog CLI (bin/build-catalog.ts)
+//   dist/render-browser.js   the site render inside the hardened Chromium page (src/render-browser.tsx)
 // Usage: node bin/build-bundles.mjs   (npm run build -w @clue/site-kit)
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,4 +29,19 @@ await Promise.all(
     }),
   ),
 );
+await build({
+  absWorkingDir: root,
+  entryPoints: ["src/render-browser.tsx"],
+  outfile: path.join(dist, "render-browser.js"),
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  target: "chrome120",
+  jsx: "automatic",
+  minify: true,
+  legalComments: "none",
+  define: { "process.env.NODE_ENV": '"production"' },
+  logLevel: "warning",
+  banner,
+});
 console.error(`site-kit bundles written to ${dist}`);

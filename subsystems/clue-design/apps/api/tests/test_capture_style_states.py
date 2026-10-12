@@ -1,0 +1,151 @@
+"""The per-style state pass on a live page (Wave 2 A9, Task X2).
+
+The real probe in headless Chromium — Playwright's and patchright's (the stealth backend's) — over a
+local fixture page: CSS hover, press and focus-visible, a script-driven hover, a transform under a
+transition, a moving icon, a disabled control, a covered button, a text link, a nav item, a card, a
+CSS reveal, a keyframe animation and a scripted animation. No network.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+from pathlib import Path
+
+import pytest
+
+from lumen_ingestion.capture import states as states_module
+from lumen_ingestion.capture.geometry import GEOMETRY_JS
+from lumen_ingestion.capture.states import LOOK_JS, REVEAL_BEFORE_JS, probe_states
+
+FIXTURE = (Path(__file__).resolve().parent / "fixtures" / "capture" / "style_states.html").as_uri()
+
+
+async def _capture(engine: str, *, before_probe=None) -> dict:
+    if engine == "patchright":
+        from patchright.async_api import async_playwright
+    else:
+        from playwright.async_api import async_playwright
+    diagnostics: list[dict] = []
+    async with async_playwright() as pw:
+        try:
+            browser = await pw.chromium.launch(headless=True)
+        except Exception as error:  # noqa: BLE001
+            pytest.skip(f"{engine} chromium unavailable: {error}")
+        try:
+            page = await browser.new_page(viewport={"width": 1440, "height": 900})
+            await page.goto(FIXTURE)
+            reveal_before = await page.evaluate(REVEAL_BEFORE_JS)
+            for y in range(0, 4200, 600):
+                await page.evaluate(f"window.scrollTo(0, {y})")
+                await page.wait_for_timeout(120)
+            await page.wait_for_timeout(700)
+            await page.evaluate("window.scrollTo(0, 0)")
+            geometry = await page.evaluate(GEOMETRY_JS)
+            ids = await page.evaluate(
+                "() => Object.fromEntries([...document.querySelectorAll('[data-lumen-probe]')]"
+                ".map((el) => [el.dataset.lumenProbe, el.id]))"
+            )
+            if before_probe is not None:
+                await before_probe(page)
+            looks_before = {
+                idx: await page.locator(f'[data-lumen-probe="{idx}"]').evaluate(LOOK_JS) for idx in ids
+            }
+            shot_before = hashlib.sha256(await page.screenshot(full_page=True)).hexdigest()
+            result = await probe_states(page, geometry, reveal_before=reveal_before, diagnostics=diagnostics)
+            await page.evaluate("window.scrollTo(0, 0)")
+            looks_after = {
+                idx: await page.locator(f'[data-lumen-probe="{idx}"]').evaluate(LOOK_JS) for idx in ids
+            }
+            shot_after = hashlib.sha256(await page.screenshot(full_page=True)).hexdigest()
+            clicked = await page.evaluate("window.__clicked || 0")
+        finally:
+            await browser.close()
+    by_id = {ids.get(str(record["idx"])): record for record in result["styles"]}
+    return {
+        "geometry": geometry, "result": result, "by_id": by_id, "diagnostics": diagnostics,
+        "same_looks": looks_before == looks_after, "same_shot": shot_before == shot_after, "clicked": clicked,
+    }
+
+
+async def _stop_motion(page) -> None:
+    await page.evaluate("window.__stopMotion()")
+
+
+@pytest.mark.parametrize("engine", ["playwright", "patchright"])
+def test_each_style_is_measured_in_every_state(engine: str) -> None:
+    run = asyncio.run(_capture(engine))
+    solid = run["by_id"]["b-solid"]
+    assert solid["how"] == "pointer"
+    assert solid["hover"]["background"] == "rgb(3, 90, 78)"
+    assert "0px 4px 12px" in solid["hover"]["box_shadow"]
+    assert solid["hover"]["icon_transform"] == "matrix(1, 0, 0, 1, 4, 0)"
+    assert solid["pressed"]["background"] == "rgb(2, 63, 55)"
+    assert solid["pressed"]["transform"] == "matrix(0.98, 0, 0, 0.98, 0, 0)"
+    assert solid["focus"]["outline_style"] == "solid"
+    assert solid["focus"]["outline_color"] == "rgb(245, 166, 35)"
+    assert solid["focus"]["outline_width"] == 3 and solid["focus"]["outline_offset"] == 2
+    assert solid["disabled"] == {"opacity": 0.45, "cursor": "not-allowed"}
+    assert [(t["property"], t["duration_ms"], t["easing"], t["delay_ms"]) for t in solid["motion"]["transitions"]] == [
+        ("background-color", 200, "ease-out", 0), ("transform", 150, "ease", 0), ("box-shadow", 300, "ease", 50),
+    ]
+    assert solid["motion"]["icon"]["kind"] == "svg" and solid["motion"]["icon"]["position"] == "end"
+    assert solid["rest"]["text_transform"] == "uppercase" and solid["rest"]["letter_spacing"] == 0.28
+
+    outline = run["by_id"]["b-outline"]
+    assert outline["motion"]["icon"] == {"kind": "glyph", "position": "end", "glyph": "→"}
+    assert outline["hover"]["label_color"] == "rgb(255, 255, 255)"
+
+    assert run["by_id"]["b-js"]["hover"]["background"] == "rgb(90, 47, 214)", "the mouseenter hover"
+    assert run["by_id"]["b-js"]["focus"] == {"browser_focus_ring": True}, "the browser's ring is not a brand value"
+    assert run["by_id"]["b-lift"]["hover"]["transform"] == "matrix(1, 0, 0, 1, 0, -2)"
+    covered = run["by_id"]["b-covered"]
+    assert covered["how"] == "forced" and covered["hover"]["background"] == "rgb(8, 58, 108)"
+
+    link = run["by_id"]["l-text"]
+    assert link["hover"]["decoration_line"] == "underline"
+    assert link["hover"]["decoration_thickness"] == "2px"
+    assert link["hover"]["color"] == "rgb(4, 116, 100)"
+    assert run["by_id"]["n-home"]["hover"]["color"] == "rgb(4, 116, 100)"
+    assert "0px 8px 24px" in run["by_id"]["c-card"]["hover"]["box_shadow"]
+
+    assert run["clicked"] == 0, "pressing never clicks"
+    assert run["same_looks"], "every element is left as the pass found it"
+
+
+@pytest.mark.parametrize("engine", ["playwright", "patchright"])
+def test_animations_reveals_and_scripted_motion_are_found(engine: str) -> None:
+    run = asyncio.run(_capture(engine))
+    pulse = next(a for a in run["geometry"]["animations"] if a["name"] == "pulse")
+    assert (pulse["duration"], pulse["iterations"], pulse["direction"]) == ("1.6s", "infinite", "alternate")
+    reveal = next(r for r in run["result"]["reveals"] if r["where"] == "section#reveal.reveal")
+    assert reveal["kind"] == "css" and reveal["from_opacity"] == 0
+    assert reveal["from_transform"] == "matrix(1, 0, 0, 1, 0, 24)" and reveal["trigger"] == ["is-in"]
+    assert {"kind": "scripted", "where": "div#spin.spin"} in run["result"]["scripted"]
+    band = next(s for s in run["geometry"]["sections"] if s.get("id") == "band")
+    assert band["ink"] == "rgb(255, 255, 255)"
+
+
+def test_the_pass_leaves_the_pixels_as_it_found_them() -> None:
+    run = asyncio.run(_capture("playwright", before_probe=_stop_motion))
+    assert run["same_shot"]
+
+
+def test_without_a_cdp_session_pointer_hovers_are_still_measured(monkeypatch) -> None:
+    async def no_cdp(page) -> None:
+        async def refuse(_page):
+            raise RuntimeError("no cdp here")
+        monkeypatch.setattr(page.context, "new_cdp_session", refuse)
+
+    run = asyncio.run(_capture("playwright", before_probe=no_cdp))
+    solid = run["by_id"]["b-solid"]
+    assert solid["hover"]["background"] == "rgb(3, 90, 78)"
+    assert "pressed" not in solid and "focus" not in solid
+    assert any(d["code"] == "LUMI0543" for d in run["diagnostics"])
+
+
+def test_the_pass_stops_at_its_deadline(monkeypatch) -> None:
+    monkeypatch.setattr(states_module, "STATE_PASS_DEADLINE_S", 0.0)
+    run = asyncio.run(_capture("playwright"))
+    assert run["result"]["styles"] == [] and run["result"]["truncated"] is True
+    assert any(d["code"] == "LUMI0544" for d in run["diagnostics"])

@@ -10,6 +10,12 @@ document — an id nobody can point at, or a path that is not the closed ``:nth-
 grammar, is refused at the HTTP boundary rather than handed to the design runtime.
 Unlike a scene turn, web targets MAY span pages: the design API's TURN TARGET line names
 each target's page itself.
+
+Site documents (Puck, Wave 2): a target is a ``design_node`` ref whose object_id is
+``site:<route>#<componentId>`` with an optional ``.<propName>``
+(``site:/analysis#Hero-1a2b.title``), or ``site:shell#header`` / ``site:shell#footer``. It is
+validated against the stored site at the pinned version: the route is a page, the component's
+``props.id`` is on it, the prop is one of its props.
 """
 
 from __future__ import annotations
@@ -23,13 +29,19 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; this module stays runtime-d
     from clue_agents import DomainObjectRef
 
 __all__ = [
+    "SITE_TARGET_PREFIX",
     "DesignTurnTargetError",
     "ResolvedSceneTargets",
+    "ResolvedSiteTargets",
     "ResolvedWebTargets",
+    "SiteTarget",
+    "SiteTargetNote",
     "WebTargetNote",
     "resolve_scene_targets",
+    "resolve_site_targets",
     "resolve_web_targets",
     "split_web_target",
+    "validate_site_targets",
     "validate_web_targets",
 ]
 
@@ -243,4 +255,112 @@ def resolve_scene_targets(
     return ResolvedSceneTargets(
         target_node_ids=ordered,
         active_page_id=next(iter(page_ids)),  # type: ignore[arg-type]
+    )
+
+
+SITE_TARGET_PREFIX = "site:"
+_SITE_ROUTE = re.compile(r"^/(?:[a-z0-9][a-z0-9-]*)?$")
+_SHELL_PARTS = ("header", "footer")
+
+
+@dataclass(frozen=True, slots=True)
+class SiteTarget:
+    #: "/", "/<name>" or "shell".
+    route: str
+    #: The component's ``props.id``; "header" or "footer" for the shell.
+    component_id: str
+    prop: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SiteTargetNote:
+    target: SiteTarget
+    note: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedSiteTargets:
+    targets: tuple[SiteTarget, ...]
+    #: One entry per submitted ref, in submission order (annotations are numbered by the human).
+    target_notes: tuple[SiteTargetNote, ...]
+
+
+def _site_component_props(
+    site: dict[str, Any], route: str, component_id: str
+) -> dict[str, Any] | None:
+    """The props of the component a target names, or None when the stored site has no such one."""
+    if route == "shell":
+        shell = site.get("shell")
+        part = (
+            shell.get(component_id)
+            if isinstance(shell, dict) and component_id in _SHELL_PARTS
+            else None
+        )
+        return part if isinstance(part, dict) else None
+    pages = site.get("pages")
+    page = pages.get(route) if isinstance(pages, dict) else None
+    content = page.get("content") if isinstance(page, dict) else None
+    for item in content if isinstance(content, list) else ():
+        props = item.get("props") if isinstance(item, dict) else None
+        if isinstance(props, dict) and props.get("id") == component_id:
+            return props
+    return None
+
+
+def _site_target(site: dict[str, Any], object_id: str) -> SiteTarget:
+    if not object_id.startswith(SITE_TARGET_PREFIX) or "#" not in object_id:
+        raise DesignTurnTargetError(
+            "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+            "a target on a site document is site:<route>#<component>[.<prop>]",
+        )
+    route, _, rest = object_id[len(SITE_TARGET_PREFIX) :].partition("#")
+    if route != "shell" and not _SITE_ROUTE.fullmatch(route):
+        raise DesignTurnTargetError(
+            "CONTEXT_REF_NOT_FOUND", "a targeted site page is not a route of this site"
+        )
+    # The whole rest is a component id first (ids may contain dots); only then "<id>.<prop>".
+    if _site_component_props(site, route, rest) is not None:
+        return SiteTarget(route=route, component_id=rest, prop=None)
+    component_id, dot, prop = rest.rpartition(".")
+    props = _site_component_props(site, route, component_id) if dot else None
+    if props is None or prop not in props:
+        raise DesignTurnTargetError(
+            "CONTEXT_REF_NOT_FOUND",
+            "a targeted site component or field does not exist in the submitted site document",
+        )
+    return SiteTarget(route=route, component_id=component_id, prop=prop)
+
+
+def validate_site_targets(
+    site: dict[str, Any], target_ids: Sequence[str]
+) -> tuple[SiteTarget, ...]:
+    """Refuse site targets the stored site cannot support; return them parsed, in order."""
+    ordered = tuple(target_ids)
+    if not ordered:
+        raise DesignTurnTargetError(
+            "CONTEXT_REF_RELATIONSHIP_MISMATCH",
+            "a focused design turn requires at least one design node",
+        )
+    if len(set(ordered)) != len(ordered):
+        raise DesignTurnTargetError(
+            "CONTEXT_REF_DUPLICATE", "the same design node may appear only once in a submission"
+        )
+    return tuple(_site_target(site, object_id) for object_id in ordered)
+
+
+def resolve_site_targets(
+    site: dict[str, Any], focus_refs: Sequence[DomainObjectRef]
+) -> ResolvedSiteTargets | None:
+    """The turn's ``design_node`` refs as site targets with their notes; None when there are
+    none."""
+    nodes = [ref for ref in focus_refs if ref.object_type == "design_node"]
+    if not nodes:
+        return None
+    targets = validate_site_targets(site, [ref.object_id for ref in nodes])
+    return ResolvedSiteTargets(
+        targets=tuple(dict.fromkeys(targets)),
+        target_notes=tuple(
+            SiteTargetNote(target=target, note=ref.note)
+            for target, ref in zip(targets, nodes, strict=True)
+        ),
     )

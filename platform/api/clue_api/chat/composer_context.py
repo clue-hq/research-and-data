@@ -31,6 +31,7 @@ from clue_api.design_leg_wiring import project_design_documents, wire_kind
 from clue_api.design_turn_targets import (
     DesignTurnTargetError,
     resolve_scene_targets,
+    validate_site_targets,
     validate_web_targets,
 )
 from clue_api.frontend_read.accounts_list import read_spine_page
@@ -268,7 +269,7 @@ async def validated_context_refs(
                 "the targeted design document is not available in this workspace",
             ) from exc
         target_doc_kind = target_document.get("doc_kind")
-        if target_doc_kind not in {"scene", "web"}:
+        if target_doc_kind not in {"scene", "web", "site"}:
             raise ContextReferenceError(
                 "CONTEXT_REF_RELATIONSHIP_MISMATCH",
                 "design node targets require a scene or web document",
@@ -284,6 +285,11 @@ async def validated_context_refs(
             # an inner ``#`` path naming the annotated element inside its node.
             if target_doc_kind == "scene":
                 resolve_scene_targets(
+                    target_document.get("scene") or {},
+                    tuple(ref.object_id for ref in design_nodes),
+                )
+            elif target_doc_kind == "site":
+                validate_site_targets(
                     target_document.get("scene") or {},
                     tuple(ref.object_id for ref in design_nodes),
                 )

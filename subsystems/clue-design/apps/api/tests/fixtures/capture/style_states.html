@@ -1,0 +1,72 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Style states fixture</title>
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; transition: color 150ms ease; }
+  header a:hover { color: #047464; }
+  .wrap { padding: 40px; display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 24px; border-radius: 999px;
+         background: #047464; color: #fff; border: 1px solid #047464; font: 500 14px/1.4 Arial;
+         letter-spacing: 0.02em; text-transform: uppercase; text-decoration: none; cursor: pointer;
+         transition: background-color 200ms ease-out, transform 150ms ease, box-shadow 300ms ease 50ms; }
+  .btn:hover { background: #035a4e; box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+  .btn:active { background: #023f37; transform: scale(0.98); }
+  .btn:focus-visible { outline: 3px solid #f5a623; outline-offset: 2px; }
+  .btn:disabled, .btn[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+  .btn svg { transition: transform 200ms ease; }
+  .btn:hover svg { transform: translateX(4px); }
+  .outline { background: transparent; color: #0d2b25; border: 1px solid #0d2b25; }
+  .outline:hover { background: #0d2b25; color: #fff; }
+  .outline .label { color: #0d2b25; }
+  .outline:hover .label { color: #fff; }
+  .lift { background: #28241e; color: #fff; border-radius: 8px; border: 0; transition: transform 250ms cubic-bezier(.2,.8,.2,1); }
+  .lift:hover { transform: translateY(-2px); }
+  .jsbtn { background: #7c4cff; color: #fff; border-radius: 6px; padding: 10px 18px; border: 0; }
+  .jsbtn.is-hot { background: #5a2fd6; }
+  .covered { position: relative; }
+  .covered .shield { position: absolute; inset: -4px; background: rgba(255,255,255,0.01); }
+  .covered .btn { background: #0a4a8a; border-color: #0a4a8a; }
+  .covered .btn:hover { background: #083a6c; }
+  a.text { color: #0d2b25; text-decoration: none; text-underline-offset: 4px; transition: color 120ms linear; }
+  a.text:hover { text-decoration: underline; text-decoration-thickness: 2px; color: #047464; }
+  article { width: 240px; padding: 24px; border-radius: 12px; background: #f1f0de; transition: box-shadow 200ms ease; }
+  article:hover { box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  .pulse { width: 40px; height: 40px; border-radius: 50%; background: #f5a623; animation: pulse 1.6s ease-in-out 0s infinite alternate; }
+  @keyframes pulse { from { transform: scale(1); opacity: 1; } 50% { opacity: .7; } to { transform: scale(1.2); opacity: .4; } }
+  .spacer { height: 2400px; }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 600ms ease-out, transform 600ms ease-out; padding: 40px; }
+  .reveal.is-in { opacity: 1; transform: none; }
+  .spin { width: 30px; height: 30px; background: #111; }
+</style></head>
+<body>
+<header><nav><a id="n-home" href="#home">Home</a><a href="#pricing">Pricing</a></nav></header>
+<main>
+<div class="wrap">
+  <a href="#go" class="btn" id="b-solid">Request the analysis <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 6h9M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg></a>
+  <button class="btn outline" id="b-outline"><span class="label">See how it works</span> →</button>
+  <button class="btn lift" id="b-lift">Book a demo</button>
+  <button class="jsbtn" id="b-js">JS hover</button>
+  <span class="covered"><button class="btn" id="b-covered">Covered</button><span class="shield"></span></span>
+  <p>Read <a class="text" id="l-text" href="#more">the full analysis</a> here.</p>
+  <article id="c-card"><h3>Card</h3><p>Body</p></article>
+  <div class="pulse" id="pulse"></div>
+  <div class="spin" id="spin"></div>
+</div>
+<div class="spacer"></div>
+<section class="band" id="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+<section class="reveal" id="reveal"><h2>Revealed on scroll</h2><p>Content.</p></section>
+</main>
+<script>
+  const js = document.getElementById('b-js');
+  js.addEventListener('mouseenter', () => js.classList.add('is-hot'));
+  js.addEventListener('mouseleave', () => js.classList.remove('is-hot'));
+  const io = new IntersectionObserver((entries) => entries.forEach((e) => { if (e.isIntersecting) e.target.classList.add('is-in'); }));
+  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+  const spin = document.getElementById('spin'); let angle = 0; let frame = 0;
+  (function tick() { angle = (angle + 6) % 360; spin.style.transform = `rotate(${angle}deg)`; frame = requestAnimationFrame(tick); })();
+  document.querySelectorAll('a[href^="#"]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); window.__clicked = (window.__clicked || 0) + 1; }));
+  window.__stopMotion = () => { cancelAnimationFrame(frame); document.getAnimations().forEach((a) => a.pause()); };
+</script>
+</body></html>

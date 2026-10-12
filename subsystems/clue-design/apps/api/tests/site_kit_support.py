@@ -62,13 +62,31 @@ def garner_brand() -> dict[str, Any]:
         "fonts": _read("fonts.json"),
         "assets": {**_read("assets.json"), **_clone_images(clones)},
         "clones": {clone["id"]: clone for clone in clones},
-        "measured": _read("measured.json"),
     }
 
 
 def garner_site(document_id: str, title: str = "Garner for Syracuse") -> dict[str, Any]:
     """The `garner-syracuse` site as a stored site document (Contract 1)."""
     stored = _read("garner-syracuse.json")
+    return {
+        "id": document_id,
+        "title": title,
+        "theme": {},
+        "pages": stored["pages"],
+        "shell": stored["shell"],
+        "agent_sections": {},
+    }
+
+
+def conduit_brand() -> dict[str, Any]:
+    """Conduit's BrandData exactly as site-kit's `kitBrand("conduit")` builds it
+    (`test/fixtures/kits.ts`): the real kit alone — no fonts, no kit assets, no clones."""
+    return {"slug": "conduit", "kit": _read("kits/conduit.json"), "fonts": [], "assets": {}, "clones": {}}
+
+
+def conduit_site(document_id: str, title: str = "Conduit for Atrium Hospitality") -> dict[str, Any]:
+    """The `conduit-atrium` site as a stored site document (Contract 1)."""
+    stored = _read("conduit-atrium.json")
     return {
         "id": document_id,
         "title": title,
@@ -135,3 +153,56 @@ def ensure_site_kit_dist() -> Path:
         raise RuntimeError("apps/frontend/node_modules is missing: run `npm ci` in apps/frontend")
     subprocess.run(["node", "bin/build-bundles.mjs"], cwd=SITE_KIT, check=True, capture_output=True, text=True, timeout=300)
     return SITE_KIT / "dist"
+
+
+QUOTE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string"},
+        "surface": {"type": "string", "enum": ["page", "card", "muted", "brandSubtle", "brand", "inverse"]},
+        "quote": {"type": "string", "minLength": 1},
+    },
+    "required": ["id", "surface", "quote"],
+    "additionalProperties": False,
+}
+
+#: A compiled agent section exactly as esbuild emits one (ESM, automatic JSX, three host imports).
+QUOTE_JS = """import { jsx } from "react/jsx-runtime";
+import { z } from "zod";
+export const schema = z.object({ id: z.string(), surface: z.enum(["page", "card", "muted", "brandSubtle", "brand", "inverse"]), quote: z.string().min(1) }).strict();
+export function render(props, kit) {
+  return jsx(kit.Shell, { surface: props.surface, children: jsx("blockquote", { className: "brand-heading font-headline text-headline", children: props.quote }) });
+}
+"""
+
+
+def section_module(name: str, module_js: str, props_schema: dict[str, Any] | None = None, css: str = "") -> Any:
+    from lumen_api.site_render import SectionModule
+
+    return SectionModule(
+        name=name,
+        digest=hashlib.sha256(module_js.encode("utf-8")).hexdigest(),
+        module_js=module_js,
+        css=css,
+        props_schema=props_schema if props_schema is not None else QUOTE_SCHEMA,
+    )
+
+
+def site_with_section(document_id: str, name: str, digest: str, props: dict[str, Any]) -> dict[str, Any]:
+    """A one-page site holding one agent section, with Garner's shell."""
+    site = garner_site(document_id)
+    site["pages"] = {"/": {"root": {"props": {"title": "Section test"}}, "content": [{"type": name, "props": props}]}}
+    site["agent_sections"] = {name: digest}
+    return site
+
+
+@functools.lru_cache(maxsize=1)
+def chromium_available() -> bool:
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as pw:
+            pw.chromium.launch(headless=True).close()
+        return True
+    except Exception:
+        return False

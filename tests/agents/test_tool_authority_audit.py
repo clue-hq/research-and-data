@@ -167,9 +167,10 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     # Agent-authored discovery (2026-09-30) registers `launch_arv2_discovery@2` and
     # `read_discovery_run@3`: new ADDRESSES of names this map already carries, so the count is
     # unmoved. Authority is decided by address for both names below.
-    # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
-    # until the design profile bump.
-    assert len(C6_AGENT_TOOL_AUTHORITY) == 145
+    # Wave 2 Lane A adds the three Puck site writes, ungranted (144 -> 147).
+    # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address, ungranted
+    # until the design profile bump (147 -> 148).
+    assert len(C6_AGENT_TOOL_AUTHORITY) == 148
     assert C6_AGENT_TOOL_AUTHORITY["web_search"] == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     assert c6_roles_for_tool("web_search@1") == (AgentRole.HEAD_OF_ABM, AgentRole.DESIGN)
     # 2026-09-19: three of them gain a SECOND holder and no new name — the DESIGN role, at
@@ -278,7 +279,8 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     design_grants = {
         name: roles for name, roles in C6_AGENT_TOOL_AUTHORITY.items() if name.startswith("design_")
     }
-    assert len(design_grants) == 57
+    # Wave 2 Lane A: + the three Puck site writes, ungranted (57 -> 60).
+    assert len(design_grants) == 60
     # The Brand Ad Assets lane is MACHINE-INVOKED, on exactly the terms `synthesize_entity_prose`
     # and `synthesize_value_narrative` already established below: its onboarding job's worker
     # calls these through the design toolbelt (actor="agent"), and no model surface plans a
@@ -295,6 +297,12 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     }
     assert set(design_grants) >= AD_ASSETS_LANE
     assert all(design_grants[name] == () for name in AD_ASSETS_LANE)
+    # Wave 2 Lane A (controller ruling R6, 2026-10-11): the Puck site writes are registered
+    # ungranted for the ad-assets lane's reason: the editor's routes and the site turn's executor
+    # invoke them, and no model names them. Granting one later is a reviewed profile bump.
+    SITE_DOCUMENT_LANE = {"design_write_site", "design_undo_site", "design_redo_site"}
+    assert set(design_grants) >= SITE_DOCUMENT_LANE
+    assert all(design_grants[name] == () for name in SITE_DOCUMENT_LANE)
     # Clone-fidelity F4.3 / ruling R-F1: the second ungranted design write, and for a different
     # reason from the ad-assets lane's. That lane is machine-invoked and merely unplanned by any
     # model; this one is HUMAN-ONLY by ruling — clearing a published ABM page's robots meta is an
@@ -313,7 +321,7 @@ def test_every_current_tool_has_an_explicit_c6_authority_decision() -> None:
     assert all(
         roles == (AgentRole.DESIGN,)
         for name, roles in design_grants.items()
-        if name not in AD_ASSETS_LANE | HUMAN_ONLY_DESIGN
+        if name not in AD_ASSETS_LANE | HUMAN_ONLY_DESIGN | SITE_DOCUMENT_LANE
     )
     assert C6_AGENT_TOOL_AUTHORITY["create_thread"] == ()
     assert C6_AGENT_TOOL_AUTHORITY["rename_thread"] == ()

@@ -34,6 +34,7 @@ from .budget import MAX_NAMED_DROPS, short_url
 from .candidates import collect_asset_candidates
 from .font_instances import instance_weights, plan_font_instances
 from .geometry import parse_geometry
+from .motion import attach_keyframes
 from .parse import ParsedSite, parse_color_value, parse_site
 
 INGEST_CONCURRENCY = 4
@@ -432,6 +433,12 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
     # brief agent reads. A static-tier capture (or a failed probe) carries no
     # harvest, so this contributes nothing and the derived scale stands.
     geometry = parse_geometry(snapshot.geometry, page_url=snapshot.final_url)
+    # Motion (Wave 2 A9): the probe saw which animations run; their @keyframes bodies are in the
+    # stylesheets this capture fetched, cross-origin ones included.
+    geometry_evidence = geometry.evidence()
+    geometry_evidence = geometry_evidence.model_copy(
+        update={"motion": attach_keyframes(geometry_evidence.motion, snapshot.stylesheets)}
+    )
     outcome_diagnostics = getattr(outcome, "diagnostics", None)
     if geometry.diagnostics and isinstance(outcome_diagnostics, list):
         outcome_diagnostics.extend(geometry.diagnostics)
@@ -552,7 +559,7 @@ def build_evidence(outcome, *, core, store_root: str, reporter) -> BrandEvidence
         declared_roles=declared,
         state_styles=state_styles,
         render_truth=render_truth,
-        geometry=geometry.evidence(),
+        geometry=geometry_evidence,
         screenshots=screenshots,
         narrative=narrative,
     )

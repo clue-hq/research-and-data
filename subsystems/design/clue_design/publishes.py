@@ -533,8 +533,27 @@ DELIVERY_CSP_META = (
 DELIVERY_CSP_HEADER = DELIVERY_CSP_META + "; frame-ancestors 'self'"
 
 
-def delivery_csp(*, meta: bool = False) -> str:
+#: A Puck SITE publish (Wave 2 Contract 3). Published sites are script-free, so script is refused
+#: outright; styles may be same-origin or inline (the theme and the clones' captured CSS are
+#: inline); images and fonts same-origin or data:; media same-origin. Chosen per publish by the
+#: manifest's ``delivery`` field (``manifest_delivery``).
+SITE_DELIVERY_CSP_META = (
+    "default-src 'none'; script-src 'none'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; font-src 'self' data:; media-src 'self'; connect-src 'none'; "
+    "form-action 'none'; base-uri 'none'"
+)
+SITE_DELIVERY_CSP_HEADER = SITE_DELIVERY_CSP_META + "; frame-ancestors 'self'"
+
+
+def delivery_csp(*, meta: bool = False, delivery: str = "web") -> str:
+    if delivery == "site":
+        return SITE_DELIVERY_CSP_META if meta else SITE_DELIVERY_CSP_HEADER
     return DELIVERY_CSP_META if meta else DELIVERY_CSP_HEADER
+
+
+def manifest_delivery(manifest: object) -> str:
+    """Which policy a publish is served under: ``site`` only when its manifest says exactly so."""
+    return "site" if isinstance(manifest, dict) and manifest.get("delivery") == "site" else "web"
 
 
 PUBLISH_ASSET_EXTENSIONS: tuple[str, ...] = ("js", "css", "html")

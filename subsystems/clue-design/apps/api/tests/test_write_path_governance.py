@@ -113,6 +113,10 @@ _GOVERNED: dict[str, tuple[str, tuple[str, ...]]] = {
     # --- Round B domain 2: website-mode documents -----------------------------------------
     "update_web_document": ("method", ("lumen_api/design_store.py",)),
     "create_web_template": ("method", ("lumen_api/design_store.py",)),
+    # --- Wave 2 Lane A: Puck site documents ------------------------------------------------
+    "update_site_document": ("method", ("lumen_api/design_store.py",)),
+    "write_site_document": ("function", ()),
+    "step_site_history": ("function", ()),
     # --- Round B domain 3: turn enqueues ---------------------------------------------------
     # The run row + its fleet task, offered in one transaction. The rest of the run lifecycle
     # (claim, result, completion, events) stays in UNCONVERTED_MUTATIONS below: it is the
@@ -251,6 +255,7 @@ def test_every_governed_name_actually_exists() -> None:
     from lumen_api.toolbelt import assets as toolbelt_assets
     from lumen_api.toolbelt import documents as toolbelt_documents
     from lumen_api.toolbelt import personalization as toolbelt_personalization
+    from lumen_api.toolbelt import site_documents as toolbelt_site_documents
     from lumen_api.toolbelt import web_documents as toolbelt_web_documents
     from lumen_ingestion.ad_library.store import AdAssetsStore
     from lumen_ingestion.describe import DescriptionStore
@@ -278,6 +283,7 @@ def test_every_governed_name_actually_exists() -> None:
                     toolbelt_web_documents,
                     toolbelt_assets,
                     toolbelt_personalization,
+                    toolbelt_site_documents,
                 )
             ), f"{name} is not a known design operation core"
 
@@ -359,6 +365,9 @@ def test_design_tool_names_are_stable() -> None:
         "design_apply_web_operations",
         "design_undo_web_document",
         "design_redo_web_document",
+        "design_write_site",
+        "design_undo_site",
+        "design_redo_site",
         # Round B — turn enqueues
         "design_start_agent_turn",
         "design_start_web_turn",
@@ -387,6 +396,7 @@ def test_design_tool_names_are_stable() -> None:
         # platform's C6 authority audit stays a complete statement about every write the
         # platform can name; reachable only through the flag-gated onboarding route.
         "design_ingest_ad_assets",
+        "design_enrich_assets",
         "design_record_ad_creatives",
         "design_publish_ad_dna_card",
         "design_link_ad_pregenerated_assets",

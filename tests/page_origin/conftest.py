@@ -38,9 +38,15 @@ class FakePageReads:
         noindex: bool = False,
         routes: dict[str, str] | None = None,
         workspace_id: str = WS,
+        delivery: str = "web",
     ) -> None:
-        """Publish a site; ``routes`` are its F5 page rows (none = a pre-F5 publish)."""
-        manifest = {"slug": slug, **({"robots": "noindex"} if noindex else {})}
+        """Publish a site; ``routes`` are its F5 page rows (none = a pre-F5 publish); ``delivery``
+        "site" marks a Puck site publish (Wave 2 Contract 3) as its manifest does."""
+        manifest = {
+            "slug": slug,
+            **({"robots": "noindex"} if noindex else {}),
+            **({"delivery": "site"} if delivery == "site" else {}),
+        }
         manifest_json = json.dumps(
             manifest, ensure_ascii=True, separators=(",", ":"), sort_keys=True
         )
@@ -50,6 +56,7 @@ class FakePageReads:
             manifest_json=manifest_json,
             manifest_digest=_sha(manifest_json),
             noindex=noindex,
+            delivery=delivery,
         )
         for route, page_html in (routes or {}).items():
             self.pages[(workspace_id, slug, route)] = page_html
@@ -68,10 +75,18 @@ class FakePageReads:
             return None
         html = self.pages.get((workspace_id, slug, route))
         if html is not None:
-            return ServedPage(html=html, html_digest=_sha(html), noindex=publish.noindex)
+            return ServedPage(
+                html=html,
+                html_digest=_sha(html),
+                noindex=publish.noindex,
+                delivery=publish.delivery,
+            )
         if route == "/":
             return ServedPage(
-                html=publish.html, html_digest=publish.html_digest, noindex=publish.noindex
+                html=publish.html,
+                html_digest=publish.html_digest,
+                noindex=publish.noindex,
+                delivery=publish.delivery,
             )
         return None
 

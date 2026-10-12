@@ -1,0 +1,4949 @@
+{
+ "approval_status": "approved",
+ "assets": {
+  "fonts": {
+   "body": {
+    "faces": [
+     {
+      "asset_id": "asset_ing_f9c4068d1ce3c8cc",
+      "source_url": "https://www.conduit.ai/_next/static/media/NeueMontreal_Book-s.p.02um6p5n9yn7j.woff2?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH",
+      "style": "normal",
+      "weight": 400
+     },
+     {
+      "asset_id": "asset_ing_ccf8f8f0266a798d",
+      "source_url": "https://www.conduit.ai/_next/static/media/NeueMontreal_Italic-s.p.07-1.vhw41r0d.woff2?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH",
+      "style": "italic",
+      "weight": 400
+     },
+     {
+      "asset_id": "asset_ing_10b3e4dabd2491e6",
+      "source_url": "https://www.conduit.ai/_next/static/media/NeueMontreal_Medium-s.p.0l05f9nn~69nn.woff2?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH",
+      "style": "normal",
+      "weight": 500
+     },
+     {
+      "asset_id": "asset_ing_a8b681569534ba51",
+      "source_url": "https://www.conduit.ai/_next/static/media/NeueMontreal_Bold-s.p.0f_3w9537n1hn.woff2?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH",
+      "style": "normal",
+      "weight": 700
+     }
+    ],
+    "fallback_stack": [
+     "Arial",
+     "sans-serif"
+    ],
+    "family": "bodyFont",
+    "license": {
+     "basis": "platform-terms",
+     "embeddable": true,
+     "name": "unknown",
+     "restrictions": [
+      "Embed permission for this workspace's own brand font comes from the platform Terms of Use, not from a license verified at ingestion: off-platform or print reuse still requires license confirmation, and the license name above is what the source declared."
+     ],
+     "source_url": null,
+     "subsettable": false
+    },
+    "metrics": {
+     "ascender_ratio": 0.958,
+     "avg_char_width_ratio": 0.53,
+     "cap_height_ratio": 0.715,
+     "descender_ratio": -0.242,
+     "line_gap_ratio": 0.0,
+     "units_per_em": 1000.0,
+     "x_height_ratio": 0.51
+    },
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:https://www.conduit.ai/_next/static/chunks/0hy4sv-05-1o5.css?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH :: @font-face bodyFont"
+    },
+    "scripts": [
+     "latin"
+    ],
+    "source": {
+     "kind": "url",
+     "url": "https://www.conduit.ai/_next/static/media/NeueMontreal_Book-s.p.02um6p5n9yn7j.woff2?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH"
+    }
+   },
+   "brand": {
+    "faces": [
+     {
+      "asset_id": "asset_ing_1aa31f0deb8a9162",
+      "source_url": "https://www.conduit.ai/_next/static/media/SeasonMix_Regular-s.p.17lo.a~65k1.4.woff2?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH",
+      "style": "normal",
+      "weight": 400
+     },
+     {
+      "asset_id": "asset_ing_d9639cf15130cbfa",
+      "source_url": "https://www.conduit.ai/_next/static/media/SeasonMix_Medium-s.p.0vffm870w92bx.woff2?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH",
+      "style": "normal",
+      "weight": 500
+     }
+    ],
+    "fallback_stack": [
+     "Arial",
+     "sans-serif"
+    ],
+    "family": "seasonFont",
+    "license": {
+     "basis": "platform-terms",
+     "embeddable": true,
+     "name": "unknown",
+     "restrictions": [
+      "Embed permission for this workspace's own brand font comes from the platform Terms of Use, not from a license verified at ingestion: off-platform or print reuse still requires license confirmation, and the license name above is what the source declared."
+     ],
+     "source_url": null,
+     "subsettable": false
+    },
+    "metrics": {
+     "ascender_ratio": 0.975,
+     "avg_char_width_ratio": 0.532,
+     "cap_height_ratio": 0.721,
+     "descender_ratio": -0.254,
+     "line_gap_ratio": 0.0,
+     "units_per_em": 1000.0,
+     "x_height_ratio": 0.519
+    },
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:https://www.conduit.ai/_next/static/chunks/0hy4sv-05-1o5.css?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH :: @font-face seasonFont"
+    },
+    "scripts": [
+     "latin"
+    ],
+    "source": {
+     "kind": "url",
+     "url": "https://www.conduit.ai/_next/static/media/SeasonMix_Regular-s.p.17lo.a~65k1.4.woff2?dpl=dpl_4BU4RsHkTEgHLL2TYDw8p62bqFEH"
+    }
+   }
+  },
+  "images": {
+   "img.1": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_3c4251c51b6e70b3",
+    "crop_allowed": true,
+    "description": "Square-cropped landscape graphic with a heavily blurred, out-of-focus photographic background. A soft blue sky band occupies the top third, transitioning through green mid-tones to warm yellow-green and olive shapes (suggesting backlit foliage or grass) across the lower half; several soft circular bokeh highlights are visible. Three tiers of white text are centred horizontally: a tiny glyph plus “/ GET STARTED TODAY” in small, widely letterspaced capitals; a large headline “AI agents for hospitality”; and beneath it the lowercase word “conduit” in a heavier weight.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: og:image"
+    },
+    "recolor_allowed": false,
+    "role": "og_image",
+    "style_tags": [
+     "ai_agents",
+     "blurred_background",
+     "bokeh",
+     "centred_stack",
+     "hero_card",
+     "hospitality",
+     "landscape_16_9",
+     "og_image",
+     "white_type",
+     "wordmark"
+    ],
+    "title": "“AI agents for hospitality” conduit wordmark card on blurred sky-and-foliage background",
+    "usage_note": "USABLE AS A PRESENTATION OR HERO-STYLE IMAGE WHERE A CALM, PHOTOGRAPHIC BACKDROP IS NEEDED FOR A SHORT POSITIONING LINE."
+   },
+   "img.10": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_44bfa6dd9b97e886",
+    "crop_allowed": true,
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 29"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": []
+   },
+   "img.11": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_7cc61adf38b8c7cd",
+    "crop_allowed": true,
+    "description": "A UI mockup shown on a 1170×1020 raster frame. A translucent white, rounded-corner list panel sits right of center and lists six third-party apps, each row containing a small colored app icon, an app name, a light-gray pill with a tool count, and a blue pill-shaped toggle switch in the on position. A separate small white rounded-square card at the left holds a single dark abstract knot mark, connected to the panel by a thin horizontal line. The background is a soft gradient that runs blue at the left, pink-magenta through the middle, orange-amber at the right, fading to near-white across the upper band, with a visible halftone dot screen texturing the colored lower two-thirds.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 26"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "gradient",
+     "halftone-dots",
+     "integrations",
+     "product-screenshot",
+     "saas",
+     "settings-panel",
+     "toggle-list",
+     "ui-mockup"
+    ],
+    "title": "Integrations toggle panel over a halftone-dot color gradient",
+    "usage_note": "When to use: as a visual for explaining integrations, connectors, or 'works with the tools you already use' messaging; for feature-tour, marketplace, or settings-panel storytelling; for product pages where a clean, low-density UI panel needs to read at small sizes. Avoid when: the surface requires verified screenshots of the live product, exact feature parity, or accessibility-critical text rendering (the panel copy is small and baked into pixels); also avoid when a neutral, colorless background is required, since the halftone gradient is strongly tinted. Crop/placement: the panel occupies the middle-right; a left-weighted or centered crop keeps the mark card and the list together, while a right-only crop isolates the app rows. Because the upper third is near-empty light gradient, headline text can be overlaid there if contrast is checked. Do not place the frame over a busy or similarly warm background; the orange-pink right edge will clash. If a transparent cut-out is needed, note that this file has no alpha — the panel would have to be re-created, not extracted."
+   },
+   "img.12": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_59a1a458ac631440",
+    "crop_allowed": true,
+    "description": "A_photograph_showing_two_people_from_behind,_walking_side_by_side_while_holding_hands._They_are_centered_in_the_frame_along_a_park_path_with_green_trees_and_soft_sunlight_filtering_through_the_canopy._The_composition_emphasizes_connection,_calm,_and_outdoor_wellness._No_text_or_logos_are_visible_in_the_image.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 20"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "couple",
+     "holding_hands",
+     "nature",
+     "park",
+     "relationship",
+     "walking"
+    ],
+    "title": "A_couple_holding_hands_in_a_sunlit_park_setting",
+    "usage_note": "Use to evoke warmth, companionship, or wellness in CTA sections, service cards, or editorial features about relationships and shared experiences."
+   },
+   "img.13": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_4401d606f41fbfdf",
+    "crop_allowed": true,
+    "description": "Abstract halftone gradient texture in teal and warm coral",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 68"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "abstract",
+     "background",
+     "coral",
+     "decorative",
+     "gradient",
+     "halftone",
+     "orange",
+     "teal",
+     "texture",
+     "wide"
+    ],
+    "title": "Abstract halftone gradient texture in teal and warm coral",
+    "usage_note": "hero_image"
+   },
+   "img.14": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_963c04902c2630a8",
+    "crop_allowed": true,
+    "description": "A white rounded chat/call interface card sits on a blurred gradient background. The card header shows a green avatar, the name 'Ava', a refresh icon, and a red 'End Call' button. Below, a chat transcript shows Ava asking 'Hey Will, how i can help?', a right-aligned dark bubble 'Do you have rooms available tonight?', Ava replying 'Yes. We have Deluxe and Standard rooms available. Want me to check rates?', and a right-aligned dark bubble 'Yes'.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 22"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "call_transcript",
+     "chat_ui",
+     "hospitality",
+     "hotel_booking",
+     "product_screenshot",
+     "voice_agent"
+    ],
+    "title": "Ava Voice Agent Chat Transcript UI for Hotel Room Availability",
+    "usage_note": "Use to illustrate AI voice agent conversation flow, call handling, booking inquiry, or chat transcript UI in hospitality context."
+   },
+   "img.15": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_d8834750375104d3",
+    "crop_allowed": true,
+    "description": "A screenshot of a web application interface on a white panel, with a large black area at the top and left edges. The app shows a top navigation with tabs 'Apps', 'Agents', 'Skills', 'Workflows'. Centered heading 'Make Conduit work your way'. A search field with placeholder 'Search marketplace...'. A row of filter chips: 'All', 'Featured', 'PMs', 'Task Management', 'Knowledge Base', 'Comms', 'CRM', 'Payments', 'De...' (truncated). Below is a rounded rectangular hero card with a blue-to-orange gradient background and three integration rows: Slack icon and text 'Summarize key updates from recent conversations'; GitHub icon and text 'Review open issues and pull request activity'; Gmail icon and text 'Draft replies for every email I'm behind on'. Below the hero, a 'Featured' section lists: X (formerly Twitter) with 'New' badge and text 'Interact with X for social media manag...' (truncated); GitHub with 'Popular' badge and text 'Streamline your development...' (truncated); Slack with text 'Facilitate team communication and coll...' (truncated); Asana with 'New' badge and text 'Manage project tasks and co...' (truncated). Icons and small plus/check controls appear at right of some rows. A black horizontal bar appears near bottom center.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 35"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "card_media",
+     "feature_illustration",
+     "integration_marketplace_ui",
+     "product_screenshot"
+    ],
+    "title": "Conduit marketplace integrations UI screenshot",
+    "usage_note": "Use as a product screenshot or feature illustration for an AI agent marketplace, integrations, or workflow automation UI; suitable for documentation, feature cards, or landing page sections about connecting tools."
+   },
+   "img.16": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_cb767dcdc9ee1e75",
+    "crop_allowed": true,
+    "description": "A white UI panel titled 'Agent Trace' over a light background with a pink/orange dotted gradient. It lists a user message, GPT 5.4, 20 steps, and a thought-process section with nested steps.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 27"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "agent",
+     "ai",
+     "screenshot",
+     "trace",
+     "ui",
+     "workflow"
+    ],
+    "title": "Agent Trace panel with thought-process steps",
+    "usage_note": "Use to illustrate AI agent tracing, reasoning, or observability workflows in product marketing or docs."
+   },
+   "img.17": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_9cfc98096911cce0",
+    "crop_allowed": true,
+    "description": "A product screenshot showing a chat interface with a language selection dropdown. The interface includes a chat window with messages in Spanish and a dropdown menu for choosing a language. The background is a gradient with orange and blue tones.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 25"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "chat",
+     "dropdown",
+     "interface",
+     "language",
+     "multilingual",
+     "product",
+     "screenshot"
+    ],
+    "title": "Multilingual Agent Language Selection UI",
+    "usage_note": "Use this asset to illustrate multilingual support, language selection, or chat interface features. It is suitable for product pages, feature highlights, or documentation."
+   },
+   "img.18": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_bd00a0ee9f67884b",
+    "crop_allowed": true,
+    "description": "A stylized computer window, styled like a terminal or editor, floats over a diagonal gradient from bright blue through cyan and teal to warm orange, overlaid with a halftone dot pattern. The window is white, with a title bar containing three small gray circles at the left and the text 'conduit ~ api' centered, followed by a monospaced code block showing a curl POST request to https://api.conduit.ai/v1/agent with an authorization header, a JSON message about resolving a ticket, and a JSON response indicating success.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 30"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "api",
+     "app-window",
+     "code",
+     "conduit",
+     "developer",
+     "gradient",
+     "halftone",
+     "integration"
+    ],
+    "title": "Conduit API mock terminal window on halftone gradient",
+    "usage_note": "Appropriate wherever a technical product needs to signal an API-first, developer-focused capability, embed a request/response example, or illustrate integration with an agent or ticket workflow. Works as a hero visual, a feature-section illustration, or a documentation callout where the message is 'a simple HTTP call gets the job done'. It is best paired with copy that explains the API, SDK, or agent functionality it depicts."
+   },
+   "img.19": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_1da979c68aae7a39",
+    "crop_allowed": true,
+    "description": "A screenshot of a software interface showing a chat interaction with an AI agent named 'Operator'. The interface displays a user query about leads performance, a thought process indicator, a summary response, and a bar chart with a legend breaking down lead sources by percentage.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 24"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "ai_agent",
+     "analytics",
+     "bar_chart",
+     "chat_interface",
+     "dashboard",
+     "leads",
+     "performance",
+     "product_screenshot",
+     "software",
+     "ui"
+    ],
+    "title": "Operator AI Agent Leads Performance UI Screenshot",
+    "usage_note": "This image is suitable for illustrating product features related to AI agents, analytics, or lead generation. It can be used in marketing materials, product documentation, or website sections that explain how the software works. It is particularly effective for showing a conversational interface and data visualization."
+   },
+   "img.2": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_87439dc874a52d69",
+    "crop_allowed": true,
+    "description": "A UI card showing an application interface with agent inbox, conversation list, and an Operator panel. The interface includes sidebars, message rows, avatars, labels, buttons, and a floating assistant panel.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 2"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "agent inbox",
+     "card",
+     "dashboard",
+     "product screenshot",
+     "ui",
+     "workflow"
+    ],
+    "title": "Conduit product screenshot in card implementation",
+    "usage_note": "Card-based product showcase or feature demo"
+   },
+   "img.20": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_d2ef78cf0e392d0b",
+    "crop_allowed": true,
+    "description": "A rectangular, rounded-corner light UI panel floats over a pale, softly tinted background. The panel is a workflow editor. A breadcrumb row at the top reads 'Workflow > Maintenance Issues' followed by a small green pill reading 'Active'. Below it is a horizontal tab row: 'Editor' (with a small icon, underlined and visually selected), 'Runs' (with a small icon) and 'Scheduled' (with a clock icon). At the far left of the panel is a narrow vertical icon toolbar holding a column of small monochrome line icons (an import/download-style arrow, several small glyphs, and what read as undo/redo arrows); the icons are not accompanied by legible text. The main canvas has a pale dot-grid background. On the canvas, a blue-tinted rounded rectangle node is labelled with a small blue pill reading 'Trigger' above it; the node contains a small tag glyph, the title 'Conversation tag Added' and the secondary line 'When a conversation tag is added'. A vertical connector line runs down from this node to a small circular '+' button, then continues to a second node. The second node is labelled with a magenta/pink pill reading 'Send AI Message' above it; the node contains a small paper-plane-style glyph, the title 'Send AI Message', an ellipsis '…' affordance at its right edge, and the secondary line 'Submit ticket in portal'. A short connector continues below it. At the extreme left edge of the image, outside the UI panel, a narrow vertical strip of dense blue/cyan halftone dot texture is visible, appearing to be a decorative graphic partly hidden behind the screenshot.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 28"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "ai_messaging",
+     "automation",
+     "customer_support",
+     "dashboard",
+     "no_code",
+     "product_ui",
+     "saas",
+     "screenshot",
+     "support_ops",
+     "workflow_builder"
+    ],
+    "title": "Workflow builder UI screenshot — 'Maintenance Issues' automation with Trigger and Send AI Message nodes",
+    "usage_note": "Supporting content"
+   },
+   "img.21": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_b87586d2739b04d3",
+    "crop_allowed": true,
+    "description": "Portrait photograph of a wood-paneled cabin living room. A central stone chimney rises to a vaulted wood ceiling. At its base is a stone fireplace with a lit fire; above the mantel is a black flat-screen TV. Above the TV hangs an antler chandelier with small lights. Behind the chimney is a large arched window divided by wood mullions, showing dense green forest and a small patch of blue sky. In the foreground are a wooden coffee table, a patterned red rug, a tan leather ottoman, and part of a leather sofa. To the left is a wooden side table or cabinet; to the right is a side table with a lamp and a cushion. No text, logo, or transparency is visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 44"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "antler",
+     "arched",
+     "cabin",
+     "chandelier",
+     "cozy",
+     "fireplace",
+     "forest",
+     "interior",
+     "leather",
+     "living room",
+     "mountain",
+     "rug",
+     "rustic",
+     "stone",
+     "tv",
+     "window",
+     "wood"
+    ],
+    "title": "Cabin Interior with Stone Fireplace, TV, Antler Chandelier, and Arched Forest Window",
+    "usage_note": "Use when depicting cozy cabin interiors, stone fireplaces, forest views, rustic or luxury mountain homes, or lifestyle, real estate, and hospitality content. Suitable as a vertical hero, section background, or card image if the fireplace and window remain visible."
+   },
+   "img.22": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_47f4af4740165828",
+    "crop_allowed": true,
+    "description": "Vertical photograph of an urban street scene at golden hour. A tall light-colored building with a grid of windows occupies the center-left, reflecting warm light. To its right, a red-brick building with arched windows and decorative brickwork rises; its parapet bears white lettering reading 'CONFIDENCE'. Green tree branches frame the upper left and lower foreground. The sky is pale with soft clouds, lit warm from the left. In the lower left distance, smaller brick buildings are visible. A small dark sign on a pole near the center is not clearly legible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 49"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "architecture",
+     "brick",
+     "building",
+     "city",
+     "editorial",
+     "golden-hour",
+     "sky",
+     "trees",
+     "urban",
+     "vertical"
+    ],
+    "title": "Golden-Hour Urban Architecture with CONFIDENCE Building Sign",
+    "usage_note": "Use for editorial, architectural, urban, real estate, or atmospheric design contexts needing a warm, vertical city photo. Suitable as a section background, card image, or article illustration where the building sign and golden-hour mood are relevant."
+   },
+   "img.23": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_b9e7a28788148779",
+    "crop_allowed": true,
+    "description": "Light-mode product UI screenshot of a skill/agent configuration editor. A narrow left sidebar, a wide main editor column, a persistent command palette dropdown overlaying the lower-left of the editor, and a slim top toolbar with a skill title, a blue toggle switch, and an 'Edit with Operator' action on the right.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 34"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "agent-builder",
+     "automation",
+     "command-palette",
+     "light-mode",
+     "procedure",
+     "product-ui",
+     "saas",
+     "screenshot",
+     "skills",
+     "workflow"
+    ],
+    "title": "Software UI screenshot: 'Appliance Work Order Generation' skill editor with an open slash-command menu",
+    "usage_note": "Use as a product screenshot in a card, feature block, or documentation figure to illustrate skill/procedure authoring in an agent platform: natural-language procedure steps plus inline tool/action tokens. Suits contexts that need to show a real interface at readable scale."
+   },
+   "img.24": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_d430ba6578558966",
+    "crop_allowed": true,
+    "description": "A vertical, low-angle photograph of a tall glass-and-steel skyscraper rising against a blue sky with faint clouds. The central tower has a narrow, vertically striated curtain wall and a stepped or tapering profile near the top. To the left, another high-rise with light cladding and horizontal window bands angles inward due to perspective. At the lower right, a dark streetlamp arm curves over the scene; a partial blue-glass building and a possible construction crane/mast appear at the right edge. The tower's base/podium includes dark reflective glass and tan/beige cladding, with reflections and possible small signage that is not legible at this resolution. No clearly visible people are present.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 53"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "architecture",
+     "city",
+     "construction",
+     "corporate",
+     "daylight",
+     "glass",
+     "low-angle",
+     "skyscraper",
+     "urban",
+     "vertical"
+    ],
+    "title": "Low-Angle Urban Skyscraper Photograph",
+    "usage_note": "Use when an urban, architectural, construction, real estate, proptech, infrastructure, or enterprise-technology context benefits from a vertical cityscape. Suitable for backgrounds, editorial headers, or card imagery where a low-angle skyscraper conveys scale and modernity."
+   },
+   "img.25": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_da20df16455dfeb5",
+    "crop_allowed": true,
+    "description": "Photograph of a warm wood-paneled room with a coffered dark wood and white ceiling, a multi-pane window with red curtains on the left, two dark leather armchairs, a glass-top coffee table on a metal base, built-in wooden shelving and cabinetry, a large ornately carved fireplace mantel, a patterned rug on hardwood floor, and a bright blue tufted sofa or ottoman in the foreground, partly covered by a white fluffy throw. No people, text, logo, or product are visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 51"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "blue-sofa",
+     "coffered-ceiling",
+     "fireplace",
+     "home-library",
+     "interior",
+     "leather-chairs",
+     "luxury",
+     "traditional",
+     "wood-paneled"
+    ],
+    "title": "Wood-Paneled Interior with Blue Tufted Sofa and Leather Chairs",
+    "usage_note": "Can be used as a card image, article thumbnail, editorial interior-design visual, or section background when the design needs a traditional, rich, wood-heavy, vintage or luxury-home feel."
+   },
+   "img.26": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_8c498a03616b413d",
+    "crop_allowed": true,
+    "description": "A white, borderless UI fragment showing three stacked list rows. Rows one and two each show a gray identifier label at left ('CG - 121', 'CG - 122') and an orange 'Pending' pill at right. Row three shows 'CG - 123' at left with a light-green 'Resolved' pill at right; directly beneath that identifier a two-line bold dark heading is truncated ('How can I resolve unassigned conversation issues caused by workflo…') followed by a smaller gray single-line subtitle, also truncated ('Comprehensive guide on organizing knowledge…'). At the bottom of the fragment, a faint divider line separates a footer strip containing a small dark circular glyph, the gray text 'Missing Info', the gray text '# issues', and a solid red rounded pill containing white text '123'. The topmost row is partially cut by the crop; a very light gray horizontal band sits behind the second row, and a very faint vertical/left edge suggests a container or table boundary. No people, no product hardware, no logo, no button chrome, no navigation. The composition is centered horizontally with generous white negative space above, below and to both sides; the UI cluster occupies roughly the middle third of the frame. Text is the dominant visual content; hierarchy runs ID label (small gray) → status pill (colored) → bold headline → muted subtitle → footer metadata.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 32"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "dashboard",
+     "escalation",
+     "knowledge-base",
+     "minimal",
+     "no-logo",
+     "no-people",
+     "product",
+     "queue",
+     "saas",
+     "screenshot",
+     "status-pills",
+     "text-heavy",
+     "tickets",
+     "ui",
+     "white-background"
+    ],
+    "title": "Conduit-style ticket list UI with a Pending/Resolved queue and an expanded 'Missing Info' entry",
+    "usage_note": "This can be used as an illustrative screenshot for product features such as an escalation queue, inbox triage, ticket status tracking, or an 'unresolved items' surface. It works well wherever the message is 'AI handled most things, but here are the items that need a human' or 'review outstanding issues in one place.' Because the crop is generic (no browser frame, no branding), it can sit inside a card, a bento tile, a feature accordion panel, a help-center article, or a comparison table row without looking like a device screenshot. It is also suitable as a background for short overlay copy in the white space, though text is small in the lower area, so keep overlays away from the right-hand pills and the bottom footer."
+   },
+   "img.27": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c94337e56c74813b",
+    "crop_allowed": true,
+    "description": "A vertical photograph showing a thatched-roof villa on a tropical hillside, with a wooden balcony, lounge chairs, tall palm trees, an infinity pool, green lawn, magenta flowering shrubs, and an ocean cliff in the background under a pale dusk sky.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 36"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "dusk",
+     "hospitality",
+     "infinity pool",
+     "lifestyle",
+     "luxury travel",
+     "ocean view",
+     "palm trees",
+     "real estate",
+     "tropical",
+     "villa"
+    ],
+    "title": "Tropical cliffside villa with infinity pool and palm trees at dusk",
+    "usage_note": "Suitable for travel, hospitality, real estate, or lifestyle contexts where a serene tropical villa scene is relevant. Can be used as a hero image, card image, or section background if text overlay is placed in open sky or pool areas."
+   },
+   "img.28": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_dbfcbc6e990297fc",
+    "crop_allowed": true,
+    "description": "Static vertical photograph of a dense city at dusk. Roughly the upper third of the frame is sky: soft, hazy cloud bands in muted lavender, pale pink and grey with a slightly warmer glow low on the horizon. Below the sky a skyline spans the width of the frame, dominated in the right-of-centre by a tight cluster of three or four very tall, dark, flat-topped residential towers whose window grids are lit in warm white and yellow; a shorter tower with a brighter, warmer-glowing top sits just to the left of this cluster. To the left of the tall towers, a large dark green mass of trees and parkland reads as a low horizontal band, with distant mid-rise buildings and scattered lit windows behind it. The lower half and foreground are filled edge to edge with layered mid-rise and low-rise blocks — cream, beige, white and grey facades, many with orange-yellow lit windows, some with visible balconies and roof structures. Lights along streets and inside buildings give the foreground a warm dotted texture against the cooler sky. The camera is elevated and looks slightly downward across the city; no people, vehicles or individual street detail are legible. The image is fully opaque, edge-to-edge photographic content, with no lettering, signage, watermark or logo visible anywhere in the frame.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 46"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "aerial view",
+     "architecture",
+     "background image",
+     "city",
+     "dusk",
+     "evening",
+     "high-rise",
+     "park",
+     "portrait orientation",
+     "residential towers",
+     "skyline",
+     "twilight",
+     "urban"
+    ],
+    "title": "Dusk City Skyline With High-Rise Cluster and Park Greenery",
+    "usage_note": "Use as an editorial or atmospheric background evoking urban scale, city life, evening or a 'built environment' theme; suitable for hero banners, section dividers, card thumbnails, blog/article headers, real-estate or proptech storytelling, and as a neutral backdrop behind overlaid text or UI. Works as a mood/context image rather than as evidence of a specific place or product."
+   },
+   "img.29": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_df0651c9b4a6aa4b",
+    "crop_allowed": true,
+    "description": "A white rounded rectangular card on a black background. The card contains a line chart titled 'AI Resolution Rate' with a large '87%' value and '80% previous period' below it. A blue line fluctuates across a white chart area with y-axis labels 0, 60, 70, 80 and x-axis labels Mar 15 and Mar 22. A black cursor arrow points to a point on the line near the middle. A three-dot ellipsis icon appears in the top-right corner.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 33"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "AI",
+     "analytics",
+     "card",
+     "chart",
+     "dashboard",
+     "metric",
+     "product UI",
+     "resolution rate"
+    ],
+    "title": "AI Resolution Rate analytics card",
+    "usage_note": "Use when illustrating AI performance monitoring, resolution-rate analytics, or a dashboard-style metric card in a product feature section."
+   },
+   "img.3": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_b31e4a808e7400f1",
+    "crop_allowed": true,
+    "description": "A square, dark-toned photographic frame dominated by rough, granular surface texture. The image has no clearly readable objects, figures, or legible text; the visible content consists of mottled black, brown, and low-value gray areas with irregular variations in brightness. The composition appears evenly filled, with no obvious subject isolation or focal point. Because the source is a rasterized, downscaled preview rather than a full-resolution original, transparency, exact crop boundaries, and fine detail cannot be verified.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 19"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "abstract",
+     "background",
+     "dark",
+     "grain",
+     "photo",
+     "square",
+     "texture"
+    ],
+    "title": "Dark Textured Square Photograph",
+    "usage_note": "Use as a full-bleed background or texture layer where a dark, gritty, abstract surface is appropriate. It can sit behind white or light-colored text if contrast is verified at final size. It is not suitable as a stand-alone informative image because it carries no readable subject or product content."
+   },
+   "img.30": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_7b31ed1a84760135",
+    "crop_allowed": true,
+    "description": "A vertical photograph of a city skyline at dusk. The sky transitions from blue at the top to warm orange, pink, and yellow near the horizon. Several high-rise buildings of varying heights and styles are visible; one building on the left has a green/yellow top, and one building on the right has a blue dome-like roof. An elevated roadway or overpass crosses horizontally through the midground, with a lower blue-lit structure and paved parking area below. In the foreground, palm trees, green grass, and a curved road with lane markings frame the scene. No readable text, logos, or watermarks are visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 38"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "buildings",
+     "cityscape",
+     "dusk",
+     "elevated roadway",
+     "lifestyle",
+     "overpass",
+     "palm trees",
+     "real estate",
+     "skyline",
+     "sunset",
+     "travel",
+     "urban",
+     "vertical"
+    ],
+    "title": "Sunset City Skyline with Elevated Roadway and Palm Trees",
+    "usage_note": "Use as a vertical hero, background, or card image for urban, travel, real estate, city lifestyle, or technology contexts where a warm dusk skyline and palm trees fit. Suitable when text overlay can sit in the upper sky negative space."
+   },
+   "img.31": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_2a6a68e6377cdd4e",
+    "crop_allowed": true,
+    "description": "A wide view of a hotel lobby with a large rug, seating areas, and a reception desk.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 61"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "hospitality",
+     "hotel",
+     "interior",
+     "lobby"
+    ],
+    "title": "Hotel Lobby Interior",
+    "usage_note": "Use this image in a card, hero, or section background for a hospitality or real estate layout."
+   },
+   "img.32": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_112d359150dd4a23",
+    "crop_allowed": true,
+    "description": "Landscape image, approximately 963x512, dominated by a near-uniform white/near-white field. In the lower-middle band a single line of widely letter-spaced uppercase Latin characters renders as an extremely faint pale-gray wordmark; the shapes are consistent with the letters B-O-C-O-B-A-Y. Above it, roughly centered horizontally, sits an equally faint, indistinct pale-gray emblem shape with a compact rounded upper form and a wider lower form, reading as a small stacked mark or monument-like silhouette. The contrast between mark and background is very low, so internal detail of the emblem is not resolvable at the supplied preview scale. No photographic content, subjects, scenery, or photographic lighting are present; the file behaves as a graphic/vector-origin mark rasterized into a preview.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 41"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "emblem",
+     "light-theme",
+     "logo",
+     "low-contrast",
+     "monochrome",
+     "partner-logo",
+     "watermark",
+     "white-on-white",
+     "wordmark"
+    ],
+    "title": "Low-contrast white-on-white 'BOCOBAY' emblem-and-wordmark lockup",
+    "usage_note": "The opaque white field and white/near-white mark make this usable only as a subtle overlay or as a logo item already placed on a light surface. It reads as a monochrome watermark or light-theme logo variant."
+   },
+   "img.33": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_282b54e63d47474d",
+    "crop_allowed": true,
+    "description": "Vertical photograph showing a modern covered outdoor patio. A dark roof fascia and warm wood-slat ceiling extend diagonally across the upper half. Below, a concrete floor holds a round wooden table with woven chairs on the left, a white upholstered sofa/daybed in the center, and a wooden-framed sofa with white cushions on the right. Two woven pendant lights hang from the ceiling. The background includes a white wall with circular wooden wall decor, a dark rectangular screen/opening, an orange-tan wall, and a textured brick/stone wall. The foreground shows wooden decking; sky with clouds is visible above the roof.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 63"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "architecture",
+     "concrete floor",
+     "furniture",
+     "hospitality",
+     "interior",
+     "no logo",
+     "no text",
+     "outdoor patio",
+     "residential",
+     "vertical",
+     "warm neutrals",
+     "wood ceiling"
+    ],
+    "title": "Covered Outdoor Patio with Wooden Ceiling and Lounge Furniture",
+    "usage_note": "Use as a hero or section background for architecture, real estate, construction, outdoor living, or interior design content; can also be cropped for cards or inline editorial imagery."
+   },
+   "img.34": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_42cb166b88686f37",
+    "crop_allowed": true,
+    "description": "A vertical photograph of a modern multi-story building at twilight. A central curved tower with light beige brick and dark rectangular windows dominates the frame. Some windows are lit warm yellow. To the right, a lower flat-roofed section with similar brick and dark windows. At ground level, vertical slats are illuminated with warm orange light, with a planter of green shrubs and a low wall. A dark rectangular sign with white lettering reads 'MERCER' on the right. Foreground includes concrete sidewalk, green lawn, and a small illuminated bollard. Sky is deep blue/purple with tree branches at upper right.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 42"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "architecture",
+     "brick",
+     "building",
+     "curved_facade",
+     "exterior",
+     "modern",
+     "real_estate",
+     "twilight",
+     "urban",
+     "vertical",
+     "warm_lighting"
+    ],
+    "title": "Twilight Exterior of Curved Brick Building with 'MERCER' Sign",
+    "usage_note": "Use for architectural, real estate, urban development, twilight exterior, modern building, or property-related editorial/website imagery. Suitable as a vertical hero/section image when an atmospheric building photo is needed."
+   },
+   "img.35": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_229bb648eb0e6588",
+    "crop_allowed": true,
+    "description": "A centered, circular white badge with a scalloped outer edge and a thin dark outline or shadow. Inside is a black caduceus-like symbol with wings and entwined serpents above the bold uppercase word 'HIPAA'. The badge appears on a white background in the supplied preview.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 67"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "compliance",
+     "healthcare",
+     "hipaa",
+     "seal",
+     "trust-badge"
+    ],
+    "title": "HIPAA Compliance Seal",
+    "usage_note": "Use as a supporting trust mark in healthcare-compliance or data-safeguards content, especially near copy about HIPAA workflows and protected data."
+   },
+   "img.36": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c6defe085fa5dfb7",
+    "crop_allowed": true,
+    "description": "A square, roughly 1:1 graphic on a white field. Centered is a round white disc bearing two stacked lines of uppercase, dark near-black sans-serif text: 'SOC 2' on the first line and 'TYPE II' on the second. The disc is enclosed by a scalloped, rosette-like ring of soft rounded lobes rendered in a very light gray, with a faint drop shadow that separates the white shape from the white background. No other marks, borders, textures, gradients, or imagery are present. There is no visible logo, wordmark, or company identifier inside or around the badge.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 65"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "attestation",
+     "compliance badge",
+     "icon",
+     "monochrome",
+     "security",
+     "square",
+     "trust seal",
+     "typographic",
+     "white background"
+    ],
+    "title": "Scalloped 'SOC 2 TYPE II' Compliance Seal",
+    "usage_note": "Use as a compact credibility/trust token next to short supporting copy, in a compliance or security strip, in a footer credentials row, or inside a feature card, list item, or tooltip where the accompanying text explains what the attestation covers. It reads clearly at small sizes because the two text lines are the only content and remain legible when the badge is scaled down."
+   },
+   "img.37": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_3384ff4ae3bad03a",
+    "crop_allowed": true,
+    "description": "A vertical cityscape image showing a river, bridge, and dense urban skyline under a pale blue sky with golden haze near the horizon. A tall, slender residential tower with an irregular white balcony grid dominates the right side. A blue-clad mid-rise building with a white vertical structural frame sits near the center. In the foreground, a paved street or embankment runs across the bottom with two cars and some trees. Two airplane contrails cross the sky diagonally.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 59"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "architecture",
+     "bridge",
+     "cityscape",
+     "london-like",
+     "real-estate",
+     "river",
+     "skyline",
+     "tower",
+     "urban-development",
+     "vertical"
+    ],
+    "title": "River City Architectural Rendering with Tall Residential Tower",
+    "usage_note": "hero_image"
+   },
+   "img.38": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_586fe1fa87e240a0",
+    "crop_allowed": true,
+    "description": "Vertical photograph of a two-story suburban house exterior at dusk. The house has gray horizontal siding, white trim, dark roof shingles, and a front-facing garage on the left. A small plaque above the garage door appears to read '7058'. A covered front porch has white columns, stone veneer at the base, a dark front door with a wreath, and an American flag hanging from the porch. Two blue pots with plants sit near the porch. A concrete driveway with expansion joints fills the foreground. The sky above is dramatic with purple, pink, orange, and blue clouds.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 57"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "american flag",
+     "architecture",
+     "driveway",
+     "dusk",
+     "garage",
+     "home exterior",
+     "house",
+     "porch",
+     "real estate",
+     "residential",
+     "suburban",
+     "sunset"
+    ],
+    "title": "Residential Exterior at Dusk with American Flag",
+    "usage_note": "Suitable for contexts about residential real estate, home exteriors, suburban neighborhoods, curb appeal, homeownership, or patriotic/seasonal themes when an American flag is appropriate. Could serve as a background, hero, card, or editorial image if cropped appropriately."
+   },
+   "img.39": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_92f301548b2bdbdc",
+    "crop_allowed": true,
+    "description": "A centered white scalloped circular badge with a soft shadow, containing a dark shield shape with a white padlock icon. The background is solid black. No text is visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 66"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "access control",
+     "badge",
+     "encryption",
+     "icon",
+     "lock",
+     "security",
+     "shield",
+     "trust"
+    ],
+    "title": "Enterprise Security Lock Badge Icon",
+    "usage_note": "Use as a visual marker for security, encryption, access control, or trust-related content; suitable for feature cards, security sections, or badges where a simple lock/shield symbol is appropriate."
+   },
+   "img.4": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_9401e327691885e3",
+    "crop_allowed": true,
+    "description": "A single flat graphic shape occupying the centre of a square 512×512 frame: a thick, right-pointing chevron (an angular '>' form) with rounded corners at every vertex and soft, slightly tapered stroke ends. The chevron is filled with a uniform light warm beige/cream tone and sits on a plain white field. No other elements, textures, gradients, shadows or text are visible. The shape is centred horizontally and vertically with wide, even margins on all four sides.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 4"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "arrow",
+     "beige",
+     "chevron",
+     "cream",
+     "directional",
+     "glyph",
+     "icon",
+     "minimal",
+     "neutral",
+     "right-pointing",
+     "rounded",
+     "ui"
+    ],
+    "title": "Pale beige rounded chevron / right-pointing arrow glyph on white",
+    "usage_note": "Likely usable as a directional/affordance icon in a UI: a 'next', 'continue', 'open' or 'expand' indicator, a list-row disclosure glyph, a carousel/pagination control, or a decorative accent inside a larger illustration. Also plausible as a soft-branded arrow in an empty-state or onboarding graphic where a low-contrast, friendly tone is wanted rather than a hard black glyph."
+   },
+   "img.40": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_a943ea0415f72685",
+    "crop_allowed": true,
+    "description": "Vertical photograph of an outdoor terrace lounge under a covered overhang. In the foreground, wooden lounge chairs with cream cushions surround a small wooden side table holding a dark bottle and two glasses. A palm frond enters at left. Beyond the seating, a low stone planter with green shrubs borders a blue ocean. The horizon line runs across the middle of the frame, with clear light-blue sky above and a warm tan ceiling edge at the top.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 40"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "hospitality",
+     "lifestyle",
+     "lounge",
+     "ocean",
+     "outdoor",
+     "palm",
+     "relaxation",
+     "resort",
+     "sunlight",
+     "terrace",
+     "travel",
+     "vertical"
+    ],
+    "title": "Sunlit Terrace Lounge Overlooking Ocean",
+    "usage_note": "Use as a calm, aspirational lifestyle image for travel, hospitality, resort, outdoor-living, or leisure contexts. It can support hero, card, or inline placements where a serene ocean-view atmosphere is appropriate."
+   },
+   "img.41": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_6ba7ce52f2061230",
+    "crop_allowed": true,
+    "description": "A vertical photograph of a contemporary interior. On the left, a floor-to-ceiling window with dark frames and sheer beige curtains reveals a cityscape with buildings and sky. A dark wood-paneled wall section includes a glass door or partition with black framing. In the center-right, a built-in desk or bar area has a warm orange/copper countertop. Above it, two floating shelves with warm LED under-lighting are mounted on a white wall. The upper shelf holds a potted plant with long green leaves in a white vase and a round wooden object; the lower shelf holds a small wooden figurine. Below the counter, two bar stools with yellow-green upholstered seats and silver metal wire legs sit on light wood plank flooring. A dark gray/black cabinet forms the right side of the desk base.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 48"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "bar_stools",
+     "city_view",
+     "desk",
+     "interior",
+     "minimalist",
+     "modern",
+     "shelves",
+     "warm_lighting",
+     "wood",
+     "workspace"
+    ],
+    "title": "Modern Interior with Built-In Desk, Shelves, and Yellow Bar Stools",
+    "usage_note": "Use when a warm, modern interior or workspace atmosphere is needed, especially for lifestyle, architecture, real estate, interior design, or office-culture contexts. Suitable as a card image, hero background, editorial illustration, or section divider where the built-in desk, shelving, and city view support a polished, contemporary mood."
+   },
+   "img.42": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_76c2f97c645202a0",
+    "crop_allowed": true,
+    "description": "A centered, stacked wordmark logo. The large word 'NOBU' appears above the smaller word 'HOTELS'. The letterforms are black with a white outline/glow and a soft gray drop shadow. The background appears white/opaque in the supplied raster. No photographic or illustrative content is visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 16"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black",
+     "brand",
+     "centered",
+     "gray",
+     "hospitality",
+     "hotel",
+     "logo",
+     "serif",
+     "stacked",
+     "white",
+     "wordmark"
+    ],
+    "title": "Nobu Hotels wordmark logo",
+    "usage_note": "Use when a page or card needs to identify the Nobu Hotels brand or display a hospitality logo in a logo strip, partner grid, or brand card. Suitable for light backgrounds where the black wordmark and white outline remain legible."
+   },
+   "img.43": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_ae595cea77d7f939",
+    "crop_allowed": true,
+    "description": "Verticall interior photograph of a home. In the foreground, a medium-brown wood-plank floor leads toward a wooden staircase on the right. A white wall or column edge runs vertically through the center of the frame, separating the left living area from the right staircase. On the left, a white wall holds a large black flat-screen TV; below and in front of it is a light grey/off-white rug on the wood floor. A track lighting fixture with several small shades is mounted high on the left wall/ceiling. On the right, wooden stairs with visible treads ascend to a closed, warm-toned wooden door with dark metal handle hardware. A small white ceiling fixture is visible above the stairs near the ceiling. The walls and ceiling are white. No people, readable text, or logos are visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 55"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "architectural",
+     "background",
+     "hallway",
+     "interior",
+     "living-room",
+     "neutral",
+     "no-people",
+     "real-estate",
+     "residential",
+     "staircase",
+     "vertical",
+     "wood-floor"
+    ],
+    "title": "Verticall Interior of a Residential Hallway with Wooden Staircase and Living Area",
+    "usage_note": "Use when a clean, human-free, vertical residential interior is needed to suggest a modern home environment, architectural space, or real-estate context. It works as a contextual image, card visual, or section background where the left wall and lower rug area can remain relatively open for overlay content."
+   },
+   "img.44": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_3c040d63f4949539",
+    "crop_allowed": true,
+    "description": "A square image with a solid black background. A thin white circular outline is centered. Inside, the word 'MOXXI' appears in large uppercase white letters, with 'Property' centered beneath in smaller white title-case letters. No other visible elements.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 56"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "brand",
+     "circular",
+     "logo",
+     "monochrome",
+     "property",
+     "wordmark"
+    ],
+    "title": "MOXXI Property circular logo lockup",
+    "usage_note": "Use as a brand identifier where a compact, high-contrast logo lockup is needed; suitable for dark backgrounds or monochrome contexts."
+   },
+   "img.45": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c49af8ecdd0525a8",
+    "crop_allowed": true,
+    "description": "A wide, low-profile horizontal logo on a plain white/very light ground. Left: a circular ring drawn in dark brown, open (broken) at the lower-right of the ring, containing an angular zigzag stroke that reads as a stylized 'W' crossed by a short horizontal bar. Outside the ring sit four small triangular pointers at roughly the top, bottom, left and right positions, suggesting compass/cardinal directions; the top and bottom pointers read as dark brown, while the left and right pointers read as light blue. Right: the lowercase wordmark 'eastwest' in a geometric sans-serif; 'east' is dark brown and 'west' is light blue, with the blue beginning at the 'w'. Directly beneath the wordmark, right-aligned under the 'west' portion, is 'HOSPITALITY' in small, widely letterspaced uppercase dark brown lettering. The mark is horizontally centered in a 512 x 127 frame (approx. 4:1), so it is much wider than tall, with empty margins left and right of the lockup.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 15"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "brand-identity",
+     "compass",
+     "horizontal",
+     "hospitality",
+     "logo",
+     "partner-logo",
+     "travel",
+     "two-color",
+     "wide-ratio",
+     "wordmark",
+     "wordmark-lockup"
+    ],
+    "title": "EastWest Hospitality horizontal logo lockup (emblem + 'eastwest' wordmark + 'HOSPITALITY' tagline)",
+    "usage_note": "A clean, high-contrast logo lockup suitable for a page header logo slot, a partner/client logo strip, a logo card, a testimonial or case-study attribution block, or a wide email signature/banner. In a design library it would be catalogued as a brand identity asset whose interchangeable roles include header mark, list/card thumbnail (scaled down, emblem may need to survive alone) and co-branding partner logo. Place on flat light backgrounds only, and keep enough clear space that the top and bottom compass pointers are not clipped."
+   },
+   "img.46": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_1bf001b0a2d10314",
+    "crop_allowed": true,
+    "description": "Wide horizontal image with a predominantly white/off-white background. Faint, very light gray lettering spells 'Olala' in a bold, rounded, geometric sans-serif-style wordmark. The text is in the central horizontal band with large negative space above and below. No other shapes, objects, people, products, scenes, or saturated colors are clearly visible. The supplied preview is a downscaled 512x146 still frame.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 17"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "Olala",
+     "brand-mark",
+     "downscaled-preview",
+     "first-frame-preview",
+     "img",
+     "logo",
+     "low-contrast",
+     "rights-unknown",
+     "unverified-relationship",
+     "website",
+     "white-on-white",
+     "wordmark"
+    ],
+    "title": "Olala",
+    "usage_note": "Use when an occurrence calls for this 'Olala' wordmark image in a logo/brand-mark role, or as a low-contrast watermark-style graphic if that effect is intentional. For normal legibility, obtain or verify a properly background-matched, higher-contrast, or transparent original with known rights."
+   },
+   "img.47": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_dc48acd2a1c20cd8",
+    "crop_allowed": true,
+    "description": "A wide, short image (700x56) with a solid black background and white all-caps serif text reading BALILUXURYSTAYS across the full width; no other visible elements.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 37"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "accommodation",
+     "bali",
+     "black",
+     "logo",
+     "luxury",
+     "serif",
+     "stays",
+     "travel",
+     "white",
+     "wordmark"
+    ],
+    "title": "Bali Luxury Stays wordmark",
+    "usage_note": "Use as a card image, hero image, or section background for travel/luxury accommodation content."
+   },
+   "img.48": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_26d833f3ea3ab436",
+    "crop_allowed": true,
+    "description": "A wide, short raster image with a solid black/near-black background and a single horizontal line of white/near-white serif text reading 'The Lauderdale Hotel'. The text spans nearly the full image width and is tightly framed vertically. The letterforms have high stroke contrast and bracketed serifs; 'T' and 'H' are uppercase, the remaining letters are lowercase. No additional visible graphics, icons, or pictorial elements.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 62"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "dark-background",
+     "hospitality",
+     "logo",
+     "monochrome",
+     "serif",
+     "wordmark"
+    ],
+    "title": "The Lauderdale Hotel typographic wordmark on black",
+    "usage_note": "Use when a high-contrast, horizontal wordmark is needed for The Lauderdale Hotel on dark backgrounds, such as dark headers, hero overlays, footers, dark cards, or banners where the full readable name can be displayed without cropping."
+   },
+   "img.49": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_0111678427bb3834",
+    "crop_allowed": true,
+    "description": "Flat vector-style wordmark on a plain white field. The text reads 'Casago' in a single line of geometric sans-serif with rounded, circular bowls. The first four letters 'Casa' are rendered in a medium cyan-blue; the final two letters 'go' are rendered in a vivid orange. A light gray curved line begins beneath and to the left of the orange 'g', sweeps rightward in a shallow arc under the orange 'go', then curves upward and terminates in a solid triangular arrowhead at the upper right of the final orange 'o'. The capital 'C' is the tallest element; the 'g' has a descender that dips below the baseline of the other letters. The arrowhead sits near the vertical level of the cap height of the 'C'.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 12"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "arrow",
+     "blue",
+     "brand",
+     "flat",
+     "horizontal",
+     "light background",
+     "logo",
+     "orange",
+     "swoosh",
+     "travel",
+     "vacation rental",
+     "vector-style",
+     "wordmark"
+    ],
+    "title": "Casago wordmark logo with gray upward swoosh arrow",
+    "usage_note": "Suitable for brand identification in a header, footer, partner or logo strip, or as a small identifying mark inside a card or list item where the brand is being named or linked."
+   },
+   "img.5": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_3f932ccb1d742160",
+    "crop_allowed": true,
+    "description": "A single flat, monochrome glyph: a thick-stroked rounded square (squircle) outline containing three vertical rounded-cap bars of different heights, standing side by side with their lower ends roughly level and their upper ends staggered (left bar short, centre bar tallest, right bar intermediate). The mark is dark on a light field and reads as a bar-chart / level-meter / signal-strength style pictogram. No lettering, numerals, arrows or other marks are present.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 23"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [],
+    "title": "Monochrome rounded-square icon with three bottom-aligned vertical bars",
+    "usage_note": "ok"
+   },
+   "img.50": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_60c8407aa76959ef",
+    "crop_allowed": true,
+    "description": "A 512x512 square image dominated by a white or near-white background. A large, very faint, light gray circular/elliptical field is centered and occupies most of the canvas, leaving a narrow margin at the edges. Inside the center of the circle is an extremely low-contrast, light gray wordmark or logo mark. The wordmark runs horizontally across the middle; at most, a horizontal sequence of rounded forms is suggested, but it is barely legible at normal viewing scale. No other subjects, icons, photographs, or legible copy are visible. The image reads as an extremely subtle watermark or low-contrast logo treatment rather than a photograph.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 43"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [],
+    "title": "Near-white circular wordmark/logo mark on white (supplied alt: 'Canbnb')",
+    "usage_note": "Use when a very subtle watermark or background brand mark is needed on white or near-white surfaces where low contrast is intentional."
+   },
+   "img.51": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_0de9bc6589cf00e8",
+    "crop_allowed": true,
+    "description": "A wide, short raster image roughly 3:1 in aspect ratio (original reported 256x84 px) rendered as a near-uniform white field with an extremely faint, low-contrast horizontal mark across the middle band. The faint mark resolves as a script/cursive-style single-line word shape with a taller ascender near the left-center, a descending tail at the far right, and a small separate dot-like mark above the baseline toward the right of center. Because the mark's tone is only marginally darker than the surrounding field, individual letters are not reliably legible from the pixels alone. No other graphic elements, borders, shadows, or photographic content are present. Any transparency in the original vector may have been flattened to white by the preview pipeline.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 58"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "flat",
+     "grayscale",
+     "logo",
+     "low-contrast",
+     "near-white",
+     "rasterized-svg-preview",
+     "unreadable-text",
+     "watermark",
+     "wide-format",
+     "wordmark"
+    ],
+    "title": "Near-white wordmark graphic at extremely low contrast (alt-labeled \"Renjoy\")",
+    "usage_note": "Suitable as a low-emphasis watermark, faint background lockup, or tonal overlay where the mark should be barely visible against a light surface. Not suitable as a primary hero logo, a legible brand signature, or any placement requiring immediate recognition, because edge contrast is near the threshold of visibility."
+   },
+   "img.52": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_a99a08190a65a455",
+    "crop_allowed": true,
+    "description": "A wide, short horizontal lockup on a plain white field. The dominant element is the word “wynwood” set in lowercase, very heavy high-contrast serif letters with pronounced thick/thin stroke modulation and large ball-ish terminals; the descender of the “y” drops below the baseline. Directly beneath the right-hand portion of the wordmark, the word “HOUSE” is set in small uppercase sans-serif letters with wide, even letter spacing. To the upper right, separated from the wordmark, sits a multi-pointed star/asterisk glyph (six visible strokes radiating from a center). A small circled “R” registered-trademark symbol sits to the lower right of the wordmark, between the word and the star glyph vertically. All elements are solid black against white. No photography, no gradients, no shadow.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 11"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black-and-white",
+     "hospitality-branding",
+     "letter-spaced",
+     "lockup",
+     "logo",
+     "monochrome",
+     "serif",
+     "wide-format",
+     "wordmark"
+    ],
+    "title": "Black-and-white horizontal wordmark lockup reading “wynwood / HOUSE” with star glyph and registered mark",
+    "usage_note": "Use as a standalone brand mark in layouts that need a horizontal, low-height logo lockup: site headers, footer logo rows, co-branded lockups, sponsor/tenant/partner grids, decks, one-sheets, and small print placements. Its wide 512×137 aspect ratio suits banner-like slots and inline text-adjacent positions. Because the mark is pure black on white it also reproduces cleanly in monochrome print, fax-style documents, and single-colour collateral when colour is unavailable."
+   },
+   "img.53": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_dbed474e84952265",
+    "crop_allowed": true,
+    "description": "A uniform black rectangular field; no discernible subjects, text, logos, or edges are visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 8"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black",
+     "placeholder",
+     "solid",
+     "unidentifiable"
+    ],
+    "title": "Solid black image with unconfirmed 'Marriott' alt text",
+    "usage_note": "Only if a solid black background or placeholder is needed; not for brand, logo, or content representation."
+   },
+   "img.54": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_626ecc8dd09f0a72",
+    "crop_allowed": true,
+    "description": "A wide, light banner containing a very faint lowercase word 'alloggio' across the left and center, and two solid blue droplet-shaped marks stacked vertically at the right edge. The background appears white or very light. The wordmark is low-contrast light gray on white, while the two blue marks are a saturated cyan-blue. No other subjects, people, products, or text are visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 9"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "alloggio",
+     "banner",
+     "blue",
+     "brand",
+     "gray",
+     "logo",
+     "minimal",
+     "white",
+     "wide",
+     "wordmark"
+    ],
+    "title": "Faint 'alloggio' wordmark with two blue droplets",
+    "usage_note": "Use as a logo/wordmark display in a header, footer, brand attribution area, or logo strip when the brand identity is confirmed and the low-contrast wordmark is acceptable for the placement size and background."
+   },
+   "img.55": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_71136cfa042dd7b5",
+    "crop_allowed": true,
+    "description": "A uniform white rectangular image with no discernible shapes, text, logos, or photographic content. The entire frame is blank/white. No visible border, gradient, or texture is present in the preview.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 13"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "blank",
+     "placeholder",
+     "unknown",
+     "white",
+     "wide"
+    ],
+    "title": "Blank white wide raster (supplied alt: Arbio)",
+    "usage_note": "Use only as a blank spacer, placeholder, or background strip if the blank white field is intentional and the source file is verified. Do not use as a logo, hero, product image, or content card without replacing it with a visible asset."
+   },
+   "img.56": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_6406307c3e3b185f",
+    "crop_allowed": true,
+    "description": "Readable text: \"Pass the Keys\" followed by a small superscript registered-trademark symbol (®) immediately after the final word. OCR agreement: high; no further copy is visible. Otherwise the frame is a wide, shallow white field containing only the logo lockup.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 14"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [],
+    "title": "Pass the Keys horizontal logo lockup (mark + wordmark)",
+    "usage_note": "hero_banner"
+   },
+   "img.57": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_16efbb590c05aafa",
+    "crop_allowed": true,
+    "description": "A black-and-white logo lockup on a plain white field. On the left is a solid black disc; cut out of that disc is a white negative-space glyph that reads as an upward-pointing arrow or roofline form. To the right of the disc is the word \"Roofstock\" set in a heavy black sans-serif, with a capital R and lowercase following letters. The lockup is horizontally arranged and vertically centered, with wide empty white margins on the left, right, top and bottom.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 7"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black and white",
+     "brand mark",
+     "customer logo",
+     "fintech",
+     "horizontal lockup",
+     "logo",
+     "logo strip",
+     "monochrome",
+     "real estate",
+     "third-party logo",
+     "white background",
+     "wordmark"
+    ],
+    "title": "Roofstock horizontal logo lockup: circular mark plus wordmark on white",
+    "usage_note": "Use where a monochrome third-party company mark is needed on a light surface: social-proof or customer logo strips, partner grids, testimonial or case-study cards, integration lists, presentation slides, or documentation headers. The wide surrounding whitespace makes it easy to place in a small logo row if the whole field is scaled down uniformly."
+   },
+   "img.58": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_36f3d5b437b2b272",
+    "crop_allowed": true,
+    "description": "The image displays the word 'hometime' in lowercase letters, rendered in a dark teal color. The text is set against a plain white background.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 18"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "brand",
+     "logo",
+     "teal",
+     "text",
+     "wordmark"
+    ],
+    "title": "hometime logo",
+    "usage_note": "Suitable for use as a logo or brand identifier in digital interfaces, particularly in card components or header sections."
+   },
+   "img.59": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_d044cb8642816c08",
+    "crop_allowed": true,
+    "description": "Literal visual description: the supplied 512x512 preview is a uniform white or near-white field. No subject, object, figure, icon, logo, text, border, gradient, or texture is visible. There is no discernible foreground/background separation or focal point.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 71"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "blank",
+     "svg-raster-preview",
+     "unidentifiable",
+     "unknown-use",
+     "white"
+    ],
+    "title": "Uniform white 512x512 preview with no discernible content",
+    "usage_note": "when-to-use | avoid-when | crop/placement"
+   },
+   "img.6": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_f3ab97ee14ab7067",
+    "crop_allowed": true,
+    "description": "A dark gray/black line-art icon composed of four circular nodes connected by thick straight lines: a top-left node connected diagonally to a right-middle node; a bottom-left node connected diagonally to the same right-middle node; the bottom-left node also connected diagonally to a bottom-right node. The circles are hollow rings. The icon is centered on a plain white/transparent background. No text, no typography, no logo.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 21"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "connect",
+     "icon",
+     "line-art",
+     "monochrome",
+     "network",
+     "nodes",
+     "share",
+     "ui"
+    ],
+    "title": "Four-Node Network/Share Icon",
+    "usage_note": "Use as a small monochrome icon to represent sharing, connecting, networking, or branching workflows; suitable for feature cards, buttons, or list items."
+   },
+   "img.60": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_801456ca44ffd2a4",
+    "crop_allowed": true,
+    "description": "A dark background featuring a white HostGenius logo, likely for branding.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 54"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "brand",
+     "hostgenius",
+     "logo",
+     "technology",
+     "white-on-dark"
+    ],
+    "title": "HostGenius Logo",
+    "usage_note": "To be used for brand identity in web design."
+   },
+   "img.61": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_206534c3949f6042",
+    "crop_allowed": true,
+    "description": "A horizontal typographic wordmark reading 'VTrips' set on a plain very light (near-white) ground. The initial capital 'V' is rendered in a warm orange/amber tone and is the only colored element; the remaining letters 'Trips' are solid black. All letterforms are heavy-weight, geometric sans-serif with tight spacing: the 'T' is a flat-topped capital, the 'r' has a short curved arm, the 'i' carries a round dot above the x-height, the 'p' has a straight descender dropping below the baseline, and the 's' is a compact rounded form. The mark sits on a single baseline with the descender of 'p' extending lowest; negative space is minimal inside the word and forms an even margin around it, with the overall bounding box noticeably wider than tall.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 10"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black",
+     "horizontal",
+     "logo",
+     "orange",
+     "sans-serif",
+     "transparent-candidate",
+     "travel",
+     "typographic",
+     "wordmark"
+    ],
+    "title": "VTrips wordmark logo — orange 'V' with black 'Trips'",
+    "usage_note": "Appropriate as a small identifying mark in a logo strip, customer/partner row, card thumbnail, image slot, or inline reference next to a name. Works best at small-to-medium sizes where the contrast between the orange 'V' and black remainder stays legible."
+   },
+   "img.62": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_7eef72e791295f96",
+    "crop_allowed": true,
+    "description": "A square raster image showing a circular seal-style logo centered in the frame. The circle is drawn as a ring, with small notch-like tabs protruding at the left and right midpoints. Inside the ring, arched lettering runs along the top and bottom of the circle, enclosing an inner disc. In the inner disc sits a geometric emblem: a tall central shape resembling a stylized peak or the letter 'A' formed by two converging legs with a crossbar, and a small arch or doorway opening at its base. Flanking the central emblem are vertical line clusters that read as stylized trees, posts or fencing. The whole mark is rendered as thin light strokes on a solid black field, giving a very high-contrast, near-two-tone appearance; the low pixel dimensions make strokes blocky and edges aliased.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 50"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "badge",
+     "black-and-white",
+     "circular",
+     "emblem",
+     "high-contrast",
+     "hospitality",
+     "icon",
+     "logo",
+     "low-resolution",
+     "monochrome",
+     "seal",
+     "vacation-rental"
+    ],
+    "title": "Circular 'Haven' Badge Logo (Low-Resolution, High-Contrast Monochrome)",
+    "usage_note": "Appropriate when a compact, high-contrast emblem is needed to signal a lodging or hospitality identity in a small footprint: favicon/avatar, app icon, small badge in a header, watermark, or a dark-mode logo lockup. Works best on dark or black surfaces, or on light surfaces if inverted by CSS."
+   },
+   "img.63": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_25517cd9e7ca2b7d",
+    "crop_allowed": true,
+    "description": "A black-and-white, square-format icon showing a rounded square containing the LinkedIn 'in' logo mark. The mark consists of a lowercase 'i' with a dot and a lowercase 'n'. No other readable text, tagline, CTA, or pictogram is visible. The image appears to be a rasterized SVG preview or downscaled icon asset; exact color inversion and transparency are not confirmed from the preview.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 70"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "application icon",
+     "black and white",
+     "icon",
+     "logo",
+     "rounded square",
+     "social media"
+    ],
+    "title": "LinkedIn 'in' Logo Icon",
+    "usage_note": "Use when a recognizable LinkedIn destination or social link is needed, such as in a footer social row, contact page, author/team profile, or share/link block."
+   },
+   "img.64": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_c3bfd28f85d5bd8a",
+    "crop_allowed": true,
+    "description": "A small rectangular image with a solid black background. Centered near the top is a white line-art circular emblem: an outer ring enclosing stylized mountain peaks and wavy water/line motifs. Below the emblem is the word 'cascadia' in white lowercase letters, and beneath that is 'GETAWAYS' in smaller white uppercase letters with spacing between characters. The image contains no other visible elements.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 45"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black background",
+     "emblem",
+     "logo",
+     "monochrome",
+     "mountain",
+     "outdoors",
+     "travel",
+     "wave",
+     "white text",
+     "wordmark"
+    ],
+    "title": "Cascadia Getaways monochrome logo lockup",
+    "usage_note": "Use as a compact brand mark for Cascadia Getaways on dark or black backgrounds, in headers, cards, or identity contexts where the full lockup is visible and legible."
+   },
+   "img.65": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_d091b9226521227e",
+    "crop_allowed": true,
+    "description": "White Kangaroo with Box Inside House Outline on Black",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 52"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "unknown"
+    ],
+    "title": "White Kangaroo with Box Inside House Outline on Black",
+    "usage_note": "sample"
+   },
+   "img.66": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_53c9c23586a90f8a",
+    "crop_allowed": true,
+    "description": "Small, low-resolution raster image with a solid black background. Centered in the upper area is a white geometric line-art mark resembling a faceted diamond or crystal, built from straight angular strokes. Centered below the mark is the uppercase white wordmark BLUE GEMS in a bold sans-serif style. The mark and wordmark are the only recognisable visual subjects.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 39"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black-and-white",
+     "branding",
+     "centered",
+     "diamond",
+     "gem",
+     "geometric",
+     "high-contrast",
+     "logo",
+     "low-resolution",
+     "uppercase",
+     "wordmark"
+    ],
+    "title": "Blue Gems white gem logo lockup on black",
+    "usage_note": "suitable for light backgrounds, cards, or branding panels where a simple black-and-white logo lockup is needed. Can be used as a visual identifier in web content, presentations, or mockups."
+   },
+   "img.67": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_353a3922d1a53a65",
+    "crop_allowed": true,
+    "description": "A near-white square raster with extremely low contrast. Readable structure is minimal: a faint lslightly-darker) curved arc runs along the left side of the frame, opening toward the right, and a very faint pale quadrilateral/rectangular area sits near the centre of the field. A few tiny isolated grey specks are scattered in the upper-left quadrant. The bottom edge shows faint regular dithering/banding. The field is otherwise uniform off-white to white, with no discernible objects, figures, products or scenery.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 47"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "Cash Flow Street"
+    ],
+    "title": "Near-Blank Low-Contrast Circular Texture Raster ('Cash Flow Street')",
+    "usage_note": "Needs orignal image for clasification"
+   },
+   "img.68": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_070d4c876227dd82",
+    "crop_allowed": true,
+    "description": "The image shows a head-and-shoulders portrait of a single person, appearing to be an adult male, dark-haired, with short-to-medium wavy hair swept across the forhead and parted slightly off-centre. The head is oriented toward the camera with a very slight turn; the eyeline is directed at the lens. The mouth is closed in a small, restrained smile. He wears a dark, round-necked top (a crew-neck or t-shirt) whose fabric is only faintly distinguishable from the background. Lighting falls mainly from thefront and slightly to the subject's right (viewer'sleft), modelling the left side of the face (viewer's left) brighter and letting the right side of the face and the shoulders fall into shadow. The background is a flat, dim, dark grey-to-near-black field with a soft vignette toward the corners; no props, no scenery, no visible horizon and no environment are discernible. The framing is a tight square crop: the top of the hair is close to the upper edge, the chin sits in the lower-middle, and the shoulders are cut off by the bottom and side edges. The image is very small (128×128) and correspondingly soft; fine detail such as individual hairs, skin texture and eye detail is not resolvable, so no jewellery, distinguishing marks, neckline hardware or background objects can be confirmed or excluded. No text, lettering, numerals, logo mark, watermark or graphic overlay is visible anywhere in the frame.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 5"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "avatar",
+     "dark-background",
+     "headshot",
+     "low-key",
+     "male",
+     "person",
+     "portrait",
+     "small-resolution",
+     "square",
+     "studio-lighting",
+     "team",
+     "testimonial"
+    ],
+    "title": "Low-key head-and-shoulders portrait of a man on a dark ground (square 128×128)",
+    "usage_note": "cheil"
+   },
+   "img.69": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_afab4b9458bd5c63",
+    "crop_allowed": true,
+    "description": "The supplied asset renders as a uniform flat white 512x512 square with no visible edges, shapes, figures, objects, text, lettering, icons, gradients, or color variation anywhere in the frame. No foreground, background, or border is distinguishable. There is no discernible subject, scene, or graphic element to describe. Whether the original asset is genuinely blank, contains white-on-white artwork, is largely transparent, or failed to render in this preview cannot be determined from the provided pixels.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 72"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "blank-preview",
+     "needs-re-render",
+     "no-visible-content",
+     "unverifiable-preview"
+    ],
+    "title": "Unresolved white preview — no visible subject (asset_ing_afab4b9458bd5c63)",
+    "usage_note": "Cannot be recommended for any placement on the basis of its visible content, because no content is visible in the supplied preview. If the underlying file is confirmed valid, it could only be assessed after a preview that actually renders its content."
+   },
+   "img.7": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_4c652b55186fad40",
+    "crop_allowed": true,
+    "description": "A heavily blurred, horizontal outdoor scene. The upper portion is soft light blue with a lighter white/light area. The lower and middle areas contain indistinct green, yellow-green, and olive forms, with orange, red, and pink color patches concentrated near the lower left and lower right. No legible text, logos, people, or sharp objects are visible.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 1"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "background",
+     "blurred",
+     "calm",
+     "decorative",
+     "green",
+     "horizontal",
+     "landscape",
+     "nature",
+     "orange",
+     "outdoors",
+     "pink",
+     "sky",
+     "soft",
+     "spring",
+     "summer"
+    ],
+    "title": "Out-of-Focus Outdoor Landscape with Blue Sky and Colorful Foreground",
+    "usage_note": "Use as a decorative background image for calm, natural, outdoor, hospitality, travel, wellness, or property-related contexts. It can work as a full-bleed hero/header backdrop, a section divider, an email header image, a card background, or a presentation slide background where a soft, low-detail photographic mood is desired. Because it has no sharp focal subject, it works better as an ambient background than as a primary content image."
+   },
+   "img.70": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_544fc22bc6490572",
+    "crop_allowed": true,
+    "description": "Black background with white centered lowercase serif text reading 'the flex.'",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 60"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "black background",
+     "logo",
+     "lowercase",
+     "serif",
+     "white text"
+    ],
+    "title": "The Flex",
+    "usage_note": "May be usable as a card image, inline image, or reference-only asset, subject to rights and brand verification."
+   },
+   "img.71": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_a072f0c43891bed7",
+    "crop_allowed": true,
+    "description": "Literal visual inspection of the supplied 512x512 preview: the frame is a single uniform light, near-white field covering the entire square. No shapes, icons, photographs, illustrations, gradients, typographic marks, borders, edges, or legible characters are visible anywhere in the image. There is no distinguishable foreground or background element, no figure/ground separation, and no visible focal point. The preview carries no readable text of any kind, so no copy, headline, or label can be transcribed from the pixels.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: img-index 73"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "blank",
+     "empty-preview",
+     "inspection-matte",
+     "no-visible-content",
+     "unverifiable"
+    ],
+    "title": "Blank / visually empty square raster (asset_ing_a072f0c43891bed7)",
+    "usage_note": "Cannot be recommended for any creative use on the basis of the pixels alone. If a valid asset exists behind this preview, use would be governed by that underlying file, not by this frame."
+   },
+   "img.72": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_83826c5d58140df6",
+    "crop_allowed": true,
+    "description": "A square raster that reads as almost entirely flat white. A single small, soft, irregularly shaped dark-gray smudge sits near the center of the frame, slightly below and right of the exact midpoint. No discernible objects, figures, architecture, text, logo, or scene are legible. Edges and corners are plain white. The image appears low-information at this resolution and looks like a blank, blown-out, or placeholder tile rather than a readable photograph.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 64"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "blank",
+     "low_informatione",
+     "placeholder_candidate",
+     "source_occurrence",
+     "unreadable_subject",
+     "website_img_element",
+     "white"
+    ],
+    "title": "Near-uniform white raster with faint central dark smudge (56x56)",
+    "usage_note": "only_usefull_as_a_neutral_placeholder_tile"
+   },
+   "img.8": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_67d0fa492f4b88a0",
+    "crop_allowed": true,
+    "description": "A bright landscape with a field of red and white flowers in the foreground, rolling green terrain, tall snow-dusted mountains, and large cumulus clouds under a blue sky",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 6"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [],
+    "title": "Inbox Zero landscape visual",
+    "usage_note": "Suitable as a hero or section background image for calm, productivity, or inbox-zero themed content"
+   },
+   "img.9": {
+    "allowed_contexts": [],
+    "asset_id": "asset_ing_772bc1376a4decd2",
+    "crop_allowed": true,
+    "description": "Abstract teal-to-green gradient with faint binary numerals and soft concentric arcs. A low-contrast tech-oriented background illustration, not a product screenshot.",
+    "license": null,
+    "mime_type": null,
+    "preferred_color_tokens": [],
+    "provenance": {
+     "confidence": 0.6,
+     "source": "website:dom :: img :: hi-res rendition :: img-index 31"
+    },
+    "recolor_allowed": false,
+    "role": "photo",
+    "style_tags": [
+     "AI",
+     "abstract",
+     "background",
+     "binary",
+     "data",
+     "gradient",
+     "green",
+     "teal",
+     "technology",
+     "texture"
+    ],
+    "title": "Abstract Teal-to-Green Gradient with Binary Numeral Texture and Concentric Arcs",
+    "usage_note": "Use as a background texture for AI, data, or technology sections. Best behind headlines or feature cards with a dark scrim for contrast. Avoid as a primary product visual or when literal UI evidence is required."
+   }
+  },
+  "logos": {
+   "mark": {
+    "allowed_backgrounds": [
+     "surface.page",
+     "surface.card"
+    ],
+    "clearspace": null,
+    "description": "A square, flat-color mark image: a single cream / off-white angular glyph centered on a very dark, near-black ground. The glyph reads as a thick right-pointing chevron or angular bracket with softly rounded corners; its left edge is indented by a shallow notch, so the form is a bent band rather than a solid triangle. The mark is vertically and horizontally centered with generous empty margin on all sides, and the background is completely uniform with no gradient, texture, or shadow.",
+    "license": null,
+    "min_size": null,
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:logo-ladder :: mark <- APPLE_TOUCH [genuine] appearance: light/white ink (mean L=0.232)"
+    },
+    "title": "Abstract cream chevron mark on a dark square ground",
+    "usage": "mark",
+    "usage_note": "Use as a compact, standalone brand or product mark where a small square icon is required, such as a touch icon, favicon, or avatar-style identifier, and place it on a dark or mid-tone surface to keep the cream glyph readable. It is also suitable as a reference sample when documenting the mark's shape and proportions.",
+    "variants": [
+     {
+      "asset_id": "asset_ing_27c64ef3b5f723e0",
+      "color_mode": "full_color",
+      "height": 180.0,
+      "name": "full_color",
+      "width": 180.0
+     }
+    ]
+   },
+   "primary": {
+    "allowed_backgrounds": [
+     "surface.page",
+     "surface.card"
+    ],
+    "clearspace": null,
+    "description": "A single-line lowercase wordmark reading 'conduit' in dark ink on a transparent or unrendered background. The letters are sans-serif with rounded terminals, uniform stroke weight, and a separated dot on the 'i'. No icon, tagline, or additional graphic elements are visible.",
+    "license": null,
+    "min_size": null,
+    "provenance": {
+     "confidence": 0.7,
+     "source": "website:logo-ladder :: light <- HEADER [genuine] appearance: dark ink (mean L=0.147)"
+    },
+    "title": "conduit lowercase wordmark logo",
+    "usage": "primary",
+    "usage_note": "Use when a compact horizontal wordmark is needed on light backgrounds, such as website headers, footers, navigation bars, brand lockups, or light UI surfaces.",
+    "variants": [
+     {
+      "asset_id": "asset_ing_761b0b47f1b7c604",
+      "color_mode": "full_color",
+      "height": 99.0,
+      "name": "full_color",
+      "width": 453.0
+     }
+    ]
+   }
+  }
+ },
+ "brief": {
+  "background_rhythm": {
+   "bands": [
+    {
+     "index": 0,
+     "note": "White band, measured #FFFFFF; nav and hero copy.",
+     "token": "surface.page"
+    },
+    {
+     "index": 1,
+     "note": "White band holding the hero product stage.",
+     "token": "surface.page"
+    },
+    {
+     "index": 2,
+     "note": "White logo/trust strip.",
+     "token": "surface.page"
+    },
+    {
+     "index": 3,
+     "note": "White product-feature row.",
+     "token": "surface.page"
+    },
+    {
+     "index": 4,
+     "note": "White six-up product grid.",
+     "token": "surface.page"
+    },
+    {
+     "index": 5,
+     "note": "Sole measured dark section — procedures band. Color has no kit token; do not substitute surface.inverse.",
+     "token": null
+    },
+    {
+     "index": 6,
+     "note": "White customer-stories band.",
+     "token": "surface.page"
+    },
+    {
+     "index": 7,
+     "note": "White security band.",
+     "token": "surface.page"
+    },
+    {
+     "index": 8,
+     "note": "White band; closing aurora CTA is an inner panel, not the section background.",
+     "token": "surface.page"
+    }
+   ],
+   "confidence": "medium",
+   "differentiation": "chromatic",
+   "ratio_summary": "8 surface.page bands : 1 untokened warm-dark band (index 5) — five white, one dark interrupt, three white. Screenshot also shows a dark footer that is not a row in this sequence."
+  },
+  "characterization": {
+   "confidence": "medium",
+   "support": "One homepage (conduit.ai): warm brown-black ink on a white canvas, sentence-case serif headlines, and saturated color held inside product-screenshot frames rather than in the chrome. A single dark procedures band is the only measured section-background break.",
+   "words": [
+    "restrained",
+    "editorial",
+    "product-led"
+   ]
+  },
+  "chromatic_moment": {
+   "confidence": "medium",
+   "element": "Repeated product-screenshot frames, plus one closing CTA panel on the last white band: white UI sitting on a multi-hue aurora wash (cyan, green, peach, orange).",
+   "quiet": false,
+   "surrounding": "Quiet surface.page canvas and text.primary ink. The wash is an inner panel, not a measured section background, and it is not a solid fill of surface.brand.",
+   "token": null
+  },
+  "component_recipes": [
+   {
+    "background": null,
+    "border": null,
+    "component": "button",
+    "confidence": "high",
+    "padding": "space.card.padding",
+    "radius": "radius.button",
+    "shadow": null,
+    "text": "text.inverse",
+    "unmapped": [
+     "Primary demo CTA, count 4. Fill measured warm-dark with no kit token — do not map to surface.inverse or text.primary.",
+     "Vertical padding measured 0; horizontal 10 lands on space.card.padding.",
+     "Recorded 1px border with no color — do not assign border.brand.",
+     "Shadow null. Face is type.cta (bodyFont 500/16)."
+    ],
+    "variant": "solid.28241e"
+   },
+   {
+    "background": "surface.card",
+    "border": null,
+    "component": "button",
+    "confidence": "medium",
+    "padding": "space.card.padding",
+    "radius": "radius.button",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 6. Border measured as text.primary-like ink at low alpha — no border token matches.",
+     "Text measured as text.primary at partial alpha — no opacity token matches that hex.",
+     "Vertical padding measured 0. Shadow null. Face type.cta."
+    ],
+    "variant": "solid.1"
+   },
+   {
+    "background": "surface.card",
+    "border": null,
+    "component": "button",
+    "confidence": "low",
+    "padding": "space.card.padding",
+    "radius": "radius.sm",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 1. Likely the light demo button on the dark procedures band. Text is the untokened warm-dark, not text.primary.",
+     "Border measured white. Vertical padding 0. Shadow null."
+    ],
+    "variant": "solid.5"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "button",
+    "confidence": "medium",
+    "padding": "space.5",
+    "radius": "radius.md",
+    "shadow": null,
+    "text": "text.inverse",
+    "unmapped": [
+     "Count 4. Horizontal padding measured 18px — no spacing token. Vertical 20 lands on space.5 by value only.",
+     "Shadow null. No visible border (recorded width 0)."
+    ],
+    "variant": "ghost.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "button",
+    "confidence": "medium",
+    "padding": "space.card.padding",
+    "radius": "radius.button",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 3. Text measured as text.primary at partial alpha — no matching token.",
+     "Vertical padding 0. Shadow null. Face type.cta."
+    ],
+    "variant": "ghost.2"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "button",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.button",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 9. Inter face, not page chrome — inside product UI.",
+     "Text #404040 and border color have no kit tokens. Padding 0. Shadow null."
+    ],
+    "variant": "outline.1"
+   },
+   {
+    "background": "surface.card",
+    "border": null,
+    "component": "button",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.full",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 3, pill. Inter face inside product UI — not a page CTA.",
+     "Border #E5E5E5 and text #404040 have no kit tokens. Shadow null."
+    ],
+    "variant": "solid.3"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "button",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.full",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 1, pill, Inter. Blue fill and blue text have no kit tokens. Inside product UI, not page chrome. Shadow null."
+    ],
+    "variant": "solid.4"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "button",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 1. No text color captured. Padding 0. Shadow null. Too thin to treat as a recipe."
+    ],
+    "variant": "ghost.3"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "card",
+    "confidence": "medium",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 9. No fill, padding 0, border width 0, shadow null. Feature tiles read as type sitting on the canvas, not boxed cards."
+    ],
+    "variant": "ghost.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "card",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.card",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 3. Fill is a warm gray with no kit token — do not substitute surface.muted.",
+     "Padding 0, border width 0, shadow null."
+    ],
+    "variant": "solid.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "nav",
+    "confidence": "high",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 5. Top-nav links. Padding 0, border width 0, shadow null."
+    ],
+    "variant": "ghost.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "nav",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 1. Bottom border only, width matches stroke.width.default, color not captured. Shadow null."
+    ],
+    "variant": "outline.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "nav",
+    "confidence": "medium",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": "text.inverse",
+    "unmapped": [
+     "Count 1. Warm-dark bar (footer/nav). Fill has no kit token — same untokened dark as the procedures band.",
+     "Vertical padding 54px has no spacing token. Shadow null."
+    ],
+    "variant": "solid.1"
+   },
+   {
+    "background": "surface.card",
+    "border": null,
+    "component": "input",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.xl",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 1. Footer email field. Border #E5E5E5 and text #404040 have no kit tokens.",
+     "Padding 4/36/4/32 does not land on one spacing token. Inter face. Shadow null."
+    ],
+    "variant": "solid.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "input",
+    "confidence": "low",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": "text.primary",
+    "unmapped": [
+     "Count 2. Inter face, padding 10/12/8/12 — only the 10 lands on space.card.padding. Border width 0. Likely inside product UI. Shadow null."
+    ],
+    "variant": "ghost.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "image",
+    "confidence": "medium",
+    "padding": null,
+    "radius": "radius.none",
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 60. No fill, padding 0, shadow null. Measured image slots are square-cornered; visible product-frame rounding belongs to the frame, not this record."
+    ],
+    "variant": "ghost.1"
+   },
+   {
+    "background": null,
+    "border": null,
+    "component": "focus_ring",
+    "confidence": "low",
+    "padding": null,
+    "radius": null,
+    "shadow": null,
+    "text": null,
+    "unmapped": [
+     "Count 1. Width matches stroke.width.focus. Color was not measured — do not assign derived focus.ring."
+    ],
+    "variant": "outline.2"
+   }
+  ],
+  "constraints": [
+   {
+    "confidence": "high",
+    "rule": "Page chrome stays on surface.page. The only measured section background that is not surface.page is the single procedures band — do not add further dark or tinted section bands.",
+    "scope": "Section backgrounds on this homepage pattern"
+   },
+   {
+    "confidence": "high",
+    "rule": "Do not paint the procedures band, primary demo button, or footer with surface.inverse, surface.brand, or text.primary. That warm-dark fill has no kit token.",
+    "scope": "Dark fills"
+   },
+   {
+    "confidence": "medium",
+    "rule": "surface.brand is motif only. It never fills a button, a headline, or a section background on this page.",
+    "scope": "Color application"
+   },
+   {
+    "confidence": "high",
+    "rule": "Primary demo CTAs are warm-dark rectangles at radius.button with text.inverse, in type.cta. They are not pills and not surface.brand fills.",
+    "scope": "Page CTAs"
+   },
+   {
+    "confidence": "high",
+    "rule": "radius.full pills appear only inside product screenshots (Inter-faced controls). Do not use them as page chrome.",
+    "scope": "Buttons"
+   },
+   {
+    "confidence": "high",
+    "rule": "Every measured component has a null shadow. Keep page surfaces flat — no elevation.",
+    "scope": "All measured surfaces"
+   },
+   {
+    "confidence": "high",
+    "rule": "Headlines stay sentence-case seasonFont (type.headline / type.title). Do not set them in the body face or in uppercase.",
+    "scope": "Headlines"
+   },
+   {
+    "confidence": "high",
+    "rule": "Do not deploy text.brand or border.brand as ink, eyebrows, or button strokes. Those tokens are derived teal and are not what this page shows.",
+    "scope": "Ink and strokes"
+   },
+   {
+    "confidence": "medium",
+    "rule": "Photography stays in the customer-story rail. Feature, security, hero, and footer regions stay product-UI, seals, or type.",
+    "scope": "Imagery slots"
+   },
+   {
+    "confidence": "medium",
+    "rule": "Section vertical rhythm uses space.section; horizontal inset uses space.page.margin. Both are website-measured.",
+    "scope": "Page spacing"
+   }
+  ],
+  "diagnostics": [
+   {
+    "observation": "Procedures band, primary demo button (solid.2), and nav solid.1 all measure a warm dark near #28241E. No surface token matches. palette.neutral.900 and text.primary are #29251E; surface.inverse is #121212.",
+    "reason": "Cannot mint a band token, and substituting the nearest kit color would shift the brand dark."
+   },
+   {
+    "observation": "Aurora washes behind product frames and the closing CTA use greens, peaches, oranges, and pinks. Review stars under the hero CTA are orange. None of these hues are kit tokens. surface.brand (#7CE4FC) is only the cyan sliver.",
+    "reason": "A single accent token cannot represent the multi-hue motif. Left unmapped so it is not collapsed to surface.brand."
+   },
+   {
+    "observation": "surface.accent (#ACB464) is recorded at 0.2% of above-the-fold chrome, but no visible element on the screenshot can be pointed at.",
+    "reason": "Too weak to assign a scope. Do not deploy it as punctuation until a human locates it."
+   },
+   {
+    "observation": "Card solid.1 fill #F7F6F6, recurring border #D9D7D1 (usually width 0), input border #E5E5E5, and text #404040 have no kit tokens. border.default / border.subtle / text.secondary / text.muted are derived and do not match.",
+    "reason": "Token law forbids minting names or smuggling these hexes into recipes."
+   },
+   {
+    "observation": "The dark multi-column footer is visible in the screenshot and supported by nav solid.1, but it is not a row in section_background_sequence (nine sections, only index 5 dark).",
+    "reason": "Rhythm stays faithful to the measured sequence; the footer is noted as a composition, not invented as a tenth band."
+   },
+   {
+    "observation": "type.eyebrow, text.brand, and border.brand are derived teal. Observed eyebrows are small warm-gray uppercase labels, not teal and not clearly seasonFont.",
+    "reason": "Derived tokens must not be stated as brand type or color facts."
+   },
+   {
+    "observation": "Measured paddings of 18px and 54px, and asymmetric input padding 4/36/4/32, have no spacing token. space.16 is 56, not 54.",
+    "reason": "Left in recipe unmapped rather than snapped to a nearby step."
+   }
+  ],
+  "imagery_posture": {
+   "absences": [
+    "No photography in the hero, feature grids, security row, or footer.",
+    "No people photography on this page.",
+    "No pricing imagery — this page has no pricing section."
+   ],
+   "confidence": "medium",
+   "diet": "product-ui-led",
+   "slots": [
+    "Hero: one large product UI on an aurora wash.",
+    "Feature rows and the six-up grid: the same aurora-backed product frame, captioned underneath.",
+    "Procedures band: one large chart card on a gradient, flanked by text tiles.",
+    "Customer rail only: hotel photography with a small wordmark badge and a caption.",
+    "Security: three outlined circular seals, not photos.",
+    "Trust strip: grayscale hospitality wordmarks."
+   ]
+  },
+  "palette_application": [
+   {
+    "confidence": "high",
+    "evidence": "Measured background of eight of nine sections (#FFFFFF). The page chrome is this white, not surface.canvas.",
+    "scope": "canvas",
+    "token": "surface.page"
+   },
+   {
+    "confidence": "high",
+    "evidence": "Measured #FFFFFF fill on solid buttons (solid.1, solid.5) and the solid input. Same white as the page; not a tint.",
+    "scope": "canvas",
+    "token": "surface.card"
+   },
+   {
+    "confidence": "high",
+    "evidence": "Custom-prop foreground. Headlines, nav ghost links, and card text measured at this warm brown-black.",
+    "scope": "ink",
+    "token": "text.primary"
+   },
+   {
+    "confidence": "medium",
+    "evidence": "Measured #FFFFFF labels on the dark demo button (solid.2) and the dark nav/footer bar. Token is derived, but the hex matches the measurement.",
+    "scope": "ink",
+    "token": "text.inverse"
+   },
+   {
+    "confidence": "medium",
+    "evidence": "Cyan measured at about 1% of above-the-fold chrome. It participates in the aurora washes; it is not button fill, ink, or a section background.",
+    "scope": "motif",
+    "token": "surface.brand"
+   }
+  ],
+  "schema_version": 1,
+  "signature_compositions": [
+   {
+    "confidence": "high",
+    "name": "Aurora-backed product frame",
+    "strength": "STRONG",
+    "structure": "White product UI centered on a soft multi-hue gradient panel, flat, no shadow. Repeated as the hero stage, the three feature cards, and the six-up grid."
+   },
+   {
+    "confidence": "high",
+    "name": "Centered editorial hero",
+    "strength": "SINGLE",
+    "structure": "Centered serif headline, one supporting line, a single dark demo CTA, a small rating line, then the product stage. Not a split hero."
+   },
+   {
+    "confidence": "high",
+    "name": "Indexed product row",
+    "strength": "SINGLE",
+    "structure": "Paired eyebrows (bracketed index left, slash label right), serif headline left with a demo CTA right, then three equal captioned product frames."
+   },
+   {
+    "confidence": "high",
+    "name": "Dark procedures mosaic",
+    "strength": "SINGLE",
+    "structure": "Warm-dark band: serif headline left, short copy and a light CTA right, then side text tiles flanking one large gradient chart card."
+   },
+   {
+    "confidence": "high",
+    "name": "Customer photo rail",
+    "strength": "SINGLE",
+    "structure": "Horizontal row of property photographs with overlaid names, short captions, and a CUSTOMER label. The only photography slot."
+   },
+   {
+    "confidence": "high",
+    "name": "Three-seal security row",
+    "strength": "SINGLE",
+    "structure": "Centered serif headline, then three outlined circular seals with titles and captions. No cards, no photos."
+   },
+   {
+    "confidence": "high",
+    "name": "Closing aurora CTA panel",
+    "strength": "SINGLE",
+    "structure": "Inner full-width gradient panel on a white band: small eyebrow, centered light serif headline, one light demo button."
+   },
+   {
+    "confidence": "medium",
+    "name": "Dark link footer",
+    "strength": "SINGLE",
+    "structure": "Warm-dark footer: wordmark and newsletter field, then a dense multi-column link directory. Visible on the page; not isolated in the section sequence."
+   }
+  ],
+  "typographic_posture": {
+   "case_posture": "Sentence case for headlines, body, and CTAs. Tracked uppercase is reserved for section-index eyebrows (bracketed codes and slash labels) and footer column labels.",
+   "confidence": "medium",
+   "scale_temperament": "substantial",
+   "signature_moves": [
+    "Serif headlines in type.headline (hero) and type.title (section heads), tight negative tracking, regular weight — not the sans body face.",
+    "No two-color headline split and no page-level accent numeral; the only large figure sits inside a product chart.",
+    "Eyebrows are small, tracked, uppercase, and warm-gray — not text.brand.",
+    "CTAs use type.cta (body face, medium weight, sentence case): “Book a demo”."
+   ],
+   "tokens": [
+    "type.headline",
+    "type.title",
+    "type.body",
+    "type.cta"
+   ]
+  }
+ },
+ "compatibility_policy": {
+  "allow_critical_mode_fallbacks": false,
+  "allow_unapproved_asset_placeholders": true,
+  "require_product_ready_tokens": false
+ },
+ "constraints": {
+  "accessibility_notes": [],
+  "allow_gradients": true,
+  "contrast_pairs": [
+   {
+    "background": "surface.page",
+    "foreground": "text.primary",
+    "min_ratio": 4.5
+   },
+   {
+    "background": "surface.brand",
+    "foreground": "text.primary",
+    "min_ratio": 4.5
+   },
+   {
+    "background": "surface.inverse",
+    "foreground": "text.inverse",
+    "min_ratio": 4.5
+   }
+  ],
+  "iconography": [],
+  "imagery": [],
+  "print_constraints": [
+   "Font licensing was not verified at ingestion; confirm embeddability before print export."
+  ],
+  "tone": [
+   "clear",
+   "professional"
+  ]
+ },
+ "description": null,
+ "grammar_audit": {
+  "anti_patterns": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "measured",
+     "evidence": "counted over the measured band sequence",
+     "rule": "No extra dark sections: 1 of 9 measured bands is dark. A second dark band is a rhythm this brand does not have."
+    },
+    {
+     "basis": "measured",
+     "evidence": "0 of 9 measured bands is a gradient",
+     "rule": "No gradient or mesh band backgrounds: not one measured band on this site uses one."
+    },
+    {
+     "basis": "measured",
+     "evidence": "18 measured surfaces, none carrying a box-shadow",
+     "rule": "No shadows, glows or glassmorphism: nothing measured on this site is elevated."
+    },
+    {
+     "basis": "default",
+     "evidence": "house default from the lane's design guidance; not a measurement of this brand",
+     "rule": "No decorative geometry — blobs, orbs, gradient meshes, scattered shapes — unless this brand's real presence uses it. It is the clearest AI-slop tell there is."
+    },
+    {
+     "basis": "default",
+     "evidence": "house default from the lane's design guidance; not a measurement of this brand",
+     "rule": "No placeholder logo grids and no one-of-each parade of primitives: pick one composition system and apply it across the page."
+    }
+   ]
+  },
+  "cadence": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "measured",
+     "evidence": "measured band backgrounds, in the order the page paints them",
+     "rule": "The site's own band sequence, top to bottom: light, light, light, light, light, dark, light, light, light (9 measured bands). Compose new sections into that rhythm."
+    },
+    {
+     "basis": "measured",
+     "evidence": "1 of 9 measured bands are dark",
+     "rule": "A dark band is the exception here — 1 of 9. Use it as an interval between light sections, never as the page's default surface."
+    },
+    {
+     "basis": "measured",
+     "evidence": "website:https://www.conduit.ai/ :: section rhythm",
+     "rule": "Band rhythm is 80px — `space.section`. Write it as the utility, never as a raw vertical padding step."
+    }
+   ]
+  },
+  "color_frequency": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "measured",
+     "evidence": "counted over the measured band sequence",
+     "rule": "`#FFFFFF` (`surface.card`) carries 8 of 9 measured bands — this page's default canvas. A new section stands on it unless it has a reason not to."
+    },
+    {
+     "basis": "measured",
+     "evidence": "counted over the measured band sequence",
+     "rule": "`#28241E` carries 1 of 9 measured bands. Use it exactly that sparingly."
+    },
+    {
+     "basis": "measured",
+     "evidence": "measured control fills, cross-checked against the band backgrounds",
+     "rule": "`#B7D9F8` fills controls and nothing else — 1 measured button/chip variants, and not one band background. Keep it at control scale; a band painted in it is not this brand."
+    }
+   ]
+  },
+  "schema_version": 1,
+  "surface_language": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "measured",
+     "evidence": "read off the brand's own rendered page",
+     "rule": "Corners: `radius.button` 8px, `radius.card` 10px — the only corner shapes this brand measures."
+    },
+    {
+     "basis": "measured",
+     "evidence": "read off the brand's own rendered page",
+     "rule": "Spacing: `space.card.padding` 10px — its measured steps."
+    },
+    {
+     "basis": "measured",
+     "evidence": "18 measured surfaces, none carrying a box-shadow",
+     "rule": "This brand paints no shadow anywhere: not one measured surface is elevated. Flat is the brand, not an omission to correct."
+    },
+    {
+     "basis": "measured",
+     "evidence": "a measured control variant is fully rounded",
+     "rule": "Controls are fully round (pills) on this site — a squared button is not this brand."
+    }
+   ]
+  },
+  "type_treatment": {
+   "absent": null,
+   "rules": [
+    {
+     "basis": "default",
+     "evidence": "house rule: measured component styles govern reuse; kit roles supply fallback values",
+     "rule": "For captured/adapted bands and equivalent new roles, preserve the measured source typography and responsive CSS. The theme's type ramp is a fallback where source measurements are unavailable; derived/substituted values are not observed facts. Inspect and bind source roles before raw composition, rather than adding generic size/weight utilities."
+    },
+    {
+     "basis": "measured",
+     "evidence": "measured on the site's own h1",
+     "rule": "This brand's headings are LIGHT (weight 400). A bold heading is not this brand."
+    },
+    {
+     "basis": "derived",
+     "evidence": "derived/substituted font_family, font_size, font_weight, letter_spacing, line_height; these are not observed brand facts",
+     "rule": "`type.display` (the display line) is seasonFont / 89.5px / weight 400 / leading 1.05 / tracking -0.02em."
+    },
+    {
+     "basis": "measured",
+     "evidence": "measured font_family, font_size, font_weight, letter_spacing, line_height at rendered :: h1; all listed type properties match the selected sample",
+     "rule": "`type.headline` (the page's `<h1>`) is seasonFont / 56px / weight 400 / leading 1 / tracking -0.03em."
+    },
+    {
+     "basis": "measured",
+     "evidence": "measured font_family, font_size, font_weight, letter_spacing, line_height at rendered :: h2; all listed type properties match the selected sample",
+     "rule": "`type.title` (an `<h2>`) is seasonFont / 48px / weight 400 / leading 1 / tracking -0.03em."
+    },
+    {
+     "basis": "derived",
+     "evidence": "derived/substituted font_family, font_size, font_weight, letter_spacing, line_height; these are not observed brand facts",
+     "rule": "`type.subtitle` (an `<h3>`) is bodyFont / 20px / weight 400 / leading 1.3."
+    },
+    {
+     "basis": "derived",
+     "evidence": "measured font_family, font_size, font_weight, line_height at rendered :: body; derived/substituted letter_spacing; these are not observed brand facts",
+     "rule": "`type.body` (body copy) is bodyFont / 16px / weight 400 / leading 1.5."
+    },
+    {
+     "basis": "derived",
+     "evidence": "measured font_family, font_size, font_weight, line_height at rendered :: button; derived/substituted letter_spacing; these are not observed brand facts",
+     "rule": "`type.cta` (button labels) is bodyFont / 16px / weight 500 / leading 1.2."
+    }
+   ]
+  }
+ },
+ "id": "brand_kit_ing_c162dc8c5b99418284b42a21a7a80298",
+ "measured_components": {
+  "motion": {
+   "animations": [],
+   "reveals": [],
+   "scripted": []
+  },
+  "schema_version": 1,
+  "source": "website:https://www.conduit.ai/",
+  "styles": [
+   {
+    "browser_focus_ring": false,
+    "component": "button",
+    "count": 4,
+    "icon": null,
+    "motion": [],
+    "probed": "rest-only",
+    "rest": {
+     "fill": "surface.band.28241e",
+     "font": "button.solid-28241e.font",
+     "height": "button.solid-28241e.height",
+     "label": "text.inverse",
+     "padding-bottom": "space.0",
+     "padding-left": "space.3",
+     "padding-right": "space.3",
+     "padding-top": "space.0",
+     "radius": "radius.button"
+    },
+    "source": "website:https://www.conduit.ai/",
+    "states": {},
+    "variant": "solid.28241e"
+   }
+  ]
+ },
+ "modes": {
+  "axes": {
+   "accessibility": [
+    "standard",
+    "high_contrast",
+    "large_text"
+   ],
+   "density": [
+    "comfortable",
+    "compact"
+   ],
+   "theme": [
+    "light",
+    "dark"
+   ]
+  },
+  "defaults": {
+   "accessibility": "standard",
+   "density": "comfortable",
+   "theme": "light"
+  }
+ },
+ "name": "Conduit",
+ "provenance": {
+  "confidence": 0.6352,
+  "created_at": "2026-10-05",
+  "created_by": "lumen_ingestion",
+  "notes": [
+   "Ingested from website evidence.",
+   "Dark colorway synthesized from the light palette."
+  ],
+  "updated_at": null
+ },
+ "sources": [
+  {
+   "captured_at": "2026-10-05T07:43:38.271400+00:00",
+   "confidence": 0.7,
+   "kind": "website",
+   "url": "https://conduit.ai"
+  }
+ ],
+ "tokens": {
+  "aliases": {
+   "accent.primary": {
+    "description": "ingestion alias",
+    "token": "surface.accent"
+   }
+  },
+  "assets": {
+   "logo.mark": {
+    "description": "Ingested logo.mark asset",
+    "provenance": {
+     "confidence": 0.7,
+     "source": "upload:asset"
+    },
+    "value": {
+     "default": {
+      "asset_id": "asset_ing_27c64ef3b5f723e0",
+      "kind": "asset"
+     },
+     "modes": {}
+    }
+   },
+   "logo.primary": {
+    "description": "Ingested logo.primary asset",
+    "provenance": {
+     "confidence": 0.7,
+     "source": "upload:asset"
+    },
+    "value": {
+     "default": {
+      "asset_id": "asset_ing_761b0b47f1b7c604",
+      "kind": "asset"
+     },
+     "modes": {}
+    }
+   }
+  },
+  "colors": {
+   "border.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.brand"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#2095AC"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#2095AC"
+      }
+     }
+    }
+   },
+   "border.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.default"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#CACACA"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#33464B"
+      }
+     }
+    }
+   },
+   "border.strong": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.strong"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#8F8F8F"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#4E6267"
+      }
+     }
+    }
+   },
+   "border.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:border.subtle"
+    },
+    "role": "border",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#E4E4E4"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#1F3136"
+      }
+     }
+    }
+   },
+   "focus.ring": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:focus.ring"
+    },
+    "role": "focus",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#2095AC"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#5EB3C6"
+      }
+     }
+    }
+   },
+   "palette.neutral.100": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.100)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#E9F1F9"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.200": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.200)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#D7DFE7"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.300": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.300)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#BEC5CD"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.400": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.400)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#9EA5AD"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.50": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.50)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F6FBFF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.500": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.500)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#80878E"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.600": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.600)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#666D74"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.700": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.700)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#50565D"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.800": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.800)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#3D434A"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.900": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.900)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#29251E"
+     },
+     "modes": {}
+    }
+   },
+   "palette.neutral.950": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.neutral.950)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#161B21"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.100": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.100)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#DEF5FB"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.200": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.200)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#7CE4FC"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.300": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.300)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#92D0DF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.400": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.400)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#5EB3C6"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.50": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.50)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F2FCFF"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.500": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.500)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#2095AC"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.600": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.600)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#00798D"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.700": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.700)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#006070"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.800": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.800)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#004B58"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.900": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.900)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#00343E"
+     },
+     "modes": {}
+    }
+   },
+   "palette.primary.950": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:ramp(palette.primary.950)"
+    },
+    "role": "palette",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#001F26"
+     },
+     "modes": {}
+    }
+   },
+   "surface.accent": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "render:0.2% of above-the-fold chrome"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#ACB464"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#ADB565"
+      }
+     }
+    }
+   },
+   "surface.band.28241e": {
+    "description": "section background (1 band, 887px)",
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: section background (sections 5)"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#28241E"
+     },
+     "modes": {}
+    }
+   },
+   "surface.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "render:1.0% of above-the-fold chrome"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#7CE4FC"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#5EB3C6"
+      }
+     }
+    }
+   },
+   "surface.brand.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.brand.subtle"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#DEF5FB"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#0F2E35"
+      }
+     }
+    }
+   },
+   "surface.canvas": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.canvas"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FDFDFD"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#000E12"
+      }
+     }
+    }
+   },
+   "surface.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "custom-prop:--background"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFFFFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#0B1E22"
+      }
+     }
+    }
+   },
+   "surface.elevated": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.elevated"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFFFFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#15272C"
+      }
+     }
+    }
+   },
+   "surface.inverse": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.inverse"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#121212"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#FFFFFF"
+      }
+     }
+    }
+   },
+   "surface.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:surface.muted"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#EEEEEE"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#102227"
+      }
+     }
+    }
+   },
+   "surface.page": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "custom-prop:--background"
+    },
+    "role": "surface",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFFFFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#041419"
+      }
+     }
+    }
+   },
+   "text.accent": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.accent"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#006070"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#BDC575"
+      }
+     }
+    }
+   },
+   "text.brand": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.brand"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#006070"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#92D0DF"
+      }
+     }
+    }
+   },
+   "text.inverse": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.inverse"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#FFFFFF"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#29251E"
+      }
+     }
+    }
+   },
+   "text.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.muted"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#767169"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#798A8E"
+      }
+     }
+    }
+   },
+   "text.primary": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "custom-prop:--foreground"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#29251E"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#E0F2F7"
+      }
+     }
+    }
+   },
+   "text.secondary": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:text.secondary"
+    },
+    "role": "text",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#59554D"
+     },
+     "modes": {
+      "theme.dark": {
+       "kind": "hex",
+       "value": "#AABBBF"
+      }
+     }
+    }
+   }
+  },
+  "effects": {},
+  "numbers": {
+   "button.solid-28241e.height": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button solid.28241e rest height"
+    },
+    "role": "dimension",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 32.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.2xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 33.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.3xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 38.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.4xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 42.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.5xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 50.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.6xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 67.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.7xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 84.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.8xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 101.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.9xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 134.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.lg": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 21.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.md": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 17.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.sm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 14.5
+     },
+     "modes": {}
+    }
+   },
+   "type.size.xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 25.0
+     },
+     "modes": {}
+    }
+   },
+   "type.size.xs": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type-size-ramp x-height-normalized (factor 1.052 = reference 0.546 / brand 0.519)"
+    },
+    "role": "font_size",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 12.5
+     },
+     "modes": {}
+    }
+   }
+  },
+  "opacity": {
+   "opacity.disabled": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.4
+     },
+     "modes": {}
+    }
+   },
+   "opacity.emphasis": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.88
+     },
+     "modes": {}
+    }
+   },
+   "opacity.muted": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.56
+     },
+     "modes": {}
+    }
+   },
+   "opacity.overlay": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.48
+     },
+     "modes": {}
+    }
+   },
+   "opacity.scrim": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.64
+     },
+     "modes": {}
+    }
+   },
+   "opacity.subtle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:opacity-scale"
+    },
+    "role": "visibility",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "ratio",
+      "value": 0.72
+     },
+     "modes": {}
+    }
+   }
+  },
+  "radii": {
+   "radius.badge": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 9999.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.button": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: card border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 10.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.full": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 9999.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.lg": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.md": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 6.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.none": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.sm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 4.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: input border-radius"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 10.0
+     },
+     "modes": {}
+    }
+   },
+   "radius.xs": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:radius-scale"
+    },
+    "role": "radius",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "shadows": {},
+  "spacing": {
+   "space.0": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.0
+     },
+     "modes": {}
+    }
+   },
+   "space.1": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: nav gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   },
+   "space.10": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 40.0
+     },
+     "modes": {}
+    }
+   },
+   "space.12": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 48.0
+     },
+     "modes": {}
+    }
+   },
+   "space.16": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: section gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 56.0
+     },
+     "modes": {}
+    }
+   },
+   "space.2": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 4.0
+     },
+     "modes": {}
+    }
+   },
+   "space.3": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 10.0
+     },
+     "modes": {}
+    }
+   },
+   "space.4": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "space.5": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 20.0
+     },
+     "modes": {}
+    }
+   },
+   "space.6": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.8": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 32.0
+     },
+     "modes": {}
+    }
+   },
+   "space.card.padding": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button padding"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 10.0
+     },
+     "modes": {}
+    }
+   },
+   "space.lg": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "space.md": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 10.0
+     },
+     "modes": {}
+    }
+   },
+   "space.page.margin": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: section horizontal padding"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 20.0
+     },
+     "modes": {}
+    }
+   },
+   "space.section": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: section rhythm"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 80.0
+     },
+     "modes": {}
+    }
+   },
+   "space.sm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 4.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 16.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.loose": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.stack.tight": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 8.0
+     },
+     "modes": {}
+    }
+   },
+   "space.xl": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:spacing-scale"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 24.0
+     },
+     "modes": {}
+    }
+   },
+   "space.xs": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: nav gap"
+    },
+    "role": "spacing",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "stroke_widths": {
+   "stroke.width.bold": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 3.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.card": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.default": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button border-width"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.divider": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.firm": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.focus": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: focus ring outline-width"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.hairline": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:stroke-scale"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 0.5
+     },
+     "modes": {}
+    }
+   },
+   "stroke.width.thin": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button border-width"
+    },
+    "role": "stroke",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 1.0
+     },
+     "modes": {}
+    }
+   }
+  },
+  "typography": {
+   "button.solid-28241e.font": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://www.conduit.ai/ :: button solid.28241e rest font"
+    },
+    "role": "component",
+    "value": {
+     "default": {
+      "color": null,
+      "font_asset": "body",
+      "font_family": "bodyFont",
+      "font_size": 16.0,
+      "font_weight": 500,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": null
+     },
+     "modes": {}
+    }
+   },
+   "type.body": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.body; measured=font_family,font_size,font_weight,line_height @ website:rendered :: body"
+    },
+    "role": "body",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "body",
+      "font_family": "bodyFont",
+      "font_size": 16.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.5
+     },
+     "modes": {}
+    }
+   },
+   "type.body.small": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.body.small; measured=none"
+    },
+    "role": "body.small",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "body",
+      "font_family": "bodyFont",
+      "font_size": 14.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.4
+     },
+     "modes": {}
+    }
+   },
+   "type.caption": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.caption; measured=none"
+    },
+    "role": "caption",
+    "value": {
+     "default": {
+      "color": "text.secondary",
+      "font_asset": "body",
+      "font_family": "bodyFont",
+      "font_size": 12.0,
+      "font_weight": 500,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.35
+     },
+     "modes": {}
+    }
+   },
+   "type.cta": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.cta; measured=font_family,font_size,font_weight,line_height @ website:rendered :: button"
+    },
+    "role": "cta",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "body",
+      "font_family": "bodyFont",
+      "font_size": 16.0,
+      "font_weight": 500,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.2
+     },
+     "modes": {}
+    }
+   },
+   "type.display": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.display; measured=none"
+    },
+    "role": "display",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "seasonFont",
+      "font_size": 89.5,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": -0.02,
+      "line_height": 1.05
+     },
+     "modes": {}
+    }
+   },
+   "type.eyebrow": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.eyebrow; measured=none"
+    },
+    "role": "eyebrow",
+    "value": {
+     "default": {
+      "color": "text.brand",
+      "font_asset": "brand",
+      "font_family": "seasonFont",
+      "font_size": 12.0,
+      "font_weight": 500,
+      "kind": "style",
+      "letter_spacing": 0.08,
+      "line_height": 1.2
+     },
+     "modes": {}
+    }
+   },
+   "type.headline": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:rendered :: h1"
+    },
+    "role": "headline",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "seasonFont",
+      "font_size": 56.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": -0.03,
+      "line_height": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "type.label": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.label; measured=none"
+    },
+    "role": "label",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "body",
+      "font_family": "bodyFont",
+      "font_size": 13.0,
+      "font_weight": 500,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.2
+     },
+     "modes": {}
+    }
+   },
+   "type.legal": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.legal; measured=none"
+    },
+    "role": "legal",
+    "value": {
+     "default": {
+      "color": "text.muted",
+      "font_asset": "body",
+      "font_family": "bodyFont",
+      "font_size": 11.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.3
+     },
+     "modes": {}
+    }
+   },
+   "type.stat": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.stat; measured=none"
+    },
+    "role": "stat",
+    "value": {
+     "default": {
+      "color": "text.brand",
+      "font_asset": "brand",
+      "font_family": "seasonFont",
+      "font_size": 70.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.0
+     },
+     "modes": {}
+    }
+   },
+   "type.subtitle": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.6,
+     "source": "derived:type.subtitle; measured=none"
+    },
+    "role": "subtitle",
+    "value": {
+     "default": {
+      "color": "text.secondary",
+      "font_asset": "body",
+      "font_family": "bodyFont",
+      "font_size": 20.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": 0.0,
+      "line_height": 1.3
+     },
+     "modes": {}
+    }
+   },
+   "type.title": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.9,
+     "source": "website:rendered :: h2"
+    },
+    "role": "title",
+    "value": {
+     "default": {
+      "color": "text.primary",
+      "font_asset": "brand",
+      "font_family": "seasonFont",
+      "font_size": 48.0,
+      "font_weight": 400,
+      "kind": "style",
+      "letter_spacing": -0.03,
+      "line_height": 1.0
+     },
+     "modes": {}
+    }
+   }
+  }
+ },
+ "version": 3
+}

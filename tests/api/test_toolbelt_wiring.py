@@ -337,6 +337,9 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "design_record_diagnostics": ("precondition", ("design_runtime_not_configured",)),
     "design_redo_document": ("precondition", ("design_runtime_not_configured",)),
     "design_redo_web_document": ("precondition", ("design_runtime_not_configured",)),
+    "design_write_site": ("precondition", ("design_runtime_not_configured",)),
+    "design_undo_site": ("precondition", ("design_runtime_not_configured",)),
+    "design_redo_site": ("precondition", ("design_runtime_not_configured",)),
     "design_replace_scene": ("precondition", ("design_runtime_not_configured",)),
     "design_rollback_web_publish": ("precondition", ("design_runtime_not_configured",)),
     "design_set_agent_instructions": ("precondition", ("design_runtime_not_configured",)),
@@ -893,6 +896,14 @@ def _bodies() -> dict[str, dict[str, object]]:
             "batch_id": "b1",
             "expected_base_version": 1,
         },
+        # Wave 2 Lane A — Puck site documents.
+        "design_write_site": {
+            "document_id": "doc_matrix",
+            "site": {"id": "doc_matrix", "title": "Matrix"},
+            "expected_base_version": 1,
+        },
+        "design_undo_site": {"document_id": "doc_matrix", "expected_base_version": 1},
+        "design_redo_site": {"document_id": "doc_matrix", "expected_base_version": 1},
         # Round B — turn enqueues.
         "design_start_agent_turn": {
             "run_id": "run_matrix",
@@ -1471,9 +1482,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
     # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
     # 144 / 166 (2026-09-22).
+    # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
-    assert len(registry.names()) == 145
+    assert len(registry.names()) == 148
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1519,9 +1531,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
     # And `read_account_research@3` (insights and the buying committee, for Design) beside `@2`
     # (168 -> 169).
+    # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
-    assert len(registry) == 170
+    assert len(registry) == 173
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1566,9 +1579,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
     # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
     # 144 / 166 (2026-09-22).
+    # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
-    assert len(registry.names()) == 145
+    assert len(registry.names()) == 148
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1601,9 +1615,10 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
     # And `read_account_research@3` (insights and the buying committee, for Design) beside `@2`
     # (168 -> 169).
+    # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
     # `read_cited_claims@1` (2026-10-11, Lane B) is a new name at one address (+1), ungranted
     # until the design profile bump.
-    assert len(registry) == 170
+    assert len(registry) == 173
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

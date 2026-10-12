@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from clue_api.chat.schemas import DesignArtifactWire
 from clue_api.design_leg_wiring import (
     _assistant_summary,
     _card_account_id,
     batch_summary,
+    clarification_sentence,
     design_kind_label,
 )
 from clue_api.frontend_read.contract_v1 import AccountArtifact
@@ -95,3 +98,53 @@ def test_the_wire_models_accept_site() -> None:
         last_edited_label="Last edited Oct 11, 2026",
     )
     assert artifact.type == "site"
+
+
+def _clarification_run(doc_kind: str, document_id: str) -> dict[str, Any]:
+    """A terminal run that stopped to ask (spec 2026-09-20 §2.2): the questions
+    ``clarification_sentence`` reads, beside the version and note a turn result also carries."""
+    return {
+        "status": "succeeded",
+        "document_id": document_id,
+        "result": {
+            "schema_version": 1,
+            "doc_kind": doc_kind,
+            "status": "clarification_requested",
+            "current_version": 4,
+            "summary": "I need one answer first.",
+            "clarification": {
+                "questions": [
+                    {
+                        "id": "audience",
+                        "question": "Who is the page for?",
+                        "default": "The district's CFO",
+                    },
+                    {
+                        "id": "proof",
+                        "question": "Which proof point should lead?",
+                        "default": "The 12% stat",
+                    },
+                ]
+            },
+        },
+    }
+
+
+def test_a_site_turn_that_stopped_to_ask_reads_as_its_question() -> None:
+    """Contract 7: a site turn may stop to ask. It designed nothing, so its thread record is the
+    question — alone and in a batch line — never "Design turn clarification_requested on …"."""
+    site = _clarification_run("site", "doc_site")
+    asked = clarification_sentence(site["result"])
+    assert asked == (
+        "Asked you 2 questions before designing: Who is the page for?; "
+        "Which proof point should lead?."
+    )
+    assert _assistant_summary(site) == asked
+    assert batch_summary([({"title": "Syracuse site"}, site)]) == f"Syracuse site: {asked}"
+
+    # A web turn's summary is unchanged (pinned from before this change).
+    web = _clarification_run("web", "doc_web")
+    assert _assistant_summary(web) == (
+        "Design turn clarification_requested on website document doc_web (now version 4): "
+        "I need one answer first."
+    )
