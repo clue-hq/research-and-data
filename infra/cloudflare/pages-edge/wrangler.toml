@@ -12,3 +12,8 @@ routes = [{ pattern = "*/*", zone_name = "cluehq.ai" }]
 SYSTEM_SUFFIX = "pages.cluehq.ai"
 ORIGIN_HOST = "page-origin.cluehq.ai"
 # EDGE_SECRET is a secret: `wrangler secret put EDGE_SECRET` — never in this file.
+# Wave 2 Contract 9 — published pages on their own domain. Empty today. At the move (runbook §8):
+# SYSTEM_SUFFIX becomes the new domain, LEGACY_SYSTEM_SUFFIXES = "pages.cluehq.ai", and a second
+# route `{ pattern = "*/*", zone_name = "<new domain>" }` joins the one above, so this Worker 301s
+# every <label>.pages.cluehq.ai URL to <label>.<new domain> and serves the new hosts.
+LEGACY_SYSTEM_SUFFIXES = ""
