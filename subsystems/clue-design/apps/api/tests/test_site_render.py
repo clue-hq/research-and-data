@@ -354,6 +354,73 @@ def test_a_section_that_reloads_the_page_fails_fast_and_typed() -> None:
     assert elapsed < 5, elapsed
 
 
+def url_change_warning(change: str) -> str:
+    return f"a section changed the page URL in place ({change}); this has no effect on the published page, which runs no script"
+
+
+@pytest.mark.parametrize(
+    ("call", "change"),
+    [
+        ('location.hash = "#pricing";', "hash #pricing"),
+        ('history.pushState({}, "", "#tab-2");', "pushState #tab-2"),
+        ('history.pushState({}, "", "/pricing");', "pushState /pricing"),
+        ('history.replaceState(null, "", "/x?y=1");', "replaceState /x?y=1"),
+        ('history.pushState({}, "", "http://127.0.0.1:LISTENER/elsewhere");', "pushState http://127.0.0.1:LISTENER/elsewhere"),
+    ],
+    ids=["hash", "push-fragment", "push-path", "replace-path-and-query", "push-absolute-url"],
+)
+def test_a_section_that_changes_the_url_in_place_renders_with_a_warning(listener: int, call: str, change: str) -> None:
+    """Founder ruling 2026-10-13: an in-place URL change loads nothing and does nothing on the
+    published page (which runs no script), so it is a warning, not a failed render. The wait lets a
+    navigation land before the render answers, as in the reload test, so a change that DID move the
+    page could not slip through."""
+    call, change = call.replace("LISTENER", str(listener)), change.replace("LISTENER", str(listener))
+    body = call + '\nawait new Promise((resolve) => setTimeout(resolve, 300));\nexport function render(props, kit) { return jsx("div", { children: "in place" }); }\n'
+    site, module = hostile("InPlace", body)
+    result = render_site(site, garner_brand(), [module], base_path="", timeout_s=8)
+    time.sleep(0.3)
+    assert '<div data-agent-section="InPlace"><div>in place</div></div>' in result.pages[0].html
+    assert [warning for warning in result.warnings if "changed the page URL" in warning] == [url_change_warning(change)]
+    assert _Recorder.hits == []
+
+
+def test_a_section_that_changes_the_hash_and_then_reloads_still_fails_fast() -> None:
+    """The hash change is accepted (the wait lets the render look at it first); the reload that
+    follows replaces the document, and that is still refused at once and by name."""
+    body = (
+        'location.hash = "#pricing";\n'
+        "await new Promise((resolve) => setTimeout(resolve, 400));\n"
+        "location.reload();\n"
+        "await new Promise((resolve) => setTimeout(resolve, 400));\n"
+        'export function render(props, kit) { return jsx("div", { children: "reloaded" }); }\n'
+    )
+    site, module = hostile("HashReload", body)
+    started = time.monotonic()
+    with pytest.raises(SiteRenderError) as refused:
+        render_site(site, garner_brand(), [module], base_path="", timeout_s=15)
+    elapsed = time.monotonic() - started
+    assert refused.value.code == RENDER_FAILED
+    assert "a section navigated the render page away (to about:blank" in refused.value.message
+    assert "a section may not navigate or reload the page" in refused.value.message
+    assert elapsed < 5, elapsed
+
+
+def test_a_section_that_changes_the_hash_and_then_spins_still_times_out() -> None:
+    """Telling a hash change from a real navigation means asking the page — and this page is busy
+    forever. The question is bounded by the render's time limit, so the render still ends there."""
+    site, module = hostile("HashSpin", 'location.hash = "#pricing";\nfor (;;) {}\nexport function render(props, kit) { return null; }\n')
+    started = time.monotonic()
+    with pytest.raises(SiteRenderError) as refused:
+        render_site(site, garner_brand(), [module], base_path="", timeout_s=3)
+    assert refused.value.code == RENDER_TIMEOUT
+    assert time.monotonic() - started < 15
+
+
+def test_read_section_schema_reads_a_module_that_changes_the_url_at_its_top_level() -> None:
+    schema = read_section_schema(QUOTE_JS + 'history.pushState({}, "", "/p");\n')
+    assert sorted(schema["properties"]) == ["id", "quote", "surface"]
+
+
 def test_a_timed_out_render_leaves_no_browser_behind() -> None:
     before = _browser_processes()
     site, module = hostile("Spin", "export function render(props, kit) { for (;;) {} }\n")

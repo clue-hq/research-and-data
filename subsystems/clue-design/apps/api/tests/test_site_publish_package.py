@@ -629,7 +629,35 @@ def test_an_agent_sections_css_keeps_its_rules_and_loses_its_foreign_urls(blobs:
         assert "collector.example" not in page.html, page.route
 
 
-# j. The publish core accepts it -------------------------------------------------------------------
+# j. A section that changes the URL in place -------------------------------------------------------
+
+PUSH_STATE_JS = """import { jsx } from "react/jsx-runtime";
+import { z } from "zod";
+export const schema = z.object({ id: z.string(), surface: z.enum(["page", "card", "muted", "brandSubtle", "brand", "inverse"]), quote: z.string().min(1) }).strict();
+export function render(props, kit) {
+  history.pushState({}, "", "/pricing");
+  return jsx(kit.Shell, { surface: props.surface, children: jsx("p", { children: props.quote }) });
+}
+"""
+
+
+def test_a_section_that_changes_the_url_in_place_publishes_with_one_warning(blobs: DesignBlobStore) -> None:
+    """Founder ruling 2026-10-13: the change is a warning, not a failed publish. The section renders
+    on both pages, so it asks twice; the package names the change once."""
+    module = section_module("PushState", PUSH_STATE_JS)
+    site, brand = hold_site_images(garner_site_without_clones("pub_push_state"), garner_brand(), blobs)
+    site = section_on_every_page(site, module, {"id": "push", "surface": "page", "quote": "Still published."})
+    package = build("pub_push_state", site, brand, [module], blobs=blobs)
+    assert [page.route for page in package.pages] == ["/", "/analysis"]
+    for page in package.pages:
+        assert "<script" not in page.html.lower(), page.route
+        assert "Still published." in page.html, page.route
+    line = "a section changed the page URL in place (pushState /pricing); this has no effect on the published page, which runs no script"
+    assert package.warnings.count(line) == 1, package.warnings
+    assert package.manifest["warnings"] == package.warnings
+
+
+# k. The publish core accepts it -------------------------------------------------------------------
 
 
 def test_the_publish_core_persists_a_site_package(blobs: DesignBlobStore) -> None:
