@@ -36,7 +36,7 @@ Each question has a recommendation. The plan's code implements the recommendatio
 - **Q5 — ANSWERED 2026-10-12: (a), and DR5 approved** (Task 6 as written). **Highlighting a selected header or footer on the canvas.** Puck draws its own outline for page sections, but the shell is not a Puck component.
   - (a) A 2px outline in Puck's own selection blue (`--puck-color-azure-04`) on the selected header/footer. **Recommended** (Task 6 adds it; listed as design review point DR5).
   - (b) No highlight; the dock title alone says "Header".
-- **Q6. A route typed into the URL bar that is not a page.**
+- **Q6 — ANSWERED 2026-10-12: (a)** (Task 14 as written). **A route typed into the URL bar that is not a page.**
   - (a) Put the current route back and say nothing (the W3.3 ruling bars new failure UI). **Recommended** (Task 14).
   - (b) Show a line under the bar — needs a design.
 

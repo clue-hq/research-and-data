@@ -584,3 +584,5 @@ model's own recipe slots and notes use the exact tokens):
   (Lane C Task 2 Step 9 as written.)
 - 2026-10-12 — **Q15:** (a) a selected header or footer gets a 2px outline in Puck's own selection
   blue; design point DR5 approved. (Lane C Task 6 as written.)
+- 2026-10-12 — **Q16:** (a) a route typed into the URL bar that is not a page puts the current route
+  back and says nothing. (Lane C Task 14 as written.)
