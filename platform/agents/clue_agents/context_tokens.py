@@ -27,6 +27,7 @@ from langchain_core.messages.utils import count_tokens_approximately
 __all__ = [
     "PROMPT_ESTIMATE_KEY",
     "ContextTokenCounter",
+    "anchored_token_ratio",
     "estimate_tokens",
     "real_token_ratio",
     "record_prompt_estimate",
@@ -41,20 +42,47 @@ def estimate_tokens(messages: Sequence[BaseMessage], tools: Sequence[Any] | None
     return count_tokens_approximately(messages, tools=list(tools) if tools else None)
 
 
-def real_token_ratio(messages: Sequence[BaseMessage], *, newest: bool = True) -> float | None:
-    """Real tokens per estimated token, from the newest (or oldest) reply that carries both counts.
-
-    The newest reply tracks the rate as the conversation's content changes. The oldest is fixed for
-    the life of a conversation, for decisions that must never move backwards (result clearing).
-    """
-    for message in reversed(messages) if newest else messages:
-        if not isinstance(message, AIMessage):
-            continue
-        sent = message.response_metadata.get(PROMPT_ESTIMATE_KEY)
-        real = (message.usage_metadata or {}).get("input_tokens")
-        if isinstance(sent, int) and sent > 0 and isinstance(real, int) and real > 0:
-            return real / sent
+def _counted(message: BaseMessage) -> tuple[int, int] | None:
+    """A reply's (our estimate of its request, the provider's real input tokens), if both exist."""
+    if not isinstance(message, AIMessage):
+        return None
+    sent = message.response_metadata.get(PROMPT_ESTIMATE_KEY)
+    real = (message.usage_metadata or {}).get("input_tokens")
+    if isinstance(sent, int) and sent > 0 and isinstance(real, int) and real > 0:
+        return sent, real
     return None
+
+
+def real_token_ratio(messages: Sequence[BaseMessage]) -> float | None:
+    """Real tokens per estimated token, from the newest reply that carries both counts."""
+    for message in reversed(messages):
+        counts = _counted(message)
+        if counts is not None:
+            return counts[1] / counts[0]
+    return None
+
+
+def anchored_token_ratio(messages: Sequence[BaseMessage], *, floor: int) -> float | None:
+    """A real-token rate fixed for the life of a conversation, for decisions that must never move
+    backwards (result clearing).
+
+    It is the rate of the first reply whose request had reached ``floor`` real tokens: by then the
+    context is mostly tool output and the rate has settled (run 6: ~0.79 on the first call with only
+    the system prompt and task, ~0.98 at 110k, ~0.91-0.93 later). Before any reply is that large it
+    is the oldest counted reply's rate. Either way it depends only on replies already in the
+    history, which never change, so it moves at most once: when the first reply reaches ``floor``.
+    """
+    oldest: float | None = None
+    for message in messages:
+        counts = _counted(message)
+        if counts is None:
+            continue
+        rate = counts[1] / counts[0]
+        if counts[1] >= floor:
+            return rate
+        if oldest is None:
+            oldest = rate
+    return oldest
 
 
 def record_prompt_estimate(response: Any, estimate: int) -> None:

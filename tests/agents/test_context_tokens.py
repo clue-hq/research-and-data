@@ -20,6 +20,7 @@ from clue_agents.compaction import CompactionSettings, build_compaction_middlewa
 from clue_agents.context_tokens import (
     PROMPT_ESTIMATE_KEY,
     ContextTokenCounter,
+    anchored_token_ratio,
     estimate_tokens,
     real_token_ratio,
 )
@@ -127,3 +128,29 @@ def test_every_reply_records_the_estimate_of_the_request_that_produced_it():
     assert reply.response_metadata[PROMPT_ESTIMATE_KEY] == estimate_tokens(
         [system, *messages], tools=tools
     )
+
+
+def test_the_anchored_rate_is_the_first_reply_whose_request_reached_the_floor():
+    """Fixed for the conversation, and measured once tool output dominates the context."""
+    messages = [
+        HumanMessage("a"),
+        _reply(10_000, 7_900),  # 0.79: system prompt and task only
+        _reply(60_000, 52_000),
+        _reply(112_000, 110_000),  # first request at the floor: 0.982
+        _reply(150_000, 138_000),  # later replies drift; the anchor does not move
+    ]
+    assert anchored_token_ratio(messages, floor=110_000) == 110_000 / 112_000
+
+
+def test_before_any_reply_reaches_the_floor_the_oldest_counted_reply_is_used():
+    messages = [
+        HumanMessage("a"),
+        _reply(None, 5_000),
+        _reply(10_000, 7_900),
+        _reply(60_000, 52_000),
+    ]
+    assert anchored_token_ratio(messages, floor=110_000) == 7_900 / 10_000
+
+
+def test_without_a_counted_reply_there_is_no_anchored_rate():
+    assert anchored_token_ratio([HumanMessage("a"), _reply(None, 900)], floor=1) is None

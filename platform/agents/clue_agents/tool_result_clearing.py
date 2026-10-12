@@ -12,10 +12,10 @@ prefix is byte-identical and stays in the provider's cache. LangChain's ``ClearT
 instead clears "all but the newest N" on every call, which moves the boundary each round and
 bills everything after it uncached.
 
-Sizes are the model's real tokens (:mod:`clue_agents.context_tokens`), calibrated by the
-provider's count of the conversation's first counted request (a rate fixed for the conversation,
-so the cut never moves back), and include the system prompt and tool schemas, which every request
-carries.
+Sizes are the model's real tokens (:mod:`clue_agents.context_tokens`), at a rate fixed for the
+conversation (``anchored_token_ratio``: measured by the provider once the conversation reached the
+clearing target), so the cut never moves back; they include the system prompt and tool schemas,
+which every request carries.
 
 Only the model request is edited; the checkpointed history keeps every result, so a resumed or
 continued turn reproduces the same request.
@@ -30,7 +30,7 @@ from typing import Any
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 
-from clue_agents.context_tokens import estimate_tokens, real_token_ratio
+from clue_agents.context_tokens import anchored_token_ratio, estimate_tokens
 
 __all__ = [
     "BatchedToolResultClearing",
@@ -91,12 +91,14 @@ def plan_clearing(
     """The ``tool_call_id``s whose results the model should see as a placeholder, oldest first."""
     if trigger <= target:
         raise ValueError("trigger must exceed target")
-    # The oldest counted reply's rate, fixed for the conversation: the newest one drifts as tool
-    # output fills the context (run 6: 1.08 -> 0.93), and re-scaling every size by it moved the
-    # result at the cut back and forth. Each flip changed a message far behind GPT-5.6's cache
-    # lookup points and re-wrote the whole context (run 6: 11 misses, ~$3.70). With fixed sizes
-    # and an append-only history the cut only moves forward.
-    ratio = real_token_ratio(messages, newest=False) or 1.0
+    # A rate fixed for the conversation (``anchored_token_ratio``): the newest reply's rate drifts
+    # as tool output fills the context (run 6: 0.79 -> 0.98 -> 0.91), and re-scaling every size by
+    # it moved the result at the cut back and forth. Each flip changed a message far behind
+    # GPT-5.6's cache lookup points and re-wrote the whole context (run 6: 11 misses, ~$3.70).
+    # With fixed sizes and an append-only history the cut only moves forward. Anchored at
+    # ``target``, the rate is measured once tool output dominates, so the trigger stays in real
+    # tokens (the first reply's rate would start clearing ~18% late).
+    ratio = anchored_token_ratio(messages, floor=target) or 1.0
     sizes = [estimate_tokens([m]) * ratio for m in messages]
     fixed = (
         estimate_tokens([system_message] if system_message is not None else [], tools) * ratio

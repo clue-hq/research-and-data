@@ -158,14 +158,38 @@ def test_the_system_prompt_and_tool_schemas_count_toward_the_trigger():
     )
 
 
-#: The real-token rate (provider input tokens / character estimate) one run-6 agent measured on
-#: its successive calls: it drifts from ~1.08 to ~0.93 as tool output fills the conversation.
-_RUN6_RATES = [
-    1.0823, 1.0844, 1.0812, 1.0815, 1.1404, 1.1193, 1.1012, 1.099, 1.098, 1.0947,
-    1.0874, 1.0605, 1.0606, 1.0506, 1.047, 1.0494, 1.0462, 1.0377, 1.037, 1.0355,
-    1.0318, 1.0296, 0.9821, 0.9751, 0.9679, 0.9635, 0.9611, 0.9586, 0.949, 0.9453,
-    0.9408, 0.9338, 0.9339, 0.9299, 0.93, 0.931, 0.9525, 0.9482, 0.9538, 0.9521,
+#: One run-6 agent's model calls (2026-10-13, GPT-6.1-Sol): our estimate of each request and the
+#: provider's real input tokens for it. The rate starts near 0.79 (system prompt and task only),
+#: settles near 0.98 once tool output dominates, and drifts to ~0.91 after clearing.
+_RUN6_CALLS = [
+    (14650, 11577), (14745, 11635), (30072, 24613), (40197, 35641), (40444, 35803),
+    (40911, 36317), (50062, 48731), (58918, 57740), (63237, 61561), (70439, 69354),
+    (73910, 73101), (74775, 73833), (79640, 78627), (93129, 90993), (93268, 91149),
+    (104866, 102469), (112707, 110331), (124076, 122507), (132979, 131447), (138553, 136171),
+    (138802, 136333), (150084, 147824), (150769, 148004), (158262, 155396), (141720, 131988),
+    (146848, 136040), (148126, 136275), (149029, 136527), (152871, 139884), (157510, 143967),
+    (162288, 147059), (166182, 150160), (170127, 153159), (172755, 154474), (173502, 155187),
+    (174404, 155353), (176756, 157569), (177078, 158041), (183438, 167749), (186469, 169856),
+    (188237, 172546), (190032, 173957),
 ]  # fmt: skip
+
+
+def _replay(seed: int):
+    """Grow a conversation one round per real call, each reply carrying that call's real counts;
+    yield (call index, messages, newest real rate) after every round."""
+    import random
+
+    from clue_agents.context_tokens import PROMPT_ESTIMATE_KEY
+
+    rng = random.Random(seed)
+    messages = [HumanMessage("go " + "s" * 40_000)]
+    for i, (estimate, real) in enumerate(_RUN6_CALLS):
+        reply = AIMessage("", tool_calls=[{"id": f"c{i}", "name": "read_file", "args": {}}])
+        reply.response_metadata[PROMPT_ESTIMATE_KEY] = estimate
+        reply.usage_metadata = {"input_tokens": real, "output_tokens": 1, "total_tokens": real + 1}
+        content = "x" * rng.randint(4_000, 40_000)
+        messages += [reply, ToolMessage(content, tool_call_id=f"c{i}", name="read_file")]
+        yield i, messages, real / estimate
 
 
 def test_the_cut_never_moves_back_while_the_measured_rate_drifts():
@@ -173,24 +197,24 @@ def test_the_cut_never_moves_back_while_the_measured_rate_drifts():
     the rate drifted the result at the cut was cleared on one call and restored on the next.
     Each flip changed a message ~90 places back, beyond GPT-5.6's cache lookup points, and Sol
     re-wrote ~130k tokens for it (11 such misses, ~$3.70). The cleared set may only grow."""
-    import random
-
-    from clue_agents.context_tokens import PROMPT_ESTIMATE_KEY
-
     for seed in range(40):
-        rng = random.Random(seed)
-        messages = [HumanMessage("go " + "s" * 40_000)]
         previous: list[str] = []
-        for i, rate in enumerate(_RUN6_RATES):
-            reply = AIMessage("", tool_calls=[{"id": f"c{i}", "name": "read_file", "args": {}}])
-            reply.response_metadata[PROMPT_ESTIMATE_KEY] = 100_000
-            reply.usage_metadata = {
-                "input_tokens": int(100_000 * rate),
-                "output_tokens": 1,
-                "total_tokens": 1,
-            }
-            content = "x" * rng.randint(4_000, 40_000)
-            messages += [reply, ToolMessage(content, tool_call_id=f"c{i}", name="read_file")]
+        for i, messages, _rate in _replay(seed):
             cleared = plan_clearing(messages, trigger=160_000, target=110_000)
             assert cleared[: len(previous)] == previous, f"seed {seed}: call {i} restored a result"
             previous = cleared
+
+
+def test_clearing_starts_within_ten_percent_of_the_real_trigger():
+    """The anchored rate keeps the trigger in real tokens: the first cut happens when the history
+    really is about 160k tokens, not 13% later (the first reply's 0.79 rate) or earlier."""
+    from clue_agents.context_tokens import estimate_tokens
+
+    for seed in range(40):
+        for _i, messages, rate in _replay(seed):
+            if plan_clearing(messages, trigger=160_000, target=110_000):
+                real_total = estimate_tokens(messages) * rate
+                assert 0.9 * 160_000 <= real_total <= 1.1 * 160_000, (seed, round(real_total))
+                break
+        else:
+            raise AssertionError(f"seed {seed}: clearing never started")
