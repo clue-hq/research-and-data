@@ -14,14 +14,13 @@ Contracts only (founder ruling 2026-10-08), three of them, in order:
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .design_store import CustodyState
-from .site_render import SectionModule, site_kit_dist
+from .site_kit_cli import SiteKitCliError, run_site_kit_bundle
+from .site_render import SectionModule
 
 JsonObject = dict[str, Any]
 
@@ -131,39 +130,18 @@ def run_site_validator(
     """The site-kit validator's errors for this site (empty = valid). The held images ride as
     ``siteImages``, so an image this workspace holds passes wherever an image may go, the header's
     account logo included."""
-    bundle = site_kit_dist() / "validate-site.mjs"
-    if not bundle.is_file():
-        raise SiteValidatorUnavailable(
-            f"the site validator is not built ({bundle} is missing): run `npm run build -w @clue/site-kit` in apps/frontend"
-        )
-    payload = json.dumps(
-        {
-            "files": {"pages": site["pages"], "shell": site["shell"]},
-            "brand": brand,
-            "agentSectionSchemas": dict(section_schemas),
-            "images": {"siteImages": list(site_images), "accountLogos": []},
-        }
-    )
+    payload = {
+        "files": {"pages": site["pages"], "shell": site["shell"]},
+        "brand": brand,
+        "agentSectionSchemas": dict(section_schemas),
+        "images": {"siteImages": list(site_images), "accountLogos": []},
+    }
     try:
-        process = subprocess.run(
-            [node_bin, str(bundle)],
-            input=payload,
-            capture_output=True,
-            text=True,
-            timeout=VALIDATOR_TIMEOUT_S,
-            env={"PATH": os.environ.get("PATH", "")},
-            cwd=str(bundle.parent),
-            check=False,
+        result = run_site_kit_bundle(
+            "validate-site.mjs", payload, timeout_s=VALIDATOR_TIMEOUT_S, node_bin=node_bin, what="the site validator"
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise SiteValidatorUnavailable(f"the site validator did not run: {error}") from error
-    if process.returncode != 0:
-        detail = (process.stderr or process.stdout or "").strip()[:2000]
-        raise SiteValidatorUnavailable(detail or f"the site validator exited {process.returncode}")
-    try:
-        result = json.loads(process.stdout)
-    except ValueError as error:
-        raise SiteValidatorUnavailable(f"the site validator printed no JSON: {process.stdout[:200]!r}") from error
+    except SiteKitCliError as error:
+        raise SiteValidatorUnavailable(error.detail) from error
     return [str(error) for error in result.get("errors") or []]
 
 
