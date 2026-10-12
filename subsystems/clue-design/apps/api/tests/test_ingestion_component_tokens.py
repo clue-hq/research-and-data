@@ -125,6 +125,32 @@ def test_a_minted_token_names_only_its_own_kind_of_slot() -> None:
     assert link["states"]["hover"]["decoration-thickness"].startswith("link.")
 
 
+def _component(name: str) -> str:
+    """The component a name is for: its first segment, or its second under `motion.`."""
+    parts = name.split(".")
+    return parts[1] if parts[0] == "motion" else parts[0]
+
+
+def test_a_minted_token_names_only_its_own_component() -> None:
+    """A link's text is not a button's label, and a card's transition is not a button's."""
+    kit, result = _mint()
+    for recipe in result.section["styles"]:
+        root = component_tokens.COMPONENT_ROOTS[recipe["component"]]
+        for slots in (recipe["rest"], *recipe["states"].values()):
+            for slot, token in slots.items():
+                if is_component_token(token):
+                    assert _component(token) == root, (recipe["component"], recipe["variant"], slot, token)
+        for step in recipe["motion"]:
+            for token in (step["duration"], step["easing"], step["delay"]):
+                if token is not None and is_component_token(token):
+                    assert _component(token) == root, (recipe["component"], recipe["variant"], step)
+        assert recipe["icon"] is None or _component(recipe["icon"]["token"]) == root
+    link = _recipe(kit, result, "link")
+    assert link["rest"]["label"].startswith("link."), link["rest"]["label"]
+    card = _recipe(kit, result, "card")
+    assert all(_component(step["duration"]) == "card" for step in card["motion"]), card["motion"]
+
+
 def test_reuse_is_exact_with_no_tolerance() -> None:
     kit = _kit()
     # Every token holding #047464 (surface.brand, text.brand, palette.primary.600) moves one step off it.

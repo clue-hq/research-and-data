@@ -8,10 +8,11 @@ reveals become named motion entries. Three rules, each enforced here:
 * Exact-match reuse. A token of this kit that already holds exactly that value (same group, same
   value, no tolerance) is named instead of minting a second; among several, the one whose family
   suits the slot wins (a fill prefers `surface.*`, a label `text.*`, a border `border.*`), then a
-  token that was not minted, then the name. Identical values used by several styles share one token
-  when they fill the same kind of slot (hover fills across buttons, shadows, durations); a minted
-  token is never reused for another kind (a 2px outline offset is not a link's underline thickness),
-  since its name says what it is.
+  token that was not minted, then the name. Identical values used by several styles of one component
+  share one token when they fill the same kind of slot (hover fills across buttons, shadows,
+  durations); a minted token is never reused for another kind (a 2px outline offset is not a link's
+  underline thickness) or another component (a link's text is not a button's label), since its name
+  says what it is.
 * Stable names made by code from where the value was measured: `button.solid-047464.fill`,
   `button.solid-047464.hover.fill`, `motion.button.solid-047464.duration-1`, `motion.keyframes.pulse`,
   `motion.reveal.<digest>`. The same page yields the same names on every extraction; no model names
@@ -104,6 +105,15 @@ def is_component_token(name: str) -> bool:
 def _slot_kind(name: str) -> str:
     """The kind of slot a name is for: `button.solid-047464.hover.fill` → `fill`."""
     return _SLOT_SUFFIX.sub("", name.rsplit(".", 1)[-1])
+
+
+def _component(name: str) -> str:
+    """The component a name is for: its first segment, or its second under `motion.`.
+
+    `button.solid-047464.hover.fill` → `button`; `motion.button.solid-047464.duration-1` → `button`.
+    """
+    parts = name.split(".")
+    return parts[1] if parts[0] == MOTION_ROOT else parts[0]
 
 
 def keyword_ok(prop: str, value: object) -> bool:
@@ -212,14 +222,15 @@ class _Minter:
 
     def _exact(self, group: str, value: dict, slot: str, path: str) -> str | None:
         prefs = _FAMILY_PREFERENCE.get(slot, ())
-        kind = _slot_kind(path)
+        kind, component = _slot_kind(path), _component(path)
         matches = [
             name for name, entry in self.entries(group).items()
             if isinstance(entry, dict) and _same(group, (entry.get("value") or {}).get("default"), value)
             # The type scale's size steps live in `numbers` too; a button's height is never one.
             and not (group == "numbers" and name.startswith("type."))
-            # A minted token names only its own kind of slot; the kit's own tokens serve any slot.
-            and not (is_component_token(name) and _slot_kind(name) != kind)
+            # A minted token names only its own kind of slot of its own component (a link's text is
+            # not a button's label); the kit's own tokens serve any slot of any component.
+            and not (is_component_token(name) and (_slot_kind(name) != kind or _component(name) != component))
         ]
         if not matches:
             return None

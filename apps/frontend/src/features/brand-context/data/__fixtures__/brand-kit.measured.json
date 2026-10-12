@@ -4174,11 +4174,11 @@
      ],
      "probed": "pointer",
      "rest": {
-      "cursor": "button.outline-0d2b25.cursor",
-      "decoration": "button.outline-0d2b25.decoration",
+      "cursor": "link.ghost-0d2b25.cursor",
+      "decoration": "link.ghost-0d2b25.decoration",
       "font": "link.ghost-0d2b25.font",
       "height": "link.ghost-0d2b25.height",
-      "label": "button.outline-0d2b25.label",
+      "label": "link.ghost-0d2b25.label",
       "padding-bottom": "space.0",
       "padding-left": "space.0",
       "padding-right": "space.0",
@@ -4209,19 +4209,19 @@
      "motion": [
       {
        "delay": null,
-       "duration": "motion.button.outline-0d2b25.duration-2",
-       "easing": "motion.button.outline-0d2b25.easing-2",
+       "duration": "motion.navlink.ghost-0d2b25.duration-1",
+       "easing": "motion.navlink.ghost-0d2b25.easing-1",
        "property": "color",
        "target": "self"
       }
      ],
      "probed": "pointer",
      "rest": {
-      "cursor": "button.outline-0d2b25.cursor",
-      "decoration": "button.outline-0d2b25.decoration",
-      "font": "link.ghost-0d2b25.font",
-      "height": "link.ghost-0d2b25.height",
-      "label": "button.outline-0d2b25.label",
+      "cursor": "navlink.ghost-0d2b25.cursor",
+      "decoration": "navlink.ghost-0d2b25.decoration",
+      "font": "navlink.ghost-0d2b25.font",
+      "height": "navlink.ghost-0d2b25.height",
+      "label": "navlink.ghost-0d2b25.label",
       "padding-bottom": "space.0",
       "padding-left": "space.0",
       "padding-right": "space.0",
@@ -4247,15 +4247,15 @@
      "motion": [
       {
        "delay": null,
-       "duration": "motion.button.outline-0d2b25.duration-1",
-       "easing": "motion.button.outline-0d2b25.easing-2",
+       "duration": "motion.card.solid-f1f0de.duration-1",
+       "easing": "motion.card.solid-f1f0de.easing-1",
        "property": "box-shadow",
        "target": "self"
       }
      ],
      "probed": "pointer",
      "rest": {
-      "decoration": "button.outline-0d2b25.decoration",
+      "decoration": "card.solid-f1f0de.decoration",
       "fill": "card.solid-f1f0de.fill",
       "font": "card.solid-f1f0de.font",
       "height": "card.solid-f1f0de.height",
@@ -4665,6 +4665,36 @@
         "value": "#6CB5A5"
        }
       }
+     }
+    },
+    "link.ghost-0d2b25.label": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: link ghost.0d2b25 rest label"
+     },
+     "role": "component",
+     "value": {
+      "default": {
+       "kind": "hex",
+       "value": "#0D2B25"
+      },
+      "modes": {}
+     }
+    },
+    "navlink.ghost-0d2b25.label": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: nav_link ghost.0d2b25 rest label"
+     },
+     "role": "component",
+     "value": {
+      "default": {
+       "kind": "hex",
+       "value": "#0D2B25"
+      },
+      "modes": {}
      }
     },
     "palette.neutral.100": {
@@ -5469,6 +5499,22 @@
        "kind": "number",
        "unit": "px",
        "value": 4.0
+      },
+      "modes": {}
+     }
+    },
+    "navlink.ghost-0d2b25.height": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: nav_link ghost.0d2b25 rest height"
+     },
+     "role": "dimension",
+     "value": {
+      "default": {
+       "kind": "number",
+       "unit": "px",
+       "value": 17.0
       },
       "modes": {}
      }
@@ -6705,6 +6751,51 @@
       "modes": {}
      }
     },
+    "card.solid-f1f0de.decoration": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: card solid.f1f0de rest decoration"
+     },
+     "value": {
+      "default": {
+       "kind": "keyword",
+       "property": "text-decoration-line",
+       "value": "none"
+      },
+      "modes": {}
+     }
+    },
+    "link.ghost-0d2b25.cursor": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: link ghost.0d2b25 rest cursor"
+     },
+     "value": {
+      "default": {
+       "kind": "keyword",
+       "property": "cursor",
+       "value": "pointer"
+      },
+      "modes": {}
+     }
+    },
+    "link.ghost-0d2b25.decoration": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: link ghost.0d2b25 rest decoration"
+     },
+     "value": {
+      "default": {
+       "kind": "keyword",
+       "property": "text-decoration-line",
+       "value": "none"
+      },
+      "modes": {}
+     }
+    },
     "link.ghost-0d2b25.hover.decoration": {
      "description": null,
      "provenance": {
@@ -6880,6 +6971,34 @@
       "modes": {}
      }
     },
+    "motion.card.solid-f1f0de.duration-1": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: card solid.f1f0de transition box-shadow"
+     },
+     "value": {
+      "default": {
+       "kind": "duration",
+       "ms": 200.0
+      },
+      "modes": {}
+     }
+    },
+    "motion.card.solid-f1f0de.easing-1": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: card solid.f1f0de transition box-shadow"
+     },
+     "value": {
+      "default": {
+       "function": "ease",
+       "kind": "easing"
+      },
+      "modes": {}
+     }
+    },
     "motion.keyframes.pulse": {
      "description": null,
      "provenance": {
@@ -6943,6 +7062,34 @@
       "modes": {}
      }
     },
+    "motion.navlink.ghost-0d2b25.duration-1": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: nav_link ghost.0d2b25 transition color"
+     },
+     "value": {
+      "default": {
+       "kind": "duration",
+       "ms": 150.0
+      },
+      "modes": {}
+     }
+    },
+    "motion.navlink.ghost-0d2b25.easing-1": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: nav_link ghost.0d2b25 transition color"
+     },
+     "value": {
+      "default": {
+       "function": "ease",
+       "kind": "easing"
+      },
+      "modes": {}
+     }
+    },
     "motion.reveal.6486bf89": {
      "description": "1 element: section#reveal.reveal",
      "provenance": {
@@ -6952,7 +7099,7 @@
      "value": {
       "default": {
        "duration": "motion.reveal.6486bf89.duration",
-       "easing": "motion.button.outline-0d2b25.easing-1",
+       "easing": "motion.reveal.6486bf89.easing",
        "from_opacity": "motion.reveal.6486bf89.from-opacity",
        "from_transform": "motion.reveal.6486bf89.from-transform",
        "kind": "reveal"
@@ -6974,6 +7121,20 @@
       "modes": {}
      }
     },
+    "motion.reveal.6486bf89.easing": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: reveal section#reveal.reveal easing"
+     },
+     "value": {
+      "default": {
+       "function": "ease-out",
+       "kind": "easing"
+      },
+      "modes": {}
+     }
+    },
     "motion.reveal.6486bf89.from-transform": {
      "description": null,
      "provenance": {
@@ -6984,6 +7145,36 @@
       "default": {
        "kind": "transform",
        "value": "matrix(1, 0, 0, 1, 0, 24)"
+      },
+      "modes": {}
+     }
+    },
+    "navlink.ghost-0d2b25.cursor": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: nav_link ghost.0d2b25 rest cursor"
+     },
+     "value": {
+      "default": {
+       "kind": "keyword",
+       "property": "cursor",
+       "value": "pointer"
+      },
+      "modes": {}
+     }
+    },
+    "navlink.ghost-0d2b25.decoration": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: nav_link ghost.0d2b25 rest decoration"
+     },
+     "value": {
+      "default": {
+       "kind": "keyword",
+       "property": "text-decoration-line",
+       "value": "none"
       },
       "modes": {}
      }
@@ -7058,6 +7249,27 @@
      "provenance": {
       "confidence": 0.8,
       "source": "website:https://fixture.test/ :: link ghost.0d2b25 rest font"
+     },
+     "role": "component",
+     "value": {
+      "default": {
+       "color": null,
+       "font_asset": null,
+       "font_family": "Arial",
+       "font_size": 16.0,
+       "font_weight": 400,
+       "kind": "style",
+       "letter_spacing": 0.0,
+       "line_height": null
+      },
+      "modes": {}
+     }
+    },
+    "navlink.ghost-0d2b25.font": {
+     "description": null,
+     "provenance": {
+      "confidence": 0.8,
+      "source": "website:https://fixture.test/ :: nav_link ghost.0d2b25 rest font"
      },
      "role": "component",
      "value": {
