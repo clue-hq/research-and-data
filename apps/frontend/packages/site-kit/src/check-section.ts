@@ -70,9 +70,31 @@ const STATE_VARIANT = /^(hover|focus|focus-visible|focus-within|active|group-hov
 const MOTION_UTILITY = /^(transition(-[a-z]+)?|duration-.+|ease-.+|delay-.+|animate-.+)$/;
 const STATE_MOTION = /^-?(translate|scale|rotate|skew)(-[xy])?-|^(opacity|shadow|blur|brightness|contrast|saturate|drop-shadow)(-|$)/;
 
+/** The text of every string inside a className attribute: `className="…"`, ``className={`… ${x}`}``,
+ * `className={["a", cond && "b"].join(" ")}`. These strings are classes; a section's other
+ * strings (a schema's description, a default heading) are prose and never count as classes. */
+function classNameStrings(source: string): string[] {
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const strings: string[] = [];
+  const collect = (node: ts.Node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+      strings.push(node.text);
+    }
+    ts.forEachChild(node, collect);
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxAttribute(node) && node.name.getText(file) === "className") {
+      if (node.initializer) collect(node.initializer);
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return strings;
+}
+
 /** Class tokens with their variants (`group-hover:-translate-y-1` → variants ["group-hover"]). */
-function variantTokens(source: string): { token: string; base: string; variants: string[] }[] {
-  const strings = [...source.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+function variantTokens(strings: string[]): { token: string; base: string; variants: string[] }[] {
   return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((token) => {
     const parts = token.split(":");
     return { token, base: parts[parts.length - 1], variants: parts.slice(0, -1) };
@@ -159,7 +181,7 @@ export function lint(source: string, options: LintOptions = {}): string[] {
   errors.push(...bannedNames(source));
   if (!/export\s+const\s+schema\b/.test(source)) errors.push("the file must export `schema` (a zod object of the section's props)");
   if (!/export\s+function\s+render\b/.test(source)) errors.push("the file must export `function render(props, kit)`");
-  for (const { token, base, variants } of variantTokens(source)) {
+  for (const { token, base, variants } of variantTokens(classNameStrings(source))) {
     if (seen.has(token)) continue;
     const ownMotion = MOTION_UTILITY.test(base) || (variants.some((v) => STATE_VARIANT.test(v)) && STATE_MOTION.test(base));
     if (ownMotion) {

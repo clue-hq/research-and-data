@@ -207,13 +207,13 @@ export function validateSite(
               errors.push(surfaceError(where, value));
               return;
             }
-            if (/cardlook$/i.test(key)) {
+            if (/^cardLook$|CardLook$/.test(key)) {
               if (value && !cardNames.includes(value)) {
                 errors.push(`${where}: "${value}" is not one of this brand's card styles; its styles are ${cardNames.join(", ")}, or leave it out for the standard card (brand/brand.md, Cards)`);
               }
               return;
             }
-            if (/look$/i.test(key)) {
+            if (/^look$|Look$/.test(key)) {
               if (value && !lookNames.includes(value)) errors.push(lookError(where, value));
               return;
             }

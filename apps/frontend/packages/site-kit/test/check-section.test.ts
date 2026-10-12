@@ -146,3 +146,25 @@ test("motion of the section's own is refused; the brand's motion classes pass", 
   assert.deepEqual(lint(withClass("mt-6 brand-motion-pulse hover:bg-surface-muted -translate-x-1/2"), options), []);
   assert.ok(lint(withClass("mt-6 brand-motion-wobble"), options).some((e) => e.startsWith('class "brand-motion-wobble" is not one of this brand\'s motion classes')));
 });
+
+test("prose that mentions motion is never a class", () => {
+  const options = lintOptionsFor(kitBrand("probe.minted"));
+  const prose = EXAMPLE.replace(
+    "attribution: z.string(),",
+    'attribution: z.string().describe("A smooth transition built for ease-of-use"),\n  heading: z.string().default("Make the transition to value-based care"),',
+  );
+  assert.deepEqual(lint(prose, options), []);
+});
+
+test("motion classes are still refused wherever className holds them", () => {
+  const options = lintOptionsFor(kitBrand("probe.minted"));
+  const at = 'className="mt-6 font-body text-body text-ink-secondary"';
+  const forms: [string, string[]][] = [
+    ['className={`mt-6 font-body ${props.quote ? "transition duration-300" : ""} ease-in-out`}', ["transition", "duration-300", "ease-in-out"]],
+    ['className={["mt-6", props.quote && "animate-spin"].filter(Boolean).join(" ")}', ["animate-spin"]],
+  ];
+  for (const [className, refused] of forms) {
+    const errors = lint(EXAMPLE.replace(at, className), options);
+    for (const cls of refused) assert.ok(errors.some((e) => e.startsWith(`class "${cls}" is motion of your own`)), `${cls}: ${errors.join("; ")}`);
+  }
+});
