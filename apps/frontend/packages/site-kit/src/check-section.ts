@@ -1,19 +1,28 @@
 // The check a section written by the agent must pass before it joins its site (E5).
 //
 // Usage: npx tsx src/check-section.ts <file.tsx>
-// Prints {"ok": bool, "errors": [...], "props": <JSON Schema of the section's props>} as JSON.
+// Prints {"ok": bool, "errors": [...]} as JSON.
 //
 // Structure is free; style is the brand's. Refused: colour values, Tailwind's own palette colours,
 // Tailwind's default type sizes, families and weights, bracketed custom values for colour, type
-// or corners (layout measures such as max-w-[30ch] are fine), inline styles, className or style
-// in the section's props, imports other than zod, react types and the kit. The file must export
-// `schema` (a zod object) and `render`, and must type-check.
+// or corners (layout measures such as max-w-[30ch] are fine), inline styles, imports other than
+// zod, react types and the kit, and the banned names below (page globals, network, eval, raw
+// HTML, storage, timers, event handlers). The file must export `schema` (a zod object) and
+// `render`, and must type-check.
+//
+// D2 (founder, 2026-10-09 and 2026-10-11): this check NEVER imports the section. The props schema,
+// and the rules about it (an id and a surface, no className or style), are read inside the design
+// API's hardened render page (lumen_api.site_render.read_section_schema), never in a platform
+// process.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
-import { z } from "zod";
+import { fileURLToPath } from "node:url";
+import ts from "typescript";
+import type { BrandData } from "./brand";
+import { buttonLooks, cardLooks, motionClassNames } from "./looks";
+import { COLOR_ROLES, SURFACES as THEME_SURFACES, colorVar, extraSurfaceRoles } from "./theme";
 
 const ALLOWED_IMPORTS = new Set(["zod", "react", "@/puck/agent-kit"]);
 const PALETTE =
@@ -27,12 +36,161 @@ const RULES: { pattern: RegExp; why: string }[] = [
   { pattern: /^(text|bg|border|fill|stroke|ring|outline|decoration|font|leading|tracking|rounded|shadow|from|via|to)-\[/, why: "a custom colour, type or corner value; use the brand's tokens" },
 ];
 
+/** A colour class in the brand's own namespaces (text-ink-*, bg-surface-*, text-on-surface-*,
+ * border-line-*, ring-focus). Its name must be one the theme defines: issue 49's
+ * border-line-inverse and bg-surface-brandSubtle exist nowhere and render unstyled. */
+const BRAND_COLOUR_CLASS = new RegExp(`^(?:${COLOUR_UTILITY})-((?:ink|surface|on-surface|line)(?:-[A-Za-z0-9-]+)?|focus)$`);
+
+export const LINK_REFUSAL =
+  "<a> is not allowed in a section; write links with kit.Link (or kit.Button for a button) so they reach the right page wherever the site is published";
+
+/** What the brand has, so a section is checked against it (B6 passes lintOptionsFor(brand)).
+ * Without a brand only the brand-independent rules run. */
+export type LintOptions = { extraSurfaces?: string[]; buttonLooks?: string[]; cardLooks?: string[]; motions?: string[] };
+
+export function lintOptionsFor(brand: BrandData): LintOptions {
+  return {
+    extraSurfaces: extraSurfaceRoles(brand),
+    buttonLooks: buttonLooks(brand).map((look) => look.name),
+    cardLooks: cardLooks(brand).map((look) => look.name),
+    motions: motionClassNames(brand),
+  };
+}
+
+function brandColourNames(extraSurfaces: string[]): Set<string> {
+  const names = new Set<string>(COLOR_ROLES.map(colorVar));
+  for (const surface of [...THEME_SURFACES, ...extraSurfaces]) {
+    names.add(colorVar(surface));
+    names.add(`on-${colorVar(surface)}`);
+  }
+  return names;
+}
+
+const STATE_VARIANT = /^(hover|focus|focus-visible|focus-within|active|group-hover|group-focus|peer-hover|peer-focus)$/;
+const MOTION_UTILITY = /^(transition(-[a-z]+)?|duration-.+|ease-.+|delay-.+|animate-.+)$/;
+const STATE_MOTION = /^-?(translate|scale|rotate|skew)(-[xy])?-|^(opacity|shadow|blur|brightness|contrast|saturate|drop-shadow)(-|$)/;
+
+/** The text of every string inside a className attribute: `className="…"`, ``className={`… ${x}`}``,
+ * `className={["a", cond && "b"].join(" ")}`. These strings are classes; a section's other
+ * strings (a schema's description, a default heading) are prose and never count as classes. */
+function classNameStrings(source: string): string[] {
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const strings: string[] = [];
+  const collect = (node: ts.Node) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+      strings.push(node.text);
+    }
+    ts.forEachChild(node, collect);
+  };
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxAttribute(node) && node.name.getText(file) === "className") {
+      if (node.initializer) collect(node.initializer);
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return strings;
+}
+
+/** An inline style in the code: a JSX `style` attribute (any value), or an object key named `style`
+ * (`{ style: … }`, `{ "style": … }`, `{ style }`), which is how React.createElement takes one. Read
+ * from the syntax tree, so prose that says "style:" in a string or a template never counts. */
+function hasInlineStyle(source: string): boolean {
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node: ts.Node): boolean =>
+    (ts.isJsxAttribute(node) && node.name.getText(file) === "style") ||
+    ((ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) &&
+      (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
+      node.name.text === "style") ||
+    (ts.forEachChild(node, visit) ?? false);
+  return visit(file);
+}
+
+/** Every literal look on a kit.Button or kit.Card: `look="x"`, `look={"x"}`, ``look={`x`}``. A look
+ * the section computes (`look={props.look}`, a template with `${}`) is props data; the validator
+ * checks that. */
+function kitLooks(source: string): { component: "Button" | "Card"; look: string }[] {
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const looks: { component: "Button" | "Card"; look: string }[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      const tag = node.tagName.getText(file);
+      if (tag === "kit.Button" || tag === "kit.Card") {
+        for (const attribute of node.attributes.properties) {
+          if (!ts.isJsxAttribute(attribute) || attribute.name.getText(file) !== "look") continue;
+          const value = attribute.initializer && ts.isJsxExpression(attribute.initializer) ? attribute.initializer.expression : attribute.initializer;
+          if (value && (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value))) {
+            looks.push({ component: tag === "kit.Button" ? "Button" : "Card", look: value.text });
+          }
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return looks;
+}
+
+/** Class tokens with their variants (`group-hover:-translate-y-1` → variants ["group-hover"]). */
+function variantTokens(strings: string[]): { token: string; base: string; variants: string[] }[] {
+  return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((token) => {
+    const parts = token.split(":");
+    return { token, base: parts[parts.length - 1], variants: parts.slice(0, -1) };
+  });
+}
+
+// D2 spike (Task 4): names a section may not use, wherever they appear in its code (a variable, a
+// property such as document.cookie, an object key). Read from the syntax tree, so the words in a
+// section's text or strings never count. A guardrail against the obvious, not a sandbox: the
+// hardened render page is the boundary (trials/puck-spike/RUNTIME-SECTIONS.md).
+const BANNED: Record<string, string> = {
+  window: "reaches the page outside the section",
+  document: "reaches the page outside the section",
+  globalThis: "reaches the page outside the section",
+  fetch: "is a network call",
+  XMLHttpRequest: "is a network call",
+  WebSocket: "is a network call",
+  eval: "runs code the check never saw",
+  Function: "runs code the check never saw",
+  dangerouslySetInnerHTML: "writes raw HTML",
+  localStorage: "reads the visitor's storage",
+  cookie: "reads the visitor's cookies",
+  setTimeout: "is a timer; a section renders once from its props",
+  setInterval: "is a timer; a section renders once from its props",
+};
+
+function bannedNames(source: string): string[] {
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  const add = (message: string) => {
+    if (!seen.has(message)) {
+      seen.add(message);
+      errors.push(message);
+    }
+  };
+  const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const visit = (node: ts.Node) => {
+    if (ts.isIdentifier(node) && Object.hasOwn(BANNED, node.text)) add(`"${node.text}" ${BANNED[node.text]}; a section renders its props and nothing else`);
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) add(`"import(" loads code the check never saw; a section renders its props and nothing else`);
+    // An event handler, as a JSX prop or as a key of an object that might be spread into one.
+    if (ts.isJsxAttribute(node) || ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node) || ts.isMethodDeclaration(node)) {
+      const name = node.name.getText(file).replace(/^["'`]|["'`]$/g, "");
+      if (/^on[A-Z]/.test(name)) add(`"${name}" is an event handler; a section is static`);
+    }
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(file) === "a") add(LINK_REFUSAL);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return errors;
+}
+
 function classTokens(source: string): string[] {
   const strings = [...source.matchAll(/"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
   return strings.flatMap((s) => s.split(/\s+/)).filter(Boolean).map((t) => t.split(":").pop() ?? t);
 }
 
-export function lint(source: string): string[] {
+export function lint(source: string, options: LintOptions = {}): string[] {
   const errors: string[] = [];
   for (const m of source.matchAll(/import\s+(?:type\s+)?[^"']*from\s+["']([^"']+)["']/g)) {
     if (!ALLOWED_IMPORTS.has(m[1])) errors.push(`import "${m[1]}" is not allowed; a section imports only zod, react types and @/puck/agent-kit`);
@@ -40,7 +198,7 @@ export function lint(source: string): string[] {
   const withoutHrefs = source.replace(/href=\{?["'`][^"'`]*["'`]\}?/g, "");
   for (const m of withoutHrefs.matchAll(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g)) errors.push(`colour value ${m[0]}; use the brand's colour tokens`);
   for (const m of source.matchAll(/\b(rgba?|hsla?|oklch|oklab|lab|lch)\(/g)) errors.push(`colour function ${m[0]}…); use the brand's colour tokens`);
-  if (/\bstyle\s*=/.test(source) || /\bstyle\s*:/.test(source)) errors.push("inline style; style only with the brand's classes");
+  if (hasInlineStyle(source)) errors.push("inline style; style only with the brand's classes");
   const seen = new Set<string>();
   for (const token of classTokens(source)) {
     for (const rule of RULES) {
@@ -50,8 +208,37 @@ export function lint(source: string): string[] {
       }
     }
   }
+  const known = brandColourNames(options.extraSurfaces ?? []);
+  for (const token of classTokens(source)) {
+    const bare = token.replace(/^!/, "").replace(/\/\d+$/, "");
+    const match = BRAND_COLOUR_CLASS.exec(bare);
+    if (match && !known.has(match[1]) && !seen.has(token)) {
+      seen.add(token);
+      errors.push(`class "${token}" is not one of the brand's classes; the brand's colour classes are text-ink-*, bg-surface-*, text-on-surface-* and border-line-* (see brand/brand.md)`);
+    }
+  }
+  errors.push(...bannedNames(source));
   if (!/export\s+const\s+schema\b/.test(source)) errors.push("the file must export `schema` (a zod object of the section's props)");
   if (!/export\s+function\s+render\b/.test(source)) errors.push("the file must export `function render(props, kit)`");
+  for (const { token, base, variants } of variantTokens(classNameStrings(source))) {
+    if (seen.has(token)) continue;
+    const ownMotion = MOTION_UTILITY.test(base) || (variants.some((v) => STATE_VARIANT.test(v)) && STATE_MOTION.test(base));
+    if (ownMotion) {
+      seen.add(token);
+      errors.push(`class "${token}" is motion of your own; motion comes from the brand: kit.Button, kit.Link and kit.Card carry it, and a class from brand/brand.md (Motion) adds it to an element`);
+    } else if (options.motions && /^brand-motion-/.test(base) && !options.motions.includes(base)) {
+      seen.add(token);
+      errors.push(`class "${token}" is not one of this brand's motion classes; its motion classes are ${options.motions.join(", ") || "none"} (brand/brand.md, Motion)`);
+    }
+  }
+  for (const { component, look } of kitLooks(source)) {
+    const known = component === "Button" ? options.buttonLooks : options.cardLooks;
+    if (known && !known.includes(look)) {
+      errors.push(component === "Button"
+        ? `look "${look}" on kit.Button is not one of this brand's button styles; the styles are ${known.join(", ") || "none"} (brand/brand.md, Buttons)`
+        : `look "${look}" on kit.Card is not one of this brand's card styles; the styles are ${known.join(", ") || "none"} (brand/brand.md, Cards)`);
+    }
+  }
   return errors;
 }
 
@@ -80,24 +267,12 @@ export function typeCheck(file: string): string[] {
   }
 }
 
-async function main() {
+function main() {
   const file = path.resolve(process.argv[2] ?? "");
   const source = fs.readFileSync(file, "utf-8");
   const errors = lint(source);
   if (!errors.length) errors.push(...typeCheck(file));
-  let props: unknown = null;
-  if (!errors.length) {
-    const mod = (await import(pathToFileURL(file).href)) as { schema?: unknown; render?: unknown };
-    if (!(mod.schema instanceof z.ZodObject)) errors.push("`schema` must be a zod object (z.object({...}).strict())");
-    else {
-      const keys = Object.keys(mod.schema.shape);
-      for (const key of ["className", "style"]) if (keys.includes(key)) errors.push(`the props may not include "${key}"`);
-      for (const key of ["id", "surface"]) if (!keys.includes(key)) errors.push(`the props need "${key}" (every section has an id and a surface)`);
-      props = z.toJSONSchema(mod.schema);
-    }
-    if (typeof mod.render !== "function") errors.push("`render` must be a function (props, kit) => JSX");
-  }
-  console.log(JSON.stringify({ ok: errors.length === 0, errors, props }));
+  console.log(JSON.stringify({ ok: errors.length === 0, errors }));
 }
 
 if (process.argv[1]?.endsWith("check-section.ts")) main();

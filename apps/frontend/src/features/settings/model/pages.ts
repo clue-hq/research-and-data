@@ -77,7 +77,7 @@ export const REFUSAL_MESSAGES: Record<string, string> = {
   hostname_invalid: "That is not a valid hostname.",
   hostname_is_apex:
     "Use a dedicated subdomain such as go.acme.com — a bare domain cannot be connected.",
-  hostname_reserved: "Hostnames under cluehq.ai cannot be connected.",
+  hostname_reserved: "Hostnames under Clue's own domains cannot be connected.",
   custom_hostname_exists:
     "This workspace already has a custom domain. Remove it first.",
   hostname_taken: "This hostname is already connected to a workspace.",

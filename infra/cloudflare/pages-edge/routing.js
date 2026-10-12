@@ -1,13 +1,32 @@
-// Pure routing decision for the pages-edge Worker (custom-domain publishing spec §5.1), kept
-// separate from the fetch handler so it runs under `node --test` without a Workers runtime.
+// Pure routing decision for the pages-edge Worker (custom-domain publishing spec §5.1; Wave 2
+// Contract 9: published pages on their own registrable domain), kept separate from the fetch
+// handler so it runs under `node --test` without a Workers runtime.
+const apexOf = (suffix) => suffix.split(".").slice(-2).join(".");
+const under = (host, suffix) => host === suffix || host.endsWith("." + suffix);
+
 export function decide(request, env) {
   const url = new URL(request.url);
   const host = url.hostname.toLowerCase();
   const suffix = env.SYSTEM_SUFFIX.toLowerCase();
-  const zoneApex = suffix.split(".").slice(-2).join(".");
-  const ours = host === suffix || host.endsWith("." + suffix) || !host.endsWith(zoneApex);
+  const legacy = (env.LEGACY_SYSTEM_SUFFIXES || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value && value !== suffix);
+  const readOnly = request.method === "GET" || request.method === "HEAD";
+  // An old system hostname (<label>.pages.cluehq.ai) answers 301 with the same label, path and
+  // query on the new domain. The bare old suffix is the Cloudflare for SaaS fallback origin and is
+  // left as it was (custom-domain traffic arrives with the customer's own Host).
+  for (const old of legacy) {
+    if (host.endsWith("." + old)) {
+      if (!readOnly) return { kind: "method_not_allowed" };
+      const label = host.slice(0, -(old.length + 1));
+      return { kind: "redirect", status: 301, location: `https://${label}.${suffix}${url.pathname}${url.search}` };
+    }
+  }
+  const apexes = [apexOf(suffix), ...legacy.map(apexOf)];
+  const ours = under(host, suffix) || legacy.includes(host) || !apexes.some((apex) => under(host, apex));
   if (!ours) return { kind: "passthrough" };
-  if (request.method !== "GET" && request.method !== "HEAD") return { kind: "method_not_allowed" };
+  if (!readOnly) return { kind: "method_not_allowed" };
   const headers = new Headers(request.headers);
   headers.delete("x-clue-public-host");
   headers.delete("x-clue-edge-auth");

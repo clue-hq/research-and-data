@@ -1,10 +1,12 @@
 // E5: the brand-token check for a section the agent writes. Structure is free; style is the brand's.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { lint, typeCheck } from "../src/check-section";
+import { LINK_REFUSAL, lint, lintOptionsFor, typeCheck } from "../src/check-section";
+import { kitBrand } from "./fixtures/kits";
 
 // The example from the spike's writing-a-section skill (trials/puck-spike/agent/skills-e5/), verbatim.
 const EXAMPLE = fs.readFileSync(new URL("./fixtures/section-example.tsx", import.meta.url), "utf-8");
@@ -40,6 +42,40 @@ test("inline style, raw colour values and other imports are refused", () => {
   assert.ok(lint(`import x from "lodash";\n${EXAMPLE}`).some((e) => e.includes('import "lodash"')));
 });
 
+const INLINE_STYLE = "inline style; style only with the brand's classes";
+
+test("a style attribute on a JSX element is refused, once", () => {
+  assert.deepEqual(lint(EXAMPLE.replace("<p className", '<p style={{ color: "red" }} className')), [INLINE_STYLE]);
+});
+
+test("a style key in an object is refused: React.createElement's props", () => {
+  assert.deepEqual(lint(`${EXAMPLE}\nexport const box = () => React.createElement("div", { style: { color: "red" } });\n`), [INLINE_STYLE]);
+});
+
+test("a shorthand style key is refused", () => {
+  assert.deepEqual(lint(`${EXAMPLE}\nconst s = { style };\n`), [INLINE_STYLE]);
+});
+
+test("prose that says \"style:\" is not an inline style, in a string or a template", () => {
+  assert.deepEqual(lint(EXAMPLE.replace("attribution: z.string(),", 'attribution: z.string().default("Leadership style: hands-on."),')), []);
+  assert.deepEqual(lint(EXAMPLE.replace("{props.attribution}", "{`style: ${props.attribution}`}")), []);
+});
+
+test("a literal look written in braces is checked like a quoted one", () => {
+  const options = { buttonLooks: ["solid.1"], cardLooks: ["solid.1"] };
+  const withButton = (look: string) => EXAMPLE.replace("</kit.Shell>", `<kit.Button label="Go" href="/" surface="page" look=${look} /></kit.Shell>`);
+  const unknown = 'look "solid.123456" on kit.Button is not one of this brand\'s button styles; the styles are solid.1 (brand/brand.md, Buttons)';
+  assert.deepEqual(lint(withButton('{"solid.123456"}'), options), [unknown]);
+  assert.deepEqual(lint(withButton("{`solid.123456`}"), options), [unknown]);
+  const withCard = EXAMPLE.replace("</kit.Shell>", "<kit.Card look={'solid.7'}>x</kit.Card></kit.Shell>");
+  assert.deepEqual(lint(withCard, options), ['look "solid.7" on kit.Card is not one of this brand\'s card styles; the styles are solid.1 (brand/brand.md, Cards)']);
+});
+
+test("a look the section computes is not checked; the validator checks props", () => {
+  const computed = EXAMPLE.replace("</kit.Shell>", '<kit.Button label="Go" href="/" surface="page" look={props.look} /></kit.Shell>');
+  assert.deepEqual(lint(computed, { buttonLooks: ["solid.1"] }), []);
+});
+
 test("the type check runs on a file written inside the package", () => {
   // A hidden directory, so neither this package's nor the frontend's tsconfig picks the files up.
   const dir = fileURLToPath(new URL("../.section-check/type-check-test", import.meta.url));
@@ -54,5 +90,115 @@ test("the type check runs on a file written inside the package", () => {
     assert.ok(errors.some((e) => e.includes("TS2322")), errors.join("; ") || "no type errors");
   } finally {
     fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+  }
+});
+
+const HOSTILE = (name: string) =>
+  fs.readFileSync(new URL(`./fixtures/hostile/${name}.tsx`, import.meta.url), "utf-8");
+
+test("the D2 banned names refuse the four hostile sections that name them", () => {
+  const cases: [string, RegExp][] = [
+    ["NetworkCall", /^"fetch" is a network call/],
+    ["CookieRead", /^"document" reaches the page outside the section/],
+    ["ParentFrame", /^"window" reaches the page outside the section/],
+    ["InjectedScript", /^"dangerouslySetInnerHTML" writes raw HTML/],
+  ];
+  for (const [name, why] of cases) {
+    const errors = lint(HOSTILE(name));
+    assert.ok(errors.some((e) => why.test(e)), `${name}: ${errors.join("; ")}`);
+  }
+});
+
+test("resource abuse names nothing banned: the loop and the huge page pass (the render page bounds them)", () => {
+  assert.deepEqual(lint(HOSTILE("InfiniteLoop")), []);
+  assert.deepEqual(lint(HOSTILE("HugeOutput")), []);
+});
+
+test("a banned word in a section's text is not a banned name", () => {
+  const prose = EXAMPLE.replace("{props.attribution}", "{props.attribution} window document fetch cookie");
+  assert.deepEqual(lint(prose), []);
+});
+
+test("event handlers and dynamic imports are refused by name", () => {
+  const handler = lint(EXAMPLE.replace("<p className", "<p onClick={() => 0} className"));
+  assert.ok(handler.includes('"onClick" is an event handler; a section is static'), handler.join("; "));
+  const dynamic = lint(`${EXAMPLE}\nexport const later = () => import("./x");\n`);
+  assert.ok(dynamic.some((e) => e.startsWith('"import(" loads code the check never saw')), dynamic.join("; "));
+});
+
+test("the CLI checks a section without importing it", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const dir = path.join(root, ".section-check", "cli-test");
+  fs.mkdirSync(dir, { recursive: true });
+  try {
+    const file = path.join(dir, "Loud.tsx");
+    // A module that throws the moment anything imports it: the CLI must still answer ok.
+    fs.writeFileSync(file, `${EXAMPLE}\nthrow new Error("the check imported the section");\n`);
+    const out = execFileSync(process.execPath, ["--import", "tsx", "src/check-section.ts", file], { cwd: root });
+    assert.deepEqual(JSON.parse(out.toString()), { ok: true, errors: [] });
+  } finally {
+    fs.rmSync(path.join(root, ".section-check"), { recursive: true, force: true });
+  }
+});
+
+test("a raw <a> is refused; links go through kit.Link or kit.Button", () => {
+  const errors = lint(EXAMPLE.replace("</kit.Shell>", '<a href="/analysis">More</a></kit.Shell>'));
+  assert.ok(errors.includes(LINK_REFUSAL), errors.join("; "));
+});
+
+test("a colour class the theme does not define is refused by name", () => {
+  for (const cls of ["border-line-inverse", "bg-surface-brandSubtle", "text-ink-tertiary"]) {
+    const errors = lint(withClass(`mt-6 ${cls}`));
+    assert.ok(errors.some((e) => e.startsWith(`class "${cls}" is not one of the brand's classes`)), `${cls}: ${errors.join("; ")}`);
+  }
+});
+
+test("variants, opacity and every defined colour class pass", () => {
+  assert.deepEqual(lint(withClass("mt-6 md:bg-surface-muted hover:border-line-subtle/50 text-on-surface-brand ring-focus bg-surface-canvas")), []);
+});
+
+test("the kit's extra surfaces pass only when the brand has them", () => {
+  const band = withClass("mt-6 bg-surface-band-statement text-on-surface-band-statement");
+  assert.ok(lint(band).some((e) => e.startsWith('class "bg-surface-band-statement" is not one of the brand\'s classes')));
+  assert.deepEqual(lint(band, { extraSurfaces: ["surface.band.statement"] }), []);
+});
+
+test("a look named in the source must be one of the brand's", () => {
+  const options = lintOptionsFor(kitBrand("garner"));
+  const withButton = (look: string) => EXAMPLE.replace("</kit.Shell>", `<kit.Button label="Go" href="/" surface="page" look="${look}" /></kit.Shell>`);
+  assert.deepEqual(lint(withButton("outline.1"), options), []);
+  assert.ok(lint(withButton("solid.9"), options).includes('look "solid.9" on kit.Button is not one of this brand\'s button styles; the styles are outline.1, ghost.1, solid.1, solid.2, solid.3, solid.4 (brand/brand.md, Buttons)'));
+  const withCard = EXAMPLE.replace("</kit.Shell>", '<kit.Card look="solid.7">x</kit.Card></kit.Shell>');
+  assert.ok(lint(withCard, options).some((e) => e.startsWith('look "solid.7" on kit.Card is not one of this brand\'s card styles')));
+});
+
+test("motion of the section's own is refused; the brand's motion classes pass", () => {
+  const options = lintOptionsFor(kitBrand("probe.minted"));
+  for (const cls of ["transition", "duration-300", "ease-in-out", "animate-spin", "hover:scale-105", "group-hover:-translate-y-1", "focus:opacity-80"]) {
+    assert.ok(lint(withClass(`mt-6 ${cls}`), options).some((e) => e.startsWith(`class "${cls}" is motion of your own`)), cls);
+  }
+  assert.deepEqual(lint(withClass("mt-6 brand-motion-pulse hover:bg-surface-muted -translate-x-1/2"), options), []);
+  assert.ok(lint(withClass("mt-6 brand-motion-wobble"), options).some((e) => e.startsWith('class "brand-motion-wobble" is not one of this brand\'s motion classes')));
+});
+
+test("prose that mentions motion is never a class", () => {
+  const options = lintOptionsFor(kitBrand("probe.minted"));
+  const prose = EXAMPLE.replace(
+    "attribution: z.string(),",
+    'attribution: z.string().describe("A smooth transition built for ease-of-use"),\n  heading: z.string().default("Make the transition to value-based care"),',
+  );
+  assert.deepEqual(lint(prose, options), []);
+});
+
+test("motion classes are still refused wherever className holds them", () => {
+  const options = lintOptionsFor(kitBrand("probe.minted"));
+  const at = 'className="mt-6 font-body text-body text-ink-secondary"';
+  const forms: [string, string[]][] = [
+    ['className={`mt-6 font-body ${props.quote ? "transition duration-300" : ""} ease-in-out`}', ["transition", "duration-300", "ease-in-out"]],
+    ['className={["mt-6", props.quote && "animate-spin"].filter(Boolean).join(" ")}', ["animate-spin"]],
+  ];
+  for (const [className, refused] of forms) {
+    const errors = lint(EXAMPLE.replace(at, className), options);
+    for (const cls of refused) assert.ok(errors.some((e) => e.startsWith(`class "${cls}" is motion of your own`)), `${cls}: ${errors.join("; ")}`);
   }
 });

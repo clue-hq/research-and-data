@@ -4,7 +4,7 @@ import hashlib
 
 from fastapi.testclient import TestClient
 
-from clue_design.publishes import DELIVERY_CSP_HEADER
+from clue_design.publishes import DELIVERY_CSP_HEADER, SITE_DELIVERY_CSP_HEADER
 
 from .conftest import HOST, WS, FakePageReads, edge
 
@@ -212,3 +212,23 @@ def test_route_catch_all_answers_head_and_refuses_post(
     head = client.head("/annual-report/pricing", headers=edge())
     assert head.status_code == 200 and head.content == b""
     assert client.post("/annual-report/pricing", headers=edge()).status_code == 405
+
+
+def test_a_site_publish_is_served_under_the_site_policy_on_every_route(
+    client: TestClient, reads: FakePageReads
+) -> None:
+    reads.publish(
+        "acme-site",
+        "<html>home</html>",
+        routes={"/": "<html>home</html>", "/analysis": "<html>a</html>"},
+        delivery="site",
+    )
+    for path in ("/acme-site", "/acme-site/analysis", "/acme-site/manifest.json"):
+        response = client.get(path, headers=edge())
+        assert response.status_code == 200, path
+        assert response.headers["content-security-policy"] == SITE_DELIVERY_CSP_HEADER, path
+    reads.publish("annual-report", "<html>web</html>")
+    assert (
+        client.get("/annual-report", headers=edge()).headers["content-security-policy"]
+        == DELIVERY_CSP_HEADER
+    )

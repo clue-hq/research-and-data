@@ -21,7 +21,8 @@ Releasing = merging a pull request from `research-streaming` into `main`.
    shared with the app would let an app bug or a leaked app key delete the backups.
    `backup_db.sh` refuses to run if its bucket or key matches the app's.
 3. Pages delivery: follow `docs/specs/pages-hosting-runbook.md` (Worker, edge secret, Cloudflare for
-   SaaS on `pages.cluehq.ai`). Record `CLUE_PAGES_EDGE_SECRET`.
+   SaaS on `pages.cluehq.ai`; the move to the published pages' own domain is that runbook's §8).
+   Record `CLUE_PAGES_EDGE_SECRET`.
 
 ## 2. Railway [FOUNDER]
 The variable files are generated from `.env.example` into `~/clue-deploy/` (outside the repo):

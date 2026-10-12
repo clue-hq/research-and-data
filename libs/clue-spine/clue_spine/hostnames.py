@@ -18,14 +18,14 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Collection, Iterator
+from collections.abc import Collection, Iterator, Sequence
 from datetime import datetime
 from itertools import count
 from typing import Literal
 
 import tldextract
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -182,22 +182,38 @@ def registrable_domain(hostname: str) -> str:
     return ".".join(labels[-2:]) if len(labels) >= 2 else hostname
 
 
-def validate_custom_hostname(value: str, *, system_suffix: str) -> str:
+def parse_suffixes(raw: str) -> tuple[str, ...]:
+    """A comma-separated suffix list from the environment, lowercased, without empty entries."""
+    return tuple(
+        dict.fromkeys(
+            part.strip().lower().strip(".") for part in raw.split(",") if part.strip().strip(".")
+        )
+    )
+
+
+def validate_custom_hostname(
+    value: str, *, system_suffix: str, legacy_suffixes: Sequence[str] = ()
+) -> str:
     """Normalise and refuse with the spec §7.3 codes. Returns the normalised hostname.
 
-    Order is invalid → reserved → apex. The spec enumerates the rules invalid → apex → reserved,
-    but our own zone apex (``cluehq.ai``) matches BOTH the apex rule and the reserved rule, and it
-    must report ``hostname_reserved`` — "this is ours", not "pick a subdomain", since no subdomain
-    of it can be connected either. Reserved is therefore the narrower rule and is tested first.
-    Every other input refuses identically under either order.
+    Order is invalid → reserved → apex. Our own zone apexes match BOTH the apex rule and the
+    reserved rule, and must report ``hostname_reserved`` — "this is ours", not "pick a subdomain",
+    since no subdomain of them can be connected either. Reserved is the narrower rule and is tested
+    first. Wave 2 Contract 9: the registrable domain of the system suffix AND of every legacy
+    suffix is reserved, so ``cluehq.ai`` stays unconnectable after published pages move to their
+    own domain.
     """
     try:
         hostname = normalize_hostname(value)
     except ValueError as error:
         raise HostnameRefused("hostname_invalid", f"{value!r} is not a valid hostname") from error
-    ours = registrable_domain(system_suffix)
-    if hostname == ours or hostname.endswith("." + ours):
-        raise HostnameRefused("hostname_reserved", f"Hostnames under {ours} cannot be connected.")
+    for ours in dict.fromkeys(
+        registrable_domain(suffix) for suffix in (system_suffix, *legacy_suffixes) if suffix
+    ):
+        if hostname == ours or hostname.endswith("." + ours):
+            raise HostnameRefused(
+                "hostname_reserved", f"Hostnames under {ours} cannot be connected."
+            )
     registrable = registrable_domain(hostname)
     if hostname == registrable:
         raise HostnameRefused(
@@ -337,6 +353,54 @@ async def backfill_system_hostnames(
             written += 1
     off_suffix = await system_hostnames_off_suffix(conn, suffix)
     return {"missing": len(missing), "written": written, "off_suffix": len(off_suffix)}
+
+
+async def move_system_hostnames(
+    conn: AsyncConnection, *, from_suffix: str, to_suffix: str, apply: bool = False
+) -> dict[str, object]:
+    """Rewrite every system hostname under ``from_suffix`` to the same label under ``to_suffix``
+    (Wave 2 Contract 9). The label is kept, so ``locked_at`` keeps its promise; the old host keeps
+    answering through the edge Worker's 301. A dry run unless ``apply``; it refuses to write when
+    any new hostname is already taken, and then nothing moves."""
+    old = from_suffix.lower().strip(".")
+    new = to_suffix.lower().strip(".")
+    if not old or not new or old == new:
+        raise ValueError("from_suffix and to_suffix must be non-empty and different")
+    rows = await conn.execute(
+        text(
+            "SELECT hostname FROM workspace_hostname WHERE kind = 'system' "
+            "AND right(hostname, :n) = :tail ORDER BY hostname"
+        ),
+        {"n": len(old) + 1, "tail": "." + old},
+    )
+    moves = [(str(row[0]), str(row[0])[: -len(old)] + new) for row in rows.all()]
+    collisions: list[str] = []
+    if moves:
+        taken = await conn.execute(
+            text("SELECT hostname FROM workspace_hostname WHERE hostname IN :targets").bindparams(
+                bindparam("targets", expanding=True)
+            ),
+            {"targets": [target for _old, target in moves]},
+        )
+        collisions = sorted(str(row[0]) for row in taken.all())
+    applied = bool(apply and moves and not collisions)
+    if applied:
+        for previous, target in moves:
+            await conn.execute(
+                text(
+                    "UPDATE workspace_hostname SET hostname = :new, updated_at = now() "
+                    "WHERE hostname = :old AND kind = 'system'"
+                ),
+                {"new": target, "old": previous},
+            )
+    return {
+        "from_suffix": old,
+        "to_suffix": new,
+        "rows": len(moves),
+        "collisions": collisions,
+        "applied": applied,
+        "sample": [{"from": previous, "to": target} for previous, target in moves[:5]],
+    }
 
 
 # --- custom hostnames: DAL (spec §4.1, §7) -----------------------------------

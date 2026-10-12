@@ -791,6 +791,47 @@ class HybridRepository:
             )
         )
 
+    def update_site_document(
+        self,
+        document_id: str,
+        site: JsonObject,
+        *,
+        intent: Optional[str],
+        checkpoint_label: Optional[str],
+        operations: List[JsonObject],
+        inverse_operations: Optional[List[JsonObject]],
+        actor_kind: str,
+        source: str,
+        reverts_batch_id: Optional[str] = None,
+        reapplies_batch_id: Optional[str] = None,
+        expected_base_version: Optional[int] = None,
+    ) -> JsonObject:
+        """The Puck site state write (Wave 2 Contract 2).
+
+        The DAL's website write is kind-agnostic — it reads only the top-level title — so a site
+        reuses it, with the same row lock, CAS, stack moves and 50-step cap. Unlike
+        ``update_web_document`` it runs no WebDoc fragment or component validators: their page walk
+        is WebDoc-shaped (a list of node maps) and means nothing for a site's dict of routes. The
+        site's own checks (shape, custody, the site-kit validator) run in the tool before this."""
+        return self._bridge._run(
+            lambda conn: design_documents.update_web_document(
+                conn,
+                workspace_id=self.workspace_id,
+                document_id=document_id,
+                web_doc=site,
+                intent=intent,
+                checkpoint_label=checkpoint_label,
+                operations=operations,
+                inverse_operations=inverse_operations,
+                actor_kind=actor_kind,
+                source=source,
+                push_undo=True,
+                reverts_batch_id=reverts_batch_id,
+                reapplies_batch_id=reapplies_batch_id,
+                expected_base_version=expected_base_version,
+            )
+        )
+
     def set_agent_instructions(self, document_id: str, instructions: Optional[str]) -> JsonObject:
         return self._bridge._run(
             lambda conn: design_documents.set_agent_instructions(

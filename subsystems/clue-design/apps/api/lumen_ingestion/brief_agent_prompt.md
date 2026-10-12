@@ -69,10 +69,10 @@ nothing, or say the brand's measured radii are X and Y).
   kind of rule that keeps a generated page on-brand.
 - **background_rhythm** — the section background sequence as observed, in
   order, with a ratio summary ("1 dark sliver : 7 canvas bands"), each band
-  named by its surface token. A background color the page recurs on is minted
-  as a `surface.band.*` token (`surface.band.statement` for a dark band,
-  `surface.band.tint` for a light one) — when the kit carries those, name the
-  bands by them rather than by the nearest approximation. Note whether
+  named by its surface token. Every flat section background the page shows is a surface token: an
+  existing `surface.*` token when one holds exactly that colour, otherwise a `surface.band.<hex>`
+  token minted from it (for example `surface.band.014036`) — name the bands by them rather than by
+  the nearest approximation. Note whether
   differentiation is chromatic (backgrounds change) or compositional (single
   canvas).
 - **typographic_posture** — case posture, scale temperament (restrained /
@@ -93,7 +93,10 @@ nothing, or say the brand's measured radii are X and Y).
   token names — radius, padding, border, shadow, background, text. These
   came from the brand's real site; a design agent will use them verbatim, so
   transcribe the measurement's token mapping faithfully and flag any shape
-  value that had no token to land on.
+  value that had no token to land on. The kit also carries tokens minted from
+  those shape records, named for where they were measured
+  (`button.solid-047464.fill`, `card.solid-f1f0de.radius`); when a slot's
+  measured value has one, name it.
 
 ## Discipline
 

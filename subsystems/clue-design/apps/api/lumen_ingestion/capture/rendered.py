@@ -16,6 +16,7 @@ import time
 from selectolax.parser import HTMLParser
 
 from .geometry import GEOMETRY_JS
+from .states import REVEAL_BEFORE_JS, probe_states
 from .net import BoundedFetcher, CaptureError, guard_url, require_complete_html
 from .snapshot import Download, SiteSnapshot, Stylesheet
 from .static import _collect_assets, _extract_meta
@@ -322,7 +323,7 @@ async def _capture_html(page) -> str:
     return require_complete_html(html)
 
 
-async def _harvest_page(page, diagnostics: list[dict]) -> dict:
+async def _harvest_page(page, diagnostics: list[dict], *, measure_states: bool = False) -> dict:
     """Everything we take from a live, already-navigated page.
 
     Shared verbatim by the plain-Chromium and stealth backends so the two can
@@ -331,6 +332,14 @@ async def _harvest_page(page, diagnostics: list[dict]) -> dict:
     harvest, the render probe, html, the full-page screenshot, and geometry
     LAST (it focuses elements and must never touch the captured pixels).
     """
+    # Entrance reveals can only be seen before the page is scrolled (Wave 2 A9): read-only, so the
+    # captured pixels and HTML are untouched.
+    reveal_before = None
+    if measure_states:
+        try:
+            reveal_before = await page.evaluate(REVEAL_BEFORE_JS)
+        except Exception:  # noqa: BLE001 — a reveal we cannot see is a reveal we do not record
+            reveal_before = None
     await _scroll_until_settled(page)
 
     # Return to the top and clean the stage before ANY harvest or pixel
@@ -383,6 +392,12 @@ async def _harvest_page(page, diagnostics: list[dict]) -> dict:
                 "message": f"geometry measurement failed; scales fall back to the derived defaults: {error}",
             }
         )
+    # Interaction states, motion and behaviour (Wave 2 A9), after everything that was captured. The
+    # entry page only: it is the page the kit is about, and the pass costs up to ~10 s.
+    if measure_states and isinstance(harvest["geometry"], dict):
+        harvest["geometry"]["states"] = await probe_states(
+            page, harvest["geometry"], reveal_before=reveal_before, diagnostics=diagnostics
+        )
     return harvest
 
 
@@ -392,6 +407,7 @@ async def fetch_rendered(
     reporter,
     *,
     fetched_at: str,
+    measure_states: bool = False,
 ) -> SiteSnapshot:
     """Rendered capture behind the backend dispatcher.
 
@@ -410,7 +426,9 @@ async def fetch_rendered(
 
     if os.environ.get("LUMEN_RENDER_STEALTH", "1") != "0":
         try:
-            snapshot = await _fetch_rendered_stealth(url, fetcher, reporter, fetched_at=fetched_at)
+            snapshot = await _fetch_rendered_stealth(
+                url, fetcher, reporter, fetched_at=fetched_at, measure_states=measure_states
+            )
             snapshot.diagnostics.append(
                 {
                     "code": "LUMI0535",
@@ -436,7 +454,9 @@ async def fetch_rendered(
     else:
         fallback_note = None
 
-    snapshot = await _fetch_rendered_chromium(url, fetcher, reporter, fetched_at=fetched_at)
+    snapshot = await _fetch_rendered_chromium(
+        url, fetcher, reporter, fetched_at=fetched_at, measure_states=measure_states
+    )
     if fallback_note is not None:
         snapshot.diagnostics.append(fallback_note)
     return snapshot
@@ -448,6 +468,7 @@ async def _fetch_rendered_stealth(
     reporter,
     *,
     fetched_at: str,
+    measure_states: bool = False,
 ) -> SiteSnapshot:
     from scrapling.fetchers import StealthyFetcher  # lazy: never at import time
 
@@ -458,11 +479,11 @@ async def _fetch_rendered_stealth(
     harvest: dict = {}
 
     async def _drive(page):
-        harvest.update(await _harvest_page(page, diagnostics))
+        harvest.update(await _harvest_page(page, diagnostics, measure_states=measure_states))
         return page
 
     # network_idle mirrors the chromium path's goto wait; the generous timeout
-    # covers scroll-settle (<=12s) + hero dwell (3s) on slow marketing pages.
+    # covers scroll-settle (<=12s) + hero dwell (3s) + the state pass (<=10s) on slow marketing pages.
     # NO context overrides: scrapling generates a COHERENT fingerprint
     # (screen/viewport/UA agree), and overriding the viewport to our chromium
     # constant broke it — sarvam.ai's WebGL hero refused to paint for a
@@ -490,6 +511,7 @@ async def _fetch_rendered_chromium(
     reporter,
     *,
     fetched_at: str,
+    measure_states: bool = False,
 ) -> SiteSnapshot:
     from playwright.async_api import async_playwright  # lazy: never at import time
 
@@ -520,7 +542,7 @@ async def _fetch_rendered_chromium(
                 )
             if response is not None and response.status >= 400:
                 raise CaptureError("LUMI0503", f"page returned HTTP {response.status}: {url}")
-            harvest = await _harvest_page(page, diagnostics)
+            harvest = await _harvest_page(page, diagnostics, measure_states=measure_states)
         finally:
             await browser.close()
 

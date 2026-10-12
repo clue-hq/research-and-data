@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from clue_db import ConnFactory, transaction
 from clue_design.brand import approved_brand_mark_sha256
 from clue_design.errors import DesignNotFoundError
-from clue_design.publishes import get_web_publish, get_web_publish_page
+from clue_design.publishes import get_web_publish, get_web_publish_page, manifest_delivery
 from clue_design.storage import read_design_blob, read_public_design_blob
 from clue_spine.hostnames import resolve_active_hostname
 from clue_spine.pages_settings import get_pages_settings
@@ -28,6 +28,8 @@ class ServedPublish(BaseModel):
     manifest_json: str
     manifest_digest: str
     noindex: bool
+    #: "site" for a Puck site publish (its manifest says so): served under the site CSP.
+    delivery: str = "web"
 
 
 class ServedPage(BaseModel):
@@ -38,6 +40,7 @@ class ServedPage(BaseModel):
     html: str
     html_digest: str
     noindex: bool
+    delivery: str = "web"
 
 
 class PageReads(Protocol):
@@ -83,6 +86,7 @@ class DbPageReads:
             manifest_json=manifest_json,
             manifest_digest=str(publish.get("manifest_digest") or _sha(manifest_json)),
             noindex=manifest.get("robots") == "noindex",
+            delivery=manifest_delivery(manifest),
         )
 
     async def active_page(self, workspace_id: str, slug: str, route: str) -> ServedPage | None:
@@ -97,10 +101,14 @@ class DbPageReads:
             )
         manifest = publish.get("manifest")
         noindex = isinstance(manifest, dict) and manifest.get("robots") == "noindex"
+        delivery = manifest_delivery(manifest)
         if row is not None:
             html = str(row["html"])
             return ServedPage(
-                html=html, html_digest=str(row.get("html_digest") or _sha(html)), noindex=noindex
+                html=html,
+                html_digest=str(row.get("html_digest") or _sha(html)),
+                noindex=noindex,
+                delivery=delivery,
             )
         if route == "/":
             html = str(publish["html"])
@@ -108,6 +116,7 @@ class DbPageReads:
                 html=html,
                 html_digest=str(publish.get("html_digest") or _sha(html)),
                 noindex=noindex,
+                delivery=delivery,
             )
         return None
 

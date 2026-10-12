@@ -1240,17 +1240,11 @@ def require_static_css_toolchain(node_bin: str = "node") -> None:
         )
 
 
-def _compile_static_css(
-    html: str, theme: _CompiledTheme, node_bin: str, timeout_seconds: int = 120
-) -> str:
-    """Run the editor's Tailwind v4 toolchain over ``html`` against the doc's
-    ``@theme`` tokens. Raises ``WebExportCompileError`` (stderr attached) on a
-    non-zero exit — never returns an empty/unstyled stylesheet silently.
-
-    ``timeout_seconds`` defaults to the export's own long bound (a whole page's worth of markup,
-    run as a build step nobody is waiting on). A caller compiling one SECTION inside a tool call
-    passes something far shorter — see :func:`compile_section_css`."""
-    input_css = _build_input_css(theme)
+def compile_tailwind_css(html: str, input_css: str, node_bin: str, timeout_seconds: int = 120) -> str:
+    """Run the editor's Tailwind v4 toolchain (``scripts/web_static_css.mjs``) over ``html``
+    against ``input_css``. Raises ``WebExportCompileError`` (stderr attached) on a non-zero exit —
+    never returns an empty/unstyled stylesheet silently. Shared by the WebDoc export below and the
+    Puck site render (``lumen_api.site_render``); the scanner only ever READS the html as text."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         html_file = tmp_path / "page.html"
@@ -1274,6 +1268,17 @@ def _compile_static_css(
                 or f"static css compile exited {result.returncode}"
             )
         return out_file.read_text(encoding="utf-8")
+
+
+def _compile_static_css(
+    html: str, theme: _CompiledTheme, node_bin: str, timeout_seconds: int = 120
+) -> str:
+    """Run the editor's Tailwind v4 toolchain over ``html`` against the doc's ``@theme`` tokens.
+
+    ``timeout_seconds`` defaults to the export's own long bound (a whole page's worth of markup,
+    run as a build step nobody is waiting on). A caller compiling one SECTION inside a tool call
+    passes something far shorter — see :func:`compile_section_css`."""
+    return compile_tailwind_css(html, _build_input_css(theme), node_bin, timeout_seconds)
 
 
 #: How long ONE section's utility compile may take before it is killed.

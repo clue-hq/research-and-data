@@ -4,6 +4,7 @@ import pytest
 
 from clue_spine.hostnames import (
     HostnameRefused,
+    parse_suffixes,
     registrable_domain,
     validate_custom_hostname,
     validate_label,
@@ -87,3 +88,41 @@ def test_invalid_labels(label: str, code: str) -> None:
     with pytest.raises(HostnameRefused) as caught:
         validate_label(label)
     assert caught.value.code == code
+
+
+NEW = "clue-pages.example"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "x.cluehq.ai",
+        "cluehq.ai",
+        "go.pages.cluehq.ai",
+        "acme.clue-pages.example",
+        "clue-pages.example",
+    ],
+)
+def test_after_the_move_both_registrable_domains_stay_reserved(bad: str) -> None:
+    with pytest.raises(HostnameRefused) as caught:
+        validate_custom_hostname(bad, system_suffix=NEW, legacy_suffixes=("pages.cluehq.ai",))
+    assert caught.value.code == "hostname_reserved"
+
+
+def test_the_refusal_names_the_domain_it_matched() -> None:
+    with pytest.raises(HostnameRefused) as caught:
+        validate_custom_hostname(
+            "x.cluehq.ai", system_suffix=NEW, legacy_suffixes=("pages.cluehq.ai",)
+        )
+    assert caught.value.message == "Hostnames under cluehq.ai cannot be connected."
+    assert (
+        validate_custom_hostname(
+            "go.acme.com", system_suffix=NEW, legacy_suffixes=("pages.cluehq.ai",)
+        )
+        == "go.acme.com"
+    )
+
+
+def test_parse_suffixes() -> None:
+    assert parse_suffixes(" pages.cluehq.ai, Old.Example. ,,") == ("pages.cluehq.ai", "old.example")
+    assert parse_suffixes("") == ()

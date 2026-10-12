@@ -11,6 +11,7 @@ import { CloneMarkup } from "./clone-markup";
 import { themeCss } from "./theme";
 import { makeSections } from "./sections";
 import { makeKit, type AgentSectionModule } from "./agent-kit";
+import { buttonLookOptions } from "./looks";
 import { SiteFooter, SiteHeader, type FooterProps, type HeaderProps, type ShellData } from "./shell";
 
 type ClonedSectionProps = {
@@ -79,6 +80,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
             accountLogo: { type: "text", label: "Account logo URL (optional)" },
             ctaLabel: { type: "text", label: "Button label" },
             ctaHref: { type: "text", label: "Button link" },
+            ...(buttonLookOptions(brand).length > 1 ? { ctaLook: { type: "select", label: "Button style", options: buttonLookOptions(brand) } } : {}),
             nav: {
               type: "array",
               label: "Navigation links",
@@ -111,7 +113,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
   ];
   const sections = makeSections(brand, href, options.editor?.AssetPicker);
   // This site's agent-written sections (E5): rendered with the same kit our sections use; no edit fields.
-  const kit = makeKit(href);
+  const kit = makeKit(href, brand);
   const agentSections = Object.fromEntries(
     Object.entries(options.agentSections ?? {}).map(([name, module]) => [
       name,
@@ -130,7 +132,6 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
     FeatureSplit: Record<string, unknown>;
     ProofCard: Record<string, unknown>;
     CtaBand: Record<string, unknown>;
-    TokenProbe: { heading: string; body: string };
   }> = {
     root: { render: ({ children }) => <BrandRoot withShell>{children}</BrandRoot> },
     categories: {
@@ -141,18 +142,6 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
         : {}),
     },
     components: {
-      // Test fixture for the G3 token check (export/check_tokens.py); not offered in the menu.
-      TokenProbe: {
-        fields: { heading: { type: "text" }, body: { type: "textarea" } },
-        defaultProps: { heading: "Brand token probe", body: "Body text in the brand's body role." },
-        render: ({ heading, body }) => (
-          <section data-probe="token-section" className="bg-surface-brand px-6 py-16">
-            <h2 data-probe="token-headline" className="font-headline text-headline text-ink-inverse">{heading}</h2>
-            <p data-probe="token-body" className="mt-4 font-body text-body text-ink-inverse">{body}</p>
-            <span data-probe="token-button" className="mt-6 inline-block rounded-button bg-surface-page px-5 py-3 font-cta text-cta text-ink-primary">Request the analysis</span>
-          </section>
-        ),
-      },
       ...(sections as unknown as Record<"StatsBand" | "FeatureSplit" | "ProofCard" | "CtaBand", never>),
       ...(agentSections as unknown as Record<string, never>),
       ClonedSection: {
@@ -197,7 +186,7 @@ export function makeConfig(brand: BrandData, options: ConfigOptions): Config {
           const clone = brand.clones[fragmentId];
           if (!clone) {
             return (
-              <div className="m-6 rounded border border-dashed border-slate-300 p-10 text-center text-slate-500">
+              <div className="p-card-padding text-center font-body text-body text-ink-muted">
                 Choose a cloned section
               </div>
             );

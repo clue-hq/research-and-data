@@ -2373,7 +2373,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "onnxruntime", specifier = ">=1.20,<2" },
     { name = "pillow", specifier = ">=10,<12" },
-    { name = "playwright", specifier = ">=1.45,<2" },
+    { name = "playwright", specifier = ">=1.48,<2" },
     { name = "py-lumen-config", editable = "subsystems/clue-design/packages/py-lumen-config" },
     { name = "py-lumen-obs", editable = "subsystems/clue-design/packages/py-lumen-obs" },
     { name = "pydantic-settings", specifier = ">=2,<3" },

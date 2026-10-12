@@ -5,6 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { COMPONENT_SCHEMAS, PageSchema, ShellSchema, formatIssues } from "../src/schemas";
 import { makeConfig } from "../src/config";
+import { validateSite } from "../src/validate";
 import { garner, site } from "./fixtures/garner";
 
 test("the phase-1 pages and shells validate clean", () => {
@@ -44,13 +45,13 @@ test("free styling is refused: no className, style or colour props", () => {
   }
 });
 
-test("a surface outside the brand's choices is refused, listing the allowed choices", () => {
+test("a surface outside the brand's choices is refused by the validator, listing the brand's surfaces", () => {
   const page = garnerHome();
   const stats = page.content.find((item: { type: string }) => item.type === "StatsBand");
   stats.props.surface = "green";
-  const message = issues(page);
-  assert.match(message, /surface/);
-  assert.match(message, /brandSubtle/);
+  const syracuse = site("garner-syracuse");
+  const { errors } = validateSite({ pages: { ...syracuse.pages, "/": page }, shell: syracuse.shell }, garner(), {});
+  assert.ok(errors.some((e) => e.includes('.surface: "green" is not one of this brand\'s surfaces') && e.includes("brandSubtle")), errors.join("\n"));
 });
 
 test("a cloned section needs a fragment id of the right shape", () => {
