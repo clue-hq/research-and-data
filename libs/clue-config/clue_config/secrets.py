@@ -115,6 +115,10 @@ class Secrets(BaseSettings):
     # refuses page traffic that does not carry it in X-Clue-Edge-Auth (spec §5.2). Empty only in
     # dev, together with CLUE_PAGES_TRUST_HOST_HEADER=true.
     pages_edge_secret: SecretStr | None = None
+    # Env: CLUE_SITE_SECTION_LINK_SECRET. Signs the 10-minute links the editor uses to load an
+    # agent-written Puck section module (Wave 2 Contract 4): an HMAC over (workspace, document,
+    # digest, expiry). Unset = the design API refuses to mint or honour section links (503).
+    site_section_link_secret: SecretStr | None = None
     # Env: CLUE_CLOUDFLARE_API_TOKEN. Zone-scoped token with only "SSL and Certificates: Edit"
     # (spec §7.7); read by the custom-hostnames client and nothing else.
     cloudflare_api_token: SecretStr | None = None

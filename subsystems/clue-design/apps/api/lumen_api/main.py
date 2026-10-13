@@ -220,6 +220,7 @@ from .models import (
     SetAssetDescriptionRequest,
     SetBrandKitApprovalRequest,
     SetBrandKitLogoRequest,
+    SiteSectionLinksRequest,
     ValidateBrandKitRequest,
     ValidateDocumentBrandGovernanceRequest,
 )
@@ -869,6 +870,11 @@ def create_app(
     # Lane B6 (Contract 4): the workspace's recorded agent sections. A site that places one finds
     # its module here for every save, render and publish.
     app.state.site_section_loader = load_site_section_modules
+    # Contract 4 (Lane B): the section-link signing secret, read per call so a deployment that sets
+    # it needs no restart; a test replaces the thunk.
+    from .site_section_links import link_secret
+
+    app.state.site_section_link_secret = link_secret
     # Part II D6: THE governed design write path. Every converted domain's mutation runs through
     # this invoker — the platform's own `ToolInvoker`, over the platform's own `tool_invocation`
     # + execution-journal tables (see `lumen_api.toolbelt.wiring`). The host's members are
@@ -4727,6 +4733,67 @@ def create_app(
             restore_of=batch_id,
         )
         return {"schema_version": 1, "document": _site_document_ref(repo, document_id)}
+
+    @app.post("/documents/{document_id}/site/section-links")
+    def mint_site_section_links(
+        document_id: str, payload: SiteSectionLinksRequest, repo: HybridRepository = Depends(repository)
+    ) -> JsonObject:
+        """Ten-minute links to the agent sections this site places (Contract 4; ruling R1)."""
+        from .site_section_links import UNCONFIGURED, SectionLinkRefused, section_links
+
+        secret = app.state.site_section_link_secret()
+        if secret is None:
+            raise HTTPException(status_code=503, detail={"code": UNCONFIGURED, "message": "section links are not configured"})
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        try:
+            links = section_links(repo, document, payload.digests, secret=secret, now=int(time.time()))
+        except SectionLinkRefused as refused:
+            raise HTTPException(status_code=404, detail={"code": refused.code, "message": refused.message}) from refused
+        return {"schema_version": 1, "links": links}
+
+    def _serve_site_section(digest: str, token: str, part: str) -> Response:
+        """An agent section's compiled module (``part="module"``) or its stored CSS (``part="css"``)
+        for the editor's own server (Contract 4, ruling R2). Token-gated; NO workspace header: the
+        token is the only statement of tenancy, the bytes are read from the token's workspace alone,
+        and that workspace rides back in ``x-clue-workspace-id`` so the editor server can refuse a
+        module that is not its Host's."""
+        from .site_section_links import NOT_FOUND, UNCONFIGURED, SectionLinkRefused, verify_section_token
+
+        if not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise HTTPException(status_code=404, detail={"code": NOT_FOUND, "message": "not a section digest"})
+        secret = app.state.site_section_link_secret()
+        if secret is None:
+            raise HTTPException(status_code=503, detail={"code": UNCONFIGURED, "message": "section links are not configured"})
+        try:
+            workspace_id, _document_id = verify_section_token(token, secret=secret, digest=digest, now=int(time.time()))
+        except SectionLinkRefused as refused:
+            raise HTTPException(status_code=403, detail={"code": refused.code, "message": refused.message}) from refused
+        rows = HybridRepository(workspace_id, ensure_workspace=False).get_site_sections([digest])
+        if not rows:
+            raise HTTPException(status_code=404, detail={"code": NOT_FOUND, "message": "no such section"})
+        blob_key = digest if part == "module" else rows[0]["css_sha256"]
+        try:
+            data = DesignBlobStore(app.state.storage, workspace_id, ensure_workspace=False).read(blob_key)
+        except NotFoundError as error:
+            raise HTTPException(status_code=404, detail={"code": NOT_FOUND, "message": "no such section"}) from error
+        return Response(
+            content=data,
+            media_type="text/javascript; charset=utf-8" if part == "module" else "text/css; charset=utf-8",
+            headers={
+                "cache-control": "no-store",
+                "x-content-type-options": "nosniff",
+                "x-clue-workspace-id": workspace_id,
+            },
+        )
+
+    @app.get("/site-sections/{digest}.mjs")
+    def get_site_section_module(digest: str, t: str = Query(...)) -> Response:
+        return _serve_site_section(digest, t, "module")
+
+    @app.get("/site-sections/{digest}.css")
+    def get_site_section_css(digest: str, t: str = Query(...)) -> Response:
+        return _serve_site_section(digest, t, "css")
 
     @app.get("/documents/{document_id}/web/theme")
     def get_web_theme(

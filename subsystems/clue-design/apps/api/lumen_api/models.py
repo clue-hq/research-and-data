@@ -625,3 +625,10 @@ class BrandCompatibilityRequest(BaseModel):
     from_ref: Optional[BrandKitRefRequest] = None
     to_ref: Optional[BrandKitRefRequest] = None
     persist_report: bool = True
+
+
+class SiteSectionLinksRequest(BaseModel):
+    """POST /documents/{id}/site/section-links (Wave 2 Contract 4). ``digests`` names the sections
+    to link; omitted = every section the document places."""
+
+    digests: Optional[List[str]] = None
