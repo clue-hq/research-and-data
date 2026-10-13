@@ -58,3 +58,16 @@ def test_youtube_is_never_downloaded():
     assert not hasattr(recording, "download_youtube")
     assert not hasattr(recording, "YouTubeAudioTransport")
     assert not hasattr(recording, "fetch_youtube")
+
+
+def test_the_deepgram_trial_script_imports_and_refuses_youtube(tmp_path):
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).parents[2] / "scripts" / "trial_deepgram_media.py"
+    spec = importlib.util.spec_from_file_location("trial_deepgram_media", path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with pytest.raises(ValueError, match="never downloaded"):
+        module.prepare("https://youtu.be/abcdefghijk", tmp_path / "out")
