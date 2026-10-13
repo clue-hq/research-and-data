@@ -445,14 +445,19 @@ def test_g_publishing_while_a_run_drives_the_document_matches_the_web_route(quie
         try:
             busy = client.get(f"/documents/{document_id}/agent-run").json()
             assert (busy["active"], busy["run_id"]) == (True, run_id)
-            outcomes[kind] = client.post(path, json={"slug": slug}).status_code
+            response = client.post(path, json={"slug": slug})
+            outcomes[kind] = response.status_code
             served = is_served(workspace_id, slug)
         finally:
             finish_run(repo, run_id)
-        assert served is (outcomes[kind] == 200), (kind, outcomes[kind])
-    # The web route has no run lock (main.py: only the six manual scene writes and the site writes
-    # call _refuse_if_agent_running), so a publish mid-run goes through, and the site route matches.
-    assert outcomes == {"web": 200, "site": 200}
+        assert response.json()["detail"] == {"code": "document.agent_run_active", "run_id": run_id}, kind
+        assert served is False, kind
+    # Founder ruling 2026-10-13: a person's publish waits for the run. main.py's
+    # _refuse_if_agent_running guards BOTH publish routes (beside the six manual scene writes and the
+    # site writes), so a publish mid-run is refused on the web route and the site route matches.
+    assert outcomes == {"web": 409, "site": 409}
+    # The run is over: the same publish goes through.
+    ok(publish(client, "site_running", slug="running-site"))
     assert_served_site(workspace_id, "running-site")
 
 

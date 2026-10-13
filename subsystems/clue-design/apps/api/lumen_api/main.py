@@ -4916,6 +4916,7 @@ def create_app(
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
+        _refuse_if_agent_running(document_id, repo)
         slug = (payload.slug or "").strip() or web_default_slug(
             document["title"], document_id
         )
@@ -5000,6 +5001,7 @@ def create_app(
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_site_document(document)
+        _refuse_if_agent_running(document_id, repo)
         slug = (payload.slug or "").strip() or web_default_slug(document["title"], document_id)
         publish = _publish_site(repo, document, slug=slug, idempotency_key=idempotency_key, noindex=payload.noindex)
         log_event(api_logger, logging.INFO, "site_publish_completed", document_id=document_id, slug=slug, doc_version=publish["doc_version"])
@@ -5805,6 +5807,13 @@ def create_app(
                     existing = repo.require_document(new_document_id)
                 except NotFoundError:
                     existing = None
+            if publish and existing is not None:
+                # Founder ruling 2026-10-13: a person's publish waits while the design agent works
+                # on the document. An account page the agent is editing is THIS account's failure
+                # (the 409 lands on its manifest row through the `except` below), checked before
+                # the re-derive so nothing is written onto the page the agent is editing either.
+                # A fresh document (a first ABM run, every generic run) has no run to wait for.
+                _refuse_if_agent_running(new_document_id, repo)
             result = app.state.core.web_derive(
                 doc=template["scene"],
                 values=values,
@@ -8264,9 +8273,17 @@ def _refuse_if_agent_running(document_id: str, store: HybridRepository) -> None:
     The rule is about authorship, not about any one route's shape: every path a human can move a
     scene through is closed while the agent is moving it.
 
+    It also guards the two PUBLISH routes — ``POST /documents/{id}/web/publish`` and
+    ``POST /documents/{id}/site/publish`` — and the ABM batch's per-account publish (founder ruling
+    2026-10-13: a person's publish waits for the run to finish). A publish taken mid-run ships a
+    half-edited page: the run commits checkpoints as it goes, so the version on the air would be
+    whatever the agent happened to have written so far. Reading the publish state, unpublish and
+    rollback stay open — they change what is live, not the document the agent is editing.
+
     The agent's own writes go through the governed ``design_apply_operations`` tool
     (``_LegSceneCommitter``), never through these routes — a lock that reached the tool would
-    deadlock every run against itself.
+    deadlock every run against itself. The same holds for the agent's own publish: the governed
+    ``design_publish_web`` / ``design_publish_site`` tools are not locked, only the person's routes.
     """
     run_id = store.active_design_run_for_document(document_id)
     if run_id is not None:
