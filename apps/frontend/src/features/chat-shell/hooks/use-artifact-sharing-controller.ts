@@ -11,7 +11,6 @@ import {
   type ArtifactAdvancedTab,
   type ArtifactPublishSettings,
   type ArtifactPublishStatus,
-  type ArtifactShareExportFormat,
   type ArtifactShareView,
 } from "../model/artifact-sharing";
 import { isWebsiteKind } from "../model/artifact-kind";
@@ -118,27 +117,6 @@ export function pageLinkRows(
     }));
 }
 
-/**
- * Hand the browser a downloaded file: an object URL behind a hidden anchor,
- * revoked as soon as the click has been dispatched.
- *
- * This is the only way to name a download the server named for us — a plain
- * navigation to the export route would work too, but it cannot carry the BFF's
- * session-scoped request the way the repository's fetch already did.
- */
-function downloadBlob(blob: Blob, filename: string): void {
-  const href = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = href;
-  anchor.download = filename;
-  anchor.rel = "noopener";
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(href);
-}
-
 /** The host shown in front of the slug in the link field — read off the URL the
  * server gave us, never a constant of ours. Empty until there is one. */
 function shareHostOf(shareUrl: string): string {
@@ -175,8 +153,6 @@ export function useArtifactSharingController({
   // FLAGGED F5: designed field, no backend contract yet
   const [description, setDescription] = useState("");
   const [editingSlug, setEditingSlug] = useState(false);
-  const [lastExportFormat, setLastExportFormat] =
-    useState<ArtifactShareExportFormat | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pageUrls, setPageUrls] = useState<Record<string, string>>({});
   const [publishStatus, setPublishStatus] =
@@ -403,53 +379,6 @@ export function useArtifactSharingController({
     setStatusMessage("Description generation requested");
   }, [kind, shareTitle]);
 
-  const requestExport = useCallback(
-    (format: ArtifactShareExportFormat) => {
-      setLastExportFormat(format);
-      if (isWebsiteKind(kind) && documentId) {
-        // Both website formats are the same download against the same seam —
-        // the server renders the bytes and names the file — so they differ only
-        // in which repository call fetches them. The map is total over the
-        // format union, so a third format cannot silently fall through to the
-        // "requested" no-op below without the compiler saying so.
-        const webExport: Record<
-          ArtifactShareExportFormat,
-          (repository: WebPublishRepository) => Promise<{
-            blob: Blob;
-            filename: string;
-          }>
-        > = {
-          PDF: (repository) => repository.exportPdf(documentId),
-          ZIP: (repository) => repository.exportZip(documentId),
-        };
-        setStatusMessage(`Preparing ${format} export`);
-        void (async () => {
-          try {
-            const { blob, filename } = await webExport[format](
-              resolveRepository(),
-            );
-            downloadBlob(blob, filename);
-            setStatusMessage(`${format} downloaded`);
-          } catch (error) {
-            setStatusMessage(
-              error instanceof Error
-                ? error.message
-                : `${format} export failed`,
-            );
-          }
-        })();
-      } else {
-        setStatusMessage(`${format} export requested`);
-      }
-      window.dispatchEvent(
-        new CustomEvent("clue:artifact-export-request", {
-          detail: { format, kind },
-        }),
-      );
-    },
-    [documentId, kind, resolveRepository],
-  );
-
   return {
     controller: {
       advancedTab,
@@ -461,7 +390,6 @@ export function useArtifactSharingController({
       customHtml,
       description,
       editingSlug,
-      lastExportFormat,
       menuOpen,
       pageUrls,
       previewExternally,
@@ -469,7 +397,6 @@ export function useArtifactSharingController({
       publishStatus,
       regenerateDescriptionOnPublish,
       requestDescriptionGeneration,
-      requestExport,
       saveAdvancedSettings,
       saveSlug,
       setAdvancedTab,
