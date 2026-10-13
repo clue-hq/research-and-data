@@ -11,6 +11,7 @@ integrated branch's record: what was merged, every test run and every failure, a
 | `f8fce07dd` | A9 complete (`w2/a9-task-16b`; carried Lane A ≤ Task 17) | none |
 | `d46b38a91` | Lane A complete (tip `4f3e2eaf2`, through `w2/a-task-29`) | chat-surface.tsx, editor-surface.tsx — Lane C's site editing lock vs Lane A Task 28's publish lock; both kept |
 | `1371a4810` | Lane B complete (`w2/b-task-19` = `6a8c2b467`) | lumen_api/main.py, write-path governance core list, 3 tool-count tests — unions (authority 150, design_* grants 62, registry 150 names / 175 addresses) |
+| `ecdb283db` | A9 fix wave (`w2/a9-task-FX-A..FX-D2`, tip `e4ce90fdd`) — A9 reopened after `f8fce07dd`; found missing by review unit K5 | none |
 
 Hand-resolved merges across all of Wave 2 (the only merge-written code): `c9a3c18d8`, `dda6790cc`,
 `d46b38a91`, `1371a4810` (`git show --remerge-diff <sha>`).
@@ -98,3 +99,14 @@ The review folder's `pytest-keyless.sh` does all of this.
    and the vitest shim, all predating this merge; tests run through tsx, which ignores types, and the
    frontend gate (lint + build) does not type-check tests. Lane C's one (`site-save-controller.test.ts`)
    fixed in `f29e0b418`.
+
+## The review (2026-10-13)
+
+Review folder `.superpowers/review/2026-10-13-wave2/` (git-ignored): REVIEWER.md, 14 unit scopes,
+reports, the controller's ledger (`progress.md`) and the verified list (`FINDINGS.md`). Bases:
+`w2/review-base` (`7ee87b9fe`) for K1–K5; `w2/review-base-2` (after the A9 fix wave) for K6 and S1–S8.
+Lesson: re-check every lane's branch tip for new commits immediately before tagging a review base — A9
+reopened for a fix wave after its merge and the first tag missed 21 commits.
+After the fix-wave merge: site-kit 167/173 (6 skip), site-editor 37/37, frontend 3377/0 fail, lint 0
+errors, build ok; the fix wave's Python files and site render/publish/thumbnails/A9 scenarios green; Lane B
+scenario `test_a_a_real_site_turn_end_to_end` updated for A9's new brand.md "classes" column (`ca2c66702`).
