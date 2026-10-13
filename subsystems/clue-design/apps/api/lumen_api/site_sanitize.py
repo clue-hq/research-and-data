@@ -1,6 +1,6 @@
 """The published-site cleaner (Wave 2 Contract 3): strip, never refuse.
 
-Every published, exported, thumbnailed or printed Puck site page passes through
+Every published or thumbnailed Puck site page passes through
 :func:`sanitize_site_html` — the whole page (ruling 2026-10-11): agent sections, the seller's
 clones and our own sections alike. Published sites are script-free. What goes, and why:
 

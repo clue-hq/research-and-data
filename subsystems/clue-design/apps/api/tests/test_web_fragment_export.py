@@ -1,26 +1,21 @@
-"""A cloned section through EXPORT and PUBLISH (clone-fidelity F1.5).
+"""A cloned section through PUBLISH (clone-fidelity F1.5).
 
 Tasks 7 and 8 made a fragment render, in flow and personalized, on both PREVIEW paths. This
-file is the other half of the phase's acceptance matrix: the two DELIVERY paths, where a page
-stops being a preview and becomes bytes somebody else holds.
+file is the other half of the phase's acceptance matrix: the DELIVERY path, where a page stops
+being a preview and becomes bytes somebody else holds. (It covered the ZIP export too until the
+founder ruling of 2026-10-13 removed every web/site export: publishing is the only delivery.)
 
-Three things have to be true of both of them, and each is a different kind of failure when it
-is not:
+Three things have to be true of it, and each is a different kind of failure when it is not:
 
 1. **The section renders** — same substituted markup as the preview, not the placeholder. A
-   fragment that previews and then exports as "Cloned section unavailable" is the whole feature
-   failing at the last step.
+   fragment that previews and then publishes as "Cloned section unavailable" is the whole
+   feature failing at the last step.
 2. **Its CSS is in the head, ahead of the compiled sheet** — an unstyled clone is worse than no
    clone, and the compiled-utility tie-break is the plan's ruling, so it is pinned against a
-   REAL compiled ``site.css`` here rather than against the document's own class tokens (which is
-   all a preview has).
-3. **Every byte it displays travels with it** — the artifact's own rehosted assets AND anything
-   bound into an asset slot. A zip whose hero image 404s from the filesystem is a broken
-   deliverable that looks fine in review.
-
-The same widening closes the recorded background-image gap: the export asset walk read IMAGE
-NODES only, so a section painted with `background.asset_id` — the document's own styling, the
-same class of reference — never put its bytes in the zip either.
+   REAL compiled sheet here rather than against the document's own class tokens (which is all a
+   preview has).
+3. **Every byte it displays is named and readable** — the artifact's own rehosted assets AND
+   anything bound into an asset slot, on the digest route the page origin serves.
 """
 
 from __future__ import annotations
@@ -28,7 +23,6 @@ from __future__ import annotations
 import io
 import json
 import re
-import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +43,8 @@ from lumen_api.fragments import (
 )
 from lumen_api.fragments.slots import SlotSpec
 from lumen_api.main import create_app
-from lumen_api.web_export import build_export_bundle
+from lumen_api.public_address import PublicSiteAddress
+from lumen_api.web_export import build_publish_package
 
 CLONE_HERO_URL = "https://clone.example/hero.png"
 CLONE_LOGO_URL = "https://clone.example/logo.png"
@@ -187,18 +182,6 @@ def _seed(client: TestClient, web_doc: dict[str, Any]) -> dict:
     return document
 
 
-def _export(client: TestClient, document_id: str) -> tuple[dict[str, bytes], str, dict]:
-    response = client.get(f"/documents/{document_id}/web/export")
-    assert response.status_code == 200, response.text
-    archive = zipfile.ZipFile(io.BytesIO(response.content))
-    files = {name: archive.read(name) for name in archive.namelist()}
-    return (
-        files,
-        files["index.html"].decode("utf-8"),
-        json.loads(files["manifest.json"].decode("utf-8")),
-    )
-
-
 def _publish(
     client: TestClient, document_id: str, workspace_id: str, slug: str
 ) -> tuple[str, dict]:
@@ -207,6 +190,13 @@ def _publish(
     )
     assert published.status_code == 200, published.text
     return published_html(workspace_id, slug), published_manifest(workspace_id, slug)
+
+
+def _compiled_sheet(html: str) -> str:
+    """The page's compiled Tailwind sheet, which a publish INLINES (no external stylesheet)."""
+    match = re.search(r'<style id="lumen-static-css">(.*?)</style>', html, re.S)
+    assert match is not None, "the published page carries no compiled sheet"
+    return match.group(1)
 
 
 def _fragment_region(html: str, fragment_id: str) -> str:
@@ -234,120 +224,26 @@ def _fragment_region(html: str, fragment_id: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# 1 — the export zip
+# 1 — a dead pin
 # --------------------------------------------------------------------------- #
 
 
-def test_the_export_zip_renders_the_fragment_and_carries_every_byte_it_shows(
+def test_a_dead_fragment_pin_still_publishes_and_says_so(
     client: TestClient, workspace_id: str
 ) -> None:
-    hero_digest = _register(client, _png((10, 20, 30)))
-    logo_digest = _register(client, _png((40, 50, 60)))
-    artifact = _mint_fragment(
-        client,
-        workspace_id,
-        rehosted={CLONE_HERO_URL: hero_digest, CLONE_LOGO_URL: logo_digest},
-    )
-    document = _seed(
-        client,
-        _web_doc(
-            "doc_export",
-            {
-                "id": "clone",
-                "kind": "fragment",
-                "fragment_id": artifact.fragment_id,
-                "classes": "w-full",
-                "slots": {"headline": {"text": ACCOUNT_HEADLINE}},
-            },
-        ),
-    )
+    """Fail-soft, exactly as the preview paths are: one dead pin must not cost the page.
 
-    files, html, manifest = _export(client, document["id"])
-
-    # 1. the section rendered, substituted, not a placeholder
-    assert fragment_wrapper_class(artifact.fragment_id) in html
-    assert ACCOUNT_HEADLINE in html
-    assert CLONE_HEADLINE not in html
-    assert "lumen-fragment-placeholder" not in html
-
-    # 2. its scoped CSS is in the head
-    assert f".{fragment_wrapper_class(artifact.fragment_id)} .clone-head" in html
-
-    # 3. every byte it displays is IN the zip, under a relative path the html names
-    for digest in (hero_digest, logo_digest):
-        matching = [name for name in files if name.startswith(f"assets/{digest}")]
-        assert matching, f"{digest[:12]} missing from {sorted(files)}"
-        assert matching[0] in html
-    # …and no absolute /asset-store reference survives, because a zip opened off a filesystem
-    # would resolve it against the filesystem root.
-    assert "/asset-store/" not in html
-
-    assert manifest["fragments"]["ids"] == [artifact.fragment_id]
-    assert manifest["fragments"]["missing"] == []
-    assert sorted(manifest["fragments"]["asset_digests"]) == sorted(
-        {hero_digest, logo_digest}
-    )
-
-
-def test_an_asset_bound_into_a_fragment_slot_reaches_the_zip(
-    client: TestClient, workspace_id: str
-) -> None:
-    """The other half of the gap class: bytes a fragment shows because a SLOT names them.
-
-    The artifact's own digests are one source; a slot bound to a document asset is the other,
-    and it is the one personalization actually uses — an account's logo in a cloned hero.
-    """
-    logo_digest = _register(client, _png((40, 50, 60)))
-    artifact = _mint_fragment(
-        client, workspace_id, rehosted={CLONE_HERO_URL: "0" * 64, CLONE_LOGO_URL: logo_digest}
-    )
-    account_logo = _upload_asset(client, _png((200, 30, 90)), "account-logo.png")
-    account_digest = account_logo["media"]["digest"]["value"]
-
-    document = _seed(
-        client,
-        _web_doc(
-            "doc_slot_asset",
-            {
-                "id": "clone",
-                "kind": "fragment",
-                "fragment_id": artifact.fragment_id,
-                "classes": "",
-                "slots": {"logo": {"asset": account_logo["id"]}},
-            },
-            assets={account_logo["id"]: account_logo},
-        ),
-    )
-
-    files, html, manifest = _export(client, document["id"])
-
-    assert f"assets/{account_digest}.png" in files
-    assert f"assets/{account_digest}.png" in html
-    # the clone's own logo is no longer displayed, so its bytes are not what the img names
-    assert f'src="assets/{logo_digest}' not in html
-
-    # This fixture's hero digest names bytes nobody ever stored (a purge, a half-restored
-    # backup). That is a WARNING and a kept reference, never a failed export: the rest of the
-    # page is a perfectly good deliverable, and a reader online may well still resolve it.
-    assert any("0" * 12 in warning for warning in manifest["warnings"]), manifest["warnings"]
-    assert f"/asset-store/{'0' * 64}" in html
-
-
-def test_a_dead_fragment_pin_still_exports_and_says_so(
-    client: TestClient, workspace_id: str
-) -> None:
-    """Fail-soft, exactly as the preview paths are: one dead pin must not cost the export.
-
-    Built through :func:`build_export_bundle` directly, because the F1.2 reference gate refuses
+    Built through :func:`build_publish_package` directly, because the F1.2 reference gate refuses
     to WRITE a document pinning an unresolvable fragment — which is the point. This state is
     reachable the way the gate cannot cover: a document written when the artifact existed, read
-    back after it was purged. So the export is handed exactly that: a stored document whose pin
+    back after it was purged. So the build is handed exactly that: a stored document whose pin
     no longer resolves.
     """
     dead = "frag_" + "ab" * 8
-    bundle = build_export_bundle(
+    repo = HybridRepository()
+    package = build_publish_package(
         client.app.state.core,
-        HybridRepository(),
+        repo,
         {
             "id": "doc_dead_pin",
             "title": "Cloned landing page",
@@ -358,55 +254,28 @@ def test_a_dead_fragment_pin_still_exports_and_says_so(
             ),
         },
         blobs=make_blob_store(client.app),
-        generated_at="2026-08-27T00:00:00Z",
-    )
-    html = bundle.files["index.html"].decode("utf-8")
-    manifest = json.loads(bundle.files["manifest.json"].decode("utf-8"))
-
-    assert "lumen-fragment-placeholder" in html
-    assert manifest["fragments"]["missing"] == [dead]
-    assert any(dead in warning for warning in manifest["warnings"])
-
-
-# --------------------------------------------------------------------------- #
-# 2 — the recorded background-image gap
-# --------------------------------------------------------------------------- #
-
-
-def test_a_section_background_image_reaches_the_export_zip(client: TestClient) -> None:
-    """The RECORDED gap, fixed as a class rather than as one instance.
-
-    The export asset walk used to ask IMAGE NODES only. A Section/Container painted through
-    `background.asset_id` — a registered document asset, rendered as a CSS `background-image`
-    by the engine's own typed field — was invisible to it, so its bytes never entered the zip
-    and the exported page painted nothing. The live seam is `_node_asset_ids`, which enumerates
-    every way one node names registered bytes.
-    """
-    background = _upload_asset(client, _png((9, 9, 9)), "hero-bg.png")
-    digest = background["media"]["digest"]["value"]
-    document = _seed(
-        client,
-        _web_doc(
-            "doc_background",
-            {
-                "id": "hero",
-                "kind": "section",
-                "classes": "",
-                "children": [],
-                "background": {"asset_id": background["id"], "fit": "cover"},
-            },
-            assets={background["id"]: background},
+        slug="dead-pin",
+        site_address=PublicSiteAddress(
+            origin="https://acme.pages.test",
+            site_path="/dead-pin",
+            asset_origin="https://acme.pages.test",
         ),
+        workspace_id=repo.workspace_id,
+        node_bin=client.app.state.web_export_node_bin,
     )
 
-    files, html, _manifest = _export(client, document["id"])
+    assert "lumen-fragment-placeholder" in package.html
+    assert package.manifest["fragments"]["missing"] == [dead]
+    assert any(dead in warning for warning in package.warnings)
 
-    assert f"assets/{digest}.png" in files
-    assert f"assets/{digest}.png" in html
+
+# --------------------------------------------------------------------------- #
+# 2 — which picture represents the page
+# --------------------------------------------------------------------------- #
 
 
-def test_the_og_image_is_still_the_first_image_node(client: TestClient) -> None:
-    """The widened walk changes which bytes SHIP, never which image represents the page."""
+def test_the_og_image_is_still_the_first_image_node(client: TestClient, workspace_id: str) -> None:
+    """A section's background is not the page's picture: the og:image is the first IMAGE node."""
     background = _upload_asset(client, _png((9, 9, 9)), "hero-bg.png")
     hero = _upload_asset(client, _png((240, 120, 10)), "hero.png")
     document = _seed(
@@ -425,7 +294,7 @@ def test_the_og_image_is_still_the_first_image_node(client: TestClient) -> None:
         ),
     )
 
-    _files, html, _manifest = _export(client, document["id"])
+    html, _manifest = _publish(client, document["id"], workspace_id, "og-image")
 
     og = re.search(r'<meta property="og:image" content="([^"]+)"', html)
     assert og is not None, html
@@ -467,16 +336,16 @@ def test_fragment_css_lands_before_the_compiled_sheet_and_a_real_collision_is_re
         ),
     )
 
-    files, html, manifest = _export(client, document["id"])
-    site_css = files["site.css"].decode("utf-8")
+    html, manifest = _publish(client, document["id"], workspace_id, "cascade-page")
+    site_css = _compiled_sheet(html)
 
     # The compiled sheet really does declare the colliding utility…
     assert ".text-center" in site_css
     # …the fragment's scoped rule is in the head BEFORE the sheet that outranks it (delivery
     # mode is unlayered, so this ordering IS the tie-break)…
     fragment_rule = html.index(f".{fragment_wrapper_class(artifact.fragment_id)} .text-center")
-    stylesheet_link = html.index('<link rel="stylesheet" href="site.css">')
-    assert fragment_rule < stylesheet_link
+    compiled_sheet = html.index('<style id="lumen-static-css">')
+    assert fragment_rule < compiled_sheet
     # …and the collision is REPORTED, fed the real sheet rather than the document's own tokens.
     assert any(
         artifact.fragment_id in warning and "text-center" in warning
@@ -513,7 +382,7 @@ def test_doc_custom_css_lands_after_the_fragment_css(
         ),
     )
 
-    _files, html, _manifest = _export(client, document["id"])
+    html, _manifest = _publish(client, document["id"], workspace_id, "custom-css-page")
 
     assert html.index(f".{fragment_wrapper_class(artifact.fragment_id)} .clone-head") < html.index(
         ".clone-head { color: #abcdef }"
@@ -521,7 +390,7 @@ def test_doc_custom_css_lands_after_the_fragment_css(
 
 
 # --------------------------------------------------------------------------- #
-# 4 — publish, and cross-path parity
+# 4 — publish, and parity with the editor render
 # --------------------------------------------------------------------------- #
 
 
@@ -568,13 +437,13 @@ def test_the_published_page_renders_the_fragment_and_the_manifest_lists_it(
 def test_a_published_page_says_when_a_cloned_asset_has_no_bytes(
     client: TestClient, workspace_id: str
 ) -> None:
-    """The publish path must be as loud as the export path about the same defect.
+    """The publish path must be loud about bytes a cloned section names and nobody holds.
 
     An artifact is immutable, but the bytes it names are not immortal: a DSAR erasure, a purge,
     a half-restored backup. Minted with bytes, published without them, the page renders a broken
     image — and the publish path used to say NOTHING, because it copies no files and therefore
     never touched the blobs at all. A clean manifest over a broken page is worse than a broken
-    page, so both paths now sweep custody before they build, and both report the same finding.
+    page, so the publish build sweeps custody before it builds and reports the finding.
     """
     hero_digest = _register(client, _png((10, 20, 30)))
     logo_digest = _register(client, _png((40, 50, 60)))
@@ -611,19 +480,18 @@ def test_a_published_page_says_when_a_cloned_asset_has_no_bytes(
     assert hero_digest not in str(manifest["fragments"]["missing_asset_digests"])
 
 
-def test_the_fragment_region_is_identical_across_render_export_and_publish(
+def test_the_fragment_region_is_identical_across_render_and_publish(
     client: TestClient, workspace_id: str
 ) -> None:
-    """The phase acceptance's delivery half: ONE document, ONE artifact, three paths.
+    """The phase acceptance's delivery half: ONE document, ONE artifact, two paths.
 
-    "Same" is defined here rather than assumed. The three paths differ in exactly two ways by
+    "Same" is defined here rather than assumed. The two paths differ in exactly two ways by
     construction, and both are frame, not content:
 
-    * asset URLs — the export rewrites them to relative `assets/<digest>.<ext>`, the publish
-      serves `/asset-store/<digest>`, the render route serves an absolute origin. Every one of
-      them names the SAME digest, so the digest is what is compared.
+    * asset URLs — the publish serves `/asset-store/<digest>`, the render route serves an
+      absolute origin. Both name the SAME digest, so the digest is what is compared.
     * the editor's instrumentation — so the render route is asked for `mode=delivery`, which is
-      the frame both delivery paths use.
+      the frame the publish uses.
 
     Everything else — the wrapper class, the node's utility classes, the substituted slot values,
     the artifact's markup byte for byte — must be identical, or a clone means something
@@ -656,7 +524,6 @@ def test_the_fragment_region_is_identical_across_render_export_and_publish(
     )
     account_digest = account_logo["media"]["digest"]["value"]
 
-    _files, export_html, _manifest = _export(client, document["id"])
     publish_html, _manifest = _publish(client, document["id"], workspace_id, "parity-page")
     rendered = client.get(
         f"/documents/{document['id']}/web/render", params={"mode": "delivery"}
@@ -673,11 +540,10 @@ def test_the_fragment_region_is_identical_across_render_export_and_publish(
             )
         return region
 
-    assert canonical(export_html) == canonical(publish_html)
-    assert canonical(export_html) == canonical(render_html)
+    assert canonical(publish_html) == canonical(render_html)
     # …and the comparison is not vacuous: the region really carries the personalized content.
-    assert ACCOUNT_HEADLINE in canonical(export_html)
-    assert f"<asset:{account_digest[:12]}>" in canonical(export_html)
+    assert ACCOUNT_HEADLINE in canonical(publish_html)
+    assert f"<asset:{account_digest[:12]}>" in canonical(publish_html)
 
 
 # --------------------------------------------------------------------------- #
@@ -745,8 +611,8 @@ def test_an_unreadable_payload_degrades_on_every_path_and_never_500s(
     """`parse_fragment_payload` refuses fail-closed — correctly. Nothing CAUGHT that refusal.
 
     The resolver caught `NotFoundError` only, so a blob that exists and cannot be read raised
-    `FragmentRefused` straight through the render route (500), the export (500), the publish
-    (500) and the agent turn's composition. The module's own promise is that an artifact which
+    `FragmentRefused` straight through the render route (500), the publish (500) and the agent
+    turn's composition. The module's own promise is that an artifact which
     will not resolve becomes a placeholder and a loud diagnostic, and it applies whether the
     bytes are absent or unreadable.
     """
@@ -769,19 +635,14 @@ def test_an_unreadable_payload_degrades_on_every_path_and_never_500s(
     assert rendered.status_code == 200, rendered.text
     assert "lumen-fragment-placeholder" in rendered.json()["html"]
 
-    # 2. the export zip
-    _files, html, manifest = _export(client, document["id"])
-    assert "lumen-fragment-placeholder" in html
-    assert manifest["fragments"]["missing"] == [fragment_id]
-
-    # 3. the published page
+    # 2. the published page
     published, publish_manifest = _publish(
         client, document["id"], workspace_id, f"unreadable-{len(payload)}"
     )
     assert "lumen-fragment-placeholder" in published
     assert publish_manifest["fragments"]["missing"] == [fragment_id]
 
-    # 4. the agent turn's composition — the same resolver, called where the database is
+    # 3. the agent turn's composition — the same resolver, called where the database is
     from lumen_api.fragments.render import build_fragment_render_package
 
     package = build_fragment_render_package(
@@ -833,8 +694,8 @@ def test_a_class_that_only_the_clone_carries_does_not_enter_the_documents_styles
         ),
     )
 
-    files, html, _manifest = _export(client, document["id"])
-    site_css = files["site.css"].decode("utf-8")
+    html, _manifest = _publish(client, document["id"], workspace_id, "scan-page")
+    site_css = _compiled_sheet(html)
 
     # The clone-only utility is NOT in the document's sheet…
     assert ".mt-24" not in site_css
@@ -861,7 +722,7 @@ def test_the_cascade_report_no_longer_counts_utilities_our_own_scan_invented(
             {"id": "clone", "kind": "fragment", "fragment_id": artifact.fragment_id},
         ),
     )
-    _files, _html, manifest = _export(client, document["id"])
+    _html, manifest = _publish(client, document["id"], workspace_id, "scan-noise-page")
     assert not [
         warning for warning in manifest["warnings"] if "mt-24" in warning
     ], manifest["warnings"]
@@ -870,7 +731,7 @@ def test_the_cascade_report_no_longer_counts_utilities_our_own_scan_invented(
 def test_a_page_with_no_cloned_sections_is_not_rendered_a_second_time() -> None:
     """F3.4, the guard the F2 wave deferred. The second render exists only to take fragments OUT,
     so on a document that pins none it returns the html already in hand — and asking the engine
-    for it costs a whole extra round trip on every export and publish of every ordinary page."""
+    for it costs a whole extra round trip on every publish of every ordinary page."""
     from lumen_api.web_export import _document_only_html
 
     class _CountingCore:

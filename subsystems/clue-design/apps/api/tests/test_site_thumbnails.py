@@ -400,3 +400,37 @@ def test_a_core_error_from_the_site_arm_is_labelled_render_failed(client: TestCl
     assert response.status_code == 502, response.text
     assert response.json()["detail"] == {"code": "thumbnail.render_failed", "message": "the helper process died"}
     assert cached_row("site_thumb_core_error", 0) is None
+
+
+def test_the_card_inliner_turns_every_stored_reference_into_its_bytes_and_keeps_a_missing_one() -> None:
+    """The card is captured from a document with no origin, so every `/asset-store/<digest>` it
+    names, in markup and in CSS, has to carry its own bytes (``web_pdf.inline_asset_store_refs``,
+    moved here from the retired PDF-export suite). A digest the store lacks stays as it was."""
+    from lumen_api.database import NotFoundError
+    from lumen_api.web_pdf import inline_asset_store_refs
+
+    held, also_held, gone = "a" * 64, "b" * 64, "c" * 64
+    reads: list[str] = []
+
+    def read_blob(digest: str) -> tuple[str, bytes]:
+        reads.append(digest)
+        if digest == gone:
+            raise NotFoundError("design_blob", digest)
+        return "image/png", b"\x89PNG-not-really"
+
+    html = (
+        f'<img src="/asset-store/{held}">'
+        f'<div style="background-image:url(/asset-store/{also_held})"></div>'
+        f'<img src="/asset-store/{held}">'
+        f'<img src="/asset-store/{gone}">'
+    )
+    out, missing = inline_asset_store_refs(html, read_blob)
+
+    encoded = base64.b64encode(b"\x89PNG-not-really").decode("ascii")
+    assert f'src="data:image/png;base64,{encoded}"' in out
+    assert f"url(data:image/png;base64,{encoded})" in out
+    assert f"/asset-store/{held}" not in out and f"/asset-store/{also_held}" not in out
+    assert f'src="/asset-store/{gone}"' in out
+    assert missing == [gone]
+    # The logo case: the same digest twice costs one read.
+    assert reads == [held, also_held, gone]

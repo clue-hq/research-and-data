@@ -1,20 +1,19 @@
 """Builders that turn a stored Puck site into something people see: the gallery thumbnail (Task
-18), the publish package (Task 20), and the ZIP and PDF exports (Task 22). Every one renders
-through ``site_render.render_site`` (agent code only inside the hardened page) and cleans the
-result with ``site_sanitize.sanitize_site_html`` before anything sees it.
+18) and the publish package (Task 20). Both render through ``site_render.render_site`` (agent code
+only inside the hardened page) and clean the result with ``site_sanitize.sanitize_site_html``
+before anything sees it. A site has no ZIP or PDF export (founder ruling 2026-10-13: hosting on
+the platform is the only delivery).
 """
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Sequence
 from typing import Any
 
 from clue_design.publishes import delivery_csp
 
-from . import web_export, web_pdf
-from .database import NotFoundError
+from . import web_export
 from .design_store import CustodyState
 from .public_address import PublicSiteAddress
 from .site_doc_validate import SiteDocumentInvalid, check_site_document
@@ -77,7 +76,6 @@ def _section_not_approved(label: str | None) -> str:
 
 
 _ASSET_REF = re.compile(r"/asset-store/([0-9a-f]{64})")
-_CSP_FILE_DIRECTIVES = frozenset({"style-src", "img-src", "font-src", "media-src"})
 
 
 class SitePublishRefused(Exception):
@@ -121,16 +119,9 @@ def gated_brand(brand: JsonObject, repo: Any, blobs: Any) -> tuple[JsonObject, A
     return {**brand, "fonts": fonts}, gate
 
 
-def site_delivery_csp(*, meta: bool, static_bundle: bool = False) -> str:
-    """The site policy; ``static_bundle`` adds ``file:`` where the export ZIP loads its own files
-    from disk (an opaque origin that ``'self'`` does not match), as web_export._delivery_csp does."""
-    policy = delivery_csp(meta=meta, delivery=SITE_DELIVERY)
-    if not static_bundle:
-        return policy
-    return "; ".join(
-        directive + " file:" if directive.split(" ", 1)[0] in _CSP_FILE_DIRECTIVES else directive
-        for directive in policy.split("; ")
-    )
+def site_delivery_csp(*, meta: bool) -> str:
+    """The site policy (``clue_design.publishes.delivery_csp`` for ``delivery="site"``)."""
+    return delivery_csp(meta=meta, delivery=SITE_DELIVERY)
 
 
 def _page_title(site: JsonObject, route: str) -> str:
@@ -240,103 +231,3 @@ def build_site_publish_package(
         warnings=warnings,
         pages=pages,
     )
-
-
-_EXTENSION_BY_MEDIA = {
-    "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif",
-    "image/avif": "avif", "image/svg+xml": "svg", "video/mp4": "mp4",
-    "font/woff2": "woff2", "font/woff": "woff", "font/ttf": "ttf", "font/otf": "otf",
-}
-
-
-def _export_head() -> str:
-    return (
-        '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f'<meta http-equiv="Content-Security-Policy" content="{web_export._escape_attr(site_delivery_csp(meta=True, static_bundle=True))}">\n'
-    )
-
-
-def build_site_export_bundle(
-    repo: Any,
-    document: JsonObject,
-    *,
-    blobs: Any,
-    brand: JsonObject,
-    sections: Sequence[SectionModule],
-    generated_at: str,
-    node_bin: str = "node",
-) -> web_export.ExportBundle:
-    """A self-contained static copy of the site: one folder per page, every stored byte it names
-    under assets/, links in folder form, the site policy with ``file:`` for its own files."""
-    site = document["scene"]
-    brand, gate = gated_brand(brand, repo, blobs)
-    render = render_site(site, brand, sections, base_path="", node_bin=node_bin)
-    routes = [page.route for page in render.pages]
-    files: dict[str, bytes] = {}
-    warnings = [*gate.warnings, *render.warnings]
-    copied: dict[str, str | None] = {}
-
-    def asset_path(digest: str) -> str | None:
-        if digest not in copied:
-            try:
-                media_type, data = blobs.read_blob(digest)
-            except NotFoundError:
-                copied[digest] = None
-                warnings.append(f"image or font {digest[:12]} is missing from the asset store; the export keeps its reference")
-            else:
-                path = f"assets/{digest}.{_EXTENSION_BY_MEDIA.get(media_type.split(';')[0].strip(), 'bin')}"
-                files[path] = data
-                copied[digest] = path
-        return copied[digest]
-
-    pages: list[JsonObject] = []
-    for page in render.pages:
-        html = web_export.rewrite_zip_links(sanitize_site_html(site_page_html(page, render.css)).html, routes)
-        prefix = web_export._relative_prefix(page.route)
-
-        def repoint(match: "re.Match[str]", prefix: str = prefix) -> str:
-            path = asset_path(match.group(1))
-            return f"{prefix}{path}" if path else match.group(0)
-
-        html = web_export._inject_before_head_close(_ASSET_REF.sub(repoint, html), _export_head())
-        path = web_export._zip_page_path(page.route)
-        files[path] = html.encode("utf-8")
-        pages.append({"route": page.route, "path": path})
-    files["manifest.json"] = json.dumps(
-        {
-            "schema_version": 1,
-            "kind": "export",
-            "delivery": SITE_DELIVERY,
-            "document_id": document["id"],
-            "doc_version": document["current_version"],
-            "generated_at": generated_at,
-            "pages": pages,
-            "assets": sorted(path for path in copied.values() if path),
-            "warnings": warnings,
-            **web_export._font_manifest_entries(gate),
-        },
-        indent=2,
-        sort_keys=True,
-    ).encode("utf-8")
-    return web_export.ExportBundle(files=files, warnings=warnings)
-
-
-def build_site_pdf(
-    repo: Any,
-    document: JsonObject,
-    *,
-    blobs: Any,
-    brand: JsonObject,
-    sections: Sequence[SectionModule],
-    node_bin: str = "node",
-) -> bytes:
-    """Every page of the site printed at the tablet layout, in route order (web_pdf's posture)."""
-    brand, _gate = gated_brand(brand, repo, blobs)
-    render = render_site(document["scene"], brand, sections, base_path="", node_bin=node_bin)
-    cache: dict[str, str | None] = {}
-    htmls: list[str] = []
-    for page in render.pages:
-        cleaned = sanitize_site_html(site_page_html(page, render.css)).html
-        inlined, _missing = inline_asset_store_refs(cleaned, blobs.read_blob, cache=cache)
-        htmls.append(inlined)
-    return web_pdf.render_pages_pdf(htmls, runtime=None, hardened=True)

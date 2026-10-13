@@ -553,27 +553,6 @@ def test_the_batch_publishes_only_what_it_derived(
         assert repo.require_document(row["document_id"])["account_id"] == row["account_id"]
 
 
-def test_an_export_of_the_template_warns_loudly_rather_than_refusing(
-    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
-) -> None:
-    """The split, ruled: refuse where a VISITOR would see the markers, warn where a HUMAN is
-    looking. An export is an inspection surface — refusing it would remove the only way to look
-    at a template's package."""
-    from lumen_api import web_export
-
-    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
-    document = HybridRepository(workspace_id=workspace_id).require_document(template)
-    bundle = web_export.build_export_bundle(
-        client.app.state.core,
-        HybridRepository(workspace_id=workspace_id),
-        document,
-        blobs=DesignBlobStore(design_storage, workspace_id),
-        generated_at="2026-08-29T00:00:00Z",
-        node_bin=client.app.state.web_export_node_bin,
-    )
-    assert any("{{account.name}}" in warning for warning in bundle.warnings)
-
-
 def test_the_marker_guard_is_the_account_namespace_and_nothing_wider() -> None:
     """A cloned site's own markup can legitimately carry `{{ }}` (a template engine's braces left
     in static HTML). The guard reads OUR grammar — `{{account.…}}` — and nothing else."""
@@ -968,36 +947,6 @@ def test_the_composed_header_can_shrink_and_caps_the_target_mark() -> None:
 
     assert "min-w-0 flex-wrap" in html
     assert "max-w-40" in html
-
-
-def test_an_exported_stamped_document_carries_the_robots_meta(
-    client: TestClient, workspace_id: str, design_storage: FsStorage, tmp_path: Path
-) -> None:
-    """F4 wave item 7 (final-review NEW-1 — the noindex law's fifth surface): a stamped ABM
-    page exported and self-hosted was indexable; the zip's index.html now carries the meta."""
-    import io
-    import zipfile
-
-    template = _abm_template(client, workspace_id, design_storage, tmp_path / "cache")
-    account = _account(client, "Acme Health")
-    derived = client.post(
-        f"/documents/{template}/web/derive", json={"account_id": account}
-    ).json()
-    doc_id = derived["document_id"]
-    assert (
-        client.put(f"/documents/{doc_id}/web-noindex", json={"noindex": True}).status_code
-        == 200
-    )
-
-    exported = client.get(f"/documents/{doc_id}/web/export")
-    assert exported.status_code == 200, exported.text
-    from lumen_api.web_export import ROBOTS_NOINDEX_META
-
-    with zipfile.ZipFile(io.BytesIO(exported.content)) as bundle:
-        index = bundle.read("index.html").decode()
-        manifest = bundle.read("manifest.json").decode()
-    assert ROBOTS_NOINDEX_META in index
-    assert "stamped noindex" in manifest
 
 
 def test_the_bind_door_refuses_the_walks_sprite_and_stamps_nothing(
