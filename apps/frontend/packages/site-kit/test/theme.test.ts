@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BrandData } from "../src/brand";
 import { colorOf } from "../src/brand-values";
+import { buildCatalog } from "../src/catalog";
+import { lintOptionsFor } from "../src/check-section";
 import { buttonLooks, elementStyle, lookNamed } from "../src/looks";
+import { surfaceChoices } from "../src/surfaces";
 import { tailwindThemeCss, themeCss } from "../src/theme";
 import { kitBrand } from "./fixtures/kits";
 
@@ -37,9 +40,11 @@ test("a filled look that would vanish on a dark surface takes the light version 
   const brand = kitBrand("conduit.minted");
   const index = lookNamed(brand, "button", "solid.28241e")!.index;
   const css = themeCss(brand);
-  assert.match(ruleOf(css, ".bg-surface-band-28241e"), new RegExp(`--bs-${index}-fill:var\\(--brand-button-light-fill\\)`));
+  // Of the page (#FFFFFF) and the inverse surface (#121212), the page stands out from the #28241E band.
+  const band = ruleOf(css, ".bg-surface-band-28241e");
+  assert.match(band, new RegExp(`--bs-${index}-fill:var\\(--brand-surface-page\\)`));
+  assert.match(band, new RegExp(`--bs-${index}-label:var\\(--brand-on-surface-page\\)`));
   assert.match(ruleOf(css, ".bg-surface-page"), new RegExp(`--bs-${index}-fill:initial`));
-  assert.match(ruleOf(css, ".brand-root"), /--brand-button-light-fill:var\(--brand-surface-page\)/);
 });
 
 test("an outline look on a dark band takes the band's text colour", () => {
@@ -134,4 +139,81 @@ test("the Tailwind mapping covers every surface the kit has, the kit's spacing a
     "--spacing-card-padding: var(--brand-space-card-padding);",
   ]) assert.ok(css.includes(line), line);
   assert.equal(css.split("--color-surface-page:").length, 2);
+});
+
+// E1: kit strings reach a <style> element; none may close it or leave its CSS string or rule.
+const HOSTILE_FAMILY = 'A"; } </style><script>alert(1)</script>';
+type FontKit = {
+  tokens: { typography: Record<string, { value: { default: { font_family: string } } }>; colors: Record<string, unknown> };
+  assets: { fonts: Record<string, { fallback_stack: string[] }> };
+};
+
+test("E1: a font family cannot close the stylesheet, in @font-face or in a font stack", () => {
+  const brand = structuredClone(kitBrand("probe.minted"));
+  const kit = brand.kit as FontKit;
+  kit.tokens.typography["type.headline"].value.default.font_family = HOSTILE_FAMILY;
+  kit.assets.fonts.brand.fallback_stack = ["Arial", "x</style><img src=x onerror=alert(1)>", "sans-serif"];
+  brand.fonts = [{ family: HOSTILE_FAMILY, weight: 400, style: "normal", file: "/asset-store/abc123" }];
+  const css = themeCss(brand);
+  assert.doesNotMatch(css, /<\/style/i);
+  assert.doesNotMatch(css, /<script/i);
+  const face = /@font-face\{font-family:"([^"]*)";src:url\("\/asset-store\/abc123"\);/.exec(css);
+  assert.ok(face, css.split("\n")[0]);
+  assert.doesNotMatch(face[1], /[";}]/);
+  assert.equal(face[1], "A /stylescriptalert(1)/script");
+  assert.ok(css.includes('--brand-font-headline:"A /stylescriptalert(1)/script", "Arial", "x/styleimg src=x onerror=alert(1)", sans-serif;'), css);
+});
+
+test("E1: a font family that is empty once cleaned is skipped", () => {
+  const brand = structuredClone(kitBrand("probe.minted"));
+  (brand.kit as FontKit).tokens.typography["type.headline"].value.default.font_family = '"<;>"';
+  brand.fonts = [{ family: "<{}>", weight: 400, style: "normal", file: "/asset-store/abc123" }];
+  const css = themeCss(brand);
+  assert.ok(!css.includes("@font-face"), css.split("\n")[0]);
+  assert.ok(css.includes('--brand-font-headline:"Arial", sans-serif;'), css);
+});
+
+test("E1: a font face whose file is not a relative asset path is skipped whole", () => {
+  const brand = structuredClone(kitBrand("probe.minted"));
+  brand.fonts = [
+    { family: "Probe Sans", weight: 400, style: "normal", file: 'x") ; } </style>' },
+    { family: "Probe Sans", weight: 700, style: "normal", file: "/asset-store/abc123" },
+  ];
+  const css = themeCss(brand);
+  assert.doesNotMatch(css, /<\/style/i);
+  const faces = css.split("\n").filter((line) => line.startsWith("@font-face"));
+  assert.deepEqual(faces, ['@font-face{font-family:"Probe Sans";src:url("/asset-store/abc123");font-weight:700;font-style:normal;font-display:swap}']);
+});
+
+test("E1: a font face whose style or weight is not a plain CSS value is skipped whole", () => {
+  const brand = structuredClone(kitBrand("probe.minted"));
+  brand.fonts = [
+    { family: "Probe Sans", weight: 400, style: "normal}</style><script>alert(1)</script>", file: "/asset-store/abc123" },
+    { family: "Probe Sans", weight: "400;}</style>" as unknown as number, style: "normal", file: "/asset-store/abc123" },
+    { family: "Probe Sans", weight: 700, style: "italic", file: "/asset-store/abc123" },
+  ];
+  const css = themeCss(brand);
+  assert.doesNotMatch(css, /<\/style/i);
+  assert.doesNotMatch(css, /<script/i);
+  const faces = css.split("\n").filter((line) => line.startsWith("@font-face"));
+  assert.deepEqual(faces, ['@font-face{font-family:"Probe Sans";src:url("/asset-store/abc123");font-weight:700;font-style:italic;font-display:swap}']);
+});
+
+test("E1: a token key outside the engine's token-path charset reaches no selector, variable or class", () => {
+  const brand = structuredClone(kitBrand("probe.minted"));
+  (brand.kit as FontKit).tokens.colors["surface.x</style>{"] = { value: { default: { kind: "hex", value: "#123456" } } };
+  const files = buildCatalog(brand, "Seller");
+  const emitted: [string, string][] = [
+    ["themeCss", themeCss(brand)],
+    ["tailwindThemeCss", tailwindThemeCss(brand)],
+    ["surface choices", JSON.stringify(surfaceChoices(brand))],
+    ["lint options", JSON.stringify(lintOptionsFor(brand))],
+    ["brand.md", files["brand/brand.md"]],
+    ["sections.md", files["catalog/sections.md"]],
+  ];
+  for (const [where, text] of emitted) {
+    assert.ok(!text.includes("</style>") && !text.includes("x</style>{"), `${where} carries the hostile key`);
+  }
+  // The kit's real extra surface is still drawn.
+  assert.ok(themeCss(brand).includes(".bg-surface-band-014036{"));
 });

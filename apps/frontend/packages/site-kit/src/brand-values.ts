@@ -38,8 +38,24 @@ export const FALLBACKS = {
 export const COMPONENT_TOKEN_ROOTS = ["button", "link", "navlink", "card", "chip", "input", "image", "motion"] as const;
 export const isComponentToken = (name: string) => (COMPONENT_TOKEN_ROOTS as readonly string[]).includes(name.split(".")[0]);
 
+/** The engine's token-path charset. A kit's token names become CSS custom-property names and class
+ * selectors (`--brand-surface-band-014036`, `.bg-surface-band-014036`), so a name outside it is never
+ * read: tokenGroups drops it, and every read of a kit token starts there. */
+const TOKEN_PATH = /^[A-Za-z0-9_.-]+$/;
+/** Each kit's groups, read once: a kit is data, and nothing edits one in place after reading it. */
+const readGroups = new WeakMap<object, TokenGroups>();
+
 export function tokenGroups(brand: BrandData): TokenGroups {
-  return ((brand.kit as { tokens?: TokenGroups }).tokens ?? {}) as TokenGroups;
+  const raw = (brand.kit as { tokens?: unknown }).tokens;
+  if (typeof raw !== "object" || raw === null) return {};
+  let groups = readGroups.get(raw);
+  if (!groups) {
+    groups = Object.fromEntries(
+      Object.entries(raw as TokenGroups).map(([group, entries]) => [group, Object.fromEntries(Object.entries(entries ?? {}).filter(([name]) => TOKEN_PATH.test(name)))]),
+    );
+    readGroups.set(raw, groups);
+  }
+  return groups;
 }
 
 export function tokenEntry(brand: BrandData, group: string, name: string | null | undefined): TokenEntry | undefined {
@@ -120,12 +136,21 @@ export function typographyOf(brand: BrandData, name: string | null | undefined):
   };
 }
 
+/** A font family as the text of a CSS string: no quote, backslash, angle bracket, semicolon, brace
+ * or control character (a family is kept verbatim from the seller's CSS, and it is written into a
+ * <style> element), whitespace runs as one space. Empty means there is no family to write. */
+export function cssString(text: string): string {
+  return text.replace(/["'\\<>;{}\x00-\x1f\x7f]/g, "").replace(/\s+/g, " ").trim();
+}
+
 /** The family, then the kit's own fallback stack for that font; nothing invented. */
 export function fontStack(brand: BrandData, style: TypeStyle): string {
   const fonts = (brand.kit as { assets?: { fonts?: Record<string, { family?: string; fallback_stack?: string[] }> } }).assets?.fonts ?? {};
   const font = (style.asset ? fonts[style.asset] : undefined) ?? Object.values(fonts).find((f) => f.family === style.family);
-  const names = [style.family, ...(font?.fallback_stack ?? [])].filter((name, i, all) => name && all.indexOf(name) === i);
-  return names.map((name) => (/^[a-z-]+$/.test(name) ? name : `"${name.replace(/"/g, "")}"`)).join(", ");
+  const names = [style.family, ...(font?.fallback_stack ?? [])]
+    .map((name) => cssString(String(name ?? "")))
+    .filter((name, i, all) => name && all.indexOf(name) === i);
+  return names.map((name) => (/^[a-z-]+$/.test(name) ? name : `"${name}"`)).join(", ");
 }
 
 export function shadowOf(brand: BrandData, name: string | null | undefined): string | undefined {

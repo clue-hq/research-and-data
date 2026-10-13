@@ -3,7 +3,8 @@
 // Usage: npx tsx src/check-section.ts <file.tsx>
 // Prints {"ok": bool, "errors": [...]} as JSON.
 //
-// Structure is free; style is the brand's. Refused: colour values, Tailwind's own palette colours,
+// Structure is free; style is the brand's. Refused: colour values where a colour can apply (a
+// className, an SVG colour attribute; prose is never read for them), Tailwind's own palette colours,
 // Tailwind's default type sizes, families and weights, bracketed custom values for colour, type
 // or corners (layout measures such as max-w-[30ch] are fine), inline styles, imports other than
 // zod, react types and the kit, and the banned names below (page globals, network, eval, raw
@@ -70,10 +71,10 @@ const STATE_VARIANT = /^(hover|focus|focus-visible|focus-within|active|group-hov
 const MOTION_UTILITY = /^(transition(-[a-z]+)?|duration-.+|ease-.+|delay-.+|animate-.+)$/;
 const STATE_MOTION = /^-?(translate|scale|rotate|skew)(-[xy])?-|^(opacity|shadow|blur|brightness|contrast|saturate|drop-shadow)(-|$)/;
 
-/** The text of every string inside a className attribute: `className="…"`, ``className={`… ${x}`}``,
- * `className={["a", cond && "b"].join(" ")}`. These strings are classes; a section's other
- * strings (a schema's description, a default heading) are prose and never count as classes. */
-function classNameStrings(source: string): string[] {
+/** The text of every string inside the named JSX attributes: `name="…"`, ``name={`… ${x}`}``,
+ * `name={["a", cond && "b"].join(" ")}`. A section's other strings (a schema's description, a
+ * default heading, an alt text) are prose and are never read. */
+function attributeStrings(source: string, names: ReadonlySet<string>): string[] {
   const file = ts.createSourceFile("section.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const strings: string[] = [];
   const collect = (node: ts.Node) => {
@@ -83,7 +84,7 @@ function classNameStrings(source: string): string[] {
     ts.forEachChild(node, collect);
   };
   const visit = (node: ts.Node) => {
-    if (ts.isJsxAttribute(node) && node.name.getText(file) === "className") {
+    if (ts.isJsxAttribute(node) && names.has(node.name.getText(file))) {
       if (node.initializer) collect(node.initializer);
       return;
     }
@@ -92,6 +93,15 @@ function classNameStrings(source: string): string[] {
   visit(file);
   return strings;
 }
+
+/** The strings inside className attributes. These are classes; no other string counts as one. */
+const classNameStrings = (source: string) => attributeStrings(source, new Set(["className"]));
+
+/** Where a colour value can apply in a section: its classes and the SVG colour attributes. An inline
+ * style is refused whole, so prose (text, alt, title, a schema's defaults) is never read for colours. */
+const COLOUR_ATTRIBUTES: ReadonlySet<string> = new Set([
+  "className", "fill", "stroke", "color", "stopColor", "stop-color", "floodColor", "flood-color", "lightingColor", "lighting-color",
+]);
 
 /** An inline style in the code: a JSX `style` attribute (any value), or an object key named `style`
  * (`{ style: … }`, `{ "style": … }`, `{ style }`), which is how React.createElement takes one. Read
@@ -195,9 +205,13 @@ export function lint(source: string, options: LintOptions = {}): string[] {
   for (const m of source.matchAll(/import\s+(?:type\s+)?[^"']*from\s+["']([^"']+)["']/g)) {
     if (!ALLOWED_IMPORTS.has(m[1])) errors.push(`import "${m[1]}" is not allowed; a section imports only zod, react types and @/puck/agent-kit`);
   }
-  const withoutHrefs = source.replace(/href=\{?["'`][^"'`]*["'`]\}?/g, "");
-  for (const m of withoutHrefs.matchAll(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g)) errors.push(`colour value ${m[0]}; use the brand's colour tokens`);
-  for (const m of source.matchAll(/\b(rgba?|hsla?|oklch|oklab|lab|lch)\(/g)) errors.push(`colour function ${m[0]}…); use the brand's colour tokens`);
+  const colourStrings = attributeStrings(source, COLOUR_ATTRIBUTES);
+  for (const text of colourStrings) {
+    for (const m of text.matchAll(/#(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g)) errors.push(`colour value ${m[0]}; use the brand's colour tokens`);
+  }
+  for (const text of colourStrings) {
+    for (const m of text.matchAll(/\b(rgba?|hsla?|oklch|oklab|lab|lch)\(/g)) errors.push(`colour function ${m[0]}…); use the brand's colour tokens`);
+  }
   if (hasInlineStyle(source)) errors.push("inline style; style only with the brand's classes");
   const seen = new Set<string>();
   for (const token of classTokens(source)) {

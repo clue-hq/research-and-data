@@ -21,7 +21,7 @@ from lumen_api.core import CoreClient
 from lumen_ingestion import BrandEvidence, normalize_evidence
 from lumen_ingestion.capture import build_evidence
 from lumen_ingestion.capture import CaptureOutcome
-from lumen_ingestion.capture.geometry import GEOMETRY_JS, parse_geometry
+from lumen_ingestion.capture.geometry import GEOMETRY_JS, normalize_transform, parse_geometry
 from lumen_ingestion.capture.snapshot import SiteSnapshot, load_snapshot
 from lumen_ingestion.evidence import EvidencePointer, SectionBackground
 from lumen_ingestion.normalizer import _band_ink
@@ -535,3 +535,43 @@ def test_colour_type_and_asset_extraction_are_byte_stable() -> None:
             golden["tokens"].pop(group)
         assert kit == golden, name
         assert produced.ingestion_report == expected["ingestion_report"], name
+
+
+# --------------------------------------------------------------------------- #
+# Transforms as evidence (Wave 2 A9 FX-C2 fix round 1)
+# --------------------------------------------------------------------------- #
+
+
+def test_a_transform_leftover_is_no_transform() -> None:
+    """An entrance held one millisecond before its end reads a sub-pixel leftover; rounded, it is the
+    identity, and the identity is no transform."""
+    assert normalize_transform("matrix(1, 0, 0, 1, 0, 1.88911e-06)") == "none"
+    assert normalize_transform("matrix(1, 0, 0, 1, 0, 0.000334674)") == "none"
+    assert normalize_transform("matrix(1.0000003, 0, 0, 1.0000003, 0, 0)") == "none"
+    assert normalize_transform("matrix(1, -1e-07, 1e-07, 1, 0, 0)") == "none"
+    assert normalize_transform("matrix(1, 0, 0, 1, 0, 0)") == "none"
+    identity_3d = "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)"
+    assert normalize_transform(identity_3d) == "none"
+    assert normalize_transform("matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.001, 0, 0.004, 1)") == "none"
+
+
+def test_a_real_transform_is_kept_as_the_browser_writes_it() -> None:
+    for value in ("matrix(1, 0, 0, 1, 0, -2)", "matrix(0.98, 0, 0, 0.98, 0, 0)", "matrix(1, 0, 0, 1, 4, 0)",
+                  "matrix(1, 0, 0, 1, 0, 24)", "matrix(-1, 0, 0, -1, 0, 0)"):
+        assert normalize_transform(value) == value, value
+    # Precision beyond the rounding goes; no "-0" and no trailing zeros are written.
+    assert normalize_transform("matrix(0.707107, 0.707107, -0.707107, 0.707107, 0, 0)") == (
+        "matrix(0.7071, 0.7071, -0.7071, 0.7071, 0, 0)"
+    )
+    assert normalize_transform("matrix(1.02996, 0, 0, 1.02996, 0, 0)") == "matrix(1.03, 0, 0, 1.03, 0, 0)"
+    assert normalize_transform("matrix(0.5, -0.00001, 0, 0.5, 12.3456, -0.001)") == "matrix(0.5, 0, 0, 0.5, 12.35, 0)"
+    assert normalize_transform(
+        "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -0.00416667, 0, 4.0000001, -12.345678, 1)"
+    ) == "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -0.0042, 0, 4, -12.35, 1)"
+
+
+def test_anything_else_passes_through_unchanged() -> None:
+    for value in (None, "none", "", "translateY(4px)", "matrix(1, 0, 0, 1, 0)", "matrix(1, 0, 0, 1, 0, nan)",
+                  "matrix(a, b, c, d, e, f)", 3):
+        assert normalize_transform(value) == value, value
+

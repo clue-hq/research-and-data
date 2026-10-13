@@ -38,7 +38,7 @@ test("colour values, palette colours, default type and custom brackets are refus
 
 test("inline style, raw colour values and other imports are refused", () => {
   assert.ok(lint(EXAMPLE.replace("<p className", "<p style={{ color: 'red' }} className")).some((e) => e.includes("inline style")));
-  assert.ok(lint(EXAMPLE.replace("max-w-[30ch]", "max-w-[30ch]\" data-c=\"#ff0000")).some((e) => e.includes("colour value #ff0000")));
+  assert.ok(lint(EXAMPLE.replace("max-w-[30ch]", "max-w-[30ch]\" fill=\"#ff0000")).some((e) => e.includes("colour value #ff0000")));
   assert.ok(lint(`import x from "lodash";\n${EXAMPLE}`).some((e) => e.includes('import "lodash"')));
 });
 
@@ -188,6 +188,29 @@ test("prose that mentions motion is never a class", () => {
     'attribution: z.string().describe("A smooth transition built for ease-of-use"),\n  heading: z.string().default("Make the transition to value-based care"),',
   );
   assert.deepEqual(lint(prose, options), []);
+});
+
+test("prose with a number sign or a bracket is never a colour: text, attributes, schema defaults", () => {
+  const cases: [string, string][] = [
+    ["JSX text: an address", EXAMPLE.replace("{props.attribution}", "Suite #300, Main St")],
+    ["JSX text: a hashtag", EXAMPLE.replace("{props.attribution}", "A #decade of results")],
+    ["JSX text: a bracket", EXAMPLE.replace("{props.attribution}", "Visit our lab(s)")],
+    ["a schema default", EXAMPLE.replace("attribution: z.string(),", 'attribution: z.string().default("Booth #A12"),')],
+    ["alt", EXAMPLE.replace("</kit.Shell>", '<kit.Image src="/asset-store/x" alt="Booth #A12" /></kit.Shell>')],
+    ["title", EXAMPLE.replace("<p className", '<p title="Call us: #300" className')],
+    ["a link to an anchor", EXAMPLE.replace("</kit.Shell>", '<kit.Link href="#abc123">Jump</kit.Link></kit.Shell>')],
+  ];
+  for (const [where, source] of cases) assert.deepEqual(lint(source), [], where);
+});
+
+test("a colour value is refused wherever a colour can apply: className and the SVG colour attributes", () => {
+  const svg = (element: string) => EXAMPLE.replace("</kit.Shell>", `<svg>${element}</svg></kit.Shell>`);
+  assert.deepEqual(lint(svg('<path fill="#7C4CFF" />')), ["colour value #7C4CFF; use the brand's colour tokens"]);
+  assert.deepEqual(lint(svg('<stop stopColor="rgb(1,2,3)" />')), ["colour function rgb(…); use the brand's colour tokens"]);
+  const bracket = lint(withClass("mt-6 text-[#fff]"));
+  assert.ok(bracket.includes('class "text-[#fff]" is a custom colour, type or corner value; use the brand\'s tokens'), bracket.join("; "));
+  const template = lint(EXAMPLE.replace('className="mt-6 font-body text-body text-ink-secondary"', 'className={`x ${props.quote ? "bg-[#000]" : ""}`}'));
+  assert.ok(template.includes("colour value #000; use the brand's colour tokens"), template.join("; "));
 });
 
 test("motion classes are still refused wherever className holds them", () => {

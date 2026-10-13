@@ -3838,22 +3838,22 @@
     "motion": [
      {
       "delay": null,
-      "duration": "motion.button.outline-0d2b25.duration-1",
-      "easing": "motion.button.outline-0d2b25.easing-1",
+      "duration": "motion.button.shared-b23804.duration",
+      "easing": "motion.button.shared-b5340a.easing",
       "property": "background-color",
       "target": "self"
      },
      {
       "delay": null,
-      "duration": "motion.button.outline-0d2b25.duration-2",
-      "easing": "motion.button.outline-0d2b25.easing-2",
+      "duration": "motion.button.shared-572015.duration",
+      "easing": "motion.button.shared-785354.easing",
       "property": "transform",
       "target": "self"
      },
      {
-      "delay": "motion.button.outline-0d2b25.delay-3",
-      "duration": "motion.button.outline-0d2b25.duration-3",
-      "easing": "motion.button.outline-0d2b25.easing-2",
+      "delay": "motion.button.shared-09919f.delay",
+      "duration": "motion.button.shared-eb8831.duration",
+      "easing": "motion.button.shared-785354.easing",
       "property": "box-shadow",
       "target": "self"
      }
@@ -3861,14 +3861,14 @@
     "probed": "pointer",
     "rest": {
      "border": "button.outline-0d2b25.border",
-     "border-style": "button.outline-0d2b25.border-style",
+     "border-style": "button.shared-b52b21.border-style",
      "border-width": "stroke.width.card",
-     "case": "button.outline-0d2b25.case",
-     "cursor": "button.outline-0d2b25.cursor",
-     "decoration": "button.outline-0d2b25.decoration",
-     "font": "button.outline-0d2b25.font",
+     "case": "button.shared-f9b1d5.case",
+     "cursor": "button.shared-af29ac.cursor",
+     "decoration": "button.shared-357cd5.decoration",
+     "font": "button.shared-08dc88.font",
      "gap": "space.2",
-     "height": "button.outline-0d2b25.height",
+     "height": "button.shared-341c88.height",
      "label": "button.outline-0d2b25.label",
      "padding-bottom": "space.3",
      "padding-left": "space.stack.loose",
@@ -3879,25 +3879,25 @@
     "source": "website:https://fixture.test/",
     "states": {
      "disabled": {
-      "cursor": "button.outline-0d2b25.disabled.cursor",
-      "opacity": "button.outline-0d2b25.disabled.opacity"
+      "cursor": "button.shared-c4f388.cursor",
+      "opacity": "button.shared-98a9e9.opacity"
      },
      "focus": {
-      "outline": "button.outline-0d2b25.focus.outline",
-      "outline-offset": "button.outline-0d2b25.focus.outline-offset",
-      "outline-style": "button.outline-0d2b25.focus.outline-style",
+      "outline": "button.shared-f5a623.outline",
+      "outline-offset": "button.shared-5b200f.outline-offset",
+      "outline-style": "button.shared-0761e1.outline-style",
       "outline-width": "stroke.width.bold"
      },
      "hover": {
       "fill": "button.outline-0d2b25.hover.fill",
       "label": "text.inverse",
-      "shadow-1": "button.outline-0d2b25.hover.shadow-1"
+      "shadow-1": "button.shared-ded46d.shadow"
      },
      "pressed": {
       "fill": "button.outline-0d2b25.hover.fill",
       "label": "text.inverse",
-      "shadow-1": "button.outline-0d2b25.hover.shadow-1",
-      "transform": "button.outline-0d2b25.pressed.transform"
+      "shadow-1": "button.shared-ded46d.shadow",
+      "transform": "button.shared-409803.transform"
      }
     },
     "variant": "outline.0d2b25"
@@ -3910,7 +3910,7 @@
     "motion": [],
     "probed": "pointer",
     "rest": {
-     "decoration": "button.outline-0d2b25.decoration",
+     "decoration": "button.shared-357cd5.decoration",
      "fill": "button.solid-7c4cff.fill",
      "font": "button.solid-7c4cff.font",
      "height": "button.solid-7c4cff.height",
@@ -3948,11 +3948,11 @@
     ],
     "probed": "pointer",
     "rest": {
-     "case": "button.outline-0d2b25.case",
-     "cursor": "button.outline-0d2b25.cursor",
-     "decoration": "button.outline-0d2b25.decoration",
+     "case": "button.shared-f9b1d5.case",
+     "cursor": "button.shared-af29ac.cursor",
+     "decoration": "button.shared-357cd5.decoration",
      "fill": "button.solid-28241e.fill",
-     "font": "button.outline-0d2b25.font",
+     "font": "button.shared-08dc88.font",
      "gap": "space.2",
      "height": "button.solid-28241e.height",
      "label": "text.inverse",
@@ -3965,23 +3965,23 @@
     "source": "website:https://fixture.test/",
     "states": {
      "disabled": {
-      "cursor": "button.outline-0d2b25.disabled.cursor",
-      "opacity": "button.outline-0d2b25.disabled.opacity"
+      "cursor": "button.shared-c4f388.cursor",
+      "opacity": "button.shared-98a9e9.opacity"
      },
      "focus": {
-      "outline": "button.outline-0d2b25.focus.outline",
-      "outline-offset": "button.outline-0d2b25.focus.outline-offset",
-      "outline-style": "button.outline-0d2b25.focus.outline-style",
+      "outline": "button.shared-f5a623.outline",
+      "outline-offset": "button.shared-5b200f.outline-offset",
+      "outline-style": "button.shared-0761e1.outline-style",
       "outline-width": "stroke.width.bold"
      },
      "hover": {
-      "fill": "button.solid-28241e.hover.fill",
-      "shadow-1": "button.outline-0d2b25.hover.shadow-1",
+      "fill": "button.shared-035a4e.fill",
+      "shadow-1": "button.shared-ded46d.shadow",
       "transform": "button.solid-28241e.hover.transform"
      },
      "pressed": {
-      "fill": "button.solid-28241e.pressed.fill",
-      "shadow-1": "button.outline-0d2b25.hover.shadow-1",
+      "fill": "button.shared-023f37.fill",
+      "shadow-1": "button.shared-ded46d.shadow",
       "transform": "button.solid-28241e.hover.transform"
      }
     },
@@ -3998,29 +3998,29 @@
     "motion": [
      {
       "delay": null,
-      "duration": "motion.button.outline-0d2b25.duration-1",
-      "easing": "motion.button.outline-0d2b25.easing-1",
+      "duration": "motion.button.shared-b23804.duration",
+      "easing": "motion.button.shared-b5340a.easing",
       "property": "background-color",
       "target": "self"
      },
      {
       "delay": null,
-      "duration": "motion.button.outline-0d2b25.duration-2",
-      "easing": "motion.button.outline-0d2b25.easing-2",
+      "duration": "motion.button.shared-572015.duration",
+      "easing": "motion.button.shared-785354.easing",
       "property": "transform",
       "target": "self"
      },
      {
-      "delay": "motion.button.outline-0d2b25.delay-3",
-      "duration": "motion.button.outline-0d2b25.duration-3",
-      "easing": "motion.button.outline-0d2b25.easing-2",
+      "delay": "motion.button.shared-09919f.delay",
+      "duration": "motion.button.shared-eb8831.duration",
+      "easing": "motion.button.shared-785354.easing",
       "property": "box-shadow",
       "target": "self"
      },
      {
       "delay": null,
-      "duration": "motion.button.outline-0d2b25.duration-1",
-      "easing": "motion.button.outline-0d2b25.easing-2",
+      "duration": "motion.button.shared-b23804.duration",
+      "easing": "motion.button.shared-785354.easing",
       "property": "transform",
       "target": "icon"
      }
@@ -4028,15 +4028,15 @@
     "probed": "pointer",
     "rest": {
      "border": "text.brand",
-     "border-style": "button.outline-0d2b25.border-style",
+     "border-style": "button.shared-b52b21.border-style",
      "border-width": "stroke.width.card",
-     "case": "button.outline-0d2b25.case",
-     "cursor": "button.outline-0d2b25.cursor",
-     "decoration": "button.outline-0d2b25.decoration",
+     "case": "button.shared-f9b1d5.case",
+     "cursor": "button.shared-af29ac.cursor",
+     "decoration": "button.shared-357cd5.decoration",
      "fill": "surface.brand",
-     "font": "button.outline-0d2b25.font",
+     "font": "button.shared-08dc88.font",
      "gap": "space.2",
-     "height": "button.outline-0d2b25.height",
+     "height": "button.shared-341c88.height",
      "label": "text.inverse",
      "padding-bottom": "space.3",
      "padding-left": "space.stack.loose",
@@ -4047,25 +4047,25 @@
     "source": "website:https://fixture.test/",
     "states": {
      "disabled": {
-      "cursor": "button.outline-0d2b25.disabled.cursor",
-      "opacity": "button.outline-0d2b25.disabled.opacity"
+      "cursor": "button.shared-c4f388.cursor",
+      "opacity": "button.shared-98a9e9.opacity"
      },
      "focus": {
-      "outline": "button.outline-0d2b25.focus.outline",
-      "outline-offset": "button.outline-0d2b25.focus.outline-offset",
-      "outline-style": "button.outline-0d2b25.focus.outline-style",
+      "outline": "button.shared-f5a623.outline",
+      "outline-offset": "button.shared-5b200f.outline-offset",
+      "outline-style": "button.shared-0761e1.outline-style",
       "outline-width": "stroke.width.bold"
      },
      "hover": {
-      "fill": "button.solid-28241e.hover.fill",
+      "fill": "button.shared-035a4e.fill",
       "icon-transform": "button.solid-047464.hover.icon-transform",
-      "shadow-1": "button.outline-0d2b25.hover.shadow-1"
+      "shadow-1": "button.shared-ded46d.shadow"
      },
      "pressed": {
-      "fill": "button.solid-28241e.pressed.fill",
+      "fill": "button.shared-023f37.fill",
       "icon-transform": "button.solid-047464.hover.icon-transform",
-      "shadow-1": "button.outline-0d2b25.hover.shadow-1",
-      "transform": "button.outline-0d2b25.pressed.transform"
+      "shadow-1": "button.shared-ded46d.shadow",
+      "transform": "button.shared-409803.transform"
      }
     },
     "variant": "solid.047464"
@@ -4078,22 +4078,22 @@
     "motion": [
      {
       "delay": null,
-      "duration": "motion.button.outline-0d2b25.duration-1",
-      "easing": "motion.button.outline-0d2b25.easing-1",
+      "duration": "motion.button.shared-b23804.duration",
+      "easing": "motion.button.shared-b5340a.easing",
       "property": "background-color",
       "target": "self"
      },
      {
       "delay": null,
-      "duration": "motion.button.outline-0d2b25.duration-2",
-      "easing": "motion.button.outline-0d2b25.easing-2",
+      "duration": "motion.button.shared-572015.duration",
+      "easing": "motion.button.shared-785354.easing",
       "property": "transform",
       "target": "self"
      },
      {
-      "delay": "motion.button.outline-0d2b25.delay-3",
-      "duration": "motion.button.outline-0d2b25.duration-3",
-      "easing": "motion.button.outline-0d2b25.easing-2",
+      "delay": "motion.button.shared-09919f.delay",
+      "duration": "motion.button.shared-eb8831.duration",
+      "easing": "motion.button.shared-785354.easing",
       "property": "box-shadow",
       "target": "self"
      }
@@ -4101,15 +4101,15 @@
     "probed": "forced",
     "rest": {
      "border": "button.solid-0a4a8a.border",
-     "border-style": "button.outline-0d2b25.border-style",
+     "border-style": "button.shared-b52b21.border-style",
      "border-width": "stroke.width.card",
-     "case": "button.outline-0d2b25.case",
-     "cursor": "button.outline-0d2b25.cursor",
-     "decoration": "button.outline-0d2b25.decoration",
+     "case": "button.shared-f9b1d5.case",
+     "cursor": "button.shared-af29ac.cursor",
+     "decoration": "button.shared-357cd5.decoration",
      "fill": "button.solid-0a4a8a.fill",
-     "font": "button.outline-0d2b25.font",
+     "font": "button.shared-08dc88.font",
      "gap": "space.2",
-     "height": "button.outline-0d2b25.height",
+     "height": "button.shared-341c88.height",
      "label": "text.inverse",
      "padding-bottom": "space.3",
      "padding-left": "space.stack.loose",
@@ -4120,23 +4120,23 @@
     "source": "website:https://fixture.test/",
     "states": {
      "disabled": {
-      "cursor": "button.outline-0d2b25.disabled.cursor",
-      "opacity": "button.outline-0d2b25.disabled.opacity"
+      "cursor": "button.shared-c4f388.cursor",
+      "opacity": "button.shared-98a9e9.opacity"
      },
      "focus": {
-      "outline": "button.outline-0d2b25.focus.outline",
-      "outline-offset": "button.outline-0d2b25.focus.outline-offset",
-      "outline-style": "button.outline-0d2b25.focus.outline-style",
+      "outline": "button.shared-f5a623.outline",
+      "outline-offset": "button.shared-5b200f.outline-offset",
+      "outline-style": "button.shared-0761e1.outline-style",
       "outline-width": "stroke.width.bold"
      },
      "hover": {
       "fill": "button.solid-0a4a8a.hover.fill",
-      "shadow-1": "button.outline-0d2b25.hover.shadow-1"
+      "shadow-1": "button.shared-ded46d.shadow"
      },
      "pressed": {
       "fill": "button.solid-0a4a8a.hover.fill",
-      "shadow-1": "button.outline-0d2b25.hover.shadow-1",
-      "transform": "button.outline-0d2b25.pressed.transform"
+      "shadow-1": "button.shared-ded46d.shadow",
+      "transform": "button.shared-409803.transform"
      }
     },
     "variant": "solid.0a4a8a"
@@ -4450,21 +4450,6 @@
      "modes": {}
     }
    },
-   "button.outline-0d2b25.focus.outline": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 focus outline"
-    },
-    "role": "component",
-    "value": {
-     "default": {
-      "kind": "hex",
-      "value": "#F5A623"
-     },
-     "modes": {}
-    }
-   },
    "button.outline-0d2b25.hover.fill": {
     "description": null,
     "provenance": {
@@ -4491,6 +4476,51 @@
      "default": {
       "kind": "hex",
       "value": "#0D2B25"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-023f37.fill": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared fill (solid.047464, solid.28241e)"
+    },
+    "role": "component",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#023F37"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-035a4e.fill": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared fill (solid.047464, solid.28241e)"
+    },
+    "role": "component",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#035A4E"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-f5a623.outline": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared outline (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
+    },
+    "role": "component",
+    "value": {
+     "default": {
+      "kind": "hex",
+      "value": "#F5A623"
      },
      "modes": {}
     }
@@ -4551,36 +4581,6 @@
      "default": {
       "kind": "hex",
       "value": "#28241E"
-     },
-     "modes": {}
-    }
-   },
-   "button.solid-28241e.hover.fill": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button solid.28241e hover fill"
-    },
-    "role": "component",
-    "value": {
-     "default": {
-      "kind": "hex",
-      "value": "#035A4E"
-     },
-     "modes": {}
-    }
-   },
-   "button.solid-28241e.pressed.fill": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button solid.28241e pressed fill"
-    },
-    "role": "component",
-    "value": {
-     "default": {
-      "kind": "hex",
-      "value": "#023F37"
      },
      "modes": {}
     }
@@ -5358,27 +5358,11 @@
   },
   "effects": {},
   "numbers": {
-   "button.outline-0d2b25.focus.outline-offset": {
+   "button.shared-341c88.height": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 focus outline-offset"
-    },
-    "role": "dimension",
-    "value": {
-     "default": {
-      "kind": "number",
-      "unit": "px",
-      "value": 2.0
-     },
-     "modes": {}
-    }
-   },
-   "button.outline-0d2b25.height": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest height"
+     "source": "website:https://fixture.test/ :: button shared height (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "role": "dimension",
     "value": {
@@ -5386,6 +5370,22 @@
       "kind": "number",
       "unit": "px",
       "value": 45.59
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-5b200f.outline-offset": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared outline-offset (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
+    },
+    "role": "dimension",
+    "value": {
+     "default": {
+      "kind": "number",
+      "unit": "px",
+      "value": 2.0
      },
      "modes": {}
     }
@@ -5712,11 +5712,11 @@
    }
   },
   "opacity": {
-   "button.outline-0d2b25.disabled.opacity": {
+   "button.shared-98a9e9.opacity": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 disabled opacity"
+     "source": "website:https://fixture.test/ :: button shared opacity (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "role": "visibility",
     "value": {
@@ -6020,11 +6020,11 @@
    }
   },
   "shadows": {
-   "button.outline-0d2b25.hover.shadow-1": {
+   "button.shared-ded46d.shadow": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 hover shadow-1"
+     "source": "website:https://fixture.test/ :: button shared shadow (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "value": {
      "default": {
@@ -6572,96 +6572,6 @@
    }
   },
   "styles": {
-   "button.outline-0d2b25.border-style": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest border-style"
-    },
-    "value": {
-     "default": {
-      "kind": "keyword",
-      "property": "border-style",
-      "value": "solid"
-     },
-     "modes": {}
-    }
-   },
-   "button.outline-0d2b25.case": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest case"
-    },
-    "value": {
-     "default": {
-      "kind": "keyword",
-      "property": "text-transform",
-      "value": "uppercase"
-     },
-     "modes": {}
-    }
-   },
-   "button.outline-0d2b25.cursor": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest cursor"
-    },
-    "value": {
-     "default": {
-      "kind": "keyword",
-      "property": "cursor",
-      "value": "pointer"
-     },
-     "modes": {}
-    }
-   },
-   "button.outline-0d2b25.decoration": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest decoration"
-    },
-    "value": {
-     "default": {
-      "kind": "keyword",
-      "property": "text-decoration-line",
-      "value": "none"
-     },
-     "modes": {}
-    }
-   },
-   "button.outline-0d2b25.disabled.cursor": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 disabled cursor"
-    },
-    "value": {
-     "default": {
-      "kind": "keyword",
-      "property": "cursor",
-      "value": "not-allowed"
-     },
-     "modes": {}
-    }
-   },
-   "button.outline-0d2b25.focus.outline-style": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 focus outline-style"
-    },
-    "value": {
-     "default": {
-      "kind": "keyword",
-      "property": "outline-style",
-      "value": "solid"
-     },
-     "modes": {}
-    }
-   },
    "button.outline-0d2b25.icon": {
     "description": null,
     "provenance": {
@@ -6676,16 +6586,106 @@
      "modes": {}
     }
    },
-   "button.outline-0d2b25.pressed.transform": {
+   "button.shared-0761e1.outline-style": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 pressed transform"
+     "source": "website:https://fixture.test/ :: button shared outline-style (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
+    },
+    "value": {
+     "default": {
+      "kind": "keyword",
+      "property": "outline-style",
+      "value": "solid"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-357cd5.decoration": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared decoration (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e, solid.7c4cff)"
+    },
+    "value": {
+     "default": {
+      "kind": "keyword",
+      "property": "text-decoration-line",
+      "value": "none"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-409803.transform": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared transform (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
       "kind": "transform",
       "value": "matrix(0.98, 0, 0, 0.98, 0, 0)"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-af29ac.cursor": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared cursor (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
+    },
+    "value": {
+     "default": {
+      "kind": "keyword",
+      "property": "cursor",
+      "value": "pointer"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-b52b21.border-style": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared border-style (outline.0d2b25, solid.047464, solid.0a4a8a)"
+    },
+    "value": {
+     "default": {
+      "kind": "keyword",
+      "property": "border-style",
+      "value": "solid"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-c4f388.cursor": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared cursor (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
+    },
+    "value": {
+     "default": {
+      "kind": "keyword",
+      "property": "cursor",
+      "value": "not-allowed"
+     },
+     "modes": {}
+    }
+   },
+   "button.shared-f9b1d5.case": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared case (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
+    },
+    "value": {
+     "default": {
+      "kind": "keyword",
+      "property": "text-transform",
+      "value": "uppercase"
      },
      "modes": {}
     }
@@ -6842,11 +6842,11 @@
      "modes": {}
     }
    },
-   "motion.button.outline-0d2b25.delay-3": {
+   "motion.button.shared-09919f.delay": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition box-shadow"
+     "source": "website:https://fixture.test/ :: button shared delay (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6856,25 +6856,11 @@
      "modes": {}
     }
    },
-   "motion.button.outline-0d2b25.duration-1": {
+   "motion.button.shared-572015.duration": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition background-color"
-    },
-    "value": {
-     "default": {
-      "kind": "duration",
-      "ms": 200.0
-     },
-     "modes": {}
-    }
-   },
-   "motion.button.outline-0d2b25.duration-2": {
-    "description": null,
-    "provenance": {
-     "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition transform"
+     "source": "website:https://fixture.test/ :: button shared duration (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6884,25 +6870,39 @@
      "modes": {}
     }
    },
-   "motion.button.outline-0d2b25.duration-3": {
+   "motion.button.shared-785354.easing": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition box-shadow"
+     "source": "website:https://fixture.test/ :: button shared easing (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
-      "kind": "duration",
-      "ms": 300.0
+      "function": "ease",
+      "kind": "easing"
      },
      "modes": {}
     }
    },
-   "motion.button.outline-0d2b25.easing-1": {
+   "motion.button.shared-b23804.duration": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition background-color"
+     "source": "website:https://fixture.test/ :: button shared duration (outline.0d2b25, solid.047464, solid.0a4a8a)"
+    },
+    "value": {
+     "default": {
+      "kind": "duration",
+      "ms": 200.0
+     },
+     "modes": {}
+    }
+   },
+   "motion.button.shared-b5340a.easing": {
+    "description": null,
+    "provenance": {
+     "confidence": 0.8,
+     "source": "website:https://fixture.test/ :: button shared easing (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
@@ -6912,16 +6912,16 @@
      "modes": {}
     }
    },
-   "motion.button.outline-0d2b25.easing-2": {
+   "motion.button.shared-eb8831.duration": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 transition transform"
+     "source": "website:https://fixture.test/ :: button shared duration (outline.0d2b25, solid.047464, solid.0a4a8a)"
     },
     "value": {
      "default": {
-      "function": "ease",
-      "kind": "easing"
+      "kind": "duration",
+      "ms": 300.0
      },
      "modes": {}
     }
@@ -7164,11 +7164,11 @@
    }
   },
   "typography": {
-   "button.outline-0d2b25.font": {
+   "button.shared-08dc88.font": {
     "description": null,
     "provenance": {
      "confidence": 0.8,
-     "source": "website:https://fixture.test/ :: button outline.0d2b25 rest font"
+     "source": "website:https://fixture.test/ :: button shared font (outline.0d2b25, solid.047464, solid.0a4a8a, solid.28241e)"
     },
     "role": "component",
     "value": {

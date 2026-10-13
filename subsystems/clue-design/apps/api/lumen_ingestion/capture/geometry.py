@@ -66,12 +66,88 @@ STATE_TARGET_CAPS = {"button": 10, "link": 2, "nav_link": 2, "card": 4, "chip": 
 _CANDIDATES_PER_STYLE = 3
 
 
+#: One motion rule for every look read, shared by this probe's `record` and the state pass's
+#: FREEZE_JS / THAW_JS (states.py), over an element and its first 15 descendants in document order.
+#: Each running animation the element carries (`getAnimations()`) is one of three kinds:
+#: - a transition: switched off with `transition: none`, so a running one reads its end value;
+#: - a CSS animation (it has an `animationName`): one that ends is HELD at its end frame, so a CTA
+#:   fading in from an authored `opacity: 0` is read opaque and in place, even while its entrance or its
+#:   delay is still running; one that never ends is switched off with `animation: none` on its node, so
+#:   the read is the authored static look and no frame of it (a pulse's halo, a wiggle) is taken for the
+#:   element's own;
+#: - any other animation, made by a script through the Web Animations API (`el.animate`, what Framer
+#:   Motion and similar libraries produce): one that ends is held at its end frame; one that never ends
+#:   is cancelled for the read (its effect is removed, so the read is the static look).
+#: Holding is `pause()` at one millisecond from the end the animation is heading to (`endTime - 1`, or
+#: `1` for one playing backwards, which ends on its time-0 frame): the end frame, without reaching the
+#: end, so the page's `animationend` / `finish` handlers never run during a capture (a
+#: handler that swaps a class would otherwise change the look between this probe, which names the
+#: style, and the state pass, which reads its states). An animation that has already finished shows its
+#: end frame and is left alone. An animation that cannot be held falls back: a CSS one is switched off
+#: with its node, a script one is cancelled.
+#: `thawMotion` gives back what the freeze changed: the inline values (and a `style` attribute the
+#: freeze created), and each held or cancelled animation at the time it was at, running again unless it
+#: was paused. The freeze returns the animations themselves, so the thaw touches exactly those, and a
+#: held one the page has cancelled in the meantime stays cancelled.
+FREEZE_MOTION_FN = r"""
+  const motionNodes = (el) => {
+    const nodes = [el];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_ELEMENT);
+    while (nodes.length < 16 && walker.nextNode()) nodes.push(walker.currentNode);
+    return nodes;
+  };
+  const endOf = (animation) => (animation.effect ? animation.effect.getComputedTiming().endTime : Infinity);
+  const freezeMotion = (el) => motionNodes(el).map((node) => {
+    const prior = { attribute: node.hasAttribute('style'), values: {}, held: [], cancelled: [] };
+    const moving = node.getAnimations().filter((animation) => !(animation instanceof CSSTransition)
+      && animation.transitionProperty === undefined && animation.playState !== 'finished');
+    let off = moving.some((animation) => animation.animationName !== undefined && endOf(animation) === Infinity);
+    for (const animation of moving) {
+      const css = animation.animationName !== undefined;
+      if (css && off) continue;  // switched off below, with the node's other CSS animations
+      const was = [animation, animation.currentTime, animation.playState === 'paused'];
+      if (endOf(animation) !== Infinity) {
+        prior.held.push(was);
+        try {  // one millisecond from the end it is heading to: time 0 when it plays backwards
+          animation.pause(); animation.currentTime = animation.playbackRate < 0 ? 1 : endOf(animation) - 1; continue;
+        } catch (e) {
+          if (css) { off = true; continue; }
+        }
+      }
+      animation.cancel();
+      prior.cancelled.push(was);
+    }
+    for (const name of off ? ['transition', 'animation'] : ['transition']) {
+      prior.values[name] = [node.style.getPropertyValue(name), node.style.getPropertyPriority(name)];
+      node.style.setProperty(name, 'none', 'important');
+    }
+    return prior;
+  });
+  const resume = ([animation, time, paused]) => {
+    if (time !== null) animation.currentTime = time;
+    if (!paused) animation.play();
+  };
+  const thawMotion = (el, priors) => motionNodes(el).forEach((node, i) => {
+    const prior = priors[i];
+    if (!prior) return;
+    for (const [name, [value, priority]] of Object.entries(prior.values)) {
+      if (value) node.style.setProperty(name, value, priority); else node.style.removeProperty(name);
+    }
+    // A style attribute the freeze created goes again once it is empty (an icon's markup is read later).
+    if (!prior.attribute && node.getAttribute('style') === '') node.removeAttribute('style');
+    prior.held.forEach((was) => { if (was[0].playState !== 'idle') resume(was); });
+    prior.cancelled.forEach(resume);
+  });
+"""
+
+
 # The browser-side probe. One expression, evaluated in the page; every number it
 # returns is a *used* value read from getComputedStyle, so nothing here needs a
 # CSS parser. Bounded on purpose (a 10k-node marketing page must not ship a
 # multi-megabyte harvest through the job row).
 GEOMETRY_JS = r"""
 () => {
+""" + FREEZE_MOTION_FN + r"""
   const MAX_PER_CLASS = 60;
   const MAX_SURFACES = 320;
   const MAX_SECTIONS = 40;
@@ -111,7 +187,13 @@ GEOMETRY_JS = r"""
     return null;
   };
 
+  // A candidate's look is read with its motion held still (FREEZE_MOTION_FN), and its inline styles
+  // and animations are given back right after the read.
   const record = (el, cls) => {
+    const priors = freezeMotion(el);
+    try { return look(el, cls); } finally { thawMotion(el, priors); }
+  };
+  const look = (el, cls) => {
     const cs = getComputedStyle(el);
     if (cs.display === 'none' || cs.visibility === 'hidden') return null;
     const rect = el.getBoundingClientRect();
@@ -146,6 +228,9 @@ GEOMETRY_JS = r"""
     + ' a[class*="btn"], a[class*="Btn"], a[class*="button"], a[class*="Button"],'
     + ' .btn, .button';
   const CTA_CONTENT = 'img, picture, video, h1, h2, h3, h4, h5, h6, p, ul, ol, table, article';
+  // An anchor holding block content or taller than a control (a card wrapped in <a>, a menu entry
+  // with a heading and a line of text) is neither a button nor a text link.
+  const blockAnchor = (el) => !!el.querySelector(CTA_CONTENT) || el.getBoundingClientRect().height > 80;
   // Tailwind-style CTAs carry no button class; a short padded anchor with a visible box — a fill
   // that stands out or a full border — is a button.
   const ctaAnchor = (el) => {
@@ -153,8 +238,8 @@ GEOMETRY_JS = r"""
     if (num(cs.paddingLeft) + num(cs.paddingRight) < 12) return false;
     const text = (el.textContent || '').trim();
     const h = el.getBoundingClientRect().height;
-    if (text.length < 1 || text.length > 40 || h < 20 || h > 80) return false;
-    if (el.querySelector(CTA_CONTENT)) return false;
+    if (text.length < 1 || text.length > 40 || h < 20) return false;
+    if (blockAnchor(el)) return false;
     const fill = opaque(cs.backgroundColor);
     const behind = effectiveBg(el.parentElement) || 'rgb(255, 255, 255)';  // the canvas default
     if (fill && fill !== behind) return true;
@@ -180,12 +265,12 @@ GEOMETRY_JS = r"""
     ['nav_link', 'nav a[href], header a[href]'],
     ['link', 'a[href]'],
   ];
-  // Text links and navigation items (Wave 2 A9): a link is an anchor with words outside the page
-  // chrome; a nav item is one inside it. Both are measured for their states and motion only.
+  // Text links and navigation items (Wave 2 A9): a link is an inline anchor with words outside the
+  // page chrome; a nav item is one inside it. Both are measured for their states and motion only.
   const FILTERS = {
     button: (el) => el.matches(BUTTON) || ctaAnchor(el),
-    nav_link: (el) => !!(el.textContent || '').trim(),
-    link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer'),
+    nav_link: (el) => !!(el.textContent || '').trim() && !blockAnchor(el),
+    link: (el) => !!(el.textContent || '').trim() && !el.closest('nav, header, footer') && !blockAnchor(el),
   };
 
   const seen = new Set();
@@ -709,12 +794,15 @@ def _identity_colour(entry: dict, fill: str) -> str | None:
 def shape_key(entry: dict) -> tuple:
     """The one grouping key: fill kind, corners, border weight, shadow, background, and the colour the
     look is told by (founder Q-A9-6: an outline's border colour and a text-only look's text colour
-    make it another look)."""
+    make it another look). A border that paints nothing (Bootstrap's `1px solid transparent`) is no
+    border, as in `_rest_look` and the minting."""
     radius = _numbers(entry.get("radius"))
     border = _numbers(entry.get("border"))
     bg = _hex(entry.get("bg"))
     style = str(entry.get("borderStyle") or "none").lower()
-    has_border = style not in ("none", "hidden") and any(v > 0 for v in border)
+    has_border = (
+        style not in ("none", "hidden") and any(v > 0 for v in border) and bool(_opaque_hex(entry.get("borderColor")))
+    )
     fill = "solid" if bg else ("outline" if has_border else "ghost")
     return (
         str(entry.get("cls") or ""), fill, tuple(radius), bool(entry.get("pill")), tuple(border),
@@ -836,6 +924,35 @@ _LOOK_LISTS = ("border_width", "radius", "padding")
 #: A colour a state clears (fully transparent), recorded as itself the way a removed shadow is "none".
 _CLEARED = "#00000000"
 _FONT = re.compile(r"^(\d+)\s+([\d.]+)px/(\S+)\s+(.+)$")
+
+
+_MATRIX_FUNCTION = re.compile(r"^(matrix|matrix3d)\((.*)\)$")
+#: Where each matrix keeps its translation (px, rounded to 2 decimals); every other component is a
+#: ratio (rounded to 4).
+_TRANSLATION = {"matrix": (4, 5), "matrix3d": (12, 13, 14)}
+_IDENTITY = {"matrix": (1, 0, 0, 1, 0, 0), "matrix3d": (1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1)}
+
+
+def normalize_transform(value: object) -> object:
+    """A computed transform as evidence: a `matrix(…)` / `matrix3d(…)` rounded (ratios to 4 decimals,
+    the translation to 2 px) and written as the browser writes numbers (`1`, `0.98`, `-2`), and the
+    identity written `none`. Reads that differ only below that precision — an entrance held one
+    millisecond before its end leaves `matrix(1, 0, 0, 1, 0, 1.88911e-06)` — are the same value, and an
+    identity is no transform. Anything else is returned unchanged."""
+    match = _MATRIX_FUNCTION.match(value) if isinstance(value, str) else None
+    if not match:
+        return value
+    kind = match.group(1)
+    try:
+        numbers = [float(part) for part in match.group(2).split(",")]
+    except ValueError:
+        return value
+    if len(numbers) != len(_IDENTITY[kind]) or not all(math.isfinite(n) for n in numbers):
+        return value
+    rounded = [round(n, 2 if i in _TRANSLATION[kind] else 4) + 0.0 for i, n in enumerate(numbers)]  # + 0.0: no -0
+    if tuple(rounded) == _IDENTITY[kind]:
+        return "none"
+    return f"{kind}({', '.join(f'{n:.4f}'.rstrip('0').rstrip('.') for n in rounded)})"
 
 
 def _opaque_hex(value: object) -> str | None:

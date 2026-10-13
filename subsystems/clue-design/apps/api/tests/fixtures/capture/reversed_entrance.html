@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Reversed entrance fixture</title>
+<!-- Wave 2 A9 FX-C2 fix round 2 (from the verifier's reversed_entrance.html): two calls to action whose
+     entrance is an EXIT played backwards (`playbackRate` -1) — one a script animation (`el.animate`,
+     then `reverse()`), one a CSS animation reversed by script — each 20 s, so both are still moving when
+     the probes reach them. A reversed animation ends on its time-0 frame (opaque, in place), not on its
+     endTime frame (`opacity: 0`, 16px down), so that is the frame each is read at.
+     Opened from file://; never a real site. -->
+<style>
+  body { margin: 0; font-family: Arial, sans-serif; background: #fff; color: #111; }
+  header { display: flex; gap: 24px; padding: 16px 40px; }
+  header a { color: #0d2b25; text-decoration: none; }
+  .wrap { padding: 40px; display: flex; gap: 24px; align-items: center; }
+  .cta { display: inline-flex; padding: 12px 24px; border-radius: 8px; border: 0; color: #fff;
+         font: 500 14px/1.4 Arial; cursor: pointer; }
+  .script { background: #047464; }
+  .script:hover { background: #035a4e; }
+  .css { background: #28241e; animation: leave 20s linear forwards; }
+  .css:hover { background: #000; }
+  @keyframes leave { to { opacity: 0; transform: translateY(16px); } }
+  section.band { padding: 60px 40px; background: #014036; color: #fff; }
+</style></head>
+<body>
+<header><nav><a id="n-home" href="#home">Home</a></nav></header>
+<main>
+  <div class="wrap">
+    <button class="cta script" id="b-script-rev">Book now</button>
+    <button class="cta css" id="b-css-rev">See the plans</button>
+  </div>
+</main>
+<section class="band"><h2>The statement band</h2><p>Light text on a dark band.</p></section>
+<script>
+  const script = document.getElementById('b-script-rev');
+  script.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(16px)' }],
+    { duration: 20000, easing: 'linear', fill: 'forwards' }).reverse();
+  document.getElementById('b-css-rev').getAnimations()[0].reverse();
+</script>
+</body></html>

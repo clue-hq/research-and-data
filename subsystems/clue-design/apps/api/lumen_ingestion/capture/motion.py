@@ -47,6 +47,15 @@ _SVG_ATTRIBUTES = {
 }
 #: An attribute value, checked with `fullmatch`: `$` alone also matches before a trailing newline.
 _ATTRIBUTE_VALUE = re.compile(r"^[A-Za-z0-9 ,.()%#+\-]{0,2000}$")
+#: A run of ASCII whitespace inside an attribute value: the cleaner writes each as one space, so a
+#: `d` or `points` written over several lines is kept, on one line.
+_ATTRIBUTE_WHITESPACE = re.compile(r"[ \t\n\r\f]+")
+#: The attributes each drawing element draws with. It draws only when its cleaned markup carries all
+#: of them with a value — a `line` any one of them, since the others default to 0.
+_SVG_GEOMETRY = {
+    "path": ("d",), "circle": ("r",), "ellipse": ("rx", "ry"), "rect": ("width", "height"),
+    "line": ("x1", "y1", "x2", "y2"), "polyline": ("points",), "polygon": ("points",),
+}
 
 
 def safe_style_value(value: str) -> bool:
@@ -138,36 +147,47 @@ def attach_keyframes(motion: MotionEvidence, stylesheets: Iterable[Any]) -> Moti
 
 
 def clean_icon_svg(markup: object) -> str | None:
-    """A button icon's SVG with drawing elements and drawing attributes only, or None — None too
-    when nothing is left to draw (an unresolved sprite `<use>` cleans to a bare `<svg>`), or when it
-    nests deeper than `MAX_ICON_SVG_DEPTH` or comes out longer than `MAX_ICON_SVG_BYTES`. What it
-    returns is the one form the engine accepts (`normalizer.component_tokens.svg_ok`)."""
+    """A button icon's SVG with drawing elements and drawing attributes only, or None. Whitespace
+    inside a value is written as one space, so a `d` over several lines is kept on one line. None
+    when nothing is left to draw — no drawing element keeps its geometry (an unresolved sprite `<use>`
+    cleans to a bare `<svg>`) — and when any drawing element lost geometry it had (a `d` over the
+    value cap): an icon missing a piece is a wrong icon. None too when it nests deeper than
+    `MAX_ICON_SVG_DEPTH` or comes out longer than `MAX_ICON_SVG_BYTES`. What it returns is the one
+    form the engine accepts (`normalizer.component_tokens.svg_ok`)."""
     if not isinstance(markup, str) or "<svg" not in markup.lower():
         return None
     root = LexborHTMLParser(markup).css_first("svg")
     if root is None:
         return None
 
-    draws = too_deep = False
+    draws = lost = too_deep = False
 
     def emit(node: Any, depth: int) -> str:
-        nonlocal draws, too_deep
+        nonlocal draws, lost, too_deep
         tag = (node.tag or "").lower()
         if tag not in _SVG_ELEMENTS:
             return ""
         if depth > MAX_ICON_SVG_DEPTH:
             too_deep = True
             return ""
-        draws = draws or tag in _SVG_DRAWING_ELEMENTS
-        attributes = []
+        geometry = _SVG_GEOMETRY.get(tag, ())
+        kept: dict[str, str] = {}
         for name, value in (node.attributes or {}).items():
             key = _SVG_ATTRIBUTES.get(str(name).lower())
-            text = "" if value is None else str(value)
-            if key is None or not _ATTRIBUTE_VALUE.fullmatch(text) or "url(" in text.lower():
+            if key is None:
                 continue
-            attributes.append(f'{key}="{html.escape(text, quote=True)}"')
+            text = _ATTRIBUTE_WHITESPACE.sub(" ", "" if value is None else str(value)).strip(" ")
+            if not _ATTRIBUTE_VALUE.fullmatch(text) or "url(" in text.lower():
+                lost = lost or key in geometry
+                continue
+            kept[key] = text
+        present = [bool(kept.get(key)) for key in geometry]
+        draws = draws or (any(present) if tag == "line" else bool(present) and all(present))
+        attributes = [f'{key}="{html.escape(text, quote=True)}"' for key, text in kept.items()]
         inner = "".join(emit(child, depth + 1) for child in node.iter(include_text=False))
         return f"<{' '.join([tag, *attributes])}>{inner}</{tag}>"
 
     cleaned = emit(root, 1)
-    return cleaned if draws and not too_deep and len(cleaned.encode()) <= MAX_ICON_SVG_BYTES else None
+    if not draws or lost or too_deep or len(cleaned.encode()) > MAX_ICON_SVG_BYTES:
+        return None
+    return cleaned

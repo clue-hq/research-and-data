@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -65,15 +66,15 @@ def test_measured_values_become_tokens_named_for_where_they_were_measured() -> N
     assert solid["rest"]["fill"] == "surface.brand", "Garner's surface.brand holds exactly #047464"
     assert solid["rest"]["label"] == "text.inverse"
     assert solid["rest"]["radius"] == "radius.full", "a pill is 9999px, radius.full exactly"
-    # `.btn:hover` paints #035A4E on the `.lift` button too, measured first (buttons in capture order),
-    # so the one shared token is named where that button measured it.
+    # `.btn:hover` paints #035A4E on the `.lift` button too, so the one shared token is named by its
+    # value and its provenance names both buttons.
     lift = _recipe(kit, result, "button", "#28241E")
-    slug = lift["variant"].replace(".", "-")
-    hover_fill = f"button.{slug}.hover.fill"
+    hover_fill = "button.shared-035a4e.fill"
     assert solid["states"]["hover"]["fill"] == lift["states"]["hover"]["fill"] == hover_fill
     assert _value(kit, "colors", hover_fill) == {"kind": "hex", "value": "#035A4E"}
     entry = kit["tokens"]["colors"][hover_fill]
-    assert entry["provenance"] == {"source": f"website:https://fixture.test/ :: button {lift['variant']} hover fill", "confidence": 0.8}
+    sharing = ", ".join(sorted((solid["variant"], lift["variant"])))
+    assert entry["provenance"] == {"source": f"website:https://fixture.test/ :: button shared fill ({sharing})", "confidence": 0.8}
     assert entry["role"] == "component"
     assert _value(kit, "styles", solid["states"]["pressed"]["transform"]) == {"kind": "transform", "value": "matrix(0.98, 0, 0, 0.98, 0, 0)"}
     assert _value(kit, "styles", solid["rest"]["case"]) == {"kind": "keyword", "property": "text-transform", "value": "uppercase"}
@@ -95,6 +96,72 @@ def test_measured_values_become_tokens_named_for_where_they_were_measured() -> N
     (reveal,) = result.section["motion"]["reveals"]
     assert reveal.startswith("motion.reveal.") and _value(kit, "styles", reveal)["kind"] == "reveal"
     assert result.section["motion"]["scripted"] == [{"kind": "scripted", "where": "div#spin.spin"}]
+
+
+def _digest(value: dict) -> str:
+    """The key of a shared non-colour value: sha1 of its canonical JSON, six hex digits."""
+    return hashlib.sha1(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:6]
+
+
+def test_a_value_several_styles_share_is_named_by_its_value() -> None:
+    """A value two buttons share is named after the value, never after whichever button the page
+    uses most (founder ruling 2026-10-13, option C)."""
+    kit, result = _mint()
+    solid = _recipe(kit, result, "button", "#047464")
+    lift = _recipe(kit, result, "button", "#28241E")
+    assert solid["states"]["hover"]["fill"] == lift["states"]["hover"]["fill"] == "button.shared-035a4e.fill"
+    assert _value(kit, "colors", "button.shared-035a4e.fill") == {"kind": "hex", "value": "#035A4E"}
+    # Its provenance names every style that shares it, sorted, not the one measured first.
+    assert kit["tokens"]["colors"]["button.shared-035a4e.fill"]["provenance"] == {
+        "source": "website:https://fixture.test/ :: button shared fill (solid.047464, solid.28241e)", "confidence": 0.8,
+    }
+    shadows = {
+        recipe["states"]["hover"]["shadow-1"]
+        for recipe in result.section["styles"]
+        if recipe["component"] == "button" and "shadow-1" in recipe["states"].get("hover", {})
+    }
+    (shadow,) = shadows
+    assert re.fullmatch(r"button\.shared-[0-9a-f]{6}\.shadow", shadow), shadow
+    assert shadow == f"button.shared-{_digest(_value(kit, 'shadows', shadow))}.shadow"
+
+
+def test_a_value_one_style_uses_keeps_its_own_name() -> None:
+    kit, result = _mint()
+    solid = _recipe(kit, result, "button", "#047464")
+    assert solid["states"]["hover"]["icon-transform"] == "button.solid-047464.hover.icon-transform"
+    assert solid["icon"]["token"] == "button.solid-047464.icon"
+    # One style using a value in two slots of one kind still names it from where it measured it first.
+    js = _recipe(kit, result, "button", "#7C4CFF")
+    assert js["rest"]["padding-top"] == js["rest"]["padding-bottom"] == "button.solid-7c4cff.padding-top"
+
+
+def _button_styles_reversed(styles: list) -> list:
+    """The same styles with the buttons in reverse order and every other style where it was."""
+    buttons = iter(reversed([style for style in styles if style.surface == "button"]))
+    return [next(buttons) if style.surface == "button" else style for style in styles]
+
+
+def test_shared_names_do_not_depend_on_style_order() -> None:
+    """A re-extraction whose usage counts move reorders the buttons; no name may move with them."""
+    parsed = parse_geometry(HARVEST, page_url="https://fixture.test/")
+    motion = attach_keyframes(parsed.motion, [Stylesheet(url="https://fixture.test/", text=CSS)])
+    reordered = _button_styles_reversed(parsed.styles)
+    assert [s.variant for s in reordered] != [s.variant for s in parsed.styles]
+    first_kit, second_kit = _kit(), _kit()
+    first = mint_component_tokens(first_kit, parsed.styles, motion)
+    second = mint_component_tokens(second_kit, reordered, motion)
+
+    def by_style(result) -> dict:
+        return {(r["component"], r["variant"]): r for r in result.section["styles"]}
+
+    assert by_style(first) == by_style(second)
+
+    def minted(kit: dict, result) -> dict:
+        """Every minted entry in full: value, role, description and provenance."""
+        return {name: entries[name] for entries in kit["tokens"].values() for name in result.minted if name in entries}
+
+    assert set(first.minted) == set(second.minted)
+    assert minted(first_kit, first) == minted(second_kit, second)
 
 
 def test_identical_values_share_one_token() -> None:
@@ -205,6 +272,23 @@ def test_a_colour_a_state_clears_is_minted_as_transparent() -> None:
     assert _value(kit, "colors", cleared) == {"kind": "hex", "value": "#00000000"}
 
 
+def test_no_transform_at_rest_is_the_browser_default_but_a_state_may_remove_one() -> None:
+    """A rest `none` transform (the button's or its icon's) is no brand choice, so nothing is minted for
+    it; in a state, `none` is the state taking the rest transform away, and is minted."""
+    pointer = EvidencePointer(source="website", locator="https://fixture.test/ :: button solid.047464")
+    style = MeasuredStyle(
+        surface="button", variant="solid.047464", probed="pointer",
+        rest=StyleLook(background="#047464", transform="none", icon_transform="none"),
+        hover=StyleLook(transform="none", icon_transform="none"), pointer=pointer,
+    )
+    kit = _kit()
+    (recipe,) = mint_component_tokens(kit, [style], MotionEvidence()).section["styles"]
+    assert not {"transform", "icon-transform"} & set(recipe["rest"]), recipe["rest"]
+    hover = recipe["states"]["hover"]
+    assert _value(kit, "styles", hover["transform"]) == {"kind": "transform", "value": "none"}
+    assert _value(kit, "styles", hover["icon-transform"]) == {"kind": "transform", "value": "none"}
+
+
 def test_a_kit_with_minted_tokens_comes_back_from_the_engine_whole() -> None:
     kit, _ = _mint()
     validation = CoreClient().validate_brand_kit(kit, product_ready=False, raise_on_error=False)
@@ -275,6 +359,9 @@ MESSY_ICONS = {
         '<SVG xmlns="http://www.w3.org/2000/svg" VIEWBOX="0 0 12 12"><PATH D="M1 6h9"></PATH></SVG>'
     ),
     "a value ending in a newline": '<svg viewBox="0 0 12 12"><path d="M1 6h9\n" stroke="currentColor"></path></svg>',
+    "a d over two lines": (
+        '<svg viewBox="0 0 12 12" fill="none"><path d="M1 6h9\n  M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"/></svg>'
+    ),
     "an img breakout": '<svg viewBox="0 0 12 12"><img src="https://example.com/x.png"><path d="M1 6h9"></path></svg>',
     "nesting deeper than 32": '<svg viewBox="0 0 12 12">' + "<g>" * 40 + '<path d="M1 1"></path>' + "</g>" * 40 + "</svg>",
 }
@@ -296,8 +383,19 @@ def test_the_cleaner_keeps_messy_icons_that_still_draw() -> None:
     assert kept["whitespace and newlines between elements"] == (
         '<svg viewBox="0 0 12 12"><g fill="none"><path d="M1 6h9"></path></g></svg>'
     )
-    assert kept["a value ending in a newline"] == '<svg viewBox="0 0 12 12"><path stroke="currentColor"></path></svg>'
+    # Whitespace inside a value is one space and stripped, so the geometry is kept, never a blank path.
+    assert kept["a value ending in a newline"] == (
+        '<svg viewBox="0 0 12 12"><path d="M1 6h9" stroke="currentColor"></path></svg>'
+    )
+    assert kept["a d over two lines"] == (
+        '<svg viewBox="0 0 12 12" fill="none">'
+        '<path d="M1 6h9 M7 2l4 4-4 4" stroke="currentColor" stroke-width="1.5"></path></svg>'
+    )
     assert kept["nesting deeper than 32"] is None
+    for name, cleaned in kept.items():
+        assert cleaned is None or svg_ok(cleaned), (name, cleaned)
+        blank = [tag for tag in re.findall(r"<path\b[^>]*>", cleaned or "") if ' d="' not in tag]
+        assert blank == [], (name, cleaned)
 
 
 def test_component_tokens_are_known_by_their_root() -> None:

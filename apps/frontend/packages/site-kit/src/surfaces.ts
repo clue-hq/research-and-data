@@ -54,6 +54,11 @@ export function inkRole(brand: BrandData, surface: string): string | undefined {
   const pairs = (brand.kit as { constraints?: { contrast_pairs?: { background: string; foreground: string }[] } }).constraints?.contrast_pairs ?? [];
   const pair = pairs.find((p) => p.background === surface && hexOf(brand, p.foreground));
   if (pair) return pair.foreground;
+  return readableInk(brand, bg);
+}
+
+/** The better of text.primary and text.inverse on a colour. */
+export function readableInk(brand: BrandData, bg: string): string | undefined {
   const primary = hexOf(brand, "text.primary");
   const inverse = hexOf(brand, "text.inverse");
   if (!primary || !inverse) return primary ? "text.primary" : inverse ? "text.inverse" : undefined;

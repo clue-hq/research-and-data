@@ -5,10 +5,10 @@
 // fallback last — and `Drawn.source` says which, for brand.md.
 import type { BrandData } from "./brand";
 import {
-  FALLBACKS, colorOf, durationOf, easingOf, fluid, fontStack, keywordOf, numberOf, pxOf, ratioOf, shadowOf,
-  styleOf, transformOf, trim, typographyOf,
+  FALLBACKS, alphaOf, colorOf, contrast, durationOf, easingOf, fluid, fontStack, keywordOf, numberOf, pxOf,
+  ratioOf, shadowOf, styleOf, tokenEntry, transformOf, trim, typographyOf,
 } from "./brand-values";
-import { inkRole } from "./surfaces";
+import { inkRole, readableInk } from "./surfaces";
 
 export type State = "hover" | "pressed" | "focus" | "disabled";
 export const STATES: State[] = ["hover", "pressed", "focus", "disabled"];
@@ -105,8 +105,12 @@ export type Part =
   | "outlineColor" | "outlineWidth" | "outlineStyle" | "outlineOffset" | "iconColor" | "iconTransform" | "iconOpacity";
 /** CSS values; four-sided parts list top right bottom left (corners: tl tr br bl). */
 export type Parts = Partial<Record<Part, string>>;
-export type Source = "measured" | "kit" | "standard" | "fallback" | "none" | "inherit";
-export type Drawn = { parts: Parts; tokens: Partial<Record<Part, string>>; source: Partial<Record<Part, Source>> };
+/** Where a drawn part came from; `readable`: put in place of one that does not read (readableLabel). */
+export type Source = "measured" | "kit" | "standard" | "fallback" | "none" | "inherit" | "readable";
+/** `replaced`: a `readable` part's own value before it was replaced, named as brand.md names it. */
+export type Drawn = {
+  parts: Parts; tokens: Partial<Record<Part, string>>; source: Partial<Record<Part, Source>>; replaced?: Partial<Record<Part, string>>;
+};
 
 const SIDES = ["top", "right", "bottom", "left"] as const;
 const CORNERS = ["tl", "tr", "br", "bl"] as const;
@@ -252,6 +256,30 @@ export function standardButton(brand: BrandData): Drawn {
   return drawn;
 }
 
+/** A fill a label is read through rather than on: none, transparent, or less than half opaque (a
+ * "glass" button, Tailwind's `bg-white/10`). Its label has to read on the surface behind it. */
+export const isClearFill = (fill: string | undefined) =>
+  !fill || fill === "transparent" || (fill.startsWith("#") && alphaOf(fill) < 0.5);
+
+/** A fill and a label that were never seen together — one the standard button's, the other the
+ * kit's or measured — and do not read together (4.5:1): the label becomes the text colour that reads
+ * on that fill, the standard button's own label on the standard's fill, else the better of
+ * text.primary and text.inverse, with source `readable` and the label it replaced kept in `replaced`
+ * (brand.md says both). A pair from one source is never changed. */
+function readableLabel(brand: BrandData, drawn: Drawn) {
+  const { fill, label } = drawn.parts;
+  const sources = [drawn.source.fill, drawn.source.label];
+  const mixed = sources.includes("standard") && (sources.includes("kit") || sources.includes("measured"));
+  if (!mixed || isClearFill(fill) || !fill?.startsWith("#") || !label?.startsWith("#")) return;
+  if (contrast(fill.slice(0, 7), label.slice(0, 7)) >= 4.5) return;
+  const std = standardButton(brand);
+  const ink = readableInk(brand, fill.slice(0, 7));
+  const [value, token] = drawn.source.fill === "standard" ? [std.parts.label, std.tokens.label] : [colorOf(brand, ink), ink];
+  if (!value) return;
+  drawn.replaced = { ...drawn.replaced, label: drawn.tokens.label ? `${label} (${drawn.tokens.label})` : label };
+  put(drawn, "label", value, token, "readable");
+}
+
 /** How a look is drawn at rest. */
 export function drawnButton(brand: BrandData, look: Look | null): Drawn {
   const drawn = standardButton(brand);
@@ -269,6 +297,7 @@ export function drawnButton(brand: BrandData, look: Look | null): Drawn {
   }
   apply(drawn, partsFromRecipe(brand, look.recipe), "kit");
   apply(drawn, partsFromSlots(brand, look.measured?.rest), "measured");
+  readableLabel(brand, drawn);
   return drawn;
 }
 
@@ -393,7 +422,7 @@ export function motionEntries(brand: BrandData): MotionEntry[] {
         + `@media (prefers-reduced-motion:no-preference){.brand-motion-${slug}{animation:brand-kf-${slug} ${duration} ${easing} ${delay} ${value.iterations} ${value.direction} ${value.fill_mode}}}`,
       describe: `${changes.join(", ")}; ${repeat}${direction}`,
       timing: `${seconds(duration)} ${easing}`,
-      where: (brand.kit as { tokens?: { styles?: Record<string, { description?: string | null }> } }).tokens?.styles?.[token]?.description ?? "",
+      where: tokenEntry(brand, "styles", token)?.description ?? "",
     });
   }
   for (const token of motion?.reveals ?? []) {
@@ -412,7 +441,7 @@ export function motionEntries(brand: BrandData): MotionEntry[] {
         + `@supports (animation-timeline:view()){@media (prefers-reduced-motion:no-preference){.brand-motion-reveal-${slug}{animation:brand-kf-reveal-${slug} ${easing} both;animation-timeline:view();animation-range:entry 0% entry 100%}}}`,
       describe: `${said} as it scrolls into view`,
       timing: easing,
-      where: (brand.kit as { tokens?: { styles?: Record<string, { description?: string | null }> } }).tokens?.styles?.[token]?.description ?? "",
+      where: tokenEntry(brand, "styles", token)?.description ?? "",
     });
   }
   return entries;

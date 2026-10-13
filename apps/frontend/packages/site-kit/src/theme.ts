@@ -7,11 +7,11 @@
 // kit's (brand-values.ts) or one of FALLBACKS; clones keep their own captured CSS.
 import type { BrandData } from "./brand";
 import {
-  FALLBACKS, alphaOf, colorOf, contrast, fluid, fontStack, hexOf, isComponentToken, isMeasured, numberOf,
+  FALLBACKS, colorOf, contrast, cssString, fluid, fontStack, hexOf, isComponentToken, isMeasured, numberOf,
   pxOf, ratioOf, tokenEntry, tokenGroups, trim, typographyOf,
 } from "./brand-values";
 import {
-  STATES, buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, elementStyle, motionEntries,
+  STATES, buttonLooks, cardLooks, drawnButton, drawnCard, drawnLink, isClearFill, motionEntries,
   partsFromSlots, transitionsOf, type Drawn, type Look, type Part, type Parts, type State,
 } from "./looks";
 import { COLOR_ROLES, SURFACES, colorVar, extraSurfaceRoles, inkRole, isDarkSurface, surfaceRoles } from "./surfaces";
@@ -40,6 +40,12 @@ const CSS_OF: Record<Part, string> = {
   iconOpacity: "opacity",
 };
 const ICON_PARTS = new Set<Part>(["iconColor", "iconTransform", "iconOpacity"]);
+/** A relative asset path: the only font file a face's url("…") may hold. */
+const ASSET_PATH = /^[A-Za-z0-9._~/-]+$/;
+/** The only values a face's font-style and font-weight are written with. */
+const FONT_STYLES = new Set(["normal", "italic", "oblique"]);
+const fontWeightOk = (weight: unknown) =>
+  weight === null || weight === undefined || (typeof weight === "number" && Number.isFinite(weight) && weight >= 1 && weight <= 1000);
 const OUTLINE_PARTS = new Set<Part>(["outlineColor", "outlineWidth", "outlineStyle", "outlineOffset"]);
 type Swap = Partial<Record<"fill" | "label" | "border", string>>;
 type Swaps = { parts: Set<Part>; bySurface: Map<string, Swap> };
@@ -52,9 +58,9 @@ function rule(selector: string, props: Record<string, string | undefined>): stri
   return text ? `${selector}{${text}}` : "";
 }
 
-/** CSS declarations for a set of parts: the box's and its icon's. A colour that a dark surface swaps
- * reads that surface's value first (`--bs-<id>-<part>`), so the NEAREST surface decides. Outlines are
- * drawn on :focus-visible only, so a look with no focus style leaves the browser's ring alone. */
+/** CSS declarations for a set of parts: the box's and its icon's. A colour that a surface swaps reads
+ * that surface's value first (`--bs-<id>-<part>`), so the NEAREST surface decides. Outlines are drawn
+ * on :focus-visible only, so a look with no focus style leaves the browser's ring alone. */
 function declarations(parts: Parts, opts: { swaps?: Swaps; id?: string; outline?: boolean } = {}) {
   const box: Record<string, string> = {};
   const icon: Record<string, string> = {};
@@ -66,28 +72,48 @@ function declarations(parts: Parts, opts: { swaps?: Swaps; id?: string; outline?
   return { box, icon };
 }
 
-/** Where a button would not stand out on a surface (text 4.5:1, WCAG 1.4.3; a filled shape 3:1,
- * WCAG 1.4.11). Outline and text-only styles take the surface's text colour on ANY surface, light or
- * dark, where their own label would fail (a white ghost measured on a dark hero, used on a white
- * page); their border too when it is the label's colour. Filled styles take the light version (the
- * kit's page colour with its text colour) on dark surfaces only. */
-function buttonSwaps(brand: BrandData, drawn: Drawn, surfaces: string[], dark: string[]): Swaps {
+const inkOn = (surface: string) => `var(--brand-on-${colorVar(surface)})`;
+
+/** Where a text colour would not stand out on a surface, light or dark (4.5:1, WCAG 1.4.3): that
+ * surface's text colour, by surface. Text links, nav links and the labels of clear looks. */
+function textSwaps(brand: BrandData, color: string | undefined, surfaces: string[]): Map<string, string> {
+  const swaps = new Map<string, string>();
+  for (const surface of surfaces) {
+    const bg = hexOf(brand, surface);
+    if (bg && color?.startsWith("#") && contrast(color.slice(0, 7), bg) < 4.5) swaps.set(surface, inkOn(surface));
+  }
+  return swaps;
+}
+
+/** A filled button's light version on a dark surface: of the kit's page and inverse surfaces, the one
+ * that stands out more from this surface (a dark-themed seller's page is itself dark). */
+function lightVersion(brand: BrandData, bg: string): string | undefined {
+  return ["surface.page", "surface.inverse"]
+    .filter((role) => hexOf(brand, role) && colorOf(brand, inkRole(brand, role)))
+    .sort((a, b) => contrast(hexOf(brand, b)!, bg) - contrast(hexOf(brand, a)!, bg))[0];
+}
+
+/** Where a button or a card would not stand out on a surface (text 4.5:1, WCAG 1.4.3; a filled shape
+ * 3:1, WCAG 1.4.11). A clear look (isClearFill: no fill, transparent, or under half opaque) takes the
+ * surface's text colour on ANY surface, light or dark, where its own label would fail (a white ghost
+ * measured on a dark hero, used on a white page); its border too when it is the label's colour. A
+ * filled button (`filled`) takes its light version on dark surfaces only; a filled card is drawn as
+ * the kit draws it. */
+function lookSwaps(brand: BrandData, drawn: Drawn, surfaces: string[], dark: string[], filled: boolean): Swaps {
   const swaps: Swaps = { parts: new Set(), bySurface: new Map() };
-  const fill = drawn.parts.fill;
-  const clear = !fill || fill === "transparent" || (fill.startsWith("#") && alphaOf(fill) === 0);
+  const { fill, label, border } = drawn.parts;
+  const clear = isClearFill(fill);
+  const labels = clear ? textSwaps(brand, label, surfaces) : new Map<string, string>();
   for (const surface of surfaces) {
     const bg = hexOf(brand, surface);
     if (!bg) continue;
-    const on = `var(--brand-on-${colorVar(surface)})`;
     let swap: Swap | null = null;
-    const label = drawn.parts.label;
-    if (clear && label?.startsWith("#") && contrast(label.slice(0, 7), bg) < 4.5) {
-      swap = { label: on, ...(drawn.parts.border === label ? { border: on } : {}) };
-    } else if (!clear && dark.includes(surface) && fill?.startsWith("#") && contrast(fill.slice(0, 7), bg) < 3) {
-      swap = {
-        fill: "var(--brand-button-light-fill)", label: "var(--brand-button-light-label)",
-        ...(drawn.parts.border ? { border: "var(--brand-button-light-fill)" } : {}),
-      };
+    const on = labels.get(surface);
+    if (on) {
+      swap = { label: on, ...(border === label ? { border: on } : {}) };
+    } else if (!clear && filled && dark.includes(surface) && fill?.startsWith("#") && contrast(fill.slice(0, 7), bg) < 3) {
+      const light = lightVersion(brand, bg);
+      if (light) swap = { fill: `var(--brand-${colorVar(light)})`, label: inkOn(light), ...(border ? { border: `var(--brand-${colorVar(light)})` } : {}) };
     }
     if (!swap) continue;
     swaps.bySurface.set(surface, swap);
@@ -99,7 +125,11 @@ function buttonSwaps(brand: BrandData, drawn: Drawn, surfaces: string[], dark: s
 export function themeCss(brand: BrandData): string {
   const lines: string[] = [];
   for (const face of brand.fonts) {
-    lines.push(`@font-face{font-family:"${face.family}";src:url("${face.file}");font-weight:${face.weight ?? 400};font-style:${face.style};font-display:swap}`);
+    // A face is written only with a relative asset path for its file, a plain style and a numeric weight;
+    // otherwise the whole face is skipped.
+    const family = cssString(face.family);
+    if (!family || !ASSET_PATH.test(face.file) || !FONT_STYLES.has(face.style) || !fontWeightOk(face.weight)) continue;
+    lines.push(`@font-face{font-family:"${family}";src:url("${face.file}");font-weight:${face.weight ?? 400};font-style:${face.style};font-display:swap}`);
   }
 
   const root: Record<string, string> = {};
@@ -133,8 +163,6 @@ export function themeCss(brand: BrandData): string {
   }
   root["--brand-content-width"] = FALLBACKS.contentWidth;
   root["--brand-rule-width"] = pxOf(brand, "stroke.width.divider") ?? FALLBACKS.ruleWidth;
-  root["--brand-button-light-fill"] = "var(--brand-surface-page)";
-  root["--brand-button-light-label"] = "var(--brand-on-surface-page)";
 
   // Per surface: type colours, the rule colour, and every swap the surface needs.
   const dark = surfaces.filter((surface) => isDarkSurface(brand, surface));
@@ -156,19 +184,21 @@ export function themeCss(brand: BrandData): string {
     { id: "std", selector: ".brand-btn", drawn: drawnButton(brand, null), look: null },
     ...buttonLooks(brand).map((look) => ({ id: String(look.index), selector: `.brand-btn.brand-look-${look.index}`, drawn: drawnButton(brand, look), look })),
   ];
-  const swaps = new Map(buttons.map((b) => [b.id, buttonSwaps(brand, b.drawn, surfaces, dark)]));
-  // A text link whose colour fails 4.5:1 on a surface, light or dark, takes that surface's text colour.
-  const link = drawnLink(brand, "link");
-  const linkSwap = new Map<string, string>();
-  for (const surface of surfaces) {
-    const bg = hexOf(brand, surface);
-    const color = link.parts.label;
-    if (bg && color?.startsWith("#") && contrast(color.slice(0, 7), bg) < 4.5) linkSwap.set(surface, `var(--brand-on-${colorVar(surface)})`);
-  }
+  const cards = cardLooks(brand).map((look) => ({ id: `card-${look.index}`, drawn: drawnCard(brand, look), look }));
+  const swaps = new Map([
+    ...buttons.map((b) => [b.id, lookSwaps(brand, b.drawn, surfaces, dark, true)] as const),
+    ...cards.map((c) => [c.id, lookSwaps(brand, c.drawn, surfaces, dark, false)] as const),
+  ]);
+  // A text link or a nav link whose colour fails 4.5:1 on a surface takes that surface's text colour.
+  const links = ([[".brand-link", "link", "--bs-link-color"], [".brand-navlink", "nav_link", "--bs-nav-color"]] as const).map(([selector, component, variable]) => {
+    const drawn = drawnLink(brand, component);
+    const swap = textSwaps(brand, drawn.parts.label, surfaces);
+    return { selector, variable, drawn, swap, color: (value: string) => (swap.size ? `var(${variable},${value})` : value) };
+  });
   for (const surface of surfaces) {
     const vars = local.get(surface)!;
     for (const [id, s] of swaps) for (const part of s.parts) vars[`--bs-${id}-${part}`] = s.bySurface.get(surface)?.[part as keyof Swap] ?? "initial";
-    if (linkSwap.size) vars["--bs-link-color"] = linkSwap.get(surface) ?? "initial";
+    for (const l of links) if (l.swap.size) vars[l.variable] = l.swap.get(surface) ?? "initial";
   }
 
   lines.push(rule(".brand-root", { ...root, ...(local.get("surface.page") ?? {}) }));
@@ -205,26 +235,26 @@ export function themeCss(brand: BrandData): string {
     }
   }
   components.push(rule(".brand-card", { display: "block", ...declarations(drawnCard(brand, null).parts).box }));
-  for (const look of cardLooks(brand)) {
-    const selector = `.brand-card.brand-card-look-${look.index}`;
-    components.push(rule(selector, { ...declarations(drawnCard(brand, look).parts).box, transition: transitionsOf(brand, look.measured, "box") }));
+  for (const c of cards) {
+    const s = swaps.get(c.id)!;
+    const selector = `.brand-card.brand-card-look-${c.look.index}`;
+    components.push(rule(selector, { ...declarations(c.drawn.parts, { swaps: s, id: c.id }).box, transition: transitionsOf(brand, c.look.measured, "box") }));
     for (const state of ["hover", "pressed", "focus"] as State[]) {
-      const parts = partsFromSlots(brand, look.measured?.states?.[state]).parts;
-      components.push(rule(`a${selector}${STATE_SELECTOR[state]}`, declarations(parts, { outline: state === "focus" }).box));
+      const parts = partsFromSlots(brand, c.look.measured?.states?.[state]).parts;
+      components.push(rule(`a${selector}${STATE_SELECTOR[state]}`, declarations(parts, { swaps: s, id: c.id, outline: state === "focus" }).box));
     }
   }
-  const linkParts: Parts = { ...link.parts };
-  const linkDecl = declarations(linkParts).box;
-  if (linkParts.label) linkDecl.color = linkSwap.size ? `var(--bs-link-color,${linkParts.label})` : linkParts.label;
-  components.push(rule(".brand-link", { ...linkDecl, transition: transitionsOf(brand, link.style, "box") }));
-  const nav = drawnLink(brand, "nav_link");
-  components.push(rule(".brand-navlink", { ...declarations(nav.parts).box, transition: transitionsOf(brand, nav.style, "box") }));
-  for (const [selector, style] of [[".brand-link", elementStyle(brand, "link")], [".brand-navlink", elementStyle(brand, "nav_link")]] as const) {
+  for (const l of links) {
+    const decl = declarations(l.drawn.parts).box;
+    if (l.drawn.parts.label) decl.color = l.color(l.drawn.parts.label);
+    components.push(rule(l.selector, { ...decl, transition: transitionsOf(brand, l.drawn.style, "box") }));
+  }
+  for (const l of links) {
     for (const state of ["hover", "pressed", "focus"] as State[]) {
-      const parts = partsFromSlots(brand, style?.states?.[state]).parts;
+      const parts = partsFromSlots(brand, l.drawn.style?.states?.[state]).parts;
       const decl = declarations(parts, { outline: state === "focus" }).box;
-      if (selector === ".brand-link" && parts.label && linkSwap.size) decl.color = `var(--bs-link-color,${parts.label})`;
-      components.push(rule(`${selector}${STATE_SELECTOR[state]}`, decl));
+      if (parts.label) decl.color = l.color(parts.label);
+      components.push(rule(`${l.selector}${STATE_SELECTOR[state]}`, decl));
     }
   }
   lines.push(`@layer components{${components.filter(Boolean).join("")}}`);

@@ -18,7 +18,7 @@ import {
   partsFromSlots, type Drawn, type Look, type Part,
 } from "./looks";
 import { COMPONENT_SCHEMAS } from "./schemas";
-import { inkRole, surfaceChoices } from "./surfaces";
+import { colorVar, inkRole, surfaceChoices } from "./surfaces";
 import { SPACING_ROLES, TYPE_ROLES, typeVar } from "./theme";
 
 const PURPOSE: Record<string, string> = {
@@ -202,6 +202,7 @@ function partCell(brand: BrandData, drawn: Drawn, part: Part, what: string): str
   if (value === "inherit" || value === "currentColor") return "the surrounding text's colour";
   if (value.startsWith("clamp(") && token) value = pxOf(brand, token) ?? value;
   const named = token ? `${value} (${token})` : value;
+  if (drawn.source[part] === "readable") return `the kit's ${drawn.replaced?.[part]} does not read on this fill; drawn: ${named}`;
   if (drawn.source[part] === "standard") return `not in the kit; drawn: ${named}, the standard ${what}`;
   if (drawn.source[part] === "fallback") return `not in the kit; drawn: ${named}, site-kit's default`;
   return named;
@@ -224,26 +225,26 @@ function surfacesSection(brand: BrandData): string[] {
     const entry = tokenEntry(brand, "colors", choice.role);
     const band = /^section background \((.*)\)$/.exec(entry?.description ?? "");
     const from = band ? `measured: a section background on the seller's site (${band[1]} tall)` : isMeasured(entry) ? "measured" : "derived";
-    return `| ${choice.value} | ${choice.label} | ${choice.role} | ${colorOf(brand, choice.role) ?? "not in this kit"} | ${ink ? `${colorOf(brand, ink)} (${ink})${how}` : "chosen by contrast"} | ${from} |`;
+    const classes = `\`bg-${colorVar(choice.role)} text-on-${colorVar(choice.role)}\``;
+    return `| ${choice.value} | ${choice.label} | ${choice.role} | ${classes} | ${colorOf(brand, choice.role) ?? "not in this kit"} | ${ink ? `${colorOf(brand, ink)} (${ink})${how}` : "chosen by contrast"} | ${from} |`;
   });
   return [
     "## Surfaces",
     "Every section stands on one of these surfaces. Choose one by its name: `\"surface\": \"brand\"` on one",
     "of our sections, or `kit.Shell surface=\"<choice>\"` (or the classes",
-    "`bg-surface-<choice> text-on-surface-<choice>`) in a section you write. Text on a surface takes the",
+    "in its \"classes\" column) in a section you write. Text on a surface takes the",
     "colour under \"text on it\".",
-    "| choice | name | kit name | colour | text on it | from |",
-    "|---|---|---|---|---|---|",
+    "| choice | name | kit name | classes | colour | text on it | from |",
+    "|---|---|---|---|---|---|---|",
     ...rows,
     "",
   ];
 }
 
 function typeSection(brand: BrandData): string[] {
-  const typography = ((brand.kit as { tokens?: { typography?: Record<string, TypeToken> } }).tokens?.typography) ?? {};
   const rows = TYPE_ROLES.map((role) => {
     const classes = `\`font-${typeVar(role)} text-${typeVar(role)}\``;
-    const token = typography[`type.${role}`];
+    const token = tokenEntry(brand, "typography", `type.${role}`) as TypeToken | undefined;
     if (!token) return `| ${role} | ${classes} | not in this kit | | | | | |`;
     const style = token.value.default;
     const colourRole = typographyOf(brand, `type.${role}`)?.color;
@@ -283,10 +284,10 @@ function buttonsSection(brand: BrandData): string[] {
   const label = partCell(brand, std, "label", "button's label");
   const corners = partCell(brand, std, "radius", "button's corners");
   const dark = [
-    "A button whose text or fill would not stand out from its surface changes: outline and text-only",
+    "A button whose text or fill would not stand out from its surface changes: outline, text-only and see-through",
     "styles take the surface's text colour on any surface, and on a dark surface filled styles and the",
-    "standard button take their light version (the kit's page colour, with its text colour). Every other",
-    "button is drawn as the seller's site draws it.",
+    "standard button take their light version (the kit's page or inverse colour, whichever stands out",
+    "more on that surface, with its text colour). Every other button is drawn as the seller's site draws it.",
   ];
   if (!looks.length) {
     return ["## Buttons", `This brand's kit records no button styles, so every button is the kit's standard button: ${fill}, ${label}, ${corners}.`, "", ...dark, ""];
@@ -328,6 +329,7 @@ function cardsSection(brand: BrandData): string[] {
   const looks = cardLooks(brand);
   const std = drawnCard(brand, null);
   const fill = partCell(brand, std, "fill", "card's fill");
+  const text = partCell(brand, std, "label", "card's text");
   const corners = partCell(brand, std, "radius", "card's corners");
   const padding = partCell(brand, std, "padding", "card's padding");
   if (!looks.length) {
@@ -335,7 +337,7 @@ function cardsSection(brand: BrandData): string[] {
   }
   const rows = looks.map((look) => {
     const drawn = drawnCard(brand, look);
-    return `| ${look.name} | ${KIND_WORD[look.kind]} | ${partCell(brand, drawn, "fill", "card's fill")} | ${borderCell(brand, drawn, "card's border")} | ${partCell(brand, drawn, "radius", "card's corners")} | ${partCell(brand, drawn, "padding", "card's padding")} | ${look.recipe.confidence ?? "low"} | ${cellText((look.recipe.unmapped ?? []).join(" "))} |`;
+    return `| ${look.name} | ${KIND_WORD[look.kind]} | ${partCell(brand, drawn, "fill", "card's fill")} | ${partCell(brand, drawn, "label", "card's text")} | ${borderCell(brand, drawn, "card's border")} | ${partCell(brand, drawn, "radius", "card's corners")} | ${partCell(brand, drawn, "padding", "card's padding")} | ${look.recipe.confidence ?? "low"} | ${cellText((look.recipe.unmapped ?? []).join(" "))} |`;
   });
   return [
     "## Cards",
@@ -343,9 +345,11 @@ function cardsSection(brand: BrandData): string[] {
     `its brand kit recorded them, and the kit's standard card. Choose one with \`look\``,
     `(\`kit.Card look="${looks[0].name}"\`), or leave it out for the standard card. Give it \`href\` to make`,
     "the whole card a link; it then takes the style's hover and focus looks from the seller's site.",
-    "| look | kind | fill | border | corners | padding | confidence | notes from the brand kit |",
-    "|---|---|---|---|---|---|---|---|",
-    `| (none) | the kit's standard card | ${fill} | none | ${corners} | ${padding} | — | Used when you name no look. |`,
+    "A text-only or outline card's text takes the surface's text colour on any surface where its own",
+    "would not stand out.",
+    "| look | kind | fill | text | border | corners | padding | confidence | notes from the brand kit |",
+    "|---|---|---|---|---|---|---|---|---|",
+    `| (none) | the kit's standard card | ${fill} | ${text} | none | ${corners} | ${padding} | — | Used when you name no look. |`,
     ...rows,
     "",
   ];
