@@ -434,3 +434,31 @@ def test_the_card_inliner_turns_every_stored_reference_into_its_bytes_and_keeps_
     assert missing == [gone]
     # The logo case: the same digest twice costs one read.
     assert reads == [held, also_held, gone]
+
+
+def test_the_inliner_shares_one_cache_across_calls_for_the_site_turn() -> None:
+    """The site turn's screenshot port (``site_turn_ports``) inlines a page's HTML and then its CSS,
+    for every render the agent asks for, through ONE cache — so the header logo on every page is read
+    once per turn, and a known-missing digest is not read again. The cache is keyword-only and
+    optional; the card passes none."""
+    from lumen_api.database import NotFoundError
+    from lumen_api.web_pdf import inline_asset_store_refs
+
+    logo, gone = "d" * 64, "e" * 64
+    reads: list[str] = []
+
+    def read_blob(digest: str) -> tuple[str, bytes]:
+        reads.append(digest)
+        if digest == gone:
+            raise NotFoundError("design_blob", digest)
+        return "image/svg+xml", b"<svg/>"
+
+    cache: dict[str, str | None] = {}
+    html, missing_html = inline_asset_store_refs(f'<img src="/asset-store/{logo}"><img src="/asset-store/{gone}">', read_blob, cache=cache)
+    css, missing_css = inline_asset_store_refs(f".hero{{background:url(/asset-store/{logo})}}", read_blob, cache=cache)
+    again, missing_again = inline_asset_store_refs(f'<img src="/asset-store/{gone}">', read_blob, cache=cache)
+
+    assert reads == [logo, gone]
+    assert "/asset-store/" not in css and f"/asset-store/{logo}" not in html
+    assert missing_html == [gone] and missing_css == []
+    assert again == f'<img src="/asset-store/{gone}">' and missing_again == [gone]

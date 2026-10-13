@@ -35,6 +35,8 @@ _ASSET_STORE_REF = re.compile(r"/asset-store/([0-9a-fA-F]{64})")
 def inline_asset_store_refs(
     html: str,
     read_blob: Callable[[str], Tuple[str, bytes]],
+    *,
+    cache: Optional[Dict[str, Optional[str]]] = None,
 ) -> Tuple[str, List[str]]:
     """Replace every ``/asset-store/<digest>`` with a ``data:`` URI of its bytes.
 
@@ -46,9 +48,16 @@ def inline_asset_store_refs(
     HTML untouched and named in ``missing`` — a capture that loses one picture is
     still an honest capture, while raising here would turn a dangling asset row
     into a failure for the whole page.
+
+    ``cache`` maps digest -> data URI (``None`` for a known-missing digest) and may be
+    shared across calls: the site turn's screenshot port (``site_turn_ports``) inlines
+    a page's HTML and then its CSS, for every render the agent asks for, through one
+    cache, so a logo on every page is read once per turn. Each call still names in
+    ``missing`` every missing digest IT met, cached or not. Passing nothing gives the
+    call its own cache (the gallery card).
     """
 
-    resolved: Dict[str, Optional[str]] = {}
+    resolved: Dict[str, Optional[str]] = {} if cache is None else cache
     missing: List[str] = []
 
     def data_uri(digest: str) -> Optional[str]:
@@ -57,10 +66,11 @@ def inline_asset_store_refs(
                 media_type, data = read_blob(digest)
             except NotFoundError:
                 resolved[digest] = None
-                missing.append(digest)
             else:
                 encoded = base64.b64encode(data).decode("ascii")
                 resolved[digest] = f"data:{media_type};base64,{encoded}"
+        if resolved[digest] is None and digest not in missing:
+            missing.append(digest)
         return resolved[digest]
 
     def replace(match: "re.Match[str]") -> str:
