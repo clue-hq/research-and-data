@@ -17,10 +17,14 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
+from .site_kit_cli import compile_section_source
 from .toolbelt.site_documents import replace_site_payload
+from .web_export import compile_tailwind_css
 
 __all__ = [
+    "SCHEMA_UNREADABLE",
     "DurableSiteAssetPort",
+    "DurableSiteSectionPort",
     "DurableSiteVersionPort",
     "PlatformSiteRenderer",
     "SiteAssetError",
@@ -173,3 +177,53 @@ class DurableSiteVersionPort:
                 site = replace_site_payload(row.get("operations"))
                 return copy.deepcopy(site) if site is not None else None
         return None
+
+
+#: T13 (founder-approved text): the one error write_section shows when the hardened render page
+#: could not read the module's props schema. {message} is the render page's own reason.
+SCHEMA_UNREADABLE = (
+    "the section could not be loaded to read its props ({code}: {message}); check that it exports "
+    "`schema` (a zod object with `id` and `surface`) and `render`"
+)
+
+
+class DurableSiteSectionPort:
+    """SiteSectionPort (Contract 4): check and bundle in Node (the module never runs here), build its
+    CSS the way the renderer builds a site's (Tailwind over the text, with the brand's theme), then
+    record it through the governed design_record_site_section, which reads the props schema in Lane
+    A's hardened render page. Check errors come back as a list to fix; a toolchain that cannot
+    answer raises (write_section turns that into "the check crashed")."""
+
+    def __init__(self, *, store: Any, invocations: Any, run_id: str, brand: dict, node_bin: str = "node") -> None:
+        self.store = store
+        self.invocations = invocations
+        self.run_id = run_id
+        self.brand = brand
+        self.node_bin = node_bin
+
+    def compile(self, *, name: str, source: str) -> dict:
+        from lumen_agent.site.inputs import SiteSection
+
+        from .toolbelt.site_sections import SiteSectionRefused
+
+        answer = compile_section_source(name=name, source=source, brand=self.brand)
+        if not answer.get("ok"):
+            return {"ok": False, "errors": [str(error) for error in answer.get("errors") or []]}
+        module_js = str(answer["moduleJs"])
+        css = compile_tailwind_css(source, '@import "tailwindcss";\n' + str(answer.get("tailwindTheme") or ""), self.node_bin)
+        try:
+            result = self.invocations.invoke(
+                "design_record_site_section",
+                {"name": name, "source": source, "module_js": module_js, "css": css},
+                workspace_id=self.store.workspace_id,
+                actor="agent",
+                actor_id=self.run_id,
+            )
+        except SiteSectionRefused as refused:
+            return {"ok": False, "errors": [SCHEMA_UNREADABLE.format(code=refused.code, message=refused.message)]}
+        digest = str(result.references["digest"])
+        (row,) = self.store.get_site_sections([digest])
+        return {
+            "ok": True,
+            "section": SiteSection(name=name, digest=digest, props_schema=row["props_schema"], module_js=module_js, css=css),
+        }

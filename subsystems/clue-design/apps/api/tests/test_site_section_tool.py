@@ -76,3 +76,26 @@ def test_a_bad_section_name_is_refused_before_anything_runs(client, workspace_id
     # (clue_toolbelt/invoker.py:187), so a bad name never reaches the schema read or the store.
     with pytest.raises(ValidationError):
         _record(client, workspace_id, name="stepsBand")
+
+
+def test_the_section_loader_serves_what_a_site_pins_and_refuses_the_rest(
+    client, workspace_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from lumen_api import site_render
+    from lumen_api.site_doc_inputs import load_section_modules
+    from lumen_api.site_workspace_view import load_site_section_modules
+
+    monkeypatch.setattr(site_render, "read_section_schema", lambda module_js, **_: SCHEMA)
+    digest = _record(client, workspace_id).references["digest"]
+    repo, blobs = HybridRepository(workspace_id), make_blob_store(client.app)
+    assert client.app.state.site_section_loader is load_site_section_modules
+    (module,) = load_site_section_modules(repo, blobs, {"StepsBand": digest})
+    assert (module.name, module.digest, module.module_js, module.css, module.props_schema) == (
+        "StepsBand", digest, MODULE, CSS, SCHEMA)
+    # Lane A's pin check accepts it: the bytes hash to the pinned digest.
+    assert load_section_modules(load_site_section_modules, repo, blobs, {"agent_sections": {"StepsBand": digest}})
+    for pins in ({"StepsBand": "0" * 64}, {"OtherName": digest}):
+        with pytest.raises(site_render.SiteRenderError) as missing:
+            load_site_section_modules(repo, blobs, pins)
+        assert missing.value.code == site_render.SECTION_MODULE_MISSING
+

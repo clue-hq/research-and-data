@@ -132,10 +132,10 @@ from .database import (
 )
 from . import run_stream
 from .spend import drain_safely as _drain_spend
-from .site_doc_inputs import SiteInputsUnavailable, sections_not_stored
+from .site_doc_inputs import SiteInputsUnavailable
 from .site_doc_validate import SiteDocumentInvalid, SiteValidatorUnavailable
 from .toolbelt.site_documents import SiteHistoryEmpty, replace_site_payload
-from .site_workspace_view import build_site_turn_inputs, site_brand_loader_for
+from .site_workspace_view import build_site_turn_inputs, load_site_section_modules, site_brand_loader_for
 from .design_store import (
     DesignBlobStore,
     HybridRepository,
@@ -864,11 +864,11 @@ def create_app(
     # to exercise the honest compile-failure path.
     app.state.web_export_node_bin = "node"
     # Puck sites (Wave 2, Lane A gap 1): the site's BrandData builder and its agent-section store.
-    # Lane B6 replaces the section store; until then a site check, render or publish that places an
-    # agent section refuses with a typed reason instead of guessing (lumen_api.site_doc_inputs).
     # Lane B2: the site's BrandData from its pinned kit (lumen_api.site_brand, the one builder).
     app.state.site_brand_loader = site_brand_loader_for(lambda workspace_id: engine_cache_dir(workspace_id))
-    app.state.site_section_loader = sections_not_stored
+    # Lane B6 (Contract 4): the workspace's recorded agent sections. A site that places one finds
+    # its module here for every save, render and publish.
+    app.state.site_section_loader = load_site_section_modules
     # Part II D6: THE governed design write path. Every converted domain's mutation runs through
     # this invoker — the platform's own `ToolInvoker`, over the platform's own `tool_invocation`
     # + execution-journal tables (see `lumen_api.toolbelt.wiring`). The host's members are
@@ -10310,9 +10310,9 @@ def _turn_design_tools(
             ),
             compile_fn=lambda: compile_custom_component,
             # Lane B (Wave 2): the site turn's persist validates through design_write_site, which
-            # needs the site's brand and its agent-section modules (Task 15 replaces the second).
+            # needs the site's brand and its agent-section modules (the workspace's recorded ones).
             site_brand_loader=lambda: site_brand_loader_for(lambda ws: _host_engine_cache_root(host, ws)),
-            site_section_loader=lambda: sections_not_stored,
+            site_section_loader=lambda: load_site_section_modules,
         ),
         storage=storage,
         run_subject=subject,
@@ -11846,6 +11846,7 @@ def _execute_site_turn_job(
 ) -> Tuple[str, JsonObject, str, JsonObject]:
     from .site_turn_ports import (
         DurableSiteAssetPort,
+        DurableSiteSectionPort,
         DurableSiteVersionPort,
         PlatformSiteRenderer,
         SitePersistOutcome,
@@ -11934,6 +11935,12 @@ def _execute_site_turn_job(
                 site_versions=DurableSiteVersionPort(store, document_id),
                 renderer=PlatformSiteRenderer(read_blob=blobs.read_blob),
                 logo_cache=DurableLogoFamilyCache(blobs=blobs),
+            )
+            inputs = replace(
+                inputs,
+                sections=DurableSiteSectionPort(
+                    store=store, invocations=invocations, run_id=envelope.run_id, brand=inputs.brand
+                ),
             )
         response = run_site_agent_turn(
             doc, prompt, user_message=payload.prompt, inputs=inputs, persist=persist, workspace_id=workspace_id,

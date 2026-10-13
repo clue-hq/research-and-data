@@ -55,7 +55,7 @@ test("the type check runs on a file written inside the package", () => {
     const errors = typeCheck(bad);
     assert.ok(errors.some((e) => e.includes("TS2322")), errors.join("; ") || "no type errors");
   } finally {
-    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -103,7 +103,7 @@ test("the CLI checks a section without importing it", () => {
     const out = execFileSync(process.execPath, ["--import", "tsx", "src/check-section.ts", file], { cwd: root });
     assert.deepEqual(JSON.parse(out.toString()), { ok: true, errors: [] });
   } finally {
-    fs.rmSync(path.join(root, ".section-check"), { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

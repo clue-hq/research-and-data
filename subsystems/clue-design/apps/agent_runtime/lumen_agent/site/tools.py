@@ -20,6 +20,7 @@ import base64
 import copy
 import hashlib
 import io
+import json
 import re
 import time
 from collections import Counter
@@ -30,13 +31,17 @@ from typing import Any, Callable
 from lumen_api.site_kit_cli import SiteKitCliError, validate_site_files
 
 from .inputs import SiteSection, SiteTurnInputs
-from .workspace import turn_brand, write_site_files
+from .workspace import record_component, turn_brand, write_site_files
 
 FETCH_LIMIT = 12_000
 VIEW_ASSET_MAX = 4
 VIEW_ASSET_PX = 1024
 RETRIES = 2
 LOOP_GUARD_AT = 3
+#: The spike's built-in section names (tools.py:42) plus the shell's two: a new section may not
+#: take one of them.
+BUILT_IN_SECTIONS = frozenset({"ClonedSection", "StatsBand", "FeatureSplit", "ProofCard", "CtaBand", "TokenProbe", "SiteHeader", "SiteFooter"})
+SECTION_NAME = re.compile(r"[A-Z][A-Za-z0-9]{2,40}")
 #: Screenshots keep their width: desktop at half size (720 px wide), mobile at full size (375 px),
 #: cut into pieces of at most TILE_PX tall so a model never shrinks a tall page into a sliver.
 SCALE_BY_WIDTH = {1440: 0.5, 375: 1.0}
@@ -181,6 +186,35 @@ class SiteTools:
             for asset in (self.brand.get("assets") or {}).values()
             if isinstance(asset, dict) and asset.get("file")
         }
+
+    # --- new sections (E5) -----------------------------------------------------------------------
+
+    def write_section(self, name: str, code: str) -> str:
+        """Write a new section as one React file. It must pass the brand-token check and type-check;
+        only then does it join this site, under its name."""
+
+        if not SECTION_NAME.fullmatch(name or ""):
+            return "NOT WRITTEN: a section name is PascalCase letters and digits, for example StepsBand."
+        if name in BUILT_IN_SECTIONS:
+            return f"NOT WRITTEN: {name} is one of the built-in sections; choose another name."
+        port = self.inputs.sections
+        try:
+            if port is None:
+                raise RuntimeError("section store unavailable")
+            answer = port.compile(name=name, source=code)
+        except Exception as error:  # noqa: BLE001 - a toolchain that cannot answer is an answer, not a crash
+            detail = getattr(error, "detail", None) or str(error)
+            return f"NOT WRITTEN: the check crashed: {str(detail).strip()[-500:]}"
+        if not answer.get("ok"):
+            errors = [str(error) for error in answer.get("errors") or []]
+            self._record("section_refused", name=name, errors=errors)
+            return "NOT WRITTEN (fix these, then call write_section again):\n" + "\n".join(f"- {e}" for e in errors)
+        section = answer["section"]
+        self.sections[name] = section
+        record_component(self.workspace, name, section.props_schema)
+        self._record("section_written", name=name, digest=section.digest)
+        return (f"WRITTEN: {name} is ready for this site. Place it in a page with \"type\": \"{name}\" and "
+                f"these props:\n{json.dumps(section.props_schema, indent=1)[:4000]}")
 
     # --- validate ------------------------------------------------------------------------------
 
@@ -505,8 +539,6 @@ class SiteTools:
 
     def web_search(self, query: str, include_domains: list[str] | None = None, num_results: int = 8) -> str:
         """The platform's web search. Set include_domains to the seller's domain for its case studies."""
-
-        import json
 
         reads = self.inputs.platform_reads
         if reads is None:

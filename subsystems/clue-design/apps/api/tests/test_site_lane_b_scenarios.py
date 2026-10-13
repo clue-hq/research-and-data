@@ -1351,12 +1351,10 @@ def test_g_a_recorded_section_is_offered_validated_and_drawn(client: TestClient,
 
 
 @needs_chromium
-@pytest.mark.xfail(strict=True, reason=(
-    "DEFECT: a section the turn offers (recorded by design_record_site_section, listed by site_sections_for_turn) "
-    "cannot be saved once placed: the turn host's design_write_site loads agent sections with sections_not_stored "
-    "(main.py _turn_design_tools), so the save refuses 'the section store, Lane B6, is not composed'"))
 def test_g_a_recorded_section_placed_by_the_agent_is_saved(client: TestClient, model: ModelSeam, garner: Garner,
                                                            workspace_id: str) -> None:
+    """The turn host's design_write_site loads the workspace's recorded modules, so a section the turn
+    offers is saved once placed (Lane B Task 15 composed the loader; was DEFECT 4)."""
     state = place_a_recorded_section(client, model, garner, workspace_id)
     turn, store, document_id = state["turn"], state["store"], state["document_id"]
     assert turn.status == "succeeded" and turn.response["saved_version"] == 1, turn.response.get("summary")

@@ -203,6 +203,29 @@ def site_sections_for_turn(store: Any, blobs: Any, site: Mapping[str, Any]) -> d
     return sections
 
 
+def load_site_section_modules(repo: Any, blobs: Any, agent_sections: Mapping[str, str]) -> list:
+    """Lane A's ``site_section_loader`` (Contract 4): the modules a site pins, from this workspace's
+    store. A pin this workspace does not hold, held under another name, or whose files are gone
+    refuses with ``render.section_module_missing`` (a save answers site.invalid, a publish refuses);
+    Lane A's ``pinned_modules`` then checks each module's bytes hash to its pin."""
+
+    from .site_render import SECTION_MODULE_MISSING, SectionModule, SiteRenderError
+
+    pins = {str(name): str(digest) for name, digest in agent_sections.items()}
+    rows = {row["digest"]: row for row in repo.get_site_sections(list(pins.values()))}
+    modules = []
+    for name, digest in pins.items():
+        row = rows.get(digest)
+        if row is None or row["name"] != name:
+            raise SiteRenderError(SECTION_MODULE_MISSING, f"agent section {name} has no stored module {digest[:12]}")
+        try:
+            module_js, css = read_section_bytes(blobs, row)
+        except NotFoundError as error:
+            raise SiteRenderError(SECTION_MODULE_MISSING, f"agent section {name}'s stored files are gone") from error
+        modules.append(SectionModule(name=name, digest=digest, module_js=module_js, css=css, props_schema=row["props_schema"]))
+    return modules
+
+
 def read_section_bytes(blobs: Any, row: Mapping[str, Any]) -> tuple[str, str]:
     """A recorded section's compiled module and CSS (raises NotFoundError when either is gone).
     The one read of section files: the turn's sections here, Lane A's loader in Task 15."""

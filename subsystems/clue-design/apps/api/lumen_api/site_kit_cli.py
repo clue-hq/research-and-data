@@ -28,6 +28,7 @@ __all__ = [
     "SITE_KIT_DIR",
     "SiteKitCliError",
     "build_site_catalog",
+    "compile_section_source",
     "run_site_kit_bundle",
     "run_site_kit_script",
     "section_toolchain_missing",
@@ -186,3 +187,11 @@ def build_site_catalog(brand: Mapping[str, Any], seller: str) -> dict[str, str]:
     if not isinstance(files, dict):
         raise SiteKitCliError("site_kit.bad_output", f"the catalog builder printed no files: {sorted(answer)[:10]!r}")
     return {str(path): str(markdown) for path, markdown in files.items()}
+
+
+def compile_section_source(*, name: str, source: str, brand: Mapping[str, Any]) -> dict[str, Any]:
+    """Check and bundle one agent-written section (Task 15). The answer is the CLI's own:
+    ``{"ok": True, "name", "moduleJs", "tailwindTheme"}`` or ``{"ok": False, "name", "errors"}``.
+    A toolchain that cannot answer raises ``SiteKitCliError``."""
+
+    return run_site_kit_script("compile-section.ts", {"name": name, "source": source, "brand": dict(brand)})

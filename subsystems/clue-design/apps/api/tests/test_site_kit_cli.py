@@ -11,7 +11,9 @@ from lumen_api.site_kit_cli import (
     SiteKitCliError,
     _child_env,
     build_site_catalog,
+    compile_section_source,
     run_site_kit_bundle,
+    section_toolchain_missing,
     site_kit_toolchain_missing,
     validate_site_files,
 )
@@ -90,3 +92,14 @@ def test_lane_as_validator_runs_through_the_shared_runner(monkeypatch: pytest.Mo
     monkeypatch.setattr(site_doc_validate, "run_site_kit_bundle", fake_bundle)
     errors = site_doc_validate.run_site_validator({"pages": {}, "shell": None}, {}, section_schemas={}, site_images=[])
     assert errors == ["page.json: x"] and seen == [("validate-site.mjs", "the site validator")]
+
+
+EXAMPLE = (SITE_KIT_DIR / "test" / "fixtures" / "section-example.tsx").read_text()
+
+
+@pytest.mark.skipif(section_toolchain_missing() is not None, reason=f"section toolchain: {section_toolchain_missing()}")
+def test_a_section_compiles_through_the_cli() -> None:
+    answer = compile_section_source(name="QuoteBand", source=EXAMPLE, brand=_brand())
+    assert answer["ok"] is True and "export" in answer["moduleJs"]
+    refused = compile_section_source(name="QuoteBand", source=EXAMPLE.replace("text-ink-secondary", "text-red-500"), brand=_brand())
+    assert refused["ok"] is False and any('class "text-red-500"' in error for error in refused["errors"])

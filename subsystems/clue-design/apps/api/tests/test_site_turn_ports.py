@@ -6,7 +6,7 @@ import base64
 import hashlib
 import sys
 from dataclasses import dataclass, field
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -18,12 +18,15 @@ from lumen_api.asset_custody import write_cache_blob
 from lumen_api.design_store import HybridRepository
 from lumen_api.main import create_app
 from lumen_api.site_turn_ports import (
+    SCHEMA_UNREADABLE,
     DurableSiteAssetPort,
+    DurableSiteSectionPort,
     DurableSiteVersionPort,
     PlatformSiteRenderer,
     SiteAssetError,
     SiteRenderPortError,
 )
+from lumen_api.toolbelt.site_sections import SiteSectionRefused
 
 
 @dataclass
@@ -191,3 +194,71 @@ def test_saved_versions_are_read_from_the_documents_history() -> None:
         (2, "human", "make v2"), (1, "agent", "make v1")]
     assert port.site_at(1)["pages"]["/"]["content"][0]["props"]["heading"] == "v1"
     assert port.site_at(9) is None
+
+
+SECTION_SCHEMA = {"type": "object", "properties": {"id": {"type": "string"}, "surface": {"type": "string"}}}
+
+
+class _SectionStore:
+    workspace_id = "ws_sections"
+
+    def get_site_sections(self, digests):
+        return [{"digest": d, "name": "StepsBand", "props_schema": SECTION_SCHEMA} for d in digests]
+
+
+class _SectionInvocations:
+    def __init__(self, refuse: bool = False) -> None:
+        self.calls: list[tuple] = []
+        self.refuse = refuse
+
+    def invoke(self, name, body, *, workspace_id, actor, actor_id=None):
+        self.calls.append((name, body, workspace_id, actor, actor_id))
+        if self.refuse:
+            raise SiteSectionRefused("render.failed", "the props need \"surface\"")
+        return SimpleNamespace(references={"digest": "d" * 64, "name": body["name"]})
+
+
+def _compiled(monkeypatch: pytest.MonkeyPatch, answer: dict) -> list:
+    from lumen_api import site_turn_ports
+
+    seen: list = []
+    monkeypatch.setattr(site_turn_ports, "compile_section_source", lambda **kw: seen.append(kw) or answer)
+    monkeypatch.setattr(
+        site_turn_ports, "compile_tailwind_css",
+        lambda html, input_css, node_bin, timeout_seconds=120: f"/* {input_css.splitlines()[0]} */.px-6{{}}",
+    )
+    return seen
+
+
+def test_the_section_port_compiles_records_and_answers_with_the_section(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _compiled(monkeypatch, {"ok": True, "name": "StepsBand", "moduleJs": "export {};", "tailwindTheme": "@theme inline {}"})
+    invocations = _SectionInvocations()
+    port = DurableSiteSectionPort(store=_SectionStore(), invocations=invocations, run_id="run_s1", brand={"assets": {}})
+    answer = port.compile(name="StepsBand", source="SRC")
+    assert answer["ok"] is True
+    section = answer["section"]
+    assert (section.name, section.digest, section.props_schema) == ("StepsBand", "d" * 64, SECTION_SCHEMA)
+    assert section.module_js == "export {};" and section.css == '/* @import "tailwindcss"; */.px-6{}'
+    assert seen == [{"name": "StepsBand", "source": "SRC", "brand": {"assets": {}}}]
+    assert invocations.calls == [(
+        "design_record_site_section",
+        {"name": "StepsBand", "source": "SRC", "module_js": "export {};", "css": '/* @import "tailwindcss"; */.px-6{}'},
+        "ws_sections", "agent", "run_s1",
+    )]
+
+
+def test_check_errors_pass_through_and_nothing_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    _compiled(monkeypatch, {"ok": False, "name": "StepsBand", "errors": ["type error: (3,7): bad"]})
+    invocations = _SectionInvocations()
+    port = DurableSiteSectionPort(store=_SectionStore(), invocations=invocations, run_id="r", brand={})
+    assert port.compile(name="StepsBand", source="SRC") == {"ok": False, "errors": ["type error: (3,7): bad"]}
+    assert invocations.calls == []
+
+
+def test_a_schema_the_render_page_cannot_read_is_one_error_to_fix(monkeypatch: pytest.MonkeyPatch) -> None:
+    _compiled(monkeypatch, {"ok": True, "name": "StepsBand", "moduleJs": "export {};", "tailwindTheme": ""})
+    port = DurableSiteSectionPort(store=_SectionStore(), invocations=_SectionInvocations(refuse=True), run_id="r", brand={})
+    assert port.compile(name="StepsBand", source="SRC") == {
+        "ok": False,
+        "errors": [SCHEMA_UNREADABLE.format(code="render.failed", message='the props need "surface"')],
+    }

@@ -133,3 +133,24 @@ def test_the_image_builds_and_ships_the_site_kit_bundles() -> None:
         " /app/apps/frontend/packages/site-kit/dist" in DOCKERFILE
     )
     assert 'check "site-kit bundles"' in SMOKE
+
+
+def test_the_image_ships_the_section_compile_toolchain() -> None:
+    """Agent-written sections are checked and bundled at run time (Wave 2 Lane B, Contract 4)."""
+    assert "COPY --from=sitekit /src/apps/frontend/node_modules /app/apps/frontend/node_modules" in DOCKERFILE
+    assert 'check "site-kit section toolchain"' in SMOKE
+
+
+def test_the_runtime_user_can_create_the_section_check_folder() -> None:
+    """The section compiler type-checks in a throwaway folder inside site-kit; the image's uid 1000
+    must be able to create it (Wave 2 Lane B, Contract 4)."""
+    assert (
+        "mkdir -p /app/apps/frontend/packages/site-kit/.section-check"
+        " && chown 1000:1000 /app/apps/frontend/packages/site-kit/.section-check" in DOCKERFILE
+    )
+    assert DOCKERFILE.index("site-kit/.section-check") < DOCKERFILE.index("USER 1000:1000")
+    assert (
+        'check "site-kit section check folder writable" run test -w'
+        " /app/apps/frontend/packages/site-kit/.section-check" in SMOKE
+    )
+
