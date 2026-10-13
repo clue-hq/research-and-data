@@ -18,7 +18,7 @@ import {
   partsFromSlots, type Drawn, type Look, type Part,
 } from "./looks";
 import { COMPONENT_SCHEMAS } from "./schemas";
-import { inkRole, surfaceChoices } from "./surfaces";
+import { colorVar, inkRole, surfaceChoices } from "./surfaces";
 import { SPACING_ROLES, TYPE_ROLES, typeVar } from "./theme";
 
 const PURPOSE: Record<string, string> = {
@@ -224,16 +224,17 @@ function surfacesSection(brand: BrandData): string[] {
     const entry = tokenEntry(brand, "colors", choice.role);
     const band = /^section background \((.*)\)$/.exec(entry?.description ?? "");
     const from = band ? `measured: a section background on the seller's site (${band[1]} tall)` : isMeasured(entry) ? "measured" : "derived";
-    return `| ${choice.value} | ${choice.label} | ${choice.role} | ${colorOf(brand, choice.role) ?? "not in this kit"} | ${ink ? `${colorOf(brand, ink)} (${ink})${how}` : "chosen by contrast"} | ${from} |`;
+    const classes = `\`bg-${colorVar(choice.role)} text-on-${colorVar(choice.role)}\``;
+    return `| ${choice.value} | ${choice.label} | ${choice.role} | ${classes} | ${colorOf(brand, choice.role) ?? "not in this kit"} | ${ink ? `${colorOf(brand, ink)} (${ink})${how}` : "chosen by contrast"} | ${from} |`;
   });
   return [
     "## Surfaces",
     "Every section stands on one of these surfaces. Choose one by its name: `\"surface\": \"brand\"` on one",
     "of our sections, or `kit.Shell surface=\"<choice>\"` (or the classes",
-    "`bg-surface-<choice> text-on-surface-<choice>`) in a section you write. Text on a surface takes the",
+    "in its \"classes\" column) in a section you write. Text on a surface takes the",
     "colour under \"text on it\".",
-    "| choice | name | kit name | colour | text on it | from |",
-    "|---|---|---|---|---|---|",
+    "| choice | name | kit name | classes | colour | text on it | from |",
+    "|---|---|---|---|---|---|---|",
     ...rows,
     "",
   ];
@@ -282,7 +283,7 @@ function buttonsSection(brand: BrandData): string[] {
   const label = partCell(brand, std, "label", "button's label");
   const corners = partCell(brand, std, "radius", "button's corners");
   const dark = [
-    "A button whose text or fill would not stand out from its surface changes: outline and text-only",
+    "A button whose text or fill would not stand out from its surface changes: outline, text-only and see-through",
     "styles take the surface's text colour on any surface, and on a dark surface filled styles and the",
     "standard button take their light version (the kit's page or inverse colour, whichever stands out",
     "more on that surface, with its text colour). Every other button is drawn as the seller's site draws it.",
