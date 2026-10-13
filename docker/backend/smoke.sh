@@ -29,6 +29,10 @@ check "site-kit bundles" run test -f /app/apps/frontend/packages/site-kit/dist/r
 check "node" run node --version
 check "docker cli" run docker --version
 check "chromium launches" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop()"
+# The site renderer asks Chromium for its own sandbox (LUMEN_SITE_RENDER_CHROMIUM_SANDBOX=1). If this
+# fails ("No usable sandbox" under the container's seccomp profile), every site render refuses with
+# render.failed: set the variable to 0 for that service, record why, and tell the founder.
+check "chromium launches sandboxed" run python -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(chromium_sandbox=True); b.close(); p.stop()"
 check "non-root (uid 1000)" runs_as_uid_1000
 check "alembic" quiet run alembic --help
 check "s3 storage sdk" run python -c "import aioboto3"

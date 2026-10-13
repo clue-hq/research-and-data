@@ -5,7 +5,6 @@ import base64
 import copy
 import hashlib
 import inspect
-import io
 import json
 import logging
 import re
@@ -17,7 +16,6 @@ import re
 # follow-up, not part of the deletion slice.
 import sqlite3
 import time
-import zipfile
 import contextlib
 from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager, contextmanager
@@ -49,8 +47,8 @@ from . import (
     document_thumbnails,
     image_cache,
     image_provider,
+    site_publish,
     web_export,
-    web_pdf,
 )
 from .asset_custody import (
     ensure_materialized,
@@ -131,7 +129,9 @@ from .database import (
 )
 from . import run_stream
 from .spend import drain_safely as _drain_spend
-from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, sections_not_stored
+from .site_doc_inputs import SiteInputsUnavailable, brand_loader_not_composed, load_section_modules, sections_not_stored
+from .site_render import SECTION_MODULE_MISSING, SiteRenderError
+from .site_publish import SitePublishRefused
 from .site_doc_validate import SiteDocumentInvalid, SiteValidatorUnavailable
 from .toolbelt.site_documents import SiteHistoryEmpty, replace_site_payload
 from .design_store import (
@@ -852,8 +852,8 @@ def create_app(
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
     # envelope that replaces the real run_web_agent_turn in tests. None = live.
     app.state.web_turn_runner = None
-    # Website-mode static-export node binary; the export/publish paths shell out
-    # to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
+    # Website-mode static-CSS node binary; the publish and site-render paths shell
+    # out to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
     # to exercise the honest compile-failure path.
     app.state.web_export_node_bin = "node"
     # Puck sites (Wave 2, Lane A gap 1): the site's BrandData builder and its agent-section store.
@@ -3977,7 +3977,17 @@ def create_app(
             # `require_*_document` gates.
             kind = document.get("doc_kind", "scene")
             try:
-                if kind == "web":
+                if kind == "site":
+                    # Wave 2: a Puck site renders in the hardened page, is cleaned, and is captured
+                    # with JavaScript off and the network blocked (site_publish).
+                    data = site_publish.site_thumbnail_png(
+                        document,
+                        blobs=blobs,
+                        brand=app.state.site_brand_loader(repo, blobs, document),
+                        sections=load_section_modules(app.state.site_section_loader, repo, blobs, document["scene"]),
+                        node_bin=app.state.web_export_node_bin,
+                    )
+                elif kind == "web":
                     # Called in-process so the composed HTML carries THIS request's
                     # origin for its asset URLs — the capture page fetches them.
                     rendered = render_web_document(
@@ -4057,6 +4067,11 @@ def create_app(
                     status_code=502,
                     detail={"code": error.code, "message": str(error)},
                 ) from error
+            except (SiteRenderError, SiteInputsUnavailable) as error:
+                raise HTTPException(
+                    status_code=502,
+                    detail={"code": "thumbnail.render_failed", "message": str(error)},
+                ) from error
             except (CoreError, NotFoundError) as error:
                 # The helper can fail BEFORE `raise_on_error` is consulted (a dead
                 # subprocess, an unparseable response), so `raise_on_error=False`
@@ -4076,7 +4091,7 @@ def create_app(
                         # `export_failed` would name a step that never ran.
                         "code": (
                             "thumbnail.render_failed"
-                            if kind == "web"
+                            if kind in ("web", "site")
                             else "thumbnail.export_failed"
                         ),
                         "message": str(error),
@@ -4748,114 +4763,6 @@ def create_app(
             "diagnostics": diagnostics,
         }
 
-    @app.get("/documents/{document_id}/web/export")
-    def export_web_document(
-        document_id: str, repo: HybridRepository = Depends(repository)
-    ) -> Response:
-        # Build a self-contained static-site zip (delivery html + statically
-        # compiled site.css + embedded fonts + copied image bytes + SEO +
-        # manifest). A compile failure fails the request honestly (502) rather
-        # than shipping an unstyled zip.
-        document = require_document(repo, document_id)
-        require_web_document(document)
-        try:
-            bundle = web_export.build_export_bundle(
-                app.state.core,
-                repo,
-                document,
-                blobs=blob_store(repo),
-                generated_at=utc_now(),
-                node_bin=app.state.web_export_node_bin,
-            )
-        except web_export.WebExportCompileError as error:
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "code": "web_export.compile_failed",
-                    "message": error.stderr or "static css compile failed",
-                },
-            ) from error
-        except web_export.WebExportError as error:
-            raise HTTPException(
-                status_code=502,
-                detail={"code": "web_export.failed", "message": str(error)},
-            ) from error
-
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-            for path in sorted(bundle.files):
-                archive.writestr(path, bundle.files[path])
-        buffer.seek(0)
-        filename = f"{web_slugify(document['title'])}-{document_id[:8]}.zip"
-        log_event(
-            api_logger,
-            logging.INFO,
-            "web_export_completed",
-            document_id=document_id,
-            file_count=len(bundle.files),
-            warning_count=len(bundle.warnings),
-        )
-        return Response(
-            content=buffer.getvalue(),
-            media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-
-    @app.get("/documents/{document_id}/web/export.pdf")
-    def export_web_document_pdf(
-        document_id: str,
-        repo: HybridRepository = Depends(repository),
-    ) -> Response:
-        # The whole SITE as one PDF: every page rendered by Chromium from the same
-        # delivery bytes a publish would serve, concatenated in document order.
-        # Nothing is persisted — no revision, no pointer — so exporting a PDF never
-        # puts a site on the air. A render or compile failure fails the request
-        # honestly (502) rather than shipping a blank or unstyled document.
-        document = require_document(repo, document_id)
-        require_web_document(document)
-        try:
-            content = web_pdf.build_web_pdf(
-                app.state.core,
-                repo,
-                document,
-                blobs=blob_store(repo),
-                workspace_id=store_workspace_id(repo),
-                node_bin=app.state.web_export_node_bin,
-                runtime=document_thumbnails.resolve_tailwind_runtime(),
-            )
-        except web_pdf.WebPdfUnavailable as error:
-            raise HTTPException(
-                status_code=502,
-                detail={"code": error.code, "message": str(error)},
-            ) from error
-        except web_export.WebExportCompileError as error:
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "code": "web_export.compile_failed",
-                    "message": error.stderr or "static css compile failed",
-                },
-            ) from error
-        except web_export.WebExportError as error:
-            raise HTTPException(
-                status_code=502,
-                detail={"code": "web_export.failed", "message": str(error)},
-            ) from error
-
-        filename = f"{web_slugify(document['title'])}-{document_id[:8]}.pdf"
-        log_event(
-            api_logger,
-            logging.INFO,
-            "web_pdf_export_completed",
-            document_id=document_id,
-            byte_count=len(content),
-        )
-        return Response(
-            content=content,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
-
     def _publish_refusals(slug: str, document_id: str) -> Dict[str, Any]:
         """The exact wire contract the editor has always seen for a refused publish.
 
@@ -4879,6 +4786,7 @@ def create_app(
                 status_code=409,
                 detail={"code": "document.kind_unsupported", "message": message},
             ),
+            "design_document_not_site": lambda message: HTTPException(status_code=409, detail={"code": "document.kind_unsupported", "message": message}),
         }
 
     def _publish_web(
@@ -4936,33 +4844,39 @@ def create_app(
                 detail={"code": "web_export.failed", "message": str(error)},
             ) from error
 
-    @app.post("/documents/{document_id}/web/publish")
-    def publish_web_document(
-        document_id: str,
-        payload: WebPublishRequest,
-        repo: HybridRepository = Depends(repository),
-        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    def _publish_site(
+        repo: HybridRepository,
+        document: JsonObject,
+        *,
+        slug: str,
+        idempotency_key: Optional[str] = None,
+        noindex: bool = False,
     ) -> JsonObject:
-        document = require_document(repo, document_id)
-        require_web_document(document)
-        slug = (payload.slug or "").strip() or web_default_slug(
-            document["title"], document_id
-        )
-        publish = _publish_web(
-            repo,
-            document,
-            slug=slug,
-            idempotency_key=idempotency_key,
-            noindex=payload.noindex,
-        )
-        log_event(
-            api_logger,
-            logging.INFO,
-            "web_publish_completed",
-            document_id=document_id,
-            slug=slug,
-            doc_version=publish["doc_version"],
-        )
+        """Publish a Puck site through the governed tool (Wave 2 Lane A); typed refusals."""
+        try:
+            return run_design_tool(
+                "design_publish_site",
+                {"document_id": document["id"], "slug": slug, "noindex": noindex},
+                workspace_id=store_workspace_id(repo),
+                idempotency_key=idempotency_key,
+                refusals=_publish_refusals(slug, document["id"]),
+            )
+        except SitePublishRefused as error:
+            raise HTTPException(status_code=409, detail={"code": error.code, "message": error.message}) from error
+        except SiteRenderError as error:
+            if error.code == SECTION_MODULE_MISSING:
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "site_publish.section_module_missing", "message": error.message},
+                ) from error
+            raise HTTPException(status_code=502, detail={"code": error.code, "message": error.message}) from error
+        except (SiteDocumentInvalid, SiteInputsUnavailable, SiteValidatorUnavailable) as error:
+            raise _site_refusal(error) from error
+        except web_export.WebExportError as error:
+            raise HTTPException(status_code=502, detail={"code": "web_export.failed", "message": str(error)}) from error
+
+    def _publish_response(repo: HybridRepository, slug: str, publish: JsonObject) -> JsonObject:
+        """The publish route's 200 body — one builder for the web and site routes."""
         address = site_address(repo, slug)
         custom = custom_site_address(repo, slug)
         routes = list(publish.get("routes") or []) or ["/"]
@@ -4993,13 +4907,38 @@ def create_app(
             ),
         }
 
-    @app.get("/documents/{document_id}/web/publish")
-    def get_web_publish_state(
+    @app.post("/documents/{document_id}/web/publish")
+    def publish_web_document(
         document_id: str,
+        payload: WebPublishRequest,
         repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
+        _refuse_if_agent_running(document_id, repo)
+        slug = (payload.slug or "").strip() or web_default_slug(
+            document["title"], document_id
+        )
+        publish = _publish_web(
+            repo,
+            document,
+            slug=slug,
+            idempotency_key=idempotency_key,
+            noindex=payload.noindex,
+        )
+        log_event(
+            api_logger,
+            logging.INFO,
+            "web_publish_completed",
+            document_id=document_id,
+            slug=slug,
+            doc_version=publish["doc_version"],
+        )
+        return _publish_response(repo, slug, publish)
+
+    def _publish_state(repo: HybridRepository, document_id: str) -> JsonObject:
+        """The publish-state body — one builder for the web and site routes."""
         publish = repo.get_web_publish_for_document(document_id)
         if publish is None:
             # Even unpublished, the state names WHERE this document would publish — the
@@ -5043,6 +4982,36 @@ def create_app(
                 {} if custom is None else {route: custom.page_url(route) for route in routes}
             ),
         }
+
+    @app.get("/documents/{document_id}/web/publish")
+    def get_web_publish_state(
+        document_id: str,
+        repo: HybridRepository = Depends(repository),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_web_document(document)
+        return _publish_state(repo, document_id)
+
+    @app.post("/documents/{document_id}/site/publish")
+    def publish_site_document_route(
+        document_id: str,
+        payload: WebPublishRequest,
+        repo: HybridRepository = Depends(repository),
+        idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
+    ) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        _refuse_if_agent_running(document_id, repo)
+        slug = (payload.slug or "").strip() or web_default_slug(document["title"], document_id)
+        publish = _publish_site(repo, document, slug=slug, idempotency_key=idempotency_key, noindex=payload.noindex)
+        log_event(api_logger, logging.INFO, "site_publish_completed", document_id=document_id, slug=slug, doc_version=publish["doc_version"])
+        return _publish_response(repo, slug, publish)
+
+    @app.get("/documents/{document_id}/site/publish")
+    def get_site_publish_state(document_id: str, repo: HybridRepository = Depends(repository)) -> JsonObject:
+        document = require_document(repo, document_id)
+        require_site_document(document)
+        return _publish_state(repo, document_id)
 
     def _publish_not_found(slug: str) -> HTTPException:
         return HTTPException(
@@ -5838,6 +5807,15 @@ def create_app(
                     existing = repo.require_document(new_document_id)
                 except NotFoundError:
                     existing = None
+            if existing is not None:
+                # The re-derive below is a person's write onto this account's page, so it waits
+                # while the design agent works on the page — publish or not (the founder's
+                # standing "no mid-run manual editing, ever"; and 2026-10-13: a person's publish
+                # waits for the run). An account page the agent is editing is THIS account's
+                # failure: the 409 lands on its manifest row through the `except` below, before
+                # anything is derived onto or published from the page, and the batch carries on.
+                # A fresh document (a first ABM run, every generic run) has no run to wait for.
+                _refuse_if_agent_running(new_document_id, repo)
             result = app.state.core.web_derive(
                 doc=template["scene"],
                 values=values,
@@ -5996,6 +5974,10 @@ def create_app(
     ) -> JsonObject:
         document = require_document(repo, document_id)
         require_web_document(document)
+        # Founder ruling 2026-10-13: every account page is built from this template, so a batch
+        # started while the design agent works on it would copy a half-edited page N times.
+        # Refused before anything is derived or written — no batch row, no account page.
+        _refuse_if_agent_running(document_id, repo)
         # Unknown accounts are NOT pre-validated: a missing account is a
         # per-account failure on its manifest row, never a batch-level error.
         requested_base = (payload.slug_base or "").strip()
@@ -6077,6 +6059,9 @@ def create_app(
         batch = repo.require_web_batch(batch_id)
         if batch["status"] == "completed":
             return web_batch_response(batch)
+        # The same rule as the create route: the rest of the batch would be derived from a
+        # template the design agent is still editing. Refused with the batch untouched.
+        _refuse_if_agent_running(batch["template_document_id"], repo)
         batch = _process_web_batch(repo, batch)
         return web_batch_response(batch)
 
@@ -8297,9 +8282,24 @@ def _refuse_if_agent_running(document_id: str, store: HybridRepository) -> None:
     The rule is about authorship, not about any one route's shape: every path a human can move a
     scene through is closed while the agent is moving it.
 
+    It also guards the two PUBLISH routes — ``POST /documents/{id}/web/publish`` and
+    ``POST /documents/{id}/site/publish`` (founder ruling 2026-10-13: a person's publish waits for
+    the run to finish). A publish taken mid-run ships a half-edited page: the run commits
+    checkpoints as it goes, so the version on the air would be whatever the agent happened to have
+    written so far. Reading the publish state, unpublish and rollback stay open — they change what
+    is live, not the document the agent is editing.
+
+    And the website batch (``POST /documents/{id}/web/batch``, ``POST /web/batches/{id}/resume``):
+    both refuse while the agent works on the batch's TEMPLATE (every account page would be built
+    from a half-edited template), and an existing account page the agent is editing is that
+    account's failure on the manifest, publish or not — the re-derive is a person's write. The
+    instance batches (``/template-revisions/{id}/batches``) derive from a frozen template revision
+    the agent cannot be editing, so they are not guarded.
+
     The agent's own writes go through the governed ``design_apply_operations`` tool
     (``_LegSceneCommitter``), never through these routes — a lock that reached the tool would
-    deadlock every run against itself.
+    deadlock every run against itself. The same holds for the agent's own publish: the governed
+    ``design_publish_web`` / ``design_publish_site`` tools are not locked, only the person's routes.
     """
     run_id = store.active_design_run_for_document(document_id)
     if run_id is not None:

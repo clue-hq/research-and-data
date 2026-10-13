@@ -1,10 +1,12 @@
-import { defaultDesignFetch, type DesignEditorConfig } from "../engine/config";
+import type { DesignEditorConfig } from "../engine/config";
 import {
   fetchWebPublishInfo,
   publishWebDocument,
   unpublishWebSite,
   type WebPublishState,
 } from "../engine/webDocuments";
+
+export { WebPublishError } from "../engine/webDocuments";
 
 /** What a publish just put on the air.
  *
@@ -37,63 +39,14 @@ export interface WebPublishOutcome {
 export interface WebPublishRepository {
   /** The document's durable publish state (`GET /documents/{id}/web/publish`). */
   state(documentId: string): Promise<WebPublishState>;
-  /** Publish or republish (`POST /documents/{id}/web/publish`). */
+  /** Publish or republish (`POST /documents/{id}/web/publish`). A server
+   * refusal rejects with a `WebPublishError` carrying its status and code. */
   publish(
     documentId: string,
     input: { slug: string; noindex: boolean },
   ): Promise<WebPublishOutcome>;
   /** Take the site offline (`DELETE /web/publishes/{slug}`). */
   unpublish(slug: string): Promise<void>;
-  /**
-   * The whole site as a static-site ZIP (`GET /documents/{id}/web/export`) —
-   * one folder per page since F5. The `filename` is the server's own
-   * `Content-Disposition` name, so the download is named the way every other
-   * consumer of that route names it.
-   */
-  exportZip(documentId: string): Promise<{ blob: Blob; filename: string }>;
-  /**
-   * The whole site as one PDF (`GET /documents/{id}/web/export.pdf`) — every
-   * page of the site printed by the server's own browser, in document order.
-   * The `filename` is the server's `Content-Disposition` name, as for the ZIP.
-   */
-  exportPdf(documentId: string): Promise<{ blob: Blob; filename: string }>;
-}
-
-/** The empty-ZIP end-of-central-directory record: a 22-byte archive that is a
- * real, openable (if empty) zip. The fixture serves this so a fixture-mode
- * download produces a genuine `.zip`, never a text file wearing the suffix. */
-const EMPTY_ZIP_BYTES = new Uint8Array([
-  0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]);
-
-/** A minimal one-page PDF, for the same reason the empty zip above exists: a
- * fixture-mode download must produce a genuine `.pdf`, not a text file wearing
- * the suffix. */
-const TINY_PDF = `%PDF-1.4
-1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
-2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
-3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]>>endobj
-trailer<</Root 1 0 R>>
-%%EOF
-`;
-
-/**
- * The download name to use, read off a `Content-Disposition` header.
- *
- * Pure and header-shaped: it accepts both the quoted (`filename="a.zip"`) and
- * the bare (`filename=a.zip`) forms servers send, drops any directory part a
- * header might carry, and falls back when there is no header or no usable name
- * in it — the caller then still gets a sane file rather than an empty name.
- */
-export function downloadFilenameFrom(
-  contentDisposition: string | null,
-  fallback: string,
-): string {
-  if (!contentDisposition) return fallback;
-  const match = /filename\s*=\s*(?:"([^"]*)"|([^;]*))/i.exec(contentDisposition);
-  const raw = (match?.[1] ?? match?.[2] ?? "").trim();
-  const name = raw.split(/[\\/]/).pop()?.trim() ?? "";
-  return name || fallback;
 }
 
 const UNPUBLISHED: WebPublishState = {
@@ -127,20 +80,6 @@ const FIXTURE_ORIGIN = "https://fixture.pages.test";
 export function createFixtureWebPublishRepository(): WebPublishRepository {
   const published = new Map<string, WebPublishState>();
   return {
-    async exportPdf(documentId) {
-      const slug = published.get(documentId)?.slug ?? "site";
-      return {
-        blob: new Blob([TINY_PDF], { type: "application/pdf" }),
-        filename: `${slug}.pdf`,
-      };
-    },
-    async exportZip(documentId) {
-      const slug = published.get(documentId)?.slug ?? "site";
-      return {
-        blob: new Blob([EMPTY_ZIP_BYTES], { type: "application/zip" }),
-        filename: `${slug}.zip`,
-      };
-    },
     async publish(documentId, { slug }) {
       const url = `${FIXTURE_ORIGIN}/${slug}`;
       published.set(documentId, {
@@ -183,37 +122,7 @@ export function createFixtureWebPublishRepository(): WebPublishRepository {
 export function createHttpWebPublishRepository(
   config: DesignEditorConfig,
 ): WebPublishRepository {
-  async function download(
-    documentId: string,
-    path: string,
-    fallbackFilename: string,
-  ): Promise<{ blob: Blob; filename: string }> {
-    const { apiBaseUrl, fetchImpl = defaultDesignFetch } = config;
-    const response = await fetchImpl(
-      new URL(
-        `/documents/${encodeURIComponent(documentId)}/${path}`,
-        apiBaseUrl,
-      ),
-    );
-    if (!response.ok) {
-      throw new Error(`Site export failed (HTTP ${response.status}).`);
-    }
-    return {
-      blob: await response.blob(),
-      filename: downloadFilenameFrom(
-        response.headers.get("content-disposition"),
-        fallbackFilename,
-      ),
-    };
-  }
-
   return {
-    async exportPdf(documentId) {
-      return download(documentId, "web/export.pdf", "site.pdf");
-    },
-    async exportZip(documentId) {
-      return download(documentId, "web/export", "site.zip");
-    },
     async publish(documentId, { noindex, slug }) {
       const result = await publishWebDocument(config, documentId, slug, {
         noindex,

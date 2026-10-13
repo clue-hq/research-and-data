@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   AGENT_RUN_LOCK_NOTE,
+  AGENT_RUN_PUBLISH_NOTE,
   NO_AGENT_RUN,
   UNKNOWN_DESIGN_LEG,
   agentRunLockForThread,
@@ -62,6 +63,13 @@ test("the lock copy is the ratified sentence, verbatim", () => {
   assert.equal(
     AGENT_RUN_LOCK_NOTE,
     "The design agent is working — editing unlocks when it finishes.",
+  );
+});
+
+test("the publish copy is the founder's sentence, verbatim (2026-10-13)", () => {
+  assert.equal(
+    AGENT_RUN_PUBLISH_NOTE,
+    "The design agent is working — publishing unlocks when it finishes.",
   );
 });
 

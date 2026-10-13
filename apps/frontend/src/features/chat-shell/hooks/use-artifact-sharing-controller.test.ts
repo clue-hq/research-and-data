@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { JSDOM } from "jsdom";
+import { act, createElement, type ReactNode } from "react";
+import { createRoot } from "react-dom/client";
 import {
   createFixtureWebPublishRepository,
-  downloadFilenameFrom,
+  createHttpWebPublishRepository,
+  type WebPublishRepository,
 } from "../../design-editor/data/web-publish.repository";
+import { AGENT_RUN_PUBLISH_NOTE } from "../model/agent-run-lock";
 import {
   pageLinkRows,
   publishWithRepository,
   shareAddresses,
+  useArtifactSharingController,
 } from "./use-artifact-sharing-controller";
 
 test("publishWithRepository publishes the slug and returns the server url", async () => {
@@ -141,32 +147,180 @@ test("pageLinkRows yields the one row a single-page site has", () => {
   ]);
 });
 
-test("downloadFilenameFrom reads the quoted filename the server sent", () => {
-  assert.equal(
-    downloadFilenameFrom(
-      'attachment; filename="acme-launch-1a2b3c4d.zip"',
-      "site.zip",
-    ),
-    "acme-launch-1a2b3c4d.zip",
+// --- Task 28 (founder 2026-10-13): a person's publish waits while the design agent works --------
+
+/** The design API's refusal while a design run drives the document (main.py,
+ * `_refuse_if_agent_running`): a 409 with a code and the run's id — no message. */
+function agentRunActiveFetch(calls: string[]): typeof fetch {
+  return async (input) => {
+    calls.push(String(input));
+    return new Response(
+      JSON.stringify({ detail: { code: "document.agent_run_active", run_id: "run_42" } }),
+      { headers: { "content-type": "application/json" }, status: 409 },
+    );
+  };
+}
+
+test("a publish refused because the agent is working reports the note, never the code", async () => {
+  const calls: string[] = [];
+  const outcome = await publishWithRepository(
+    createHttpWebPublishRepository({
+      apiBaseUrl: "http://localhost:8002",
+      fetchImpl: agentRunActiveFetch(calls),
+    }),
+    "doc_1",
+    { slug: "acme", noindex: false },
   );
+  assert.equal(calls.length, 1);
+  assert.equal(outcome.status, "draft");
+  assert.equal(outcome.agentWorking, true);
+  assert.equal(outcome.message, AGENT_RUN_PUBLISH_NOTE);
+  assert.doesNotMatch(outcome.message, /agent_run_active|run_42/);
 });
 
-test("downloadFilenameFrom reads an unquoted filename too", () => {
-  assert.equal(
-    downloadFilenameFrom("attachment; filename=acme.zip", "site.zip"),
-    "acme.zip",
+test("any other refusal is not the agent's lock", async () => {
+  const outcome = await publishWithRepository(
+    createHttpWebPublishRepository({
+      apiBaseUrl: "http://localhost:8002",
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ detail: { code: "web_publish.slug_taken", message: "Slug already in use." } }), {
+          headers: { "content-type": "application/json" },
+          status: 409,
+        }),
+    }),
+    "doc_1",
+    { slug: "acme", noindex: false },
   );
+  assert.equal(outcome.agentWorking, false);
+  assert.equal(outcome.message, "Slug already in use.");
 });
 
-test("downloadFilenameFrom falls back when there is no usable name", () => {
-  assert.equal(downloadFilenameFrom(null, "site.zip"), "site.zip");
-  assert.equal(downloadFilenameFrom("attachment", "site.zip"), "site.zip");
-  assert.equal(downloadFilenameFrom('attachment; filename=""', "site.zip"), "site.zip");
+type SharingController = ReturnType<typeof useArtifactSharingController>["controller"];
+
+/** Mount the real hook in a DOM (the menu's controller, exactly as the header
+ * builds it) and hand back every render's controller. */
+type SharingProps = { publishLocked: boolean; repository: WebPublishRepository };
+
+async function withSharingController(
+  initial: SharingProps,
+  run: (
+    latest: () => SharingController,
+    rerender: (next: SharingProps) => Promise<void>,
+  ) => Promise<void>,
+): Promise<void> {
+  const dom = new JSDOM("<div id='root'></div>", { url: "http://localhost/" });
+  const originals = new Map<string, PropertyDescriptor | undefined>();
+  for (const [key, value] of Object.entries({
+    window: dom.window,
+    document: dom.window.document,
+    navigator: dom.window.navigator,
+    CustomEvent: dom.window.CustomEvent,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  })) {
+    originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  }
+  const seen: SharingController[] = [];
+  function Probe(props: SharingProps): ReactNode {
+    seen.push(
+      useArtifactSharingController({
+        documentId: "doc_1",
+        kind: "web",
+        title: "Spring launch",
+        ...props,
+      }).controller,
+    );
+    return null;
+  }
+  const root = createRoot(dom.window.document.getElementById("root")!);
+  const render = async (props: SharingProps) => {
+    await act(async () => root.render(createElement(Probe, props)));
+  };
+  try {
+    await render(initial);
+    await run(() => seen.at(-1)!, render);
+  } finally {
+    act(() => root.unmount());
+    for (const [key, descriptor] of originals) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete (globalThis as Record<string, unknown>)[key];
+    }
+  }
+}
+
+/** A seam that counts publishes, so "sends nothing" is a count, not a hope. */
+function countingRepository(): WebPublishRepository & { publishes: number } {
+  const fixture = createFixtureWebPublishRepository();
+  const counted = {
+    ...fixture,
+    publishes: 0,
+    async publish(documentId: string, input: { slug: string; noindex: boolean }) {
+      counted.publishes += 1;
+      return fixture.publish(documentId, input);
+    },
+  };
+  return counted;
+}
+
+test("while the agent works the Publish action is inert, says why, and sends nothing", async () => {
+  const repository = countingRepository();
+  await withSharingController({ publishLocked: true, repository }, async (latest) => {
+    assert.equal(latest().publishLocked, true);
+    assert.equal(latest().publishLockNote, AGENT_RUN_PUBLISH_NOTE);
+    await act(async () => latest().publishAsset());
+    assert.equal(repository.publishes, 0);
+    assert.equal(latest().publishStatus, "draft");
+    assert.equal(latest().publishLockNote, AGENT_RUN_PUBLISH_NOTE);
+  });
 });
 
-test("downloadFilenameFrom keeps only the file's own name", () => {
-  assert.equal(
-    downloadFilenameFrom('attachment; filename="../../etc/acme.zip"', "site.zip"),
-    "acme.zip",
-  );
+test("a run that started after the menu opened: the 409 shows the same note, not the code", async () => {
+  const calls: string[] = [];
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl: agentRunActiveFetch(calls),
+  });
+  await withSharingController({ publishLocked: false, repository }, async (latest) => {
+    assert.equal(latest().publishLockNote, null);
+    await act(async () => latest().publishAsset());
+    assert.equal(calls.length, 1);
+    assert.equal(latest().publishStatus, "draft");
+    assert.equal(latest().publishLockNote, AGENT_RUN_PUBLISH_NOTE);
+    assert.equal(latest().statusMessage, AGENT_RUN_PUBLISH_NOTE);
+    // The button is not held shut by a refusal: once the run is over, pressing it again publishes.
+    assert.equal(latest().publishLocked, false);
+  });
+});
+
+test("a refusal's note gives way to the lock, and leaves with it when the run is over", async () => {
+  const calls: string[] = [];
+  const repository = createHttpWebPublishRepository({
+    apiBaseUrl: "http://localhost:8002",
+    fetchImpl: agentRunActiveFetch(calls),
+  });
+  await withSharingController({ publishLocked: false, repository }, async (latest, rerender) => {
+    await act(async () => latest().publishAsset());
+    assert.equal(latest().publishLockNote, AGENT_RUN_PUBLISH_NOTE);
+    // The surface now sees the run: the lock holds the button and says the same sentence.
+    await rerender({ publishLocked: true, repository });
+    assert.equal(latest().publishLocked, true);
+    assert.equal(latest().publishLockNote, AGENT_RUN_PUBLISH_NOTE);
+    // The run is over: no stale "wait" line is left behind.
+    await rerender({ publishLocked: false, repository });
+    assert.equal(latest().publishLocked, false);
+    assert.equal(latest().publishLockNote, null);
+  });
+});
+
+test("with no run in the way, publishing is unchanged", async () => {
+  const repository = countingRepository();
+  await withSharingController({ publishLocked: false, repository }, async (latest) => {
+    assert.equal(latest().publishLocked, false);
+    assert.equal(latest().publishLockNote, null);
+    await act(async () => latest().publishAsset());
+    assert.equal(repository.publishes, 1);
+    assert.equal(latest().publishStatus, "published");
+    assert.equal(latest().statusMessage, "Published");
+    assert.equal(latest().publishLockNote, null);
+  });
 });

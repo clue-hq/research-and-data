@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { designBffConfig } from "@/features/design-editor/data/design-bff";
 import {
   createHttpWebPublishRepository,
+  WebPublishError,
   type WebPublishRepository,
 } from "@/features/design-editor/data/web-publish.repository";
 import {
@@ -11,9 +12,9 @@ import {
   type ArtifactAdvancedTab,
   type ArtifactPublishSettings,
   type ArtifactPublishStatus,
-  type ArtifactShareExportFormat,
   type ArtifactShareView,
 } from "../model/artifact-sharing";
+import { AGENT_RUN_PUBLISH_NOTE } from "../model/agent-run-lock";
 import { isWebsiteKind } from "../model/artifact-kind";
 import type { ChatShellArtifactKind } from "../model/chat-shell";
 
@@ -28,6 +29,20 @@ export interface ArtifactPublishOutcome {
   url: string;
   pageUrls: Record<string, string>;
   message: string;
+  /** True when the server refused because a design run is working on the
+   * document (409 `document.agent_run_active`); `message` is then the
+   * founder's publish note, never the refusal code. */
+  agentWorking: boolean;
+}
+
+/** The design API's answer while a design run drives the document (Task 28,
+ * founder 2026-10-13: a person's publish waits for the run to finish). */
+function isAgentRunRefusal(error: unknown): boolean {
+  return (
+    error instanceof WebPublishError &&
+    error.status === 409 &&
+    error.code === "document.agent_run_active"
+  );
 }
 
 /**
@@ -61,7 +76,9 @@ export function shareAddresses({
  * with no React in it, so it is tested directly.
  *
  * A refusal (a taken slug, a bad slug, an unreachable API) is an outcome, not a
- * throw: the menu goes back to `draft` and shows the server's own words.
+ * throw: the menu goes back to `draft` and shows the server's own words — except
+ * the agent-run refusal, which names a run and no words, so the menu says the
+ * founder's note instead.
  */
 export async function publishWithRepository(
   repository: WebPublishRepository,
@@ -71,13 +88,20 @@ export async function publishWithRepository(
   try {
     const result = await repository.publish(documentId, input);
     return {
+      agentWorking: false,
       message: "Published",
       status: "published",
       ...shareAddresses(result),
     };
   } catch (error) {
+    const agentWorking = isAgentRunRefusal(error);
     return {
-      message: error instanceof Error ? error.message : "Publish failed",
+      agentWorking,
+      message: agentWorking
+        ? AGENT_RUN_PUBLISH_NOTE
+        : error instanceof Error
+          ? error.message
+          : "Publish failed",
       pageUrls: {},
       status: "draft",
       url: "",
@@ -118,27 +142,6 @@ export function pageLinkRows(
     }));
 }
 
-/**
- * Hand the browser a downloaded file: an object URL behind a hidden anchor,
- * revoked as soon as the click has been dispatched.
- *
- * This is the only way to name a download the server named for us — a plain
- * navigation to the export route would work too, but it cannot carry the BFF's
- * session-scoped request the way the repository's fetch already did.
- */
-function downloadBlob(blob: Blob, filename: string): void {
-  const href = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = href;
-  anchor.download = filename;
-  anchor.rel = "noopener";
-  anchor.style.display = "none";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(href);
-}
-
 /** The host shown in front of the slug in the link field — read off the URL the
  * server gave us, never a constant of ours. Empty until there is one. */
 function shareHostOf(shareUrl: string): string {
@@ -153,6 +156,7 @@ function shareHostOf(shareUrl: string): string {
 export function useArtifactSharingController({
   documentId,
   kind,
+  publishLocked = false,
   repository,
   title,
 }: {
@@ -160,6 +164,11 @@ export function useArtifactSharingController({
    * document yet — publishing is then unavailable rather than faked. */
   documentId?: string | null;
   kind: ChatShellArtifactKind;
+  /** Task 28 (founder 2026-10-13): a design run is working on this page, so a
+   * publish now would ship it half-edited. Publish is inert and the menu says
+   * why. Absent leaves publishing as it is; the server refuses mid-run either
+   * way. */
+  publishLocked?: boolean;
   /** Injected in tests and fixture mode; the real BFF-backed seam otherwise. */
   repository?: WebPublishRepository;
   title: string;
@@ -175,12 +184,21 @@ export function useArtifactSharingController({
   // FLAGGED F5: designed field, no backend contract yet
   const [description, setDescription] = useState("");
   const [editingSlug, setEditingSlug] = useState(false);
-  const [lastExportFormat, setLastExportFormat] =
-    useState<ArtifactShareExportFormat | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [pageUrls, setPageUrls] = useState<Record<string, string>>({});
   const [publishStatus, setPublishStatus] =
     useState<ArtifactPublishStatus>("draft");
+  // A publish the server refused because the agent was working — a run this
+  // surface had not seen yet when the button was pressed. It says the same
+  // note as the lock until the next attempt, the menu closing, or the lock
+  // itself moving (engaging takes over the note; releasing means that run is
+  // over), so a finished run never leaves a stale "wait" line behind.
+  const [refusedByAgentRun, setRefusedByAgentRun] = useState(false);
+  const [lastPublishLocked, setLastPublishLocked] = useState(publishLocked);
+  if (lastPublishLocked !== publishLocked) {
+    setLastPublishLocked(publishLocked);
+    setRefusedByAgentRun(false);
+  }
   // FLAGGED F5: designed field, no backend contract yet
   const [regenerateDescriptionOnPublish, setRegenerateDescriptionOnPublish] =
     useState(false);
@@ -229,6 +247,7 @@ export function useArtifactSharingController({
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
     setEditingSlug(false);
+    setRefusedByAgentRun(false);
     setView("main");
   }, []);
 
@@ -290,6 +309,7 @@ export function useArtifactSharingController({
     setMenuOpen((current) => {
       if (current) {
         setEditingSlug(false);
+        setRefusedByAgentRun(false);
         setView("main");
       }
       return !current;
@@ -313,6 +333,9 @@ export function useArtifactSharingController({
   }, [slugDraft]);
 
   const publishAsset = useCallback(async () => {
+    // The button is disabled while the agent works; this keeps any other way
+    // of calling it from sending a publish the server would refuse anyway.
+    if (publishLocked) return;
     if (!isWebsiteKind(kind)) {
       // Scene publishing has no backend contract; the menu says so rather than
       // reporting a success that never happened.
@@ -325,6 +348,7 @@ export function useArtifactSharingController({
     }
     setPublishStatus("publishing");
     setStatusMessage("Publishing asset");
+    setRefusedByAgentRun(false);
     const outcome = await publishWithRepository(
       resolveRepository(),
       documentId,
@@ -332,6 +356,7 @@ export function useArtifactSharingController({
     );
     setPublishStatus(outcome.status);
     setStatusMessage(outcome.message);
+    setRefusedByAgentRun(outcome.agentWorking);
     if (outcome.status !== "published") return;
     setShareUrl(outcome.url);
     setPageUrls(outcome.pageUrls);
@@ -341,7 +366,15 @@ export function useArtifactSharingController({
         detail: { kind, settings },
       }),
     );
-  }, [allowIndexing, documentId, kind, resolveRepository, settings, slug]);
+  }, [
+    allowIndexing,
+    documentId,
+    kind,
+    publishLocked,
+    resolveRepository,
+    settings,
+    slug,
+  ]);
 
   const copyLink = useCallback(async () => {
     try {
@@ -403,53 +436,6 @@ export function useArtifactSharingController({
     setStatusMessage("Description generation requested");
   }, [kind, shareTitle]);
 
-  const requestExport = useCallback(
-    (format: ArtifactShareExportFormat) => {
-      setLastExportFormat(format);
-      if (isWebsiteKind(kind) && documentId) {
-        // Both website formats are the same download against the same seam —
-        // the server renders the bytes and names the file — so they differ only
-        // in which repository call fetches them. The map is total over the
-        // format union, so a third format cannot silently fall through to the
-        // "requested" no-op below without the compiler saying so.
-        const webExport: Record<
-          ArtifactShareExportFormat,
-          (repository: WebPublishRepository) => Promise<{
-            blob: Blob;
-            filename: string;
-          }>
-        > = {
-          PDF: (repository) => repository.exportPdf(documentId),
-          ZIP: (repository) => repository.exportZip(documentId),
-        };
-        setStatusMessage(`Preparing ${format} export`);
-        void (async () => {
-          try {
-            const { blob, filename } = await webExport[format](
-              resolveRepository(),
-            );
-            downloadBlob(blob, filename);
-            setStatusMessage(`${format} downloaded`);
-          } catch (error) {
-            setStatusMessage(
-              error instanceof Error
-                ? error.message
-                : `${format} export failed`,
-            );
-          }
-        })();
-      } else {
-        setStatusMessage(`${format} export requested`);
-      }
-      window.dispatchEvent(
-        new CustomEvent("clue:artifact-export-request", {
-          detail: { format, kind },
-        }),
-      );
-    },
-    [documentId, kind, resolveRepository],
-  );
-
   return {
     controller: {
       advancedTab,
@@ -461,15 +447,18 @@ export function useArtifactSharingController({
       customHtml,
       description,
       editingSlug,
-      lastExportFormat,
       menuOpen,
       pageUrls,
       previewExternally,
       publishAsset,
+      publishLocked,
+      /** The line under the Publish button while it waits for the agent, or
+       * `null`. One sentence for both reasons it can wait. */
+      publishLockNote:
+        publishLocked || refusedByAgentRun ? AGENT_RUN_PUBLISH_NOTE : null,
       publishStatus,
       regenerateDescriptionOnPublish,
       requestDescriptionGeneration,
-      requestExport,
       saveAdvancedSettings,
       saveSlug,
       setAdvancedTab,

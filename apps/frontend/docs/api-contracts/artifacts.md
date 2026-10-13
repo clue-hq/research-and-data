@@ -59,6 +59,9 @@ and not archived), Archived. Default sort last-viewed (own mark, falling back to
 Account filter/group options come only from accounts on artifacts. Open editor creates a thread
 under the artifact's project titled with the artifact's title and navigates with `?open=` and
 `surface=web|ad`. Open source conversation → the origin thread. Copy link → the editor route
-`/projects/:id/artifacts/:artifactId`. Downloads: ads = real engine export (PNG 1x–4x, SVG, PDF);
-web pages = Export, the design API's self-contained static-site zip
-(`GET /documents/{id}/web/export` through the design BFF). Create in chat → `/`.
+`/projects/:id/artifacts/:artifactId`. Downloads: ads only = real engine export (PNG 1x–4x, SVG,
+PDF). Web pages and sites have no download. Create in chat → `/`.
+
+2026-10-13, founder ruling — hosting only: web pages and sites have no ZIP or PDF export anywhere (the
+design API's `/web/export`, `/web/export.pdf`, `/site/export`, `/site/export.pdf` are gone); publishing
+is their only delivery.

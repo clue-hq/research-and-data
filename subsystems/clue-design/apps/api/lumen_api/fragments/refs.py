@@ -28,7 +28,7 @@ FRAGMENT_ID_RE = re.compile(r"frag_[0-9a-f]{16}")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
 #: Where a rehosted design blob is served from. The digest route (``GET /asset-store/{digest}``)
-#: is the ONE public byte surface, and it is what web export/publish already emit for images and
+#: is the ONE public byte surface, and it is what web publish already emits for images and
 #: font faces — so a fragment that names its assets this way needs no special serving path.
 ASSET_URL_PREFIX = "/asset-store/"
 

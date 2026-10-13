@@ -2181,10 +2181,26 @@ export interface WebPublishResult {
   customPageUrls: Record<string, string>;
 }
 
+/** A refused publish: the server's message, plus the HTTP status and the
+ * design API's refusal code (`detail.code`, null when it sent none) so a caller
+ * can tell refusals apart without parsing prose — e.g. 409
+ * `document.agent_run_active`, which names a run and carries no message. */
+export class WebPublishError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(message: string, options: { status: number; code: string | null }) {
+    super(message);
+    this.name = "WebPublishError";
+    this.status = options.status;
+    this.code = options.code;
+  }
+}
+
 /** Publish (or republish) a website (`POST /documents/{id}/web/publish`). Pass
  * the desired slug; omit it to let the server keep the current one. A 422 (bad
- * slug) or 409 (slug taken by another document) throws with the server's
- * message so the dialog can surface it inline.
+ * slug) or 409 (slug taken by another document) throws a {@link WebPublishError}
+ * with the server's message so the dialog can surface it inline.
  *
  * `noindex` (R-F1) asks the server to serve the pages with a robots `noindex`
  * meta. Omitted, the server keeps its own default — and it ORs the document's
@@ -2211,7 +2227,16 @@ export async function publishWebDocument(
     }
   );
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response, `Publish failed (HTTP ${response.status}).`));
+    let parsed: unknown = null;
+    try {
+      parsed = await response.clone().json();
+    } catch {
+      /* not JSON — no refusal code */
+    }
+    throw new WebPublishError(
+      await readErrorMessage(response, `Publish failed (HTTP ${response.status}).`),
+      { status: response.status, code: readErrorDetail(parsed).code }
+    );
   }
   const payload = (await response.json()) as {
     schema_version?: unknown;

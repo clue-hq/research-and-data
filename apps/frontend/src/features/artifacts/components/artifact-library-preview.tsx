@@ -34,11 +34,11 @@ import styles from "./artifact-library.module.css";
  * is caught and announced — and it opens the editor by asking for a new chat
  * rather than deep-linking a thread the operator has not got.
  *
- * Downloads split by kind: an ad exports the *saved document* through the
- * design API (every format and scale the editor offers) and can also take its
- * original image, while a web artifact has one Export — the design API's
- * self-contained static-site zip (founder ruling 2026-09-16), the thing a
- * marketer can actually publish, rather than a picture of the page.
+ * Only an ad downloads: it exports the *saved document* through the design API
+ * (every format and scale the editor offers) and can also take its original
+ * image. A web page or site has no download at all — hosting on the platform is
+ * its only delivery (founder ruling 2026-10-13, which retired the static-site
+ * zip of 2026-09-16).
  */
 export function ArtifactLibraryPreview({
   actions,
@@ -290,8 +290,13 @@ export function ArtifactLibraryPreview({
                 Copy artifact link
               </Button>
             </div>
-            <div className={styles.detailActions}>
-              {artifact.kind === "ad" ? (
+            {/* Only an ad downloads: a web page or site is delivered by publishing it
+                (founder ruling 2026-10-13 — no ZIP or PDF of a website). The dummy's
+                "Download table (.csv)" action is not lifted either: a library row is a
+                design document and never carries `tableContent`, and the CSV machinery
+                it called does not exist in this repo. */}
+            {artifact.kind === "ad" ? (
+              <div className={styles.detailActions}>
                 <div className={styles.exportAnchor} ref={exportMenuRef}>
                   <Button
                     size="md"
@@ -321,19 +326,6 @@ export function ArtifactLibraryPreview({
                     />
                   ) : null}
                 </div>
-              ) : (
-                <Button
-                  size="md"
-                  variant="default"
-                  className={styles.fullWidthButton}
-                  disabled={actions.busy}
-                  onClick={() => actions.exportWeb(artifact)}
-                >
-                  <Download size={14} />
-                  Export
-                </Button>
-              )}
-              {artifact.kind === "ad" ? (
                 <a
                   className={buttonVariants({
                     size: "md",
@@ -346,12 +338,8 @@ export function ArtifactLibraryPreview({
                   <Download size={14} />
                   Original image
                 </a>
-              ) : null}
-              {/* The dummy's "Download table (.csv)" action is not lifted: a
-                  library row is a design document (web or ad) and never carries
-                  `tableContent`, so the block could not render, and the CSV
-                  machinery it called does not exist in this repo. */}
-            </div>
+              </div>
+            ) : null}
             <div className={styles.detailActions}>
               <Button
                 size="md"

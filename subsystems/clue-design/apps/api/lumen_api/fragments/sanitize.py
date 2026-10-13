@@ -1,7 +1,7 @@
 """The one-time fragment sanitizer (clone-fidelity F1.2, ruling D-F4).
 
 **Sanitization happens exactly once, at artifact creation.** Everything downstream — the F1.3
-render arm, the F1.4 derive path, the F1.5 export/publish package — may trust stored artifact
+render arm, the F1.4 derive path, the F1.5 publish package — may trust stored artifact
 HTML absolutely, because no write path can put markup into a fragment except this one. That is
 the same guarantee shape the engine uses on its own write path (``lumen-web``'s
 ``canonicalize_incoming_kind`` in ``ops.rs``: an operation's payload is canonicalized once, on

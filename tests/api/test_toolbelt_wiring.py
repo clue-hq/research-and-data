@@ -333,6 +333,7 @@ _MATRIX: dict[str, tuple[str, object]] = {
     "design_finalize_document": ("precondition", ("design_runtime_not_configured",)),
     "design_persist_preflight": ("precondition", ("design_runtime_not_configured",)),
     "design_publish_web": ("precondition", ("design_runtime_not_configured",)),
+    "design_publish_site": ("precondition", ("design_runtime_not_configured",)),
     "design_record_diagnostics": ("precondition", ("design_runtime_not_configured",)),
     "design_redo_document": ("precondition", ("design_runtime_not_configured",)),
     "design_redo_web_document": ("precondition", ("design_runtime_not_configured",)),
@@ -764,6 +765,7 @@ def _bodies() -> dict[str, dict[str, object]]:
             "document_id": "doc_matrix",
             "slug": "matrix-page",
         },
+        "design_publish_site": {"document_id": "doc_matrix", "slug": "matrix-site"},
         "design_unpublish_web": {"slug": "matrix-page"},
         "design_rollback_web_publish": {"slug": "matrix-page"},
         "design_create_web_account": {"account_id": "acc_matrix", "name": "Matrix Co"},
@@ -1480,8 +1482,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
     # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
     # 144 / 166 (2026-09-22).
-    # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
-    assert len(registry.names()) == 147
+    # Wave 2 Lane A: three site writes (+3 names, +3 addresses), then the site publish (+1, +1)
+    assert len(registry.names()) == 148
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default.
     # S4-D likewise retains both historical @1 Client-KB readers and registers strict @2 as
@@ -1527,8 +1529,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
     # And `read_account_research@3` (insights and the buying committee, for Design) beside `@2`
     # (168 -> 169).
-    # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
-    assert len(registry) == 172
+    # Wave 2 Lane A: three site writes (+3 names, +3 addresses), then the site publish (+1, +1)
+    assert len(registry) == 173
     assert registry.descriptor("draft_account_research_directive").version == "5"
     assert registry.descriptor("synthesize_icps").version == "3"
     assert registry.descriptor("synthesize_icps", "2").version == "2"
@@ -1573,8 +1575,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # Automatic targeting (base) and design_enrich_assets registered without moving these counts;
     # measured off the merged tree: 143 names / 165 addresses before web_search@1, which makes
     # 144 / 166 (2026-09-22).
-    # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
-    assert len(registry.names()) == 147
+    # Wave 2 Lane A: three site writes (+3 names, +3 addresses), then the site publish (+1, +1)
+    assert len(registry.names()) == 148
     # C6 keeps profile_contact@1 for immutable historical pins and elects the governed,
     # project-run-scoped profile_contact@2 as the name-only default. Slice B wave 2's
     # draft_account_research_directive@4 and the live-gate repair's @5 each add an address and
@@ -1607,8 +1609,8 @@ def test_build_toolbelt_registers_the_full_set() -> None:
     # And `read_discovery_run@3` (summary, end reason, exclusions) beside `@2` (167 -> 168).
     # And `read_account_research@3` (insights and the buying committee, for Design) beside `@2`
     # (168 -> 169).
-    # Wave 2 Lane A: three site writes (+3 names, +3 addresses)
-    assert len(registry) == 172
+    # Wave 2 Lane A: three site writes (+3 names, +3 addresses), then the site publish (+1, +1)
+    assert len(registry) == 173
     assert registry.descriptor("profile_contact").version == "2"
     assert registry.descriptor("profile_contact", "1").version == "1"
     assert {

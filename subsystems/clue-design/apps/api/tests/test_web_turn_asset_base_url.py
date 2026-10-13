@@ -133,15 +133,11 @@ def test_the_editor_render_route_still_derives_its_base_from_the_request():
     assert 'asset_base_url = str(request.base_url).rstrip("/") + "/asset-store"' in source
 
 
-def test_the_export_paths_still_use_their_own_relative_and_same_origin_bases():
-    """A ZIP export resolves images from a sibling `assets/` directory and a
-    publish payload from the serving origin's own `/asset-store`. Neither wants
-    an absolute dev-stack URL baked in."""
+def test_the_publish_path_still_uses_its_own_same_origin_base():
+    """A publish payload resolves images from the serving origin's own
+    `/asset-store`, never an absolute dev-stack URL baked in. (The ZIP export's
+    relative `assets/` base went with the export, founder ruling 2026-10-13.)"""
     from lumen_api import web_export
 
     source = Path(web_export.__file__).read_text()
-    # F5 multi-page export (Task 11): the ZIP base gained the per-page relative
-    # hop `prefix` ("" for the root `index.html`, "../" for a `<route>/index.html`
-    # subpage), so each page still resolves its own sibling `assets/` folder.
-    assert 'asset_base_url=f"{prefix}assets"' in source
     assert 'asset_base_url="/asset-store"' in source

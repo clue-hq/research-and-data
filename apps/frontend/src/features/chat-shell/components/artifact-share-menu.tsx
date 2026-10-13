@@ -3,8 +3,6 @@ import {
   ChevronRightIcon,
   CopyIcon,
   ExternalLinkIcon,
-  FileArchiveIcon,
-  FileTextIcon,
   Link2Icon,
   PencilIcon,
   RefreshCwIcon,
@@ -16,7 +14,6 @@ import {
   pageLinkRows,
   type useArtifactSharingController,
 } from "../hooks/use-artifact-sharing-controller";
-import { ARTIFACT_SHARE_EXPORT_FORMATS } from "../model/artifact-sharing";
 import styles from "./chat-shell.module.css";
 
 const SHARE_MENU_ICONS = {
@@ -24,8 +21,6 @@ const SHARE_MENU_ICONS = {
   "chevron-right": ChevronRightIcon,
   copy: CopyIcon,
   "external-link": ExternalLinkIcon,
-  "file-archive": FileArchiveIcon,
-  "file-text": FileTextIcon,
   link: Link2Icon,
   pencil: PencilIcon,
   refresh: RefreshCwIcon,
@@ -118,8 +113,9 @@ function ShareMainView({ controller }: { controller: ShareController }) {
     editingSlug,
     previewExternally,
     publishAsset,
+    publishLocked,
+    publishLockNote,
     publishStatus,
-    requestExport,
     saveSlug,
     setSlugDraft,
     setView,
@@ -139,69 +135,71 @@ function ShareMainView({ controller }: { controller: ShareController }) {
   };
 
   return (
-    <>
-      <div className={styles.shareMenuSection}>
-        <div className={styles.sharePublishHeading}>
-          {published ? (
-            <>
-              <span className={styles.sharePublishedDot} />
-              <strong>Asset published</strong>
-            </>
-          ) : (
-            <strong>Publish to share outside your workspace</strong>
-          )}
-        </div>
+    <div className={styles.shareMenuSection}>
+      <div className={styles.sharePublishHeading}>
+        {published ? (
+          <>
+            <span className={styles.sharePublishedDot} />
+            <strong>Asset published</strong>
+          </>
+        ) : (
+          <strong>Publish to share outside your workspace</strong>
+        )}
+      </div>
 
-        <div className={styles.shareLinkField}>
-          <ShareMenuIcon name="link" />
-          {shareHost ? (
-            <span className={styles.shareLinkHost}>{shareHost}/</span>
-          ) : null}
-          {editingSlug ? (
-            <input
-              aria-label="Publishing link path"
-              autoFocus
-              maxLength={72}
-              onChange={(event) => setSlugDraft(event.target.value)}
-              onKeyDown={handleSlugKeyDown}
-              value={slugDraft}
-            />
-          ) : (
-            <span className={styles.shareLinkSlug}>{slug}</span>
-          )}
+      <div className={styles.shareLinkField}>
+        <ShareMenuIcon name="link" />
+        {shareHost ? (
+          <span className={styles.shareLinkHost}>{shareHost}/</span>
+        ) : null}
+        {editingSlug ? (
+          <input
+            aria-label="Publishing link path"
+            autoFocus
+            maxLength={72}
+            onChange={(event) => setSlugDraft(event.target.value)}
+            onKeyDown={handleSlugKeyDown}
+            value={slugDraft}
+          />
+        ) : (
+          <span className={styles.shareLinkSlug}>{slug}</span>
+        )}
+        <button
+          aria-label={editingSlug ? "Save publishing link" : "Edit publishing link"}
+          className={styles.shareLinkEditButton}
+          onClick={editingSlug ? saveSlug : beginSlugEdit}
+          type="button"
+        >
+          {editingSlug ? "Save" : <ShareMenuIcon name="pencil" size={13} />}
+        </button>
+      </div>
+
+      {!showingPublishButton ? (
+        <div className={styles.sharePublishedActions}>
           <button
-            aria-label={editingSlug ? "Save publishing link" : "Edit publishing link"}
-            className={styles.shareLinkEditButton}
-            onClick={editingSlug ? saveSlug : beginSlugEdit}
+            className={styles.shareSecondaryButton}
+            onClick={previewExternally}
             type="button"
           >
-            {editingSlug ? "Save" : <ShareMenuIcon name="pencil" size={13} />}
+            <ShareMenuIcon name="external-link" />
+            Preview externally
+          </button>
+          <button
+            className={styles.sharePrimaryButton}
+            onClick={copyLink}
+            type="button"
+          >
+            <ShareMenuIcon name="copy" />
+            {copied ? "Copied" : "Copy link"}
           </button>
         </div>
-
-        {!showingPublishButton ? (
-          <div className={styles.sharePublishedActions}>
-            <button
-              className={styles.shareSecondaryButton}
-              onClick={previewExternally}
-              type="button"
-            >
-              <ShareMenuIcon name="external-link" />
-              Preview externally
-            </button>
-            <button
-              className={styles.sharePrimaryButton}
-              onClick={copyLink}
-              type="button"
-            >
-              <ShareMenuIcon name="copy" />
-              {copied ? "Copied" : "Copy link"}
-            </button>
-          </div>
-        ) : (
+      ) : (
+        <>
           <button
             className={styles.sharePrimaryButtonWide}
-            disabled={publishing}
+            // Task 28 (founder 2026-10-13): inert while the design agent works
+            // on the page — a publish now would ship it half-edited.
+            disabled={publishing || publishLocked}
             onClick={() => void publishAsset()}
             type="button"
           >
@@ -211,41 +209,24 @@ function ShareMainView({ controller }: { controller: ShareController }) {
                 ? "Republish"
                 : "Publish asset"}
           </button>
-        )}
+          {publishLockNote ? (
+            <p className={styles.sharePublishNote}>{publishLockNote}</p>
+          ) : null}
+        </>
+      )}
 
-        <div className={styles.shareSettingsList}>
-          <button
-            className={styles.shareSettingRow}
-            onClick={() => setView("advanced")}
-            type="button"
-          >
-            <ShareMenuIcon name="sliders" />
-            <span>Advanced publishing settings</span>
-            <ShareMenuIcon name="chevron-right" size={12} />
-          </button>
-        </div>
+      <div className={styles.shareSettingsList}>
+        <button
+          className={styles.shareSettingRow}
+          onClick={() => setView("advanced")}
+          type="button"
+        >
+          <ShareMenuIcon name="sliders" />
+          <span>Advanced publishing settings</span>
+          <ShareMenuIcon name="chevron-right" size={12} />
+        </button>
       </div>
-
-      <div className={styles.shareExportSection}>
-        <strong>Export</strong>
-        <div className={styles.shareExportGrid}>
-          {ARTIFACT_SHARE_EXPORT_FORMATS.map((format) => (
-            <button
-              className={styles.shareExportCard}
-              key={format}
-              onClick={() => requestExport(format)}
-              type="button"
-            >
-              <ShareMenuIcon
-                name={format === "ZIP" ? "file-archive" : "file-text"}
-                size={16}
-              />
-              <span>{format}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </>
+    </div>
   );
 }
 

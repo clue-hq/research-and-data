@@ -37,6 +37,7 @@ import { useEditorShellController } from "../hooks/use-editor-shell-controller";
 import { useFileDrop } from "../hooks/use-file-drop";
 import { agentRunLockForThread } from "../model/agent-run-lock";
 import { artifactsToAutoOpen } from "../model/artifact-auto-open";
+import { isWebsiteKind } from "../model/artifact-kind";
 import { routeAttachmentFiles } from "../model/attachment-routing";
 import {
   chatDockContent,
@@ -227,12 +228,21 @@ export function ChatSurface({
     state: chat.agentRunLock,
     threadBusy: chat.threadBusy,
   });
-  // Consumed on the AD lane only. The website lane has the same exposure and no
-  // scene editor, so widening the lock to it is a separate decision with its own
-  // surfaces — not something to acquire by accident here.
+  // Editing: consumed on the AD lane only. The website lane has the same
+  // exposure and no scene editor, so widening the EDITING lock to it is a
+  // separate decision with its own surfaces — not something to acquire by
+  // accident here.
   const sceneLocked = agentRunLock.locked && shell.artifactKind === "ad";
   // Ruling (Wave 2): the agent-run lock applies to sites too — the same derivation, the site lane.
   const siteLocked = agentRunLock.locked && shell.artifactKind === "site";
+  // Publishing: founder ruling 2026-10-13 — a person's publish waits while the
+  // design agent works on the page, and the Share menu says so. This widens the
+  // lock to the website lane (web and site) for PUBLISHING ONLY; editing on the
+  // web lane is unchanged (a site's editing lock is `siteLocked` above). The
+  // server refuses mid-run either way (409 `document.agent_run_active` on both
+  // publish routes); this is the honest UX in front of it.
+  const publishLocked =
+    agentRunLock.locked && isWebsiteKind(shell.artifactKind);
 
   // Chat-flow slice 3: the SAME editing session the artifact route mounts
   // (documents/selection/writes/rich-text/theme), keyed only on this mount's
@@ -1253,6 +1263,7 @@ export function ChatSurface({
         // changing, which is the whole of what the ruling forbids.
         sceneGestureDisabled={sceneLocked}
         onSceneLockedEdit={sceneSession.onLockedEdit}
+        publishLocked={publishLocked}
         // Rung C / §1.6: one document, one brand palette — the caret
         // session's colour control offers exactly what the inspector's do.
         scenePalette={sceneSession.palette}

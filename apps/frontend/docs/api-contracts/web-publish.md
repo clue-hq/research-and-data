@@ -141,7 +141,14 @@ Refusals (all `{"detail": {"code", "message", ...}}`):
 | 409 | `document.kind_unsupported` | The document is not a website-mode document |
 | 422 | `web_publish.unresolved_markers` | The page still carries `{{account.…}}` markers; carries a `markers` list |
 | 409 | `web_publish.revision_conflict` | A publish-revision content address was re-used with different content; carries `publish_id` |
+| 409 | `document.agent_run_active` | A design run is working on the document; carries `run_id` and no `message` |
 | 502 | `web_export.failed` | The static export compile failed |
+
+`document.agent_run_active` is the founder's 2026-10-13 ruling: a person's publish waits for the
+design run to finish (`POST …/site/publish` refuses the same way; unpublish, rollback and this
+route's `GET` stay open; the agent's own publish tool is not locked). The share menu disables
+Publish while it can see the run and, on this refusal, shows the same line instead of the code:
+"The design agent is working — publishing unlocks when it finishes."
 
 A successful publish also **locks the workspace handle** — idempotently, and only on success, so a
 refused publish leaves the marketer free to keep choosing.

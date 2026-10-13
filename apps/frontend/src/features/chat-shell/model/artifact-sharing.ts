@@ -1,6 +1,5 @@
 import type { ChatShellArtifactKind } from "./chat-shell";
 
-export const ARTIFACT_SHARE_EXPORT_FORMATS = ["ZIP", "PDF"] as const;
 export const ARTIFACT_PUBLISH_STATUSES = [
   "draft",
   "publishing",
@@ -9,8 +8,6 @@ export const ARTIFACT_PUBLISH_STATUSES = [
 export const ARTIFACT_SHARE_VIEWS = ["main", "advanced"] as const;
 export const ARTIFACT_ADVANCED_TABS = ["page", "html"] as const;
 
-export type ArtifactShareExportFormat =
-  (typeof ARTIFACT_SHARE_EXPORT_FORMATS)[number];
 export type ArtifactPublishStatus =
   (typeof ARTIFACT_PUBLISH_STATUSES)[number];
 export type ArtifactShareView = (typeof ARTIFACT_SHARE_VIEWS)[number];
@@ -28,11 +25,6 @@ export interface ArtifactPublishSettings {
 export interface ArtifactPublishRequest {
   kind: ChatShellArtifactKind;
   settings: ArtifactPublishSettings;
-}
-
-export interface ArtifactShareExportRequest {
-  format: ArtifactShareExportFormat;
-  kind: ChatShellArtifactKind;
 }
 
 export function slugifyArtifactTitle(title: string) {

@@ -13,7 +13,7 @@ import { useSceneEditingSession } from "@/features/design-editor/hooks/use-scene
 import { useSiteEditingSession } from "@/features/site-editor/hooks/use-site-editing-session";
 import { useWebEditingSession } from "@/features/design-editor/hooks/use-web-editing-session";
 import type { ProjectArtifact } from "@/features/projects/model/project-workspace";
-import { chatShellKindForCard } from "../model/artifact-kind";
+import { chatShellKindForCard, isWebsiteKind } from "../model/artifact-kind";
 import { ArtifactStage } from "./artifact-stage";
 import { AssetLibraryPanel } from "./asset-library-panel";
 import { ImageInspector } from "./image-inspector";
@@ -104,6 +104,21 @@ export function EditorSurface({
   const agentRun = useDocumentAgentRun({ documentId: lockDocumentId, enabled: lockedKind });
   const sceneLocked = controller.artifactKind === "ad" && agentRun.active;
   const siteLocked = controller.artifactKind === "site" && agentRun.active;
+  // Task 28 (founder 2026-10-13): a person's publish waits while the design
+  // agent works on the page, and the Share menu says so. This route has no turn
+  // stream, so the website lane reads the same document-scoped agent-busy poll —
+  // for PUBLISHING only. A site already has that read (above); a web page gets
+  // its own, whose reload counter is not consumed: editing and rendering on the
+  // web lane are unchanged here.
+  const webDocumentId =
+    controller.artifactKind === "web" && controller.activeArtifactId
+      ? (documentIds?.[controller.activeArtifactId] ?? null)
+      : null;
+  const webAgentRun = useDocumentAgentRun({
+    documentId: webDocumentId,
+    enabled: controller.artifactKind === "web",
+  });
+  const publishLocked = isWebsiteKind(controller.artifactKind) && (siteLocked || webAgentRun.active);
   const sceneSession = useSceneEditingSession({
     activeArtifactId: controller.activeArtifactId,
     // Task 4 (scene live-streaming rung A), closed here: the lock is the
@@ -355,6 +370,7 @@ export function EditorSurface({
         // read polled at the top of this component (ruling R1), not a turn
         // stream this route does not have.
         sceneGestureDisabled={sceneLocked}
+        publishLocked={publishLocked}
         onSceneLockedEdit={sceneSession.onLockedEdit}
         // Rung C / §1.6: one document, one brand palette — the caret
         // session's colour control offers exactly what the inspector's do.

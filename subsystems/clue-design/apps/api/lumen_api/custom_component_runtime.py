@@ -549,7 +549,6 @@ def _build_runtime_srcdoc(
     override_variables: Dict[str, str],
     runtime_nonce: str,
     delivery_assets: Optional[_DeliveryAssetCatalog] = None,
-    embed_delivery_assets: bool = False,
 ) -> str:
     config = {
         "runtimeNonce": runtime_nonce,
@@ -571,7 +570,7 @@ body{font-family:var(--lumen-font-body,system-ui)}
 """.strip()
     combined_css = base_css + _theme_css(theme) + component_css
 
-    if delivery_assets is None or embed_delivery_assets:
+    if delivery_assets is None:
         imports = {
             "react": _data_javascript(_react_adapter()),
             "react/jsx-runtime": _data_javascript(_JSX_ADAPTER),
@@ -591,68 +590,6 @@ body{font-family:var(--lumen-font-body,system-ui)}
         script_sources = "'unsafe-inline' data:"
         style_sources = "'unsafe-inline'"
         script_crossorigin = ""
-        if delivery_assets is not None:
-            for data, media_type, extension, role in (
-                (
-                    _react_adapter(),
-                    "text/javascript; charset=utf-8",
-                    "js",
-                    "react-adapter",
-                ),
-                (
-                    _JSX_ADAPTER,
-                    "text/javascript; charset=utf-8",
-                    "js",
-                    "react-jsx-runtime-adapter",
-                ),
-                (
-                    _JSX_DEV_ADAPTER,
-                    "text/javascript; charset=utf-8",
-                    "js",
-                    "react-jsx-development-runtime-adapter",
-                ),
-                (
-                    _runtime_prelude(config),
-                    "text/javascript; charset=utf-8",
-                    "js",
-                    f"runtime-prelude:{node_id}",
-                ),
-                (
-                    _runtime_bootstrap(config),
-                    "text/javascript; charset=utf-8",
-                    "js",
-                    f"runtime-bootstrap:{node_id}",
-                ),
-                (
-                    host_javascript,
-                    "text/javascript; charset=utf-8",
-                    "js",
-                    "react-runtime-host",
-                ),
-                (
-                    combined_css,
-                    "text/css; charset=utf-8",
-                    "css",
-                    f"component-styles:{node_id}",
-                ),
-            ):
-                delivery_assets.add(
-                    data,
-                    media_type=media_type,
-                    extension=extension,
-                    role=role,
-                )
-            for specifier, bundle in sorted(bundles.items()):
-                if not specifier.startswith("artifact:"):
-                    delivery_assets.add(
-                        bundle,
-                        media_type="text/javascript; charset=utf-8",
-                        extension="js",
-                        role=(
-                            f"artifact-bundle:{artifact['artifact_id']}:"
-                            f"{specifier}"
-                        ),
-                    )
     else:
         def add_javascript(data: bytes | str, role: str) -> str:
             return str(
@@ -863,7 +800,6 @@ def _assemble_custom_component_runtime(
     delivery_asset_url_for: Optional[Callable[[str, str], str]] = None,
     deterministic_seed: Optional[str] = None,
     strict: bool = False,
-    embed_delivery_assets: bool = False,
 ) -> CustomComponentDeliveryPackage:
     """Resolve reachable custom components into frames and optional assets."""
 
@@ -994,7 +930,6 @@ def _assemble_custom_component_runtime(
                     override_variables=override_variables,
                     runtime_nonce=runtime_nonce,
                     delivery_assets=delivery_assets,
-                    embed_delivery_assets=embed_delivery_assets,
                 )
                 frames[node_id] = {
                     "state": "ready",
@@ -1137,9 +1072,8 @@ def build_custom_component_delivery_package(
     runtime_host_path: Path,
     asset_url_for: Callable[[str, str], str],
     deterministic_seed: str,
-    embed_runtime_assets: bool = False,
 ) -> CustomComponentDeliveryPackage:
-    """Build a strict immutable delivery package for export or publish.
+    """Build a strict immutable delivery package for publish.
 
     Unlike editor preview, delivery fails if any pinned node cannot be
     assembled. A publish therefore never degrades into a placeholder while
@@ -1158,5 +1092,4 @@ def build_custom_component_delivery_package(
         delivery_asset_url_for=asset_url_for,
         deterministic_seed=deterministic_seed,
         strict=True,
-        embed_delivery_assets=embed_runtime_assets,
     )

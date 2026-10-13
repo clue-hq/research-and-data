@@ -998,7 +998,6 @@
 }
 
 .sharePublishHeading strong,
-.shareExportSection > strong,
 .shareMenuSubheader strong {
   font-size: 13px;
   font-weight: 500;
@@ -1166,44 +1165,8 @@
   min-width: 0;
 }
 
-.shareSettingRow > svg,
-.shareExportCard > svg {
+.shareSettingRow > svg {
   color: var(--chat-shell-subtle);
-}
-
-.shareExportSection {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px 16px;
-  border-top: 0.5px solid var(--chat-shell-subtle-border);
-}
-
-.shareExportGrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.shareExportCard {
-  display: flex;
-  height: 58px;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 9px;
-  padding: 10px 12px;
-  border: 0.5px solid var(--chat-shell-border);
-  border-radius: 4px;
-  background: var(--chat-shell-neutral);
-  color: var(--chat-shell-content);
-  font-size: 13px;
-  line-height: 18px;
-  text-align: left;
-}
-
-.shareExportCard:hover {
-  border-color: var(--clue-ds-color-border-brand-default);
-  background: var(--clue-ds-color-bg-neutral-hover);
 }
 
 .shareMenuSubheader {
@@ -1270,7 +1233,8 @@
 }
 
 .shareAdvancedFields > p,
-.shareCustomHtmlField > p {
+.shareCustomHtmlField > p,
+.sharePublishNote {
   margin: 0;
   color: var(--chat-shell-subtle);
   font-size: 12px;

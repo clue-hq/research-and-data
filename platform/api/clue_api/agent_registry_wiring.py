@@ -396,6 +396,9 @@ C6_AGENT_TOOL_AUTHORITY: dict[str, tuple[AgentRole, ...]] = {
     "design_finalize_document": (AgentRole.DESIGN,),
     "design_persist_preflight": (AgentRole.DESIGN,),
     "design_publish_web": (AgentRole.DESIGN,),
+    # Wave 2 Lane A: the Puck site publish, ungranted (ruling R6): only the person's Publish
+    # route invokes it.
+    "design_publish_site": (),
     "design_record_diagnostics": (AgentRole.DESIGN,),
     "design_redo_document": (AgentRole.DESIGN,),
     "design_redo_web_document": (AgentRole.DESIGN,),

@@ -3,14 +3,12 @@ import test from "node:test";
 import {
   ARTIFACT_ADVANCED_TABS,
   ARTIFACT_PUBLISH_STATUSES,
-  ARTIFACT_SHARE_EXPORT_FORMATS,
   ARTIFACT_SHARE_VIEWS,
   publicLinkHost,
   slugifyArtifactTitle,
 } from "./artifact-sharing";
 
 test("artifact sharing exposes the production shell states", () => {
-  assert.deepEqual(ARTIFACT_SHARE_EXPORT_FORMATS, ["ZIP", "PDF"]);
   assert.deepEqual(ARTIFACT_PUBLISH_STATUSES, [
     "draft",
     "publishing",

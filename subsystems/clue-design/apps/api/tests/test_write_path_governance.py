@@ -117,6 +117,8 @@ _GOVERNED: dict[str, tuple[str, tuple[str, ...]]] = {
     "update_site_document": ("method", ("lumen_api/design_store.py",)),
     "write_site_document": ("function", ()),
     "step_site_history": ("function", ()),
+    "build_site_publish_package": ("function", ("lumen_api/site_publish.py",)),
+    "publish_site_document": ("function", ()),
     # --- Round B domain 3: turn enqueues ---------------------------------------------------
     # The run row + its fleet task, offered in one transaction. The rest of the run lifecycle
     # (claim, result, completion, events) stays in UNCONVERTED_MUTATIONS below: it is the
@@ -250,11 +252,12 @@ def test_converted_domain_mutations_are_only_called_from_the_toolbelt() -> None:
 
 def test_every_governed_name_actually_exists() -> None:
     """A typo in the guard's list would silently govern nothing."""
-    from lumen_api import custom_component_compiler, custom_components, web_export
+    from lumen_api import custom_component_compiler, custom_components, site_publish, web_export
     from lumen_api.design_store import HybridRepository
     from lumen_api.toolbelt import assets as toolbelt_assets
     from lumen_api.toolbelt import documents as toolbelt_documents
     from lumen_api.toolbelt import personalization as toolbelt_personalization
+    from lumen_api.toolbelt import publishes as toolbelt_publishes
     from lumen_api.toolbelt import site_documents as toolbelt_site_documents
     from lumen_api.toolbelt import web_documents as toolbelt_web_documents
     from lumen_ingestion.ad_library.store import AdAssetsStore
@@ -284,6 +287,8 @@ def test_every_governed_name_actually_exists() -> None:
                     toolbelt_assets,
                     toolbelt_personalization,
                     toolbelt_site_documents,
+                    site_publish,
+                    toolbelt_publishes,
                 )
             ), f"{name} is not a known design operation core"
 
@@ -329,6 +334,7 @@ def test_design_tool_names_are_stable() -> None:
     assert set(DESIGN_TOOL_NAMES) == {
         # Round A
         "design_publish_web",
+        "design_publish_site",
         "design_unpublish_web",
         "design_rollback_web_publish",
         "design_create_web_account",
