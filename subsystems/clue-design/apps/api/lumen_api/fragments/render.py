@@ -33,8 +33,8 @@ rather than changed — this is what the engine already does):
 2. ``doc.custom_css``, emitted after it — so at EQUAL specificity the document's own CSS beats a
    cloned section's, which is the right way round: custom_css is the human's deliberate override;
 3. the compiled utilities — in the editor by the ``@layer base`` wrapper, in delivery by source
-   order (the export links ``site.css`` after the inline blocks). Either way they win ties, which
-   is the plan's ruling and what makes admitting foreign CSS safe at all.
+   order (the publish inlines the compiled sheet after the inline blocks). Either way they win
+   ties, which is the plan's ruling and what makes admitting foreign CSS safe at all.
 """
 
 from __future__ import annotations
@@ -339,8 +339,9 @@ def build_fragment_render_package(
             "derived": bool(loaded.row.get("derived_from")),
             # F1.5: the digests of every byte the ARTIFACT displays (its rehosted images and
             # fonts). The engine never sees these — the markup already names them as
-            # `/asset-store/<digest>` — but a delivery build must put those bytes in the zip,
-            # and the artifact is the only thing that knows which they are.
+            # `/asset-store/<digest>` — but a publish must check those bytes are still readable
+            # and list them on its manifest, and the artifact is the only thing that knows which
+            # they are.
             "asset_digests": list(loaded.asset_digests),
         }
         if loaded.payload.get("native_dependencies"):
@@ -456,13 +457,12 @@ def rebase_artifact_assets(text: str, asset_base_url: str | None) -> str:
     ``asset_base_url`` — rendered fine. One asset kind worked, the other did not, and only the
     working one was ever probed.
 
-    **This rebase belongs at the API layer and must never move into the engine's render arm.**
-    The export renders with ``asset_base_url="assets"``; an engine-side rebase would emit
-    ``assets/<digest>`` into the artifact's markup, and ``web_export``'s
-    ``html.replace("/asset-store/<digest>", …)`` would then silently match nothing — the zip
-    would ship the bytes as orphans under paths no element names. The delivery paths therefore
-    pass no base at all and keep the stored reference exactly as it is: publish serves that
-    route directly, and the export rewrites it to a relative path itself.
+    **This rebase belongs at the API layer, not in the engine's render arm.** The publish path
+    hands it no base and keeps the stored reference exactly as it is: publish serves that route
+    directly. (The original reason was the ZIP export, which rendered with
+    ``asset_base_url="assets"`` and rewrote ``/asset-store/<digest>`` to relative paths itself —
+    an engine-side rebase would have left its bytes orphaned. That export was removed by the
+    founder ruling of 2026-10-13.)
 
     Only ``/asset-store/`` immediately followed by a 64-hex digest is touched, so nothing else
     in somebody else's markup can be caught by it.

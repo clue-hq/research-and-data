@@ -46,7 +46,7 @@ whose background image was never rehosted refuses rather than rendering a hole. 
 and would otherwise be the one reference shape that walked past a fail-closed gate.
 
 **Stored CSS may not contain ``</``** (:func:`_refuse_markup_breakout`). This is a *markup*
-concern living in a *CSS* module on purpose. The render arm and the export packager write this
+concern living in a *CSS* module on purpose. The render arm and the publish packager write this
 stylesheet RAW into a ``<style>`` element, whose content is raw text to the HTML tokenizer —
 so a CSS string reading ``content: "</style><script>alert(1)</script>"`` ends the style element
 and turns the rest into live markup, on a published page whose CSP permits inline script.

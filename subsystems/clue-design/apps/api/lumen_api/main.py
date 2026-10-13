@@ -852,8 +852,8 @@ def create_app(
     # Website-mode turn test seam: a callable (document, prompt, model, root) ->
     # envelope that replaces the real run_web_agent_turn in tests. None = live.
     app.state.web_turn_runner = None
-    # Website-mode static-export node binary; the export/publish paths shell out
-    # to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
+    # Website-mode static-CSS node binary; the publish and site-render paths shell
+    # out to scripts/web_static_css.mjs with it. A test overrides this (e.g. "false")
     # to exercise the honest compile-failure path.
     app.state.web_export_node_bin = "node"
     # Puck sites (Wave 2, Lane A gap 1): the site's BrandData builder and its agent-section store.

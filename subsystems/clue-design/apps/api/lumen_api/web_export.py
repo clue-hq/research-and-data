@@ -584,8 +584,10 @@ def _node_asset_ids(node: JsonObject) -> List[Tuple[str, str]]:
     """``[(origin, asset_id)]`` for every registered document asset ONE node displays.
 
     The class of gap this closes (F1.5): the walk below used to ask only "is this an image
-    node", so every other way a node names bytes was invisible to the export — the bytes never
-    entered the zip and the delivered page painted nothing, silently.
+    node", so every other way a node names bytes was invisible to the ZIP export — the bytes
+    never entered the zip and the delivered page painted nothing, silently. (That export was
+    removed by the founder ruling of 2026-10-13; on the publish path the walk feeds the
+    ``og:image`` choice.)
 
     Three ways exist today, and they are enumerated here rather than at the call site so a
     fourth is added in one place:

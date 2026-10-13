@@ -288,7 +288,7 @@ def _refusing(code: str, check: Any, *args: Any) -> None:
 def read_web_fragment(
     storage: StorageBackend, *, workspace_id: str, fragment_id: str
 ) -> LoadedFragment:
-    """One fragment with its payload — the read F1.3's render arm and F1.5's export go through."""
+    """One fragment with its payload — the read F1.3's render arm and F1.5's publish go through."""
 
     async def _read(conn: Any) -> LoadedFragment:
         row = await dal.get_web_fragment(

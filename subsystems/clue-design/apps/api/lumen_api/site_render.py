@@ -1,6 +1,6 @@
 """The Puck site renderer (Wave 2 Lane A, Contract 3).
 
-Every site render — publish, thumbnail, export, the agent's own preview — runs agent-written
+Every site render — publish, thumbnail, the agent's own preview — runs agent-written
 section code inside ONE hardened headless Chromium page (D2, founder ruling 2026-10-11). Python and
 Node never import or run it. The shared types and paths (Task 11), then the render, the section
 schema read and the screenshot (Task 17; the browser itself is ``lumen_api.hardened_browser``).
