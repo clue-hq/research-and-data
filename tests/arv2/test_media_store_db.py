@@ -1267,3 +1267,47 @@ def test_run_media_summary_counts_reads_by_method_and_gap():
             }
 
     run_async(scenario())
+
+
+def test_paid_gemini_windows_are_recovered_when_saving_failed(monkeypatch):
+    from clue_api.arv2.media_tools import ReadMediaArgs, read_media
+
+    async def scenario():
+        async with rollback_conn() as conn:
+            rt = await seeded(conn)
+            rt.clients = MediaClients()
+            rt.media_budget = MediaBudget(9000)
+            rt.settings = rt.settings.model_copy(update={"arv2_media_gemini_window_seconds": 2400})
+            wire = ScriptedTransport(
+                [
+                    youtube_data("PT1H10M"),
+                    no_shows(),
+                    no_shows(),
+                    gemini_window("[00:10] Guest: First part."),
+                    gemini_window("[00:20] Guest: Second part."),
+                    embeddings(),
+                ]
+            )
+            rt._transport_factory = lambda: wire
+            original = store.save_transcript
+
+            async def fail_once(*args, **kwargs):
+                monkeypatch.setattr(store, "save_transcript", original)
+                raise RuntimeError("simulated persistence failure after both windows were paid")
+
+            monkeypatch.setattr(store, "save_transcript", fail_once)
+            args = ReadMediaArgs(url="https://youtu.be/abcdefghijk", purpose="Recover windows")
+            with pytest.raises(RuntimeError):
+                await read_media(rt, args)
+            recovered = await read_media(rt, args)
+            assert recovered["state"] == "available"
+            assert sum(":generateContent" in r.url for r in wire.requests) == 2
+            method = (
+                await conn.execute(
+                    text("SELECT source_method FROM arv2_media_transcript WHERE version_id=:v"),
+                    {"v": UUID(recovered["version_ref"])},
+                )
+            ).scalar_one()
+            assert method == "gemini_youtube"
+
+    run_async(scenario())

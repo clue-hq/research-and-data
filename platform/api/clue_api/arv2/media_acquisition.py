@@ -18,6 +18,7 @@ from clue_api.arv2 import media_operations as ops
 from clue_api.arv2 import media_store as store
 from clue_api.arv2.deepgram_media_client import DeepgramTranscript, parameters, parse_response
 from clue_api.arv2.gemini_media_client import (
+    GeminiMediaClient,
     SpeakerContext,
     Transcript,
     detect_loops,
@@ -569,6 +570,36 @@ async def _acquire_youtube(
                     runtime, conn, UUID(op["result"]["version_ref"])
                 )
             return receipt(saved, reused=True)
+        # Every window was paid but the transcript was never saved: rebuild it from the saved
+        # responses, as the Deepgram route does. A window that was never answered is an unknown
+        # outcome and is not bought again.
+        async with runtime._conn_factory() as conn:
+            bodies = [b for b in await raw_responses(runtime, conn, op) if "candidates" in b]
+        if len(bodies) == len(windows):
+            model = runtime.settings.arv2_media_video_model
+            recovered = join_windows(
+                [
+                    (
+                        start,
+                        GeminiMediaClient.parse_native_recording(
+                            body, model=model, structured=True
+                        ),
+                    )
+                    for (start, _), body in zip(windows, bodies, strict=True)
+                ]
+            )
+            return await _save_transcript(
+                runtime,
+                op=op,
+                item=item,
+                candidate=candidate,
+                resolution=resolution,
+                transcript=recovered,
+                request=request,
+                purpose=purpose,
+                repair_version=repair_version,
+                method="gemini_youtube",
+            )
         return {
             "state": op["state"],
             "operation_ref": str(op["operation_id"]),
