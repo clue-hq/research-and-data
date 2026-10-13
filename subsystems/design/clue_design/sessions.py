@@ -57,7 +57,7 @@ async def latest_written_version(
 
 
 async def latest_session_manifest_sha256(
-    conn: AsyncConnection, *, workspace_id: str, document_id: str
+    conn: AsyncConnection, *, workspace_id: str, document_id: str, include_failed: bool = False
 ) -> str | None:
     """The digest of the newest session-folder manifest this document's session synced, or ``None``.
 
@@ -70,12 +70,18 @@ async def latest_session_manifest_sha256(
     actually carries the stamp. A succeeded turn may legitimately have none (a non-session editor
     turn, or a turn whose best-effort snapshot failed), and skipping over it restores the newest
     memory that really was stored rather than declaring the session lost.
+
+    ``include_failed=True`` also accepts a ``failed`` run that carries the stamp (still the newest
+    by ``updated_at``; a failed run with no stamp, such as a crash, is skipped as before). The Puck
+    site turn asks for it: it writes history and snapshots its memory on a conflicted, refused or
+    stopped request too, so that memory is the session's newest. Web and scene keep the default.
     """
+    statuses = "status IN ('succeeded', 'failed')" if include_failed else "status = 'succeeded'"
     row = (
         await conn.execute(
             text(
                 "SELECT result_json->>'session_manifest_sha256' AS sha FROM design_agent_run "
-                "WHERE workspace_id = :w AND document_id = :d AND status = 'succeeded' "
+                f"WHERE workspace_id = :w AND document_id = :d AND {statuses} "
                 "AND result_json->>'session_manifest_sha256' IS NOT NULL "
                 "ORDER BY updated_at DESC LIMIT 1"
             ),

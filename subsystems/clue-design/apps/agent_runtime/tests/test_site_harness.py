@@ -173,6 +173,31 @@ def test_a_valid_change_stands_when_the_round_limit_stops_the_request(tmp_path: 
     assert "Lower medical spend for Syracuse" in json.dumps(result.site["pages"]["/"])
 
 
+def test_a_validator_that_cannot_run_at_the_finish_leaves_the_verdict_to_the_save(tmp_path: Path, monkeypatch) -> None:
+    """BV1a fix round 1 (DEFECT 2): a site-kit validator that cannot run is not an invalid page. The
+    finish sends no reminder and does not end site_invalid; the site goes back as edited, and the
+    executor's save (design_write_site's own check) gives the verdict."""
+
+    from lumen_agent.site import tools as site_tools
+    from lumen_api.site_kit_cli import SiteKitCliError
+
+    def bundle_missing(*args, **kwargs):
+        raise SiteKitCliError("site_kit.validator_unavailable", "site-kit validator bundle missing")
+
+    monkeypatch.setattr(site_tools, "validate_site_files", bundle_missing)
+    result = _run(tmp_path, [
+        AIMessage(content="", tool_calls=[call("edit_file", {
+            "file_path": "/page.json", "old_string": "Lower medical spend for SCSD",
+            "new_string": "Lower medical spend for Syracuse"}, 1)]),
+        AIMessage(content="Changed the heading."),
+    ])
+    # Two model calls and no third: a reminder would have asked the model again.
+    assert len(result.model_calls) == 2
+    assert result.status == "applied" and result.stop_reason is None and result.errors == []
+    assert result.summary == "Changed the heading."
+    assert "Lower medical spend for Syracuse" in json.dumps(result.site["pages"]["/"])
+
+
 def test_a_cancelled_request_never_calls_the_model(tmp_path: Path) -> None:
     result = _run(tmp_path, [], cancel_requested=lambda: True)
     assert result.status == "failed" and result.stop_reason == "cancelled_by_request"

@@ -192,3 +192,40 @@ def test_latest_session_manifest_reads_the_newest_succeeded_stamp() -> None:
                 await trans.rollback()
 
     run_async(scenario())
+
+
+@pytest.mark.usefixtures("require_design_db")
+def test_include_failed_reads_a_failed_turns_manifest_and_the_default_does_not() -> None:
+    """BV1a fix round 1: a Puck site turn writes its history and snapshots its memory on a
+    conflicted, refused or stopped (``failed``) request too, so the site executor asks with
+    ``include_failed=True``. The default (web and scene) is unchanged: a newer failed run's manifest
+    is skipped. A failed run that stamped nothing (a crash) is skipped either way.
+    """
+
+    async def scenario() -> None:
+        ws, doc = f"ws_test_sess_{uuid4().hex[:10]}", f"doc_{uuid4().hex}"
+        async with db_lifespan() as engine, engine.connect() as conn:
+            trans = await conn.begin()
+            try:
+                await _seed_workspace(conn, ws)
+                await _seed_document(conn, workspace_id=ws, document_id=doc)
+                for status, result in (
+                    ("succeeded", '{"session_manifest_sha256": "aa"}'),
+                    ("failed", '{"session_manifest_sha256": "ff"}'),
+                    ("failed", '{"summary": "crashed before a snapshot"}'),
+                ):
+                    run_id = f"run_{uuid4().hex}"
+                    await design_runs.create_run(conn, workspace_id=ws, run_id=run_id, document_id=doc)
+                    await _terminalize(conn, run_id=run_id, status=status, result=result)
+
+                assert await latest_session_manifest_sha256(conn, workspace_id=ws, document_id=doc) == "aa"
+                assert (
+                    await latest_session_manifest_sha256(
+                        conn, workspace_id=ws, document_id=doc, include_failed=True
+                    )
+                    == "ff"
+                )
+            finally:
+                await trans.rollback()
+
+    run_async(scenario())

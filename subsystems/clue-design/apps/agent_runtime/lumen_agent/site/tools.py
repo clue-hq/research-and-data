@@ -190,7 +190,8 @@ class SiteTools:
                 self._site_files(), self.brand, {name: s.props_schema for name, s in self.sections.items()}
             )
         except SiteKitCliError as error:
-            return {"valid": False, "errors": [f"validator crashed: {error.detail[-500:]}"]}
+            # The validator could not run: not a verdict on the page (FinishGuard leaves it to the save).
+            return {"valid": False, "errors": [f"validator crashed: {error.detail[-500:]}"], "unavailable": True}
 
     def validate_page(self) -> str:
         """Check page.json and shell.json. Returns VALID or INVALID with each error and its fix."""

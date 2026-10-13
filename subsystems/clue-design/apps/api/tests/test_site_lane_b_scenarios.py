@@ -23,7 +23,8 @@ THE BRAND. Garner's real kit (site-kit's ``kit.json`` fixture) is published as a
 row in the test's workspace and pinned on the site (``theme.brand_kit``); the brand loader
 ``create_app`` composes (``site_brand_loader_for``) and the turn's own builder read it from there.
 The site is Garner's ``garner-syracuse`` shell and its kit-component sections; its two photos are
-uploaded through ``POST /assets`` so this workspace holds them. Garner's five captured clones are not
+put in this workspace's library (engine ingest + ``design_register_asset_record``, as ``POST /assets``
+does) so this workspace holds them. Garner's five captured clones are not
 minted as web fragments (their stored html is the sanitizer's output and would not re-mint to the
 same ids), so the ``ClonedSection`` items are left out.
 
@@ -220,16 +221,44 @@ class Garner:
         }
 
 
-def upload_image(client: TestClient, colour: tuple[int, int, int], name: str) -> dict:
-    """A photo uploaded to this workspace's library through the real route (engine ingest + custody)."""
-    from PIL import Image
-    import io
+def library_image(client: TestClient, colour: tuple[int, int, int], label: str, workspace_id: str | None = None) -> dict:
+    """A photo in a workspace's library, made the way ``POST /assets`` makes one: ingested by the
+    real engine (``app.state.core``), given durable custody (``register_engine_write``) and
+    registered through the governed ``design_register_asset_record``.
 
+    The route itself is not called: it also offers an asset-enrichment ingestion job to the fleet
+    queue, nothing in this file drains that queue (the embedded worker is off), and an undrained job
+    is later claimed by another suite's embedded worker, where it holds that client's shutdown
+    open. (Found in BV1a fix round 1.)"""
+    import base64
+    import io
+    import os
+
+    from PIL import Image
+
+    from clue_design.storage import SOURCE_KEY_ASSET
+    from lumen_api.asset_custody import register_engine_write
+    from lumen_api.design_store import DesignBlobStore
+
+    workspace_id = workspace_id or os.environ["LUMEN_DEV_WORKSPACE_ID"]
     buffer = io.BytesIO()
     Image.new("RGB", (64, 40), colour).save(buffer, format="PNG")
-    response = client.post("/assets", files={"file": (name, buffer.getvalue(), "image/png")}, data={"label": name})
-    assert response.status_code == 200, response.text
-    return response.json()["asset"]
+    asset_id = f"asset_{uuid4().hex[:12]}"
+    cache_dir = Path(client.app.state.engine_cache_root) / workspace_id
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    ingested = client.app.state.core.ingest_asset(
+        store_root=str(cache_dir), bytes_base64=base64.b64encode(buffer.getvalue()).decode("ascii"), asset_id=asset_id,
+        label=label, declared_mime_type="image/png", filename=f"{label}.png",
+        provenance={"created_by": "bv1a", "source_label": "upload", "confidence": None, "notes": []},
+        raise_on_error=False,
+    )
+    assert ingested.get("ok"), ingested
+    record = ingested["asset"]["record"]
+    register_engine_write(DesignBlobStore(client.app.state.storage, workspace_id), cache_dir, source_key=SOURCE_KEY_ASSET,
+                          record=record)
+    client.app.state.design_tools.invoke("design_register_asset_record", {"record": record}, workspace_id=workspace_id,
+                                         actor="human")
+    return HybridRepository(workspace_id=workspace_id).require_asset_record(asset_id)["asset"]
 
 
 def asset_file(asset: dict) -> str:
@@ -248,7 +277,7 @@ def seed_garner(client: TestClient) -> Garner:
                 old.append(image)
     images = {}
     for index, file in enumerate(old):
-        images[file] = asset_file(upload_image(client, ((index * 70) % 256, 140, 90), f"garner-photo-{index}.png"))
+        images[file] = asset_file(library_image(client, ((index * 70) % 256, 140, 90), f"garner-photo-{index}"))
     return Garner(kit_ref=kit_ref, images=images)
 
 
@@ -699,10 +728,6 @@ def test_c_a_takeover_that_saved_first_wins_the_race(client: TestClient, model: 
     assert store.require_run(turn.run_id)["status"] == "running"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "DEFECT: a conflicted/refused site turn snapshots its memory (manifest stamped on the FAILED run), but the "
-    "fresh-worker restore reads only SUCCEEDED runs (clue_design.sessions.latest_session_manifest_sha256), so "
-    "the request's history entry is lost and the next request is renumbered"))
 def test_c_a_lost_race_is_remembered_by_a_fresh_worker(client: TestClient, model: ModelSeam, garner: Garner,
                                                        _agent_root: Path) -> None:
     """Task 12 snapshots the session's memory on a conflicted (or refused) request on purpose
@@ -808,7 +833,7 @@ def test_e_a_an_invalid_site_is_never_saved(client: TestClient, model: ModelSeam
     """The agent puts a surface the brand lacks on the page and tries to finish. The real harness
     refuses to end on an invalid page (two reminders, then "completed with errors"), so the turn
     fails as site_invalid BEFORE any save is tried — a stronger guard than the save's own refusal,
-    which the stubbed runner of Task 12's suite reached instead (E f proves that refused shape)."""
+    which the stubbed runner of Task 12's suite reached instead (E b and E f prove that refused shape)."""
     store = HybridRepository()
     document_id = f"site_bv1a_{uuid4().hex[:10]}"
     store_site(garner.site(document_id))
@@ -832,17 +857,14 @@ def test_e_a_an_invalid_site_is_never_saved(client: TestClient, model: ModelSeam
     assert "- Saved: no, the page was still invalid\n" in history_of(_agent_root, store, document_id)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "DEFECT: an unavailable site-kit validator is reported by the site harness as an INVALID PAGE "
-    "(SiteTools._validate_raw turns SiteKitCliError into 'validator crashed' errors; FinishGuard nags twice; "
-    "the turn ends site_invalid, 'the page was still invalid') instead of the refused shape Task 12 rules for it"))
 def test_e_b_a_validator_that_cannot_check_is_a_refused_save(client: TestClient, model: ModelSeam, garner: Garner,
                                                               _agent_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The site-kit validator cannot run (its node bundle call fails: the narrowest real seam,
     Task 12's own). The turn's validate_page and the save's check both go through that one call
     (``site_doc_validate.run_site_validator``), so there is no seam that breaks the save alone.
     Task 12 (fix round 1 a) rules a "cannot check now" error a REFUSED SAVE: "The website could not
-    be saved: <why>", history "the save was refused", memory still written."""
+    be saved: <why>", history "the save was refused", memory still written. The finish leaves the
+    verdict to that save: no reminder, not site_invalid (BV1a fix round 1, was DEFECT 2)."""
     import lumen_api.site_doc_validate as site_doc_validate
     from lumen_api.site_kit_cli import SiteKitCliError
 
@@ -853,13 +875,17 @@ def test_e_b_a_validator_that_cannot_check_is_a_refused_save(client: TestClient,
     store = HybridRepository()
     document_id = f"site_bv1a_{uuid4().hex[:10]}"
     born = store_site(garner.site(document_id))["scene"]
-    model.next(
+    script = model.next(
         AIMessage(content="", tool_calls=[edit_heading_call(born, "/analysis", "cta", NEW_CTA_HEADING, 1),
                                           call("validate_page", {}, 2)]),
-        AIMessage(content="Done."), AIMessage(content="Done."), AIMessage(content="Done."),
+        AIMessage(content="Done."),
     )
     turn = run_turn(client.app, store, document_id, REQUEST_1)
+    # validate_page's own words are unchanged; the finish sent no reminder (two model calls, no more).
+    assert script.text_of("call_2").startswith("INVALID (1 error):\n- validator crashed: site-kit validator bundle missing")
+    assert len(script.seen) == 2
     nothing_saved(store, document_id, turn)
+    assert turn.response["error"]["code"] == "site_turn.write_refused" and turn.response["stop_reason"] is None
     assert turn.status == "failed" and turn.response["session_manifest_sha256"]
     assert turn.response["summary"].startswith("The website could not be saved: "), turn.response["summary"]
     assert "site-kit validator bundle missing" in turn.response["summary"]
@@ -932,38 +958,38 @@ def _unknown_kind_task(client: TestClient, garner: Garner) -> tuple[HybridReposi
     return store, document_id, envelope, payload
 
 
-def test_e_e_an_unknown_turn_kind_is_never_run(client: TestClient, model: ModelSeam, garner: Garner) -> None:
+def test_e_e_a_turn_outside_the_pool_is_refused_before_its_row_is_touched(client: TestClient, model: ModelSeam,
+                                                                         garner: Garner) -> None:
+    """The fleet given a turn its pool does not serve. ``executor_for_kind`` refuses an unknown kind
+    (never the web executor by default), and the handler's capability check is the POOL BOUNDARY:
+    it raises before the claim, so it never runs, claims or terminalizes a row that is not its
+    pool's (an ingestion-only pool must never fail a turn row; the claim-time SQL capabilities route
+    work, and ``design_agent_run.kind`` is a database enum, so a real row cannot carry an unknown
+    kind). A row left that way is the reaper's. Controller ruling, BV1a fix round 1 (was DEFECT 3)."""
     import asyncio
 
     from lumen_api.fleet_handler import DesignJobWorkHandler, DesignTurnJobError, executor_for_kind
 
     with pytest.raises(DesignTurnJobError, match="poster_turn"):
-        executor_for_kind("poster_turn")  # never the web executor by default
+        executor_for_kind("poster_turn")
     store, document_id, envelope, payload = _unknown_kind_task(client, garner)
-    handler = DesignJobWorkHandler(host_provider=lambda: turn_host(client.app), named_trace=False)
-    try:
-        asyncio.run(handler.handle(_fleet_context(payload, envelope.work_id)))
-    except DesignTurnJobError:
-        pass  # today's refusal escapes the handler; where that leaves the row is the xfail below
-    # Whatever the handler answers, no executor ran: no model, no write, no envelope.
+    pools = (
+        (DesignJobWorkHandler(host_provider=lambda: turn_host(client.app), named_trace=False), payload),
+        # The real site_turn envelope offered to the ingestion-only pool: outside that pool too.
+        (DesignJobWorkHandler(host_provider=lambda: turn_host(client.app), named_trace=False, ingestion_only=True),
+         envelope.model_dump(mode="json")),
+    )
+    for handler, offered in pools:
+        with pytest.raises(DesignTurnJobError, match="outside this worker's execution pool"):
+            asyncio.run(handler.handle(_fleet_context(offered, envelope.work_id)))
+        # A run row carries its terminal error in result_json (it has no error_json column).
+        (row,) = query("SELECT status, result_json, leased_by, lease_generation, leased_at FROM design_agent_run "
+                       "WHERE run_id = :r", {"r": envelope.run_id})
+        assert row == {"status": "queued", "result_json": None, "leased_by": None, "lease_generation": None,
+                       "leased_at": None}, row
+    # No executor ran: no model, no write, no envelope.
     assert model.built == []
     assert store.require_document(document_id)["current_version"] == 0 and store.list_envelopes(document_id) == []
-
-
-@pytest.mark.xfail(strict=True, reason=(
-    "DEFECT: DesignJobWorkHandler.handle raises its kind-capability refusal BEFORE its own containment "
-    "(fleet_handler.py:236-237), so an unknown-kind task leaves its design row queued with no terminal result"))
-def test_e_e_the_fleet_terminalizes_an_unknown_turn_kinds_row(client: TestClient, model: ModelSeam, garner: Garner) -> None:
-    import asyncio
-
-    from lumen_api.fleet_handler import DesignJobWorkHandler
-
-    store, _document_id, envelope, payload = _unknown_kind_task(client, garner)
-    handler = DesignJobWorkHandler(host_provider=lambda: turn_host(client.app), named_trace=False)
-    result = asyncio.run(handler.handle(_fleet_context(payload, envelope.work_id)))
-    assert result.outcome in {"preamble_error", "handler_error"}
-    row = store.require_run(envelope.run_id)
-    assert row["status"] == "failed" and row["result"]["error"]["code"].startswith("design_job.")
 
 
 def test_e_f_an_image_this_workspace_does_not_hold(client: TestClient, model: ModelSeam, garner: Garner,
@@ -972,7 +998,7 @@ def test_e_f_an_image_this_workspace_does_not_hold(client: TestClient, model: Mo
     stays). search_assets offers it, the agent places it, validate_page passes (the turn's brand
     lists it); render_page shows it broken; the save's custody check refuses it."""
     store = HybridRepository()
-    lost = upload_image(client, (200, 40, 40), "lost-classroom.png")
+    lost = library_image(client, (200, 40, 40), "lost classroom photo")
     lost_file = asset_file(lost)
     assert make_blob_store(client.app).delete(lost["media"]["digest"]["value"]) is True
     document_id = f"site_bv1a_{uuid4().hex[:10]}"
@@ -1094,7 +1120,7 @@ def test_f_a_b_a_section_recorded_in_one_workspace_is_invisible_to_another(clien
             assert blobs.read(file_digest)  # the workspace holds the bytes ...
             assert client.get(f"/asset-store/{file_digest}").status_code == 404  # ... and they are never served
             assert other.client.get(f"/asset-store/{file_digest}").status_code == 404
-    photo = upload_image(client, (12, 34, 56), f"ordinary-{marker}.png")
+    photo = library_image(client, (12, 34, 56), f"ordinary-{marker}")
     served = other.client.get(asset_file(photo))
     assert served.status_code == 200 and hashlib.sha256(served.content).hexdigest() == photo["media"]["digest"]["value"]
 
@@ -1179,9 +1205,7 @@ def test_f_d_a_generated_image_stays_in_its_workspace(client: TestClient, model:
     # B's library does not list it, and B's search_assets does not find it (B's own photo, found by
     # the same words, proves the search ran over a non-empty library).
     assert digest not in json.dumps(library(other.client))
-    own = other.client.post("/assets", files={"file": ("b-classroom.png", site_fixtures.png("green", (40, 30)), "image/png")},
-                            data={"label": "calm classroom morning light (B)"})
-    assert own.status_code == 200, own.text
+    own = library_image(client, (40, 160, 60), "calm classroom morning light (B)", workspace_id=other.workspace_id)
     b_document = f"site_bv1a_{uuid4().hex[:10]}"
     other.store.create_document(plain_site(b_document), doc_kind="site")
     b_script = model.next(
@@ -1190,7 +1214,7 @@ def test_f_d_a_generated_image_stays_in_its_workspace(client: TestClient, model:
     )
     run_turn(client.app, other.store, b_document, "Find a classroom photo.")
     found = json.loads(b_script.text_of("call_1"))
-    assert [row["asset_id"] for row in found["results"]] == [own.json()["asset"]["id"]], found
+    assert [row["asset_id"] for row in found["results"]] == [own["id"]], found
     assert digest not in b_script.text_of("call_1")
 
 

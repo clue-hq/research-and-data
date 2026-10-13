@@ -10590,7 +10590,7 @@ def _document_drift_note(
 
 
 def _session_manifest(
-    store: HybridRepository, blobs: DesignBlobStore, *, document_id: str
+    store: HybridRepository, blobs: DesignBlobStore, *, document_id: str, include_failed: bool = False
 ) -> JsonObject | None:
     """This document's session-folder manifest from its last synced turn, or ``None``.
 
@@ -10602,10 +10602,12 @@ def _session_manifest(
     ``None`` means no turn has synced this session yet, or the read itself failed. A missing
     manifest is not a failure: the runtime simply starts the session's folder fresh, which is
     what the very first turn of every session does anyway. Shared by both executors so the two
-    can never disagree on where a session's memory comes from.
+    can never disagree on where a session's memory comes from. ``include_failed`` also reads a
+    failed run's stamp (the site executor's; see
+    :func:`clue_design.sessions.latest_session_manifest_sha256`).
     """
     try:
-        sha = store.latest_session_manifest_sha256(document_id)
+        sha = store.latest_session_manifest_sha256(document_id, include_failed=include_failed)
         if sha is None:
             return None
         _, data = blobs.read_blob(sha)
@@ -11936,7 +11938,8 @@ def _execute_site_turn_job(
         response = run_site_agent_turn(
             doc, prompt, user_message=payload.prompt, inputs=inputs, persist=persist, workspace_id=workspace_id,
             run_id=envelope.run_id, session_id=design_session_id(workspace_id, document_id),
-            session_manifest=_session_manifest(store, blobs, document_id=document_id), blobs=blobs,
+            # A site turn writes history and snapshots its memory on conflicted, refused and stopped turns too.
+            session_manifest=_session_manifest(store, blobs, document_id=document_id, include_failed=True), blobs=blobs,
             checkpointer=checkpointer, cancel_requested=_run_cancel_probe(store, envelope.run_id),
             callbacks=callbacks, event_sink=event_sink, runner=runner,
         )

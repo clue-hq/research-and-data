@@ -209,7 +209,9 @@ class FinishGuard(AgentMiddleware):
     """A request cannot end on an invalid page (the spike's RunRecorder.after_model).
 
     A request that never touched the site's files (it only wrote a section, or only answered) is
-    not checked. After two reminders the request ends "completed with errors".
+    not checked. After two reminders the request ends "completed with errors". A validator that
+    cannot run is not an invalid page: the request completes and the save gives the verdict (the
+    executor's persist meets design_write_site's own check).
     """
 
     def __init__(self, tools: SiteTools) -> None:
@@ -228,7 +230,8 @@ class FinishGuard(AgentMiddleware):
             self.status = "completed (site unchanged)"
             return None
         check = self.site_tools._validate_raw()
-        if check["valid"]:
+        if check["valid"] or check.get("unavailable"):
+            # Unavailable: no reminder the model could act on, and not site_invalid; the save decides.
             self.status = "completed"
             self.errors = []
             return None

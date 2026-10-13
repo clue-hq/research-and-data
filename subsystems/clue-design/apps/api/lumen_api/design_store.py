@@ -2221,18 +2221,19 @@ class HybridRepository:
             )
         )
 
-    def latest_session_manifest_sha256(self, document_id: str) -> str | None:
+    def latest_session_manifest_sha256(self, document_id: str, *, include_failed: bool = False) -> str | None:
         """The digest of the newest session-folder manifest this document's session stored, or
         ``None``.
 
         Session continuity (2026-09-18): the session folder lives on ONE worker's disk, so a turn
         that lands anywhere else restores it from this manifest before the agent sees its
         workspace. Sync twin of :func:`clue_design.sessions.latest_session_manifest_sha256`, on
-        the same one-transaction bridge every other read here uses.
+        the same one-transaction bridge every other read here uses; ``include_failed`` is passed
+        through as it is documented there.
         """
         return self._bridge._run(
             lambda conn: design_sessions.latest_session_manifest_sha256(
-                conn, workspace_id=self.workspace_id, document_id=document_id
+                conn, workspace_id=self.workspace_id, document_id=document_id, include_failed=include_failed
             )
         )
 
